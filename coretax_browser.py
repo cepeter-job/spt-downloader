@@ -75,6 +75,15 @@ FIELDS_JS = r'''(root) => {
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.innerText)})"
 
 
+class CaptureCancelled(KeyboardInterrupt):
+    """Stop must bypass broad per-record Exception handlers and remain PARTIAL."""
+
+
+def _check_cancel(check_cancel):
+    if check_cancel:
+        check_cancel()
+
+
 def wait_idle(page):
     page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
     page.wait_for_timeout(180)
@@ -99,7 +108,8 @@ def maximize_page_size(page, container):
         page.keyboard.press('Escape')
 
 
-def capture_table(page, table, ordinal, max_pages):
+def capture_table(page, table, ordinal, max_pages, check_cancel=None):
+    _check_cancel(check_cancel)
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     maximize_page_size(page, container_handle)
@@ -112,6 +122,7 @@ def capture_table(page, table, ordinal, max_pages):
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
     seen = set()
     while container_handle.query_selector(next_selector):
+        _check_cancel(check_cancel)
         if result['pages'] >= max_pages:
             result['complete'] = False
             result['warning'] = f'Table page limit {max_pages} reached'
@@ -125,6 +136,7 @@ def capture_table(page, table, ordinal, max_pages):
         container_handle.query_selector(next_selector).click()
         deadline = time.monotonic() + 30
         while container_handle.evaluate(STATE_JS) == state:
+            _check_cancel(check_cancel)
             if time.monotonic() >= deadline:
                 result['complete'] = False
                 result['warning'] = 'Table pagination did not advance'
@@ -151,7 +163,8 @@ def capture_table(page, table, ordinal, max_pages):
     return result
 
 
-def capture_detail(page, max_pages=1000):
+def capture_detail(page, max_pages=1000, check_cancel=None):
+    _check_cancel(check_cancel)
     page.locator('.main-content').wait_for(timeout=45000)
     wait_idle(page)
     root = page.locator('.main-content').first
@@ -162,11 +175,13 @@ def capture_detail(page, max_pages=1000):
         # Accordion controls only reveal content; no arbitrary button clicks.
         expanders = panel.locator('.p-accordion-header a[aria-expanded=false]')
         for i in range(expanders.count()):
+            _check_cancel(check_cancel)
             expanders.nth(i).evaluate('(e)=>e.click()')
         wait_idle(page)
         section = {'name': name, 'fields': panel.evaluate(FIELDS_JS), 'text': panel.inner_text(), 'tables': []}
         tables = panel.locator('table')
         for i in range(tables.count()):
+            _check_cancel(check_cancel)
             table = tables.nth(i)
             if not table.is_visible():
                 continue
@@ -175,7 +190,7 @@ def capture_detail(page, max_pages=1000):
             if belongs != owner:
                 continue
             try:
-                captured = capture_table(page, table, i + 1, max_pages)
+                captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel)
                 section['tables'].append(captured)
                 if not captured['complete']:
                     errors.append({'object': name, 'message': captured['warning']})
@@ -197,6 +212,7 @@ def capture_detail(page, max_pages=1000):
         if not count:
             raise RuntimeError('No supported tab controls found')
         for i in range(count):
+            _check_cancel(check_cancel)
             tab = tabs.nth(i)
             if tab.evaluate('(e)=>e.closest(\"li\").classList.contains(\"p-disabled\")||e.getAttribute(\"aria-disabled\")===\"true\"'):
                 continue
@@ -266,7 +282,8 @@ class ListObserver:
         self.page.remove_listener('response', self.on_response)
 
 
-def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
+def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
+    _check_cancel(check_cancel)
     npwp, year = validate_scope(npwp, year)
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -298,6 +315,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
         sources.append({'url': page.url, 'label': 'SPT Belum Disampaikan'})
         links = page.locator('a[href]').evaluate_all('(els)=>els.map(e=>({href:e.getAttribute(\"href\"),label:e.innerText.trim()}))')
         for link in links:
+            _check_cancel(check_cancel)
             url = urljoin(ORIGIN, link['href'])
             path = urlparse(url).path
             if urlparse(url).netloc == urlparse(ORIGIN).netloc and re.fullmatch(r'/returnsheets/id-ID/[^/]*returnsheets/' + re.escape(taxpayer_id), path):
@@ -306,6 +324,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
         if len(sources) == 1:
             errors.append({'object': 'Status navigation', 'message': 'No other SPT status lists discovered; refusing to certify all-SPT completeness'})
         for source in sources:
+            _check_cancel(check_cancel)
             label = source['label']
             print(f"Inventory: {label}", flush=True)
             entry = {'status': label, 'total': None, 'scanned': 0, 'selected': 0, 'result': 'PARTIAL', 'note': source['url']}
@@ -329,6 +348,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
                         response = observer.wait(before)
                 # List pages use Prev even when First is hidden.
                 for _ in range(max_pages):
+                    _check_cancel(check_cancel)
                     previous = container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)')
                     if not previous:
                         break
@@ -337,12 +357,16 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
                     response = observer.wait(before)
                 seen_ids = set()
                 for page_index in range(max_pages):
+                    _check_cancel(check_cancel)
                     grid = table.evaluate(TABLE_JS)
                     if len(grid['rows']) != len(response['rows']):
                         raise RuntimeError('Return-list DOM row count does not match the UI response')
                     entry['scanned'] += len(grid['rows'])
+                    if on_progress:
+                        on_progress({'completed': len(audit)-1, 'total': len(sources), 'scanned': entry['scanned']})
                     batch = []
                     for position, (values, api_row) in enumerate(zip(grid['rows'], response['rows'])):
+                        _check_cancel(check_cancel)
                         identifier = str(api_row.get('RecordId') or api_row.get('AggregateIdentifier') or '')
                         if not identifier or identifier in seen_ids:
                             raise RuntimeError('Missing or repeated SPT identifier; pagination cannot be certified')
@@ -363,6 +387,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
                     entry['selected'] += len(batch)
                     with batch_path.open('a', encoding='utf-8') as handle:
                         for record in batch:
+                            _check_cancel(check_cancel)
                             handle.write(json.dumps(record, ensure_ascii=False) + '\n')
                     next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
                     if not next_button:
@@ -382,6 +407,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
                 errors.append({'object': label, 'message': str(exc).split('\n')[0]})
                 print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
             (folder / ('inventory-' + str(len(audit)) + '.json')).write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
+            if on_progress:
+                on_progress({'completed': len(audit), 'total': len(sources), 'scanned': entry['scanned']})
     finally:
         observer.close()
     # Aggregate from durable batches; verify counts programmatically, not from logs.
@@ -428,7 +455,8 @@ def open_return_readonly(page, row, taxpayer_id):
         context.remove_listener('page', callback)
 
 
-def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None):
+def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None):
+    _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -438,6 +466,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     attempted = 0
     try:
         for ordinal, record in enumerate(run['records'], 1):
+            _check_cancel(check_cancel)
             checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
             if checkpoint.exists():
                 saved = json.loads(checkpoint.read_text(encoding='utf-8'))
@@ -446,6 +475,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                 if saved.get('capture_complete'):
                     record.update(saved)
                     print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
+                    if on_progress:
+                        on_progress(run, ordinal)
                     continue
             if detail_limit is not None and attempted >= detail_limit:
                 run['errors'].append({'object': 'Scope', 'phase': 'details', 'message': f'Test detail limit {detail_limit} reached; full export not complete'})
@@ -471,10 +502,12 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         if current_size.inner_text().strip() != str(desired):
                             raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
                     while container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)'):
+                        _check_cancel(check_cancel)
                         before = len(observer.events)
                         container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)').evaluate('(e)=>e.click()')
                         current_response = observer.wait(before)
                     for _ in range(record['list_page'] - 1):
+                        _check_cancel(check_cancel)
                         next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
                         if not next_button:
                             raise RuntimeError('Inventory page is no longer available; source changed')
@@ -492,14 +525,16 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                 data = table.evaluate(TABLE_JS)
                 current_meta = dict(zip(data['headers'], data['rows'][position]))
                 for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
+                    _check_cancel(check_cancel)
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
                 taxpayer_id = record['list_url'].rstrip('/').split('/')[-1]
                 detail, is_popup = open_return_readonly(page, source_row, taxpayer_id)
                 detail.set_viewport_size({'width': 1600, 'height': 1000})
-                capture = capture_detail(detail, max_pages=max_pages)
+                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel)
                 record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
                 for error in capture['errors']:
+                    _check_cancel(check_cancel)
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
             except Exception as exc:
                 record['capture_complete'] = False
@@ -518,6 +553,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
         observer.close()
     # Re-read all durable detail checkpoints and aggregate before certifying.
     for ordinal, record in enumerate(run['records'], 1):
+        _check_cancel(check_cancel)
         checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
         if checkpoint.exists():
             saved = json.loads(checkpoint.read_text(encoding='utf-8'))

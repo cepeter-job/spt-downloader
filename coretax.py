@@ -29,17 +29,18 @@ def verify_workbook(path, run, *, include_details=True):
         wb.close()
 
 
-def save_output(run, folder):
+def verify_outputs(run, folder):
     folder = Path(folder)
     validate_scope(run['npwp'], run['year'])
-    scope_file = folder / 'run.json'
-    if scope_file.exists():
-        previous = json.loads(scope_file.read_text(encoding='utf-8'))
-        scope_keys = ('npwp', 'year', 'year_basis')
-        if any(previous.get(key) != run.get(key) for key in scope_keys):
-            raise FileExistsError('Output scope differs from existing run.json; use a new output folder')
-    folder.mkdir(parents=True, exist_ok=True)
-    files = export_split_workbooks(run, folder)
+    expected = {'resume.xlsx'} | {tax_type_filename(r['meta'].get('Jenis Pajak')) for r in run['records']}
+    declared = run.get('output_files', list(expected))
+    if not isinstance(declared, list) or any(not isinstance(n, str) or Path(n).name != n for n in declared):
+        raise ValueError('Invalid workbook filename declaration')
+    if len(declared) != len(set(declared)) or set(declared) != expected:
+        raise ValueError('Workbook filename/count mismatch')
+    if {p.name for p in folder.glob('*.xlsx')} != expected:
+        raise ValueError('Workbook file set differs from the selected scope')
+    files = {name: folder / name for name in expected}
     verify_workbook(files['resume.xlsx'], run, include_details=False)
     sheet_names = {}
     for filename, path in files.items():
@@ -63,7 +64,21 @@ def save_output(run, folder):
             assert linked_sheet in sheet_names[expected_file], 'Resume links to a nonexistent detail sheet'
     finally:
         resume.close()
+
+
+def save_output(run, folder):
+    folder = Path(folder)
+    validate_scope(run['npwp'], run['year'])
+    scope_file = folder / 'run.json'
+    if scope_file.exists():
+        previous = json.loads(scope_file.read_text(encoding='utf-8'))
+        scope_keys = ('npwp', 'year', 'year_basis')
+        if any(previous.get(key) != run.get(key) for key in scope_keys):
+            raise FileExistsError('Output scope differs from existing run.json; use a new output folder')
+    folder.mkdir(parents=True, exist_ok=True)
+    files = export_split_workbooks(run, folder)
     run['output_files'] = list(files)
+    verify_outputs(run, folder)
     scope_file.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding='utf-8')
     return files['resume.xlsx']
 
