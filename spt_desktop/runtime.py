@@ -177,6 +177,8 @@ def ensure_runtime(root: Path, on_status, cancelled) -> Path:
                         'UV_CACHE_DIR': str(root / 'cache'), 'PYTHONUTF8': '1',
                         'PYTHONIOENCODING': 'utf-8'})
     environment.pop('UV_INSECURE_HOST', None)
+    environment.pop('PYTHONHOME', None)
+    environment.pop('PYTHONPATH', None)
     python = root / 'runtime' / 'Scripts' / 'python.exe'
     ready = root / 'runtime-ready.txt'
     info = _probe_python(python, expected, environment, cancelled, packages=True)
