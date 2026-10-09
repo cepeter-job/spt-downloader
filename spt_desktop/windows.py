@@ -143,11 +143,16 @@ class ProcessJob:
             self.assign(process.pid)
             _resume_primary(self._kernel, process.pid)
         except BaseException:
-            process.kill()
-            process.wait(timeout=10)
-            for stream in (process.stdin, process.stdout, process.stderr):
-                if stream is not None:
-                    stream.close()
+            try:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=10)
+            finally:
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
             raise
         return process
 

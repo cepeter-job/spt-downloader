@@ -176,3 +176,27 @@ def test_job_spawn_contains_venv_launcher_before_it_can_create_descendants():
                 process.stdin.close()
             if process.stdout:
                 process.stdout.close()
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Native Windows process ownership')
+def test_spawn_cleanup_closes_pipes_even_when_wait_fails(monkeypatch):
+    import io
+    windows = module('windows')
+    class FailedChild:
+        pid = 123
+        stdin = io.StringIO()
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        def kill(self):
+            pass
+        def wait(self, timeout):
+            raise subprocess.TimeoutExpired('synthetic-child', timeout)
+    child = FailedChild()
+    monkeypatch.setattr(windows.subprocess, 'Popen', lambda *args, **kwargs: child)
+    with windows.ProcessJob() as job:
+        def reject_assignment(pid):
+            raise OSError('Synthetic assignment failure')
+        monkeypatch.setattr(job, 'assign', reject_assignment)
+        with pytest.raises(subprocess.TimeoutExpired):
+            job.spawn(['synthetic-only'])
+    assert child.stdin.closed and child.stdout.closed and child.stderr.closed
