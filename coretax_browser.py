@@ -1,0 +1,527 @@
+"""Authorized read-only UI capture. No password entry, token extraction or write actions."""
+import time
+import re
+import json
+from pathlib import Path
+from urllib.parse import urljoin, urlparse
+from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+CELL_JS = r'''(cell) => {
+ const clone=cell.cloneNode(true);
+ clone.querySelectorAll('.p-column-title,button,script,style,.p-hidden-accessible').forEach(e=>e.remove());
+ clone.querySelectorAll('input,textarea,select').forEach(e=>e.remove());
+ let text=(clone.textContent||'').replace(/\s+/g,' ').trim();
+ const vals=[...cell.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')]
+ .filter(e=>e.getAttribute('role')!=='combobox' && !e.closest('.p-hidden-accessible') && (!(e.type==='radio'||e.type==='checkbox')||e.checked))
+ .map(e=>(e.type==='checkbox'||e.type==='radio') ? String(e.checked) : (e.tagName==='SELECT' ? e.selectedOptions[0]?.textContent||e.value : e.value));
+ return [text,...vals.filter(v=>v!=='' && v!==text)].filter(Boolean).join(' | ');
+}'''
+
+TABLE_JS = r'''(table) => {
+ const value = CELL;
+ const hrows=table.tHead ? [...table.tHead.rows].filter(r=>![...r.cells].some(c=>c.querySelector('p-columnfilter,input,select'))) : [];
+ const matrix=[];
+ hrows.forEach((tr,ri)=>{
+  matrix[ri] ||= []; let ci=0;
+  [...tr.cells].forEach(c=>{
+   while(matrix[ri][ci]!==undefined)ci++;
+   for(let r=ri;r<ri+(c.rowSpan||1);r++){
+    matrix[r] ||= [];
+    for(let x=ci;x<ci+(c.colSpan||1);x++)matrix[r][x]=value(c);
+   }
+   ci+=c.colSpan||1;
+  });
+ });
+ const width=Math.max(0,...matrix.map(r=>r.length));
+ const headers=Array.from({length:width},(_,i)=>[...new Set(matrix.map(r=>r[i]).filter(Boolean))].join(' / ')||`Kolom ${i+1}`);
+ const rows=[...table.tBodies].flatMap(b=>[...b.rows]).filter(r=>!r.classList.contains('p-datatable-emptymessage'))
+ .filter(r=>!(r.cells.length===1 && r.cells[0].colSpan>1 && /tidak ada data|no records|no data/i.test(r.textContent)))
+ .map(r=>[...r.cells].map(value));
+ const foot=table.tFoot ? [...table.tFoot.rows].map(r=>[...r.cells].map(value)) : [];
+ return {headers,rows,footer:foot};
+}'''.replace('CELL', CELL_JS)
+
+FIELDS_JS = r'''(root) => {
+ const owner=root.closest('.p-tabview-panel');
+ const visible=e=>!!e.getClientRects().length;
+ const fields=[];
+ const labelFor=e=>{
+  let explicit=e.id ? root.querySelector('label[for="'+CSS.escape(e.id)+'"]') : null;
+  if(explicit)return explicit.textContent.trim();
+  let node=e;
+  for(let n=0;n<7&&node&&node!==root;n++,node=node.parentElement){
+   const labels=[...node.querySelectorAll('label')].filter(l=>visible(l));
+   if(labels.length)return labels.map(l=>l.innerText.trim()).filter(Boolean).join(' / ');
+  }
+  return e.getAttribute('aria-label')||e.getAttribute('formcontrolname')||e.name||e.id||'Unnamed field';
+ };
+ const include=e=>e.closest('.p-tabview-panel')===owner && !e.closest('table') && !e.closest('[hidden],[aria-hidden="true"]');
+ [...root.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')].filter(include).forEach(e=>{
+  if(e.getAttribute('role')==='combobox')return;
+  if(e.type==='radio'||e.type==='checkbox'){
+   const control=e.closest('p-radiobutton,p-checkbox')||e;
+   if(!visible(control))return;
+   if(e.type==='radio'&&!e.checked&&e.getAttribute('aria-checked')!=='true')return;
+   fields.push({label:labelFor(e),field:e.name||e.getAttribute('formcontrolname')||e.id,value:e.type==='checkbox'?String(e.checked):e.value});
+  }else if(visible(e))fields.push({label:labelFor(e),field:e.getAttribute('formcontrolname')||e.name||e.id,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.textContent).join(', '):e.value});
+ });
+ [...root.querySelectorAll('p-dropdown,p-multiselect')].filter(include).filter(visible).forEach(e=>{
+  fields.push({label:labelFor(e),field:e.getAttribute('formcontrolname')||e.id,value:e.querySelector('.p-dropdown-label,.p-multiselect-label')?.textContent.trim()||''});
+ });
+ return fields;
+}'''
+
+STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.innerText)})"
+
+
+def wait_idle(page):
+    page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
+    page.wait_for_timeout(180)
+
+
+def maximize_page_size(page, container):
+    total = container.query_selector('.p-paginator-current')
+    if total and re.search(r'(?:dari|of)\s+0\s', total.inner_text(), re.I):
+        return
+    trigger = container.query_selector('.p-paginator .p-dropdown-trigger')
+    if not trigger:
+        return
+    trigger.evaluate('(e)=>e.click()')
+    options = page.locator('.p-dropdown-items li:visible')
+    options.first.wait_for(state='visible', timeout=5000)
+    numeric = [(int(text.strip()), i) for i, text in enumerate(options.all_inner_texts()) if text.strip().isdigit() and int(text.strip()) <= 100]
+    if numeric:
+        _, index = max(numeric)
+        options.nth(index).evaluate('(e)=>e.click()')
+        wait_idle(page)
+    else:
+        page.keyboard.press('Escape')
+
+
+def capture_table(page, table, ordinal, max_pages):
+    handle = table.element_handle()
+    container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
+    maximize_page_size(page, container_handle)
+    first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
+    if first:
+        first.evaluate('(e)=>e.click()')
+        wait_idle(page)
+    result = table.evaluate(TABLE_JS)
+    result.update(name=f'Tabel {ordinal}', pages=1, complete=True)
+    next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
+    seen = set()
+    while container_handle.query_selector(next_selector):
+        if result['pages'] >= max_pages:
+            result['complete'] = False
+            result['warning'] = f'Table page limit {max_pages} reached'
+            break
+        state = container_handle.evaluate(STATE_JS)
+        if state in seen:
+            result['complete'] = False
+            result['warning'] = 'Repeated table pagination state'
+            break
+        seen.add(state)
+        container_handle.query_selector(next_selector).click()
+        deadline = time.monotonic() + 30
+        while container_handle.evaluate(STATE_JS) == state:
+            if time.monotonic() >= deadline:
+                result['complete'] = False
+                result['warning'] = 'Table pagination did not advance'
+                break
+            page.wait_for_timeout(120)
+        if not result['complete']:
+            break
+        wait_idle(page)
+        data = table.evaluate(TABLE_JS)
+        result['rows'].extend(data['rows'])
+        result['pages'] += 1
+    # Reconcile body rows to the application's declared count when exposed.
+    total_element = container_handle.query_selector('.p-paginator-current')
+    if total_element:
+        match = re.search(r'(?:dari|of)\s+([0-9.,]+)', total_element.inner_text(), re.I)
+        if match:
+            result['source_total'] = int(re.sub(r'[^0-9]', '', match.group(1)))
+            if len(result['rows']) != result['source_total']:
+                result['complete'] = False
+                result['warning'] = f"Source count {result['source_total']} != captured rows {len(result['rows'])}"
+    # Source totals are often in tfoot; include once after paging.
+    result['rows'].extend(result.pop('footer', []))
+    container_handle.dispose()
+    return result
+
+
+def capture_detail(page, max_pages=1000):
+    page.locator('.main-content').wait_for(timeout=45000)
+    wait_idle(page)
+    root = page.locator('.main-content').first
+    sections = []
+    errors = []
+
+    def capture_panel(panel, name):
+        # Accordion controls only reveal content; no arbitrary button clicks.
+        expanders = panel.locator('.p-accordion-header a[aria-expanded=false]')
+        for i in range(expanders.count()):
+            expanders.nth(i).evaluate('(e)=>e.click()')
+        wait_idle(page)
+        section = {'name': name, 'fields': panel.evaluate(FIELDS_JS), 'text': panel.inner_text(), 'tables': []}
+        tables = panel.locator('table')
+        for i in range(tables.count()):
+            table = tables.nth(i)
+            if not table.is_visible():
+                continue
+            belongs = table.evaluate('(e)=>e.closest(\".p-tabview-panel\")?.id||\"\"')
+            owner = panel.evaluate('(e)=>e.closest(\".p-tabview-panel\")?.id||\"\"')
+            if belongs != owner:
+                continue
+            try:
+                captured = capture_table(page, table, i + 1, max_pages)
+                section['tables'].append(captured)
+                if not captured['complete']:
+                    errors.append({'object': name, 'message': captured['warning']})
+            except Exception as exc:
+                errors.append({'object': f'{name}/table {i+1}', 'message': str(exc).split('\n')[0]})
+        sections.append(section)
+        nested = panel.locator('.p-tabview')
+        if nested.count():
+            visit_view(nested.first, name + ' / ')
+
+    def visit_view(view, prefix=''):
+        tabs = view.locator(':scope > .p-tabview-nav-container > .p-tabview-nav-content > .p-tabview-nav > li > a[role=tab]')
+        if not tabs.count():
+            tabs = view.locator(':scope > .p-tabview-nav > li > a[role=tab]')
+        # PrimeNG versions differ in nav wrappers: limit fallbacks to this view.
+        if not tabs.count():
+            tabs = view.locator('.p-tabview-nav > li > a[role=tab]')
+        count = tabs.count()
+        if not count:
+            raise RuntimeError('No supported tab controls found')
+        for i in range(count):
+            tab = tabs.nth(i)
+            if tab.evaluate('(e)=>e.closest(\"li\").classList.contains(\"p-disabled\")||e.getAttribute(\"aria-disabled\")===\"true\"'):
+                continue
+            name = prefix + tab.inner_text().strip()
+            tab.evaluate('(e)=>e.click()')
+            wait_idle(page)
+            panel_id = tab.get_attribute('aria-controls')
+            if panel_id:
+                panel = view.locator('[id=' + repr(panel_id) + ']')
+            else:
+                panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])').first
+            panel.wait_for(state='visible', timeout=30000)
+            capture_panel(panel, name)
+
+    view = root.locator('.p-tabview').first
+    try:
+        if view.count():
+            visit_view(view)
+        else:
+            capture_panel(root, 'Halaman SPT')
+    except Exception as exc:
+        errors.append({'object': 'SPT detail', 'message': str(exc).split('\n')[0]})
+    meaningful = any(s['fields'] or s['tables'] for s in sections)
+    if not meaningful:
+        errors.append({'object': 'SPT detail', 'message': 'No structured fields or tables captured; unsupported detail layout'})
+    return {'sections': sections, 'capture_complete': meaningful and not errors, 'errors': errors}
+
+
+ORIGIN = 'https://coretax.intranet.pajak.go.id'
+SEARCH_URL = ORIGIN + '/returnsheets/id-ID/taxpayer-search'
+
+
+class ListObserver:
+    """Observe the UI's own list responses; never read cookies or auth headers."""
+    def __init__(self, page):
+        self.page = page
+        self.events = []
+        page.on('response', self.on_response)
+
+    def on_response(self, response):
+        if '/returnsheet/api/' not in response.url or response.request.resource_type not in ('xhr', 'fetch'):
+            return
+        if 'json' not in response.headers.get('content-type', ''):
+            return
+        try:
+            data = response.json()
+            payload = data.get('Payload', data.get('payload', {}))
+            if isinstance(payload, dict) and isinstance(payload.get('Data'), list) and isinstance(payload.get('TotalRecords'), int):
+                self.events.append({'total': payload['TotalRecords'], 'rows': payload['Data'],
+                                    'successful': data.get('IsSuccessful', data.get('isSuccessful', True))})
+        except Exception:
+            pass
+
+    def wait(self, after, timeout=45):
+        deadline = time.monotonic() + timeout
+        while len(self.events) <= after:
+            if time.monotonic() > deadline:
+                raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
+            self.page.wait_for_timeout(100)
+        result = self.events[-1]
+        if not result['successful']:
+            raise RuntimeError('Coretax reported an unsuccessful return-list request')
+        wait_idle(self.page)
+        return result
+
+    def close(self):
+        self.page.remove_listener('response', self.on_response)
+
+
+def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
+    npwp, year = validate_scope(npwp, year)
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    batch_path = folder / 'inventory-batches.jsonl'
+    if batch_path.exists():
+        raise FileExistsError(f'Use a new output directory; checkpoint already exists: {batch_path}')
+    batch_path.touch()
+    page.goto(SEARCH_URL, wait_until='domcontentloaded', timeout=60000)
+    page.locator('#ObjectPermitNumber').wait_for(state='visible', timeout=45000)
+    page.locator('#ObjectPermitNumber').fill(npwp)
+    page.locator('#ObjectPermitNumber').press('Enter')
+    row = page.locator('table tbody tr').filter(has_text=npwp)
+    row.first.wait_for(state='visible', timeout=45000)
+    wait_idle(page)
+    if row.count() != 1:
+        raise RuntimeError('NPWP search was ambiguous; refusing to select a different taxpayer')
+    cells = [s.strip() for s in row.locator('td').all_inner_texts()]
+    exact = next((i for i, s in enumerate(cells) if s == npwp), None)
+    if exact is None:
+        raise RuntimeError('NPWP search returned no exact NPWP match; input is not normalized')
+    taxpayer_name = cells[exact + 1] if exact + 1 < len(cells) else ''
+    observer = ListObserver(page)
+    errors, audit, sources = [], [], []
+    try:
+        before = len(observer.events)
+        row.get_by_role('button', name='Pilih', exact=True).evaluate('(e)=>e.click()')
+        observer.wait(before)
+        taxpayer_id = page.url.rstrip('/').split('/')[-1]
+        sources.append({'url': page.url, 'label': 'SPT Belum Disampaikan'})
+        links = page.locator('a[href]').evaluate_all('(els)=>els.map(e=>({href:e.getAttribute(\"href\"),label:e.innerText.trim()}))')
+        for link in links:
+            url = urljoin(ORIGIN, link['href'])
+            path = urlparse(url).path
+            if urlparse(url).netloc == urlparse(ORIGIN).netloc and re.fullmatch(r'/returnsheets/id-ID/[^/]*returnsheets/' + re.escape(taxpayer_id), path):
+                if url not in [s['url'] for s in sources]:
+                    sources.append({'url': url, 'label': link['label']})
+        if len(sources) == 1:
+            errors.append({'object': 'Status navigation', 'message': 'No other SPT status lists discovered; refusing to certify all-SPT completeness'})
+        for source in sources:
+            label = source['label']
+            print(f"Inventory: {label}", flush=True)
+            entry = {'status': label, 'total': None, 'scanned': 0, 'selected': 0, 'result': 'PARTIAL', 'note': source['url']}
+            audit.append(entry)
+            try:
+                before = len(observer.events)
+                page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
+                response = observer.wait(before)
+                entry['total'] = response['total']
+                table = page.locator('.main-content table').first
+                table.wait_for(state='visible', timeout=30000)
+                container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
+                # Selecting an already-selected page size may not trigger a request.
+                current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+                if entry['total'] and current_size and current_size.inner_text().strip() != '50':
+                    before = len(observer.events)
+                    maximize_page_size(page, container)
+                    if len(observer.events) > before:
+                        response = observer.events[-1]
+                    else:
+                        response = observer.wait(before)
+                # List pages use Prev even when First is hidden.
+                for _ in range(max_pages):
+                    previous = container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)')
+                    if not previous:
+                        break
+                    before = len(observer.events)
+                    previous.evaluate('(e)=>e.click()')
+                    response = observer.wait(before)
+                seen_ids = set()
+                for page_index in range(max_pages):
+                    grid = table.evaluate(TABLE_JS)
+                    if len(grid['rows']) != len(response['rows']):
+                        raise RuntimeError('Return-list DOM row count does not match the UI response')
+                    entry['scanned'] += len(grid['rows'])
+                    batch = []
+                    for position, (values, api_row) in enumerate(zip(grid['rows'], response['rows'])):
+                        identifier = str(api_row.get('RecordId') or api_row.get('AggregateIdentifier') or '')
+                        if not identifier or identifier in seen_ids:
+                            raise RuntimeError('Missing or repeated SPT identifier; pagination cannot be certified')
+                        seen_ids.add(identifier)
+                        meta = dict(zip(grid['headers'], values))
+                        try:
+                            selected = in_scope(meta, year, basis)
+                        except ValueError as exc:
+                            errors.append({'object': label + '/' + identifier, 'message': str(exc)})
+                            continue
+                        if selected:
+                            record = {'key': urlparse(source['url']).path + '/' + identifier,
+                                      'record_id': identifier, 'meta': meta, 'source_status': label,
+                                      'list_url': source['url'], 'list_page': page_index + 1, 'row_position': position,
+                                      'list_page_size': int(current_size.inner_text().strip()) if current_size and current_size.inner_text().strip().isdigit() else None,
+                                      'capture_complete': False, 'sections': []}
+                            batch.append(record)
+                    entry['selected'] += len(batch)
+                    with batch_path.open('a', encoding='utf-8') as handle:
+                        for record in batch:
+                            handle.write(json.dumps(record, ensure_ascii=False) + '\n')
+                    next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
+                    if not next_button:
+                        break
+                    if page_index + 1 == max_pages:
+                        raise RuntimeError(f'List page limit {max_pages} reached')
+                    before = len(observer.events)
+                    next_button.evaluate('(e)=>e.click()')
+                    response = observer.wait(before)
+                    if response['total'] != entry['total']:
+                        raise RuntimeError('Source list changed during capture; rerun with a new output folder')
+                if entry['scanned'] != entry['total']:
+                    raise RuntimeError(f"Source total {entry['total']} != scanned {entry['scanned']}")
+                entry['result'] = 'RECONCILED'
+                container.dispose()
+            except Exception as exc:
+                errors.append({'object': label, 'message': str(exc).split('\n')[0]})
+                print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
+            (folder / ('inventory-' + str(len(audit)) + '.json')).write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
+    finally:
+        observer.close()
+    # Aggregate from durable batches; verify counts programmatically, not from logs.
+    records = [json.loads(line) for line in batch_path.read_text(encoding='utf-8').splitlines() if line]
+    keys = [r['key'] for r in records]
+    if len(keys) != len(set(keys)) or len(records) != sum(e['selected'] for e in audit):
+        raise RuntimeError('Checkpoint reconciliation failed: duplicate identifiers or selected-count mismatch')
+    unique = deduplicate_inventory(records)
+    if len(unique) != len(records):
+        audit.append({'status': 'Deduplicatie / Deduplikasi', 'total': len(records), 'scanned': len(unique), 'selected': len(unique),
+                      'result': 'RECONCILED', 'note': 'Same RecordId appears in multiple status lists. Retained once; all source occurrences preserved. Distinct amendments retain distinct identifiers.'})
+    result = {'npwp': npwp, 'year': year, 'year_basis': basis, 'taxpayer_name': taxpayer_name,
+              'records': unique, 'audit': audit, 'errors': errors, 'sources': sources,
+              'inventory_complete': bool(sources) and not errors and all(e['result'] == 'RECONCILED' for e in audit)}
+    (folder / 'inventory.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    return result
+
+
+def open_return_readonly(page, row, taxpayer_id):
+    # Exact observed View button only. Never fall back to arbitrary row actions.
+    view = row.locator('button[id=ViewButton]')
+    if view.count() != 1:
+        raise RuntimeError('No unique supported View control; refusing to click other row actions')
+    opened = []
+    callback = lambda tab: opened.append(tab)
+    context = page.context
+    previous_url = page.url
+    context.on('page', callback)
+    try:
+        view.evaluate('(e)=>e.click()')
+        deadline = time.monotonic() + 20
+        while not opened and page.url == previous_url:
+            if time.monotonic() > deadline:
+                raise RuntimeError('View did not open a return; unsupported document or permission failure')
+            page.wait_for_timeout(100)
+        detail = opened[0] if opened else page
+        detail.wait_for_load_state('domcontentloaded', timeout=60000)
+        if urlparse(detail.url).netloc != urlparse(ORIGIN).netloc or not urlparse(detail.url).path.startswith('/returnsheets/'):
+            raise RuntimeError('View redirected outside the authorized Coretax return pages; login may have expired')
+        if taxpayer_id not in urlparse(detail.url).path.split('/'):
+            raise RuntimeError('Return URL does not identify the selected taxpayer; provenance cannot be verified')
+        return detail, bool(opened)
+    finally:
+        context.remove_listener('page', callback)
+
+
+def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None):
+    folder = Path(folder)
+    checkpoint_dir = folder / 'returns'
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    observer = ListObserver(page)
+    active_group, current_response = None, None
+    run['errors'] = [e for e in run.get('errors', []) if e.get('phase') != 'details']
+    attempted = 0
+    try:
+        for ordinal, record in enumerate(run['records'], 1):
+            checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
+            if checkpoint.exists():
+                saved = json.loads(checkpoint.read_text(encoding='utf-8'))
+                if saved['record_id'] != record['record_id'] or saved.get('scope') != [run['npwp'], run['year'], run['year_basis']]:
+                    raise RuntimeError('Existing detail checkpoint belongs to a different record or scope; use a new output folder')
+                if saved.get('capture_complete'):
+                    record.update(saved)
+                    print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
+                    continue
+            if detail_limit is not None and attempted >= detail_limit:
+                run['errors'].append({'object': 'Scope', 'phase': 'details', 'message': f'Test detail limit {detail_limit} reached; full export not complete'})
+                break
+            attempted += 1
+            record['scope'] = [run['npwp'], run['year'], run['year_basis']]
+            print(f"Detail {ordinal}/{len(run['records'])}: {record['meta'].get('Jenis Pajak', '')} | {record['meta'].get('Masa Pajak', '')}", flush=True)
+            detail, is_popup = None, False
+            try:
+                group = (record['list_url'], record['list_page'])
+                if group != active_group:
+                    before = len(observer.events)
+                    page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
+                    current_response = observer.wait(before)
+                    table = page.locator('.main-content table').first
+                    container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
+                    current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+                    desired = record.get('list_page_size')
+                    if desired and current_size and current_size.inner_text().strip() != str(desired):
+                        before = len(observer.events)
+                        maximize_page_size(page, container)
+                        current_response = observer.wait(before)
+                        if current_size.inner_text().strip() != str(desired):
+                            raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
+                    while container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)'):
+                        before = len(observer.events)
+                        container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)').evaluate('(e)=>e.click()')
+                        current_response = observer.wait(before)
+                    for _ in range(record['list_page'] - 1):
+                        next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
+                        if not next_button:
+                            raise RuntimeError('Inventory page is no longer available; source changed')
+                        before = len(observer.events)
+                        next_button.evaluate('(e)=>e.click()')
+                        current_response = observer.wait(before)
+                    container.dispose()
+                    active_group = group
+                identifiers = [str(r.get('RecordId') or r.get('AggregateIdentifier') or '') for r in current_response['rows']]
+                if record['record_id'] not in identifiers:
+                    raise RuntimeError('Inventoried SPT is not on the expected source page; rerun inventory')
+                position = identifiers.index(record['record_id'])
+                table = page.locator('.main-content table').first
+                source_row = table.locator('tbody tr').nth(position)
+                data = table.evaluate(TABLE_JS)
+                current_meta = dict(zip(data['headers'], data['rows'][position]))
+                for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
+                    if record['meta'].get(field, '') != current_meta.get(field, ''):
+                        raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
+                taxpayer_id = record['list_url'].rstrip('/').split('/')[-1]
+                detail, is_popup = open_return_readonly(page, source_row, taxpayer_id)
+                detail.set_viewport_size({'width': 1600, 'height': 1000})
+                capture = capture_detail(detail, max_pages=max_pages)
+                record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
+                for error in capture['errors']:
+                    run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
+            except Exception as exc:
+                record['capture_complete'] = False
+                run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
+                print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
+            finally:
+                if detail is not None and is_popup:
+                    detail.close()
+                elif detail is not None:
+                    active_group = None
+                checkpoint.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
+                (folder / 'run.json').write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding='utf-8')
+                if on_progress:
+                    on_progress(run, ordinal)
+    finally:
+        observer.close()
+    # Re-read all durable detail checkpoints and aggregate before certifying.
+    for ordinal, record in enumerate(run['records'], 1):
+        checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
+        if checkpoint.exists():
+            saved = json.loads(checkpoint.read_text(encoding='utf-8'))
+            if saved['record_id'] == record['record_id']:
+                record.update(saved)
+    run['complete'] = bool(run.get('inventory_complete')) and not run['errors'] and all(r.get('capture_complete') for r in run['records'])
+    return run

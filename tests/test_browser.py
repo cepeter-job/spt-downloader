@@ -1,0 +1,144 @@
+"""Local HTML fixtures test the real browser driver; no fixture is used as tax output."""
+from pathlib import Path
+import sys
+import importlib.util
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from playwright.sync_api import sync_playwright
+
+HTML = '''<div class="main-content"><div class="p-tabview">
+<ul class="p-tabview-nav"><li><a role="tab" onclick="show(0)">Induk</a></li><li><a role="tab" onclick="show(1)">Lampiran</a></li></ul>
+<div class="p-tabview-panels"><div class="p-tabview-panel" id="panel0"><div class="form-group"><label for="turnover">Peredaran Bruto</label><input id="turnover" formcontrolname="Turnover" disabled value="7.500,00"></div></div>
+<div class="p-tabview-panel" id="panel1" hidden><p-table><div class="p-datatable"><table><thead><tr><th>Kode</th><th>Nilai</th></tr></thead><tbody><tr><td>001</td><td><input disabled value="1.000,00"></td></tr><tr><td>001</td><td><input disabled value="1.000,00"></td></tr></tbody></table><div class="p-paginator"><button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="this.disabled=true;this.parentNode.querySelector('.p-highlight').textContent='2'">Next</button></div></div></p-table></div></div></div></div>
+<script>function show(i){document.querySelectorAll('.p-tabview-panel').forEach((e,j)=>e.hidden=j!==i);}</script>'''
+
+
+import pytest
+
+
+@pytest.mark.parametrize('wrapped_panels', [False, True])
+def test_driver_captures_tabs_and_all_table_pages_without_deduplication(wrapped_panels):
+    assert importlib.util.find_spec('coretax_browser'), 'Browser extractor missing'
+    import coretax_browser as driver
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(HTML)
+        if wrapped_panels:
+            page.evaluate('''() => document.querySelectorAll('.p-tabview-panel').forEach(panel=>{
+                let wrapper=document.createElement('p-tabpanel');
+                panel.parentNode.insertBefore(wrapper,panel); wrapper.appendChild(panel);
+            })''')
+        result = driver.capture_detail(page, max_pages=5)
+        assert [s['name'] for s in result['sections']] == ['Induk', 'Lampiran']
+        field = result['sections'][0]['fields'][0]
+        assert field['value'] == '7.500,00'
+        assert field['label'] == 'Peredaran Bruto'
+        table = result['sections'][1]['tables'][0]
+        assert table['headers'] == ['Kode', 'Nilai']
+        assert table['rows'] == [['001', '1.000,00']] * 4
+        assert table['pages'] == 2
+        assert result['capture_complete']
+        browser.close()
+
+
+def test_pagination_uses_largest_supported_page_size():
+    import coretax_browser as driver
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(HTML)
+        page.evaluate('''() => {
+          const trigger=document.createElement('div'); trigger.className='p-dropdown-trigger'; trigger.textContent='page size';
+          trigger.onclick=()=>{
+            let list=document.createElement('ul'); list.className='p-dropdown-items';
+            [10,25,50].forEach(n=>{let li=document.createElement('li'); li.textContent=n; li.onclick=()=>{
+              document.body.dataset.chosen=String(n); list.remove();
+            }; list.appendChild(li);}); document.body.appendChild(list);
+          }; document.querySelector('.p-paginator').appendChild(trigger);
+        }''')
+        result = driver.capture_detail(page, max_pages=5)
+        assert page.locator('body').get_attribute('data-chosen') == '50', 'Largest supported UI page size was not selected'
+        assert result['capture_complete']
+        browser.close()
+
+
+def test_capture_starts_at_first_page_even_if_grid_retained_a_later_page():
+    import coretax_browser as driver
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(HTML)
+        page.evaluate('''() => {
+          const paginator=document.querySelector('.p-paginator');
+          const first=document.createElement('button'); first.className='p-paginator-first'; first.textContent='First';
+          first.onclick=()=>{paginator.querySelector('.p-highlight').textContent='1'; paginator.querySelector('.p-paginator-next').disabled=false; first.disabled=true;};
+          paginator.prepend(first); paginator.querySelector('.p-highlight').textContent='2'; paginator.querySelector('.p-paginator-next').disabled=true;
+        }''')
+        result=driver.capture_detail(page,max_pages=5)
+        assert len(result['sections'][1]['tables'][0]['rows']) == 4, 'Retained later-page state skipped source rows'
+        browser.close()
+
+
+def test_readonly_view_opens_return_in_new_tab():
+    import coretax_browser as driver
+    assert callable(getattr(driver, 'open_return_readonly', None)), 'Read-only return navigation missing'
+    target='https://coretax.intranet.pajak.go.id/returnsheets/id-ID/corporate-income-tax-return/fixture-taxpayer/fixture-return/ICT_RCIT/fixture-record'
+    with sync_playwright() as p:
+        browser=p.chromium.launch(channel='msedge',headless=True)
+        context=browser.new_context()
+        page=context.new_page()
+        page.route('**/*',lambda route:route.fulfill(body=HTML,content_type='text/html'))
+        page.set_content(f'''<div class="main-content"><table><tbody><tr><td><button id="ViewButton" onclick="window.open('{target}')">View</button><button id="Action9" onclick="throw Error('Must not cancel')">Cancel</button></td></tr></tbody></table></div>''')
+        context.route('**/*',lambda route:route.fulfill(body=HTML,content_type='text/html'))
+        detail,popup=driver.open_return_readonly(page,page.locator('tbody tr').first,'fixture-taxpayer')
+        assert popup
+        assert detail.url == target
+        browser.close()
+
+
+def test_inventory_reads_every_page_and_filters_to_selected_year(tmp_path):
+    import coretax_browser as driver
+    assert callable(getattr(driver, 'collect_inventory', None)), 'Inventory workflow missing'
+    origin='https://coretax.intranet.pajak.go.id'
+    taxpayer_id='00000000-0000-0000-0000-000000000001'
+    periods=['Januari 2025','Februari 2025','Januari 2026']
+    search=f'''<div class="main-content"><input id="ObjectPermitNumber"><table><tbody></tbody></table></div>
+    <script>document.querySelector('input').onkeydown=e=>{{if(e.key==='Enter'){{let row=document.createElement('tr'); row.innerHTML='<td>0000000000000001</td><td>Fixture</td><td><button>Pilih</button></td>'; row.querySelector('button').onclick=()=>location.href='{origin}/returnsheets/id-ID/not-submitted-returnsheets/{taxpayer_id}'; document.querySelector('tbody').appendChild(row);}}}};</script>'''
+    def listing(submitted):
+        return f'''<a href="/returnsheets/id-ID/submitted-returnsheets/{taxpayer_id}">SPT Dilaporkan</a><div class="main-content"><h2>Fixture taxpayer</h2>
+        <p-table><table><thead><tr><th></th><th>Jenis Pajak</th><th>Masa Pajak</th><th>Model SPT</th></tr></thead><tbody></tbody></table><div class="p-paginator"><button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="offset=2;load()">Next</button></div></p-table></div>
+        <script>let offset=0; function load(){{fetch('/returnsheet/api/returnsheetsfixture',{{method:'POST',body:JSON.stringify({{First:offset,Rows:2,Submitted:{str(submitted).lower()}}})}}).then(r=>r.json()).then(d=>{{document.querySelector('tbody').innerHTML=d.Payload.Data.map(x=>'<tr><td><button id="ViewButton">View</button></td><td>PPh</td><td>'+x.Period+'</td><td>Normal</td></tr>').join(''); document.querySelector('.p-highlight').textContent=offset/2+1;document.querySelector('.p-paginator-next').disabled=offset+d.Payload.Data.length>=d.Payload.TotalRecords;}})}}load();</script>'''
+    with sync_playwright() as p:
+        browser=p.chromium.launch(channel='msedge',headless=True)
+        page=browser.new_page()
+        def handle(route):
+            url=route.request.url
+            if '/returnsheet/api/' in url:
+                data=route.request.post_data_json
+                rows=[{'RecordId':f'fixture-{i}','Period':period} for i,period in enumerate(periods)] if data['Submitted'] else []
+                route.fulfill(json={'IsSuccessful':True,'Payload':{'TotalRecords':len(rows),'Data':rows[data['First']:data['First']+2]}})
+            elif '/taxpayer-search' in url:
+                route.fulfill(body=search,content_type='text/html')
+            else:
+                route.fulfill(body=listing('/not-submitted-' not in url),content_type='text/html')
+        page.route('**/*',handle)
+        result=driver.collect_inventory(page,'0000000000000001',2025,'period',tmp_path,max_pages=5)
+        assert len(result['records']) == 2
+        assert result['inventory_complete']
+        assert result['audit'][-1]['total'] == 3
+        assert result['audit'][-1]['scanned'] == 3
+        assert result['audit'][-1]['selected'] == 2
+        browser.close()
+
+
+def test_table_source_total_mismatch_is_reported_as_partial():
+    import coretax_browser as driver
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(HTML)
+        page.evaluate('''() => {let total=document.createElement('span'); total.className='p-paginator-current'; total.textContent='Menampilkan 1 sampai 2 dari 99 entri'; document.querySelector('.p-paginator').appendChild(total);}''')
+        result = driver.capture_detail(page, max_pages=5)
+        assert not result['capture_complete'], 'Unreconciled source count must not be marked complete'
+        assert result['errors']
+        browser.close()

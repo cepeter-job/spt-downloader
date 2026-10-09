@@ -1,0 +1,39 @@
+# Taxpayer data and browser sessions must never be versioned.
+output/
+outputs/
+data/
+checkpoints/
+returns/
+browser-profile/
+browser-profile-*/
+*-profile/
+profiles/
+credentials/
+Cookies
+Local State
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.pdf
+*.json
+*.jsonl
+*.zip
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Local environments, dependency binaries and generated test files.
+.venv/
+venv/
+.tools/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test-tmp/
+.coverage
+htmlcov/
+*.log
