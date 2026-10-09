@@ -37,3 +37,17 @@ __pycache__/
 .coverage
 htmlcov/
 *.log
+
+# Generated desktop binaries and packaging intermediates.
+dist/
+build/
+*.spec
+
+# Dedicated desktop workspace must remain private even with a custom developer root.
+profile/
+jobs/
+runtime/
+cache/
+tools/
+app/
+*.exe

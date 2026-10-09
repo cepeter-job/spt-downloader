@@ -19,3 +19,11 @@ This repository is the development home for the read-only Coretax SPT downloader
 Install production requirements and `pytest==9.1.1` in a local `.venv`. Run `python -m pytest tests -q` with a dedicated scratch `--basetemp` outside the repository. Browser tests use isolated local synthetic HTML fixtures and an installed Microsoft Edge; they are not live taxpayer tests. Verify changed behavior, output counts, literal source text and links before committing.
 
 Use an existing saved JSON capture for offline export/layout checks when appropriate, but keep that capture and its generated files outside version control. Review `git diff --cached --name-only` and staged content for private data before any push. Preserve the existing LICENSE.
+
+
+## Desktop boundaries
+
+- The GUI is a thin stdlib/Tkinter launcher. Do not import Playwright/openpyxl into its process; prepare the isolated worker with uv and copy only `spt_desktop.runtime.WORKER_FILES`. Update that explicit allowlist when adding worker modules; never recursively package workspace/profile/output directories.
+- Windows Job Objects must contain suspended children **before** resuming them; uv-created virtualenv Python launchers can spawn an interpreter before Python code runs. Preserve start authorization, cooperative cancellation, 15-second forced owned-tree cleanup and main-thread-only UI callbacks. Success requires terminal COMPLETE, matching exit code, verified output and completed owned cleanup—not a zero exit alone.
+- Saved credentials belong only to Windows Credential Manager and exact approved origins. Never print fill exceptions, inherit Playwright credential-debug flags, guess login actions or click generic form-submit controls. Require inspected sign-in intent and no unknown challenge/fields; otherwise manual visible login. No MFA/CAPTCHA bypass.
+- Exercise both source and frozen GUI self-tests without real accounts. The Windows CI artifact must be read back by exact run/commit/artifact ID before reporting build success. Do not include private diagnostic logs or local test tax output in artifacts. Preserve source-level COMPLETE/PARTIAL checks and relative Excel links when staging/publishing to Known Folder Downloads.

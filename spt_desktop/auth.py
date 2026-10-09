@@ -42,6 +42,21 @@ def try_saved_login(page,check_cancel):
     target=button.get_attribute('formaction')
     if target and _origin(urljoin(page.url,target))!=origin:return False
     if (button.get_attribute('formmethod') or 'post').lower()!='post':return False
+    label=(button.get_attribute('aria-label') or button.inner_text() or button.get_attribute('value') or '').strip().casefold()
+    if label not in ('login','log in','sign in','masuk'):return False
+    segments=[part.casefold() for part in urlsplit(meta['action']).path.split('/') if part]
+    login_paths={'login','log-in','signin','sign-in','logon','session','sessions','authenticate','authentication'}
+    if segments and not any(part in login_paths for part in segments):return False
+    if not segments and not any(part.casefold() in login_paths for part in urlsplit(page.url).path.split('/')):return False
+    if any(part in {'returnsheets','registration','submit','logout','signout'} for part in segments):return False
+    editable=form.locator('input,textarea,select')
+    fields=0
+    for index in range(editable.count()):
+        field=editable.nth(index)
+        if field.is_visible() and field.is_enabled() and field.get_attribute('type') not in ('submit','button'):
+            if field.get_attribute('readonly') is not None:return False
+            fields+=1
+    if fields!=2:return False
     try:
         login=read_login(origin)
         if login is None:return False

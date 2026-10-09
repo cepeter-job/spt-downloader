@@ -52,7 +52,11 @@ def test_simple_window_controls_and_partial_progress_are_real_tkinter(tmp_path):
         root.update_idletasks()
         assert window.percent.get()=='99%'
         assert window.open_button.instate(['disabled'])
-    finally:root.destroy()
+    finally:
+        root.destroy()
+        del window
+        import gc
+        gc.collect()  # Tk variable destruction belongs to this UI test thread.
 
 
 def test_settings_preferences_never_accept_password_fields(tmp_path):
@@ -69,6 +73,8 @@ def controlled_worker(tmp_path,monkeypatch):
     import io,time,sys
     controller=module('controller')
     state={}
+    monkeypatch.setenv('DEBUG','pw:api')
+    monkeypatch.setenv('PWDEBUG','console')
     downloads=tmp_path/'Downloads'
     final=downloads/'SYNTHETIC_RESULT';final.mkdir(parents=True)
     (final/'resume.xlsx').write_bytes(b'SYNTHETIC TRANSPORT FIXTURE ONLY, NOT AN EXCEL EXPORT')
@@ -84,6 +90,7 @@ def controlled_worker(tmp_path,monkeypatch):
     class Job:
         def spawn(self,argv,**kwargs):
             state['argv']=argv
+            state['env_keys']=set(kwargs['env'])
             job_id=argv[argv.index('--job-id')+1]
             event={'job_id':job_id,'type':'terminal','stage':'finished','status':'COMPLETE',
                    'percent':100,'output':str(final),'message':'Synthetic transport complete'}
@@ -118,7 +125,7 @@ def test_complete_is_held_until_exit_and_owned_cleanup(controlled_worker):
     assert ctl.active
     assert json.loads(child.stdin.getvalue().splitlines()[0])['command']=='start'
     child.returncode=0
-    ctl.poll()
+    finish_controller(ctl)
     assert not ctl.active and state['closed']
     assert events[-1]['status']=='COMPLETE' and events[-1]['percent']==100
     assert 'SYNTHETIC_SECRET_STDERR_MUST_NOT_LEAK' not in str(events)
@@ -133,7 +140,7 @@ def test_stop_precedence_and_fifteen_second_forced_owned_cleanup(controlled_work
     ctl.stop()
     assert json.loads(child.stdin.getvalue().splitlines()[-1])['command']=='stop'
     clock[0]=116.0
-    ctl.poll()
+    finish_controller(ctl)
     assert not ctl.active and state['closed']
     assert events[-1]['status']=='CANCELLED' and events[-1]['percent']<100
 
@@ -141,5 +148,19 @@ def test_stop_precedence_and_fifteen_second_forced_owned_cleanup(controlled_work
 def test_worker_exit_zero_alone_is_not_success(controlled_worker):
     ctl,child,state,events=controlled_worker
     child.returncode=1
-    ctl.poll()
+    finish_controller(ctl)
     assert events[-1]['status']=='ERROR' and events[-1]['percent']<100
+
+
+def test_worker_cannot_inherit_credential_logging_debug_flags(controlled_worker):
+    ctl,child,state,events=controlled_worker
+    assert 'DEBUG' not in state['env_keys'] and 'PWDEBUG' not in state['env_keys']
+
+
+def finish_controller(ctl):
+    import time
+    for _ in range(200):
+        ctl.poll()
+        if not ctl.active:return
+        time.sleep(0.001)
+    raise AssertionError('Synthetic controller did not reach an idle terminal state')

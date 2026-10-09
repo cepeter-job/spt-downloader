@@ -1,0 +1,43 @@
+name: Build Windows app
+on:
+  push:
+    branches: [main, feat/windows-desktop]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Install pinned uv and dependencies
+        shell: pwsh
+        run: |
+          python -m pip install uv==0.12.16
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-build.txt
+      - name: Run synthetic tests only
+        shell: pwsh
+        run: .venv/Scripts/python.exe -m pytest tests -q --basetemp "$env:RUNNER_TEMP/spt-pytest"
+      - name: Build and exercise frozen GUI
+        shell: pwsh
+        run: .venv/Scripts/python.exe build_desktop.py --output dist
+      - name: Upload verified Windows artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: SPTDownloader-Windows-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/SPTDownloader.exe
+            dist/LICENSE.txt
+            dist/README.txt
+            dist/build-selftest.json

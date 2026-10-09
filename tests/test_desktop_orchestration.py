@@ -73,3 +73,27 @@ def test_credential_or_browser_exception_cannot_leak_secret_into_events(tmp_path
     assert result==1
     assert messages[-1]['status']=='ERROR'
     assert 'SYNTHETIC_SECRET_DO_NOT_LOG' not in str(messages)
+
+
+
+def test_worker_main_json_stays_on_original_stdout_when_diagnostics_are_redirected(tmp_path):
+    import json,subprocess,sys
+    source=Path(__file__).resolve().parents[1]
+    script="""import io,json,sys
+from spt_desktop import worker
+job_id='synthetic-stream'
+sys.stdin=io.StringIO(json.dumps({'job_id':job_id,'command':'start'})+'\\n')
+def synthetic_run(npwp,year,root,job_id,browser,headless,emit,cancelled):
+    print('SYNTHETIC_DIAGNOSTIC_ONLY')
+    emit({'job_id':job_id,'type':'progress','percent':20,'message':'Synthetic progress'})
+    emit({'job_id':job_id,'type':'terminal','status':'BLOCKED','percent':20,'output':None})
+    return 3
+worker.run_job=synthetic_run
+raise SystemExit(worker.main(['--npwp','0000000000000001','--year','2025','--root','fixture-unused','--job-id',job_id]))
+"""
+    result=subprocess.run([sys.executable,'-c',script],cwd=source,capture_output=True,text=True,timeout=10)
+    assert result.returncode==3
+    messages=[json.loads(line) for line in result.stdout.splitlines()]
+    assert [m['type'] for m in messages]==['progress','terminal']
+    assert 'SYNTHETIC_DIAGNOSTIC_ONLY' in result.stderr
+    assert 'SYNTHETIC_DIAGNOSTIC_ONLY' not in result.stdout

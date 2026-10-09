@@ -94,6 +94,7 @@ class JobController:
                 environment=os.environ.copy()
                 environment.update({'PYTHONUTF8':'1','PYTHONIOENCODING':'utf-8'})
                 environment.pop('PYTHONPATH',None);environment.pop('PYTHONHOME',None)
+                environment.pop('DEBUG',None);environment.pop('PWDEBUG',None)
                 argv=[str(python),'-u','-m','spt_desktop.worker','--npwp',npwp,'--year',str(year),
                       '--root',str(self.root),'--job-id',job_id,'--browser',browser]
                 if not headless:argv.append('--visible')

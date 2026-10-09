@@ -68,3 +68,28 @@ def test_non_allowlisted_origin_never_reads_credential(browser,monkeypatch):
         assert not module.try_saved_login(p,lambda:None)
         assert not reads
     finally:p.close()
+
+
+@pytest.mark.parametrize('html',[form().replace('>Login<','>Submit SPT<'),
+    form(action='/returnsheets/submit'),form(extra='').replace('<button','<input name="unknown_challenge"><button')])
+def test_non_login_action_or_unknown_editable_field_never_uses_credentials(browser,monkeypatch,html):
+    module=auth()
+    p=page(browser,html)
+    reads=[]
+    monkeypatch.setattr(module,'read_login',lambda origin:(reads.append(origin) or Login('SYNTHETIC_ACCOUNT','SYNTHETIC_PASSWORD_ONLY')))
+    try:
+        assert not module.try_saved_login(p,lambda:None)
+        assert reads == []
+    finally:p.close()
+
+
+def test_root_action_on_non_login_page_never_reads_password(browser,monkeypatch):
+    module=auth()
+    p=page(browser,form(action='/'))
+    p.goto('https://satu.intranet.pajak.go.id/returnsheets/id-ID/unknown-form')
+    reads=[]
+    monkeypatch.setattr(module,'read_login',lambda origin:(reads.append(origin) or Login('SYNTHETIC_ACCOUNT','SYNTHETIC_PASSWORD_ONLY')))
+    try:
+        assert not module.try_saved_login(p,lambda:None)
+        assert not reads
+    finally:p.close()
