@@ -1,6 +1,6 @@
 # SPT Downloader — Windows Desktop Design
 
-Status: conversational design approved; written specification awaiting user review.
+Status: written specification approved by the user; implementation plan awaiting review and execution-method selection.
 
 ## Purpose and agreed outcome
 
