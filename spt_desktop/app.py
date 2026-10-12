@@ -224,20 +224,26 @@ class App:
         self._interaction=None
         for variable,token in current['traces']:
             try:variable.trace_remove('write',token)
-            except tk.TclError:pass
+            except tk.TclError:
+                # Window shutdown may already have removed this Tcl variable or trace.
+                pass
         current['traces'].clear()
         dialog=current['dialog']
         try:
             if dialog.grab_current() is dialog:dialog.grab_release()
             dialog.destroy()
-        except tk.TclError:pass
+        except tk.TclError:
+            # Parent shutdown may already have destroyed the dialog and released its grab.
+            pass
         focus=current['focus']
         try:
             if (focus is None or not focus.winfo_exists()
                     or (isinstance(focus,ttk.Widget) and focus.instate(['disabled']))):
                 focus=self.stop_button if self.controller.active else self.npwp_entry
             focus.focus_set()
-        except tk.TclError:pass
+        except tk.TclError:
+            # Focus cannot be restored after its widget or Tcl interpreter is destroyed.
+            pass
 
     def _cancel_interaction(self,interaction):
         active=self._interaction_current(interaction)

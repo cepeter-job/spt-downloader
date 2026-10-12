@@ -92,10 +92,13 @@ def build(output, python_profile='production'):
         'Simpan pengaturan, lalu pilih Cek Kredensial: sesi terisolasi baru, satu upaya login, tanpa ekspor.\n'
         'Login berhasil hanya muncul setelah pengiriman sandi tersimpan terverifikasi.\n'
         'NPWP harus tepat 16 digit ASCII; tahun pajak empat digit. Mulai menjalankan satu pekerjaan baca-saja.\n'
+        'Setelah inventaris, pilih SPT lalu klik Sedot SPT terpilih. Tidak ada pilihan otomatis.\n'
+        'Periksa folder dan file pada konfirmasi penggantian; setiap file diganti seluruhnya sesuai pilihan saat ini.\n'
+        'Jangan ganti mempertahankan file lama. Workbook masa lain tetap tersimpan; resume.xlsx mengindeks pilihan saat ini.\n'
         'Selesaikan CAPTCHA/MFA dan halaman login yang belum dikenali secara manual di browser aplikasi.\n'
         'Stop mempertahankan checkpoint PARTIAL lokal; hanya proses browser milik aplikasi yang ditutup.\n'
         'Hasil: folder Downloads\\NPWP - NAMA WP\\TAHUN PAJAK\\WAKTU EKSPOR. Simpan semua Excel bersama.\n'
-        '100% berarti COMPLETE terverifikasi. Pekerjaan parsial, terhalang, atau dibatalkan tidak dinyatakan berhasil.\n'
+        '100% berarti COMPLETE terverifikasi untuk pilihan yang dikonfirmasi. Pekerjaan parsial, terhalang, atau dibatalkan tidak dinyatakan berhasil.\n'
         'Executable belum bertanda tangan. Verifikasi build/sumber GitHub; jangan nonaktifkan Defender atau TLS.\n',
         encoding='utf-8')
     print('Built and self-tested:',executable)

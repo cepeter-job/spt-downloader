@@ -1,17 +1,21 @@
 """Publish verified workbooks with explicit consent and private recovery copies."""
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
+from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import stat
 import tempfile
+import uuid
 
 import coretax
 from coretax_exporter import validate_export_run, validate_scope, workbook_groups
 from .paths import safe_taxpayer_name
+from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
 
 
 _EXPORT_FOLDER = re.compile(r'[0-9]{8}-[0-9]{6}-[0-9]{6}-[A-Za-z0-9_-]{1,12}')
@@ -253,32 +257,177 @@ def _check_files(target, states):
             raise ValueError('Output workbook changed during publication')
 
 
-def _remove_owned(folder, identity):
+def _prepare_directory(folder, guard, directories):
+    _check_directories(directories)
+    _safe_path(folder).mkdir(parents=True, exist_ok=True)
+    _include_directories(directories, folder)
+    guard.include(directories)
+
+
+def _release_tree(folder, guard, directories):
+    names = [name for name in directories if Path(name).is_relative_to(folder)]
+    for name in sorted(names, key=lambda value: len(Path(value).parts), reverse=True):
+        guard.release(name)
+        del directories[name]
+
+
+def _remove_owned(folder, identity, guard, directories):
+    """Remove contents while their directory handles still pin the owned tree."""
     if folder.exists():
         _safe_path(folder)
         if _identity(folder.lstat()) != identity:
             raise ValueError('Temporary output directory identity changed; cleanup refused')
-        shutil.rmtree(folder)
+        _include_directories(directories, folder)
+        guard.include(directories)
+        for child in folder.iterdir():
+            info = _safe_path(child).lstat()
+            if stat.S_ISDIR(info.st_mode):
+                _remove_owned(child, _identity(info), guard, directories)
+            elif stat.S_ISREG(info.st_mode):
+                child.unlink()
+            else:
+                raise ValueError('Unknown temporary output file type; cleanup refused')
+        # The parent remains held. rmdir cannot recurse through a raced leaf junction.
+        guard.release(folder)
+        directories.pop(str(folder), None)
+        folder.rmdir()
 
 
-def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel):
+@dataclass
+class _Displaced:
+    path: Path
+    private: Path
+    captured: bool = False
+    uncertain: bool = False
+    lock: ExitStack | None = None
+    fingerprint: tuple | None = None
+    archived: bool = False
+
+    def capture(self, source):
+        if self.path.exists():
+            raise FileExistsError('Temporary recovery filename is already occupied')
+        try:
+            _move_no_replace(source, self.path)
+        except BaseException:
+            # Journal the on-disk result even if an interruption follows a successful move.
+            self.captured = self.path.exists()
+            self.uncertain = self.captured and source.exists()
+            raise
+        self.captured = True
+
+    def exists(self):
+        return self.captured and self.path.exists()
+
+    def preserve(self, guard, directories):
+        if not self.exists():
+            return None
+        if self.uncertain:
+            raise ValueError('Temporary recovery file ownership cannot be established')
+        if self.lock is None:
+            lock = ExitStack()
+            try:
+                lock.enter_context(locked_file(self.path))
+                current = _fingerprint(self.path)
+                if self.fingerprint is not None and current != self.fingerprint:
+                    raise ValueError('Displaced workbook changed while recovery was pending')
+            except BaseException:
+                lock.close()
+                raise
+            self.lock = lock
+            self.fingerprint = current
+        if not self.archived:
+            _prepare_directory(self.private.parent, guard, directories)
+            _copy_verified(self.path, self.private)
+            self.archived = True
+        return self.fingerprint
+
+    def close(self):
+        lock, self.lock = self.lock, None
+        if lock is not None:
+            lock.close()
+
+
+@dataclass
+class _Replacement:
+    destination: Path
+    staged: Path
+    original: _Displaced | None
+    removed: _Displaced
+    new_state: tuple
+
+
+class _RecoveryRequired(RuntimeError):
+    def __init__(self, recovery, retained):
+        self.recovery = recovery
+        self.retained = retained
+        detail = ('; same-volume recovery files retained at ' + ', '.join(map(str, retained))) if retained else ''
+        super().__init__(f'Output rollback blocked{detail}; recovery files retained at {recovery}')
+
+
+def _displaced(destination, private):
+    # Keeping the actual file in the same parent also keeps that existing leaf
+    # nonempty between capture and installation. This name is not a workbook.
+    return _Displaced(destination.parent / f'.spt-{uuid.uuid4().hex}.recovery', private)
+
+
+def _rollback(entries, guard, directories):
+    errors = []
+    for entry in reversed(entries):
+        try:
+            _check_directories(directories)
+            if entry.original is not None:
+                entry.original.preserve(guard, directories)
+            if not entry.staged.exists() and entry.destination.exists():
+                # Capture the actual current file; never replace a third party's version.
+                entry.removed.capture(entry.destination)
+                actual = entry.removed.preserve(guard, directories)
+                if actual != entry.new_state:
+                    entry.removed.close()
+                    _move_no_replace(entry.removed.path, entry.destination)
+                    raise ValueError('Output changed after publication; its actual version was kept')
+            if entry.original is not None and entry.original.exists():
+                if entry.destination.exists():
+                    raise FileExistsError('An unapproved workbook occupies the recovery destination')
+                entry.original.close()
+                _move_no_replace(entry.original.path, entry.destination)
+        except BaseException as error:
+            errors.append(error)
+    return errors
+
+
+def _clean_displaced(entries, guard, directories):
+    retained = []
+    for entry in entries:
+        for item in (entry.original, entry.removed):
+            if item is not None and item.exists():
+                try:
+                    item.preserve(guard, directories)
+                    item.close()
+                    item.path.unlink()
+                except BaseException:
+                    # This path is outside staging: cleanup cannot delete its only copy.
+                    retained.append(item.path)
+    return retained
+
+
+def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel, guard, directories):
     target = Path(snapshot['target'])
     names = snapshot['selected_files']
-    directories = dict(snapshot['directories'])
-    _include_directories(directories, staging)
     states = dict(snapshot['workbooks'])
     backup = recovery / 'backup'
-    backup.mkdir()
+    _prepare_directory(backup, guard, directories)
     for name in names:
         _cancel(check_cancel)
         if name in states:
             _check_directories(directories)
-            copied = _copy_verified(coretax.output_path(target, name), coretax.output_path(backup, name))
+            saved = coretax.output_path(backup, name)
+            _prepare_directory(saved.parent, guard, directories)
+            copied = _copy_verified(coretax.output_path(target, name), saved)
             if copied[-1] != states[name][-1]:
                 raise ValueError('Output changed before its recovery copy was made')
     _revalidate(run, downloads, snapshot)
     new_states = {name: _fingerprint(coretax.output_path(staging, name)) for name in names}
-    attempted = []
+    entries = []
     try:
         for name in names:
             _cancel(check_cancel)
@@ -294,35 +443,40 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel)
                 # Reject an empty directory alias as well as aliases containing workbooks.
                 _case_component(container, component)
                 container = container / component
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            _include_directories(directories, destination.parent)
-            attempted.append(name)
-            coretax.output_path(staging, name).replace(destination)
+            _prepare_directory(destination.parent, guard, directories)
+            entry = _Replacement(destination, coretax.output_path(staging, name),
+                _displaced(destination, coretax.output_path(recovery / 'displaced', name))
+                    if name in states else None,
+                _displaced(destination, coretax.output_path(recovery / 'removed', name)), new_states[name])
+            entries.append(entry)
+            if entry.original is not None:
+                entry.original.capture(destination)
+                if entry.original.preserve(guard, directories) != states[name]:
+                    raise ValueError('Actual displaced workbook differs from the approved consent snapshot')
+            _cancel(check_cancel)
+            _check_directories(directories)
+            _move_no_replace(entry.staged, destination)
             states[name] = new_states[name]
         _cancel(check_cancel)
         _check_directories(directories)
         _check_files(target, states)
         coretax.verify_outputs(run, target, allow_extra=True)
         _cancel(check_cancel)
-    except BaseException:
-        try:
-            for name in reversed(attempted):
-                if coretax.output_path(staging, name).exists():
-                    continue  # The replacement did not consume its staged source.
-                _check_directories(directories)
-                destination = coretax.output_path(target, name)
-                if _fingerprint(destination) != new_states[name]:
-                    raise ValueError('Output changed after replacement; recovery must not overwrite it')
-                saved = coretax.output_path(backup, name)
-                if saved.exists():
-                    restored = coretax.output_path(staging / 'restore', name)
-                    _copy_verified(saved, restored)
-                    restored.replace(destination)
-                else:
-                    destination.unlink()
-        except BaseException as error:
-            raise RuntimeError(f'Output rollback blocked; recovery files retained at {recovery}') from error
+    except BaseException as failure:
+        errors = _rollback(entries, guard, directories)
+        retained = _clean_displaced(entries, guard, directories)
+        if errors or retained:
+            raise _RecoveryRequired(recovery, retained) from (errors[0] if errors else failure)
         raise
+    else:
+        retained = _clean_displaced(entries, guard, directories)
+        if retained:
+            raise _RecoveryRequired(recovery, retained)
+    finally:
+        for entry in entries:
+            for item in (entry.original, entry.removed):
+                if item is not None:
+                    item.close()
     return target
 
 
@@ -346,39 +500,68 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
             raise ValueError('Overwrite recovery requires a private source outside Downloads')
         _revalidate(run, downloads, snapshot)
     _cancel(check_cancel)
-    parent.mkdir(parents=True, exist_ok=True)
-    parent_directories = _directories(parent)
-    staging = Path(tempfile.mkdtemp(prefix='.spt-', dir=parent))
-    staging_identity = _identity(staging.lstat())
-    _include_directories(parent_directories, staging)
-    recovery = None
-    retain_recovery = False
-    try:
-        for name in names:
+    directories = dict(snapshot['directories']) if snapshot is not None else {}
+    _include_directories(directories, parent)
+    _include_directories(directories, source)
+    with DirectoryGuard() as guard:
+        guard.include(directories)
+        _prepare_directory(parent, guard, directories)
+        staging = Path(tempfile.mkdtemp(prefix='.spt-', dir=parent))
+        staging_identity = _identity(staging.lstat())
+        recovery = None
+        retain_recovery = False
+        try:
+            _include_directories(directories, staging)
+            guard.include(directories)
+            for name in names:
+                _cancel(check_cancel)
+                original, staged = coretax.output_path(source, name), coretax.output_path(staging, name)
+                _include_directories(directories, original.parent)
+                _prepare_directory(staged.parent, guard, directories)
+                _copy_verified(original, staged)
+            coretax.verify_outputs(run, staging)
             _cancel(check_cancel)
-            _check_directories(parent_directories)
-            _copy_verified(coretax.output_path(source, name), coretax.output_path(staging, name))
-        coretax.verify_outputs(run, staging)
-        _cancel(check_cancel)
-        _check_directories(parent_directories)
-        if snapshot is not None:
-            # Downloads may be on another drive; recovery copies stay beside the private job.
-            recovery = Path(tempfile.mkdtemp(prefix='.spt-publish-', dir=source.parent))
-            recovery_identity = _identity(recovery.lstat())
-            retain_recovery = True
-            result = _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel)
-            retain_recovery = False
-            return result
-        if existing_outputs(run, downloads) is not None:
-            raise FileExistsError('An export appeared during publication; overwrite consent is required')
-        stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
-        final = parent / f'{stamp}-{job_id[:12]}'
-        if final.exists():
-            raise FileExistsError('Result folder already exists; overwrite consent is required')
-        _cancel(check_cancel)
-        staging.rename(final)
-        return final
-    finally:
-        if recovery is not None and not retain_recovery:
-            _remove_owned(recovery, recovery_identity)
-        _remove_owned(staging, staging_identity)
+            _check_directories(directories)
+            if snapshot is not None:
+                # Private copies may be on another drive; actual file moves never are.
+                recovery = Path(tempfile.mkdtemp(prefix='.spt-publish-', dir=source.parent))
+                recovery_identity = _identity(recovery.lstat())
+                retain_recovery = True
+                _include_directories(directories, recovery)
+                guard.include(directories)
+                try:
+                    result = _replace_selected(run, downloads, snapshot, staging, recovery,
+                                               check_cancel, guard, directories)
+                except _RecoveryRequired as error:
+                    # Public worker errors are deliberately generic. Keep the locations
+                    # discoverable in this private job, without adding JSON to Downloads.
+                    try:
+                        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                prefix='publication-recovery-', suffix='.json', dir=source, delete=False) as notice:
+                            json.dump({'recovery_files': [str(error.recovery), *map(str, error.retained)]}, notice)
+                            notice.write('\n')
+                    except OSError:
+                        error.add_note('The private job recovery location note could not be written')
+                    raise
+                retain_recovery = False
+                return result
+            if existing_outputs(run, downloads) is not None:
+                raise FileExistsError('An export appeared during publication; overwrite consent is required')
+            stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+            final = parent / f'{stamp}-{job_id[:12]}'
+            if final.exists():
+                raise FileExistsError('Result folder already exists; overwrite consent is required')
+            _cancel(check_cancel)
+            final_directories = {str(final / Path(name).relative_to(staging)): identity
+                                 for name, identity in directories.items() if Path(name).is_relative_to(staging)}
+            # Release only the owned subtree for its final rename; all ancestors stay pinned.
+            _release_tree(staging, guard, directories)
+            _move_no_replace(staging, final)
+            directories.update(final_directories)
+            guard.include(directories)
+            coretax.verify_outputs(run, final)
+            return final
+        finally:
+            _remove_owned(staging, staging_identity, guard, directories)
+            if recovery is not None and not retain_recovery:
+                _remove_owned(recovery, recovery_identity, guard, directories)
