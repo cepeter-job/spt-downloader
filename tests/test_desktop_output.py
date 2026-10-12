@@ -95,3 +95,32 @@ def test_preexisting_taxpayer_directory_cannot_redirect_publication_outside_down
         module().publish_workbooks(run,source,downloads,'synthetic-redirect')
     assert list(outside.iterdir()) == []
     assert (source/'resume.xlsx').is_file()
+
+
+@pytest.mark.parametrize('component',['taxpayer','year'])
+def test_scope_directory_cannot_redirect_within_downloads(tmp_path,component):
+    import subprocess
+    import sys
+
+    run=fixture_run()
+    run['taxpayer_name']='SYNTHETIC WP'
+    source=tmp_path/'local'
+    coretax.save_output(run,source)
+    downloads=tmp_path/'Downloads'
+    foreign=downloads/'another-synthetic-scope'
+    foreign.mkdir(parents=True)
+    sentinel=foreign/'keep.txt'
+    sentinel.write_bytes(b'Synthetic unrelated file; preserve exactly')
+    taxpayer=downloads/'0000000000000001 - SYNTHETIC WP'
+    redirected=taxpayer if component=='taxpayer' else taxpayer/'2025'
+    redirected.parent.mkdir(parents=True,exist_ok=True)
+    if sys.platform=='win32':
+        subprocess.run(['cmd','/d','/c','mklink','/J',str(redirected),str(foreign)],
+                       check=True,capture_output=True,text=True,timeout=10)
+    else:
+        redirected.symlink_to(foreign,target_is_directory=True)
+    with pytest.raises(ValueError,match='Downloads|reparse|symbolic|redirect'):
+        module().publish_workbooks(run,source,downloads,'synthetic-inside-redirect')
+    assert {path.relative_to(foreign).as_posix():path.read_bytes()
+            for path in foreign.rglob('*') if path.is_file()}=={
+                'keep.txt':b'Synthetic unrelated file; preserve exactly'}

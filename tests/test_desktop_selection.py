@@ -136,3 +136,45 @@ def test_message_replaced_between_inspection_and_open_is_rejected_before_read(tm
     with pytest.raises(ValueError,match='changed|identity|path'):
         module.read_message(tmp_path,'synthetic-job',request_id,reply=True)
     assert swapped
+
+
+def test_ready_reply_arriving_after_the_deadline_cannot_authorize_overwrite(tmp_path,monkeypatch):
+    module=interaction()
+    clock={'now':100.0}
+    event={}
+    requests=None
+    def emit(item):
+        event.update(item)
+        module.write_reply(tmp_path,'synthetic-job',item['request_id'],{'overwrite':True})
+    requests=module.Requests(tmp_path,'synthetic-job',emit,lambda:None)
+    def late_signal(timeout):
+        # Simulate a scheduler overrun: the signal arrives after the deadline,
+        # not an on-time answer that merely required no waiting.
+        clock['now']=102.0
+        assert requests.respond('overwrite',event['request_id'])
+        return True
+    monkeypatch.setattr(module.time,'monotonic',lambda:clock['now'])
+    monkeypatch.setattr(requests._ready,'wait',late_signal)
+    with pytest.raises(TimeoutError,match='deadline'):
+        requests.request('overwrite',{'files':['resume.xlsx']},99,timeout=1)
+
+
+def test_stop_during_reply_read_wins_before_returning_consent(tmp_path,monkeypatch):
+    module=interaction()
+    stopped=False
+    requests=None
+    original=module.read_message
+    def read_and_stop(*args,**kwargs):
+        nonlocal stopped
+        reply=original(*args,**kwargs)
+        stopped=True
+        return reply
+    def check_cancel():
+        if stopped:raise RuntimeError('synthetic stop during reply read')
+    def emit(event):
+        module.write_reply(tmp_path,'synthetic-job',event['request_id'],{'overwrite':True})
+        assert requests.respond('overwrite',event['request_id'])
+    monkeypatch.setattr(module,'read_message',read_and_stop)
+    requests=module.Requests(tmp_path,'synthetic-job',emit,check_cancel)
+    with pytest.raises(RuntimeError,match='synthetic stop'):
+        requests.request('overwrite',{'files':['resume.xlsx']},99)
