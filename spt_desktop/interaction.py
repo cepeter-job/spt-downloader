@@ -137,7 +137,15 @@ class Requests:
                 if time.monotonic() >= deadline:
                     raise TimeoutError('User confirmation deadline expired; no automatic consent')
             self.check_cancel()
-            return read_message(self.folder, self.job_id, request_id, reply=True)
+            if time.monotonic() >= deadline:
+                raise TimeoutError('User confirmation deadline expired; no automatic consent')
+            reply = read_message(self.folder, self.job_id, request_id, reply=True)
+            # A ready signal is not proof of timely consent; file reads can also
+            # overlap Stop or outlast the confirmation deadline.
+            self.check_cancel()
+            if time.monotonic() >= deadline:
+                raise TimeoutError('User confirmation deadline expired; no automatic consent')
+            return reply
         finally:
             with self._lock:
                 self._pending = None
