@@ -29,9 +29,14 @@ def fixture_run():
 @pytest.mark.parametrize('value', ['SYNTHETIC-' + 'x' * 32768,
                                   'SYNTHETIC\x0bCONTROL', 'SYNTHETIC\ufffeXML',
                                   9007199254740993, 1.2345678901234567,
-                                  float('nan'), float('inf')],
+                                  float('nan'), float('inf'),
+                                  1234567890123456, 1.234567890123456,
+                                  1e-320, 5e-324, -1e-320, -0.0, 10**24],
                          ids=['long-text', 'xml-control', 'xml-noncharacter',
-                              'large-integer', 'precise-float', 'nan', 'infinity'])
+                              'large-integer', 'precise-float', 'nan', 'infinity',
+                              'excel-integer-precision', 'excel-float-precision',
+                              'subnormal', 'smallest-subnormal', 'negative-subnormal',
+                              'negative-zero', 'integer-binary-rounding'])
 def test_unrepresentable_source_values_leave_existing_workbook_untouched(tmp_path, value):
     run = fixture_run()
     run['records'][0]['sections'][0]['fields'][0]['value'] = value
@@ -43,6 +48,22 @@ def test_unrepresentable_source_values_leave_existing_workbook_untouched(tmp_pat
         app.export_workbook(run, path)
 
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('value', [0, 0.0, 123456789012345, 1234567890123450, 10**20,
+                                  1.23456789012345, 1.25, -2.5, 3e-308])
+def test_supported_excel_numbers_round_trip_unchanged(tmp_path, value):
+    run = fixture_run()
+    run['records'][0]['sections'][0]['fields'][0]['value'] = value
+    path = tmp_path / 'report.xlsx'
+    app.export_workbook(run, path)
+
+    wb = load_workbook(path)
+    try:
+        assert wb.worksheets[3]['F6'].value == value
+        assert wb.worksheets[3]['F6'].data_type == 'n'
+    finally:
+        wb.close()
 
 
 def test_split_preflight_checks_later_type_before_writing_any_workbook(tmp_path):
@@ -173,6 +194,46 @@ def test_inconsistent_completion_is_rejected_before_export(tmp_path, contradicti
         run['records'][0]['capture_complete'] = 'false'
 
     with pytest.raises(ValueError, match='complet|COMPLETE'):
+        app.export_split_workbooks(run, tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize('inventory_complete', [False, 'false', 0, 1, None])
+def test_explicit_inventory_completion_must_support_complete_output(tmp_path, inventory_complete):
+    run = fixture_run()
+    run['inventory_complete'] = inventory_complete
+    path = tmp_path / 'report.xlsx'
+    original = b'SYNTHETIC EXISTING OUTPUT'
+    path.write_bytes(original)
+
+    with pytest.raises(ValueError, match='inventory|COMPLETE'):
+        app.export_workbook(run, path)
+
+    assert path.read_bytes() == original
+
+
+def test_explicit_incomplete_inventory_can_be_exported_as_partial(tmp_path):
+    run = fixture_run()
+    run['inventory_complete'] = False
+    run['complete'] = False
+    path = tmp_path / 'report.xlsx'
+    app.export_workbook(run, path)
+
+    wb = load_workbook(path)
+    try:
+        assert wb['Ringkasan']['B8'].value == 'PARTIAL'
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize('complete', [True, False])
+def test_duplicate_explicit_return_identifier_cannot_inflate_output_count(tmp_path, complete):
+    run = fixture_run()
+    run['complete'] = complete
+    run['records'].append(deepcopy(run['records'][0]))
+
+    with pytest.raises(ValueError, match='[Dd]uplicate.*identifier'):
         app.export_split_workbooks(run, tmp_path)
 
     assert list(tmp_path.iterdir()) == []

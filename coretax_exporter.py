@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 import math
 import re
+import sys
 from urllib.parse import urlsplit
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -68,14 +69,16 @@ def validate_excel_value(value, location, *, long_text=False):
         return
     elif isinstance(value, int):
         try:
-            # openpyxl serializes numbers with %.16g, which can round integers.
-            if Decimal('%.16g' % value) != value:
+            # Excel supports 15 significant digits and binary floating-point storage.
+            if Decimal('%.15g' % value) != value or float(value) != value:
                 reason = 'numeric digits would be rounded; preserve the source as text'
         except (OverflowError, ValueError):
             reason = 'number exceeds the supported numeric range'
     elif isinstance(value, float):
-        if not math.isfinite(value) or float('%.16g' % value) != value:
-            reason = 'number would be rounded or written as an empty cell'
+        if (not math.isfinite(value) or 0 < abs(value) < sys.float_info.min
+                or value == 0 and math.copysign(1, value) < 0
+                or float('%.15g' % value) != value):
+            reason = 'number exceeds Excel precision or range, or has an unsupported sign'
     else:
         reason = 'source cell has an unsupported value type'
     if reason:
@@ -105,6 +108,11 @@ def validate_export_run(run):
         raise ValueError('Year basis must be period or submission.')
     if type(run.get('complete')) is not bool:
         raise ValueError('Run complete must be a boolean, not a truthy value.')
+    if 'inventory_complete' in run:
+        if type(run['inventory_complete']) is not bool:
+            raise ValueError('Run inventory_complete must be a boolean.')
+        if run['complete'] and not run['inventory_complete']:
+            raise ValueError('A COMPLETE run cannot have incomplete inventory.')
     if run['complete'] and run.get('errors'):
         raise ValueError('A COMPLETE run cannot contain capture errors.')
     for key in ('npwp', 'year', 'taxpayer_name', 'started_at', 'scope_description'):
@@ -116,9 +124,14 @@ def validate_export_run(run):
         validate_excel_value(error.get('object', 'Run'), 'error.object')
         validate_excel_value(error.get('message', str(error)), 'error.message')
     expected_scope = [run['npwp'], run['year'], basis]
+    seen_identifiers = set()
     for ordinal, record in enumerate(run['records'], 1):
         location = f'record {ordinal}'
         meta = record['meta']
+        if 'record_id' in record:
+            if record['record_id'] in seen_identifiers:
+                raise ValueError(f'Duplicate return identifier at {location}; count cannot be certified.')
+            seen_identifiers.add(record['record_id'])
         if 'scope' in record and record['scope'] != expected_scope:
             raise ValueError(f'{location} scope differs from the export scope.')
         if not in_scope(meta, run['year'], basis):

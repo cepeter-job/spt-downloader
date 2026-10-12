@@ -139,18 +139,18 @@ def _publish_output(staging, folder, names):
             attempted.append(name)
             (staging / name).replace(folder / name)
     except BaseException:
-        for name in reversed(attempted):
-            if (staging / name).exists():
-                continue  # The rename failed before consuming its staged source.
-            saved = backup / name
-            try:
+        try:
+            for name in reversed(attempted):
+                if (staging / name).exists():
+                    continue  # The rename failed before consuming its staged source.
+                saved = backup / name
                 if saved.exists():
                     saved.replace(folder / name)
                 else:
                     (folder / name).unlink(missing_ok=True)
-            except BaseException as recovery_error:
-                # Keep recovery files if an external lock also blocks rollback.
-                raise RuntimeError(f'Output rollback blocked; recovery files retained at {staging}') from recovery_error
+        except BaseException as recovery_error:
+            # An external lock or interruption can also prevent rollback.
+            raise RuntimeError(f'Output rollback blocked; recovery files retained at {staging}') from recovery_error
         raise
 
 
@@ -167,11 +167,11 @@ def save_output(run, folder):
         verify_outputs(saved_run, staging)
         (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
         _check_output_scope(run, folder)
-        try:
-            _publish_output(staging, folder, [*files, 'run.json'])
-        except RuntimeError:
-            retain_recovery = True
-            raise
+        # Retain backups before publication starts, including interruptions in
+        # the recovery handler itself. Only proven success permits cleanup.
+        retain_recovery = True
+        _publish_output(staging, folder, [*files, 'run.json'])
+        retain_recovery = False
         run['output_files'] = list(files)
     finally:
         if not retain_recovery:

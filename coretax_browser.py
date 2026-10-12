@@ -185,6 +185,8 @@ def capture_detail(page, max_pages=1000):
             for expander in expanders:
                 expander.dispose()
         wait_idle(page)
+        if panel.locator('.p-accordion-header a[aria-expanded=false]').count():
+            errors.append({'object': name, 'message': 'Some accordion sections remain collapsed; their content could not be fully captured'})
         section = {'name': name, 'fields': panel.evaluate(FIELDS_JS), 'text': panel.inner_text(), 'tables': []}
         tables = panel.locator('table')
         for i in range(tables.count()):
@@ -311,7 +313,7 @@ class ListObserver:
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
         while self.sequence <= after:
-            if time.monotonic() > deadline:
+            if time.monotonic() >= deadline:
                 raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
         wait_idle(self.page)

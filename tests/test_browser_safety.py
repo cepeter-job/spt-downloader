@@ -117,6 +117,13 @@ def test_observer_sequence_does_not_reset_when_old_batches_are_released():
         observer.wait(observer.sequence, timeout=0)
 
 
+def test_zero_timeout_expires_even_when_clock_has_not_advanced(monkeypatch):
+    observer = driver.ListObserver(SignalSource())
+    monkeypatch.setattr(driver.time, 'monotonic', lambda: 123.0)
+    with pytest.raises(RuntimeError, match='No verifiable'):
+        observer.wait(0, timeout=0)
+
+
 class Container:
     def query_selector(self, selector):
         return None
@@ -418,6 +425,19 @@ def test_detail_captures_every_initially_collapsed_accordion():
     assert captured['capture_complete'], captured['errors']
     assert captured['sections'][0]['fields'] == [
         {'label': 'Fixture 1', 'value': '01'}, {'label': 'Fixture 2', 'value': '02'}]
+
+
+def test_exclusive_accordion_is_partial_when_earlier_content_closes(monkeypatch):
+    def exclusive_open(self, script):
+        self.panel.expanded[:] = [False] * len(self.panel.expanded)
+        self.panel.expanded[self.position] = True
+
+    monkeypatch.setattr(AccordionControl, 'evaluate', exclusive_open)
+    panel = AccordionPanel()
+    captured = driver.capture_detail(SimpleNamespace(locator=lambda selector: panel))
+    assert not captured['capture_complete'], 'Exclusive accordions must not certify omitted sections'
+    assert captured['sections'][0]['fields'] == [{'label': 'Fixture 2', 'value': '02'}]
+    assert any('collapsed' in error['message'] for error in captured['errors'])
 
 
 def test_detail_list_reset_obeys_page_limit(tmp_path, monkeypatch):

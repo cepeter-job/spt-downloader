@@ -181,3 +181,27 @@ def test_capture_resets_with_previous_when_first_control_is_absent():
         assert table['pages'] == 2
         assert captured['capture_complete']
         browser.close()
+
+
+def test_exclusive_accordion_preserves_visible_data_but_reports_partial():
+    import coretax_browser as driver
+    fixture = '''<div class="main-content">
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="showAccordion(this,'fixture-one')">Fixture one</a></div>
+    <div class="fixture-content" id="fixture-one" hidden><label for="value-one">Fixture one value</label><input id="value-one" disabled value="001"></div>
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="showAccordion(this,'fixture-two')">Fixture two</a></div>
+    <div class="fixture-content" id="fixture-two" hidden><label for="value-two">Fixture two value</label><input id="value-two" disabled value="002"></div>
+    </div><script>
+    function showAccordion(control,id){
+      document.querySelectorAll('.p-accordion-header a').forEach(e=>e.setAttribute('aria-expanded','false'));
+      document.querySelectorAll('.fixture-content').forEach(e=>e.hidden=true);
+      control.setAttribute('aria-expanded','true'); document.getElementById(id).hidden=false;
+    }</script>'''
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(fixture)
+        captured = driver.capture_detail(page)
+        assert not captured['capture_complete']
+        assert [field['value'] for field in captured['sections'][0]['fields']] == ['002']
+        assert any('collapsed' in error['message'] for error in captured['errors'])
+        browser.close()

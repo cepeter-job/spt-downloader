@@ -183,3 +183,32 @@ def test_blocked_rollback_keeps_recoverable_original_files(tmp_path, monkeypatch
         coretax.save_output(run, tmp_path)
     recovery, = tmp_path.glob('.spt-export-*')
     assert {p.name: p.read_bytes() for p in (recovery / 'backup').iterdir()} == before
+
+
+def test_interrupt_in_rollback_probe_keeps_recoverable_original_files(tmp_path, monkeypatch):
+    run = fixture_run()
+    coretax.save_output(run, tmp_path)
+    before = snapshot(tmp_path)
+    run['taxpayer_name'] = 'SYNTHETIC UPDATED NAME'
+    real_replace = Path.replace
+    real_exists = Path.exists
+    publication_failed = False
+
+    def fail_later_publication(source, target):
+        nonlocal publication_failed
+        if Path(target).parent == tmp_path and Path(target).name == 'SPT_21.xlsx':
+            publication_failed = True
+            raise PermissionError('Synthetic workbook lock')
+        return real_replace(source, target)
+
+    def interrupt_recovery_probe(path):
+        if publication_failed and path.parent.name.startswith('.spt-export-'):
+            raise KeyboardInterrupt()
+        return real_exists(path)
+
+    monkeypatch.setattr(Path, 'replace', fail_later_publication)
+    monkeypatch.setattr(Path, 'exists', interrupt_recovery_probe)
+    with pytest.raises(RuntimeError, match='recovery files retained'):
+        coretax.save_output(run, tmp_path)
+    recovery, = tmp_path.glob('.spt-export-*')
+    assert {p.name: p.read_bytes() for p in (recovery / 'backup').iterdir()} == before
