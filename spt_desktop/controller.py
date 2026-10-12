@@ -29,12 +29,16 @@ def parse_event(line,job_id,operation='export'):
     try:event=json.loads(line)
     except (ValueError,TypeError):return None
     if not isinstance(event,dict) or event.get('job_id')!=job_id:return None
-    allowed={'job_id','type','stage','percent','message','processed','total','verified','scanned','status','output'}
+    allowed={'job_id','type','stage','percent','message','processed','total','verified','scanned','status','output','request_id'}
     if set(event)-allowed:return None
     percent=event.get('percent')
     if type(percent) is not int or not 0<=percent<=100:return None
     kind=event.get('type')
-    if kind not in ('progress','login_required','terminal'):return None
+    if kind not in ('progress','login_required','terminal','selection_required','overwrite_required'):return None
+    interaction=kind in ('selection_required','overwrite_required')
+    if interaction:
+        if operation!='export' or not isinstance(event.get('request_id'),str) or not re.fullmatch(r'[0-9a-f]{32}',event['request_id']):return None
+    elif 'request_id' in event:return None
     if any(not isinstance(event[k],str) or len(event[k])>500 for k in ('message','stage') if k in event):return None
     if any(type(event[k]) is not int or event[k]<0 for k in ('processed','total','verified','scanned') if k in event):return None
     if operation=='login_check':
