@@ -6,7 +6,7 @@ Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan meng
 
 ## Memakai aplikasi Windows
 
-**Status PR #6:** susunan workbook per masa dilanjutkan dengan pemilihan SPT dan konfirmasi penggantian hasil pada desktop. Implementasinya tersedia pada branch PR; verifikasi menyeluruh untuk commit implementasi masih menunggu CI. Unduhan PDF serta perubahan autentikasi dan teks global tetap merupakan pekerjaan berikutnya. Lihat [rencana dan bukti RED](docs/superpowers/plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite).
+**Status PR #6:** susunan workbook per masa dilanjutkan dengan pemilihan SPT dan konfirmasi penggantian hasil pada desktop. Implementasi Tugas 1–2 pada branch PR telah lulus verifikasi otomatis pada commit yang dicatat dalam rencana. Unduhan PDF serta perubahan autentikasi dan teks global tetap merupakan pekerjaan berikutnya. Lihat [rencana dan bukti pengujian](docs/superpowers/plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite).
 
 Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.11.17` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. Artifact Python 3.14 adalah kandidat pengujian. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 

@@ -10,7 +10,7 @@
 
 **Spesifikasi:** [desain pemilihan SPT dan workbook](../specs/2026-10-12-period-selection-layout-design.md).
 
-**Batas publikasi terbaru:** PR #6 mencakup Tugas 1 dan lanjutan Tugas 2: pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi Tugas 2 dan tesnya sudah tersedia; verifikasi menyeluruh pada commit implementasi masih menunggu CI. Tugas 3 (PDF), Tugas 4 (pengenalan autentikasi dan teks global), serta penerimaan fitur lengkap pada Tugas 5 tetap tertunda.
+**Batas publikasi terbaru:** PR #6 mencakup Tugas 1 dan Tugas 2: pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi dan verifikasi otomatis Tugas 2 selesai pada commit yang dicatat di bawah. Tugas 3 (PDF), Tugas 4 (pengenalan autentikasi dan teks global), serta penerimaan fitur lengkap pada Tugas 5 tetap tertunda.
 
 ## Batas umum
 
@@ -42,20 +42,38 @@
 
 ### Tugas 2: Capture sesuai pilihan dan dialog overwrite
 
-**Berkas:** modul `spt_desktop/interaction.py`, `app.py`, `controller.py`, `worker.py`, `output.py`, `runtime.py`; serta tes pemilihan, GUI, lifecycle, output, dan worker.
+**Berkas:** modul `spt_desktop/interaction.py`, `app.py`, `controller.py`, `worker.py`, `output.py`, `output_windows.py`, `runtime.py`; serta tes pemilihan, GUI, lifecycle, output, dan worker.
 
 **Antarmuka:** event `selection_required` dan `overwrite_required` membawa `job_id`/`request_id`; data daftar dan jawaban berada dalam JSON privat milik job. GUI memakai `read_request(event)` dan `respond(kind, request_id, payload)`. `publish_workbooks(..., overwrite=False, expected_outputs=...)` mengikat persetujuan pada folder/file yang sudah diperiksa; default tetap menolak penggantian.
 
 - [x] Buat/jalankan tes RED untuk detail sesuai pilihan, pilihan kosong, ID salah/duplikat, jawaban lintas job, Stop saat menunggu, penolakan/persetujuan overwrite, serta file di luar pilihan yang tetap utuh.
-- [x] Terapkan request/reply terbatas dan dialog Tk pada thread utama; ambil rincian hanya untuk ID yang dikonfirmasi dan catat scope. Tampilkan folder/file penggantian, periksa ulang tujuan dan workbook lama, serta pertahankan salinan pemulihan saat publikasi gagal. Checkbox ini menyatakan kode tersedia, bukan hasil GREEN.
-- [ ] Tuntaskan suite lifecycle, worker, selection, output, keamanan dalam mode Python teroptimasi, serta self-test source/frozen pada commit implementasi; catat run dan artifact yang tepat.
+- [x] Terapkan request/reply terbatas dan dialog Tk pada thread utama; ambil rincian hanya untuk ID yang dikonfirmasi dan catat scope. Tampilkan folder/file penggantian, periksa ulang tujuan dan workbook lama, serta pertahankan salinan pemulihan saat publikasi gagal.
+- [x] Tuntaskan suite lifecycle, worker, selection, dan output, termasuk regresi verifikasi workbook pada Python `-O`, serta self-test source/frozen pada commit implementasi; catat run dan artifact yang tepat.
 
 **Bukti RED pada runner Windows:**
 
-| Run | Commit yang diuji |
-| --- | --- |
-| [38229426598](https://github.com/cepeter-job/spt-downloader/actions/runs/38229426598) | `9b49bb1f1d45ba3eda8f381d0aeaabb70cd5b1a7` |
-| [38234647737](https://github.com/cepeter-job/spt-downloader/actions/runs/38234647737) | `4079ace06d3efbfc916f30a17df00bc9f36d1df4` |
+| Run | Head PR | Kegagalan yang direproduksi |
+| --- | --- | --- |
+| [38229426598](https://github.com/cepeter-job/spt-downloader/actions/runs/38229426598) | `9b49bb1f1d45ba3eda8f381d0aeaabb70cd5b1a7` | Dialog pemilihan/penggantian belum tersedia. |
+| [38234647737](https://github.com/cepeter-job/spt-downloader/actions/runs/38234647737) | `4079ace06d3efbfc916f30a17df00bc9f36d1df4` | Regresi tambahan pemilihan, lifecycle, dan overwrite sebelum integrasi. |
+| [38236203384](https://github.com/cepeter-job/spt-downloader/actions/runs/38236203384) | `28d2b0db9fc3f593f12287a3b424684efa806552` | Empat kegagalan mutasi output saat publikasi. |
+| [38238540703](https://github.com/cepeter-job/spt-downloader/actions/runs/38238540703) | `3c8f57da41e7d70e9dc150a32040486130c0be05` | 26 kegagalan publikasi awal Windows akibat mode berbagi direktori. |
+
+**Bukti GREEN Tugas 2:** [38239213602](https://github.com/cepeter-job/spt-downloader/actions/runs/38239213602). CI menguji commit merge `6b188802eb1a859dba654c1601a487110ba3a8e7`, dengan tree `091ebdad6d2626483a8d9bc1a9ab9605610074c6` yang identik dengan head PR `92e4af8e275c6ba4228374f4fadc48b1e22628a6`.
+
+| Profil | Suite Windows | Suite portable |
+| --- | --- | --- |
+| Produksi — CPython 3.11.17 | 492 lulus (112,23 detik) | 339 lulus; 153 deselected |
+| Kandidat — CPython 3.14.8 | 491 lulus, 1 dilewati (107,35 detik) | 339 lulus; 153 deselected |
+
+Satu tes cache tar native yang dipakai bersama dilewati pada kandidat dan dijalankan pada produksi. Persiapan worker baru, pemakaian ulang runtime, self-test source/frozen, packaging, dan pembacaan kembali artifact berdasarkan ID persis lulus pada kedua profil.
+
+| Profil | Artifact ID | Nama artifact |
+| --- | --- | --- |
+| Produksi — CPython 3.11.17 | [11742506238](https://github.com/cepeter-job/spt-downloader/actions/runs/38239213602/artifacts/11742506238) | `SPTDownloader-Windows-x64-6b188802eb1a859dba654c1601a487110ba3a8e7-python3.11.17` |
+| Kandidat — CPython 3.14.8 | [11741819154](https://github.com/cepeter-job/spt-downloader/actions/runs/38239213602/artifacts/11741819154) | `SPTDownloader-Windows-x64-6b188802eb1a859dba654c1601a487110ba3a8e7-python3.14.8` |
+
+Kedua artifact juga diunduh ulang dan diperiksa secara independen: digest ZIP dari GitHub, seluruh checksum payload, tepat lima berkas distribusi, serta pemeriksaan frozen, resource, dan README cocok. [Laporan audit 11742525416](https://github.com/cepeter-job/spt-downloader/actions/runs/38239213602/artifacts/11742525416) dibaca kembali: 45 dependensi, 0 kerentanan, 0 dilewati. Run di atas berlaku untuk commit implementasi yang disebutkan. Status commit penutupan dokumentasi dan head terbaru dicatat pada [pemeriksaan PR #6](https://github.com/cepeter-job/spt-downloader/pull/6/checks).
 
 Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan Stop membatalkan pekerjaan; jawaban usang/duplikat/lintas job tidak mengesahkan pilihan. Dialog penggantian menunjukkan folder ekspor sebelumnya dan file yang berbenturan; persetujuan mengganti file Excel tersebut, sedangkan workbook masa lain tetap utuh. `resume.xlsx` baru mengindeks pilihan saat ini. CLI mempertahankan alur argumen/checkpoint yang terpisah dari dialog desktop.
 
@@ -87,4 +105,4 @@ Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan 
 - [ ] Jalankan seluruh pytest dengan basetemp scratch unik; periksa XLSX sintetis dan seluruh tautan/jumlah file.
 - [ ] Dapatkan review kode/keamanan independen dan perbaiki temuan penting dengan tes regresi.
 - [ ] Bangun executable Windows di luar repo, jalankan self-test source/frozen, verifikasi checksum artifact dan keamanan resource, lalu laporkan hasil serta batas penerimaan live.
-- [ ] Sajikan diff dan commit sesuai scope yang diizinkan pengguna. PR #6 mencakup Tugas 1 dan lanjutan Tugas 2; penerimaan fitur lengkap tetap menunggu verifikasi akhir implementasi serta Tugas 3–4.
+- [ ] Sajikan diff dan commit sesuai scope yang diizinkan pengguna. PR #6 mencakup Tugas 1 dan Tugas 2; penerimaan fitur lengkap tetap menunggu Tugas 3–4 serta verifikasi seluruh sepuluh persyaratan.

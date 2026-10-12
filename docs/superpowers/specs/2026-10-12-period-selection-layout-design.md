@@ -2,7 +2,7 @@
 
 Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windows-desktop` ke `013dd19`. Desain ini membatasi revisi pada alur capture, ekspor, dan desktop yang sudah ada.
 
-**Batas publikasi terbaru PR #6:** mencakup susunan workbook pada Tugas 1 dan lanjutan Tugas 2, yaitu pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas publikasi lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi Tugas 2 tersedia, sementara verifikasi menyeluruh pada commit implementasi masih menunggu CI. Unduhan PDF pada Tugas 3 serta perubahan autentikasi dan teks global pada Tugas 4 tetap tertunda. Lihat [rencana dan bukti pengujian](../plans/2026-10-12-period-selection-layout.md).
+**Batas publikasi terbaru PR #6:** mencakup susunan workbook pada Tugas 1 dan Tugas 2, yaitu pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas publikasi lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi dan verifikasi otomatis Tugas 2 selesai pada commit yang dicatat dalam rencana. Unduhan PDF pada Tugas 3 serta perubahan autentikasi dan teks global pada Tugas 4 tetap tertunda. Lihat [rencana dan bukti pengujian](../plans/2026-10-12-period-selection-layout.md).
 
 ## Kontrak output
 
@@ -31,7 +31,7 @@ Dialog dan protokol persetujuan ini khusus desktop. CLI tetap menentukan cakupan
 
 ## Verifikasi dan batas bukti
 
-Bukti RED pemilihan/overwrite dari dua run Windows beserta commit tepatnya dicatat pada [Tugas 2](../plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite). Bukti tersebut mereproduksi kegagalan sebelum integrasi dan tidak menyatakan implementasi saat ini sudah GREEN. Suite pada commit implementasi, self-test source/frozen, pemeriksaan artifact, serta penerimaan fitur lengkap tetap menunggu verifikasi. Semua fixture baru harus sintetis; periksa pilihan ID, byte file yang dipertahankan, jumlah workbook, nilai sumber, dan tautan relatif.
+Bukti RED dan GREEN pemilihan/overwrite beserta commit tepatnya dicatat pada [Tugas 2](../plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite). Suite pada commit implementasi tersebut, self-test source/frozen, dan pemeriksaan artifact telah lulus pada kedua profil Python. Penerimaan fitur lengkap tetap menunggu Tugas 3–4 serta pemeriksaan live berizin. Semua fixture baru harus sintetis; periksa pilihan ID, byte file yang dipertahankan, jumlah workbook, nilai sumber, dan tautan relatif.
 
 Tugas 3–4 masih memerlukan pengujian byte/origin/redirect/pembatalan PDF, pengenalan/binding autentikasi, dan teks global yang direncanakan. Pengujian dialog saat ini juga belum membuktikan perilaku keyboard/fokus pada jendela terlihat, aksesibilitas Windows, atau performa inventaris besar.
 
