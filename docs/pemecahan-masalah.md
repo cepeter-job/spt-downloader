@@ -49,6 +49,8 @@ Jangan menghapus seluruh `%LOCALAPPDATA%\SPTDownloader` sebagai langkah pertama:
 
 ## Tes dan CI
 
+Jika langkah instalasi Windows gagal dengan **`Failed to create Python minor version link directory`** dan **`os error 267`** setelah cache berhasil dipulihkan, periksa laporan `ci_python_cache.py` pada langkah bootstrap. Perbaikan hanya berlaku untuk alias minor di cache runner; jangan menghapus direktori aplikasi pengguna, menurunkan pin Python, atau mematikan verifikasi hash. Tes restore cache di job produksi harus lulus sebelum kegagalan ini dinyatakan selesai. Lihat [kebijakan cache CI](ci-dan-rilis.md#cache-dan-cpu).
+
 Tes GUI yang gagal karena display tidak tersedia, Edge hilang, atau API Windows dijalankan pada Linux adalah masalah lingkungan yang perlu dibedakan dari kegagalan perilaku. Gunakan [workload yang sesuai](pengembangan.md#pengujian-lokal); keberhasilan portable belum menutup gate Windows.
 
 Jika tes baru hanya muncul pada workload Windows, itu default konservatif pemilih tes. Klasifikasikan sebagai portable setelah memeriksa seluruh fixture/dependensinya. Jangan menambahkan skip luas supaya matrix hijau.

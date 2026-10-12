@@ -60,8 +60,8 @@ def test_supported_excel_numbers_round_trip_unchanged(tmp_path, value):
 
     wb = load_workbook(path)
     try:
-        assert wb.worksheets[3]['F6'].value == value
-        assert wb.worksheets[3]['F6'].data_type == 'n'
+        assert wb.worksheets[3]['C7'].value == value
+        assert wb.worksheets[3]['C7'].data_type == 'n'
     finally:
         wb.close()
 
@@ -272,7 +272,7 @@ def test_web_source_link_and_literal_formula_text_are_preserved(tmp_path):
     try:
         assert wb['Daftar SPT']['K5'].hyperlink.target == source_url
         assert wb.worksheets[3]['A3'].hyperlink.target == source_url
-        field = wb.worksheets[3]['F6']
+        field = wb.worksheets[3]['C7']
         assert field.value == source_value
         assert field.data_type == 's'
         assert run == original

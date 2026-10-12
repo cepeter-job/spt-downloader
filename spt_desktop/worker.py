@@ -13,7 +13,8 @@ from coretax_browser import CaptureCancelled,collect_inventory,collect_details
 from .auth import AuthBlocked,authenticate_owned,check_saved_credentials
 from .credentials import ALLOWED_ORIGINS
 from .events import Progress
-from .output import publish_workbooks
+from .interaction import Requests, select_records
+from .output import existing_outputs, publish_workbooks
 from .paths import downloads_folder
 
 
@@ -22,7 +23,7 @@ def playwright_factory():
     return sync_playwright()
 
 
-def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled):
+def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None):
     progress=Progress(job_id,emit)
     run=None
     folder=None
@@ -45,6 +46,17 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled):
                 run=collect_inventory(page,npwp,year,'period',folder,
                     on_progress=lambda item:progress.inventory(item['completed'],item['total'],item['scanned']),
                     check_cancel=check_cancel)
+                check_cancel()
+                if requests is None:
+                    raise RuntimeError('A private selection channel is required before detail capture')
+                if run['records']:
+                    inventory = {'records': [{'record_id': record['record_id'], 'meta': record['meta']}
+                                              for record in run['records']]}
+                    reply = requests.request('selection', inventory, progress.percent)
+                    check_cancel()
+                    if not isinstance(reply, dict) or set(reply) != {'selected_ids'}:
+                        raise ValueError('Invalid selection response')
+                    run = select_records(run, reply['selected_ids'])
                 run['started_at']=datetime.now().astimezone().isoformat()
                 verified=0
                 def details_progress(data,ordinal):
@@ -62,7 +74,21 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled):
         progress.exported()
         check_cancel()
         progress.publishing()
-        final=publish_workbooks(run,folder,downloads_folder(),job_id,check_cancel=check_cancel)
+        downloads = downloads_folder()
+        previous = existing_outputs(run, downloads)
+        overwrite = False
+        if previous is not None:
+            reply = requests.request('overwrite', {'files': previous['files'],
+                                                   'folder': previous['target']}, progress.percent)
+            check_cancel()
+            if (not isinstance(reply, dict) or set(reply) != {'overwrite'}
+                    or type(reply['overwrite']) is not bool):
+                raise ValueError('Invalid overwrite response')
+            if not reply['overwrite']:
+                raise CaptureCancelled('Existing files were kept by user choice')
+            overwrite = True
+        final=publish_workbooks(run,folder,downloads,job_id,check_cancel=check_cancel,
+                                overwrite=overwrite,expected_outputs=previous)
         progress.finished(bool(run['complete']),final)
         return 0 if run['complete'] else 2
     except CaptureCancelled:
@@ -120,6 +146,13 @@ def main(argv=None):
         except ValueError:return 1
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',args.job_id):return 1
     started,cancelled=threading.Event(),threading.Event()
+    output=sys.stdout
+    def emit(item):
+        output.write(json.dumps(item,ensure_ascii=True)+'\n');output.flush()
+    def check_cancel():
+        if cancelled.is_set():raise CaptureCancelled('Stop requested')
+    requests = None if args.check_login else Requests(
+        args.root/'jobs'/args.job_id, args.job_id, emit, check_cancel)
     def listen():
         while True:
             line=sys.stdin.readline(8193)
@@ -132,17 +165,19 @@ def main(argv=None):
             if not isinstance(item,dict) or item.get('job_id')!=args.job_id:continue
             if item.get('command')=='start':started.set()
             elif item.get('command')=='stop':cancelled.set();started.set()
+            elif (requests is not None and not cancelled.is_set()
+                  and set(item)=={'job_id','command','request_id'}
+                  and item['command'] in ('selection','overwrite')):
+                requests.respond(item['command'],item['request_id'])
     threading.Thread(target=listen,daemon=True).start()
-    output=sys.stdout
-    def emit(item):
-        output.write(json.dumps(item,ensure_ascii=True)+'\n');output.flush()
     if not started.wait(30):
         Progress(args.job_id,emit).finished(False,None,status='BLOCKED',message='Worker tidak menerima izin mulai dari GUI.')
         return 3
     with contextlib.redirect_stdout(sys.stderr):
         if args.check_login:
             return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
-        return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,emit,cancelled.is_set)
+        return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,
+                       emit,cancelled.is_set,requests=requests)
 
 
 if __name__=='__main__':

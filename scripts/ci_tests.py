@@ -13,6 +13,7 @@ PORTABLE_FILES = frozenset({
     'tests/test_branch_cleanup.py',
     'tests/test_browser_safety.py',
     'tests/test_ci_artifacts.py',
+    'tests/test_ci_python_cache.py',
     'tests/test_ci_routing.py',
     'tests/test_dependency_locks.py',
     'tests/test_desktop_build.py',
@@ -29,9 +30,11 @@ PORTABLE_FILES = frozenset({
     'tests/test_export_safety.py',
     'tests/test_exporter.py',
     'tests/test_output_safety.py',
+    'tests/test_period_layout.py',
     'tests/test_split_output.py',
 })
 WINDOWS_TESTS = frozenset({
+    'tests/test_ci_python_cache.py::test_real_windows_cold_install_and_tar_restore_reuse_the_exact_python',
     'tests/test_desktop_gui.py::test_simple_window_controls_and_partial_progress_are_real_tkinter',
 })
 

@@ -4,6 +4,8 @@ Modul ini tidak mengakses browser. coretax.save_output menangani staging,
 verifikasi, dan publikasi set workbook yang dihasilkan di sini.
 """
 from pathlib import Path
+from pathlib import PurePosixPath
+import posixpath
 from collections import Counter, defaultdict
 from decimal import Decimal
 import math
@@ -227,8 +229,154 @@ def header(ws, row, labels):
 
 
 def detail_sheet_title(ordinal, record):
-    title = re.sub(r'[\[\]:*?/\\]', '-', record['meta'].get('Jenis Pajak', 'SPT'))
-    return f'{ordinal:03d} {title}'[:31]
+    return record_sheet_titles(ordinal, record)[0]
+
+
+def amendment_label(record):
+    value = record['meta'].get('Model SPT', '')
+    if value.casefold() == 'normal':
+        return 'Normal'
+    if re.search(r'pembetulan|amendment', value, re.I):
+        number = re.search(r'[0-9]+', value)
+        return 'Pembetulan' + (' ' + str(int(number.group())) if number else '')
+    return re.sub(r'[\[\]:*?/\\]', '-', value)[:14] or 'Status belum ada'
+
+
+def record_forms(record):
+    sections = record.get('sections', [])
+    if record['meta'].get('Jenis Pajak') != 'PPh Badan' or not sections:
+        return [('SPT', sections)]
+    groups = {}
+    for section in sections:
+        # Jalur induk membedakan form dengan label anak yang sama.
+        name = section['name']
+        groups.setdefault(name, []).append(section)
+    return list(groups.items())
+
+
+def record_sheet_titles(ordinal, record):
+    result = []
+    for index, (form, _) in enumerate(record_forms(record), 1):
+        form = re.sub(r'[\[\]:*?/\\]', '-', form)
+        prefix = f'{ordinal:03d}.{index:02d} {amendment_label(record)} '
+        result.append((prefix + form)[:31])
+    return result
+
+
+def workbook_groups(run):
+    """Kelompokkan masa sumber literal; sanitasi nama berkas tidak menyatukan identitas."""
+    groups, identities = {}, {}
+    periodic = {'PPh Pasal 21/26': '21', 'PPh Unifikasi': 'Unifikasi', 'PPN': 'PPN'}
+    for record in run['records']:
+        tax = record['meta'].get('Jenis Pajak')
+        filename = tax_type_filename(tax)
+        period = record['meta'].get('Masa Pajak', '')
+        identity = (tax, period) if tax in periodic else (tax,)
+        if tax in periodic:
+            component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', period).strip(' .')
+            if not component or len(component) > 120:
+                raise ValueError('Unsupported source period filename')
+            filename = f'SPT Masa {periodic[tax]}/{Path(filename).stem}_{component}.xlsx'
+        folded = filename.casefold()
+        if folded in identities and identities[folded] != identity:
+            raise ValueError('Tax type or period filename collision; no workbook was overwritten')
+        identities[folded] = identity
+        groups.setdefault(filename, []).append(record)
+    return groups
+
+
+def numeric_analysis(value, label):
+    """Nilai numerik opsional tanpa mengganti pengenal atau nilai sumber."""
+    if not isinstance(value, str) or re.search(r'npwp|nik|nomor|kode|tanggal|rekening|faktur', label, re.I):
+        return None
+    if not re.search(r'nilai|jumlah|pendapatan|penghasilan|biaya|saldo|total|amount|revenue|dpp|harga|pajak', label, re.I):
+        return None
+    text = re.sub(r'^Rp\s*', '', value.strip(), flags=re.I)
+    if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', text):
+        return None
+    try:
+        source = Decimal(text.replace('.', '').replace(',', '.'))
+        # Periksa presisi 15 digit pada nilai sumber sebelum konversi float.
+        if Decimal(format(source, '.15g')) != source:
+            return None
+        number = float(source)
+        validate_excel_value(number, 'numeric analysis')
+        return number
+    except (ValueError, OverflowError):
+        return None
+
+
+def render_form(detail, sections, ordinal, form_index):
+    row, serial = 5, 0
+    def data_table(labels, values):
+        nonlocal row, serial
+        header(detail, row, labels)
+        first = row
+        row += 1
+        for values_row in values:
+            for col, value in enumerate(values_row, 1):
+                put(detail, row, col, value)
+            row += 1
+        if row > first + 1:
+            serial += 1
+            table = Table(displayName=f'Data_{ordinal}_{form_index}_{serial}',
+                ref=f'A{first}:{get_column_letter(len(labels))}{row-1}')
+            table.tableStyleInfo = TableStyleInfo(name='TableStyleMedium2', showRowStripes=True)
+            detail.add_table(table)
+        row += 2
+    for section in sections:
+        put(detail, row, 1, section['name']).font = Font(bold=True, color=NAVY)
+        row += 1
+        fields = section.get('fields', [])
+        if fields:
+            values = []
+            for field in fields:
+                label = field.get('label') or field.get('field', '')
+                raw = field.get('value', '')
+                values.append([section['name'], label, raw, numeric_analysis(raw, label)])
+            data_table(['Bagian', 'Field', 'Nilai sumber', 'Nilai numerik (opsional)'], values)
+        for table in section.get('tables', []):
+            put(detail, row, 1, table.get('name', 'Tabel'))
+            row += 1
+            width = max(len(table.get('headers', [])), max((len(r) for r in table.get('rows', [])), default=1))
+            source_headers = table.get('headers') or [f'Kolom {i+1}' for i in range(width)]
+            source_headers = source_headers + [f'Kolom {i+1}' for i in range(len(source_headers), width)]
+            # Simpan label sumber terpisah ketika header filter perlu dibedakan.
+            for col, value in enumerate(source_headers, 1):
+                put(detail, row, col, value)
+            row += 1
+            numeric_cols = [i for i, label in enumerate(source_headers) if any(
+                numeric_analysis(values[i] if i < len(values) else None, str(label)) is not None for values in table.get('rows', []))]
+            captions = source_headers + [f'Numerik {i+1} ({source_headers[i]})' for i in numeric_cols]
+            labels, used, seen = [], set(), Counter()
+            for value in captions:
+                caption = str(value) or 'Kolom'
+                key = caption.casefold()
+                seen[key] += 1
+                label = caption if seen[key] == 1 else f'{caption} ({seen[key]})'
+                # Label sumber dapat sama dengan hasil penambahan sufiks pada kolom lain.
+                while label.casefold() in used:
+                    seen[key] += 1
+                    label = f'{caption} ({seen[key]})'
+                used.add(label.casefold())
+                labels.append(label)
+            rows = []
+            for values in table.get('rows', []):
+                raw = list(values) + [''] * (width-len(values))
+                rows.append(raw + [numeric_analysis(raw[i], str(source_headers[i])) for i in numeric_cols])
+            data_table(labels, rows)
+            if not table.get('complete', True):
+                put(detail, row, 1, 'PARTIAL: paginasi tidak selesai')
+                row += 1
+        text = section.get('text', '')
+        if text:
+            put(detail, row, 1, 'Teks halaman / konteks sumber')
+            row += 1
+            for offset in range(0, len(text), 30000):
+                put(detail, row, 1, text[offset:offset+30000])
+                row += 1
+    detail.print_title_rows = '1:3'
+    detail.print_area = f'A1:{get_column_letter(max(detail.max_column, 4))}{max(row, 5)}'
 
 
 def tax_type_filename(tax_type):
@@ -306,65 +454,25 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
         url = record.get('detail_url', '')
         if include_details:
             title_label, scope_label = detail_labels(run, record)
-            detail = wb.create_sheet(detail_sheet_title(ordinal, record))
-            setup_sheet(detail, [12, 36, 28, 25, 25, 25, 25, 25, 25, 25, 25, 25], 'C6')
-            band(detail, 1, title_label, 12)
-            back = put(detail, 2, 1, 'Resume' if resume_file else 'Daftar SPT')
-            if resume_file:
-                back.hyperlink = Hyperlink(ref=back.coordinate, target=resume_file, location="'Daftar SPT'!A1")
-            else:
-                back.hyperlink = "#'Daftar SPT'!A1"
-            back.font = Font(color=BLUE, underline='single')
-            detail.merge_cells('B2:L2')
-            put(detail, 2, 2, scope_label)
-            detail.merge_cells('A3:L3')
-            if url:
-                source_cell = put(detail, 3, 1, url)
-                if web_source_url(url):
-                    source_cell.hyperlink = url
-            row = 5
-            for section in record.get('sections', []):
-                band(detail, row, section['name'], 12, BLUE)
-                row += 1
-                for field in section.get('fields', []):
-                    detail.merge_cells(start_row=row, start_column=1, end_row=row, end_column=5)
-                    put(detail, row, 1, field.get('label') or field.get('field', '')).font = Font(color=NAVY)
-                    detail.merge_cells(start_row=row, start_column=6, end_row=row, end_column=12)
-                    put(detail, row, 6, field.get('value', ''))
-                    detail.row_dimensions[row].height = 30
-                    row += 1
-                for table in section.get('tables', []):
-                    row += 1
-                    width = max(len(table.get('headers', [])), max((len(r) for r in table.get('rows', [])), default=1))
-                    band(detail, row, table.get('name', 'Tabel'), max(12, width), GRAY)
-                    row += 1
-                    headers = table.get('headers') or [f'Kolom {i+1}' for i in range(width)]
-                    header(detail, row, headers)
-                    row += 1
-                    for values in table.get('rows', []):
-                        for col, value in enumerate(values, 1):
-                            put(detail, row, col, value)
-                            if col > 12:
-                                detail.column_dimensions[get_column_letter(col)].width = 25
-                        detail.row_dimensions[row].height = 36
-                        row += 1
-                    if not table.get('complete', True):
-                        put(detail, row, 1, 'PARTIAL: paginasi tidak selesai')
-                        row += 1
-                # Simpan teks terlihat agar judul, pernyataan, dan angka non-input tetap ada.
-                text = section.get('text', '')
-                if text:
-                    row += 1
-                    band(detail, row, 'Teks halaman / konteks sumber', 12, GRAY)
-                    row += 1
-                    for offset in range(0, len(text), 30000):
-                        detail.merge_cells(start_row=row, start_column=1, end_row=row, end_column=12)
-                        put(detail, row, 1, text[offset:offset+30000])
-                        detail.row_dimensions[row].height = min(220, max(40, text[offset:offset+30000].count('\n') * 12))
-                        row += 1
-                row += 2
-            detail.print_title_rows = '1:3'
-            detail.print_area = f'A1:{get_column_letter(max(detail.max_column, 12))}{max(row, 5)}'
+            titles = record_sheet_titles(ordinal, record)
+            for form_index, (sheet_title, (_, sections)) in enumerate(zip(titles, record_forms(record)), 1):
+                detail = wb.create_sheet(sheet_title)
+                setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A6')
+                band(detail, 1, title_label, 12)
+                back = put(detail, 2, 1, 'Resume' if resume_file else 'Daftar SPT')
+                if resume_file:
+                    back.hyperlink = Hyperlink(ref=back.coordinate, target=resume_file, location="'Daftar SPT'!A1")
+                else:
+                    back.hyperlink = "#'Daftar SPT'!A1"
+                back.font = Font(color=BLUE, underline='single')
+                put(detail, 2, 2, scope_label)
+                if url:
+                    source_cell = put(detail, 3, 1, url)
+                    if web_source_url(url):
+                        source_cell.hyperlink = url
+                render_form(detail, sections, ordinal, form_index)
+            # Indeks selalu menarget form pertama sesuai urutan sumber.
+            detail = wb[titles[0]]
         ir = ordinal + 4
         values = [ordinal, meta.get('Jenis Pajak', ''), meta.get('Jenis Surat Pemberitahuan Pajak', ''), meta.get('Masa Pajak', ''), meta.get('Model SPT', ''), record.get('source_status', ''), meta.get('Nomor Bukti Penerimaan', ''), meta.get('Tanggal Submit SPT', ''), 'OK' if record.get('capture_complete') else 'PARTIAL', len(record.get('sections', [])), url]
         for col, value in enumerate(values, 1):
@@ -392,29 +500,24 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
 
 
 def export_split_workbooks(run, folder):
-    """Buat resume dan satu workbook per jenis; publikasi aman ditangani pemanggil."""
+    """Buat resume, workbook masa, dan form Badan; publikasi ditangani pemanggil."""
     validate_export_run(run)
     folder = Path(folder)
-    groups = defaultdict(list)
-    for ordinal, record in enumerate(run['records'], 1):
-        groups[record['meta'].get('Jenis Pajak')].append((ordinal, record))
-    filenames = {tax: tax_type_filename(tax) for tax in groups}
-    # Nama berkas Windows tidak membedakan kapital; tolak benturan sebelum menulis.
-    normalized = [name.casefold() for name in filenames.values()]
-    if len(normalized) != len(set(normalized)):
-        raise ValueError('Tax type filename collision; no workbook was overwritten')
-    for tax in groups:
-        validate_excel_value(type_scope_description(run, tax), 'type scope description')
+    groups = workbook_groups(run)
+    for records in groups.values():
+        validate_excel_value(type_scope_description(run, records[0]['meta']['Jenis Pajak']), 'type scope description')
     targets = {}
     files = {'resume.xlsx': folder / 'resume.xlsx'}
-    for tax, entries in groups.items():
-        filename = filenames[tax]
-        for local_ordinal, (global_ordinal, record) in enumerate(entries, 1):
+    ordinals = {id(record): index for index, record in enumerate(run['records'], 1)}
+    for filename, records in groups.items():
+        for local_ordinal, record in enumerate(records, 1):
+            global_ordinal = ordinals[id(record)]
             targets[global_ordinal] = (filename, detail_sheet_title(local_ordinal, record))
-        group_run = {**run, 'records': [record for _, record in entries],
-            'scope_description': type_scope_description(run, tax)}
+        group_run = {**run, 'records': records,
+            'scope_description': type_scope_description(run, records[0]['meta']['Jenis Pajak'])}
         path = folder / filename
-        export_workbook(group_run, path, resume_file='resume.xlsx')
+        back = posixpath.relpath('resume.xlsx', str(PurePosixPath(filename).parent))
+        export_workbook(group_run, path, resume_file=back)
         files[filename] = path
     export_workbook(run, files['resume.xlsx'], include_details=False, detail_targets=targets)
     return files

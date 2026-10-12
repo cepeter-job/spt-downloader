@@ -74,8 +74,10 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
 
     # Nilai True dapat berasal dari capture baru maupun checkpoint tervalidasi.
     outcomes = [True, False, True, True, False] * 40
-    run = {'records': [Record(capture_complete=value) for value in outcomes],
-           'complete': False}
+    run = {'records': [Record(record_id=f'synthetic-{ordinal}',meta={},capture_complete=value)
+                       for ordinal,value in enumerate(outcomes)],
+           'npwp':'0000000000000001','year':2025,'year_basis':'period',
+           'taxpayer_name':'SYNTHETIC WP','complete':False}
     emitted = []
     monkeypatch.setattr(worker, 'playwright_factory', lambda: nullcontext(object()))
     context = SimpleNamespace(close=lambda: None)
@@ -92,8 +94,11 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
     monkeypatch.setattr(worker.coretax, 'save_output', lambda *args: None)
     monkeypatch.setattr(worker, 'downloads_folder', lambda: tmp_path / 'Downloads')
     monkeypatch.setattr(worker, 'publish_workbooks', lambda *args, **kwargs: tmp_path / 'hasil-sintetis')
+    monkeypatch.setattr(worker, 'existing_outputs', lambda *args: None)
+    requests=SimpleNamespace(request=lambda kind,payload,percent:{
+        'selected_ids':[record['record_id'] for record in payload['records']]})
     result = worker.run_job('0000000000000001', 2025, tmp_path, 'fixture-progress',
-                            'msedge', True, emitted.append, lambda: False)
+                            'msedge', True, emitted.append, lambda: False,requests=requests)
 
     details = [event for event in emitted if event['stage'] == 'details']
     expected = 0

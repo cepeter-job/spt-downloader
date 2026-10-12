@@ -22,7 +22,7 @@ def test_publish_preserves_raw_name_links_and_only_excel_files(tmp_path):
     final = module().publish_workbooks(run, source, downloads, 'synthetic-job')
     assert final.parent.name == '2025'
     assert final.parent.parent.name == '0000000000000001 - SYNTHETIC _ 日本 WP'
-    assert set(p.name for p in final.iterdir()) == set(run['output_files'])
+    assert {p.relative_to(final).as_posix() for p in final.rglob('*.xlsx')} == set(run['output_files'])
     assert not list(downloads.rglob('*.json'))
     wb = load_workbook(final/'resume.xlsx')
     try:
@@ -62,13 +62,13 @@ def test_copy_failure_cannot_advertise_finished_result(tmp_path,monkeypatch):
     assert (tmp_path/'local'/'run.json').is_file()
 
 
-def test_previous_exports_are_never_overwritten(tmp_path):
+def test_previous_exports_require_explicit_overwrite_consent(tmp_path):
     run = fixture_run()
     coretax.save_output(run,tmp_path/'local')
     first = module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','first-job')
     before = (first/'resume.xlsx').read_bytes()
-    second = module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','second-job')
-    assert first != second and first.parent == second.parent
+    with pytest.raises(FileExistsError,match='overwrite|consent'):
+        module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','second-job')
     assert (first/'resume.xlsx').read_bytes() == before
 
 

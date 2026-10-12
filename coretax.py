@@ -6,6 +6,7 @@ CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
 import argparse
 from datetime import datetime
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -15,7 +16,7 @@ from urllib.parse import urlparse
 
 from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
-from coretax_exporter import validate_scope, validate_export_run, export_split_workbooks, tax_type_filename, detail_sheet_title
+from coretax_exporter import validate_scope, validate_export_run, export_split_workbooks, workbook_groups, detail_sheet_title, record_sheet_titles
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 
 BASE = Path(__file__).resolve().parent
@@ -34,7 +35,7 @@ def verify_workbook(path, run, *, include_details=True):
             (wb['Ringkasan']['B8'].value == ('COMPLETE' if run['complete'] else 'PARTIAL'),
              'Incorrect completion status'),
             (wb['Daftar SPT'].max_row == 4 + len(run['records']), 'Excel index count mismatch'),
-            (len(wb.sheetnames) == (3 + len(run['records']) if include_details else 3),
+            (len(wb.sheetnames) == (3 + sum(len(record_sheet_titles(i, r)) for i, r in enumerate(run['records'], 1)) if include_details else 3),
              'Incorrect worksheet count'),
         )
         for valid, message in checks:
@@ -45,7 +46,45 @@ def verify_workbook(path, run, *, include_details=True):
         wb.close()
 
 
-def verify_outputs(run, folder):
+def output_path(folder, name):
+    """Tolak alias Windows dan komponen reparse sebelum membaca atau mengganti hasil."""
+    if (not isinstance(name, str) or not name or '\\' in name or ':' in name
+            or any(part in ('', '.', '..') or part.endswith((' ', '.')) for part in name.split('/'))
+            or Path(name).is_absolute()):
+        raise ValueError('Invalid workbook filename')
+    root = Path(folder).absolute()
+    path = root / name
+    for component in [root, *[root.joinpath(*name.split('/')[:i]) for i in range(1, len(name.split('/'))+1)]]:
+        if component.exists() or component.is_symlink():
+            if component.is_symlink() or getattr(component.lstat(), 'st_file_attributes', 0) & 1024:
+                raise ValueError('Invalid source workbook path: symbolic link or reparse point')
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError('Invalid source workbook path')
+    return path
+
+
+def workbook_files(folder, exclude=None):
+    folder = Path(folder).absolute()
+    # Normalisasi hanya pembanding; path yang dibaca tetap mempertahankan symlink/"..".
+    exclude = Path(os.path.abspath(exclude)) if exclude is not None else None
+    found = set()
+    stack = [folder]
+    while stack:
+        current = stack.pop()
+        for entry in os.scandir(current):
+            path = Path(entry.path)
+            if exclude is not None and Path(os.path.abspath(path)) == exclude:
+                continue
+            if entry.is_symlink() or getattr(entry.stat(follow_symlinks=False), 'st_file_attributes', 0) & 1024:
+                raise ValueError('Invalid source workbook path: reparse point')
+            if entry.is_dir(follow_symlinks=False):
+                stack.append(path)
+            elif path.suffix.casefold() == '.xlsx':
+                found.add(path.relative_to(folder).as_posix())
+    return found
+
+
+def verify_outputs(run, folder, *, allow_extra=False):
     """Verifikasi set Excel dan tautan pembetulan, termasuk saat Python memakai -O.
 
     Pemeriksaan ini memakai exception eksplisit agar optimasi interpreter tidak
@@ -53,19 +92,18 @@ def verify_outputs(run, folder):
     """
     folder = Path(folder)
     validate_export_run(run)
-    grouped = {}
-    for record in run['records']:
-        filename = tax_type_filename(record['meta'].get('Jenis Pajak'))
-        grouped.setdefault(filename, []).append(record)
+    grouped = workbook_groups(run)
     expected = {'resume.xlsx', *grouped}
     declared = run.get('output_files', list(expected))
     if (not isinstance(declared, list) or
-            any(not isinstance(n, str) or Path(n).name != n for n in declared)):
+            any(not isinstance(n, str) or not n.endswith('.xlsx') for n in declared)):
         raise ValueError('Invalid workbook filename declaration')
     if len(declared) != len(set(declared)) or set(declared) != expected:
         raise ValueError('Workbook filename/count mismatch')
-    actual = {p.name for p in folder.iterdir() if p.suffix.casefold() == '.xlsx'}
-    if actual != expected:
+    for name in declared:
+        output_path(folder, name)
+    actual = workbook_files(folder)
+    if (not allow_extra and actual != expected) or not expected.issubset(actual):
         raise ValueError('Workbook file set differs from the selected scope')
     if any((folder / name).is_symlink() or not (folder / name).is_file() for name in expected):
         raise ValueError('Invalid source workbook path')
@@ -80,7 +118,7 @@ def verify_outputs(run, folder):
         local_ordinals = {}
         for ordinal, record in enumerate(run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
-            expected_file = tax_type_filename(record['meta'].get('Jenis Pajak'))
+            expected_file = next(name for name, records in grouped.items() if any(r is record for r in records))
             if not link or link.target != expected_file or not isinstance(link.location, str):
                 raise ValueError('Missing or incorrect type-workbook link')
             linked_sheet = link.location.rsplit('!', 1)[0][1:-1].replace("''", "'")
@@ -93,7 +131,7 @@ def verify_outputs(run, folder):
         resume.close()
 
 
-def _check_output_scope(run, folder):
+def _check_output_scope(run, folder, staging=None):
     """Pastikan checkpoint dan header Excel lama membuktikan scope yang sama."""
     scope_file = folder / 'run.json'
     if scope_file.is_symlink():
@@ -105,16 +143,15 @@ def _check_output_scope(run, folder):
         if (not isinstance(previous, dict) or
                 any(previous.get(key) != run.get(key) for key in scope_keys)):
             raise FileExistsError('Output scope differs from existing run.json; use a new output folder')
-    expected = {'resume.xlsx'} | {tax_type_filename(r['meta'].get('Jenis Pajak')) for r in run['records']}
+    expected = {'resume.xlsx', *workbook_groups(run)}
     folded = {name.casefold(): name for name in expected}
-    for path in folder.iterdir():
-        if path.suffix.casefold() != '.xlsx':
-            continue
+    for relative in workbook_files(folder, exclude=staging):
+        path = output_path(folder, relative)
         if previous is None:
             raise FileExistsError('Existing workbook has no verified output scope; use a new output folder')
-        if path.name.casefold() in folded and path.name != folded[path.name.casefold()]:
+        if relative.casefold() in folded and relative != folded[relative.casefold()]:
             raise FileExistsError('Existing workbook filename collision; use a new output folder')
-        if path.name not in expected:
+        if relative not in expected:
             raise FileExistsError('Existing workbooks differ from selected output scope; use a new output folder')
         if path.is_symlink() or not path.is_file():
             raise FileExistsError('Invalid existing workbook path; use a new output folder')
@@ -144,14 +181,17 @@ def _publish_output(staging, folder, names):
     backup = staging / 'backup'
     backup.mkdir()
     for name in names:
-        existing = folder / name
+        existing = output_path(folder, name)
         if existing.exists():
+            (backup / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(existing, backup / name)
     attempted = []
     try:
         for name in names:
+            target = output_path(folder, name)
+            target.parent.mkdir(parents=True, exist_ok=True)
             attempted.append(name)
-            (staging / name).replace(folder / name)
+            (staging / name).replace(target)
     except BaseException:
         try:
             for name in reversed(attempted):
@@ -181,7 +221,7 @@ def save_output(run, folder):
         saved_run = {**run, 'output_files': list(files)}
         verify_outputs(saved_run, staging)
         (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
-        _check_output_scope(run, folder)
+        _check_output_scope(run, folder, staging)
         # Pertahankan backup sejak publikasi dimulai, termasuk jika penanganan
         # pemulihan terinterupsi. Bersihkan hanya setelah keberhasilan terbukti.
         retain_recovery = True

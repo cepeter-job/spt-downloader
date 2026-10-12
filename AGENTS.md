@@ -14,7 +14,7 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 
 ## Output contract
 
-`resume.xlsx` contains the global summary/index/audit. Each tax type gets one workbook (Badan, 21/26, Unifikasi, and other available types), containing every selected period and distinct amendment. Preserve relative links and keep all generated workbooks together. Check case-insensitive filename collisions and NPWP/year scope before overwriting outputs.
+`resume.xlsx` contains the global summary/index/audit. Periodic PPh Pasal 21/26, PPh Unifikasi and PPN get one workbook per literal source period under `SPT Masa 21`, `SPT Masa Unifikasi` and `SPT Masa PPN`. Normal and distinct amendments share their period workbook with explicit sheet names. PPh Badan uses `SPT_Badan.xlsx` with one sheet per observed form and amendment. Other observed tax types retain one type workbook. Preserve the entire folder hierarchy and exact relative links; reject case-insensitive path collisions and verify NPWP/year/basis before replacing outputs. Keep raw source values and duplicates; numeric analysis columns are optional and never replace source evidence.
 
 ## Verification
 

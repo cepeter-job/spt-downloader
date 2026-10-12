@@ -12,6 +12,7 @@ from .runtime import SetupCancelled,ensure_runtime,worker_source
 from .windows import ProcessJob
 from .paths import downloads_folder
 from .credentials import ALLOWED_ORIGINS
+from .interaction import read_message, select_records, write_reply
 
 
 def validate_job_scope(npwp,year):
@@ -29,12 +30,16 @@ def parse_event(line,job_id,operation='export'):
     try:event=json.loads(line)
     except (ValueError,TypeError):return None
     if not isinstance(event,dict) or event.get('job_id')!=job_id:return None
-    allowed={'job_id','type','stage','percent','message','processed','total','verified','scanned','status','output'}
+    allowed={'job_id','type','stage','percent','message','processed','total','verified','scanned','status','output','request_id'}
     if set(event)-allowed:return None
     percent=event.get('percent')
     if type(percent) is not int or not 0<=percent<=100:return None
     kind=event.get('type')
-    if kind not in ('progress','login_required','terminal'):return None
+    if kind not in ('progress','login_required','terminal','selection_required','overwrite_required'):return None
+    interaction=kind in ('selection_required','overwrite_required')
+    if interaction:
+        if operation!='export' or not isinstance(event.get('request_id'),str) or not re.fullmatch(r'[0-9a-f]{32}',event['request_id']):return None
+    elif 'request_id' in event:return None
     if any(not isinstance(event[k],str) or len(event[k])>500 for k in ('message','stage') if k in event):return None
     if any(type(event[k]) is not int or event[k]<0 for k in ('processed','total','verified','scanned') if k in event):return None
     if operation=='login_check':
@@ -71,6 +76,8 @@ class JobController:
         self._terminal=None
         self._stop_at=None
         self._percent=0
+        self._pending_request=None
+        self._seen_requests=set()
 
     def _enqueue(self,event):
         try:self._queue.put_nowait(event)
@@ -103,6 +110,8 @@ class JobController:
         self._percent=0
         self._readers=[]
         self._cancel.clear()
+        self._pending_request=None
+        self._seen_requests.clear()
         job_id=self.job_id
         def status(message):
             self._enqueue({'job_id':job_id,'type':'setup','percent':0,'message':message})
@@ -155,6 +164,7 @@ class JobController:
     def stop(self):
         if not self.active:return
         self._cancel.set()
+        self._pending_request=None
         if self._stop_at is None:self._stop_at=time.monotonic()+15
         process=self.process
         if process and process.poll() is None:
@@ -163,13 +173,62 @@ class JobController:
                 process.stdin.flush()
             except (OSError,ValueError):pass
 
+    def _request_active(self,job_id,kind,request_id):
+        return (self.active and self.operation=='export' and job_id==self.job_id
+                and not self._cancel.is_set() and self._terminal is None
+                and self._pending_request==(job_id,kind,request_id)
+                and self.process is not None and self.process.poll() is None)
+
+    def read_request(self,event):
+        kind={'selection_required':'selection','overwrite_required':'overwrite'}.get(event.get('type'))
+        if not self._request_active(event.get('job_id'),kind,event.get('request_id')):
+            raise ValueError('Consent request is not pending for the active job')
+        return read_message(self.root/'jobs'/self.job_id,self.job_id,event['request_id'])
+
+    def respond(self,kind,request_id,payload):
+        job_id=self.job_id
+        if not self._request_active(job_id,kind,request_id):return False
+        request=self.read_request({'job_id':job_id,'type':kind+'_required','request_id':request_id})
+        if not isinstance(payload,dict):raise ValueError('Invalid consent response')
+        if kind=='selection':
+            if set(payload)!={'selected_ids'}:raise ValueError('Invalid selection response')
+            select_records(request,payload['selected_ids'])
+        elif set(payload)!={'overwrite'} or type(payload['overwrite']) is not bool:
+            raise ValueError('Invalid overwrite response')
+        if not self._request_active(job_id,kind,request_id):return False
+        write_reply(self.root/'jobs'/job_id,job_id,request_id,payload)
+        if not self._request_active(job_id,kind,request_id):return False
+        # Consume before signalling: repeated callbacks cannot authorize a second answer.
+        self._pending_request=None
+        try:
+            self.process.stdin.write(json.dumps({'job_id':job_id,'command':kind,
+                                                 'request_id':request_id})+'\n')
+            self.process.stdin.flush()
+        except (OSError,ValueError):
+            self.stop()
+            return False
+        return True
+
     def _drain(self):
         for _ in range(128):
             try:event=self._queue.get_nowait()
             except queue.Empty:break
             if event.get('job_id')!=self.job_id:continue
-            if event['type']=='terminal':self._terminal=event
+            if event['type']=='terminal':
+                self._terminal=event
+                self._pending_request=None
             else:
+                if self._cancel.is_set() or self._terminal is not None:continue
+                if event['type'] in ('selection_required','overwrite_required'):
+                    if (not self.active or self.operation!='export' or self.process is None
+                            or self.process.poll() is not None):continue
+                    request_id=event['request_id']
+                    if request_id in self._seen_requests:continue
+                    if self._pending_request is not None:
+                        self.stop()
+                        continue
+                    self._seen_requests.add(request_id)
+                    self._pending_request=(self.job_id,event['type'].removesuffix('_required'),request_id)
                 self._percent=max(self._percent,min(99,event.get('percent',0)))
                 event={**event,'percent':self._percent}
                 self.on_event(event)
@@ -208,6 +267,8 @@ class JobController:
                        'message':'Folder hasil tidak dapat diverifikasi; tidak ada hasil COMPLETE.'}
         self.process=None
         self._terminal=None
+        self._pending_request=None
+        self._seen_requests.clear()
         self._readers=[]
         self.active=False
         self.on_event(event)

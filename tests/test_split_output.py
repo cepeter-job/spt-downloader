@@ -23,17 +23,22 @@ def fixture_run():
                         for key, tax, period, model in rows]}
 
 
-def test_save_output_separates_resume_and_one_file_per_tax_type(tmp_path):
+def test_save_output_separates_resume_and_period_files(tmp_path):
     run = fixture_run()
     path = coretax.save_output(run, tmp_path)
     assert path.name == 'resume.xlsx', 'Separate resume workbook not implemented'
-    assert {p.name for p in tmp_path.glob('*.xlsx')} == {'resume.xlsx', 'SPT_Badan.xlsx', 'SPT_21.xlsx', 'SPT_Unifikasi.xlsx'}
+    assert {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob('*.xlsx')} == {'resume.xlsx', 'SPT_Badan.xlsx',
+        'SPT Masa 21/SPT_21_Januari 2025.xlsx', 'SPT Masa 21/SPT_21_Februari 2025.xlsx',
+        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx'}
     resume = load_workbook(path)
     assert resume.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit'], 'Detailed SPT must not be embedded in resume.xlsx'
     assert resume['Daftar SPT'].max_row == 4 + len(run['records'])
     assert resume['Ringkasan']['B4'].value == run['npwp']
     assert resume['Ringkasan']['B4'].data_type == 's'
-    expected = {'SPT_Badan.xlsx': run['records'][:2], 'SPT_21.xlsx': run['records'][2:4], 'SPT_Unifikasi.xlsx': run['records'][4:]}
+    expected = {'SPT_Badan.xlsx': run['records'][:2],
+        'SPT Masa 21/SPT_21_Januari 2025.xlsx': run['records'][2:3],
+        'SPT Masa 21/SPT_21_Februari 2025.xlsx': run['records'][3:4],
+        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx': run['records'][4:]}
     for filename, records in expected.items():
         wb = load_workbook(tmp_path / filename)
         assert len(wb.sheetnames[3:]) == len(records), 'Periods/amendments were split into separate files or lost'
@@ -54,13 +59,15 @@ def test_resume_links_to_correct_external_detail_and_back(tmp_path):
     assert (tmp_path / 'resume.xlsx').is_file(), 'Separate resume workbook missing'
     resume = load_workbook(tmp_path / 'resume.xlsx')
     links = [resume['Daftar SPT'].cell(5+i, 1).hyperlink for i in range(len(run['records']))]
-    assert [link.target for link in links] == ['SPT_Badan.xlsx', 'SPT_Badan.xlsx', 'SPT_21.xlsx', 'SPT_21.xlsx', 'SPT_Unifikasi.xlsx']
+    assert [link.target for link in links] == ['SPT_Badan.xlsx', 'SPT_Badan.xlsx',
+        'SPT Masa 21/SPT_21_Januari 2025.xlsx', 'SPT Masa 21/SPT_21_Februari 2025.xlsx',
+        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx']
     for link in links:
         target = load_workbook(tmp_path / link.target)
         sheet_name = link.location.rsplit('!', 1)[0].strip("'")
         assert sheet_name in target.sheetnames
         back = target[sheet_name]['A2'].hyperlink
-        assert back.target == 'resume.xlsx'
+        assert back.target == ('../resume.xlsx' if '/' in link.target else 'resume.xlsx')
         assert back.location == "'Daftar SPT'!A1"
         target.close()
     resume.close()
