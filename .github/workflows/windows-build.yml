@@ -19,7 +19,6 @@ concurrency:
 env:
   PYTHONUTF8: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-  UV_PYTHON_PREFERENCE: only-managed
 
 # Batas paralelisme selama migrasi Python: maksimal 2 runner tes portable,
 # 2 runner tes Windows, dan 1 runner audit secara bersamaan. Setiap runner
@@ -87,7 +86,8 @@ jobs:
         env:
           PYTHON_VERSION: ${{ matrix.python }}
         run: |
-          uv python install "$PYTHON_VERSION+gil" --no-bin --no-registry
+          # Gunakan key katalog exact untuk instalasi baru; +gil dipakai saat discovery.
+          uv python install "cpython-${PYTHON_VERSION}-linux-x86_64-gnu" --no-bin --no-registry
           uv venv --managed-python --python "$PYTHON_VERSION+gil" .venv
           uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
           uv pip check --python .venv/bin/python
@@ -140,7 +140,8 @@ jobs:
         env:
           PYTHON_VERSION: ${{ matrix.python }}
         run: |
-          uv python install "$env:PYTHON_VERSION+gil" --no-bin --no-registry
+          # Key katalog exact memilih distribusi x64/GIL pada instalasi baru.
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -196,7 +197,7 @@ jobs:
           cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ env.PYTHON_VERSION }}-audit
       - name: Install the locked audited environment and isolated audit tooling
         run: |
-          uv python install "$env:PYTHON_VERSION+gil" --no-bin --no-registry
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -259,7 +260,7 @@ jobs:
           cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ matrix.python }}-build
       - name: Install the hash-locked build environment
         run: |
-          uv python install "$env:PYTHON_VERSION+gil" --no-bin --no-registry
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

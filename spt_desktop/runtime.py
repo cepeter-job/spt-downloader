@@ -213,6 +213,8 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
                         'UV_CACHE_DIR': str(root / 'cache'), 'PYTHONUTF8': '1',
                         'PYTHONIOENCODING': 'utf-8'})
     environment.pop('UV_INSECURE_HOST', None)
+    # Worker memilih interpreter sendiri; preferensi shell bertabrakan dengan --managed-python.
+    environment.pop('UV_PYTHON_PREFERENCE', None)
     environment.pop('PYTHONHOME', None)
     environment.pop('PYTHONPATH', None)
     python = root / 'runtime' / 'Scripts' / 'python.exe'
@@ -228,8 +230,10 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
     if not _compatible(info, python_profile) or not _managed(info, root):
         # Installer resmi Windows 3.11 berhenti di 3.11.9; gunakan distribusi managed berpatch.
         request = version + '+gil'
+        # +gil berlaku untuk pencarian instalasi; katalog unduhan uv memakai kunci varian default.
+        download = f'cpython-{version}-windows-x86_64-none'
         on_status(f'Memasang Python portable {version} x64 di workspace…')
-        _run([uv, 'python', 'install', request, '--install-dir', str(root / 'python'),
+        _run([uv, 'python', 'install', download, '--install-dir', str(root / 'python'),
               '--no-bin', '--no-registry'], environment, cancelled)
         # Abaikan virtualenv shell pengembang; hanya interpreter managed dasar yang dicari.
         result = _run([uv, 'python', 'find', request, '--managed-python', '--system', '--no-python-downloads'],

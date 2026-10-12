@@ -57,7 +57,12 @@ class SyntheticCommands:
             return subprocess.CompletedProcess(argv, 0, json.dumps(info), '')
         if argv[1:3] == ['python', 'install']:
             assert '--no-bin' in argv and '--no-registry' in argv
-            self.managed_version = [int(v) for v in argv[3].split('+')[0].split('.')]
+            # Katalog unduhan uv 0.12.22 memakai varian default, bukan selector +gil.
+            downloads = {'cpython-3.11.17-windows-x86_64-none': [3, 11, 17],
+                         'cpython-3.14.8-windows-x86_64-none': [3, 14, 8]}
+            if argv[3] not in downloads:
+                raise RuntimeError('No download found for request: ' + argv[3])
+            self.managed_version = downloads[argv[3]]
             self.base_outside = False
             managed = self.root / 'python' / 'python.exe'
             managed.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +107,7 @@ def setup(monkeypatch, tmp_path):
 def test_runtime_uses_managed_patched_python_and_hashed_isolated_dependencies(setup):
     runtime, root, source, commands = setup
     notices = []
+    assert not (root / 'python').exists()
     python = runtime.ensure_runtime(root, notices.append, lambda: False)
     assert python == root / 'runtime' / 'Scripts' / 'python.exe'
     assert runtime.worker_source(root) == root / 'app'
@@ -110,7 +116,8 @@ def test_runtime_uses_managed_patched_python_and_hashed_isolated_dependencies(se
     assert not any(str(commands.system) in c for c in commands.calls)
     installs = [c for c in commands.calls if c[1:3] == ['python', 'install']]
     assert len(installs) == 1
-    assert installs[0][3:] == ['3.11.17+gil', '--install-dir', str(root / 'python'), '--no-bin', '--no-registry']
+    assert installs[0][3:] == ['cpython-3.11.17-windows-x86_64-none', '--install-dir',
+                              str(root / 'python'), '--no-bin', '--no-registry']
     syncs = [c for c in commands.calls if c[1:3] == ['pip', 'sync']]
     assert len(syncs) == 1 and '--require-hashes' in syncs[0] and '--only-binary' in syncs[0]
     assert str(root / 'app' / 'locks' / 'runtime.txt') in syncs[0]
@@ -127,10 +134,11 @@ def test_unsupported_interpreter_is_rejected(version, bits):
 
 def test_candidate_profile_prepares_only_the_explicit_candidate_version(setup):
     runtime, root, _, commands = setup
+    assert not (root / 'python').exists()
     runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile='candidate')
     installs = [c for c in commands.calls if c[1:3] == ['python', 'install']]
     assert len(installs) == 1
-    assert installs[0][3] == '3.14.8+gil'
+    assert installs[0][3] == 'cpython-3.14.8-windows-x86_64-none'
     assert any(c[1:3] == ['python', 'find'] and '--managed-python' in c for c in commands.calls)
 
 
@@ -148,6 +156,24 @@ def test_missing_python_and_uv_use_only_bundled_and_managed_tools(setup, monkeyp
     assert python.is_relative_to(root)
     assert (root / 'tools' / 'uv.exe').read_bytes() == (source / 'tools' / 'uv.exe').read_bytes()
     assert any(c[1:3] == ['python', 'install'] for c in commands.calls)
+
+
+@pytest.mark.parametrize('profile', ['production', 'candidate'])
+def test_inherited_python_preference_cannot_conflict_with_owned_selection(setup, monkeypatch, profile):
+    runtime, root, _, commands = setup
+    monkeypatch.setenv('UV_PYTHON_PREFERENCE', 'only-managed')
+    original_run = commands.run
+
+    def reject_conflicting_preference(argv, env, cancelled, timeout=900):
+        # uv 0.12.22 menolak --managed-python jika opsi preferensi diwarisi dari environment.
+        if '--managed-python' in argv and 'UV_PYTHON_PREFERENCE' in env:
+            raise RuntimeError('the argument --managed-python cannot be used with --python-preference')
+        return original_run(argv, env, cancelled, timeout)
+
+    monkeypatch.setattr(runtime, '_run', reject_conflicting_preference)
+    python = runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile=profile)
+    assert python.is_file()
+    assert (root / 'runtime-ready.txt').is_file()
 
 
 def test_active_developer_venv_cannot_shadow_the_owned_managed_python(setup, monkeypatch):

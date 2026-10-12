@@ -14,7 +14,7 @@ Sumber pin adalah `PYTHON_PROFILES`, `UV_VERSION`, dan `RUNTIME_LOCK` pada [spt_
 | Worker kandidat di CI | Managed CPython **3.14.8**, Windows x64, GIL aktif | Diuji melalui smoke bootstrap terisolasi; tidak mengganti default worker pengguna. |
 | Paket/installer `uv` | **0.12.22** | Versi exact untuk katalog interpreter, lock, CI, dan bundel. |
 
-Versi minor saja tidak cukup. Runtime memeriksa patch version, implementasi, arsitektur 64-bit, status free-threaded, lokasi interpreter dasar di workspace managed, serta versi seluruh dependency yang dikunci. Distribusi free-threaded bukan target saat ini. Request `+gil` membuat pilihan interpreter eksplisit.
+Versi minor saja tidak cukup. Runtime memeriksa patch version, implementasi, arsitektur 64-bit, status free-threaded, lokasi interpreter dasar di workspace managed, serta versi seluruh dependency yang dikunci. Distribusi free-threaded bukan target saat ini. Instalasi baru memakai key katalog exact `cpython-VERSI-windows-x86_64-none`; request `+gil` dipakai saat memilih interpreter yang sudah terpasang. Pada uv 0.12.22, request unduhan dengan akhiran `+gil` tidak menemukan entri katalog, walaupun discovery interpreter mendukungnya. Metadata runtime tetap memverifikasi bahwa GIL aktif.
 
 Python 3.11 telah masuk fase pemeliharaan keamanan; installer Windows Python.org 3.11 terakhir adalah 3.11.9. Karena itu, menerima interpreter sistem 3.11 apa saja akan mempertahankan patch lama. Jalur produksi menggunakan distribusi managed melalui `uv` pada versi patch yang dipin. Kandidat 3.14 disiapkan bersamaan, dengan gate yang harus lulus sebelum promosi. Rujukan upstream: [rilis Python](https://www.python.org/downloads/), [Python 3.11.9](https://www.python.org/downloads/release/python-3119/), dan [versi serta distribusi Python pada uv](https://docs.astral.sh/uv/concepts/python-versions/).
 
@@ -66,7 +66,7 @@ Gunakan environment dan output baru di luar checkout agar profil produksi tetap 
 
 ```powershell
 $SptCandidateRoot = Join-Path $env:LOCALAPPDATA "SPTDownloader-Dev/python314"
-uv python install 3.14.8+gil --no-bin --no-registry
+uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
 uv venv --managed-python --python 3.14.8+gil "$SptCandidateRoot/venv"
 uv pip sync --python "$SptCandidateRoot/venv/Scripts/python.exe" --require-hashes --only-binary :all: locks/build.txt
 & "$SptCandidateRoot/venv/Scripts/python.exe" -m pytest tests -p scripts.ci_tests --ci-workload portable -q --basetemp "$SptCandidateRoot/tests-portable"

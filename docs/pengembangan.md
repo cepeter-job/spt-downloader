@@ -16,7 +16,7 @@ Pasang `uv` dari distribusi resmi yang diverifikasi, lalu pastikan versi yang ak
 
 ```powershell
 uv --version
-uv python install 3.11.17+gil --no-bin --no-registry
+uv python install cpython-3.11.17-windows-x86_64-none --no-bin --no-registry
 uv venv --python 3.11.17+gil --managed-python .venv
 uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
 .venv/Scripts/python.exe --version
@@ -77,7 +77,7 @@ Tes yang dilewati karena platform bukan kegagalan, tetapi juga bukan bukti lulus
 Linux cukup untuk perubahan logika portable. Instal interpreter produksi dan lock tes ke `.venv`, lalu jalankan workload portable:
 
 ```bash
-uv python install 3.11.17+gil --no-bin
+uv python install cpython-3.11.17-linux-x86_64-gnu --no-bin
 uv venv --python 3.11.17+gil --managed-python .venv
 uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
 .venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q --basetemp /tmp/spt-downloader-tests-portable
