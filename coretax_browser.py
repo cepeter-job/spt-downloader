@@ -107,6 +107,19 @@ def capture_table(page, table, ordinal, max_pages):
     if first:
         first.evaluate('(e)=>e.click()')
         wait_idle(page)
+    # Some supported lists retain a later page but expose Prev without First.
+    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+    for _ in range(max_pages):
+        previous = container_handle.query_selector(previous_selector)
+        if not previous:
+            break
+        state = container_handle.evaluate(STATE_JS)
+        previous.click()
+        wait_idle(page)
+        if container_handle.evaluate(STATE_JS) == state:
+            raise RuntimeError('Table pagination did not return to the first page')
+    if container_handle.query_selector(previous_selector):
+        raise RuntimeError(f'Table reset page limit {max_pages} reached')
     result = table.evaluate(TABLE_JS)
     result.update(name=f'Tabel {ordinal}', pages=1, complete=True)
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
@@ -133,6 +146,10 @@ def capture_table(page, table, ordinal, max_pages):
         if not result['complete']:
             break
         wait_idle(page)
+        if container_handle.evaluate(STATE_JS) in seen:
+            result['complete'] = False
+            result['warning'] = 'Repeated table pagination state'
+            break
         data = table.evaluate(TABLE_JS)
         result['rows'].extend(data['rows'])
         result['pages'] += 1
@@ -160,10 +177,16 @@ def capture_detail(page, max_pages=1000):
 
     def capture_panel(panel, name):
         # Accordion controls only reveal content; no arbitrary button clicks.
-        expanders = panel.locator('.p-accordion-header a[aria-expanded=false]')
-        for i in range(expanders.count()):
-            expanders.nth(i).evaluate('(e)=>e.click()')
+        expanders = panel.locator('.p-accordion-header a[aria-expanded=false]').element_handles()
+        try:
+            for expander in expanders:
+                expander.evaluate('(e)=>e.click()')
+        finally:
+            for expander in expanders:
+                expander.dispose()
         wait_idle(page)
+        if panel.locator('.p-accordion-header a[aria-expanded=false]').count():
+            errors.append({'object': name, 'message': 'Some accordion sections remain collapsed; their content could not be fully captured'})
         section = {'name': name, 'fields': panel.evaluate(FIELDS_JS), 'text': panel.inner_text(), 'tables': []}
         tables = panel.locator('table')
         for i in range(tables.count()):
@@ -229,41 +252,79 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 SEARCH_URL = ORIGIN + '/returnsheets/id-ID/taxpayer-search'
 
 
+def trusted_origin(url):
+    """Check the full HTTPS origin before trusting navigation or response data."""
+    if not isinstance(url, str) or url != url.strip() or '\\' in url or any(ord(c) < 32 for c in url):
+        return False
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == 'https' and parsed.hostname == urlparse(ORIGIN).hostname
+                and parsed.port in (None, 443) and parsed.username is None and parsed.password is None)
+    except ValueError:
+        return False
+
+
+def list_taxpayer_id(url):
+    if not trusted_origin(url):
+        raise RuntimeError('Return list is outside the authorized Coretax HTTPS origin')
+    match = re.fullmatch(r'/returnsheets/id-ID/[^/]*returnsheets/([^/]+)/?', urlparse(url).path)
+    if not match:
+        raise RuntimeError('Unsupported return-list URL; taxpayer provenance cannot be verified')
+    return match.group(1)
+
+
+def verify_detail_url(url, taxpayer_id, record_id=None):
+    if not trusted_origin(url) or not urlparse(url).path.startswith('/returnsheets/'):
+        raise RuntimeError('View redirected outside the authorized Coretax return pages; login may have expired')
+    segments = urlparse(url).path.split('/')
+    if taxpayer_id not in segments:
+        raise RuntimeError('Return URL does not identify the selected taxpayer; provenance cannot be verified')
+    if record_id is not None and record_id not in segments:
+        raise RuntimeError('Return URL does not identify the selected SPT record; provenance cannot be verified')
+
+
 class ListObserver:
     """Observe the UI's own list responses; never read cookies or auth headers."""
     def __init__(self, page):
         self.page = page
-        self.events = []
+        self.sequence = 0
+        self.latest = None
         page.on('response', self.on_response)
 
     def on_response(self, response):
-        if '/returnsheet/api/' not in response.url or response.request.resource_type not in ('xhr', 'fetch'):
+        if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/')
+                or response.request.resource_type not in ('xhr', 'fetch')):
             return
-        if 'json' not in response.headers.get('content-type', ''):
+        if 'json' not in response.headers.get('content-type', '').lower():
             return
         try:
             data = response.json()
             payload = data.get('Payload', data.get('payload', {}))
-            if isinstance(payload, dict) and isinstance(payload.get('Data'), list) and isinstance(payload.get('TotalRecords'), int):
-                self.events.append({'total': payload['TotalRecords'], 'rows': payload['Data'],
-                                    'successful': data.get('IsSuccessful', data.get('isSuccessful', True))})
+            if (isinstance(payload, dict) and isinstance(payload.get('Data'), list)
+                    and all(isinstance(row, dict) for row in payload['Data'])
+                    and type(payload.get('TotalRecords')) is int and payload['TotalRecords'] >= 0):
+                self.sequence += 1
+                self.latest = {'total': payload['TotalRecords'], 'rows': payload['Data'],
+                               'successful': 200 <= response.status < 300
+                               and data.get('IsSuccessful', data.get('isSuccessful')) is True}
         except Exception:
             pass
 
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
-        while len(self.events) <= after:
-            if time.monotonic() > deadline:
+        while self.sequence <= after:
+            if time.monotonic() >= deadline:
                 raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
-        result = self.events[-1]
+        wait_idle(self.page)
+        result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
-        wait_idle(self.page)
         return result
 
     def close(self):
         self.page.remove_listener('response', self.on_response)
+        self.latest = None
 
 
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
@@ -275,6 +336,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
         raise FileExistsError(f'Use a new output directory; checkpoint already exists: {batch_path}')
     batch_path.touch()
     page.goto(SEARCH_URL, wait_until='domcontentloaded', timeout=60000)
+    if not trusted_origin(page.url) or urlparse(page.url).path != urlparse(SEARCH_URL).path:
+        raise RuntimeError('Taxpayer search redirected outside the authorized search page; sign in again')
     page.locator('#ObjectPermitNumber').wait_for(state='visible', timeout=45000)
     page.locator('#ObjectPermitNumber').fill(npwp)
     page.locator('#ObjectPermitNumber').press('Enter')
@@ -291,16 +354,19 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
     observer = ListObserver(page)
     errors, audit, sources = [], [], []
     try:
-        before = len(observer.events)
+        before = observer.sequence
         row.get_by_role('button', name='Pilih', exact=True).evaluate('(e)=>e.click()')
         observer.wait(before)
-        taxpayer_id = page.url.rstrip('/').split('/')[-1]
+        taxpayer_id = list_taxpayer_id(page.url)
         sources.append({'url': page.url, 'label': 'SPT Belum Disampaikan'})
         links = page.locator('a[href]').evaluate_all('(els)=>els.map(e=>({href:e.getAttribute(\"href\"),label:e.innerText.trim()}))')
         for link in links:
-            url = urljoin(ORIGIN, link['href'])
-            path = urlparse(url).path
-            if urlparse(url).netloc == urlparse(ORIGIN).netloc and re.fullmatch(r'/returnsheets/id-ID/[^/]*returnsheets/' + re.escape(taxpayer_id), path):
+            url = urljoin(page.url, link['href'])
+            try:
+                linked_taxpayer = list_taxpayer_id(url)
+            except RuntimeError:
+                continue
+            if linked_taxpayer == taxpayer_id:
                 if url not in [s['url'] for s in sources]:
                     sources.append({'url': url, 'label': link['label']})
         if len(sources) == 1:
@@ -311,8 +377,10 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
             entry = {'status': label, 'total': None, 'scanned': 0, 'selected': 0, 'result': 'PARTIAL', 'note': source['url']}
             audit.append(entry)
             try:
-                before = len(observer.events)
+                before = observer.sequence
                 page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
+                if list_taxpayer_id(page.url) != taxpayer_id:
+                    raise RuntimeError('Status navigation changed the selected taxpayer; refusing capture')
                 response = observer.wait(before)
                 entry['total'] = response['total']
                 table = page.locator('.main-content table').first
@@ -321,18 +389,15 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
                 # Selecting an already-selected page size may not trigger a request.
                 current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
                 if entry['total'] and current_size and current_size.inner_text().strip() != '50':
-                    before = len(observer.events)
+                    before = observer.sequence
                     maximize_page_size(page, container)
-                    if len(observer.events) > before:
-                        response = observer.events[-1]
-                    else:
-                        response = observer.wait(before)
+                    response = observer.wait(before)
                 # List pages use Prev even when First is hidden.
                 for _ in range(max_pages):
                     previous = container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)')
                     if not previous:
                         break
-                    before = len(observer.events)
+                    before = observer.sequence
                     previous.evaluate('(e)=>e.click()')
                     response = observer.wait(before)
                 seen_ids = set()
@@ -369,7 +434,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
                         break
                     if page_index + 1 == max_pages:
                         raise RuntimeError(f'List page limit {max_pages} reached')
-                    before = len(observer.events)
+                    before = observer.sequence
                     next_button.evaluate('(e)=>e.click()')
                     response = observer.wait(before)
                     if response['total'] != entry['total']:
@@ -400,16 +465,16 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000):
     return result
 
 
-def open_return_readonly(page, row, taxpayer_id):
+def open_return_readonly(page, row, taxpayer_id, record_id=None):
     # Exact observed View button only. Never fall back to arbitrary row actions.
     view = row.locator('button[id=ViewButton]')
     if view.count() != 1:
         raise RuntimeError('No unique supported View control; refusing to click other row actions')
     opened = []
     callback = lambda tab: opened.append(tab)
-    context = page.context
     previous_url = page.url
-    context.on('page', callback)
+    page.on('popup', callback)
+    verified = False
     try:
         view.evaluate('(e)=>e.click()')
         deadline = time.monotonic() + 20
@@ -417,15 +482,37 @@ def open_return_readonly(page, row, taxpayer_id):
             if time.monotonic() > deadline:
                 raise RuntimeError('View did not open a return; unsupported document or permission failure')
             page.wait_for_timeout(100)
+        if len(opened) > 1:
+            raise RuntimeError('View opened multiple tabs; return provenance is ambiguous')
         detail = opened[0] if opened else page
         detail.wait_for_load_state('domcontentloaded', timeout=60000)
-        if urlparse(detail.url).netloc != urlparse(ORIGIN).netloc or not urlparse(detail.url).path.startswith('/returnsheets/'):
-            raise RuntimeError('View redirected outside the authorized Coretax return pages; login may have expired')
-        if taxpayer_id not in urlparse(detail.url).path.split('/'):
-            raise RuntimeError('Return URL does not identify the selected taxpayer; provenance cannot be verified')
+        verify_detail_url(detail.url, taxpayer_id, record_id)
+        verified = True
         return detail, bool(opened)
     finally:
-        context.remove_listener('page', callback)
+        page.remove_listener('popup', callback)
+        if not verified:
+            for tab in opened:
+                try:
+                    tab.close()
+                except Exception:
+                    pass  # Preserve the navigation failure if the popup already closed.
+
+
+def read_detail_checkpoint(path, record, scope):
+    saved = json.loads(path.read_text(encoding='utf-8'))
+    identity_fields = ('key', 'record_id', 'meta', 'list_url', 'list_page', 'list_page_size',
+                       'row_position', 'source_status')
+    if (not isinstance(saved, dict) or saved.get('scope') != scope
+            or any(saved.get(field) != record.get(field) for field in identity_fields)):
+        raise RuntimeError('Existing detail checkpoint belongs to a different record, scope or source; use a new output folder')
+    if saved.get('capture_complete'):
+        try:
+            verify_detail_url(saved.get('detail_url'), list_taxpayer_id(record['list_url']), record['record_id'])
+        except RuntimeError as exc:
+            raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
+    # A detail file cannot rewrite the inventory's identifiers or source metadata.
+    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope') if field in saved}
 
 
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None):
@@ -435,14 +522,14 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     observer = ListObserver(page)
     active_group, current_response = None, None
     run['errors'] = [e for e in run.get('errors', []) if e.get('phase') != 'details']
+    scope = [run['npwp'], run['year'], run['year_basis']]
+    run['complete'] = False
     attempted = 0
     try:
         for ordinal, record in enumerate(run['records'], 1):
             checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
             if checkpoint.exists():
-                saved = json.loads(checkpoint.read_text(encoding='utf-8'))
-                if saved['record_id'] != record['record_id'] or saved.get('scope') != [run['npwp'], run['year'], run['year_basis']]:
-                    raise RuntimeError('Existing detail checkpoint belongs to a different record or scope; use a new output folder')
+                saved = read_detail_checkpoint(checkpoint, record, scope)
                 if saved.get('capture_complete'):
                     record.update(saved)
                     print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
@@ -455,30 +542,39 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
             print(f"Detail {ordinal}/{len(run['records'])}: {record['meta'].get('Jenis Pajak', '')} | {record['meta'].get('Masa Pajak', '')}", flush=True)
             detail, is_popup = None, False
             try:
+                taxpayer_id = list_taxpayer_id(record['list_url'])
                 group = (record['list_url'], record['list_page'])
                 if group != active_group:
-                    before = len(observer.events)
+                    before = observer.sequence
                     page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
+                    if list_taxpayer_id(page.url) != taxpayer_id:
+                        raise RuntimeError('Return-list navigation changed the selected taxpayer; refusing capture')
                     current_response = observer.wait(before)
                     table = page.locator('.main-content table').first
                     container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
                     current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
                     desired = record.get('list_page_size')
                     if desired and current_size and current_size.inner_text().strip() != str(desired):
-                        before = len(observer.events)
+                        before = observer.sequence
                         maximize_page_size(page, container)
                         current_response = observer.wait(before)
                         if current_size.inner_text().strip() != str(desired):
                             raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
-                    while container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)'):
-                        before = len(observer.events)
-                        container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)').evaluate('(e)=>e.click()')
+                    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+                    for _ in range(max_pages):
+                        previous = container.query_selector(previous_selector)
+                        if not previous:
+                            break
+                        before = observer.sequence
+                        previous.evaluate('(e)=>e.click()')
                         current_response = observer.wait(before)
+                    if container.query_selector(previous_selector):
+                        raise RuntimeError(f'List reset page limit {max_pages} reached')
                     for _ in range(record['list_page'] - 1):
                         next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
                         if not next_button:
                             raise RuntimeError('Inventory page is no longer available; source changed')
-                        before = len(observer.events)
+                        before = observer.sequence
                         next_button.evaluate('(e)=>e.click()')
                         current_response = observer.wait(before)
                     container.dispose()
@@ -494,14 +590,14 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                 for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                taxpayer_id = record['list_url'].rstrip('/').split('/')[-1]
-                detail, is_popup = open_return_readonly(page, source_row, taxpayer_id)
+                detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'])
                 detail.set_viewport_size({'width': 1600, 'height': 1000})
                 capture = capture_detail(detail, max_pages=max_pages)
                 record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
                 for error in capture['errors']:
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
             except Exception as exc:
+                active_group = None
                 record['capture_complete'] = False
                 run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
                 print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
@@ -520,8 +616,6 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     for ordinal, record in enumerate(run['records'], 1):
         checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
         if checkpoint.exists():
-            saved = json.loads(checkpoint.read_text(encoding='utf-8'))
-            if saved['record_id'] == record['record_id']:
-                record.update(saved)
+            record.update(read_detail_checkpoint(checkpoint, record, scope))
     run['complete'] = bool(run.get('inventory_complete')) and not run['errors'] and all(r.get('capture_complete') for r in run['records'])
     return run

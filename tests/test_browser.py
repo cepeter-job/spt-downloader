@@ -142,3 +142,66 @@ def test_table_source_total_mismatch_is_reported_as_partial():
         assert not result['capture_complete'], 'Unreconciled source count must not be marked complete'
         assert result['errors']
         browser.close()
+
+
+def test_detail_expands_all_collapsed_accordions():
+    import coretax_browser as driver
+    fixture = '''<div class="main-content">
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('fixture-one').hidden=false">Fixture one</a></div>
+    <div id="fixture-one" hidden><label for="value-one">Fixture one value</label><input id="value-one" disabled value="001"></div>
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('fixture-two').hidden=false">Fixture two</a></div>
+    <div id="fixture-two" hidden><label for="value-two">Fixture two value</label><input id="value-two" disabled value="002"></div>
+    </div>'''
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(1500)
+        page.set_content(fixture)
+        captured = driver.capture_detail(page)
+        assert captured['capture_complete'], captured['errors']
+        assert [field['value'] for field in captured['sections'][0]['fields']] == ['001', '002']
+        browser.close()
+
+
+def test_capture_resets_with_previous_when_first_control_is_absent():
+    import coretax_browser as driver
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(HTML)
+        page.evaluate('''() => {
+          const paginator=document.querySelector('.p-paginator');
+          const previous=document.createElement('button'); previous.className='p-paginator-prev'; previous.textContent='Previous';
+          previous.onclick=()=>{paginator.querySelector('.p-highlight').textContent='1'; paginator.querySelector('.p-paginator-next').disabled=false; previous.disabled=true;};
+          paginator.prepend(previous); paginator.querySelector('.p-highlight').textContent='2'; paginator.querySelector('.p-paginator-next').disabled=true;
+        }''')
+        captured = driver.capture_detail(page, max_pages=5)
+        table = captured['sections'][1]['tables'][0]
+        assert table['rows'] == [['001', '1.000,00']] * 4
+        assert table['pages'] == 2
+        assert captured['capture_complete']
+        browser.close()
+
+
+def test_exclusive_accordion_preserves_visible_data_but_reports_partial():
+    import coretax_browser as driver
+    fixture = '''<div class="main-content">
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="showAccordion(this,'fixture-one')">Fixture one</a></div>
+    <div class="fixture-content" id="fixture-one" hidden><label for="value-one">Fixture one value</label><input id="value-one" disabled value="001"></div>
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="showAccordion(this,'fixture-two')">Fixture two</a></div>
+    <div class="fixture-content" id="fixture-two" hidden><label for="value-two">Fixture two value</label><input id="value-two" disabled value="002"></div>
+    </div><script>
+    function showAccordion(control,id){
+      document.querySelectorAll('.p-accordion-header a').forEach(e=>e.setAttribute('aria-expanded','false'));
+      document.querySelectorAll('.fixture-content').forEach(e=>e.hidden=true);
+      control.setAttribute('aria-expanded','true'); document.getElementById(id).hidden=false;
+    }</script>'''
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(fixture)
+        captured = driver.capture_detail(page)
+        assert not captured['capture_complete']
+        assert [field['value'] for field in captured['sections'][0]['fields']] == ['002']
+        assert any('collapsed' in error['message'] for error in captured['errors'])
+        browser.close()
