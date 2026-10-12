@@ -41,7 +41,9 @@ class RoutedPlaywright:
                 request.fulfill(body=READY if self.mode=='already' else self.form,content_type='text/html')
             elif url==ORIGIN+'/session':
                 self.posts.append(request.request.post_data)
-                if self.mode=='success':request.fulfill(body='<script>location.assign("'+READY_URL+'");</script>',content_type='text/html')
+                if self.mode in ('success','slow_success'):
+                    delay=750 if self.mode=='slow_success' else 0
+                    request.fulfill(body='<script>setTimeout(()=>location.assign("'+READY_URL+'"),'+str(delay)+');</script>',content_type='text/html')
                 elif self.mode=='challenge':request.fulfill(body='<input autocomplete="one-time-code">',content_type='text/html')
                 else:request.fulfill(body=self.form,content_type='text/html')
             elif url==READY_URL:request.fulfill(body=READY,content_type='text/html')
@@ -61,7 +63,7 @@ def run_check(browser,tmp_path,monkeypatch,mode='success',form=FORM,origin=ORIGI
     monkeypatch.setattr(auth,'SEARCH_URL',READY_URL if mode=='already' else ORIGIN+'/login')
     engine=RoutedPlaywright(browser,mode,form)
     reads=saved(monkeypatch)
-    status,message=function(engine,tmp_path,origin,account,'msedge',True,cancelled,timeout=0.4)
+    status,message=function(engine,tmp_path,origin,account,'msedge',True,cancelled,timeout=0.4 if mode=='reject' else 5)
     assert all(not context.pages for context in engine.contexts)
     assert all(not path.exists() for path in engine.paths)
     assert not (tmp_path/'profile').exists()
@@ -156,7 +158,7 @@ def test_every_check_uses_a_new_profile(browser,tmp_path,monkeypatch):
     function=check_function();engine=RoutedPlaywright(browser);saved(monkeypatch)
     monkeypatch.setattr(auth,'SEARCH_URL',ORIGIN+'/login')
     for _ in range(2):
-        assert function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,lambda:None,timeout=0.4)[0]=='LOGIN_OK'
+        assert function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,lambda:None,timeout=5)[0]=='LOGIN_OK'
     assert len(set(engine.paths))==2
 
 
@@ -188,3 +190,8 @@ def test_internal_secret_bearing_errors_never_reach_result(browser,tmp_path,monk
     assert SECRET not in message and ACCOUNT not in message and 'private call log' not in message
     assert all(not context.pages for context in engine.contexts)
     assert all(not path.exists() for path in engine.paths)
+
+
+def test_asynchronous_success_is_not_bound_to_a_subsecond_fixture_deadline(browser,tmp_path,monkeypatch):
+    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,mode='slow_success')
+    assert status=='LOGIN_OK' and len(engine.posts)==1 and reads==[ORIGIN]
