@@ -225,10 +225,11 @@ def test_real_windows_cold_install_and_tar_restore_reuse_the_exact_python(tmp_pa
     manifest = tmp_path / 'manifest.txt'
     # Manifest GNU tar wajib memakai LF; CR dari CRLF dianggap bagian nama berkas.
     manifest.write_bytes((managed.as_posix() + '\n').encode('utf-8'))
-    run([tar, '--posix', '-cf', archive, '-P', '-C', tmp_path,
-         '--files-from', manifest, '--force-local'])
+    # Samakan dengan Actions cache: backslash pada argumen -C diproses sebagai escape.
+    run([tar, '--posix', '-cf', archive.as_posix(), '-P', '-C', tmp_path.as_posix(),
+         '--files-from', manifest.as_posix(), '--force-local'])
     managed.rename(tmp_path / 'cold-python')
-    run([tar, '-xf', archive, '-P', '-C', tmp_path, '--force-local'])
+    run([tar, '-xf', archive.as_posix(), '-P', '-C', tmp_path.as_posix(), '--force-local'])
     assert executable.read_bytes() == cold_bytes
 
     # Tar yang mempertahankan tautan direktori dapat langsung meluluskan kontrol ini.
@@ -242,12 +243,13 @@ def test_real_windows_cold_install_and_tar_restore_reuse_the_exact_python(tmp_pa
     run([*install, '--offline'])
     venv = tmp_path / 'warm-venv'
     run([uv, 'venv', '--managed-python', '--python', version + '+gil', '--offline', venv])
-    probe = run([venv / 'Scripts' / 'python.exe', '-I', '-c',
-                 'import json,platform,struct,sys,sysconfig; '
-                 'print(json.dumps({"implementation":platform.python_implementation(),'
-                 '"version":platform.python_version(),"bits":struct.calcsize("P")*8,'
-                 '"free_threaded":bool(sysconfig.get_config_var("Py_GIL_DISABLED")),'
-                 '"base":sys.base_prefix}))'])
+    probe_code = (
+        'import json,platform,struct,sys,sysconfig; '
+        'print(json.dumps({"implementation":platform.python_implementation(),'
+        '"version":platform.python_version(),"bits":struct.calcsize("P")*8,'
+        '"free_threaded":bool(sysconfig.get_config_var("Py_GIL_DISABLED")),'
+        '"base":sys.base_prefix}))')
+    probe = run([venv / 'Scripts' / 'python.exe', '-I', '-c', probe_code])
     info = json.loads(probe.stdout)
     assert {key: info[key] for key in ('implementation', 'version', 'bits', 'free_threaded')} == {
         'implementation': 'CPython', 'version': version, 'bits': 64, 'free_threaded': False}
