@@ -13,12 +13,15 @@ def worker():
 
 def synthetic_browser(module,monkeypatch,state):
     class Manager:
-        def __enter__(self):return object()
+        def __enter__(self):state['driver_started']=True;return object()
         def __exit__(self,*args):state['driver_closed']=True
     class Context:
         def close(self):state['browser_closed']=True
     monkeypatch.setattr(module,'playwright_factory',Manager)
-    monkeypatch.setattr(module,'authenticate_owned',lambda *a,**k:(Context(),object()))
+    def authenticate(*args, **kwargs):
+        state['browser_started'] = True
+        return Context(), object()
+    monkeypatch.setattr(module,'authenticate_owned',authenticate)
 
 
 def test_complete_event_is_after_browser_cleanup_and_verified_downloads(tmp_path,monkeypatch):
