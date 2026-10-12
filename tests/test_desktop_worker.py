@@ -55,3 +55,52 @@ def test_cancel_before_capture_never_touches_browser_or_writes_checkpoint(name,a
         raise capture.CaptureCancelled('synthetic stop')
     with pytest.raises(capture.CaptureCancelled):
         getattr(capture, name)(*args, check_cancel=cancel)
+
+
+def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeypatch, tmp_path):
+    """Biaya progress harus linear, termasuk detail lengkap dari checkpoint."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from spt_desktop import worker
+
+    reads = 0
+
+    class Record(dict):
+        def get(self, key, default=None):
+            nonlocal reads
+            if key == 'capture_complete':
+                reads += 1
+            return super().get(key, default)
+
+    # Nilai True dapat berasal dari capture baru maupun checkpoint tervalidasi.
+    outcomes = [True, False, True, True, False] * 40
+    run = {'records': [Record(capture_complete=value) for value in outcomes],
+           'complete': False}
+    emitted = []
+    monkeypatch.setattr(worker, 'playwright_factory', lambda: nullcontext(object()))
+    context = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(worker, 'authenticate_owned', lambda *args: (context, object()))
+    monkeypatch.setattr(worker, 'collect_inventory', lambda *args, **kwargs: run)
+
+    def deliver_details(page, data, folder, on_progress, check_cancel):
+        for ordinal in range(1, len(data['records']) + 1):
+            check_cancel()
+            on_progress(data, ordinal)
+        return data
+
+    monkeypatch.setattr(worker, 'collect_details', deliver_details)
+    monkeypatch.setattr(worker.coretax, 'save_output', lambda *args: None)
+    monkeypatch.setattr(worker, 'downloads_folder', lambda: tmp_path / 'Downloads')
+    monkeypatch.setattr(worker, 'publish_workbooks', lambda *args, **kwargs: tmp_path / 'hasil-sintetis')
+    result = worker.run_job('0000000000000001', 2025, tmp_path, 'fixture-progress',
+                            'msedge', True, emitted.append, lambda: False)
+
+    details = [event for event in emitted if event['stage'] == 'details']
+    expected = 0
+    for ordinal, (event, complete) in enumerate(zip(details, outcomes), 1):
+        expected += complete
+        assert (event['processed'], event['total'], event['verified']) == (ordinal, len(outcomes), expected)
+    assert len(details) == len(outcomes)
+    assert result == 2 and emitted[-1]['status'] == 'PARTIAL'
+    assert max(event['percent'] for event in emitted) < 100
+    assert reads <= 2 * len(outcomes), 'Progress memindai ulang seluruh prefix pada tiap detail'

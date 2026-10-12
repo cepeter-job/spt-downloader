@@ -17,6 +17,8 @@ Local State
 *.csv
 *.pdf
 *.json
+# Konfigurasi ruleset repositori disimpan sebagai sumber yang dapat ditinjau.
+!.github/rulesets/main.json
 *.jsonl
 *.zip
 .env

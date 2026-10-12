@@ -2,9 +2,17 @@
 import importlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import pytest
+
+
+PACKAGES = {'playwright': '1.63.0', 'openpyxl': '3.1.5', 'greenlet': '3.5.6',
+            'pyee': '13.0.1', 'et-xmlfile': '2.0.0', 'typing-extensions': '4.16.0'}
+LOCK = '\n'.join(f'{name}=={version} --hash=sha256:' + 'a' * 64
+                 for name, version in PACKAGES.items()) + '\n'
 
 
 def runtime_module():
@@ -21,8 +29,12 @@ class SyntheticCommands:
         self.system.touch()
         self.uv = source / 'uv.exe'
         self.uv.touch()
-        self.system_version = [3, 11, 16]
+        self.system_version = [3, 11, 17]
         self.system_bits = 64
+        self.managed_version = [3, 11, 17]
+        self.free_threaded = False
+        self.base_outside = False
+        self.package_versions = dict(PACKAGES)
         self.imports_ok = True
         self.fail_install = False
 
@@ -32,17 +44,21 @@ class SyntheticCommands:
         if cancelled():
             raise RuntimeError('Setup dibatalkan')
         if '--version' in argv:
-            return subprocess.CompletedProcess(argv, 0, 'uv 0.12.18 (synthetic)\n', '')
+            return subprocess.CompletedProcess(argv, 0, f'uv {runtime_module().UV_VERSION} (synthetic)\n', '')
         if '-c' in argv:
             candidate = Path(argv[0])
-            info = {'implementation': 'CPython', 'version': self.system_version if candidate == self.system else [3, 11, 16],
+            info = {'implementation': 'CPython', 'version': self.system_version if candidate == self.system else self.managed_version,
                     'bits': self.system_bits if candidate == self.system else 64,
+                    'free_threaded': self.free_threaded,
+                    'base_executable': str(self.system if self.base_outside else self.root / 'python' / 'python.exe'),
                     'executable': str(candidate), 'packages': {}}
             if 'importlib.metadata' in argv[-1] and self.imports_ok:
-                info['packages'] = {'playwright': '1.63.0', 'openpyxl': '3.1.5'}
+                info['packages'] = dict(self.package_versions)
             return subprocess.CompletedProcess(argv, 0, json.dumps(info), '')
         if argv[1:3] == ['python', 'install']:
             assert '--no-bin' in argv and '--no-registry' in argv
+            self.managed_version = [int(v) for v in argv[3].split('+')[0].split('.')]
+            self.base_outside = False
             managed = self.root / 'python' / 'python.exe'
             managed.parent.mkdir(parents=True, exist_ok=True)
             managed.touch()
@@ -52,7 +68,7 @@ class SyntheticCommands:
             environment = self.root / 'runtime' / 'Scripts' / 'python.exe'
             environment.parent.mkdir(parents=True, exist_ok=True)
             environment.touch()
-        if argv[1:3] == ['pip', 'install'] and self.fail_install:
+        if argv[1:3] in (['pip', 'install'], ['pip', 'sync']) and self.fail_install:
             raise RuntimeError('Synthetic dependency download failure')
         return subprocess.CompletedProcess(argv, 0, '', '')
 
@@ -68,7 +84,10 @@ def setup(monkeypatch, tmp_path):
         path = source / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('playwright==1.63.0\nopenpyxl==3.1.5\n' if relative == 'requirements.txt'
+                        else LOCK if relative == 'locks/runtime.txt'
                         else '# Synthetic resource payload, never a live worker\n', encoding='utf-8')
+    (source / 'locks').mkdir(exist_ok=True)
+    (source / 'locks' / 'runtime.txt').write_text(LOCK, encoding='utf-8')
     tools = source / 'tools'
     tools.mkdir()
     (tools / 'uv.exe').write_bytes(b'synthetic bundled uv')
@@ -76,42 +95,81 @@ def setup(monkeypatch, tmp_path):
     commands = SyntheticCommands(root, source)
     monkeypatch.setattr(runtime, 'resource_root', lambda: source)
     monkeypatch.setattr(runtime, '_run', commands.run)
-    monkeypatch.setattr(runtime, '_python_candidates', lambda: [commands.system])
     monkeypatch.setattr(runtime.shutil, 'which', lambda name: str(commands.uv) if name == 'uv' else None)
     return runtime, root, source, commands
 
 
-def test_compatible_python_uses_isolated_environment_without_global_install(setup):
+def test_runtime_uses_managed_patched_python_and_hashed_isolated_dependencies(setup):
     runtime, root, source, commands = setup
     notices = []
     python = runtime.ensure_runtime(root, notices.append, lambda: False)
     assert python == root / 'runtime' / 'Scripts' / 'python.exe'
     assert runtime.worker_source(root) == root / 'app'
     assert (root / 'app' / 'requirements.txt').read_text() == (source / 'requirements.txt').read_text()
-    assert any(c[1] == 'venv' and str(commands.system) in c for c in commands.calls)
-    assert not any(c[1:3] == ['python', 'install'] for c in commands.calls)
+    assert any(c[1] == 'venv' and str(root / 'python' / 'python.exe') in c for c in commands.calls)
+    assert not any(str(commands.system) in c for c in commands.calls)
+    installs = [c for c in commands.calls if c[1:3] == ['python', 'install']]
+    assert len(installs) == 1
+    assert installs[0][3:] == ['3.11.17+gil', '--install-dir', str(root / 'python'), '--no-bin', '--no-registry']
+    syncs = [c for c in commands.calls if c[1:3] == ['pip', 'sync']]
+    assert len(syncs) == 1 and '--require-hashes' in syncs[0] and '--only-binary' in syncs[0]
+    assert str(root / 'app' / 'locks' / 'runtime.txt') in syncs[0]
     assert notices
 
 
-@pytest.mark.parametrize('version,bits', [([3, 14, 7], 64), ([3, 11, 16], 32)])
-def test_incompatible_system_python_uses_portable_no_registry_install(setup, version, bits):
+@pytest.mark.parametrize('version,bits', [([3, 11, 9], 64), ([3, 11, 16], 64),
+                                        ([3, 14, 8], 64), ([3, 11, 17], 32)])
+def test_unsupported_interpreter_is_rejected(version, bits):
+    runtime = runtime_module()
+    assert not runtime._compatible({'implementation': 'CPython', 'version': version,
+                                    'bits': bits, 'free_threaded': False})
+
+
+def test_candidate_profile_prepares_only_the_explicit_candidate_version(setup):
     runtime, root, _, commands = setup
-    commands.system_version, commands.system_bits = version, bits
-    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile='candidate')
     installs = [c for c in commands.calls if c[1:3] == ['python', 'install']]
     assert len(installs) == 1
-    assert installs[0][3:] == ['3.11', '--install-dir', str(root / 'python'), '--no-bin', '--no-registry']
+    assert installs[0][3] == '3.14.8+gil'
     assert any(c[1:3] == ['python', 'find'] and '--managed-python' in c for c in commands.calls)
+
+
+def test_unknown_profile_never_creates_or_downloads_a_runtime(setup):
+    runtime, root, _, commands = setup
+    with pytest.raises(ValueError, match='profil'):
+        runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile='3.15')
+    assert commands.calls == [] and not root.exists()
 
 
 def test_missing_python_and_uv_use_only_bundled_and_managed_tools(setup, monkeypatch):
     runtime, root, source, commands = setup
-    monkeypatch.setattr(runtime, '_python_candidates', lambda: [])
     monkeypatch.setattr(runtime.shutil, 'which', lambda _: None)
     python = runtime.ensure_runtime(root, lambda _: None, lambda: False)
     assert python.is_relative_to(root)
     assert (root / 'tools' / 'uv.exe').read_bytes() == (source / 'tools' / 'uv.exe').read_bytes()
     assert any(c[1:3] == ['python', 'install'] for c in commands.calls)
+
+
+def test_active_developer_venv_cannot_shadow_the_owned_managed_python(setup, monkeypatch):
+    runtime, root, source, commands = setup
+    developer_venv = source / 'developer-venv'
+    developer_venv.mkdir()
+    monkeypatch.setenv('VIRTUAL_ENV', str(developer_venv))
+    original_run = commands.run
+
+    def find_with_active_venv(argv, env, cancelled, timeout=900):
+        command = [str(value) for value in argv]
+        # Perilaku uv 0.12.22: find tetap mengutamakan VIRTUAL_ENV tanpa --system,
+        # sekalipun --managed-python sudah diberikan dan versi tepat tersedia.
+        if (command[1:3] == ['python', 'find'] and env.get('VIRTUAL_ENV')
+                and '--system' not in command):
+            return subprocess.CompletedProcess(command, 0, str(commands.system) + '\n', '')
+        return original_run(argv, env, cancelled, timeout)
+
+    monkeypatch.setattr(runtime, '_run', find_with_active_venv)
+    python = runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    assert python == root / 'runtime' / 'Scripts' / 'python.exe'
+    assert (root / 'runtime-ready.txt').is_file()
 
 
 def test_vulnerable_installed_uv_is_rejected_in_favor_of_patched_bundle(setup, monkeypatch):
@@ -126,7 +184,7 @@ def test_vulnerable_installed_uv_is_rejected_in_favor_of_patched_bundle(setup, m
 
     monkeypatch.setattr(runtime, '_run', installed_old_uv)
     runtime.ensure_runtime(root, lambda _: None, lambda: False)
-    installations = [call for call in commands.calls if call[1:3] == ['pip', 'install']]
+    installations = [call for call in commands.calls if call[1:3] == ['pip', 'sync']]
     assert installations and all(Path(call[0]) == root/'tools'/'uv.exe' for call in installations)
 
 
@@ -137,7 +195,7 @@ def test_ready_environment_is_reverified_and_does_not_reinstall(setup):
     second = runtime.ensure_runtime(root, lambda _: None, lambda: False)
     assert first == second
     assert not any(len(c) > 1 and c[1] == 'venv' for c in commands.calls)
-    assert not any(c[1:3] == ['pip', 'install'] for c in commands.calls)
+    assert not any(c[1:3] in (['pip', 'install'], ['pip', 'sync']) for c in commands.calls)
     assert any('-c' in c and 'importlib.metadata' in c[-1] for c in commands.calls)
 
 
@@ -147,8 +205,71 @@ def test_changed_requirements_cannot_be_mistaken_for_ready(setup):
     commands.calls.clear()
     (source / 'requirements.txt').write_text('playwright==1.63.0\nopenpyxl==3.1.5\n# changed source\n', encoding='utf-8')
     runtime.ensure_runtime(root, lambda _: None, lambda: False)
-    assert any(c[1:3] == ['pip', 'install'] for c in commands.calls)
+    assert any(c[1:3] == ['pip', 'sync'] for c in commands.calls)
     assert (root / 'app' / 'requirements.txt').read_bytes() == (source / 'requirements.txt').read_bytes()
+
+
+def test_changed_transitive_lock_invalidates_ready_fingerprint(setup):
+    runtime, root, source, commands = setup
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    fingerprint = (root / 'runtime-ready.txt').read_text()
+    commands.calls.clear()
+    lock = source / 'locks' / 'runtime.txt'
+    lock.write_text(LOCK.replace('a' * 64, 'b' * 64), encoding='utf-8')
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    assert (root / 'runtime-ready.txt').read_text() != fingerprint
+    assert any(c[1:3] == ['pip', 'sync'] for c in commands.calls)
+    assert (root / 'app' / 'locks' / 'runtime.txt').read_bytes() == lock.read_bytes()
+
+
+@pytest.mark.parametrize('contents', ['playwright==1.63.0\n',
+                                     'playwright>=1 --hash=sha256:' + 'a' * 64,
+                                     '-r ../requirements.txt\n'])
+def test_invalid_lock_fails_before_any_subprocess(setup, contents):
+    runtime, root, source, commands = setup
+    (source / 'locks' / 'runtime.txt').write_text(contents, encoding='utf-8')
+    with pytest.raises(RuntimeError, match='lock|hash'):
+        runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    assert commands.calls == []
+
+
+def test_ready_runtime_rejects_transitive_version_drift(setup):
+    runtime, root, _, commands = setup
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    commands.calls.clear()
+    commands.package_versions['greenlet'] = '0.0.0'
+    with pytest.raises(RuntimeError, match='dependensi'):
+        runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    assert any(c[1:3] == ['pip', 'sync'] for c in commands.calls)
+    assert not (root / 'runtime-ready.txt').exists()
+
+
+def test_existing_runtime_backed_by_system_python_is_recreated(setup):
+    runtime, root, _, commands = setup
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    commands.calls.clear()
+    commands.base_outside = True
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    assert any(c[1] == 'venv' for c in commands.calls)
+
+
+def test_free_threaded_python_is_not_an_approved_runtime():
+    runtime = runtime_module()
+    for profile, version in [('production', [3, 11, 17]), ('candidate', [3, 14, 8])]:
+        assert not runtime._compatible({'implementation': 'CPython', 'version': version,
+                                        'bits': 64, 'free_threaded': True}, profile)
+
+
+def test_probe_imports_transitive_distributions_with_hyphenated_names(monkeypatch):
+    runtime = runtime_module()
+    def run(argv, env, cancelled, timeout=900):
+        return subprocess.run(argv, env=env, capture_output=True, text=True, check=True, timeout=timeout)
+    monkeypatch.setattr(runtime, '_run', run)
+    expected = {'et-xmlfile': 'unused', 'typing-extensions': 'unused'}
+    info = runtime._probe_python(Path(sys.executable), expected, os.environ.copy(),
+                                 lambda: False, packages=True)
+    assert info is not None and all(info['packages'].values())
+    assert info['base_executable'] and info['free_threaded'] is False
 
 
 def test_failed_dependency_setup_is_retryable_and_never_marked_ready(setup):
@@ -182,5 +303,6 @@ def test_source_payload_is_explicit_and_excludes_outputs_profiles_and_gui():
     runtime = runtime_module()
     assert 'coretax.py' in runtime.WORKER_FILES
     assert 'requirements.txt' in runtime.WORKER_FILES
+    assert 'locks/runtime.txt' in runtime.WORKER_FILES
     assert not any(any(x in name for x in ['output/', 'profile/', '.venv/', 'tests/', 'app.py'])
                    for name in runtime.WORKER_FILES)

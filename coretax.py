@@ -1,4 +1,8 @@
-"""Coretax NPWP + tax-year -> formatted Excel. Login is completed by the user in the browser."""
+"""Orkestrasi CLI Coretax dan publikasi Excel yang memeriksa kembali hasilnya.
+
+Login CLI diselesaikan pengguna di browser. Validasi data bersama dipakai oleh
+CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
+"""
 import argparse
 from datetime import datetime
 import json
@@ -18,6 +22,7 @@ BASE = Path(__file__).resolve().parent
 
 
 def verify_workbook(path, run, *, include_details=True):
+    """Cocokkan scope, status, jumlah baris, dan lembar dengan data run."""
     wb = load_workbook(path, read_only=True, data_only=False)
     try:
         checks = (
@@ -41,7 +46,11 @@ def verify_workbook(path, run, *, include_details=True):
 
 
 def verify_outputs(run, folder):
-    """Verify output even with Python -O; used by CLI and desktop publication."""
+    """Verifikasi set Excel dan tautan pembetulan, termasuk saat Python memakai -O.
+
+    Pemeriksaan ini memakai exception eksplisit agar optimasi interpreter tidak
+    menghilangkan syarat publikasi hasil CLI maupun desktop.
+    """
     folder = Path(folder)
     validate_export_run(run)
     grouped = {}
@@ -65,7 +74,7 @@ def verify_outputs(run, folder):
         filename: verify_workbook(folder / filename, {**run, 'records': records})
         for filename, records in grouped.items()
     }
-    # openpyxl's read-only mode does not expose hyperlinks.
+    # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
     resume = load_workbook(folder / 'resume.xlsx')
     try:
         local_ordinals = {}
@@ -85,6 +94,7 @@ def verify_outputs(run, folder):
 
 
 def _check_output_scope(run, folder):
+    """Pastikan checkpoint dan header Excel lama membuktikan scope yang sama."""
     scope_file = folder / 'run.json'
     if scope_file.is_symlink():
         raise FileExistsError('Output scope cannot be a symbolic link')
@@ -108,8 +118,8 @@ def _check_output_scope(run, folder):
             raise FileExistsError('Existing workbooks differ from selected output scope; use a new output folder')
         if path.is_symlink() or not path.is_file():
             raise FileExistsError('Invalid existing workbook path; use a new output folder')
-        # run.json is also a capture checkpoint and can be newer than the Excel set.
-        # The existing workbook headers must independently agree with this scope.
+        # run.json juga menjadi checkpoint dan bisa lebih baru daripada set Excel.
+        # Header Excel lama harus membuktikan scope secara independen.
         try:
             workbook = load_workbook(path, read_only=True)
             try:
@@ -126,7 +136,11 @@ def _check_output_scope(run, folder):
 
 
 def _publish_output(staging, folder, names):
-    """Restore earlier files if a later replacement fails, including an Excel lock."""
+    """Pulihkan penggantian terdahulu bila publikasi berkas berikutnya gagal.
+
+    Backup membantu saat exception atau berkas dikunci Excel. Ini bukan jaminan
+    transaksi atomik ketika proses dimatikan atau listrik padam.
+    """
     backup = staging / 'backup'
     backup.mkdir()
     for name in names:
@@ -142,19 +156,20 @@ def _publish_output(staging, folder, names):
         try:
             for name in reversed(attempted):
                 if (staging / name).exists():
-                    continue  # The rename failed before consuming its staged source.
+                    continue  # Rename gagal sebelum memakai sumber dari staging.
                 saved = backup / name
                 if saved.exists():
                     saved.replace(folder / name)
                 else:
                     (folder / name).unlink(missing_ok=True)
         except BaseException as recovery_error:
-            # An external lock or interruption can also prevent rollback.
+            # Kunci eksternal atau interupsi juga bisa menghalangi rollback.
             raise RuntimeError(f'Output rollback blocked; recovery files retained at {staging}') from recovery_error
         raise
 
 
 def save_output(run, folder):
+    """Validasi, tulis ke staging, baca ulang, lalu publikasikan seluruh set."""
     folder = Path(folder)
     validate_export_run(run)
     folder.mkdir(parents=True, exist_ok=True)
@@ -167,8 +182,8 @@ def save_output(run, folder):
         verify_outputs(saved_run, staging)
         (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
         _check_output_scope(run, folder)
-        # Retain backups before publication starts, including interruptions in
-        # the recovery handler itself. Only proven success permits cleanup.
+        # Pertahankan backup sejak publikasi dimulai, termasuk jika penanganan
+        # pemulihan terinterupsi. Bersihkan hanya setelah keberhasilan terbukti.
         retain_recovery = True
         _publish_output(staging, folder, [*files, 'run.json'])
         retain_recovery = False
@@ -180,7 +195,7 @@ def save_output(run, folder):
 
 
 def validate_debug_endpoint(value):
-    """Accept only explicit loopback origins, without credentials or URL routing."""
+    """Terima hanya origin loopback eksplisit tanpa kredensial atau rute URL."""
     message = '--reuse-browser must be a localhost HTTP debugging origin without credentials, path or query'
     if not isinstance(value, str) or any(ord(c) <= 32 or ord(c) == 127 for c in value):
         raise ValueError(message)
@@ -204,7 +219,7 @@ def authenticate(page, noninteractive):
         return
     page.bring_to_front()
     if noninteractive:
-        # Angular may not have rendered the search yet; a login wall is never bypassed.
+        # Tunggu render kontrol pencarian SPA; halaman login tidak pernah dilewati.
         page.locator('#ObjectPermitNumber').wait_for(state='visible', timeout=20000)
         return
     print('\nSign in directly in the browser window. Complete password, CAPTCHA and MFA there.')

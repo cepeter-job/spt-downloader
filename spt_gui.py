@@ -2,14 +2,16 @@
 import argparse
 import json
 from pathlib import Path
+import platform
 import struct
 import sys
+import sysconfig
 import tempfile
 import tkinter as tk
 from tkinter import messagebox
 from spt_desktop.app import App
 from spt_desktop.paths import workspace_root,downloads_folder
-from spt_desktop.runtime import resource_root,WORKER_FILES
+from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
 from spt_desktop.windows import InstanceLock
 
 
@@ -38,6 +40,11 @@ def self_test(report=None):
             app.on_event({'type':'progress','percent':42,'message':'Self-test synthetic progress'})
             assert app.percent.get()=='42%'
             data={'ok':True,'python':sys.version.split()[0],'bits':struct.calcsize('P')*8,
+                  'python_implementation':platform.python_implementation(),
+                  'free_threaded':bool(sysconfig.get_config_var('Py_GIL_DISABLED')),
+                  'tcl':str(root.tk.call('info','patchlevel')),
+                  'tk':str(root.tk.call('package','provide','Tk')),
+                  'worker_python':python_version(),
                   'frozen':bool(getattr(sys,'frozen',False)),
                   'worker_resources':list(WORKER_FILES),'uv_bundled':(resource_root()/'tools'/'uv.exe').is_file(),
                   'gui_controls':['NPWP','Tahun pajak','Mulai','Stop','Pengaturan','Buka Hasil','Cek Kredensial','Batalkan Cek'],

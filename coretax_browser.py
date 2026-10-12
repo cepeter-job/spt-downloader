@@ -1,4 +1,8 @@
-"""Authorized read-only UI capture. No password entry, token extraction or write actions."""
+"""Ambil data UI Coretax secara read-only melalui akses yang diizinkan.
+
+Modul ini tidak memasukkan password, mengambil token, atau menjalankan aksi
+penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
+"""
 import time
 import re
 import json
@@ -76,7 +80,7 @@ STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-h
 
 
 class CaptureCancelled(KeyboardInterrupt):
-    """Stop must bypass broad per-record Exception handlers and remain PARTIAL."""
+    """Lewati penanganan Exception per SPT agar Stop tetap menghasilkan PARTIAL."""
 
 
 def _check_cancel(check_cancel):
@@ -109,6 +113,7 @@ def maximize_page_size(page, container):
 
 
 def capture_table(page, table, ordinal, max_pages, check_cancel=None):
+    """Baca seluruh halaman tabel dan rekonsiliasi jumlah baris sebelum footer."""
     _check_cancel(check_cancel)
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
@@ -117,7 +122,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     if first:
         first.evaluate('(e)=>e.click()')
         wait_idle(page)
-    # Some supported lists retain a later page but expose Prev without First.
+    # Sebagian tabel menyimpan halaman terakhir dan hanya menyediakan Prev.
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
     for _ in range(max_pages):
         _check_cancel(check_cancel)
@@ -166,7 +171,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
         data = table.evaluate(TABLE_JS)
         result['rows'].extend(data['rows'])
         result['pages'] += 1
-    # Reconcile body rows to the application's declared count when exposed.
+    # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.
     total_element = container_handle.query_selector('.p-paginator-current')
     if total_element:
         match = re.search(r'(?:dari|of)\s+([0-9.,]+)', total_element.inner_text(), re.I)
@@ -175,13 +180,14 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
             if len(result['rows']) != result['source_total']:
                 result['complete'] = False
                 result['warning'] = f"Source count {result['source_total']} != captured rows {len(result['rows'])}"
-    # Source totals are often in tfoot; include once after paging.
+    # Total sumber sering ada di tfoot; masukkan sekali setelah paginasi selesai.
     result['rows'].extend(result.pop('footer', []))
     container_handle.dispose()
     return result
 
 
 def capture_detail(page, max_pages=1000, check_cancel=None):
+    """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
     _check_cancel(check_cancel)
     page.locator('.main-content').wait_for(timeout=45000)
     wait_idle(page)
@@ -190,7 +196,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None):
     errors = []
 
     def capture_panel(panel, name):
-        # Accordion controls only reveal content; no arbitrary button clicks.
+        # Accordion hanya membuka isi; jangan klik tombol aksi yang belum dikenali.
         expanders = panel.locator('.p-accordion-header a[aria-expanded=false]').element_handles()
         try:
             for expander in expanders:
@@ -229,7 +235,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None):
         tabs = view.locator(':scope > .p-tabview-nav-container > .p-tabview-nav-content > .p-tabview-nav > li > a[role=tab]')
         if not tabs.count():
             tabs = view.locator(':scope > .p-tabview-nav > li > a[role=tab]')
-        # PrimeNG versions differ in nav wrappers: limit fallbacks to this view.
+        # Pembungkus navigasi PrimeNG berbeda; batasi fallback pada view ini.
         if not tabs.count():
             tabs = view.locator('.p-tabview-nav > li > a[role=tab]')
         count = tabs.count()
@@ -270,7 +276,7 @@ SEARCH_URL = ORIGIN + '/returnsheets/id-ID/taxpayer-search'
 
 
 def trusted_origin(url):
-    """Check the full HTTPS origin before trusting navigation or response data."""
+    """Periksa origin HTTPS lengkap sebelum menerima navigasi atau respons."""
     if not isinstance(url, str) or url != url.strip() or '\\' in url or any(ord(c) < 32 for c in url):
         return False
     try:
@@ -291,6 +297,7 @@ def list_taxpayer_id(url):
 
 
 def verify_detail_url(url, taxpayer_id, record_id=None):
+    """Tautkan URL detail dengan wajib pajak dan identitas SPT dari inventaris."""
     if not trusted_origin(url) or not urlparse(url).path.startswith('/returnsheets/'):
         raise RuntimeError('View redirected outside the authorized Coretax return pages; login may have expired')
     segments = urlparse(url).path.split('/')
@@ -301,7 +308,11 @@ def verify_detail_url(url, taxpayer_id, record_id=None):
 
 
 class ListObserver:
-    """Observe the UI's own list responses; never read cookies or auth headers."""
+    """Amati respons daftar milik UI tanpa membaca cookie atau header autentikasi.
+
+    Simpan hanya respons terakhir dan nomor urut monotonik. Pemanggil menunggu
+    respons baru, sehingga respons lama tidak dianggap hasil navigasi berikutnya.
+    """
     def __init__(self, page):
         self.page = page
         self.sequence = 0
@@ -345,6 +356,7 @@ class ListObserver:
 
 
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
+    """Temukan NPWP persis, simpan batch daftar, lalu rekonsiliasi inventaris."""
     _check_cancel(check_cancel)
     npwp, year = validate_scope(npwp, year)
     folder = Path(folder)
@@ -406,13 +418,13 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 table = page.locator('.main-content table').first
                 table.wait_for(state='visible', timeout=30000)
                 container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
-                # Selecting an already-selected page size may not trigger a request.
+                # Memilih ukuran halaman yang sudah aktif belum tentu memicu request.
                 current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
                 if entry['total'] and current_size and current_size.inner_text().strip() != '50':
                     before = observer.sequence
                     maximize_page_size(page, container)
                     response = observer.wait(before)
-                # List pages use Prev even when First is hidden.
+                # Daftar tetap menyediakan Prev walaupun First tersembunyi.
                 for _ in range(max_pages):
                     _check_cancel(check_cancel)
                     previous = container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)')
@@ -477,7 +489,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 on_progress({'completed': len(audit), 'total': len(sources), 'scanned': entry['scanned']})
     finally:
         observer.close()
-    # Aggregate from durable batches; verify counts programmatically, not from logs.
+    # Agregasikan batch tersimpan; bukti jumlah berasal dari data, bukan pesan log.
     records = [json.loads(line) for line in batch_path.read_text(encoding='utf-8').splitlines() if line]
     keys = [r['key'] for r in records]
     if len(keys) != len(set(keys)) or len(records) != sum(e['selected'] for e in audit):
@@ -494,7 +506,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
 
 
 def open_return_readonly(page, row, taxpayer_id, record_id=None):
-    # Exact observed View button only. Never fall back to arbitrary row actions.
+    """Buka satu kontrol View yang dikenali dan verifikasi asal detailnya."""
+    # Hanya tombol View persis yang telah diamati; jangan menebak aksi baris lain.
     view = row.locator('button[id=ViewButton]')
     if view.count() != 1:
         raise RuntimeError('No unique supported View control; refusing to click other row actions')
@@ -524,10 +537,11 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None):
                 try:
                     tab.close()
                 except Exception:
-                    pass  # Preserve the navigation failure if the popup already closed.
+                    pass  # Pertahankan error navigasi jika popup sudah ditutup.
 
 
 def read_detail_checkpoint(path, record, scope):
+    """Terima hanya hasil capture dengan identitas dan scope inventaris yang sama."""
     saved = json.loads(path.read_text(encoding='utf-8'))
     identity_fields = ('key', 'record_id', 'meta', 'list_url', 'list_page', 'list_page_size',
                        'row_position', 'source_status')
@@ -539,11 +553,12 @@ def read_detail_checkpoint(path, record, scope):
             verify_detail_url(saved.get('detail_url'), list_taxpayer_id(record['list_url']), record['record_id'])
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
-    # A detail file cannot rewrite the inventory's identifiers or source metadata.
+    # Berkas detail tidak boleh menimpa identitas atau metadata asal inventaris.
     return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope') if field in saved}
 
 
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None):
+    """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
     _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
@@ -648,7 +663,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     on_progress(run, ordinal)
     finally:
         observer.close()
-    # Re-read all durable detail checkpoints and aggregate before certifying.
+    # Baca ulang checkpoint tersimpan dan agregasikan sebelum menetapkan COMPLETE.
     for ordinal, record in enumerate(run['records'], 1):
         _check_cancel(check_cancel)
         checkpoint = checkpoint_dir / f'{ordinal:04d}.json'

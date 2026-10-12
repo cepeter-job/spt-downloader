@@ -1,4 +1,8 @@
-"""Read-only Coretax SPT exporter; implementation developed test-first."""
+"""Validasi data Coretax dan bentuk workbook tanpa mengubah nilai sumber.
+
+Modul ini tidak mengakses browser. coretax.save_output menangani staging,
+verifikasi, dan publikasi set workbook yang dihasilkan di sini.
+"""
 from pathlib import Path
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -18,6 +22,7 @@ INVALID_XML_TEXT = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\u
 
 
 def validate_scope(npwp, year):
+    """Tolak NPWP yang bukan 16 digit ASCII persis dan tahun di luar kontrak."""
     if not isinstance(npwp, str) or not re.fullmatch(r'[0-9]{16}', npwp):
         raise ValueError('NPWP must be exactly 16 digits, without separators or spaces. The input is not normalized.')
     if not re.fullmatch(r'[0-9]{4}', str(year)) or not 1900 <= int(year) <= 2100:
@@ -26,14 +31,15 @@ def validate_scope(npwp, year):
 
 
 def in_scope(meta, year, basis):
+    """Tentukan tahun dari metadata teramati; format tak dikenal menjadi error."""
     if basis not in ('period', 'submission'):
         raise ValueError('Year basis must be period or submission.')
     value = meta.get('Masa Pajak' if basis == 'period' else 'Tanggal Submit SPT', '')
     if not isinstance(value, str):
         raise ValueError(f'Cannot establish {basis} year from non-text source metadata.')
     years = re.findall(r'(?<![0-9])(?:19|20|21)[0-9]{2}(?![0-9])', value)
-    # Observed migrated monthly periods use MM-MM-YYYY without separators.
-    # Interpret only the validated year suffix; preserve the original source text.
+    # Masa bulanan migrasi yang teramati memakai MM-MM-YYYY tanpa pemisah.
+    # Tafsirkan akhiran tahun hanya pada pola tervalidasi; teks sumber tetap utuh.
     if not years and basis == 'period' and re.fullmatch(r'(?:0[1-9]|1[0-2]){2}(?:19|20|21)[0-9]{2}', value):
         years = [value[-4:]]
     if not years:
@@ -42,6 +48,7 @@ def in_scope(meta, year, basis):
 
 
 def deduplicate_inventory(records):
+    """Gabungkan kemunculan ID yang sama tanpa melebur pembetulan berbeda."""
     unique = {}
     for record in records:
         identifier = record['record_id']
@@ -58,7 +65,7 @@ def deduplicate_inventory(records):
 
 
 def validate_excel_value(value, location, *, long_text=False):
-    """Reject source values that XLSX would truncate, alter or fail to read."""
+    """Tolak nilai yang akan terpotong, berubah, atau gagal dibaca sebagai XLSX."""
     reason = None
     if isinstance(value, str):
         if INVALID_XML_TEXT.search(value):
@@ -69,7 +76,7 @@ def validate_excel_value(value, location, *, long_text=False):
         return
     elif isinstance(value, int):
         try:
-            # Excel supports 15 significant digits and binary floating-point storage.
+            # Excel membatasi presisi 15 digit signifikan dengan floating-point biner.
             if Decimal('%.15g' % value) != value or float(value) != value:
                 reason = 'numeric digits would be rounded; preserve the source as text'
         except (OverflowError, ValueError):
@@ -82,7 +89,7 @@ def validate_excel_value(value, location, *, long_text=False):
     else:
         reason = 'source cell has an unsupported value type'
     if reason:
-        # Identify the field without including confidential source text in logs.
+        # Tunjukkan lokasi field tanpa menyertakan teks sumber rahasia dalam log.
         raise ValueError(f'Cannot represent {location} exactly in Excel: {reason}.')
 
 
@@ -101,7 +108,7 @@ def type_scope_description(run, tax):
 
 
 def validate_export_run(run):
-    """Preflight scope, completion and source cells before any output is written."""
+    """Periksa scope, flag kelengkapan, dan nilai sel sebelum menulis hasil."""
     validate_scope(run.get('npwp'), run.get('year'))
     basis = run.get('year_basis')
     if basis not in ('period', 'submission'):
@@ -167,7 +174,7 @@ def validate_export_run(run):
 
 
 def web_source_url(value):
-    """Only web navigation becomes active; all other source URLs stay literal."""
+    """Aktifkan hanya URL web; URL sumber lainnya disimpan sebagai teks literal."""
     if not isinstance(value, str) or re.search(r'[\s\\]', value):
         return False
     try:
@@ -178,7 +185,7 @@ def web_source_url(value):
 
 
 def put(ws, row, col, value):
-    """Store untrusted source text literally, never as an Excel formula."""
+    """Simpan teks sumber sebagai teks literal agar tidak menjadi formula Excel."""
     validate_excel_value(value, f'{ws.title}!{get_column_letter(col)}{row}')
     cell = ws.cell(row, col)
     cell.value = value if value is not None else ''
@@ -344,7 +351,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                     if not table.get('complete', True):
                         put(detail, row, 1, 'PARTIAL: paginasi tidak selesai')
                         row += 1
-                # Keep visible text to preserve captions, declarations and non-input figures.
+                # Simpan teks terlihat agar judul, pernyataan, dan angka non-input tetap ada.
                 text = section.get('text', '')
                 if text:
                     row += 1
@@ -385,13 +392,14 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
 
 
 def export_split_workbooks(run, folder):
+    """Buat resume dan satu workbook per jenis; publikasi aman ditangani pemanggil."""
     validate_export_run(run)
     folder = Path(folder)
     groups = defaultdict(list)
     for ordinal, record in enumerate(run['records'], 1):
         groups[record['meta'].get('Jenis Pajak')].append((ordinal, record))
     filenames = {tax: tax_type_filename(tax) for tax in groups}
-    # Windows filenames are case-insensitive: reject a collision before any write.
+    # Nama berkas Windows tidak membedakan kapital; tolak benturan sebelum menulis.
     normalized = [name.casefold() for name in filenames.values()]
     if len(normalized) != len(set(normalized)):
         raise ValueError('Tax type filename collision; no workbook was overwritten')

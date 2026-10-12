@@ -1,13 +1,16 @@
-"""Build and exercise the Windows GUI without bundling private workspace data."""
+"""Build GUI Windows dengan resource terbatas dan verifikasi runtime executable."""
 import argparse
 import importlib.metadata
 import json
 from pathlib import Path
+import platform
+import re
 import shutil
 import struct
 import subprocess
 import sys
-from spt_desktop.runtime import WORKER_FILES,UV_VERSION
+import sysconfig
+from spt_desktop.runtime import WORKER_FILES, UV_VERSION, PYTHON_PROFILES, python_version
 from spt_desktop.windows import ProcessJob
 
 ROOT=Path(__file__).resolve().parent
@@ -29,9 +32,27 @@ def build_command(root,output,uv_binary):
     return command
 
 
-def build(output):
-    if sys.platform!='win32' or struct.calcsize('P')!=8 or sys.version_info[:2]!=(3,11):
-        raise RuntimeError('Build requires Windows CPython 3.11 x64.')
+def validate_report(data, python_profile='production'):
+    expected = python_version(python_profile)
+    if not (data.get('ok') is True and data.get('frozen') is True and data.get('uv_bundled') is True
+            and data.get('bits') == 64 and data.get('python') == expected
+            and data.get('python_implementation') == 'CPython' and data.get('free_threaded') is False
+            and all(re.fullmatch(r'\d+\.\d+\.\d+', str(data.get(name, ''))) for name in ('tcl', 'tk'))
+            and data.get('worker_python') == python_version()
+            and data.get('worker_resources') == list(WORKER_FILES)
+            and data.get('credential_check_controls') and 'Cek Kredensial' in data.get('gui_controls', [])
+            and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only', 'for personal use : punto ap']
+            and data.get('credentials_accessed') is False and data.get('live_scrape') is False):
+        raise RuntimeError('Packaged application self-test failed')
+
+
+def build(output, python_profile='production'):
+    expected = python_version(python_profile)
+    if (sys.platform != 'win32' or struct.calcsize('P') != 8
+            or platform.python_implementation() != 'CPython'
+            or tuple(sys.version_info[:3]) != tuple(int(v) for v in expected.split('.'))
+            or sysconfig.get_config_var('Py_GIL_DISABLED')):
+        raise RuntimeError(f'Build requires Windows CPython {expected} x64 with GIL.')
     if importlib.metadata.version('uv')!=UV_VERSION:
         raise RuntimeError('Build uv version differs from the application pin.')
     import uv
@@ -55,28 +76,27 @@ def build(output):
             owned.close()
             process.wait(timeout=10)
     data=json.loads(report.read_text(encoding='utf-8'))
-    if not (data['ok'] and data['frozen'] and data['uv_bundled'] and data['bits']==64
-            and data['worker_resources']==list(WORKER_FILES)
-            and data['credential_check_controls'] and 'Cek Kredensial' in data['gui_controls']
-            and data['personal_use_labels']==['Coretax → Excel · for personal use only','for personal use : punto ap']
-            and not data['credentials_accessed'] and not data['live_scrape']):
-        raise RuntimeError('Packaged application self-test failed')
+    validate_report(data, python_profile)
+    data['build_profile'] = python_profile
+    report.write_text(json.dumps(data, indent=2), encoding='utf-8')
     shutil.copy2(ROOT/'LICENSE',output/'LICENSE.txt')
     (output/'README.txt').write_text(
         'SPT Downloader — Windows 10/11 x64\n'
-        'Source/license: https://github.com/cepeter-job/spt-downloader (GPL-3.0)\n\n'
-        'Run SPTDownloader.exe without administrator rights. The GUI includes its Python/Tcl runtime and uv.\n'
-        'Worker setup uses compatible installed Python or portable CPython 3.11 in LocalAppData\\SPTDownloader.\n'
-        'First setup may require internet access; exporting requires authorized intranet access and Edge/Chrome.\n'
-        'Enter your account/password only in Pengaturan; the password is stored in Windows Credential Manager.\n'
-        'Save settings, then choose Cek Kredensial: fresh isolated session, one saved login attempt, no scraping/export.\n'
-        'Login berhasil requires verified saved-password submission; CAPTCHA/MFA and timeouts remain explicit.\n'
-        'NPWP is exactly 16 ASCII digits; tax year is four digits. Mulai runs one read-only job.\n'
-        'CAPTCHA/MFA and unknown login layouts require completing login in the application browser.\n'
-        'Stop preserves local PARTIAL checkpoints; only owned browser processes are closed.\n'
-        'Output: resolved Downloads\\NPWP - NAMA WP\\TAHUN PAJAK\\WAKTU EKSPOR. Keep all Excel files together.\n'
-        '100% means verified COMPLETE. Partial/blocked/cancelled jobs do not report success.\n'
-        'This executable is unsigned. Verify its GitHub build/source; do not disable Defender or TLS validation.\n',
+        'Sumber/lisensi: https://github.com/cepeter-job/spt-downloader (GPL-3.0)\n\n'
+        'Jalankan SPTDownloader.exe tanpa hak administrator. Python/Tcl dan uv untuk GUI sudah disertakan.\n'
+        f'Runtime GUI: CPython {expected} x64; profil build: {python_profile}.\n'
+        f'Persiapan worker memasang CPython managed {python_version()} x64 di LocalAppData\\SPTDownloader.\n'
+        'Dependency worker memakai lock SHA-256 yang disertakan; Python sistem dan registry tidak diubah.\n'
+        'Persiapan pertama memerlukan internet; ekspor membutuhkan akses intranet yang sah dan Edge/Chrome.\n'
+        'Masukkan akun/sandi melalui Pengaturan; sandi disimpan di Windows Credential Manager.\n'
+        'Simpan pengaturan, lalu pilih Cek Kredensial: sesi terisolasi baru, satu upaya login, tanpa ekspor.\n'
+        'Login berhasil hanya muncul setelah pengiriman sandi tersimpan terverifikasi.\n'
+        'NPWP harus tepat 16 digit ASCII; tahun pajak empat digit. Mulai menjalankan satu pekerjaan baca-saja.\n'
+        'Selesaikan CAPTCHA/MFA dan halaman login yang belum dikenali secara manual di browser aplikasi.\n'
+        'Stop mempertahankan checkpoint PARTIAL lokal; hanya proses browser milik aplikasi yang ditutup.\n'
+        'Hasil: folder Downloads\\NPWP - NAMA WP\\TAHUN PAJAK\\WAKTU EKSPOR. Simpan semua Excel bersama.\n'
+        '100% berarti COMPLETE terverifikasi. Pekerjaan parsial, terhalang, atau dibatalkan tidak dinyatakan berhasil.\n'
+        'Executable belum bertanda tangan. Verifikasi build/sumber GitHub; jangan nonaktifkan Defender atau TLS.\n',
         encoding='utf-8')
     print('Built and self-tested:',executable)
     return executable
@@ -85,8 +105,10 @@ def build(output):
 def main(argv=None):
     parser=argparse.ArgumentParser()
     parser.add_argument('--output',type=Path,default=ROOT/'dist')
+    parser.add_argument('--python-profile', choices=tuple(PYTHON_PROFILES), default='production',
+                        help='Profil build terverifikasi; kandidat belum mengubah default worker.')
     args=parser.parse_args(argv)
-    build(args.output)
+    build(args.output, args.python_profile)
 
 
 if __name__=='__main__':main()

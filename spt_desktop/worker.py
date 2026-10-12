@@ -1,4 +1,4 @@
-"""Console-hidden owned scraper worker; stdout is a bounded event protocol."""
+"""Worker scraper milik aplikasi; stdout hanya memuat protokol event terbatas."""
 import argparse
 import contextlib
 from datetime import datetime
@@ -46,8 +46,12 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled):
                     on_progress=lambda item:progress.inventory(item['completed'],item['total'],item['scanned']),
                     check_cancel=check_cancel)
                 run['started_at']=datetime.now().astimezone().isoformat()
+                verified=0
                 def details_progress(data,ordinal):
-                    verified=sum(bool(r.get('capture_complete')) for r in data['records'][:ordinal])
+                    nonlocal verified
+                    # collect_details melapor sekali per urutan, termasuk checkpoint.
+                    # Baca hanya detail terbaru agar total biaya progress tetap linear.
+                    verified+=bool(data['records'][ordinal-1].get('capture_complete'))
                     progress.details(ordinal,len(data['records']),verified)
                 run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel)
                 if not run['records']:progress.details(0,0,0)
@@ -72,7 +76,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled):
         progress.finished(False,None,status='BLOCKED',message=str(error))
         return 3
     except Exception:
-        # Do not forward browser/credential exception traces or captured tax data to GUI logs.
+        # Jangan kirim trace browser/kredensial atau data pajak ke log GUI.
         progress.finished(False,None,status='ERROR',message='Ekspor terhenti. Periksa koneksi, izin Downloads, dan checkpoint lokal; tidak ada hasil COMPLETE.')
         return 1
 
