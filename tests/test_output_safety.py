@@ -13,7 +13,8 @@ from test_split_output import fixture_run
 
 
 def snapshot(folder):
-    return {p.name: p.read_bytes() for p in folder.iterdir() if p.is_file()}
+    return {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob('*')
+            if p.is_file() and not p.relative_to(folder).parts[0].startswith('.spt-export-')}
 
 
 def test_verification_remains_enabled_under_python_optimization(tmp_path):
@@ -87,7 +88,7 @@ def test_failed_replacement_rolls_back_completed_replacements(tmp_path, monkeypa
     def fail_one_replace(source, target):
         nonlocal failed
         target = Path(target)
-        if target.parent == tmp_path and target.name == 'SPT_21.xlsx' and not failed:
+        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx' and not failed:
             failed = True
             raise PermissionError('Synthetic workbook lock')
         return real_replace(source, target)
@@ -157,7 +158,7 @@ def test_interrupt_immediately_after_replace_rolls_back_that_file(tmp_path, monk
         nonlocal interrupted
         result = real_replace(source, target)
         target = Path(target)
-        if target.parent == tmp_path and target.name == 'SPT_21.xlsx' and not interrupted:
+        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx' and not interrupted:
             interrupted = True
             raise KeyboardInterrupt()
         return result
@@ -175,14 +176,14 @@ def test_blocked_rollback_keeps_recoverable_original_files(tmp_path, monkeypatch
     real_replace = Path.replace
     def fail_publication_and_rollback(source, target):
         target = Path(target)
-        if target.parent == tmp_path and (target.name == 'SPT_21.xlsx' or source.parent.name == 'backup'):
+        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx' or source.parent.name == 'backup':
             raise PermissionError('Synthetic persistent file lock')
         return real_replace(source, target)
     monkeypatch.setattr(Path, 'replace', fail_publication_and_rollback)
     with pytest.raises(RuntimeError, match='recovery files retained'):
         coretax.save_output(run, tmp_path)
     recovery, = tmp_path.glob('.spt-export-*')
-    assert {p.name: p.read_bytes() for p in (recovery / 'backup').iterdir()} == before
+    assert snapshot(recovery/'backup') == before
 
 
 def test_interrupt_in_rollback_probe_keeps_recoverable_original_files(tmp_path, monkeypatch):
@@ -196,7 +197,7 @@ def test_interrupt_in_rollback_probe_keeps_recoverable_original_files(tmp_path, 
 
     def fail_later_publication(source, target):
         nonlocal publication_failed
-        if Path(target).parent == tmp_path and Path(target).name == 'SPT_21.xlsx':
+        if Path(target) == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx':
             publication_failed = True
             raise PermissionError('Synthetic workbook lock')
         return real_replace(source, target)
@@ -211,4 +212,4 @@ def test_interrupt_in_rollback_probe_keeps_recoverable_original_files(tmp_path, 
     with pytest.raises(RuntimeError, match='recovery files retained'):
         coretax.save_output(run, tmp_path)
     recovery, = tmp_path.glob('.spt-export-*')
-    assert {p.name: p.read_bytes() for p in (recovery / 'backup').iterdir()} == before
+    assert snapshot(recovery/'backup') == before

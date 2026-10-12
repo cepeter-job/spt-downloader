@@ -26,7 +26,7 @@ def publish_workbooks(run,source,downloads,job_id,check_cancel=None):
     source,downloads = Path(source).resolve(),Path(downloads).resolve()
     coretax.verify_outputs(run,source)
     filenames = run['output_files']
-    if any(not isinstance(n,str) or Path(n).name != n or not n.endswith('.xlsx') for n in filenames):
+    if any(not isinstance(n,str) or not n.endswith('.xlsx') for n in filenames):
         raise ValueError('Invalid workbook filename')
     parent = (downloads / f'{npwp} - {name}' / str(year)).resolve()
     if not parent.is_relative_to(downloads):
@@ -39,10 +39,11 @@ def publish_workbooks(run,source,downloads,job_id,check_cancel=None):
     try:
         for filename in filenames:
             if check_cancel: check_cancel()
-            original = source / filename
+            original = coretax.output_path(source,filename)
             if original.is_symlink() or not original.resolve().is_relative_to(source):
                 raise ValueError('Invalid source workbook path')
-            target = staging / filename
+            target = coretax.output_path(staging,filename)
+            target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copy2(original,target)
             if _digest(original) != _digest(target):
                 raise OSError('Workbook copy verification failed')

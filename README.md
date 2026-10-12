@@ -62,12 +62,13 @@ Setiap detail dibuka hanya melalui kontrol **View** yang dikenali. URL detail ha
 | Berkas | Isi |
 | --- | --- |
 | `resume.xlsx` | Ringkasan global, Daftar SPT, dan Audit; indeks menaut ke workbook serta lembar detail yang tepat. |
-| `SPT_Badan.xlsx` | Semua masa dan pembetulan PPh Badan yang terambil, satu lembar detail per SPT unik. |
-| `SPT_21.xlsx` | Semua masa dan pembetulan PPh Pasal 21/26 yang terambil. |
-| `SPT_Unifikasi.xlsx` | Semua masa dan pembetulan PPh Unifikasi yang terambil. |
+| `SPT_Badan.xlsx` | Satu sheet per form teramati, misalnya Induk/L1-D, dengan penanda Normal/Pembetulan. |
+| `SPT Masa 21/SPT_21_<masa>.xlsx` | Satu workbook per masa literal PPh Pasal 21/26; Normal dan pembetulan masa itu dibedakan dalam nama sheet. |
+| `SPT Masa Unifikasi/SPT_Unifikasi_<masa>.xlsx` | Satu workbook per masa literal PPh Unifikasi, termasuk pembetulan masa itu. |
+| `SPT Masa PPN/SPT_PPN_<masa>.xlsx` | Satu workbook per masa literal PPN, termasuk pembetulan masa itu. |
 | `SPT_<jenis>.xlsx` | Satu workbook untuk setiap jenis pajak lainnya yang tersedia dalam hasil capture. |
 
-Workbook jenis pajak berisi Ringkasan/Daftar SPT khusus jenis tersebut, Audit proses, dan lembar detailnya. Tidak ada berkas jenis pajak yang dibuat bila datanya tidak terambil. **Simpan seluruh set pada folder yang sama dan jangan mengganti nama workbook** agar tautan relatif tetap berfungsi. Seluruh folder dapat dipindahkan bersama.
+Workbook jenis/masa berisi Ringkasan/Daftar SPT khusus scope tersebut, Audit proses, dan lembar detailnya. Tidak ada workbook masa/jenis yang dibuat bila datanya tidak terambil. **Pertahankan seluruh hierarki folder dan jangan mengganti nama workbook** agar tautan relatif tetap berfungsi. Folder hasil dapat dipindahkan bersama. Sheet menggunakan tabel berfilter/freeze panes; field dan nilai sumber tidak digabung dalam sel data. Kolom numerik opsional membantu pengolahan angka format Indonesia tanpa mengganti nilai sumber atau mengubah NPWP/ID menjadi angka.
 
 Identitas dan angka sumber berbentuk teks dipertahankan sebagai teks literal, termasuk nol awal, format angka Indonesia, dan teks yang diawali `=`. Hitungan ringkasan tetap numerik. Sel yang melebihi 32.767 karakter, karakter XML yang tidak didukung, atau angka numerik yang akan kehilangan presisi menghentikan ekspor secara eksplisit. Teks konteks halaman yang panjang dipecah antar-sel tanpa pemotongan. Hanya URL HTTP/HTTPS menjadi tautan aktif.
 

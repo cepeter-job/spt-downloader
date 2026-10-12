@@ -79,7 +79,9 @@ Stop memiliki prioritas atas start/progres yang terlambat. Pembatalan kooperatif
 
 `coretax_exporter` memvalidasi scope, completion, dan seluruh nilai sebelum menghasilkan workbook. Teks sumber selalu ditulis literal, termasuk string yang menyerupai formula. Angka sumber yang telah berupa teks tetap teks; hitungan turunan tetap numerik. Nilai yang tidak dapat diwakili Excel secara persis ditolak. Hanya URL HTTP/HTTPS menjadi hyperlink aktif.
 
-Set hasil terdiri dari `resume.xlsx` dan satu workbook per jenis pajak yang benar-benar ada. `resume.xlsx` berisi indeks global; workbook jenis berisi indeks lokal dan lembar detail tiap SPT. Tautan indeks harus menunjuk file, lembar, dan pembetulan yang tepat. Nama file diperiksa dengan perbandingan tanpa membedakan kapital agar aman pada Windows.
+Set hasil terdiri dari `resume.xlsx` dan workbook jenis/masa yang benar-benar tertangkap. PPh Pasal 21/26, PPh Unifikasi, dan PPN memakai satu workbook per masa sumber literal dalam folder `SPT Masa 21`, `SPT Masa Unifikasi`, dan `SPT Masa PPN`. Normal dan pembetulan satu masa berada dalam workbook yang sama dengan nama sheet berbeda. PPh Badan memakai satu sheet per form teramati/pembetulan di `SPT_Badan.xlsx`; jenis lain tetap memakai workbook jenis. Nama sheet memakai ordinal SPT dan form di awal agar pemotongan 31 karakter tidak menyatukan identitas. Tautan resume relatif menarget file, sheet pertama, dan pembetulan yang tepat; tautan kembali dari folder masa memakai `../resume.xlsx`. Nama file diperiksa tanpa membedakan kapital dan identitas masa tidak digabung hanya karena nama file tersanitasi sama.
+
+Data field dan tabel disajikan tanpa sel data gabungan, dengan filter tabel dan freeze panes. Nilai sumber tetap literal; kolom numerik opsional hanya tersedia untuk angka dengan label/format yang didukung dan presisi yang dapat dipertahankan. Caption sumber disimpan terpisah bila header filter perlu disambiguasi. Header sumber yang kebetulan sama dengan suffix hasil disambiguasi juga tetap menghasilkan nama kolom tabel yang unik.
 
 Publikasi lokal oleh `coretax.save_output` mengikuti urutan berikut:
 

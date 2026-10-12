@@ -22,7 +22,7 @@ def test_publish_preserves_raw_name_links_and_only_excel_files(tmp_path):
     final = module().publish_workbooks(run, source, downloads, 'synthetic-job')
     assert final.parent.name == '2025'
     assert final.parent.parent.name == '0000000000000001 - SYNTHETIC _ 日本 WP'
-    assert set(p.name for p in final.iterdir()) == set(run['output_files'])
+    assert {p.relative_to(final).as_posix() for p in final.rglob('*.xlsx')} == set(run['output_files'])
     assert not list(downloads.rglob('*.json'))
     wb = load_workbook(final/'resume.xlsx')
     try:
