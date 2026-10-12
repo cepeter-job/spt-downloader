@@ -12,7 +12,7 @@ from spt_desktop.interaction import Requests, read_message
 def test_controller_reads_only_its_request_and_never_sends_return_ids_on_stdin(tmp_path):
     assert hasattr(JobController, 'read_request') and hasattr(JobController, 'respond'), 'GUI consent transport is missing'
     events = []
-    controller = JobController(SimpleNamespace(after=lambda *args: None), tmp_path, events.append)
+    controller = JobController(tmp_path, events.append)
     controller.job_id = 'synthetic-job'
     controller.active = True
     controller.operation = 'export'
@@ -41,7 +41,7 @@ def test_controller_reads_only_its_request_and_never_sends_return_ids_on_stdin(t
 
 def test_controller_stop_and_foreign_job_cannot_authorize_a_pending_answer(tmp_path):
     assert hasattr(JobController, 'read_request') and hasattr(JobController, 'respond'), 'GUI consent transport is missing'
-    controller = JobController(SimpleNamespace(after=lambda *args: None), tmp_path, lambda event: None)
+    controller = JobController(tmp_path, lambda event: None)
     controller.job_id = 'synthetic-job'
     controller.active = True
     controller.operation = 'export'
@@ -54,9 +54,9 @@ def test_controller_stop_and_foreign_job_cannot_authorize_a_pending_answer(tmp_p
         controller._drain()
         with pytest.raises(ValueError):
             controller.read_request({**event, 'job_id': 'other-job'})
-        controller.cancelled = True
+        controller.stop()
         assert not controller.respond('overwrite', event['request_id'], {'overwrite': True})
-        assert controller.process.stdin.getvalue() == ''
+        assert json.loads(controller.process.stdin.getvalue()) == {'command': 'stop', 'job_id': 'synthetic-job'}
         with pytest.raises(FileNotFoundError):
             read_message(folder, 'synthetic-job', event['request_id'], reply=True)
         raise RuntimeError('synthetic test ends a blocked request without waiting')

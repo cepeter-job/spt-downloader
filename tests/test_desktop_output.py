@@ -62,13 +62,13 @@ def test_copy_failure_cannot_advertise_finished_result(tmp_path,monkeypatch):
     assert (tmp_path/'local'/'run.json').is_file()
 
 
-def test_previous_exports_are_never_overwritten(tmp_path):
+def test_previous_exports_require_explicit_overwrite_consent(tmp_path):
     run = fixture_run()
     coretax.save_output(run,tmp_path/'local')
     first = module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','first-job')
     before = (first/'resume.xlsx').read_bytes()
-    second = module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','second-job')
-    assert first != second and first.parent == second.parent
+    with pytest.raises(FileExistsError,match='overwrite|consent'):
+        module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','second-job')
     assert (first/'resume.xlsx').read_bytes() == before
 
 

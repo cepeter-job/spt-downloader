@@ -1,6 +1,7 @@
 """Job-bound consent; private return identifiers never travel on stdout/stdin."""
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import re
 import stat
@@ -75,9 +76,16 @@ def write_reply(folder, job_id, request_id, payload):
 
 def read_message(folder, job_id, request_id, *, reply=False):
     path = _message_path(folder, job_id, request_id, reply)
-    if not stat.S_ISREG(path.lstat().st_mode) or path.stat().st_size > MAX_MESSAGE_BYTES:
+    before = path.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_MESSAGE_BYTES:
         raise ValueError('Invalid private job message size/type')
     with path.open('rb') as stream:
+        opened = os.fstat(stream.fileno())
+        # Windows Path.open has no no-follow flag: verify the handle before reading any bytes.
+        if (not os.path.samestat(before, opened) or not stat.S_ISREG(opened.st_mode)
+                or opened.st_size > MAX_MESSAGE_BYTES):
+            raise ValueError('Private job message identity changed while opening')
+        _message_path(folder, job_id, request_id, reply)
         data = stream.read(MAX_MESSAGE_BYTES + 1)
     if len(data) > MAX_MESSAGE_BYTES:
         raise ValueError('Interaction payload is too large')
