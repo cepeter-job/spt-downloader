@@ -47,6 +47,8 @@ def window(tmp_path, payload, kind='selection'):
     assert hasattr(App, 'selection_dialog') and hasattr(App, 'overwrite_dialog'), 'Consent dialogs are missing'
     root = tk.Tk()
     root.withdraw()
+    callback_errors = []
+    root.report_callback_exception = lambda *error: callback_errors.append(error)
     controller = ConsentController(payload)
     app = App(root, tmp_path, controller=controller)
     event = consent_event(controller, kind)
@@ -64,6 +66,7 @@ def window(tmp_path, payload, kind='selection'):
         root.destroy()
         del app
         gc.collect()
+        assert not callback_errors, f'Tk callback errors: {callback_errors!r}'
 
 
 def widgets(widget):
@@ -232,10 +235,8 @@ def test_foreign_request_does_not_replace_the_pending_dialog(tmp_path):
         assert not controller.replies and not controller.stopped
 
 
-def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_path, monkeypatch):
+def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
-        errors = []
-        monkeypatch.setattr(root, 'report_callback_exception', lambda *error: errors.append(error))
         entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
         entry.insert(0, 'Februari')
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
@@ -252,7 +253,7 @@ def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_pa
         new_entry.insert(0, 'Februari')
         root.update()
         assert len(tree.get_children()) == 1 and not tree.selection()
-        assert not controller.replies and not controller.stopped and not errors
+        assert not controller.replies and not controller.stopped
 
 
 def test_only_the_explicit_overwrite_button_authorizes_replacement(tmp_path):
@@ -270,3 +271,30 @@ def test_closing_overwrite_preserves_existing_files(tmp_path):
         root.update()
         assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
         assert not dialog.winfo_exists()
+
+
+@pytest.mark.parametrize('kind,payload', [
+    ('selection', records()), ('overwrite', {'files': ['resume.xlsx']})])
+def test_rejected_consent_dismisses_without_cancelling_terminal_cleanup(tmp_path, monkeypatch, kind, payload):
+    with window(tmp_path, payload, kind) as (root, app, controller, dialog):
+        monkeypatch.setattr(controller, 'respond', lambda *args: False)
+        if kind == 'selection':
+            select_first(root, dialog)
+            approve = button(dialog, 'Sedot SPT terpilih')
+        else:
+            approve = button(dialog, 'Ganti file tersebut')
+        approve.invoke()
+        root.update()
+        assert not dialog.winfo_exists() and not controller.replies and not controller.stopped
+        controller.active = False
+        app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'ERROR',
+                      'percent': 20, 'output': None, 'message': 'Synthetic original worker failure'})
+        assert app.status.get() == 'ERROR · Synthetic original worker failure'
+
+
+def test_overwrite_displays_the_exact_prior_export_folder(tmp_path):
+    folder = r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_WP\2025\SYNTHETIC_EXPORT'
+    with window(tmp_path, {'files': ['resume.xlsx'], 'folder': folder}, 'overwrite') as (root, app, controller, dialog):
+        visible_text = [str(widget.cget('text')) for widget in widgets(dialog) if 'text' in widget.keys()]
+        assert any(folder in text for text in visible_text)
+        assert not controller.replies

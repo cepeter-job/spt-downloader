@@ -10,14 +10,14 @@
 
 **Spesifikasi:** [desain pemilihan SPT dan workbook](../specs/2026-10-12-period-selection-layout-design.md).
 
-**Batas publikasi:** sesuai permintaan pengguna, PR #6 hanya memuat Tugas 1 dari baseline tersebut. Tugas 2–5 masih tertunda untuk fitur lengkap. Tes RED pemilihan/overwrite dan probe reviewer sementara dari workspace pembuat PR tidak termasuk tree publikasi. Verifikasi produksi memakai CPython 3.11.17 terisolasi dan `locks/test.txt` dengan hash. Konsolidasi berikutnya memasukkan dokumentasi UI/UX yang telah di-merge ke main, memperbaiki temuan review Tugas 1 serta cache CI, tanpa menyatakan fitur tertunda sudah selesai.
+**Batas publikasi terbaru:** PR #6 mencakup Tugas 1 dan lanjutan Tugas 2: pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi Tugas 2 dan tesnya sudah tersedia; verifikasi menyeluruh pada commit implementasi masih menunggu CI. Tugas 3 (PDF), Tugas 4 (pengenalan autentikasi dan teks global), serta penerimaan fitur lengkap pada Tugas 5 tetap tertunda.
 
 ## Batas umum
 
 - Pertahankan NPWP/ID, nilai sumber, dan baris duplikat secara persis; gunakan tes sintetis saja.
 - Folder: `SPT Masa 21`, `SPT Masa Unifikasi`, `SPT Masa PPN`; satu workbook per masa sumber, dengan sheet Normal/Pembetulan terpisah.
 - Form Badan memiliki sheet masing-masing. Rencana PDF hanya mengizinkan laporan keuangan yang sudah tersedia dan diperiksa sebagai aksi baca.
-- Teks persis yang direncanakan: `jalankan proses sedot di background`; `Hasil Sedot berada di folder Downloads Windows`; `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`.
+- Teks persis yang direncanakan pada Tugas 4, belum diterapkan: `jalankan proses sedot di background`; `Hasil Sedot berada di folder Downloads Windows`; `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`.
 - Jangan melonggarkan autentikasi, menebak aksi remote, meng-commit data privat, melakukan overwrite otomatis, atau menjalankan browser pada thread UI.
 - Persyaratan awal rencana meminta persetujuan terpisah sebelum commit/push. Ikuti scope publikasi yang benar-benar diizinkan pengguna pada sesi terkait.
 
@@ -42,13 +42,22 @@
 
 ### Tugas 2: Capture sesuai pilihan dan dialog overwrite
 
-**Berkas:** modul `spt_desktop/app.py`, `controller.py`, `worker.py`, `events.py`, `output.py`; `coretax.py`; serta tes pemilihan/output/worker.
+**Berkas:** modul `spt_desktop/interaction.py`, `app.py`, `controller.py`, `worker.py`, `output.py`, `runtime.py`; serta tes pemilihan, GUI, lifecycle, output, dan worker.
 
-**Antarmuka:** permintaan inventory-ready dan overwrite-required membawa job ID serta payload JSON privat milik job. GUI hanya membaca payload miliknya. Controller mengirim ID record yang dikonfirmasi atau keputusan overwrite untuk job tersebut. `publish_workbooks(...)` mendapat persetujuan overwrite eksplisit; default tetap menolak.
+**Antarmuka:** event `selection_required` dan `overwrite_required` membawa `job_id`/`request_id`; data daftar dan jawaban berada dalam JSON privat milik job. GUI memakai `read_request(event)` dan `respond(kind, request_id, payload)`. `publish_workbooks(..., overwrite=False, expected_outputs=...)` mengikat persetujuan pada folder/file yang sudah diperiksa; default tetap menolak penggantian.
 
-- [ ] Buat/jalankan tes RED untuk detail sesuai pilihan, pilihan kosong, ID salah/duplikat, jawaban lintas job, Stop saat menunggu, penolakan/persetujuan overwrite, serta file di luar pilihan yang tetap utuh.
-- [ ] Tambahkan request/reply terbatas dan dialog pemilihan pada thread utama; filter inventaris sebelum capture detail dan catat scope. Validasi staging serta scope workbook lama, lalu pertahankan rollback.
-- [ ] Jalankan suite lifecycle, worker, selection, output, dan keamanan pada mode Python teroptimasi.
+- [x] Buat/jalankan tes RED untuk detail sesuai pilihan, pilihan kosong, ID salah/duplikat, jawaban lintas job, Stop saat menunggu, penolakan/persetujuan overwrite, serta file di luar pilihan yang tetap utuh.
+- [x] Terapkan request/reply terbatas dan dialog Tk pada thread utama; ambil rincian hanya untuk ID yang dikonfirmasi dan catat scope. Tampilkan folder/file penggantian, periksa ulang tujuan dan workbook lama, serta pertahankan salinan pemulihan saat publikasi gagal. Checkbox ini menyatakan kode tersedia, bukan hasil GREEN.
+- [ ] Tuntaskan suite lifecycle, worker, selection, output, keamanan dalam mode Python teroptimasi, serta self-test source/frozen pada commit implementasi; catat run dan artifact yang tepat.
+
+**Bukti RED pada runner Windows:**
+
+| Run | Commit yang diuji |
+| --- | --- |
+| [38229426598](https://github.com/cepeter-job/spt-downloader/actions/runs/38229426598) | `9b49bb1f1d45ba3eda8f381d0aeaabb70cd5b1a7` |
+| [38234647737](https://github.com/cepeter-job/spt-downloader/actions/runs/38234647737) | `4079ace06d3efbfc916f30a17df00bc9f36d1df4` |
+
+Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan Stop membatalkan pekerjaan; jawaban usang/duplikat/lintas job tidak mengesahkan pilihan. Dialog penggantian menunjukkan folder ekspor sebelumnya dan file yang berbenturan; persetujuan mengganti file Excel tersebut, sedangkan workbook masa lain tetap utuh. `resume.xlsx` baru mengindeks pilihan saat ini. CLI mempertahankan alur argumen/checkpoint yang terpisah dari dialog desktop.
 
 ### Tugas 3: Capture PDF laporan keuangan yang sudah tersedia
 
@@ -78,4 +87,4 @@
 - [ ] Jalankan seluruh pytest dengan basetemp scratch unik; periksa XLSX sintetis dan seluruh tautan/jumlah file.
 - [ ] Dapatkan review kode/keamanan independen dan perbaiki temuan penting dengan tes regresi.
 - [ ] Bangun executable Windows di luar repo, jalankan self-test source/frozen, verifikasi checksum artifact dan keamanan resource, lalu laporkan hasil serta batas penerimaan live.
-- [ ] Sajikan diff dan commit sesuai scope yang diizinkan pengguna. Bukti PR #6 hanya menutup slice Tugas 1; checklist penerimaan fitur lengkap ini tetap menunggu Tugas 2–4.
+- [ ] Sajikan diff dan commit sesuai scope yang diizinkan pengguna. PR #6 mencakup Tugas 1 dan lanjutan Tugas 2; penerimaan fitur lengkap tetap menunggu verifikasi akhir implementasi serta Tugas 3–4.

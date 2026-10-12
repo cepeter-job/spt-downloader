@@ -6,6 +6,8 @@ Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan meng
 
 ## Memakai aplikasi Windows
 
+**Status PR #6:** susunan workbook per masa dilanjutkan dengan pemilihan SPT dan konfirmasi penggantian hasil pada desktop. Implementasinya tersedia pada branch PR; verifikasi menyeluruh untuk commit implementasi masih menunggu CI. Unduhan PDF serta perubahan autentikasi dan teks global tetap merupakan pekerjaan berikutnya. Lihat [rencana dan bukti RED](docs/superpowers/plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite).
+
 Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.11.17` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. Artifact Python 3.14 adalah kandidat pengujian. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
 Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan administrator atau Python pada PATH. Lokasi portable yang dapat dipakai adalah `%LOCALAPPDATA%\Programs\SPTDownloader`. Executable belum memiliki tanda tangan Authenticode dari penerbit; checksum dan provenance build memiliki fungsi berbeda dari tanda tangan penerbit.
@@ -14,9 +16,11 @@ Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan adminis
 2. Masukkan **NPWP tepat 16 digit ASCII** dan **tahun pajak empat digit**. Spasi, pemisah, dan perubahan otomatis atas input tidak diterima. Klik **Mulai**. Hanya satu aplikasi/job yang boleh menggunakan profil khusus ini pada saat yang sama.
 3. Persiapan pertama memeriksa runtime yang sesuai atau menyiapkan CPython produksi terisolasi di `%LOCALAPPDATA%\SPTDownloader`, kemudian memasang dependensi dengan `uv` dan pemeriksaan hash. Persiapan membutuhkan akses unduhan paket/runtime; pengambilan SPT membutuhkan koneksi intranet berizin dan Edge/Chrome terpasang. Kegagalan setup dapat dicoba kembali.
 4. Selesaikan CAPTCHA, MFA, atau login yang tidak dikenali pada browser aplikasi yang terlihat. Login otomatis hanya berlaku untuk form yang sudah diperiksa dan kredensial yang cocok dengan origin. Bila pemindahan sesi ke headless ditolak, browser tetap terlihat.
-5. Tunggu status terminal. **100% berarti COMPLETE setelah verifikasi workbook, publikasi, dan pembersihan proses milik aplikasi.** Klik **Buka Hasil** untuk membuka folder yang telah dipublikasikan.
+5. Setelah daftar SPT muncul, cari menurut jenis pajak, masa, pembetulan, atau ID, lalu pilih SPT yang ingin diunduh. Tidak ada pilihan otomatis. Klik **Sedot SPT terpilih**; aplikasi hanya mengambil rincian untuk ID yang dikonfirmasi. Menutup dialog pemilihan membatalkan pekerjaan.
+6. Jika ada hasil sebelumnya, periksa **folder yang ditampilkan dan daftar file yang akan diganti**. **Jangan ganti**, Escape, atau menutup dialog mempertahankan file lama dan membatalkan publikasi. **Ganti file tersebut** menyetujui penggantian pada folder itu. File masa lain yang tidak diganti tetap tersimpan.
+7. Tunggu status terminal. **100% berarti COMPLETE untuk pilihan yang dikonfirmasi, setelah verifikasi workbook, publikasi, dan pembersihan proses milik aplikasi.** Klik **Buka Hasil** untuk membuka folder yang telah dipublikasikan.
 
-**Stop** membatalkan pekerjaan dan mempertahankan checkpoint lokal sebagai PARTIAL. Aplikasi menutup proses worker/browser yang dimilikinya; worker yang tidak berhenti diterminasi setelah 15 detik. Menutup jendela saat pekerjaan berjalan meminta konfirmasi. Ekspor terdahulu di Downloads tetap tersimpan.
+**Stop** meminta pembatalan pekerjaan; checkpoint yang tersedia tetap disimpan sebagai data belum lengkap. Aplikasi menutup proses worker/browser yang dimilikinya; worker yang tidak berhenti diterminasi setelah 15 detik. Menutup jendela utama saat pekerjaan berjalan meminta konfirmasi. Permintaan atau jawaban lama tidak melanjutkan pekerjaan yang sudah dihentikan. File hasil terdahulu tidak diganti tanpa persetujuan.
 
 ### Cek Kredensial
 
@@ -43,6 +47,8 @@ Downloads ditentukan melalui Windows Known Folder API, termasuk lokasi yang dipi
 
 Nama folder memakai nama wajib pajak dari hasil pencarian NPWP yang cocok persis. Hanya komponen nama berkas yang disanitasi; nama sumber tetap literal di Excel. Nama wajib pajak yang hilang atau Downloads yang tidak dapat ditulisi menghasilkan error. Aplikasi tidak membuat nama pengganti atau diam-diam mengganti tujuan.
 
+Saat penggantian disetujui, desktop memakai folder ekspor sebelumnya yang ditampilkan pada dialog. Aplikasi memeriksa ulang folder dan file tersebut sebelum menggantinya; perubahan sejak konfirmasi menghentikan publikasi.
+
 Workbook, checkpoint, dan profil merupakan data rahasia lokal. Workbook tidak terenkripsi. Jangan unggah berkas tersebut, cookie, kredensial, atau tangkapan layar berisi data wajib pajak ke issue, PR, log publik, atau percakapan.
 
 ## Cakupan pengambilan
@@ -51,17 +57,17 @@ Dasar seleksi bawaan adalah **masa/tahun pajak**, bukan tahun penyampaian. SPT D
 
 Aplikasi membuka `/returnsheets/id-ID/taxpayer-search`, memilih NPWP yang cocok persis, menemukan daftar status yang tersedia bagi wajib pajak tersebut, lalu membaca seluruh halaman. Respons JSON yang diamati berasal dari navigasi UI itu sendiri. `TotalRecords` direkonsiliasi dengan baris yang dibaca; aplikasi tidak mengambil token autentikasi atau menjalankan request penulisan API tersendiri.
 
-Semua jenis SPT, masa, dan pembetulan dalam scope yang terambil dipertahankan. `RecordId` yang sama pada beberapa daftar status diekspor sekali dengan asal kemunculannya dicatat. ID pembetulan berbeda tetap menjadi entri terpisah. Format tahun yang tidak dapat dibuktikan menjadi error, bukan alasan untuk membuang SPT secara diam-diam.
+Inventaris mencakup jenis SPT, masa, dan pembetulan yang ditemukan dalam scope. Desktop kemudian mengambil rincian hanya untuk pilihan pengguna dan mencatat jumlah serta ID yang dipilih. Pilihan kosong atau ID yang tidak sah tidak otomatis menjadi pilihan semua SPT. `RecordId` yang sama pada beberapa daftar status diekspor sekali dengan asal kemunculannya dicatat. ID pembetulan berbeda tetap menjadi entri terpisah. Format tahun yang tidak dapat dibuktikan menjadi error, bukan alasan untuk membuang SPT secara diam-diam.
 
 Setiap detail dibuka hanya melalui kontrol **View** yang dikenali. URL detail harus cocok dengan wajib pajak dan identitas SPT. Tab yang tersedia, field baca, tabel, dan paginasi yang didukung diambil; tab dinonaktifkan tidak dijelajahi. Isi file PDF/BPE/lampiran, pembuatan PDF jarak jauh, dan dialog rincian per baris berada di luar cakupan. Metadata lampiran yang terlihat pada tabel dapat ikut terekspor.
 
-**COMPLETE** berarti cakupan halaman yang didukung telah direkonsiliasi. Status ini tidak menyatakan bahwa seluruh dokumen atau objek database Coretax sudah diunduh. Layout yang tidak didukung, halaman gagal, batas pengujian, atau pembatalan tetap dilaporkan PARTIAL/BLOCKED sesuai tahapnya. Baca **Ringkasan → Status** dan lembar **Audit** pada hasil yang bersangkutan.
+**COMPLETE** berarti cakupan halaman yang didukung telah direkonsiliasi; pada desktop, hasil ini berlaku untuk subset SPT yang dikonfirmasi. Status ini tidak menyatakan bahwa seluruh tahun, dokumen, atau objek database Coretax sudah diunduh. Layout yang tidak didukung, halaman gagal, batas pengujian, atau pembatalan tetap membatasi status hasil sesuai tahapnya. Baca **Ringkasan → Status** dan lembar **Audit** pada hasil yang bersangkutan.
 
 ## Susunan workbook
 
 | Berkas | Isi |
 | --- | --- |
-| `resume.xlsx` | Ringkasan global, Daftar SPT, dan Audit; indeks menaut ke workbook serta lembar detail yang tepat. |
+| `resume.xlsx` | Ringkasan proses saat ini, Daftar SPT, dan Audit; indeks menaut ke workbook serta lembar detail yang tepat. Pada desktop, ringkasan menyatakan pilihan pengguna. |
 | `SPT_Badan.xlsx` | Satu sheet per form teramati, misalnya Induk/L1-D, dengan penanda Normal/Pembetulan. |
 | `SPT Masa 21/SPT_21_<masa>.xlsx` | Satu workbook per masa literal PPh Pasal 21/26; Normal dan pembetulan masa itu dibedakan dalam nama sheet. |
 | `SPT Masa Unifikasi/SPT_Unifikasi_<masa>.xlsx` | Satu workbook per masa literal PPh Unifikasi, termasuk pembetulan masa itu. |
@@ -74,9 +80,13 @@ Identitas dan angka sumber berbentuk teks dipertahankan sebagai teks literal, te
 
 Seluruh set ditulis ke staging dan diperiksa sebelum publikasi. Header workbook lama harus membuktikan scope NPWP, tahun, dan dasar tahun yang sama secara independen dari `run.json`. Benturan nama berkas tanpa membedakan kapital dan berkas tak dikenal ditolak. Kegagalan penggantian mencoba rollback serta mempertahankan data pemulihan. Proses mati atau listrik padam di tengah penggantian beberapa berkas tidak memiliki jaminan transaksi atomik. Gunakan folder baru saat mengubah scope atau memulihkan publikasi yang terblokir.
 
+Penggantian desktop bekerja **per file Excel**. Workbook masa/jenis yang tercantum pada dialog diganti seluruhnya dengan hasil pilihan saat ini, termasuk bila sebelumnya memuat SPT lain dalam file yang sama. Workbook masa lain yang tidak diganti tetap utuh. `resume.xlsx` yang baru merangkum pilihan saat ini; file lama yang dipertahankan di luar pilihan tidak otomatis ditambahkan ke indeks baru itu.
+
 Untuk membuat ulang capture lama yang masih memakai satu workbook per jenis pajak, pilih **folder output baru** melalui `--from-json ... --output ...`. Susunan lama tidak ditimpa atau dihapus secara otomatis ketika set nama berkasnya berbeda. Path output relatif maupun absolut didukung; pindahkan seluruh folder hasil bersama agar tautannya tetap utuh.
 
 ## Memakai CLI di Windows
+
+CLI tetap memakai argumen dan checkpoint untuk menentukan cakupan serta folder output. CLI tidak memakai dialog pemilihan atau persetujuan penggantian milik desktop; pengambilan biasa tetap memproses inventaris dalam cakupan argumennya, kecuali dibatasi oleh opsi di bawah.
 
 Pasang `uv` sesuai [kebijakan toolchain](docs/python-314.md), lalu jalankan **setup.cmd** dari checkout ini. Setelah setup berhasil, jalankan **run.cmd** untuk mengisi NPWP dan tahun secara interaktif. Login dilakukan langsung di browser terpisah; selesaikan password, CAPTCHA, atau MFA di sana, lalu tekan Enter pada terminal bila diminta.
 

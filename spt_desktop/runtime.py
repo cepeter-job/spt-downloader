@@ -21,7 +21,7 @@ WORKER_FILES = (
     'spt_desktop/__init__.py', 'spt_desktop/paths.py',
     'spt_desktop/credentials.py', 'spt_desktop/windows.py',
     'spt_desktop/events.py', 'spt_desktop/auth.py', 'spt_desktop/output.py',
-    'spt_desktop/worker.py',
+    'spt_desktop/worker.py', 'spt_desktop/interaction.py',
 )
 
 

@@ -118,6 +118,108 @@ def test_redirected_destination_after_consent_keeps_original_and_outside_files(t
     assert list(outside.iterdir()) == []
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows directory sharing and junction regression')
+@pytest.mark.parametrize('phase', ['publication', 'rollback'])
+def test_junction_at_replace_boundary_cannot_overwrite_unapproved_outside_bytes(tmp_path, monkeypatch, phase):
+    run, source, downloads, final = previous_and_selected(tmp_path)
+    snapshot = output.existing_outputs(run, downloads)
+    before = workbook_bytes(final)
+    period = final / 'SPT Masa 21'
+    selected_path = period / 'SPT_21_Januari 2025.xlsx'
+    moved = tmp_path / 'original-period'
+    outside = tmp_path / 'unapproved-outside'
+    outside.mkdir()
+    unrelated = outside / selected_path.name
+    outside_bytes = b'SYNTHETIC OUTSIDE FILE: THESE UNAPPROVED BYTES MUST NEVER BE REPLACED'
+    unrelated.write_bytes(outside_bytes)
+    real_replace = Path.replace
+    selected_replacements = 0
+    attempted = False
+
+    def redirect_at_actual_replacement(path, destination):
+        nonlocal selected_replacements, attempted
+        destination = Path(destination)
+        if phase == 'rollback' and destination == final / 'resume.xlsx':
+            raise PermissionError('Synthetic later file lock requires rollback')
+        if destination == selected_path:
+            selected_replacements += 1
+            boundary = 1 if phase == 'publication' else 2
+            if selected_replacements == boundary:
+                attempted = True
+                # All production pathname checks have already happened at this boundary.
+                try:
+                    period.rename(moved)
+                except OSError:
+                    if phase == 'publication':
+                        raise  # Abort the controlled publication with the original bytes intact.
+                    # A denied redirect must still allow the pending rollback to restore its file.
+                else:
+                    subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(period), str(outside)],
+                                   check=True, capture_output=True, text=True, timeout=10)
+        return real_replace(path, destination)
+
+    monkeypatch.setattr(Path, 'replace', redirect_at_actual_replacement)
+    with pytest.raises((OSError, ValueError, RuntimeError)):
+        output.publish_workbooks(run, source, downloads, 'second-job', overwrite=True,
+                                 expected_outputs=snapshot)
+    assert attempted, 'The actual publication/rollback replacement boundary was not exercised'
+    assert unrelated.read_bytes() == outside_bytes, 'Unapproved outside bytes were overwritten before rejection'
+    original_period = moved if moved.exists() else period
+    expected_period = {name.split('/', 1)[1]: value for name, value in before.items()
+                       if name.startswith('SPT Masa 21/')}
+    assert workbook_bytes(original_period) == expected_period
+    for name, value in before.items():
+        if not name.startswith('SPT Masa 21/'):
+            assert (final / name).read_bytes() == value
+    # Any directory handles used by the failed transaction must have been released.
+    released = tmp_path / 'period-after-transaction'
+    original_period.rename(released)
+    released.rename(original_period)
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows replacement transaction regression')
+@pytest.mark.parametrize('mutation', ['write', 'replace'])
+def test_selected_file_changed_at_replace_boundary_is_preserved_and_not_certified(tmp_path, monkeypatch, mutation):
+    run, source, downloads, final = previous_and_selected(tmp_path)
+    snapshot = output.existing_outputs(run, downloads)
+    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
+    original_bytes = selected_path.read_bytes()
+    raced_bytes = b'SYNTHETIC CONCURRENT VERSION: PRESERVE THESE DISTINCT UNAPPROVED BYTES'
+    real_replace = Path.replace
+    attempted = False
+    changed = False
+
+    def change_after_last_check(path, destination):
+        nonlocal attempted, changed
+        destination = Path(destination)
+        if destination == selected_path and not attempted:
+            attempted = True
+            # The consent fingerprint has already been checked by the caller.
+            if mutation == 'write':
+                selected_path.write_bytes(raced_bytes)
+            else:
+                replacement = tmp_path / 'concurrent-version.xlsx'
+                replacement.write_bytes(raced_bytes)
+                real_replace(replacement, selected_path)
+            changed = True
+        return real_replace(path, destination)
+
+    monkeypatch.setattr(Path, 'replace', change_after_last_check)
+    failure = None
+    try:
+        output.publish_workbooks(run, source, downloads, 'second-job', overwrite=True,
+                                 expected_outputs=snapshot)
+    except (OSError, ValueError, RuntimeError) as error:
+        failure = error
+    assert attempted, 'The actual workbook replacement boundary was not exercised'
+    if changed:
+        assert any(path.read_bytes() == raced_bytes for path in tmp_path.rglob('*') if path.is_file()), (
+            'The concurrent workbook version was overwritten without retaining recoverable bytes')
+    else:
+        assert selected_path.read_bytes() == original_bytes
+    assert failure is not None, 'Publication certified a result after a concurrent workbook mutation'
+
+
 def test_stop_after_replacement_rolls_back_every_old_workbook(tmp_path, monkeypatch):
     run, source, downloads, final = previous_and_selected(tmp_path)
     before = workbook_bytes(final)

@@ -2,6 +2,7 @@
 import importlib
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 from test_split_output import fixture_run
 
@@ -42,7 +43,11 @@ def test_complete_event_is_after_browser_cleanup_and_verified_downloads(tmp_path
     def emit(event):
         if event['type']=='terminal':assert state['browser_closed'] and state['driver_closed']
         messages.append(event)
-    result=module.run_job('0000000000000001','2025',tmp_path/'workspace','synthetic-job','msedge',True,emit,lambda:False)
+    def choose(kind, payload, percent):
+        assert kind == 'selection'
+        return {'selected_ids': [record['record_id'] for record in payload['records']]}
+    result=module.run_job('0000000000000001','2025',tmp_path/'workspace','synthetic-job','msedge',True,
+                          emit,lambda:False,requests=SimpleNamespace(request=choose))
     assert result==0
     assert messages[-1]['status']=='COMPLETE' and messages[-1]['percent']==100
     assert (Path(messages[-1]['output'])/'resume.xlsx').is_file()
@@ -86,7 +91,8 @@ def test_worker_main_json_stays_on_original_stdout_when_diagnostics_are_redirect
 from spt_desktop import worker
 job_id='synthetic-stream'
 sys.stdin=io.StringIO(json.dumps({'job_id':job_id,'command':'start'})+'\\n')
-def synthetic_run(npwp,year,root,job_id,browser,headless,emit,cancelled):
+def synthetic_run(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests):
+    assert requests is not None
     print('SYNTHETIC_DIAGNOSTIC_ONLY')
     emit({'job_id':job_id,'type':'progress','percent':20,'message':'Synthetic progress'})
     emit({'job_id':job_id,'type':'terminal','status':'BLOCKED','percent':20,'output':None})
