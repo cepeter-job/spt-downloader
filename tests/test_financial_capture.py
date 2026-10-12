@@ -1,0 +1,184 @@
+"""Induk capture contracts use intercepted synthetic pages and bytes only."""
+from copy import deepcopy
+import hashlib
+import json
+from pathlib import PurePosixPath
+
+import pytest
+from playwright.sync_api import sync_playwright
+
+import coretax_browser as driver
+from coretax_browser import CaptureCancelled
+
+ORIGIN = 'https://coretax.synthetic.invalid'
+RECORD = {
+    'key': 'SYNTHETIC_BADAN_RETURN',
+    'record_id': 'SYNTHETIC_BADAN_RETURN',
+    'list_url': ORIGIN + '/returnsheets/id-ID/corporatereturnsheets/SYNTHETIC_TAXPAYER',
+    'scope': ['0000000000000001', 2025, 'period'],
+    'source_status': 'SYNTHETIC FIXTURE ONLY',
+    'meta': {'Jenis Pajak': 'PPh Badan', 'Masa Pajak': '2025', 'Model SPT': 'Normal'},
+}
+DETAIL = RECORD['list_url'] + '/' + RECORD['record_id']
+PDF_URL = ORIGIN + '/synthetic-existing/statement.pdf'
+PDF = b'%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n'
+LABEL = 'Laporan Keuangan yang Telah Diaudit*'
+CONTROL = '<a href="/synthetic-existing/statement.pdf"><span>' + LABEL + '</span></a>'
+
+# Start and finish on L1D: downloading only before or after traversal misses
+# the financial href, which exists solely on the visible inspected Induk.
+HTML = """<!doctype html><html><body>
+<main class="main-content"><div class="p-tabview">
+<ul class="p-tabview-nav">
+<li><a role="tab" aria-controls="induk" onclick="show('induk')">Induk</a></li>
+<li><a role="tab" aria-controls="l1d" onclick="show('l1d')">L1D</a></li>
+</ul><div class="p-tabview-panels">
+<p-tabpanel><div class="p-tabview-panel" id="induk" hidden>
+<label for="identifier">Nomor literal</label><input id="identifier" value="0000123">
+<label for="amount">Nilai literal</label><input id="amount" value="1.234,56">
+<table><thead><tr><th>Kode</th><th>Nilai</th></tr></thead>
+<tbody><tr><td>0007</td><td>1.234,56</td></tr>
+<tr><td>0007</td><td>1.234,56</td></tr></tbody></table>
+__CONTROL__
+</div></p-tabpanel>
+<p-tabpanel><div class="p-tabview-panel" id="l1d">
+<label for="other">Penanda L1D</label><input id="other" value="SYNTHETIC L1D ONLY">
+</div></p-tabpanel>
+</div></div></main>
+<script>function show(id) {
+  document.querySelectorAll('.p-tabview-panel').forEach(p => p.hidden = p.id !== id);
+}</script></body></html>"""
+
+
+@pytest.fixture(scope='module')
+def browser():
+    with sync_playwright() as engine:
+        owned = engine.chromium.launch(channel='msedge', headless=True)
+        try:
+            yield owned
+        finally:
+            owned.close()
+
+
+@pytest.fixture
+def routed(browser, monkeypatch):
+    monkeypatch.setattr(driver, 'ORIGIN', ORIGIN)
+    contexts = []
+
+    def create(control=CONTROL):
+        context = browser.new_context(service_workers='block')
+        contexts.append(context)
+        requests = []
+
+        def route(intercept):
+            if intercept.request.url == DETAIL:
+                intercept.fulfill(body=HTML.replace('__CONTROL__', control), content_type='text/html')
+            elif intercept.request.url == PDF_URL:
+                intercept.fulfill(body=PDF, content_type='application/pdf')
+            else:
+                intercept.abort('blockedbyclient')
+
+        context.route('**/*', route)
+        page = context.new_page()
+        page.on('request', lambda request: requests.append((request.method, request.url)))
+        page.goto(DETAIL, wait_until='domcontentloaded')
+        assert page.locator('#l1d').is_visible() and not page.locator('#induk').is_visible()
+        return page, requests
+
+    try:
+        yield create
+    finally:
+        for context in contexts:
+            context.close()
+
+
+def test_financial_pdf_is_captured_while_induk_is_visible_without_changing_raw_data(routed, tmp_path):
+    page, requests = routed()
+    result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+    assert result['capture_complete'] is True and result['errors'] == []
+    assert [section['name'] for section in result['sections']] == ['Induk', 'L1D']
+    induk = result['sections'][0]
+    assert induk['fields'] == [
+        {'label': 'Nomor literal', 'field': 'identifier', 'value': '0000123'},
+        {'label': 'Nilai literal', 'field': 'amount', 'value': '1.234,56'},
+    ]
+    assert induk['tables'][0]['rows'] == [['0007', '1.234,56'], ['0007', '1.234,56']]
+    assert page.locator('#l1d').is_visible() and not page.locator('#induk').is_visible()
+    assert len(result['attachments']) == 1
+    attachment = result['attachments'][0]
+    assert attachment['label'] == LABEL and attachment['status'] == 'COMPLETE'
+    relative = PurePosixPath(attachment['relative_path'])
+    assert not relative.is_absolute() and '..' not in relative.parts and '\\' not in str(relative)
+    assert relative.suffix == '.pdf'
+    path = tmp_path.joinpath(*relative.parts)
+    assert path.is_file() and not path.is_symlink() and path.read_bytes() == PDF
+    assert attachment['bytes'] == len(PDF) and attachment['hash'] == hashlib.sha256(PDF).hexdigest()
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
+
+
+@pytest.mark.parametrize('control', [
+    '',
+    '<button onclick="fetch(\'/generate-statement\', {method:\'POST\'})">Laporan Keuangan</button>',
+])
+def test_unsupported_or_absent_financial_control_keeps_structured_capture_partial(routed, tmp_path, control):
+    page, requests = routed(control)
+    result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+    assert result['capture_complete'] is False and result['errors']
+    assert result['sections'][0]['fields'][0]['value'] == '0000123'
+    assert result['attachments'] and all(item['status'] == 'PARTIAL' for item in result['attachments'])
+    assert all(not item.get('relative_path') for item in result['attachments'])
+    assert not list(tmp_path.rglob('*.pdf'))
+    assert requests == [('GET', DETAIL)]
+
+
+def test_stop_during_financial_get_propagates_instead_of_becoming_partial(routed, tmp_path):
+    page, requests = routed()
+
+    def stop_after_financial_request():
+        if ('GET', PDF_URL) in requests:
+            raise CaptureCancelled('SYNTHETIC STOP DURING FINANCIAL GET')
+
+    with pytest.raises(CaptureCancelled):
+        driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path,
+                              check_cancel=stop_after_financial_request)
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
+    assert not list(tmp_path.rglob('*.pdf'))
+
+
+def test_periodic_return_never_downloads_even_an_observed_financial_href(routed, tmp_path):
+    page, requests = routed()
+    record = deepcopy(RECORD)
+    record['meta']['Jenis Pajak'] = 'PPh Pasal 21/26'
+    result = driver.capture_detail(page, record=record, folder=tmp_path)
+    assert result['capture_complete'] is True
+    assert result['attachments'] == []
+    assert not list(tmp_path.rglob('*.pdf'))
+    assert requests == [('GET', DETAIL)]
+
+
+def test_legacy_capture_without_record_context_does_not_download_financial_files(routed, tmp_path):
+    page, requests = routed()
+    result = driver.capture_detail(page)
+    assert result['capture_complete'] is True
+    assert result.get('attachments', []) == []
+    assert not list(tmp_path.rglob('*.pdf'))
+    assert requests == [('GET', DETAIL)]
+
+
+def test_verified_checkpoint_restores_record_bound_financial_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(driver, 'ORIGIN', ORIGIN)
+    path = tmp_path / 'attachments' / 'synthetic' / 'statement.pdf'
+    path.parent.mkdir(parents=True)
+    path.write_bytes(PDF)
+    saved = deepcopy(RECORD)
+    saved.update(detail_url=DETAIL, capture_complete=True,
+                 sections=[{'name': 'Induk', 'fields': [], 'tables': [], 'text': 'SYNTHETIC ONLY'}],
+                 attachments=[{'label': LABEL, 'relative_path': path.relative_to(tmp_path).as_posix(),
+                               'status': 'COMPLETE', 'bytes': len(PDF),
+                               'hash': hashlib.sha256(PDF).hexdigest()}])
+    checkpoint = tmp_path / 'record.json'
+    checkpoint.write_text(json.dumps(saved), encoding='utf-8')
+    restored = driver.read_detail_checkpoint(checkpoint, deepcopy(RECORD), RECORD['scope'])
+    assert restored['attachments'] == saved['attachments']
+    assert restored['scope'] == RECORD['scope']
+    assert restored['detail_url'] == DETAIL
