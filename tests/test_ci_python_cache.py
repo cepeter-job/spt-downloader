@@ -223,7 +223,8 @@ def test_real_windows_cold_install_and_tar_restore_reuse_the_exact_python(tmp_pa
     cold_bytes = executable.read_bytes()
     archive = tmp_path / 'python-cache.tar'
     manifest = tmp_path / 'manifest.txt'
-    manifest.write_text(managed.as_posix() + '\n', encoding='utf-8')
+    # Manifest GNU tar wajib memakai LF; CR dari CRLF dianggap bagian nama berkas.
+    manifest.write_bytes((managed.as_posix() + '\n').encode('utf-8'))
     run([tar, '--posix', '-cf', archive, '-P', '-C', tmp_path,
          '--files-from', manifest, '--force-local'])
     managed.rename(tmp_path / 'cold-python')
