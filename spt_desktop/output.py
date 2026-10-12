@@ -391,6 +391,8 @@ def _rollback(entries, guard, directories):
                 entry.original.close()
                 _move_no_replace(entry.original.path, entry.destination)
         except BaseException as error:
+            # Even an interrupt must preserve the other journaled versions.
+            # The caller converts collected failures into _RecoveryRequired.
             errors.append(error)
     return errors
 
@@ -406,6 +408,8 @@ def _clean_displaced(entries, guard, directories):
                     item.path.unlink()
                 except BaseException:
                     # This path is outside staging: cleanup cannot delete its only copy.
+                    # The caller raises _RecoveryRequired for every retained path,
+                    # including an interrupt that prevented recovery or cleanup.
                     retained.append(item.path)
     return retained
 

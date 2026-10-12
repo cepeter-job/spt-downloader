@@ -1,8 +1,10 @@
 """Small filesystem primitives for the Windows desktop output transaction.
 
 Windows sharing restrictions last until the owning handle is closed. Directory
-handles here deny write/delete sharing, which blocks rename/delete of those
-directories; this does not prohibit every FILE_WRITE_ATTRIBUTES operation.
+handles here deny delete sharing, which blocks rename/delete of those
+directories. Write sharing permits Windows to open a destination directory
+with add-child access during a rename. These handles do not prohibit every
+FILE_WRITE_ATTRIBUTES operation.
 Callers retain all ancestors throughout mutation and release only their own
 empty leaves or staged subtree when a directory itself must be removed/moved.
 
@@ -14,10 +16,10 @@ API contracts:
 https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
 https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw
 https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/open-osfhandle
+https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/87f86c9b-6c2a-4803-84b7-131a74a434fa
 """
 from contextlib import contextmanager
-import ctypes
-from ctypes import wintypes
+import ctypes.wintypes
 import errno
 import os
 from pathlib import Path
@@ -27,6 +29,7 @@ import sys
 
 _GENERIC_READ = 0x80000000
 _FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
 _OPEN_EXISTING = 3
 _FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 _FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
@@ -36,14 +39,16 @@ _FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
 def _kernel():
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.CreateFileW.argtypes = [
-        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
-        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+        ctypes.wintypes.LPCWSTR, ctypes.wintypes.DWORD, ctypes.wintypes.DWORD, ctypes.c_void_p,
+        ctypes.wintypes.DWORD, ctypes.wintypes.DWORD, ctypes.wintypes.HANDLE,
     ]
-    kernel.CreateFileW.restype = wintypes.HANDLE
-    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel.CloseHandle.restype = wintypes.BOOL
-    kernel.MoveFileExW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
-    kernel.MoveFileExW.restype = wintypes.BOOL
+    kernel.CreateFileW.restype = ctypes.wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    kernel.CloseHandle.restype = ctypes.wintypes.BOOL
+    kernel.MoveFileExW.argtypes = [
+        ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPCWSTR, ctypes.wintypes.DWORD,
+    ]
+    kernel.MoveFileExW.restype = ctypes.wintypes.BOOL
     return kernel
 
 
@@ -96,12 +101,17 @@ def _open_windows_fd(path, *, directory):
 
     kernel = _kernel()
     flags = _FILE_FLAG_OPEN_REPARSE_POINT
+    sharing = _FILE_SHARE_READ
     if directory:
         flags |= _FILE_FLAG_BACKUP_SEMANTICS
+        # MS-FSA 2.1.5.15.12 opens the rename target's parent with
+        # FILE_ADD_FILE / FILE_ADD_SUBDIRECTORY. Permit those writes while
+        # still denying DELETE on the held directory itself.
+        sharing |= _FILE_SHARE_WRITE
     # GENERIC_READ includes directory-list access, not just attribute access.
     # No security attributes means the native handle is not inheritable.
     handle = kernel.CreateFileW(
-        _native_path(path), _GENERIC_READ, _FILE_SHARE_READ, None,
+        _native_path(path), _GENERIC_READ, sharing, None,
         _OPEN_EXISTING, flags, None,
     )
     if handle == ctypes.c_void_p(-1).value:
