@@ -1,5 +1,55 @@
 # spt-downloader
 
+## Windows interface (recommended)
+
+Download the `SPTDownloader-Windows-x64` artifact from [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml), extract it, and run **SPTDownloader.exe**. The executable is Windows 10/11 x64 and does not require administrator rights or Python on PATH merely to open the GUI. It is unsigned: verify the source/build; never disable Defender or TLS verification. An optional standard location for the portable executable is `%LOCALAPPDATA%\Programs\SPTDownloader`.
+
+1. Open **Pengaturan** and choose the actual approved intranet login origin, browser (`msedge` or `chrome`), and headless preference. Enter credentials directly in the masked Windows dialog, never in chat. Passwords are stored in this application's origin-bound Windows Credential Manager entries, not in the preferences file. Blank password preserves an existing saved entry; removing an entry requires confirmation.
+2. Enter the **exact 16-digit NPWP** and **4-digit tahun pajak**, then select **Mulai**. No spaces, separators or silent normalization. The existing tax-period year interpretation is preserved. Only one application/job can use the dedicated profile at a time.
+3. The first run checks a compatible installed CPython 3.11 x64 or prepares portable Python in `%LOCALAPPDATA%\SPTDownloader`, then installs pinned worker dependencies with bundled/compatible uv. No global PATH edits or registry registration. First setup needs package/runtime download access; scraping needs authorized intranet connectivity and installed Edge/Chrome. A setup error remains retryable rather than claiming success.
+4. Progress displays stage-weighted work and processed/verified SPT counts; setup has an indeterminate indicator where no denominator exists. **100% only means COMPLETE after verified workbook publication and owned browser cleanup.** CAPTCHA/MFA and unknown/unsafe sign-in layouts switch to the application's visible browser; solve challenges there. Stored credentials are never used for unknown forms or tax submission buttons. If headless session transfer is rejected, the application remains visible.
+5. Use **Buka Hasil** after publication. **Stop** preserves private local PARTIAL checkpoints and closes only owned worker/browser descendants; a stubborn worker is terminated after 15 seconds. Closing the window during a job asks for confirmation. Previously downloaded exports are never overwritten or deleted.
+
+### Cek Kredensial (login otomatis)
+
+Open **Pengaturan**, save the exact login origin/account/password, then press **Cek Kredensial**. No NPWP/year is required. The check runs in the owned background worker, creates a fresh temporary browser profile and tries the saved account once. It never reuses the export profile or starts scraping/exporting. Unsaved settings disable the check; **Simpan** keeps the dialog open so you can check immediately. **Batalkan Cek**, Escape or closing settings stops the owned check before the dialog closes.
+
+**Login berhasil** appears only after the saved credential was actually submitted and the authorized Coretax taxpayer-search marker is visible. An already-authenticated SSO session is reported as **password belum diuji**, not a valid saved password. CAPTCHA/MFA and unknown form layouts report why manual action is needed; a timeout is **belum terverifikasi**, not proof of a wrong password. Origin/account mismatches and network/credential-store failures have explicit messages. The result is transient, not a persistent guarantee that a password is still valid later. Normal **Mulai** continues to use automatic login when the inspected form and saved entry match; challenges are never bypassed.
+
+### Deteksi setelah login manual
+
+The observed Satu sign-in may finish at `https://coretax.intranet.pajak.go.id/home/id-ID/`. The app treats that exact home route only as a navigation cue, opens the known read-only taxpayer-search URL once and waits for its visible `ObjectPermitNumber` control. **Five minutes is a maximum deadline, not a fixed sleep.** The app proceeds as soon as the search page is verified; a homepage alone does not certify authentication. Headless profile restoration also waits for the SPA control instead of immediately treating delayed rendering as session rejection. The same transition is used after a saved-password submission in Cek Kredensial without adding a second password attempt.
+
+### Windows paths and confidentiality
+
+The actual Windows Known Folder API resolves Downloads, including OneDrive, relocated, network and non-ASCII locations. Successful jobs publish only the verified Excel set:
+
+```text
+<actual Downloads>\NPWP - NAMA WP\TAHUN PAJAK\WAKTU EKSPOR-JOB ID\
+  resume.xlsx
+  SPT_Badan.xlsx     # only if captured in this scope
+  SPT_21.xlsx        # only if captured in this scope
+  ...other available tax-type workbooks
+```
+
+Keep all workbooks together for relative hyperlinks. The folder name uses the exact-matched taxpayer's name, sanitizing only its filesystem component; the literal source name stays in Excel. A missing taxpayer name or unwritable/failed Downloads publication is an error, not a fabricated name or silently changed destination. Raw recovery JSON and the dedicated confidential browser profile stay under `%LOCALAPPDATA%\SPTDownloader`, outside this repository. Preferences whitelist only browser/headless/origin/account identifier; no password, token, cookies or code is stored there.
+
+Live account login/export is an authorized user acceptance check; synthetic tests and packaged self-test do **not** prove live Coretax access. Unknown detail layouts, failed pages or cancelled jobs remain explicitly PARTIAL/BLOCKED, and never display successful 100%.
+
+### Build from source / GitHub
+
+GitHub Actions uses pinned actions, Windows x64 CPython 3.11, uv-installed production/build dependencies, synthetic tests, and `build_desktop.py`. The thin windowed executable contains only the GUI runtime, pinned uv binary and an explicit worker-source allowlist; no browser binaries, tax captures, personal profiles, credentials or output files. The artifact contains the executable, LICENSE, quick-start README and a non-secret frozen self-test report. No intranet account/data is used in CI.
+
+```bash
+uv venv --python 3.11 .venv
+uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-build.txt
+.venv/Scripts/python.exe -m pytest tests -q
+.venv/Scripts/python.exe build_desktop.py --output dist
+```
+
+`build_desktop.py` runs the frozen executable's `--self-test` and fails if GUI/resources/uv/known-folder checks fail. Build artifacts are generated under `dist` or the explicitly selected output directory and excluded from Git. The original CLI and offline Excel export remain available below.
+
+
 Local, authorized Coretax SPT capture and split-file Excel export.
 
 ## Run on Windows
