@@ -1,163 +1,137 @@
-# spt-downloader
+# SPT Downloader
 
-## Windows interface (recommended)
+Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan mengekspornya ke Excel. Tersedia antarmuka Windows dan CLI. Pengambilan data hanya memakai navigasi baca, mempertahankan identitas serta nilai sumber, dan mencatat kelengkapan hasil secara eksplisit.
 
-Download the `SPTDownloader-Windows-x64` artifact from [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml), extract it, and run **SPTDownloader.exe**. The executable is Windows 10/11 x64 and does not require administrator rights or Python on PATH merely to open the GUI. It is unsigned: verify the source/build; never disable Defender or TLS verification. An optional standard location for the portable executable is `%LOCALAPPDATA%\Programs\SPTDownloader`.
+**Untuk kontributor:** mulai dari [dokumentasi development](docs/README.md). Panduan tersebut mencakup setup `uv`, arsitektur, pengujian, CI, persiapan Python 3.14, dan penerimaan manual.
 
-1. Open **Pengaturan** and choose the actual approved intranet login origin, browser (`msedge` or `chrome`), and headless preference. Enter credentials directly in the masked Windows dialog, never in chat. Passwords are stored in this application's origin-bound Windows Credential Manager entries, not in the preferences file. Blank password preserves an existing saved entry; removing an entry requires confirmation.
-2. Enter the **exact 16-digit NPWP** and **4-digit tahun pajak**, then select **Mulai**. No spaces, separators or silent normalization. The existing tax-period year interpretation is preserved. Only one application/job can use the dedicated profile at a time.
-3. The first run checks a compatible installed CPython 3.11 x64 or prepares portable Python in `%LOCALAPPDATA%\SPTDownloader`, then installs pinned worker dependencies with bundled/compatible uv. No global PATH edits or registry registration. First setup needs package/runtime download access; scraping needs authorized intranet connectivity and installed Edge/Chrome. A setup error remains retryable rather than claiming success.
-4. Progress displays stage-weighted work and processed/verified SPT counts; setup has an indeterminate indicator where no denominator exists. **100% only means COMPLETE after verified workbook publication and owned browser cleanup.** CAPTCHA/MFA and unknown/unsafe sign-in layouts switch to the application's visible browser; solve challenges there. Stored credentials are never used for unknown forms or tax submission buttons. If headless session transfer is rejected, the application remains visible.
-5. Use **Buka Hasil** after publication. **Stop** preserves private local PARTIAL checkpoints and closes only owned worker/browser descendants; a stubborn worker is terminated after 15 seconds. Closing the window during a job asks for confirmation. Previously downloaded exports are never overwritten or deleted.
+## Memakai aplikasi Windows
 
-### Cek Kredensial (login otomatis)
+Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.11.17` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. Artifact Python 3.14 adalah kandidat pengujian. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
-Open **Pengaturan**, save the exact login origin/account/password, then press **Cek Kredensial**. No NPWP/year is required. The check runs in the owned background worker, creates a fresh temporary browser profile and tries the saved account once. It never reuses the export profile or starts scraping/exporting. Unsaved settings disable the check; **Simpan** keeps the dialog open so you can check immediately. **Batalkan Cek**, Escape or closing settings stops the owned check before the dialog closes.
+Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan administrator atau Python pada PATH. Lokasi portable yang dapat dipakai adalah `%LOCALAPPDATA%\Programs\SPTDownloader`. Executable belum memiliki tanda tangan Authenticode dari penerbit; checksum dan provenance build memiliki fungsi berbeda dari tanda tangan penerbit.
 
-**Login berhasil** appears only after the saved credential was actually submitted and the authorized Coretax taxpayer-search marker is visible. An already-authenticated SSO session is reported as **password belum diuji**, not a valid saved password. CAPTCHA/MFA and unknown form layouts report why manual action is needed; a timeout is **belum terverifikasi**, not proof of a wrong password. Origin/account mismatches and network/credential-store failures have explicit messages. The result is transient, not a persistent guarantee that a password is still valid later. Normal **Mulai** continues to use automatic login when the inspected form and saved entry match; challenges are never bypassed.
+1. Buka **Pengaturan**. Pilih origin login intranet yang memang diizinkan, browser `msedge` atau `chrome`, dan preferensi headless. Masukkan akun serta password langsung pada dialog Windows yang menyamarkan password.
+2. Masukkan **NPWP tepat 16 digit ASCII** dan **tahun pajak empat digit**. Spasi, pemisah, dan perubahan otomatis atas input tidak diterima. Klik **Mulai**. Hanya satu aplikasi/job yang boleh menggunakan profil khusus ini pada saat yang sama.
+3. Persiapan pertama memeriksa runtime yang sesuai atau menyiapkan CPython produksi terisolasi di `%LOCALAPPDATA%\SPTDownloader`, kemudian memasang dependensi dengan `uv` dan pemeriksaan hash. Persiapan membutuhkan akses unduhan paket/runtime; pengambilan SPT membutuhkan koneksi intranet berizin dan Edge/Chrome terpasang. Kegagalan setup dapat dicoba kembali.
+4. Selesaikan CAPTCHA, MFA, atau login yang tidak dikenali pada browser aplikasi yang terlihat. Login otomatis hanya berlaku untuk form yang sudah diperiksa dan kredensial yang cocok dengan origin. Bila pemindahan sesi ke headless ditolak, browser tetap terlihat.
+5. Tunggu status terminal. **100% berarti COMPLETE setelah verifikasi workbook, publikasi, dan pembersihan proses milik aplikasi.** Klik **Buka Hasil** untuk membuka folder yang telah dipublikasikan.
 
-### Deteksi setelah login manual
+**Stop** membatalkan pekerjaan dan mempertahankan checkpoint lokal sebagai PARTIAL. Aplikasi menutup proses worker/browser yang dimilikinya; worker yang tidak berhenti diterminasi setelah 15 detik. Menutup jendela saat pekerjaan berjalan meminta konfirmasi. Ekspor terdahulu di Downloads tetap tersimpan.
 
-The observed Satu sign-in may finish at `https://coretax.intranet.pajak.go.id/home/id-ID/`. The app treats that exact home route only as a navigation cue, opens the known read-only taxpayer-search URL once and waits for its visible `ObjectPermitNumber` control. **Five minutes is a maximum deadline, not a fixed sleep.** The app proceeds as soon as the search page is verified; a homepage alone does not certify authentication. Headless profile restoration also waits for the SPA control instead of immediately treating delayed rendering as session rejection. The same transition is used after a saved-password submission in Cek Kredensial without adding a second password attempt.
+### Cek Kredensial
 
-### Windows paths and confidentiality
+Simpan origin, akun, dan password pada **Pengaturan**, kemudian klik **Cek Kredensial**. Pemeriksaan ini tidak memerlukan NPWP atau tahun, memakai profil browser sementara yang baru, dan mencoba kredensial tersimpan satu kali. Pemeriksaan tidak memulai pengambilan SPT atau ekspor. Tombol dinonaktifkan selama ada perubahan pengaturan yang belum disimpan; **Simpan** mempertahankan dialog agar pemeriksaan bisa segera dijalankan.
 
-The actual Windows Known Folder API resolves Downloads, including OneDrive, relocated, network and non-ASCII locations. Successful jobs publish only the verified Excel set:
+**Login berhasil** memerlukan bukti bahwa kredensial tersimpan telah dikirim melalui form yang sah dan kontrol pencarian wajib pajak Coretax terlihat. Sesi SSO yang sudah login dilaporkan sebagai **password belum diuji**. CAPTCHA/MFA atau form yang tidak dikenal membutuhkan tindakan manual. Timeout berarti **belum terverifikasi**, bukan bukti password salah. Hasil ini berlaku untuk pemeriksaan tersebut, bukan jaminan password tetap valid di kemudian hari.
 
-```text
-<actual Downloads>\NPWP - NAMA WP\TAHUN PAJAK\WAKTU EKSPOR-JOB ID\
-  resume.xlsx
-  SPT_Badan.xlsx     # only if captured in this scope
-  SPT_21.xlsx        # only if captured in this scope
-  ...other available tax-type workbooks
-```
+Gunakan **Batalkan Cek**, Escape, atau tutup Pengaturan untuk menghentikan pemeriksaan milik aplikasi sebelum dialog ditutup. Password disimpan hanya di Windows Credential Manager, terikat pada origin yang diizinkan. Password kosong mempertahankan entri lama; penghapusan entri meminta konfirmasi. File preferensi tidak menyimpan password, token, atau cookie.
 
-Keep all workbooks together for relative hyperlinks. The folder name uses the exact-matched taxpayer's name, sanitizing only its filesystem component; the literal source name stays in Excel. A missing taxpayer name or unwritable/failed Downloads publication is an error, not a fabricated name or silently changed destination. Raw recovery JSON and the dedicated confidential browser profile stay under `%LOCALAPPDATA%\SPTDownloader`, outside this repository. Preferences whitelist only browser/headless/origin/account identifier; no password, token, cookies or code is stored there.
+### Setelah login manual
 
-Live account login/export is an authorized user acceptance check; synthetic tests and packaged self-test do **not** prove live Coretax access. Unknown detail layouts, failed pages or cancelled jobs remain explicitly PARTIAL/BLOCKED, and never display successful 100%.
+Rute `https://coretax.intranet.pajak.go.id/home/id-ID/` hanya menjadi petunjuk navigasi. Aplikasi membuka alamat pencarian wajib pajak yang dikenal satu kali, lalu menunggu kontrol `ObjectPermitNumber` terlihat. Homepage saja tidak membuktikan autentikasi siap. Batas lima menit adalah tenggat maksimum; pekerjaan berlanjut segera setelah kontrol pencarian terverifikasi. Mekanisme yang sama dipakai sesudah pengiriman password pada Cek Kredensial tanpa mencoba password untuk kedua kali.
 
-### Build from source / GitHub
+## Lokasi hasil dan kerahasiaan
 
-GitHub Actions uses pinned actions, Windows x64 CPython 3.11, uv-installed production/build dependencies, synthetic tests, and `build_desktop.py`. The thin windowed executable contains only the GUI runtime, pinned uv binary and an explicit worker-source allowlist; no browser binaries, tax captures, personal profiles, credentials or output files. The artifact contains the executable, LICENSE, quick-start README and a non-secret frozen self-test report. No intranet account/data is used in CI.
+Downloads ditentukan melalui Windows Known Folder API, termasuk lokasi yang dipindahkan, OneDrive, jaringan, atau nama non-ASCII.
 
-```bash
-uv venv --python 3.11 .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-build.txt
-.venv/Scripts/python.exe -m pytest tests -q
-.venv/Scripts/python.exe build_desktop.py --output dist
-```
+| Isi | Lokasi |
+| --- | --- |
+| Set Excel yang dipublikasikan desktop | `<Downloads aktual>\NPWP - NAMA WP\TAHUN PAJAK\WAKTU EKSPOR-JOB ID\` |
+| Checkpoint dan data pemulihan desktop | `%LOCALAPPDATA%\SPTDownloader\jobs\<job-id>\` |
+| Profil browser khusus desktop | `%LOCALAPPDATA%\SPTDownloader\profile\` |
+| Runtime, paket, dan preferensi desktop | `%LOCALAPPDATA%\SPTDownloader\` |
 
-`build_desktop.py` runs the frozen executable's `--self-test` and fails if GUI/resources/uv/known-folder checks fail. Build artifacts are generated under `dist` or the explicitly selected output directory and excluded from Git. The original CLI and offline Excel export remain available below.
+Nama folder memakai nama wajib pajak dari hasil pencarian NPWP yang cocok persis. Hanya komponen nama berkas yang disanitasi; nama sumber tetap literal di Excel. Nama wajib pajak yang hilang atau Downloads yang tidak dapat ditulisi menghasilkan error. Aplikasi tidak membuat nama pengganti atau diam-diam mengganti tujuan.
 
+Workbook, checkpoint, dan profil merupakan data rahasia lokal. Workbook tidak terenkripsi. Jangan unggah berkas tersebut, cookie, kredensial, atau tangkapan layar berisi data wajib pajak ke issue, PR, log publik, atau percakapan.
 
-Local, authorized Coretax SPT capture and split-file Excel export.
+## Cakupan pengambilan
 
-## Run on Windows
+Dasar seleksi bawaan adalah **masa/tahun pajak**, bukan tahun penyampaian. SPT Desember 2025 yang disampaikan Januari 2026 termasuk ekspor tahun pajak 2025. CLI menyediakan `--year-basis submission` bila seleksi memang harus berdasarkan tanggal penyampaian.
 
-1. Open the cloned `spt-downloader` folder and run **setup.cmd** first (requires `uv` 0.12.18 or newer and installed Edge or Chrome). Then double-click **run.cmd**.
-2. Enter the **exact 16-digit NPWP** and **four-digit tax year**. Separators/spaces are rejected, not silently normalized.
-3. Sign in directly in the separate browser window if prompted; complete password, CAPTCHA or MFA there. Press Enter in the script terminal after signing in. An existing local automation browser on port 9235 is reused by the launcher.
-4. Open the Excel file in the printed `output` folder. Check **Ringkasan → Status** and **Audit** before relying on completeness.
+Aplikasi membuka `/returnsheets/id-ID/taxpayer-search`, memilih NPWP yang cocok persis, menemukan daftar status yang tersedia bagi wajib pajak tersebut, lalu membaca seluruh halaman. Respons JSON yang diamati berasal dari navigasi UI itu sendiri. `TotalRecords` direkonsiliasi dengan baris yang dibaca; aplikasi tidak mengambil token autentikasi atau menjalankan request penulisan API tersendiri.
 
-```bat
-.venv\Scripts\python.exe coretax.py
-```
+Semua jenis SPT, masa, dan pembetulan dalam scope yang terambil dipertahankan. `RecordId` yang sama pada beberapa daftar status diekspor sekali dengan asal kemunculannya dicatat. ID pembetulan berbeda tetap menjadi entri terpisah. Format tahun yang tidak dapat dibuktikan menjadi error, bukan alasan untuk membuang SPT secara diam-diam.
 
-For an already-authenticated automation browser:
+Setiap detail dibuka hanya melalui kontrol **View** yang dikenali. URL detail harus cocok dengan wajib pajak dan identitas SPT. Tab yang tersedia, field baca, tabel, dan paginasi yang didukung diambil; tab dinonaktifkan tidak dijelajahi. Isi file PDF/BPE/lampiran, pembuatan PDF jarak jauh, dan dialog rincian per baris berada di luar cakupan. Metadata lampiran yang terlihat pada tabel dapat ikut terekspor.
 
-```bat
-.venv\Scripts\python.exe coretax.py --npwp YOUR_16_DIGIT_NPWP --year 2025 --reuse-browser http://127.0.0.1:9235
-```
+**COMPLETE** berarti cakupan halaman yang didukung telah direkonsiliasi. Status ini tidak menyatakan bahwa seluruh dokumen atau objek database Coretax sudah diunduh. Layout yang tidak didukung, halaman gagal, batas pengujian, atau pembatalan tetap dilaporkan PARTIAL/BLOCKED sesuai tahapnya. Baca **Ringkasan → Status** dan lembar **Audit** pada hasil yang bersangkutan.
 
-The placeholder `YOUR_16_DIGIT_NPWP` must be replaced; it is intentionally not a valid NPWP.
+## Susunan workbook
 
-## Scope and year rule
+| Berkas | Isi |
+| --- | --- |
+| `resume.xlsx` | Ringkasan global, Daftar SPT, dan Audit; indeks menaut ke workbook serta lembar detail yang tepat. |
+| `SPT_Badan.xlsx` | Semua masa dan pembetulan PPh Badan yang terambil, satu lembar detail per SPT unik. |
+| `SPT_21.xlsx` | Semua masa dan pembetulan PPh Pasal 21/26 yang terambil. |
+| `SPT_Unifikasi.xlsx` | Semua masa dan pembetulan PPh Unifikasi yang terambil. |
+| `SPT_<jenis>.xlsx` | Satu workbook untuk setiap jenis pajak lainnya yang tersedia dalam hasil capture. |
 
-The default is **tax-period / tax year**, not the submission year. A December 2025 return submitted in January 2026 belongs to the default 2025 export. For submission-date selection, add `--year-basis submission`.
+Workbook jenis pajak berisi Ringkasan/Daftar SPT khusus jenis tersebut, Audit proses, dan lembar detailnya. Tidak ada berkas jenis pajak yang dibuat bila datanya tidak terambil. **Simpan seluruh set pada folder yang sama dan jangan mengganti nama workbook** agar tautan relatif tetap berfungsi. Seluruh folder dapat dipindahkan bersama.
 
-The tool searches the Coretax **SPT taxpayer search** at `/returnsheets/id-ID/taxpayer-search`, selects the exact NPWP result, discovers the taxpayer's exposed status lists, and reads every list page. It observes the UI's own JSON list responses to reconcile `TotalRecords` against scanned rows. It does not extract authentication tokens or issue independent API write requests.
+Identitas dan angka sumber berbentuk teks dipertahankan sebagai teks literal, termasuk nol awal, format angka Indonesia, dan teks yang diawali `=`. Hitungan ringkasan tetap numerik. Sel yang melebihi 32.767 karakter, karakter XML yang tidak didukung, atau angka numerik yang akan kehilangan presisi menghentikan ekspor secara eksplisit. Teks konteks halaman yang panjang dipecah antar-sel tanpa pemotongan. Hanya URL HTTP/HTTPS menjadi tautan aktif.
 
-All available return types and amendments for the selected year are retained. Duplicate appearances of the same `RecordId` in different status lists are exported once with their source occurrences recorded in JSON. Distinct amendment IDs remain separate. Year interpretation of migrated numeric periods is restricted to the observed validated `MMMMYYYY` pattern; the original source value is preserved. Unrecognizable year values are errors, not silently excluded.
+Seluruh set ditulis ke staging dan diperiksa sebelum publikasi. Header workbook lama harus membuktikan scope NPWP, tahun, dan dasar tahun yang sama secara independen dari `run.json`. Benturan nama berkas tanpa membedakan kapital dan berkas tak dikenal ditolak. Kegagalan penggantian mencoba rollback serta mempertahankan data pemulihan. Proses mati atau listrik padam di tengah penggantian beberapa berkas tidak memiliki jaminan transaksi atomik. Gunakan folder baru saat mengubah scope atau memulihkan publikasi yang terblokir.
 
-For each selected return, the tool clicks only the observed **View** control, verifies taxpayer/record provenance, and captures exposed tabs, read-only form values, visible tables and their pagination. Disabled tabs are not traversed. Navigation/accordion/page-size controls only reveal content.
+## Memakai CLI di Windows
 
-**Not included:** file contents of PDF/BPE/other uploaded attachments, generated PDFs, and per-row drill-down dialogs. Their visible table metadata is included where available. “COMPLETE” means the supported exposed-page scope is reconciled, not that every underlying Coretax document or database object has been downloaded. Unsupported layouts or inaccessible returns are explicitly marked **PARTIAL**.
+Pasang `uv` sesuai [kebijakan toolchain](docs/python-314.md), lalu jalankan **setup.cmd** dari checkout ini. Setelah setup berhasil, jalankan **run.cmd** untuk mengisi NPWP dan tahun secara interaktif. Login dilakukan langsung di browser terpisah; selesaikan password, CAPTCHA, atau MFA di sana, lalu tekan Enter pada terminal bila diminta.
 
-## Workbook layout — separate files by SPT type
+`run.cmd` dapat memakai ulang browser automation lokal pada port 9235 yang sudah aktif. Browser baru biasa tidak mengaktifkan port debugging. Jangan mengekspos endpoint debugging ke jaringan atau memakai profil browser pribadi.
 
-- **resume.xlsx:** global Ringkasan, Daftar SPT, and Audit only; detail data is kept in the type files. Click an index number to open the correct external workbook and worksheet.
-- **SPT_Badan.xlsx:** all captured PPh Badan periods and amendments in one workbook, with one detail worksheet per unique return.
-- **SPT_21.xlsx:** all captured PPh Pasal 21/26 periods and amendments in one workbook.
-- **SPT_Unifikasi.xlsx:** all captured PPh Unifikasi periods and amendments in one workbook.
-- **Other tax types:** one `SPT_<type>.xlsx` each; filenames are checked for collisions before any workbook is written.
-
-Each type workbook contains its own type-specific Ringkasan/Daftar SPT, the run Audit, and only that type's detail worksheets. All periods and amendment identifiers are retained. No absent tax-type files are fabricated. Detail sheets link back to resume.xlsx. Keep all generated workbooks together in the same folder and do not rename them; hyperlinks are relative so the whole folder can be moved. Existing single-file exports are not deleted; choose a new folder if it contains other workbooks. All new workbooks are staged and verified before replacing the previous set, with rollback if a later file replacement fails. Failed publication retains its staging/recovery directory, including when rollback is interrupted or blocked. Abrupt power loss is not a transactional filesystem guarantee. Use a new output folder when changing the NPWP, year, year basis, or test scope. Existing workbook headers must independently match the requested scope, even if a newer capture has already updated run.json.
-
-The raw checkpoint command `--resume` is independent of the Excel filename `resume.xlsx`; it still resumes capture from inventory.json and return checkpoints. `--from-json` rebuilds all the split Excel files offline without opening the browser.
-
-Identifiers and source figures are stored as literal text to preserve leading zeros, Indonesian number formatting and source precision. Summary counts are numeric. Source strings beginning with `=` are **not** executed as Excel formulas. Values that Excel cannot represent exactly, including a field/table cell longer than 32,767 characters, unsupported XML controls or numeric precision that would be lost, stop the export explicitly. Long page-context text is split across cells without truncation; the raw JSON remains available for recovery. Only HTTP/HTTPS source URLs become active links; other URL text is preserved without an executable link. The workbook is not encrypted; handle it as confidential taxpayer data.
-
-## Checkpoints and recovery
-
-Raw JSON stays locally under the output folder. List batches are saved incrementally; every completed return has its own JSON checkpoint. A failed/limited/interrupted run stays PARTIAL. Resume skips complete matching checkpoints and retries incomplete returns:
+Contoh berikut untuk **Command Prompt**. Ganti `NPWP_16_DIGIT_ANDA` dengan NPWP yang memang berwenang Anda akses; placeholder sengaja bukan NPWP valid. Tentukan folder baru di luar checkout untuk data lokal.
 
 ```bat
-.venv\Scripts\python.exe coretax.py --resume "output\YOUR_PREVIOUS_RUN_FOLDER" --reuse-browser http://127.0.0.1:9235
+.venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --output "%LOCALAPPDATA%\SPTDownloader-CLI\run-baru" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\profile"
 ```
 
-Rebuild Excel offline from already-captured data:
+Bila browser automation yang sesuai sudah login:
 
 ```bat
-.venv\Scripts\python.exe coretax.py --from-json "output\YOUR_PREVIOUS_RUN_FOLDER\run.json"
+.venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --output "%LOCALAPPDATA%\SPTDownloader-CLI\run-baru" --reuse-browser http://127.0.0.1:9235
 ```
 
-Inventory only (explicitly PARTIAL for full-detail scope):
+Endpoint harus berupa origin HTTP/HTTPS loopback tanpa kredensial, path, query, atau fragment. Tutup browser automation setelah selesai; proses lokal lain mungkin dapat mengakses endpoint selama browser tersebut terbuka.
+
+### Checkpoint dan pemulihan CLI
+
+`--resume` melanjutkan pengambilan data dari `inventory.json` dan checkpoint detail yang cocok. Opsi tersebut berbeda dengan nama workbook `resume.xlsx`. Detail lengkap yang valid dilewati, detail yang belum lengkap dicoba kembali.
 
 ```bat
-.venv\Scripts\python.exe coretax.py --npwp YOUR_16_DIGIT_NPWP --year 2025 --inventory-only
+.venv\Scripts\python.exe coretax.py --resume "%LOCALAPPDATA%\SPTDownloader-CLI\run-sebelumnya" --reuse-browser http://127.0.0.1:9235
 ```
 
-`--detail-limit N` is for bounded testing, not a complete export. `--max-pages` defaults to 1000 per list/table; reaching the safety cap is reported as PARTIAL.
-
-Exit codes: **0** complete supported scope; **2** partial; **1** blocked; **130** interrupted. Authentication or layout failures never cause fabricated tax output. Use a new output folder for a fresh inventory; do not edit checkpoints manually.
-
-## Security
-
-Use only an account and taxpayer records you are authorized to access. The script never asks for a password, CAPTCHA answer, card or verification code. Login is performed by you in the browser; persistent login cookies may remain in the dedicated browser profile. The profile is separate from your personal Firefox/Chrome/Edge profile. Neither profiles, credentials, tax output nor the virtual environment is included in the distributable ZIP. No tax data is uploaded to a cloud scraping service by this tool. This chat's live inspection does not change that local execution model.
-
-If a local debugging browser is reused, its endpoint must be a localhost HTTP/HTTPS origin without credentials, path, query or fragment. Other local programs may be able to access that session while the debugging browser is open, so close the dedicated automation window after use. Never expose its port to the network. The normal fresh-browser path does not enable a debugging port.
-
-No submission, cancellation, email, PDF-generation or arbitrary row-action buttons are clicked. If the View selector or page structure changes, the tool reports an error rather than guessing an action.
-
-## Troubleshooting and tests
-
-- **Login required / MFA / CAPTCHA:** finish in the visible browser. `--non-interactive` requires an existing authenticated session.
-- **Profile in use:** close only the dedicated automation window, or reuse its known local endpoint. Do not kill your personal browser or copy its cookies.
-- **NPWP not found / ambiguous result:** check the exact input and account authorization. The script does not select partial matches.
-- **Source counts or metadata change mid-run:** start a fresh inventory in a new folder. Check Audit.
-- **Unknown return layout:** inspect the relevant saved checkpoint before extending selectors; keep the run PARTIAL until verified.
-
-Development tests use locally served synthetic HTML fixtures, explicitly separate from taxpayer outputs:
+`--from-json` membentuk ulang seluruh set Excel secara offline tanpa membuka browser. Gunakan folder baru agar hasil lama tetap mudah diperiksa:
 
 ```bat
-uv pip install --python .venv\Scripts\python.exe -r requirements-test.txt
-.venv\Scripts\python.exe -m pytest tests -q --basetemp "%LOCALAPPDATA%\hermes\cache\scratch\coretax-tests"
+.venv\Scripts\python.exe coretax.py --from-json "%LOCALAPPDATA%\SPTDownloader-CLI\run-sebelumnya\run.json" --output "%LOCALAPPDATA%\SPTDownloader-CLI\hasil-pemulihan-baru"
 ```
 
-The tool has been exercised against the authorized intranet session as well as the fixture tests. See the delivered workbook's Audit for the particular run's verified results and limitations.
+`--inventory-only` mengambil daftar saja sehingga statusnya PARTIAL untuk cakupan detail penuh. `--detail-limit N` membatasi jumlah detail untuk pengujian; sisa SPT yang belum diambil membuat run tetap PARTIAL. `--max-pages` memiliki batas bawaan 1000 per daftar/tabel; batas yang menghalangi kelengkapan dilaporkan sebagai PARTIAL. Jangan mengedit checkpoint secara manual.
 
-## Development repository
+| Exit code CLI | Arti |
+| --- | --- |
+| `0` | COMPLETE untuk cakupan yang didukung. |
+| `2` | PARTIAL. |
+| `1` | Terblokir/gagal. |
+| `130` | Diinterupsi. |
 
-Development takes place in https://github.com/cepeter-job/spt-downloader. The repository contains source, documentation and synthetic fixture tests only. Never commit real taxpayer data, captured JSON, Excel outputs, browser profiles, credentials or cookies. Existing local tax outputs stay outside this repository.
+Kode protokol worker desktop berbeda untuk beberapa status; rujuk [arsitektur](docs/arsitektur.md#status-dan-stop) saat mengubah controller.
 
-## Continuous verification
+## Development dan verifikasi
 
-GitHub Actions runs the synthetic test suite on Windows with CPython 3.11 and the installed Edge browser for pull requests and pushes to `main` and `feat/windows-desktop`. It audits the installed runtime, test and available desktop-build dependencies with `pip-audit`; a weekly scheduled run checks dependencies on both maintained branches without rebuilding the app. An unavailable advisory service fails the check so an unverified audit cannot look successful.
+Repositori [cepeter-job/spt-downloader](https://github.com/cepeter-job/spt-downloader) menyatukan CLI dan aplikasi desktop. `main` menjadi branch integrasi; perubahan dilakukan lewat branch berumur pendek dan PR yang dapat ditinjau.
 
-The workflow pins actions by commit and uv to the patched 0.12.18 release. Its uv cache contains dependency packages, never browser profiles, tax outputs or test workspaces. PRs can restore the cache but do not save it. Desktop builds, when present, run after tests and dependency audit in the same job, exercise the frozen GUI, and upload only the allowlisted executable, license, usage instructions, self-test report and SHA-256 manifest. Artifact names include the tested commit. Dependabot groups weekly dependency and action update PRs for review.
+- [Setup, pengujian lokal, dan kontribusi](docs/pengembangan.md).
+- [Arsitektur serta kontrak keamanan dan data](docs/arsitektur.md).
+- [Pembagian CI, cache, dan verifikasi artifact](docs/ci-dan-rilis.md).
+- [Kebijakan Python produksi dan persiapan 3.14](docs/python-314.md).
+- [Checklist penerimaan manual Coretax dan Excel](docs/penerimaan-manual.md).
+- [Pemecahan masalah](docs/pemecahan-masalah.md).
+- [Audit 12 Oktober 2026](docs/audit-2026-10-12.md), sebagai catatan historis baseline dan temuan.
 
-For the findings, verification boundaries and follow-up priorities, see [the October 2026 audit](docs/audit-2026-10-12.md).
+Pengujian otomatis memakai data sintetis. Tes browser memakai fixture HTML lokal, tanpa akun atau data wajib pajak. Self-test GUI source/frozen tidak mengakses kredensial nyata dan tidak mengambil SPT. Bukti tersebut tidak menggantikan penerimaan manual berizin pada Coretax aktual.
 
-## License
+## Lisensi
 
-The repository retains its existing GNU General Public License, version 3. See [LICENSE](LICENSE).
+Lisensi yang ada dipertahankan: **GNU General Public License versi 3**. Lihat [LICENSE](LICENSE).

@@ -2,7 +2,8 @@
 import importlib
 import importlib.util
 from pathlib import Path
-from spt_desktop.runtime import WORKER_FILES
+import pytest
+from spt_desktop.runtime import WORKER_FILES, python_version
 
 
 def builder():
@@ -29,3 +30,44 @@ def test_workflow_tests_builds_and_verifies_before_explicit_artifact_upload():
     assert 'pytest tests' in text and 'build_desktop.py' in text
     assert 'upload-artifact@' in text and 'SPTDownloader.exe' in text
     assert 'secrets.' not in text and 'coretax.intranet' not in text
+
+
+def report(profile='production'):
+    return {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
+            'python': python_version(profile), 'python_implementation': 'CPython',
+            'free_threaded': False, 'tcl': '8.6.15', 'tk': '8.6.15',
+            'worker_python': python_version(), 'worker_resources': list(WORKER_FILES),
+            'credential_check_controls': True, 'gui_controls': ['Cek Kredensial'],
+            'personal_use_labels': ['Coretax → Excel · for personal use only', 'for personal use : punto ap'],
+            'credentials_accessed': False, 'live_scrape': False}
+
+
+@pytest.mark.parametrize('profile', ['production', 'candidate'])
+def test_frozen_report_accepts_only_the_requested_patched_python(profile):
+    builder().validate_report(report(profile), profile)
+    wrong = report(profile)
+    wrong['python'] = '3.11.9' if profile == 'production' else python_version()
+    with pytest.raises(RuntimeError, match='self-test'):
+        builder().validate_report(wrong, profile)
+
+
+@pytest.mark.parametrize('key,value', [('python_implementation', 'PyPy'), ('free_threaded', True),
+                                      ('tcl', ''), ('tk', None), ('bits', 32),
+                                      ('worker_python', '3.11.9'), ('worker_resources', []),
+                                      ('credentials_accessed', True), ('live_scrape', True)])
+def test_frozen_report_rejects_missing_runtime_evidence(key, value):
+    data = report()
+    data[key] = value
+    with pytest.raises(RuntimeError, match='self-test'):
+        builder().validate_report(data)
+
+
+@pytest.mark.parametrize('version', [(3, 11, 9), (3, 11, 16), (3, 14, 8)])
+def test_production_build_rejects_unsupported_interpreter_before_writing(monkeypatch, tmp_path, version):
+    build = builder()
+    monkeypatch.setattr(build.sys, 'platform', 'win32')
+    monkeypatch.setattr(build.sys, 'version_info', version)
+    output = tmp_path / 'artifact'
+    with pytest.raises(RuntimeError, match='3.11.17'):
+        build.build(output)
+    assert not output.exists()

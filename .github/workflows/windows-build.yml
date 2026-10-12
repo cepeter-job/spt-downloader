@@ -2,9 +2,9 @@ name: Build Windows app
 
 on:
   push:
-    branches: [main, feat/windows-desktop]
+    branches: [main]
   pull_request:
-    branches: [main, feat/windows-desktop]
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '17 3 * * 1'
@@ -16,70 +16,284 @@ concurrency:
   group: windows-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
+env:
+  PYTHONUTF8: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+# Batas paralelisme selama migrasi Python: maksimal 2 runner tes portable,
+# 2 runner tes Windows, dan 1 runner audit secara bersamaan. Setiap runner
+# menjalankan satu proses pytest; Tk, Credential Manager, dan proses milik aplikasi tetap serial.
+# Dua runner build dimulai setelah seluruh tes dan audit lulus.
 jobs:
-  validate:
-    name: Windows tests and dependency audit${{ matrix.ref != '' && format(' ({0})', matrix.ref) || '' }}
-    runs-on: windows-2022
-    timeout-minutes: 20
+  route:
+    name: Route changes and validate workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.route.outputs.mode }}
+      python_matrix: ${{ steps.route.outputs.python_matrix }}
+      production_python: ${{ steps.route.outputs.production_python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Route the actual changed paths, defaulting to full validation
+        id: route
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: python3 -m scripts.ci_route route
+      - name: Validate Actions syntax with verified actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 --max-time 60 \
+            --output "$archive" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check --status
+          tar --no-same-owner -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck='' -pyflakes=''
+
+  portable:
+    name: Portable tests (Python ${{ matrix.python }})
+    needs: route
+    if: needs.route.outputs.mode == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
-      matrix:
-        ref: ${{ github.event_name == 'schedule' && fromJSON('["main","feat/windows-desktop"]') || fromJSON('[""]') }}
-    defaults:
-      run:
-        shell: pwsh
-    env:
-      PYTHONUTF8: '1'
-      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.route.outputs.python_matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ matrix.ref }}
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.11'
-          architecture: x64
-      - name: Set up pinned uv and dependency cache
+      - name: Set up pinned uv, wheel cache and managed Python cache
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: '0.12.18'
+          version: '0.12.22'
+          python-version: ${{ matrix.python }}
           enable-cache: true
-          save-cache: ${{ github.event_name != 'pull_request' }}
-          cache-dependency-glob: 'requirements*.txt'
-          cache-suffix: windows-x64-python311
-      - name: Install runtime and test dependencies
+          cache-python: true
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-dependency-glob: |
+            requirements*.txt
+            locks/*.txt
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ matrix.python }}-portable
+      - name: Install the hash-locked portable test environment
+        env:
+          PYTHON_VERSION: ${{ matrix.python }}
         run: |
-          uv venv --python 3.11 .venv
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-test.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (Test-Path requirements-build.txt) {
-            uv pip install --python .venv/Scripts/python.exe -r requirements-build.txt
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-      - name: Audit installed runtime, test and build dependencies
-        run: uvx --with pip --from pip-audit==2.10.1 pip-audit --path .venv/Lib/site-packages --strict --progress-spinner off
-      - name: Run synthetic tests only
-        if: github.event_name != 'schedule'
-        run: .venv/Scripts/python.exe -m pytest tests -q --basetemp "$env:RUNNER_TEMP/spt-pytest"
-      - name: Build and exercise frozen GUI
-        if: github.event_name != 'schedule' && hashFiles('build_desktop.py') != ''
-        run: .venv/Scripts/python.exe build_desktop.py --output dist
-      - name: Record artifact checksums
-        if: github.event_name != 'schedule' && hashFiles('build_desktop.py') != ''
-        run: |
-          $files = 'SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json'
-          $checksums = foreach ($name in $files) {
-            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path dist $name)).Hash.ToLowerInvariant()
-            "$hash  $name"
-          }
-          $checksums | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
-      - name: Upload verified Windows artifact
-        if: github.event_name != 'schedule' && hashFiles('build_desktop.py') != ''
+          # Gunakan key katalog exact untuk instalasi baru; +gil dipakai saat discovery.
+          uv python install "cpython-${PYTHON_VERSION}-linux-x86_64-gnu" --no-bin --no-registry
+          uv venv --managed-python --python "$PYTHON_VERSION+gil" .venv
+          uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
+          uv pip check --python .venv/bin/python
+      - name: Verify lock freshness and hashes against the reviewed manifests
+        if: matrix.profile == 'production'
+        run: .venv/bin/python -m scripts.update_locks --check
+      - name: Run portable synthetic tests serially
+        run: >-
+          .venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q
+          --basetemp "$RUNNER_TEMP/spt-pytest-portable"
+          --ci-manifest "$RUNNER_TEMP/test-inventory.json" --durations=10
+      - name: Publish synthetic collection evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: SPTDownloader-Windows-x64-${{ github.sha }}
+          name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}
+          path: ${{ runner.temp }}/test-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows integration (Python ${{ matrix.python }})
+    needs: route
+    if: needs.route.outputs.mode == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.route.outputs.python_matrix) }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned uv, wheel cache and managed Python cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.22'
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-python: true
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-dependency-glob: |
+            requirements*.txt
+            locks/*.txt
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ matrix.python }}-integration
+      - name: Install the hash-locked Windows test environment
+        env:
+          PYTHON_VERSION: ${{ matrix.python }}
+        run: |
+          # Key katalog exact memilih distribusi x64/GIL pada instalasi baru.
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Run the complete Windows suite including native, Tk and Edge fixtures
+        run: >-
+          .venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q
+          --basetemp "$env:RUNNER_TEMP/spt-pytest-windows"
+          --ci-manifest "$env:RUNNER_TEMP/test-inventory.json" --durations=10
+      - name: Exercise fresh managed worker setup and verified reuse
+        env:
+          PYTHON_PROFILE: ${{ matrix.profile }}
+        run: .venv/Scripts/python.exe -m scripts.ci_runtime --profile "$env:PYTHON_PROFILE"
+      - name: Publish synthetic collection evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-inventory-windows-python${{ matrix.python }}-${{ github.sha }}
+          path: ${{ runner.temp }}/test-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+
+  dependency-audit:
+    name: Locked dependency audit
+    needs: route
+    if: needs.route.outputs.mode != 'docs'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    # Pin runtime/build tidak memiliki marker Python, sehingga environment Windows
+    # ini mengaudit gabungan paket/versi untuk kedua interpreter CI.
+    # Alat audit terisolasi dan ikut diaudit. Database advisory tidak disimpan dalam cache.
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHON_VERSION: ${{ needs.route.outputs.production_python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned uv and audit dependency cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.22'
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-python: true
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-dependency-glob: |
+            requirements*.txt
+            locks/*.txt
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ env.PYTHON_VERSION }}-audit
+      - name: Install the locked audited environment and isolated audit tooling
+        run: |
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .audit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .audit/Scripts/python.exe --require-hashes --only-binary :all: locks/audit.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .audit/Scripts/python.exe
+      - name: Audit installed runtime, test, build and auditor dependencies
+        id: audit
+        run: >-
+          .audit/Scripts/python.exe -m pip_audit
+          --path .venv/Lib/site-packages --path .audit/Lib/site-packages
+          --strict --progress-spinner off --format json
+          --output "$env:RUNNER_TEMP/dependency-audit.json"
+      - name: Publish dependency audit report
+        if: always() && steps.audit.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: ${{ runner.temp }}/dependency-audit.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  package:
+    name: Windows package (Python ${{ matrix.python }})
+    needs: [route, portable, windows, dependency-audit]
+    if: needs.route.outputs.mode == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.route.outputs.python_matrix) }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHON_VERSION: ${{ matrix.python }}
+      PYTHON_PROFILE: ${{ matrix.profile }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned uv, build wheel cache and managed Python cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.22'
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-python: true
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-dependency-glob: |
+            requirements*.txt
+            locks/*.txt
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ matrix.python }}-build
+      - name: Install the hash-locked build environment
+        run: |
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Download this commit's portable test inventory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}
+          path: ${{ runner.temp }}/inventory-portable
+      - name: Download this commit's Windows test inventory
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-inventory-windows-python${{ matrix.python }}-${{ github.sha }}
+          path: ${{ runner.temp }}/inventory-windows
+      - name: Require full Windows coverage and the matching portable subset before building
+        run: >-
+          .venv/Scripts/python.exe -m scripts.ci_tests
+          "$env:RUNNER_TEMP/inventory-portable/test-inventory.json"
+          "$env:RUNNER_TEMP/inventory-windows/test-inventory.json"
+          --python-version "$env:PYTHON_VERSION" --commit "$env:GITHUB_SHA"
+      - name: Exercise the source GUI without accounts
+        run: .venv/Scripts/python.exe spt_gui.py --self-test --report "$env:RUNNER_TEMP/source-selftest.json"
+      - name: Build and exercise the frozen GUI
+        run: .venv/Scripts/python.exe build_desktop.py --python-profile "$env:PYTHON_PROFILE" --output dist
+      - name: Validate frozen report and record artifact checksums
+        run: .venv/Scripts/python.exe -m scripts.ci_artifact write-checksums dist --python-version "$env:PYTHON_VERSION"
+      - name: Upload the exact verified Windows payload
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -89,3 +303,92 @@ jobs:
             dist/README.txt
             dist/build-selftest.json
             dist/SHA256SUMS.txt
+      - name: Read back the uploaded artifact by its exact artifact ID
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.upload.outputs.artifact-id }}
+          path: ${{ runner.temp }}/artifact-readback
+          merge-multiple: true
+      - name: Verify the downloaded bytes and five-file allowlist
+        run: >-
+          .venv/Scripts/python.exe -m scripts.ci_artifact verify
+          "$env:RUNNER_TEMP/artifact-readback" --python-version "$env:PYTHON_VERSION"
+      - name: Record verified artifact coordinates
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          "Verified artifact ID $env:ARTIFACT_ID, run $env:GITHUB_RUN_ID, commit $env:GITHUB_SHA, Python $env:PYTHON_VERSION." | Add-Content $env:GITHUB_STEP_SUMMARY
+          "Artifact: $env:ARTIFACT_URL" | Add-Content $env:GITHUB_STEP_SUMMARY
+
+  attest:
+    name: Artifact provenance (Python ${{ matrix.python }})
+    needs: [route, package]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.route.outputs.mode == 'full'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.route.outputs.python_matrix) }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download the already verified artifact from this workflow run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}
+          path: verified-artifact
+      - name: Verify exact contents before attesting without executing the artifact
+        env:
+          PYTHON_VERSION: ${{ matrix.python }}
+        run: python3 -m scripts.ci_artifact verify verified-artifact --python-version "$PYTHON_VERSION"
+      - name: Attest executable and its complete checksum manifest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          create-storage-record: false
+          subject-path: |
+            verified-artifact/SPTDownloader.exe
+            verified-artifact/SHA256SUMS.txt
+
+  validate:
+    # Pertahankan nama pemeriksaan cabang meskipun pekerjaan CI dipisahkan.
+    name: Windows tests and dependency audit
+    needs: [route, portable, windows, dependency-audit, package, attest]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every workload selected by the routing decision
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 -m scripts.ci_route gate
+
+  cleanup:
+    name: Clean completed branches
+    needs: [route, validate]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.route.result == 'success' && needs.validate.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Delete only completed, unchanged branch heads already contained in the tested main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/cleanup_branches.py --repository "$GITHUB_REPOSITORY"
+          --base main --expected-base "$GITHUB_SHA" --apply
