@@ -7,6 +7,7 @@ from .credentials import ALLOWED_ORIGINS,read_login
 
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
 CORETAX_ORIGIN = 'https://coretax.intranet.pajak.go.id'
+HOME_PATH = '/home/id-ID/'
 
 
 class AuthBlocked(RuntimeError):
@@ -86,10 +87,27 @@ def try_saved_login(page,check_cancel):
         return False
 
 
-def _wait_ready(page,deadline,check_cancel):
+def _at_home(page):
+    return _origin(page.url)==CORETAX_ORIGIN and urlsplit(page.url).path==HOME_PATH
+
+
+def _open_search_from_home(page,check_cancel,timeout=30000,emit=None):
+    if not _at_home(page):return False
+    check_cancel()
+    if emit:emit('progress','Beranda Coretax terdeteksi; membuka Pencarian WP untuk verifikasi sesi…')
+    page.goto(SEARCH_URL,wait_until='domcontentloaded',timeout=timeout)
+    return True
+
+
+def _wait_ready(page,deadline,check_cancel,emit=None):
+    opened_search=False
     while time.monotonic()<deadline:
         check_cancel()
         if authenticated(page):return True
+        if not opened_search and _at_home(page):
+            remaining=max(1,int((deadline-time.monotonic())*1000))
+            opened_search=_open_search_from_home(page,check_cancel,timeout=min(30000,remaining),emit=emit)
+            continue
         page.wait_for_timeout(200)
     return False
 
@@ -114,24 +132,25 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
     try:
         context,page=launch(headless)
         if authenticated(page):return context,page
+        if _at_home(page) and _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):return context,page
         if _origin(page.url) not in ALLOWED_ORIGINS:
             raise AuthBlocked('Login beralih ke origin yang tidak disetujui. Hubungi administrator.')
         attempted=try_saved_login(page,check_cancel)
-        if attempted and _wait_ready(page,time.monotonic()+10,check_cancel):return context,page
+        if attempted and _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):return context,page
         if headless:
             context.close(); context=None
             context,page=launch(False)
-        emit('login_required','Selesaikan login/CAPTCHA/MFA langsung di browser aplikasi; batas waktu 5 menit.')
-        if not _wait_ready(page,time.monotonic()+manual_timeout,check_cancel):
+        emit('login_required','Selesaikan login/CAPTCHA/MFA di browser aplikasi. Maksimal 5 menit; otomatis lanjut setelah Pencarian WP terverifikasi.')
+        if not _wait_ready(page,time.monotonic()+manual_timeout,check_cancel,emit=emit):
             raise AuthBlocked('Login manual belum selesai; tekan Mulai untuk mencoba lagi.')
         if headless:
             context.close(); context=None
             context,page=launch(True)
-            if authenticated(page):return context,page
+            if _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):return context,page
             context.close(); context=None
             context,page=launch(False)
             emit('login_required','Sesi headless tidak diterima. Lanjutkan login di browser terlihat.')
-            if not _wait_ready(page,time.monotonic()+manual_timeout,check_cancel):
+            if not _wait_ready(page,time.monotonic()+manual_timeout,check_cancel,emit=emit):
                 raise AuthBlocked('Sesi browser terlihat belum siap.')
         return context,page
     except BaseException:
@@ -166,6 +185,9 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
             check_cancel()
             if authenticated(page):
                 return 'LOGIN_UNVERIFIED','Sesi SSO tersedia, tetapi password tersimpan belum diuji.'
+            if _at_home(page):
+                _wait_ready(page,time.monotonic()+timeout,check_cancel)
+                return 'LOGIN_UNVERIFIED','Beranda Coretax terbuka, tetapi password tersimpan belum diuji.'
             current=_origin(page.url)
             if current not in ALLOWED_ORIGINS:
                 return 'LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.'
@@ -188,10 +210,15 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
             button.click(timeout=5000)
             del login
             deadline=time.monotonic()+timeout
+            opened_search=False
             while time.monotonic()<deadline:
                 check_cancel()
                 if authenticated(page):
                     return 'LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.'
+                if not opened_search and _at_home(page):
+                    remaining=max(1,int((deadline-time.monotonic())*1000))
+                    opened_search=_open_search_from_home(page,check_cancel,timeout=min(30000,remaining))
+                    continue
                 if _has_challenge(page):
                     return 'LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.'
                 if _origin(page.url) not in ALLOWED_ORIGINS:

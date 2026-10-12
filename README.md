@@ -16,6 +16,10 @@ Open **Pengaturan**, save the exact login origin/account/password, then press **
 
 **Login berhasil** appears only after the saved credential was actually submitted and the authorized Coretax taxpayer-search marker is visible. An already-authenticated SSO session is reported as **password belum diuji**, not a valid saved password. CAPTCHA/MFA and unknown form layouts report why manual action is needed; a timeout is **belum terverifikasi**, not proof of a wrong password. Origin/account mismatches and network/credential-store failures have explicit messages. The result is transient, not a persistent guarantee that a password is still valid later. Normal **Mulai** continues to use automatic login when the inspected form and saved entry match; challenges are never bypassed.
 
+### Deteksi setelah login manual
+
+The observed Satu sign-in may finish at `https://coretax.intranet.pajak.go.id/home/id-ID/`. The app treats that exact home route only as a navigation cue, opens the known read-only taxpayer-search URL once and waits for its visible `ObjectPermitNumber` control. **Five minutes is a maximum deadline, not a fixed sleep.** The app proceeds as soon as the search page is verified; a homepage alone does not certify authentication. Headless profile restoration also waits for the SPA control instead of immediately treating delayed rendering as session rejection. The same transition is used after a saved-password submission in Cek Kredensial without adding a second password attempt.
+
 ### Windows paths and confidentiality
 
 The actual Windows Known Folder API resolves Downloads, including OneDrive, relocated, network and non-ASCII locations. Successful jobs publish only the verified Excel set:
