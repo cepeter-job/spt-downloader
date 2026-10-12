@@ -2,7 +2,7 @@
 import time
 import tempfile
 from pathlib import Path
-from urllib.parse import urljoin,urlsplit
+from urllib.parse import urlsplit
 from .credentials import ALLOWED_ORIGINS,read_login
 
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
@@ -29,6 +29,15 @@ def _has_challenge(page):
     return bool(page.locator(challenges).count())
 
 
+def _submission(button):
+    # Read browser-resolved properties: a base URL and empty method override can
+    # change the actual destination/method even when raw attributes look safe.
+    return button.evaluate('''(button)=>({
+        action:button.hasAttribute('formaction')?button.formAction:button.form.action,
+        method:button.hasAttribute('formmethod')?button.formMethod:button.form.method
+    })''')
+
+
 def _login_fields(page):
     origin=_origin(page.url)
     if origin not in ALLOWED_ORIGINS:return None
@@ -45,14 +54,13 @@ def _login_fields(page):
     identifier,password,button=identifiers.first,passwords.first,buttons.first
     if password.get_attribute('autocomplete')=='new-password':return None
     if not all(e.is_visible() and e.is_enabled() for e in (identifier,password,button)):return None
-    target=button.get_attribute('formaction')
-    if target and _origin(urljoin(page.url,target))!=origin:return None
-    if (button.get_attribute('formmethod') or 'post').lower()!='post':return None
+    submission=_submission(button)
+    if _origin(submission['action'])!=origin or submission['method'].lower()!='post':return None
     visible_label=button.locator('.indicator-label:visible')
     caption=visible_label.first.inner_text() if visible_label.count()==1 else button.inner_text()
     label=(button.get_attribute('aria-label') or caption or button.get_attribute('value') or '').strip().casefold()
     if label not in ('login','log in','sign in','masuk'):return None
-    action=urljoin(page.url,target) if target else meta['action']
+    action=submission['action']
     segments=[part.casefold() for part in urlsplit(action).path.split('/') if part]
     login_paths={'login','log-in','signin','sign-in','logon','session','sessions','authenticate','authentication'}
     if segments and not any(part in login_paths for part in segments):return None
@@ -69,17 +77,42 @@ def _login_fields(page):
     return origin,identifier,password,button
 
 
+def _bind_login_fields(page,fields):
+    origin=fields[0]
+    controls=tuple(locator.element_handle() for locator in fields[1:])
+    form=controls[-1].evaluate_handle('(button)=>button.form')
+    submission=_submission(controls[-1])
+    def current():
+        if _origin(page.url)!=origin:return False
+        inspected=_login_fields(page)
+        if inspected is None or inspected[0]!=origin:return False
+        latest=tuple(locator.element_handle() for locator in inspected[1:])
+        if _submission(latest[-1])!=submission:return False
+        if not form.evaluate('(form,button)=>form.isConnected && form===button.form',latest[-1]):return False
+        return all(original.evaluate('(element,current)=>element.isConnected && element===current',fresh)
+                   for original,fresh in zip(controls,latest))
+    return (origin,*controls),current
+
+
 def try_saved_login(page,check_cancel):
     check_cancel()
     fields=_login_fields(page)
     if fields is None:return False
-    origin,identifier,password,button=fields
     try:
+        fields,current=_bind_login_fields(page,fields)
+        origin,identifier,password,button=fields
+        if not current():return False
+        check_cancel()
         login=read_login(origin)
         if login is None:return False
+        if not current():return False
         check_cancel()
         identifier.fill(login.identifier,timeout=5000)
+        if not current():return False
+        check_cancel()
         password.fill(login.password,timeout=5000)
+        if not current():return False
+        check_cancel()
         button.click(timeout=5000)
         return True
     except Exception:
@@ -198,15 +231,24 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
             fields=_login_fields(page)
             if fields is None:
                 return 'LOGIN_MANUAL','Form login belum dikenali dengan aman; gunakan login manual saat Mulai.'
+            fields,current_form=_bind_login_fields(page,fields)
+            changed_form=('LOGIN_MANUAL','Form login berubah; gunakan login manual saat Mulai.')
+            if not current_form():return changed_form
+            check_cancel()
             login=read_login(origin)
             if login is None:
                 return 'LOGIN_BLOCKED','Kredensial belum disimpan untuk origin ini; isi Pengaturan lalu Simpan.'
             if login.identifier!=account:
                 return 'LOGIN_BLOCKED','Akun tersimpan berbeda dari Pengaturan; masukkan akun/password lalu Simpan.'
             _,identifier,password,button=fields
+            if not current_form():return changed_form
             check_cancel()
             identifier.fill(login.identifier,timeout=5000)
+            if not current_form():return changed_form
+            check_cancel()
             password.fill(login.password,timeout=5000)
+            if not current_form():return changed_form
+            check_cancel()
             button.click(timeout=5000)
             del login
             deadline=time.monotonic()+timeout

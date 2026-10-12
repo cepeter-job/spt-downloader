@@ -12,7 +12,7 @@ import time
 
 from .windows import ProcessJob
 
-UV_VERSION = '0.12.16'
+UV_VERSION = '0.12.18'
 WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'requirements.txt',
     'spt_desktop/__init__.py', 'spt_desktop/paths.py',

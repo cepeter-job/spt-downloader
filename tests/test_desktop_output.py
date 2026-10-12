@@ -70,3 +70,28 @@ def test_previous_exports_are_never_overwritten(tmp_path):
     second = module().publish_workbooks(run,tmp_path/'local',tmp_path/'Downloads','second-job')
     assert first != second and first.parent == second.parent
     assert (first/'resume.xlsx').read_bytes() == before
+
+
+def test_preexisting_taxpayer_directory_cannot_redirect_publication_outside_downloads(tmp_path):
+    import subprocess
+    import sys
+
+    run = fixture_run()
+    run['taxpayer_name'] = 'SYNTHETIC WP'
+    source = tmp_path/'local'
+    coretax.save_output(run,source)
+    downloads = tmp_path/'Downloads'
+    downloads.mkdir()
+    outside = tmp_path/'outside'
+    outside.mkdir()
+    redirected = downloads/'0000000000000001 - SYNTHETIC WP'
+    if sys.platform == 'win32':
+        # Directory junctions do not need the symlink privilege on Windows CI.
+        subprocess.run(['cmd','/d','/c','mklink','/J',str(redirected),str(outside)],
+                       check=True,capture_output=True,text=True,timeout=10)
+    else:
+        redirected.symlink_to(outside,target_is_directory=True)
+    with pytest.raises(ValueError,match='Downloads'):
+        module().publish_workbooks(run,source,downloads,'synthetic-redirect')
+    assert list(outside.iterdir()) == []
+    assert (source/'resume.xlsx').is_file()

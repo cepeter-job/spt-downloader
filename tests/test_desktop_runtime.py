@@ -32,7 +32,7 @@ class SyntheticCommands:
         if cancelled():
             raise RuntimeError('Setup dibatalkan')
         if '--version' in argv:
-            return subprocess.CompletedProcess(argv, 0, 'uv 0.12.16 (synthetic)\n', '')
+            return subprocess.CompletedProcess(argv, 0, 'uv 0.12.18 (synthetic)\n', '')
         if '-c' in argv:
             candidate = Path(argv[0])
             info = {'implementation': 'CPython', 'version': self.system_version if candidate == self.system else [3, 11, 16],
@@ -112,6 +112,22 @@ def test_missing_python_and_uv_use_only_bundled_and_managed_tools(setup, monkeyp
     assert python.is_relative_to(root)
     assert (root / 'tools' / 'uv.exe').read_bytes() == (source / 'tools' / 'uv.exe').read_bytes()
     assert any(c[1:3] == ['python', 'install'] for c in commands.calls)
+
+
+def test_vulnerable_installed_uv_is_rejected_in_favor_of_patched_bundle(setup, monkeypatch):
+    runtime, root, source, commands = setup
+    original_run = commands.run
+
+    def installed_old_uv(argv, env, cancelled, timeout=900):
+        if Path(argv[0]) == commands.uv and '--version' in argv:
+            commands.calls.append([str(value) for value in argv])
+            return subprocess.CompletedProcess(argv, 0, 'uv 0.12.16 (synthetic vulnerable version)\n', '')
+        return original_run(argv, env, cancelled, timeout)
+
+    monkeypatch.setattr(runtime, '_run', installed_old_uv)
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+    installations = [call for call in commands.calls if call[1:3] == ['pip', 'install']]
+    assert installations and all(Path(call[0]) == root/'tools'/'uv.exe' for call in installations)
 
 
 def test_ready_environment_is_reverified_and_does_not_reinstall(setup):

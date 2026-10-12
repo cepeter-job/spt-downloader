@@ -177,14 +177,14 @@ def test_internal_secret_bearing_errors_never_reach_result(browser,tmp_path,monk
     if failure=='read':monkeypatch.setattr(auth,'read_login',unsafe_error)
     else:
         saved(monkeypatch)
-        original=auth._login_fields
-        class Broken:
-            fill=unsafe_error
-            click=unsafe_error
-        def controls(page):
-            origin,identifier,password,button=original(page)
-            return (origin,Broken(),password,button) if failure=='fill' else (origin,identifier,password,Broken())
-        monkeypatch.setattr(auth,'_login_fields',controls)
+        original=auth._bind_login_fields
+        def controls(page,inspected):
+            fields,current=original(page,inspected)
+            origin,identifier,password,button=fields
+            monkeypatch.setattr(identifier if failure=='fill' else button,
+                                'fill' if failure=='fill' else 'click',unsafe_error)
+            return fields,current
+        monkeypatch.setattr(auth,'_bind_login_fields',controls)
     status,message=function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,lambda:None,timeout=0.4)
     assert status=='LOGIN_ERROR'
     assert SECRET not in message and ACCOUNT not in message and 'private call log' not in message

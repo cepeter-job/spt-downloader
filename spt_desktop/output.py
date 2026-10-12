@@ -23,12 +23,14 @@ def publish_workbooks(run,source,downloads,job_id,check_cancel=None):
     if not isinstance(job_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',job_id):
         raise ValueError('Invalid job identifier')
     name = safe_taxpayer_name(run.get('taxpayer_name',''))
-    source,downloads = Path(source).resolve(),Path(downloads)
+    source,downloads = Path(source).resolve(),Path(downloads).resolve()
     coretax.verify_outputs(run,source)
     filenames = run['output_files']
     if any(not isinstance(n,str) or Path(n).name != n or not n.endswith('.xlsx') for n in filenames):
         raise ValueError('Invalid workbook filename')
-    parent = downloads / f'{npwp} - {name}' / str(year)
+    parent = (downloads / f'{npwp} - {name}' / str(year)).resolve()
+    if not parent.is_relative_to(downloads):
+        raise ValueError('Result folder must remain within the resolved Windows Downloads directory')
     parent.mkdir(parents=True,exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     final = parent / f'{stamp}-{job_id[:12]}'
