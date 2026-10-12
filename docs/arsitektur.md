@@ -81,12 +81,14 @@ Stop memiliki prioritas atas start/progres yang terlambat. Pembatalan kooperatif
 
 Set hasil terdiri dari `resume.xlsx` dan workbook jenis/masa yang benar-benar tertangkap. PPh Pasal 21/26, PPh Unifikasi, dan PPN memakai satu workbook per masa sumber literal dalam folder `SPT Masa 21`, `SPT Masa Unifikasi`, dan `SPT Masa PPN`. Normal dan pembetulan satu masa berada dalam workbook yang sama dengan nama sheet berbeda. PPh Badan memakai satu sheet per form teramati/pembetulan di `SPT_Badan.xlsx`; jenis lain tetap memakai workbook jenis. Nama sheet memakai ordinal SPT dan form di awal agar pemotongan 31 karakter tidak menyatukan identitas. Tautan resume relatif menarget file, sheet pertama, dan pembetulan yang tepat; tautan kembali dari folder masa memakai `../resume.xlsx`. Nama file diperiksa tanpa membedakan kapital dan identitas masa tidak digabung hanya karena nama file tersanitasi sama.
 
-Data field dan tabel disajikan tanpa sel data gabungan, dengan filter tabel dan freeze panes. Nilai sumber tetap literal; kolom numerik opsional hanya tersedia untuk angka dengan label/format yang didukung dan presisi yang dapat dipertahankan. Caption sumber disimpan terpisah bila header filter perlu disambiguasi. Header sumber yang kebetulan sama dengan suffix hasil disambiguasi juga tetap menghasilkan nama kolom tabel yang unik.
+Identitas form Badan memakai path bagian sumber lengkap. `Induk / Rincian` dan `L1-D / Rincian` tetap menjadi sheet terpisah walaupun nama akhirnya sama. Caption sumber lengkap dan baris duplikat tetap disimpan; nama pendek sheet hanya membantu navigasi.
+
+Data field dan tabel disajikan tanpa sel data gabungan, dengan filter tabel dan freeze panes. Nilai sumber tetap literal; kolom numerik opsional hanya tersedia untuk angka dengan label/format yang didukung dan presisi yang dapat dipertahankan. Nilai `Decimal` sumber dibandingkan dengan representasi 15 digit yang didukung sebelum angka turunan diterima, agar konversi ke `float` tidak lebih dulu menyembunyikan pembulatan. Bila tidak lolos, nilai analisis tidak diisi dan teks sumber tetap utuh. Caption sumber disimpan terpisah bila header filter perlu disambiguasi. Header sumber yang kebetulan sama dengan suffix hasil disambiguasi juga tetap menghasilkan nama kolom tabel yang unik.
 
 Publikasi lokal oleh `coretax.save_output` mengikuti urutan berikut:
 
 1. Periksa scope run serta file yang sudah ada, termasuk header workbook lama secara independen dari `run.json`.
-2. Tulis set baru ke direktori staging.
+2. Tulis set baru ke direktori staging. Pemindaian menyamakan bentuk path relatif/absolut secara leksikal sebelum mengecualikan staging, tanpa mengikuti symlink atau junction untuk menutupi path yang tidak sah.
 3. Baca ulang set, jumlah, tipe sel identitas, status, serta tautan workbook/pembetulan. Pemeriksaan tetap berjalan dengan `python -O` karena menggunakan exception eksplisit.
 4. Buat backup dan ganti seluruh workbook serta `run.json`.
 5. Bila penggantian gagal, coba rollback. Pertahankan staging/backup bila publikasi atau pemulihan tidak selesai.

@@ -74,6 +74,8 @@ Identitas dan angka sumber berbentuk teks dipertahankan sebagai teks literal, te
 
 Seluruh set ditulis ke staging dan diperiksa sebelum publikasi. Header workbook lama harus membuktikan scope NPWP, tahun, dan dasar tahun yang sama secara independen dari `run.json`. Benturan nama berkas tanpa membedakan kapital dan berkas tak dikenal ditolak. Kegagalan penggantian mencoba rollback serta mempertahankan data pemulihan. Proses mati atau listrik padam di tengah penggantian beberapa berkas tidak memiliki jaminan transaksi atomik. Gunakan folder baru saat mengubah scope atau memulihkan publikasi yang terblokir.
 
+Untuk membuat ulang capture lama yang masih memakai satu workbook per jenis pajak, pilih **folder output baru** melalui `--from-json ... --output ...`. Susunan lama tidak ditimpa atau dihapus secara otomatis ketika set nama berkasnya berbeda. Path output relatif maupun absolut didukung; pindahkan seluruh folder hasil bersama agar tautannya tetap utuh.
+
 ## Memakai CLI di Windows
 
 Pasang `uv` sesuai [kebijakan toolchain](docs/python-314.md), lalu jalankan **setup.cmd** dari checkout ini. Setelah setup berhasil, jalankan **run.cmd** untuk mengisi NPWP dan tahun secara interaktif. Login dilakukan langsung di browser terpisah; selesaikan password, CAPTCHA, atau MFA di sana, lalu tekan Enter pada terminal bila diminta.

@@ -12,7 +12,7 @@ Nama check gabungan tetap **Windows tests and dependency audit** agar aturan bra
 
 Pemilihan perubahan memakai [scripts/ci_route.py](../scripts/ci_route.py). Hanya perubahan dokumentasi yang cocok dengan allowlist aman yang dapat melewati pekerjaan runtime. Perubahan tak dikenal, basis diff yang tidak dapat ditetapkan, atau ketidakpastian klasifikasi menjalankan pemeriksaan lengkap. Perubahan script, lock, requirements, workflow, resource, atau aturan pemilih tes tetap memerlukan gate kode.
 
-Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer perlu memastikan check gabungan dan PR benar-benar diwajibkan pada `main`. Jangan menyimpulkan perlindungan aktif hanya karena workflow tersedia atau berwarna hijau. Lihat [aktivasi aturan repo](#aktivasi-aturan-repository) untuk prasyarat admin yang masih terpisah dari CI.
+Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer perlu memastikan check gabungan dan PR benar-benar diwajibkan pada `main`. Jangan menyimpulkan perlindungan aktif hanya karena workflow tersedia atau berwarna hijau. [Aturan repo](#aktivasi-aturan-repository) telah dibaca kembali dan diverifikasi aktif; periksa ulang metadata remote bila konfigurasi berubah.
 
 ## Pembagian pekerjaan
 
@@ -37,6 +37,10 @@ Pemilih [scripts/ci_tests.py](../scripts/ci_tests.py) memilih subset portable un
 Cache menyimpan unduhan/paket `uv` serta interpreter managed. Kunci memisahkan OS, arsitektur, versi Python, peran workload, serta isi lock dan requirements. Cache tidak menjadi bukti bahwa environment sudah terverifikasi: instalasi tetap memakai lock dan hash, dan runtime memeriksa kesiapan aktual.
 
 PR dapat memulihkan cache, tetapi penulisan cache dibatasi pada push tepercaya ke `main`. `.venv`, profil/cookie browser, data pajak, checkpoint, output tes, Downloads, dan executable browser tidak disimpan dalam cache. Jangan menambahkan seluruh workspace ke cache demi mempercepat setup.
+
+Pada Windows, [scripts/ci_python_cache.py](../scripts/ci_python_cache.py) memeriksa alias minor Python setelah restore cache dan sebelum `uv python install`. Alias seperti `cpython-3.11-windows-x86_64-none` dapat dipulihkan sebagai file atau symlink, sementara uv 0.12.22 mengharapkan direktori/junction dan gagal dengan `os error 267`. Helper stdlib dijalankan terisolasi sebelum `.venv` tersedia. Root harus tepat `RUNNER_TEMP/uv-python-dir` tanpa pengalihan; hanya alias minor untuk versi yang dipin boleh dilepas sebagai entry file/symlink. Direktori interpreter patch, direktori nyata, target link, dan cache paket tidak dihapus. uv tetap memasang/memilih interpreter exact dan instalasi paket tetap memverifikasi hash.
+
+Tes regresi membuktikan file/tautan alias dapat dibersihkan tanpa menyentuh interpreter atau target di luar cache. Satu job Windows produksi juga menguji instalasi baru, arsip/pemulihan dengan GNU tar milik Git for Windows, lalu penggunaan ulang interpreter yang dipulihkan secara offline. Job kandidat, audit, dan build tetap melalui restore serta helper yang sama; pengujian arsip besar tidak diulang pada semua job. Diagnostik hanya mencatat nama alias dan tipe/atribut entry, bukan isi data pengguna atau target tautan.
 
 Beberapa keputusan menjaga beban tetap terukur:
 
@@ -122,7 +126,7 @@ Template `.github/rulesets/main.json` disiapkan sebagai konfigurasi yang dapat d
 
 Admin repository yang terautentikasi dapat membuka **Settings → Rulesets → New ruleset → Import a ruleset**, memilih JSON, meninjau target/check/bypass, lalu membuat dan mengaktifkan aturan. Cocokkan nama check persis dengan check run yang terdaftar sebelum aktivasi. Periksa status enforcement dan aturan efektif setelah tersimpan. Langkah resmi tersedia pada [panduan impor ruleset GitHub](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository#importing-a-ruleset).
 
-Aktivasi ini membutuhkan akses admin yang sesuai dan tetap tertunda sampai hasil remote dapat dibaca kembali. Keberhasilan CI, merge, atau keberadaan JSON saja tidak menutup prasyarat tersebut.
+Pada **12 Oktober 2026**, [ruleset main ID 24914050](https://github.com/cepeter-job/spt-downloader/rules/24914050) telah dibaca kembali melalui API: enforcement `active`, target `refs/heads/main`, tanpa bypass, serta larangan penghapusan dan force-push. PR wajib dengan 0 approval manusia; `Windows tests and dependency audit` dari GitHub Actions dan `CodeQL` dari GitHub Advanced Security wajib lulus. Kebijakan strict mengharuskan branch PR mengikuti main terbaru. Metadata branch juga menyatakan `protected: true`. Ini catatan verifikasi pada tanggal tersebut, bukan jaminan konfigurasi tidak akan berubah.
 
 ## Pembersihan branch selesai
 

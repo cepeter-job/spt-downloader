@@ -248,7 +248,8 @@ def record_forms(record):
         return [('SPT', sections)]
     groups = {}
     for section in sections:
-        name = section['name'].rsplit(' / ', 1)[-1]
+        # Jalur induk membedakan form dengan label anak yang sama.
+        name = section['name']
         groups.setdefault(name, []).append(section)
     return list(groups.items())
 
@@ -263,7 +264,7 @@ def record_sheet_titles(ordinal, record):
 
 
 def workbook_groups(run):
-    """Group by literal source period; sanitizing a filename never merges identities."""
+    """Kelompokkan masa sumber literal; sanitasi nama berkas tidak menyatukan identitas."""
     groups, identities = {}, {}
     periodic = {'PPh Pasal 21/26': '21', 'PPh Unifikasi': 'Unifikasi', 'PPN': 'PPN'}
     for record in run['records']:
@@ -285,7 +286,7 @@ def workbook_groups(run):
 
 
 def numeric_analysis(value, label):
-    """An optional numeric view; identifiers and the original source are never replaced."""
+    """Nilai numerik opsional tanpa mengganti pengenal atau nilai sumber."""
     if not isinstance(value, str) or re.search(r'npwp|nik|nomor|kode|tanggal|rekening|faktur', label, re.I):
         return None
     if not re.search(r'nilai|jumlah|pendapatan|penghasilan|biaya|saldo|total|amount|revenue|dpp|harga|pajak', label, re.I):
@@ -294,7 +295,11 @@ def numeric_analysis(value, label):
     if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', text):
         return None
     try:
-        number = float(Decimal(text.replace('.', '').replace(',', '.')))
+        source = Decimal(text.replace('.', '').replace(',', '.'))
+        # Periksa presisi 15 digit pada nilai sumber sebelum konversi float.
+        if Decimal(format(source, '.15g')) != source:
+            return None
+        number = float(source)
         validate_excel_value(number, 'numeric analysis')
         return number
     except (ValueError, OverflowError):
@@ -336,7 +341,7 @@ def render_form(detail, sections, ordinal, form_index):
             width = max(len(table.get('headers', [])), max((len(r) for r in table.get('rows', [])), default=1))
             source_headers = table.get('headers') or [f'Kolom {i+1}' for i in range(width)]
             source_headers = source_headers + [f'Kolom {i+1}' for i in range(len(source_headers), width)]
-            # Retain captions separately when filter headers need disambiguation.
+            # Simpan label sumber terpisah ketika header filter perlu dibedakan.
             for col, value in enumerate(source_headers, 1):
                 put(detail, row, col, value)
             row += 1
@@ -349,7 +354,7 @@ def render_form(detail, sections, ordinal, form_index):
                 key = caption.casefold()
                 seen[key] += 1
                 label = caption if seen[key] == 1 else f'{caption} ({seen[key]})'
-                # A source caption may already equal another column's generated suffix.
+                # Label sumber dapat sama dengan hasil penambahan sufiks pada kolom lain.
                 while label.casefold() in used:
                     seen[key] += 1
                     label = f'{caption} ({seen[key]})'
@@ -466,7 +471,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                     if web_source_url(url):
                         source_cell.hyperlink = url
                 render_form(detail, sections, ordinal, form_index)
-            # The index always targets the first form, never the last visited tab.
+            # Indeks selalu menarget form pertama sesuai urutan sumber.
             detail = wb[titles[0]]
         ir = ordinal + 4
         values = [ordinal, meta.get('Jenis Pajak', ''), meta.get('Jenis Surat Pemberitahuan Pajak', ''), meta.get('Masa Pajak', ''), meta.get('Model SPT', ''), record.get('source_status', ''), meta.get('Nomor Bukti Penerimaan', ''), meta.get('Tanggal Submit SPT', ''), 'OK' if record.get('capture_complete') else 'PARTIAL', len(record.get('sections', [])), url]

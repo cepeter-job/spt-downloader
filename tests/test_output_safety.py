@@ -17,6 +17,50 @@ def snapshot(folder):
             if p.is_file() and not p.relative_to(folder).parts[0].startswith('.spt-export-')}
 
 
+@pytest.mark.parametrize('relative_output', [
+    None, 'relative-result', 'synthetic-capture/../parent-relative-result',
+])
+def test_offline_cli_exports_to_relative_output_folder(tmp_path, relative_output):
+    run = fixture_run()
+    capture = tmp_path / 'synthetic-capture' / 'capture.json'
+    capture.parent.mkdir()
+    capture.write_text(json.dumps(run), encoding='utf-8')
+    args = [sys.executable, str(Path(coretax.__file__).resolve()),
+            '--from-json', str(capture.relative_to(tmp_path))]
+    folder = capture.parent
+    if relative_output is not None:
+        args.extend(['--output', relative_output])
+        folder = tmp_path / relative_output
+
+    result = subprocess.run(args, cwd=tmp_path, capture_output=True, text=True, timeout=30)
+
+    assert result.returncode == 2, result.stderr
+    saved_run = json.loads((folder / 'run.json').read_text(encoding='utf-8'))
+    coretax.verify_outputs(saved_run, folder)
+    assert len(list(folder.rglob('*.xlsx'))) == 5
+    assert not list(folder.glob('.spt-export-*'))
+
+
+def test_relative_output_root_reparse_point_cannot_hide_during_normalization(tmp_path, monkeypatch):
+    run = fixture_run()
+    existing = tmp_path / 'existing-results'
+    coretax.save_output(run, existing)
+    before = snapshot(existing)
+    alias = tmp_path / 'redirected-results'
+    if sys.platform == 'win32':
+        subprocess.run(['cmd', '/d', '/c', 'mklink', '/J', str(alias), str(existing)],
+                       check=True, capture_output=True, text=True, timeout=10)
+    else:
+        alias.symlink_to(existing, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    run['taxpayer_name'] = 'SYNTHETIC REPLACEMENT'
+
+    with pytest.raises(ValueError, match='symbolic|reparse'):
+        coretax.save_output(run, Path(alias.name))
+
+    assert snapshot(existing) == before
+
+
 def test_verification_remains_enabled_under_python_optimization(tmp_path):
     run = fixture_run()
     path = coretax.save_output(run, tmp_path)

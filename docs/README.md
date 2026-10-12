@@ -7,6 +7,7 @@ Panduan ini ditujukan bagi kontributor SPT Downloader. Untuk menjalankan aplikas
 | Kebutuhan | Panduan |
 | --- | --- |
 | Menyiapkan checkout Windows dengan `uv`, menjalankan tes, membuat build | [Pengembangan](pengembangan.md) |
+| Menulis teks antarmuka, merancang layar, atau menyiapkan fitur baru | [Panduan UI/UX desain B](ui-ux/README.md) |
 | Memahami batas GUI/worker, akses baca Coretax, identitas, ekspor, dan Stop | [Arsitektur](arsitektur.md) |
 | Memahami job CI, biaya CPU, cache, check wajib, dan artifact | [CI dan rilis](ci-dan-rilis.md) |
 | Memperbarui Python/dependensi atau mengevaluasi Python 3.14 | [Kebijakan Python dan kompatibilitas](python-314.md) |
@@ -15,6 +16,8 @@ Panduan ini ditujukan bagi kontributor SPT Downloader. Untuk menjalankan aplikas
 | Menelusuri alasan perbaikan keamanan sebelumnya | [Audit 12 Oktober 2026](audit-2026-10-12.md) |
 
 Urutan yang disarankan untuk kontributor baru: setup dan tes portable, arsitektur area yang akan diubah, tes Windows yang relevan, kemudian aturan PR/CI. Jangan mencoba akun nyata untuk membuat tes otomatis lulus.
+
+Untuk perubahan antarmuka, arah yang dipilih adalah desain B dengan Tkinter/ttk. Dahulukan kejelasan proses dan hasil; ikuti panduan bahasa serta checklist fitur sebelum menambah layar atau tombol. Panduan desain bukan bukti bahwa redesign sudah diterapkan.
 
 ## Sumber kebenaran
 

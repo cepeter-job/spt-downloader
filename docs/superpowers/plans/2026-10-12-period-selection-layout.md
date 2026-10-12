@@ -1,82 +1,81 @@
-# Selected SPT and period workbook Implementation Plan
+# Rencana implementasi pemilihan SPT dan workbook per masa
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Untuk agen pengembang:** gunakan `superpowers:subagent-driven-development` atau `superpowers:executing-plans` untuk menjalankan tugas berurutan. Checklist mencatat status, bukan menggantikan bukti pengujian.
 
-**Goal:** Implement all ten requested downloader revisions with scoped exports, explicit user selection/overwrite consent, safe PDF handling, and verifiable Windows behavior.
+**Tujuan lengkap rancangan:** menerapkan sepuluh revisi downloader yang diminta, mencakup ekspor sesuai scope, pemilihan/overwrite dengan persetujuan eksplisit, PDF yang aman, serta perilaku Windows yang dapat diverifikasi.
 
-**Architecture:** Extend existing exporter, browser capture, and desktop worker flows. Use pure workbook layout helpers for both export and verification. Keep new interactive requests job-bound, preserve origin/provenance checks and cancellation, and never import browser/Excel libraries into the GUI process.
+**Arsitektur:** perluas exporter, capture browser, dan worker desktop yang sudah ada. Helper layout murni dipakai bersama oleh ekspor dan verifier. Permintaan interaktif terikat pada job; pertahankan pemeriksaan origin/provenance dan pembatalan. Pustaka browser/Excel tidak diimpor ke proses GUI.
 
-**Tech Stack:** Synced to main e99464a: production CPython 3.11.17/GIL, uv 0.12.22, stdlib Tkinter, Playwright 1.63.0, openpyxl 3.1.5, pytest 9.1.1 and hashed locks. Python 3.14.8 remains the repository candidate profile. No new production dependency.
+**Toolchain:** baseline tersinkron `main e99464a`: CPython produksi 3.11.17/GIL, uv 0.12.22, Tkinter stdlib, Playwright 1.63.0, openpyxl 3.1.5, pytest 9.1.1, dan lock dengan hash. Python 3.14.8 tetap profil kandidat. Tidak ada dependensi produksi baru.
 
-**Spec:** docs/superpowers/specs/2026-10-12-period-selection-layout-design.md
+**Spesifikasi:** [desain pemilihan SPT dan workbook](../specs/2026-10-12-period-selection-layout-design.md).
 
-**Publication slice:** At the user's request, create a PR from synced main e99464a containing Task1 only. Tasks2–5 remain pending. RED selection/overwrite tests and temporary reviewer probes stay local and are not part of the proposed PR tree. Production validation uses isolated CPython3.11.17 and hashed locks/test.txt, not the older application venv.
+**Batas publikasi:** sesuai permintaan pengguna, PR #6 hanya memuat Tugas 1 dari baseline tersebut. Tugas 2–5 masih tertunda untuk fitur lengkap. Tes RED pemilihan/overwrite dan probe reviewer sementara dari workspace pembuat PR tidak termasuk tree publikasi. Verifikasi produksi memakai CPython 3.11.17 terisolasi dan `locks/test.txt` dengan hash. Konsolidasi berikutnya memasukkan dokumentasi UI/UX yang telah di-merge ke main, memperbaiki temuan review Tugas 1 serta cache CI, tanpa menyatakan fitur tertunda sudah selesai.
 
-## Global Constraints
+## Batas umum
 
-- Exact NPWP/source identifiers, source values and duplicate rows; clearly synthetic tests only.
-- Folders: `SPT Masa 21`, `SPT Masa Unifikasi`, `SPT Masa PPN`; one workbook per source period, Normal/Pembetulan in separate sheets.
-- Corporate forms become individual sheets; only inspected existing financial-statement PDFs may be downloaded.
-- Exact strings: `jalankan proses sedot di background`; `Hasil Sedot berada di folder Downloads Windows`; `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`.
-- No unsafe auth relaxation, guessed remote actions, private data commits, default overwrite, or UI-thread browser work.
-- No commit/push until separately approved.
+- Pertahankan NPWP/ID, nilai sumber, dan baris duplikat secara persis; gunakan tes sintetis saja.
+- Folder: `SPT Masa 21`, `SPT Masa Unifikasi`, `SPT Masa PPN`; satu workbook per masa sumber, dengan sheet Normal/Pembetulan terpisah.
+- Form Badan memiliki sheet masing-masing. Rencana PDF hanya mengizinkan laporan keuangan yang sudah tersedia dan diperiksa sebagai aksi baca.
+- Teks persis yang direncanakan: `jalankan proses sedot di background`; `Hasil Sedot berada di folder Downloads Windows`; `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`.
+- Jangan melonggarkan autentikasi, menebak aksi remote, meng-commit data privat, melakukan overwrite otomatis, atau menjalankan browser pada thread UI.
+- Persyaratan awal rencana meminta persetujuan terpisah sebelum commit/push. Ikuti scope publikasi yang benar-benar diizinkan pengguna pada sesi terkait.
 
-## Review Focus
+## Fokus review
 
-- Two raw periods or tax names that sanitize to the same Windows path must fail before writing.
-- Normal/amendment forms with long identical captions must retain unique Excel names and exact resume links.
-- Invalid, duplicate, stale or cross-job selection replies must never capture unintended records.
-- A locked/replaced/symlinked destination during consent or publication must preserve previous results/recovery.
-- HTML, foreign-origin redirects, expired sessions and cancelled PDF downloads must not be presented as valid PDFs or COMPLETE.
+- Dua masa atau jenis pajak yang tersanitasi menjadi path Windows sama harus ditolak sebelum penulisan.
+- Caption form/pembetulan yang panjang tetap menghasilkan nama Excel unik dan tautan resume yang tepat. Path bagian lengkap membedakan form dengan nama akhir sama.
+- Angka analisis harus dibandingkan dengan sumber sebelum pembulatan dapat menghilangkan bukti digit yang berbeda.
+- Jawaban pemilihan tidak sah, duplikat, usang, atau lintas job tidak boleh mengambil record yang tidak dipilih.
+- Tujuan yang terkunci, diganti, atau dialihkan symlink selama persetujuan/publikasi harus mempertahankan hasil lama dan data pemulihan.
+- HTML, redirect origin asing, sesi kedaluwarsa, dan unduhan PDF yang dibatalkan tidak boleh ditampilkan sebagai PDF sah atau COMPLETE.
 
----
+### Tugas 1: Layout workbook dan form untuk analisis
 
-### Task 1: Workbook layout and analysis-friendly forms
+**Berkas:** `coretax_exporter.py`, `coretax.py`, `tests/test_split_output.py`, `tests/test_exporter.py`, serta `tests/test_period_layout.py`.
 
-**Files:** coretax_exporter.py; coretax.py; tests/test_split_output.py; tests/test_exporter.py; new tests/test_period_layout.py.
+**Antarmuka:** `workbook_groups(run) -> dict[str, list[dict]]` menentukan path XLSX relatif. `record_sheet_titles(ordinal, record) -> list[str]` menentukan sheet per form; `detail_sheet_title(ordinal, record)` mengembalikan target pertama. Pertahankan `export_split_workbooks(run, folder) -> dict[str, Path]`. Verifier memakai helper yang sama dan tetap membaca ulang file yang dihasilkan.
 
-**Interfaces:** Add `workbook_groups(run) -> dict[str, list[dict]]` for relative XLSX paths and `record_sheet_titles(ordinal, record) -> list[str]` for per-form detail sheets. `detail_sheet_title(ordinal, record)` returns the first target. Preserve `export_split_workbooks(run, folder) -> dict[str, Path]`; verifier consumes the same layout helpers without trusting the generated files.
+- [x] Buat dan jalankan tes RED untuk file Januari/Februari/PPN, pembetulan dalam masa sama, sheet Induk/L1-D, benturan Windows, teks/duplikat, tabel, serta tautan.
+- [x] Terapkan helper dan perbarui exporter, verifikasi, serta scope staging bersarang. Data field/tabel tidak digabung dalam sel; kolom numerik opsional memerlukan format dan presisi yang didukung.
+- [x] Jalankan tes exporter/output; kontrak scope dan rollback tetap dipertahankan. Temuan review lanjutan harus ditutup dengan regresi sebelum merge.
 
-- [x] Write/run failing tests for January/February/PPN separate files, same-period amendments, corporate Induk/L1-D sheets, Windows collisions, raw text/duplicates, tables and links.
-- [x] Implement helpers and update exporter/verification/nested staging scope; keep workbook field/table data unmerged and filterable, with validated numeric analysis columns where source formatting is supported.
-- [x] Run exporter/output safety tests; all new cases pass and retained scope/rollback checks still hold.
+### Tugas 2: Capture sesuai pilihan dan dialog overwrite
 
-### Task 2: Selected-only capture and overwrite dialogue
+**Berkas:** modul `spt_desktop/app.py`, `controller.py`, `worker.py`, `events.py`, `output.py`; `coretax.py`; serta tes pemilihan/output/worker.
 
-**Files:** spt_desktop/app.py; controller.py; worker.py; events.py; output.py; coretax.py; new tests/test_desktop_selection.py; test_desktop_output.py; test_desktop_worker.py.
+**Antarmuka:** permintaan inventory-ready dan overwrite-required membawa job ID serta payload JSON privat milik job. GUI hanya membaca payload miliknya. Controller mengirim ID record yang dikonfirmasi atau keputusan overwrite untuk job tersebut. `publish_workbooks(...)` mendapat persetujuan overwrite eksplisit; default tetap menolak.
 
-**Interfaces:** Worker inventory-ready and overwrite-required requests carry a job ID and private job-local JSON payload; GUI reads only the owned job payload. Controller sends job-bound confirmed record IDs or an overwrite decision. Publisher keeps `publish_workbooks(...)` and gains explicit overwrite consent; default remains deny.
+- [ ] Buat/jalankan tes RED untuk detail sesuai pilihan, pilihan kosong, ID salah/duplikat, jawaban lintas job, Stop saat menunggu, penolakan/persetujuan overwrite, serta file di luar pilihan yang tetap utuh.
+- [ ] Tambahkan request/reply terbatas dan dialog pemilihan pada thread utama; filter inventaris sebelum capture detail dan catat scope. Validasi staging serta scope workbook lama, lalu pertahankan rollback.
+- [ ] Jalankan suite lifecycle, worker, selection, output, dan keamanan pada mode Python teroptimasi.
 
-- [ ] Write/run failing tests for selected-only details, empty choice, wrong/duplicate IDs, cross-job replies, stop while waiting, decline/approve overwrite and untouched nonselected files.
-- [ ] Add bounded request/reply handling and a main-thread selection dialogue; filter inventory before detail capture and record selection scope. Stage verified selected files; validate existing workbook scope before replacement and retain rollback.
-- [ ] Run desktop lifecycle, worker, selection, output and optimized-mode safety suites.
+### Tugas 3: Capture PDF laporan keuangan yang sudah tersedia
 
-### Task 3: Existing financial-statement PDF capture
+**Berkas:** rencana `coretax_attachments.py`, `coretax_browser.py`, rendering tautan exporter, manifest worker, allowlist `WORKER_FILES`, dan `tests/test_financial_attachments.py`.
 
-**Files:** new coretax_attachments.py; coretax_browser.py; exporter link rendering; worker output manifest; spt_desktop/runtime.py explicit WORKER_FILES; new tests/test_financial_attachments.py.
+**Antarmuka:** `download_financial_attachments(page, record, folder, check_cancel=None) -> list[dict]` menyimpan PDF tervalidasi dan metadata label/path relatif/status/byte/hash. Integrasi dilakukan sebelum halaman detail Badan yang diperiksa ditutup. Publisher menyertakan hanya PDF yang dideklarasikan dan tervalidasi bersama XLSX.
 
-**Interfaces:** `download_financial_attachments(page, record, folder, check_cancel=None) -> list[dict]` stores validated local PDFs and returns label/relative_path/status/bytes/hash metadata. Browser integrates before closing the inspected corporate detail page. The publisher includes only declared validated PDFs alongside XLSX outputs.
+- [ ] Buat/jalankan tes browser/HTTP sintetis untuk href teramati, kontrol tak tersedia, origin/redirect/HTML asing, batas ukuran, pembatalan, dan path output.
+- [ ] Terapkan unduhan GET dari tautan yang sudah ada; jangan menebak URL atau mengeklik pembuatan/submit dokumen. Pertahankan PARTIAL untuk kontrol belum didukung atau kegagalan.
+- [ ] Verifikasi byte/hash PDF dan tautan relatif; perbarui allowlist resource dan tes build.
 
-- [ ] Write/run failing local synthetic browser/HTTP tests for observed hrefs, unavailable controls, foreign origin/redirect/HTML, size cap, cancellation and output paths.
-- [ ] Implement GET-only validated existing-link downloads; never infer remote URLs or click generation/submit controls. Preserve PARTIAL for unsupported available controls/failures.
-- [ ] Verify PDF bytes/hash and relative workbook links and update runtime resource allowlist/build tests.
+### Tugas 4: Pengenalan autentikasi dan teks UI
 
-### Task 4: Authentication recognition and UI copy
+**Berkas:** `spt_desktop/auth.py`, `app.py`, `spt_gui.py`, `build_desktop.py`, serta tes autentikasi/branding/GUI.
 
-**Files:** spt_desktop/auth.py; app.py; spt_gui.py; build_desktop.py; authentication/branding/gui tests.
+**Antarmuka:** pertahankan `_login_fields`, binding kontrol, origin tepat, dan kepemilikan kredensial. Diagnostik alasan yang disanitasi serta penantian kondisi hanya ditambah bila didukung bukti; tidak ada data kredensial dalam diagnostik.
 
-**Interfaces:** Preserve `_login_fields`, control binding, exact origins and saved-credential ownership. Add sanitized reason diagnostics and condition-based readiness only where evidence supports them; no credential data in diagnostics.
+- [ ] Buat/jalankan fixture RED untuk kesiapan form asinkron dan caption/field yang dikenal, sambil tetap menolak challenge, field tambahan, serta aksi tak aman.
+- [ ] Terapkan perbaikan pengenalan yang sempit dan teks yang disetujui; perbarui assertion self-test source/frozen.
+- [ ] Jalankan suite autentikasi/binding/pembatalan dan GUI. Pengenalan portal live tetap belum terverifikasi sampai benar-benar diperiksa.
 
-- [ ] Write/run failing synthetic fixtures for asynchronous form readiness and known supported captions/fields while retaining rejection of challenges/extra fields/unsafe actions.
-- [ ] Apply narrow recognition fix supported by evidence and exact approved UI strings; update source/frozen self-test assertions.
-- [ ] Run complete auth/binding/cancellation and GUI suites. Keep live portal recognition explicitly unverified until inspected.
+### Tugas 5: Penerimaan fitur lengkap, review, dan artifact
 
-### Task 5: Acceptance, independent review and artifact
+**Berkas:** kontrak output `AGENTS.md`, `README.md`, ekspektasi tes, artifact di luar repo, serta laporan penerimaan.
 
-**Files:** AGENTS.md output contract; README.md; test expectations; build artifact outside repo; acceptance report.
-
-- [ ] Reconcile all ten user requirements to executed tests; update old output documentation only within the new approved contract.
-- [ ] Run full pytest with unique Hermes scratch basetemp; inspect synthetic XLSX files with excel-workbench and verify every link/file count.
-- [ ] Obtain independent code/security review and fix high-priority findings with regression tests.
-- [ ] Build Windows executable outside repo, run source and frozen GUI self-tests, verify real artifact checksum and privacy-safe resources; deliver MEDIA path and live-test limitations.
-- [ ] Present diff and proposed scoped conventional commit messages only if commit/push is requested; obtain confirmation before executing.
+- [ ] Petakan seluruh sepuluh persyaratan ke tes yang dijalankan; perbarui dokumentasi sesuai kontrak yang disetujui.
+- [ ] Jalankan seluruh pytest dengan basetemp scratch unik; periksa XLSX sintetis dan seluruh tautan/jumlah file.
+- [ ] Dapatkan review kode/keamanan independen dan perbaiki temuan penting dengan tes regresi.
+- [ ] Bangun executable Windows di luar repo, jalankan self-test source/frozen, verifikasi checksum artifact dan keamanan resource, lalu laporkan hasil serta batas penerimaan live.
+- [ ] Sajikan diff dan commit sesuai scope yang diizinkan pengguna. Bukti PR #6 hanya menutup slice Tugas 1; checklist penerimaan fitur lengkap ini tetap menunggu Tugas 2–4.

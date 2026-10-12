@@ -47,7 +47,7 @@ def verify_workbook(path, run, *, include_details=True):
 
 
 def output_path(folder, name):
-    """Reject Windows aliases and reparse components before reading or replacing output."""
+    """Tolak alias Windows dan komponen reparse sebelum membaca atau mengganti hasil."""
     if (not isinstance(name, str) or not name or '\\' in name or ':' in name
             or any(part in ('', '.', '..') or part.endswith((' ', '.')) for part in name.split('/'))
             or Path(name).is_absolute()):
@@ -64,13 +64,16 @@ def output_path(folder, name):
 
 
 def workbook_files(folder, exclude=None):
+    folder = Path(folder).absolute()
+    # Normalisasi hanya pembanding; path yang dibaca tetap mempertahankan symlink/"..".
+    exclude = Path(os.path.abspath(exclude)) if exclude is not None else None
     found = set()
-    stack = [Path(folder)]
+    stack = [folder]
     while stack:
         current = stack.pop()
         for entry in os.scandir(current):
             path = Path(entry.path)
-            if exclude is not None and path == exclude:
+            if exclude is not None and Path(os.path.abspath(path)) == exclude:
                 continue
             if entry.is_symlink() or getattr(entry.stat(follow_symlinks=False), 'st_file_attributes', 0) & 1024:
                 raise ValueError('Invalid source workbook path: reparse point')

@@ -1,4 +1,4 @@
-"""Synthetic output-layout contracts; not taxpayer records."""
+"""Kontrak tata letak keluaran dengan data sintetis, bukan catatan wajib pajak."""
 from copy import deepcopy
 import pytest
 from openpyxl import load_workbook
@@ -52,6 +52,32 @@ def test_corporate_forms_are_separate_and_amendments_unique(tmp_path):
         assert any('L1-D' in name and 'Pembetulan' in name for name in names)
         for ws in wb.worksheets[3:]:
             assert not any(r.min_row >= 6 for r in ws.merged_cells.ranges)
+    finally:
+        wb.close()
+
+
+def test_nested_corporate_sections_keep_full_source_identity(tmp_path):
+    run = fixture_run()
+    run['records'] = run['records'][:2]
+    expected = []
+    for record in run['records']:
+        record['sections'] = []
+        for name in ['Induk / Rincian', 'L1-D / Rincian']:
+            marker = f"SYNTHETIC {record['record_id']} / {name}"
+            record['sections'].append({'name': name,
+                'fields': [{'label': 'Marker', 'value': marker}], 'tables': [], 'text': ''})
+            expected.append((name, marker))
+    files = exporter.export_split_workbooks(run, tmp_path)
+    coretax.verify_outputs(run, tmp_path)
+    wb = load_workbook(files['SPT_Badan.xlsx'])
+    try:
+        details = wb.worksheets[3:]
+        assert len(details) == len(expected)
+        markers = {marker for _, marker in expected}
+        for ws, (name, marker) in zip(details, expected):
+            values = [cell.value for row in ws for cell in row]
+            assert name in values
+            assert [value for value in values if value in markers] == [marker]
     finally:
         wb.close()
 
@@ -131,9 +157,17 @@ def test_unexpected_output_declaration_never_authorizes_a_generic_path(tmp_path,
     assert not list(tmp_path.iterdir())
 
 
-def test_optional_numeric_view_does_not_lose_decimal_precision():
-    assert exporter.numeric_analysis('123.456.789.012.345,67','Nilai') is None
-    assert exporter.numeric_analysis('123.456.789.012,34','Nilai')==123456789012.34
+@pytest.mark.parametrize(('value', 'expected'), [
+    ('123.456.789.012.345,67', None),
+    ('999.999.999.999.999,99', None),
+    ('10.000.000.000.000.001', None),
+    ('123.456.789.012,34', 123456789012.34),
+    ('1.234,50', 1234.5),
+    ('-1.234,50', -1234.5),
+    ('1.000.000.000.000.000,00', 1e15),
+])
+def test_optional_numeric_view_does_not_lose_decimal_precision(value, expected):
+    assert exporter.numeric_analysis(value, 'Nilai') == expected
 
 
 def test_derived_table_headers_are_unique_without_changing_source_captions(tmp_path):

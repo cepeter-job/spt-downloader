@@ -140,6 +140,8 @@ jobs:
         env:
           PYTHON_VERSION: ${{ matrix.python }}
         run: |
+          python -I -S scripts/ci_python_cache.py --python-version "$env:PYTHON_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Key katalog exact memilih distribusi x64/GIL pada instalasi baru.
           uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -197,6 +199,8 @@ jobs:
           cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ env.PYTHON_VERSION }}-audit
       - name: Install the locked audited environment and isolated audit tooling
         run: |
+          python -I -S scripts/ci_python_cache.py --python-version "$env:PYTHON_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
@@ -260,6 +264,8 @@ jobs:
           cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ matrix.python }}-build
       - name: Install the hash-locked build environment
         run: |
+          python -I -S scripts/ci_python_cache.py --python-version "$env:PYTHON_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv

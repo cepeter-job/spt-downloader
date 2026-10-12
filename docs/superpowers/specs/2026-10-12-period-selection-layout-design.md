@@ -1,31 +1,33 @@
-# Selected SPT and period workbook design
+# Desain pemilihan SPT dan workbook per masa
 
-Approved by the user in chat on 2026-10-12 after pulling feat/windows-desktop to 013dd19. This is a bounded revision of the existing capture/export/desktop flows, not a new tax-data platform.
+Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windows-desktop` ke `013dd19`. Desain ini membatasi revisi pada alur capture, ekspor, dan desktop yang sudah ada.
 
-## Output contract
+**Batas publikasi PR #6:** hanya susunan workbook per masa dan form Badan pada Tugas 1 dalam [rencana implementasi](../plans/2026-10-12-period-selection-layout.md). Pemilihan SPT per proses, konfirmasi overwrite, unduhan PDF, serta perubahan autentikasi dan teks di bawah masih merupakan rancangan pekerjaan berikutnya. Dokumen ini tidak menyatakan fitur tersebut sudah tersedia.
 
-- Keep resume.xlsx as the selected-run index/audit, with relative links.
-- SPT Masa 21, SPT Masa Unifikasi, and SPT Masa PPN have separate folders, and exactly one workbook per literal source period within each folder. Normal and all selected amendments for the same period share that workbook and have distinct descriptive sheets.
-- Corporate returns remain in SPT_Badan.xlsx with a sheet per observed form/section (Induk, L1-D, etc.), distinguished by Normal/Pembetulan and a collision-safe ordinal. Do not invent unobserved forms.
-- Use flat filterable fields/tables, frozen headers, widths, and source evidence. Preserve raw identifiers/values, duplicate rows, captions, and exact amendment provenance. Add validated numeric analysis values without silently altering raw text.
-- Download only existing, inspected read-only financial-statement/audited-financial-statement PDF links in corporate Induk. Never generate a remote document or guess an API URL. Use the authorized browser context, exact HTTPS origin, GET-only downloads with no unchecked redirects, bounded size and PDF validation. Unsupported available controls/failures are explicitly PARTIAL.
+## Kontrak output
 
-## Run interaction
+- Pertahankan `resume.xlsx` sebagai indeks/audit proses terpilih dengan tautan relatif.
+- `SPT Masa 21`, `SPT Masa Unifikasi`, dan `SPT Masa PPN` memiliki folder terpisah, masing-masing tepat satu workbook per masa sumber literal. Normal dan seluruh pembetulan yang dipilih untuk masa yang sama berada dalam workbook tersebut, dengan sheet deskriptif yang berbeda.
+- SPT Badan tetap di `SPT_Badan.xlsx`, dengan satu sheet per form/bagian teramati, seperti Induk dan L1-D. Bedakan Normal/Pembetulan dan gunakan ordinal yang aman dari benturan nama. Jangan membuat form yang tidak teramati. Path bagian lengkap menjadi identitas agar bagian dari dua induk berbeda tidak tergabung.
+- Gunakan field/tabel datar yang dapat difilter, header dibekukan, lebar kolom, dan bukti sumber. Pertahankan ID/nilai mentah, baris duplikat, caption, serta asal pembetulan secara persis. Tambahkan angka analisis hanya setelah presisinya tervalidasi; teks sumber tidak berubah.
+- Rencana PDF: unduh hanya tautan PDF laporan keuangan/auditan yang sudah ada dan telah diperiksa sebagai aksi baca pada Induk Badan. Jangan membuat dokumen remote atau menebak URL API. Gunakan konteks browser yang berizin, origin HTTPS yang tepat, unduhan GET tanpa redirect yang belum diperiksa, batas ukuran, dan validasi PDF. Kontrol yang belum didukung atau kegagalan tetap dilaporkan PARTIAL.
 
-- Inventory only first; show the observed returns and allow choosing individual records by type, period, and Normal/Pembetulan. Capture details only for confirmed IDs. An intentionally selected subset may be COMPLETE for that declared subset, not for the entire year.
-- Selection and overwrite replies are job-bound and cancellation-aware. No default all-record capture while waiting. Keep GUI callbacks on the Tk main thread and preserve owned-process cleanup.
-- Downloads publication uses verified scope and relative paths. Existing colliding results require explicit overwrite consent; declining preserves old bytes. Never overwrite unselected files, unknown workbooks, mismatched NPWP/year/basis, symlinks or junction escapes. Stage and validate before replacement; retain rollback recovery on failure.
+## Interaksi proses yang direncanakan
 
-## Authentication and exact copy
+- Mulai dengan inventaris saja. Tampilkan SPT yang teramati dan izinkan pemilihan per record menurut jenis, masa, serta Normal/Pembetulan. Capture detail hanya untuk ID yang dikonfirmasi. Subset yang sengaja dipilih dapat berstatus COMPLETE untuk subset yang dinyatakan itu, bukan otomatis seluruh tahun.
+- Jawaban pemilihan dan overwrite terikat pada job serta memperhatikan pembatalan. Jangan otomatis mengambil seluruh record saat menunggu. Callback GUI tetap pada thread utama Tk dan pembersihan proses milik aplikasi tetap berlaku.
+- Publikasi ke Downloads memakai scope tervalidasi dan path relatif. Hasil lama yang berbenturan memerlukan persetujuan overwrite eksplisit; penolakan mempertahankan byte lama. Jangan menimpa file yang tidak dipilih, workbook tak dikenal, scope NPWP/tahun/basis berbeda, atau tujuan yang dialihkan symlink/junction. Gunakan staging dan validasi sebelum penggantian; pertahankan data pemulihan jika gagal.
 
-- Reproduce recognition gaps with synthetic fixtures and inspected sanitized DOM; do not relax the approved-origin/form/submission/control-binding/CAPTCHA/MFA safeguards or log secrets.
-- Header: `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`
-- Background setting: `jalankan proses sedot di background`
-- Output description: `Hasil Sedot berada di folder Downloads Windows`
-- Preserve existing personal-use subtitle and credit.
+## Autentikasi dan teks persis yang direncanakan
 
-## Verification and boundaries
+- Reproduksi celah pengenalan dengan fixture sintetis dan DOM yang telah diperiksa/disanitasi. Pertahankan pembatas origin, form, submit, binding kontrol, CAPTCHA/MFA, serta larangan mencatat rahasia.
+- Judul: `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`
+- Pengaturan background: `jalankan proses sedot di background`
+- Deskripsi output: `Hasil Sedot berada di folder Downloads Windows`
+- Pertahankan subtitle penggunaan pribadi dan kredit yang sudah ada.
 
-Baseline on pulled code: 289 tests passed in 67.24 seconds. All new data is clearly synthetic. Test per-period file counts, per-form/amendment names, raw-value preservation and filters, exact relative links, selected-only capture, decline/approve overwrite and rollback, PDF bytes/origin/redirect/cancellation handling, authentication rejection/binding, and all exact GUI strings. Exercise source and frozen GUI self-tests and reopen generated XLSX files with the excel-workbench audit.
+## Verifikasi dan batas bukti
 
-Actual login DOM probe timed out. No real taxpayer capture or credential submission has been performed. Live portal recognition and financial download controls require real evidence before claiming live acceptance. No source commit/push without the user's separate confirmation.
+Catatan baseline awal pada kode yang ditarik: 289 tes lulus dalam 67,24 detik. Semua data baru harus jelas sintetis. Verifikasi jumlah file per masa, nama form/pembetulan, nilai mentah/filter, dan tautan relatif yang tepat. Untuk tugas berikutnya, tambahkan pemeriksaan capture sesuai pilihan, persetujuan/penolakan overwrite dan rollback, byte/origin/redirect/pembatalan PDF, penolakan/binding autentikasi, serta teks GUI persis. Jalankan self-test source/frozen dan buka ulang XLSX yang dihasilkan untuk audit.
+
+Probe DOM login aktual mengalami timeout. Tidak ada capture wajib pajak nyata atau pengiriman kredensial dalam pekerjaan desain ini. Pengenalan portal dan kontrol unduhan keuangan memerlukan bukti nyata sebelum dinyatakan lulus penerimaan live. Persyaratan awal rencana meminta konfirmasi pengguna secara terpisah sebelum commit/push; batas publikasi yang disepakati dicatat pada rencana dan PR terkait.

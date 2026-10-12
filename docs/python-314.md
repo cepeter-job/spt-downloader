@@ -79,6 +79,8 @@ uv pip sync --python "$SptCandidateRoot/venv/Scripts/python.exe" --require-hashe
 
 CI juga menjalankan [scripts/ci_runtime.py](../scripts/ci_runtime.py) dengan masing-masing `--profile production` dan `--profile candidate`. Script membuat workspace sementara Windows, menjalankan setup worker nyata, mengimpor seluruh paket terkunci, memeriksa exact version/x64/GIL/lokasi managed, lalu mengulang setup untuk membuktikan reuse penanda siap. Tidak ada browser akun atau capture live. Script membutuhkan `RUNNER_TEMP` dari lingkungan CI dan tidak dimaksudkan sebagai launcher pekerjaan Coretax pengguna.
 
+Regresi ekspor offline juga diuji pada kedua profil. Sejak Python 3.12, [`tempfile.mkdtemp`](https://docs.python.org/3.14/library/tempfile.html#tempfile.mkdtemp) selalu mengembalikan path absolut meskipun direktori induk relatif. Pemindai output menyamakan folder dan pengecualian staging secara leksikal agar `--from-json` dengan path relatif tetap bekerja pada 3.14. Tes mencakup output eksplisit, direktori capture sebagai default, serta penolakan symlink/junction; tidak cukup hanya menguji folder absolut.
+
 ## Gate promosi menjadi produksi
 
 Promosi ke Python 3.14 baru dapat diputuskan setelah bukti berikut tersedia pada commit kandidat yang sama:
@@ -100,4 +102,4 @@ Jika satu gate gagal, perbaiki ketidakcocokan spesifik dan ulangi bagian yang re
 
 ## Batas yang tetap memerlukan tindakan eksternal
 
-Kesiapan kode dan CI bukan bukti bahwa ruleset repository sudah aktif, executable memiliki Authenticode, atau portal aktual sudah diuji. Aktivasi ruleset memerlukan admin repository yang terautentikasi. Signing memerlukan identitas/sertifikat penerbit yang dikelola maintainer. Acceptance live memerlukan operator dan NPWP/tahun yang memang diizinkan. Ketiganya dicatat terpisah dari status matrix; lihat [CI dan rilis](ci-dan-rilis.md) serta [penerimaan manual](penerimaan-manual.md).
+Status aturan repository harus dibaca dari GitHub secara terpisah dari hasil CI; [ruleset main](https://github.com/cepeter-job/spt-downloader/rules/24914050) telah diverifikasi aktif pada 12 Oktober 2026. Signing masih memerlukan identitas/sertifikat penerbit yang dikelola maintainer. Acceptance live memerlukan operator dan NPWP/tahun yang memang diizinkan. Aturan repository, signing, dan acceptance dicatat terpisah dari status matrix; lihat [CI dan rilis](ci-dan-rilis.md) serta [penerimaan manual](penerimaan-manual.md).
