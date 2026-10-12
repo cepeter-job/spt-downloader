@@ -2,6 +2,8 @@
 import argparse
 from datetime import datetime
 import json
+import shutil
+import tempfile
 from pathlib import Path
 import sys
 import time
@@ -9,7 +11,7 @@ from urllib.parse import urlparse
 
 from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
-from coretax_exporter import validate_scope, export_split_workbooks, tax_type_filename
+from coretax_exporter import validate_scope, validate_export_run, export_split_workbooks, tax_type_filename, detail_sheet_title
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 
 BASE = Path(__file__).resolve().parent
@@ -18,69 +20,182 @@ BASE = Path(__file__).resolve().parent
 def verify_workbook(path, run, *, include_details=True):
     wb = load_workbook(path, read_only=True, data_only=False)
     try:
-        assert wb['Ringkasan']['B4'].value == run['npwp'], 'NPWP mismatch in output'
-        assert wb['Ringkasan']['B4'].data_type == 's', 'NPWP was not preserved as text'
-        assert wb['Ringkasan']['B5'].value == run['year'], 'Tax year mismatch in output'
-        assert wb['Ringkasan']['B8'].value == ('COMPLETE' if run['complete'] else 'PARTIAL'), 'Incorrect completion status'
-        assert wb['Daftar SPT'].max_row == 4 + len(run['records']), 'Excel index count mismatch'
-        expected_sheets = 3 + len(run['records']) if include_details else 3
-        assert len(wb.sheetnames) == expected_sheets, 'Incorrect worksheet count'
+        checks = (
+            (wb['Ringkasan']['B4'].value == run['npwp'], 'NPWP mismatch in output'),
+            (wb['Ringkasan']['B4'].data_type == 's', 'NPWP was not preserved as text'),
+            (wb['Ringkasan']['B5'].value == run['year'], 'Tax year mismatch in output'),
+            (wb['Ringkasan']['B7'].value == ('Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'),
+             'Year basis mismatch in output'),
+            (wb['Ringkasan']['B8'].value == ('COMPLETE' if run['complete'] else 'PARTIAL'),
+             'Incorrect completion status'),
+            (wb['Daftar SPT'].max_row == 4 + len(run['records']), 'Excel index count mismatch'),
+            (len(wb.sheetnames) == (3 + len(run['records']) if include_details else 3),
+             'Incorrect worksheet count'),
+        )
+        for valid, message in checks:
+            if not valid:
+                raise ValueError(message)
+        return set(wb.sheetnames)
     finally:
         wb.close()
 
 
 def verify_outputs(run, folder):
+    """Verify output even with Python -O; used by CLI and desktop publication."""
     folder = Path(folder)
-    validate_scope(run['npwp'], run['year'])
-    expected = {'resume.xlsx'} | {tax_type_filename(r['meta'].get('Jenis Pajak')) for r in run['records']}
+    validate_export_run(run)
+    grouped = {}
+    for record in run['records']:
+        filename = tax_type_filename(record['meta'].get('Jenis Pajak'))
+        grouped.setdefault(filename, []).append(record)
+    expected = {'resume.xlsx', *grouped}
     declared = run.get('output_files', list(expected))
-    if not isinstance(declared, list) or any(not isinstance(n, str) or Path(n).name != n for n in declared):
+    if (not isinstance(declared, list) or
+            any(not isinstance(n, str) or Path(n).name != n for n in declared)):
         raise ValueError('Invalid workbook filename declaration')
     if len(declared) != len(set(declared)) or set(declared) != expected:
         raise ValueError('Workbook filename/count mismatch')
-    if {p.name for p in folder.glob('*.xlsx')} != expected:
+    actual = {p.name for p in folder.iterdir() if p.suffix.casefold() == '.xlsx'}
+    if actual != expected:
         raise ValueError('Workbook file set differs from the selected scope')
-    files = {name: folder / name for name in expected}
-    verify_workbook(files['resume.xlsx'], run, include_details=False)
-    sheet_names = {}
-    for filename, path in files.items():
-        if filename == 'resume.xlsx':
-            continue
-        records = [record for record in run['records'] if tax_type_filename(record['meta'].get('Jenis Pajak')) == filename]
-        verify_workbook(path, {**run, 'records': records})
-        wb = load_workbook(path, read_only=True)
-        try:
-            sheet_names[filename] = set(wb.sheetnames)
-        finally:
-            wb.close()
-    # Relative links keep the output portable when the whole folder is moved.
-    resume = load_workbook(files['resume.xlsx'])
+    if any((folder / name).is_symlink() or not (folder / name).is_file() for name in expected):
+        raise ValueError('Invalid source workbook path')
+    verify_workbook(folder / 'resume.xlsx', run, include_details=False)
+    sheet_names = {
+        filename: verify_workbook(folder / filename, {**run, 'records': records})
+        for filename, records in grouped.items()
+    }
+    # openpyxl's read-only mode does not expose hyperlinks.
+    resume = load_workbook(folder / 'resume.xlsx')
     try:
+        local_ordinals = {}
         for ordinal, record in enumerate(run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
             expected_file = tax_type_filename(record['meta'].get('Jenis Pajak'))
-            assert link and link.target == expected_file, 'Missing or incorrect type-workbook link'
+            if not link or link.target != expected_file or not isinstance(link.location, str):
+                raise ValueError('Missing or incorrect type-workbook link')
             linked_sheet = link.location.rsplit('!', 1)[0][1:-1].replace("''", "'")
-            assert linked_sheet in sheet_names[expected_file], 'Resume links to a nonexistent detail sheet'
+            local_ordinals[expected_file] = local_ordinals.get(expected_file, 0) + 1
+            expected_sheet = detail_sheet_title(local_ordinals[expected_file], record)
+            expected_location = "'" + expected_sheet.replace("'", "''") + "'!A1"
+            if linked_sheet not in sheet_names[expected_file] or link.location != expected_location:
+                raise ValueError('Resume links to an incorrect detail sheet or amendment')
     finally:
         resume.close()
 
 
-def save_output(run, folder):
-    folder = Path(folder)
-    validate_scope(run['npwp'], run['year'])
+def _check_output_scope(run, folder):
     scope_file = folder / 'run.json'
+    if scope_file.is_symlink():
+        raise FileExistsError('Output scope cannot be a symbolic link')
+    previous = None
     if scope_file.exists():
         previous = json.loads(scope_file.read_text(encoding='utf-8'))
         scope_keys = ('npwp', 'year', 'year_basis')
-        if any(previous.get(key) != run.get(key) for key in scope_keys):
+        if (not isinstance(previous, dict) or
+                any(previous.get(key) != run.get(key) for key in scope_keys)):
             raise FileExistsError('Output scope differs from existing run.json; use a new output folder')
+    expected = {'resume.xlsx'} | {tax_type_filename(r['meta'].get('Jenis Pajak')) for r in run['records']}
+    folded = {name.casefold(): name for name in expected}
+    for path in folder.iterdir():
+        if path.suffix.casefold() != '.xlsx':
+            continue
+        if previous is None:
+            raise FileExistsError('Existing workbook has no verified output scope; use a new output folder')
+        if path.name.casefold() in folded and path.name != folded[path.name.casefold()]:
+            raise FileExistsError('Existing workbook filename collision; use a new output folder')
+        if path.name not in expected:
+            raise FileExistsError('Existing workbooks differ from selected output scope; use a new output folder')
+        if path.is_symlink() or not path.is_file():
+            raise FileExistsError('Invalid existing workbook path; use a new output folder')
+        # run.json is also a capture checkpoint and can be newer than the Excel set.
+        # The existing workbook headers must independently agree with this scope.
+        try:
+            workbook = load_workbook(path, read_only=True)
+            try:
+                summary = workbook['Ringkasan']
+                expected_basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
+                matches = (summary['B4'].value == run['npwp'] and summary['B4'].data_type == 's'
+                           and summary['B5'].value == run['year'] and summary['B7'].value == expected_basis)
+            finally:
+                workbook.close()
+        except Exception as error:
+            raise FileExistsError('Existing workbook scope cannot be verified; use a new output folder') from error
+        if not matches:
+            raise FileExistsError('Existing workbook scope differs; use a new output folder')
+
+
+def _publish_output(staging, folder, names):
+    """Restore earlier files if a later replacement fails, including an Excel lock."""
+    backup = staging / 'backup'
+    backup.mkdir()
+    for name in names:
+        existing = folder / name
+        if existing.exists():
+            shutil.copy2(existing, backup / name)
+    attempted = []
+    try:
+        for name in names:
+            attempted.append(name)
+            (staging / name).replace(folder / name)
+    except BaseException:
+        try:
+            for name in reversed(attempted):
+                if (staging / name).exists():
+                    continue  # The rename failed before consuming its staged source.
+                saved = backup / name
+                if saved.exists():
+                    saved.replace(folder / name)
+                else:
+                    (folder / name).unlink(missing_ok=True)
+        except BaseException as recovery_error:
+            # An external lock or interruption can also prevent rollback.
+            raise RuntimeError(f'Output rollback blocked; recovery files retained at {staging}') from recovery_error
+        raise
+
+
+def save_output(run, folder):
+    folder = Path(folder)
+    validate_export_run(run)
     folder.mkdir(parents=True, exist_ok=True)
-    files = export_split_workbooks(run, folder)
-    run['output_files'] = list(files)
-    verify_outputs(run, folder)
-    scope_file.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding='utf-8')
-    return files['resume.xlsx']
+    _check_output_scope(run, folder)
+    staging = Path(tempfile.mkdtemp(prefix='.spt-export-', dir=folder))
+    retain_recovery = False
+    try:
+        files = export_split_workbooks(run, staging)
+        saved_run = {**run, 'output_files': list(files)}
+        verify_outputs(saved_run, staging)
+        (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
+        _check_output_scope(run, folder)
+        # Retain backups before publication starts, including interruptions in
+        # the recovery handler itself. Only proven success permits cleanup.
+        retain_recovery = True
+        _publish_output(staging, folder, [*files, 'run.json'])
+        retain_recovery = False
+        run['output_files'] = list(files)
+    finally:
+        if not retain_recovery:
+            shutil.rmtree(staging)
+    return folder / 'resume.xlsx'
+
+
+def validate_debug_endpoint(value):
+    """Accept only explicit loopback origins, without credentials or URL routing."""
+    message = '--reuse-browser must be a localhost HTTP debugging origin without credentials, path or query'
+    if not isinstance(value, str) or any(ord(c) <= 32 or ord(c) == 127 for c in value):
+        raise ValueError(message)
+    try:
+        endpoint = urlparse(value)
+        port = endpoint.port
+    except ValueError as error:
+        raise ValueError(message) from error
+    if (endpoint.scheme not in ('http', 'https') or
+            endpoint.hostname not in ('127.0.0.1', 'localhost', '::1') or
+            endpoint.username is not None or endpoint.password is not None or
+            endpoint.path not in ('', '/') or endpoint.params or endpoint.query or endpoint.fragment or
+            endpoint.netloc.endswith(':') or port == 0):
+        raise ValueError(message)
+    return value
 
 
 def authenticate(page, noninteractive):
@@ -148,9 +263,10 @@ def main(argv=None):
     print(f'Scope: NPWP {npwp} | year {year} | basis {run["year_basis"] if run else args.year_basis}')
     print('READ-ONLY: no submission, cancellation, PDF-generation or email actions.')
     if args.reuse_browser:
-        endpoint = urlparse(args.reuse_browser)
-        if endpoint.scheme not in ('http', 'https') or endpoint.hostname not in ('127.0.0.1', 'localhost', '::1'):
-            cli.error('--reuse-browser must be a localhost HTTP debugging endpoint')
+        try:
+            validate_debug_endpoint(args.reuse_browser)
+        except ValueError as error:
+            cli.error(str(error))
     start = time.monotonic()
     owned_context = None
     work_page = None

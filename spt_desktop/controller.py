@@ -175,10 +175,12 @@ class JobController:
                 self.on_event(event)
 
     def _finish(self,exit_code):
-        for reader in self._readers:reader.join(timeout=0.05)
-        self._drain()
         if self._job:
             self._job.close();self._job=None
+        # Descendants may inherit stdout/stderr. Release them before waiting for EOF,
+        # and let the GUI poll again instead of closing a pipe its reader still owns.
+        if any(reader.is_alive() for reader in self._readers):return
+        self._drain()
         if self.process:
             for stream in (self.process.stdin,self.process.stdout,self.process.stderr):
                 if stream:

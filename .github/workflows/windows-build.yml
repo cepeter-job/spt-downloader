@@ -1,43 +1,91 @@
 name: Build Windows app
+
 on:
   push:
     branches: [main, feat/windows-desktop]
+  pull_request:
+    branches: [main, feat/windows-desktop]
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
 permissions:
   contents: read
+
 concurrency:
-  group: windows-build-${{ github.ref }}
-  cancel-in-progress: true
+  group: windows-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
 jobs:
-  build:
+  validate:
+    name: Windows tests and dependency audit${{ matrix.ref != '' && format(' ({0})', matrix.ref) || '' }}
     runs-on: windows-2022
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ github.event_name == 'schedule' && fromJSON('["main","feat/windows-desktop"]') || fromJSON('[""]') }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.ref }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
           architecture: x64
-      - name: Install pinned uv and dependencies
-        shell: pwsh
+      - name: Set up pinned uv and dependency cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.18'
+          enable-cache: true
+          save-cache: ${{ github.event_name != 'pull_request' }}
+          cache-dependency-glob: 'requirements*.txt'
+          cache-suffix: windows-x64-python311
+      - name: Install runtime and test dependencies
         run: |
-          python -m pip install uv==0.12.16
           uv venv --python 3.11 .venv
-          uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip install --python .venv/Scripts/python.exe -r requirements.txt -r requirements-test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path requirements-build.txt) {
+            uv pip install --python .venv/Scripts/python.exe -r requirements-build.txt
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Audit installed runtime, test and build dependencies
+        run: uvx --with pip --from pip-audit==2.10.1 pip-audit --path .venv/Lib/site-packages --strict --progress-spinner off
       - name: Run synthetic tests only
-        shell: pwsh
+        if: github.event_name != 'schedule'
         run: .venv/Scripts/python.exe -m pytest tests -q --basetemp "$env:RUNNER_TEMP/spt-pytest"
       - name: Build and exercise frozen GUI
-        shell: pwsh
+        if: github.event_name != 'schedule' && hashFiles('build_desktop.py') != ''
         run: .venv/Scripts/python.exe build_desktop.py --output dist
+      - name: Record artifact checksums
+        if: github.event_name != 'schedule' && hashFiles('build_desktop.py') != ''
+        run: |
+          $files = 'SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json'
+          $checksums = foreach ($name in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path dist $name)).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          $checksums | Set-Content -LiteralPath dist/SHA256SUMS.txt -Encoding ascii
       - name: Upload verified Windows artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: github.event_name != 'schedule' && hashFiles('build_desktop.py') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: SPTDownloader-Windows-x64
+          name: SPTDownloader-Windows-x64-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
           path: |
             dist/SPTDownloader.exe
             dist/LICENSE.txt
             dist/README.txt
             dist/build-selftest.json
+            dist/SHA256SUMS.txt
