@@ -7,6 +7,13 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+powershell -NoProfile -NonInteractive -Command "$version = (& uv --version) -replace '^uv ([0-9]+\.[0-9]+\.[0-9]+).*','$1'; if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$' -or [version]$version -lt [version]'0.12.18') { exit 1 }"
+if errorlevel 1 (
+  echo uv 0.12.18 or newer is required for the Windows wheel extraction security fix.
+  echo Update uv using https://docs.astral.sh/uv/getting-started/installation/
+  pause
+  exit /b 1
+)
 if not exist ".venv\Scripts\python.exe" (
   uv venv --python 3.11 .venv
   if errorlevel 1 exit /b 1

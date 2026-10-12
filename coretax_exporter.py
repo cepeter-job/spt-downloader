@@ -1,7 +1,10 @@
 """Read-only Coretax SPT exporter; implementation developed test-first."""
 from pathlib import Path
 from collections import Counter, defaultdict
+from decimal import Decimal
+import math
 import re
+from urllib.parse import urlsplit
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -10,10 +13,11 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.utils import get_column_letter
 
 NAVY, BLUE, PALE, GRAY = '17365D', '2463A0', 'EDF3FA', '64748B'
+INVALID_XML_TEXT = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
 
 
 def validate_scope(npwp, year):
-    if not re.fullmatch(r'[0-9]{16}', npwp):
+    if not isinstance(npwp, str) or not re.fullmatch(r'[0-9]{16}', npwp):
         raise ValueError('NPWP must be exactly 16 digits, without separators or spaces. The input is not normalized.')
     if not re.fullmatch(r'[0-9]{4}', str(year)) or not 1900 <= int(year) <= 2100:
         raise ValueError('Tax year must be four digits between 1900 and 2100.')
@@ -24,6 +28,8 @@ def in_scope(meta, year, basis):
     if basis not in ('period', 'submission'):
         raise ValueError('Year basis must be period or submission.')
     value = meta.get('Masa Pajak' if basis == 'period' else 'Tanggal Submit SPT', '')
+    if not isinstance(value, str):
+        raise ValueError(f'Cannot establish {basis} year from non-text source metadata.')
     years = re.findall(r'(?<![0-9])(?:19|20|21)[0-9]{2}(?![0-9])', value)
     # Observed migrated monthly periods use MM-MM-YYYY without separators.
     # Interpret only the validated year suffix; preserve the original source text.
@@ -43,19 +49,127 @@ def deduplicate_inventory(records):
             unique[identifier] = {**record, 'source_occurrences': [occurrence]}
         else:
             original = unique[identifier]
-            for field in ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
+            for field in ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan', 'Tanggal Submit SPT'):
                 if original['meta'].get(field, '') != record['meta'].get(field, ''):
                     raise ValueError(f'Conflicting source metadata for SPT identifier {identifier}; no amendment is silently merged')
             original['source_occurrences'].append(occurrence)
     return list(unique.values())
 
 
+def validate_excel_value(value, location, *, long_text=False):
+    """Reject source values that XLSX would truncate, alter or fail to read."""
+    reason = None
+    if isinstance(value, str):
+        if INVALID_XML_TEXT.search(value):
+            reason = 'source text contains characters forbidden by XML'
+        elif not long_text and len(value) > 32767:
+            reason = 'source text exceeds the 32,767-character cell limit'
+    elif isinstance(value, bool) or value is None:
+        return
+    elif isinstance(value, int):
+        try:
+            # openpyxl serializes numbers with %.16g, which can round integers.
+            if Decimal('%.16g' % value) != value:
+                reason = 'numeric digits would be rounded; preserve the source as text'
+        except (OverflowError, ValueError):
+            reason = 'number exceeds the supported numeric range'
+    elif isinstance(value, float):
+        if not math.isfinite(value) or float('%.16g' % value) != value:
+            reason = 'number would be rounded or written as an empty cell'
+    else:
+        reason = 'source cell has an unsupported value type'
+    if reason:
+        # Identify the field without including confidential source text in logs.
+        raise ValueError(f'Cannot represent {location} exactly in Excel: {reason}.')
+
+
+def detail_labels(run, record):
+    meta = record['meta']
+    title = re.sub(r'[\[\]:*?/\\]', '-', meta.get('Jenis Pajak', 'SPT'))
+    return (
+        f"{meta.get('Jenis Surat Pemberitahuan Pajak', title)} | {meta.get('Masa Pajak', '')}",
+        f"NPWP {run['npwp']} | {meta.get('Model SPT', '')} | {record.get('source_status', '')}",
+    )
+
+
+def type_scope_description(run, tax):
+    return (f'Rincian khusus {tax}. Ringkasan seluruh jenis SPT ada di resume.xlsx. '
+            'Audit mencatat keseluruhan proses. ' + run.get('scope_description', ''))
+
+
+def validate_export_run(run):
+    """Preflight scope, completion and source cells before any output is written."""
+    validate_scope(run.get('npwp'), run.get('year'))
+    basis = run.get('year_basis')
+    if basis not in ('period', 'submission'):
+        raise ValueError('Year basis must be period or submission.')
+    if type(run.get('complete')) is not bool:
+        raise ValueError('Run complete must be a boolean, not a truthy value.')
+    if run['complete'] and run.get('errors'):
+        raise ValueError('A COMPLETE run cannot contain capture errors.')
+    for key in ('npwp', 'year', 'taxpayer_name', 'started_at', 'scope_description'):
+        validate_excel_value(run.get(key, ''), key)
+    for entry in run.get('audit', []):
+        for key in ('status', 'total', 'scanned', 'selected', 'result', 'note'):
+            validate_excel_value(entry.get(key), f'audit.{key}')
+    for error in run.get('errors', []):
+        validate_excel_value(error.get('object', 'Run'), 'error.object')
+        validate_excel_value(error.get('message', str(error)), 'error.message')
+    expected_scope = [run['npwp'], run['year'], basis]
+    for ordinal, record in enumerate(run['records'], 1):
+        location = f'record {ordinal}'
+        meta = record['meta']
+        if 'scope' in record and record['scope'] != expected_scope:
+            raise ValueError(f'{location} scope differs from the export scope.')
+        if not in_scope(meta, run['year'], basis):
+            raise ValueError(f'{location} year is outside the selected export scope.')
+        captured = record.get('capture_complete', False)
+        if type(captured) is not bool:
+            raise ValueError(f'{location} capture_complete must be a boolean.')
+        if run['complete'] and not captured:
+            raise ValueError(f'A COMPLETE run contains an incomplete capture at {location}.')
+        for key in ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak',
+                    'Model SPT', 'Nomor Bukti Penerimaan', 'Tanggal Submit SPT'):
+            validate_excel_value(meta.get(key, ''), f'{location} metadata.{key}')
+        for key in ('source_status', 'detail_url'):
+            validate_excel_value(record.get(key, ''), f'{location}.{key}')
+        for label in detail_labels(run, record):
+            validate_excel_value(label, f'{location} combined source label')
+        for section in record.get('sections', []):
+            validate_excel_value(section['name'], f'{location} section name')
+            validate_excel_value(section.get('text', ''), f'{location} page context', long_text=True)
+            for field in section.get('fields', []):
+                validate_excel_value(field.get('label') or field.get('field', ''), f'{location} field label')
+                validate_excel_value(field.get('value', ''), f'{location} field value')
+            for table in section.get('tables', []):
+                complete = table.get('complete', True)
+                if type(complete) is not bool or captured and not complete:
+                    raise ValueError(f'{location} capture completion contradicts a table completion flag.')
+                validate_excel_value(table.get('name', 'Tabel'), f'{location} table name')
+                for value in table.get('headers', []):
+                    validate_excel_value(value, f'{location} table header')
+                for row in table.get('rows', []):
+                    for value in row:
+                        validate_excel_value(value, f'{location} table cell')
+
+
+def web_source_url(value):
+    """Only web navigation becomes active; all other source URLs stay literal."""
+    if not isinstance(value, str) or re.search(r'[\s\\]', value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme in ('http', 'https') and bool(parsed.hostname)
+    except ValueError:
+        return False
+
+
 def put(ws, row, col, value):
     """Store untrusted source text literally, never as an Excel formula."""
+    validate_excel_value(value, f'{ws.title}!{get_column_letter(col)}{row}')
     cell = ws.cell(row, col)
     cell.value = value if value is not None else ''
     if isinstance(value, str):
-        cell.value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', value)[:32767]
         cell.data_type = 's'
         cell.number_format = '@'
     cell.alignment = Alignment(vertical='top', wrap_text=True)
@@ -110,6 +224,7 @@ def tax_type_filename(tax_type):
 
 
 def export_workbook(run, path, *, include_details=True, detail_targets=None, resume_file=None):
+    validate_export_run(run)
     wb = Workbook()
     summary = wb.active
     summary.title = 'Ringkasan'
@@ -170,10 +285,10 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
         meta = record['meta']
         url = record.get('detail_url', '')
         if include_details:
-            title = re.sub(r'[\[\]:*?/\\]', '-', meta.get('Jenis Pajak', 'SPT'))
+            title_label, scope_label = detail_labels(run, record)
             detail = wb.create_sheet(detail_sheet_title(ordinal, record))
             setup_sheet(detail, [12, 36, 28, 25, 25, 25, 25, 25, 25, 25, 25, 25], 'C6')
-            band(detail, 1, f"{meta.get('Jenis Surat Pemberitahuan Pajak', title)} | {meta.get('Masa Pajak', '')}", 12)
+            band(detail, 1, title_label, 12)
             back = put(detail, 2, 1, 'Resume' if resume_file else 'Daftar SPT')
             if resume_file:
                 back.hyperlink = Hyperlink(ref=back.coordinate, target=resume_file, location="'Daftar SPT'!A1")
@@ -181,10 +296,12 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                 back.hyperlink = "#'Daftar SPT'!A1"
             back.font = Font(color=BLUE, underline='single')
             detail.merge_cells('B2:L2')
-            put(detail, 2, 2, f"NPWP {run['npwp']} | {meta.get('Model SPT', '')} | {record.get('source_status', '')}")
+            put(detail, 2, 2, scope_label)
             detail.merge_cells('A3:L3')
             if url:
-                put(detail, 3, 1, url).hyperlink = url
+                source_cell = put(detail, 3, 1, url)
+                if web_source_url(url):
+                    source_cell.hyperlink = url
             row = 5
             for section in record.get('sections', []):
                 band(detail, row, section['name'], 12, BLUE)
@@ -238,7 +355,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
             filename, sheet_title = detail_targets[ordinal]
             index.cell(ir, 1).hyperlink = Hyperlink(ref=index.cell(ir, 1).coordinate,
                 target=filename, location=f"'{sheet_title.replace(chr(39), chr(39)*2)}'!A1")
-        if url:
+        if web_source_url(url):
             index.cell(ir, 11).hyperlink = url
         index.row_dimensions[ir].height = 36
     if records:
@@ -255,6 +372,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
 
 
 def export_split_workbooks(run, folder):
+    validate_export_run(run)
     folder = Path(folder)
     groups = defaultdict(list)
     for ordinal, record in enumerate(run['records'], 1):
@@ -264,6 +382,8 @@ def export_split_workbooks(run, folder):
     normalized = [name.casefold() for name in filenames.values()]
     if len(normalized) != len(set(normalized)):
         raise ValueError('Tax type filename collision; no workbook was overwritten')
+    for tax in groups:
+        validate_excel_value(type_scope_description(run, tax), 'type scope description')
     targets = {}
     files = {'resume.xlsx': folder / 'resume.xlsx'}
     for tax, entries in groups.items():
@@ -271,7 +391,7 @@ def export_split_workbooks(run, folder):
         for local_ordinal, (global_ordinal, record) in enumerate(entries, 1):
             targets[global_ordinal] = (filename, detail_sheet_title(local_ordinal, record))
         group_run = {**run, 'records': [record for _, record in entries],
-            'scope_description': f'Rincian khusus {tax}. Ringkasan seluruh jenis SPT ada di resume.xlsx. Audit mencatat keseluruhan proses. ' + run.get('scope_description', '')}
+            'scope_description': type_scope_description(run, tax)}
         path = folder / filename
         export_workbook(group_run, path, resume_file='resume.xlsx')
         files[filename] = path

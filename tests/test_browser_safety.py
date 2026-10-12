@@ -1,0 +1,445 @@
+"""Synthetic protocol fixtures exercise safety without tax sites or profiles."""
+from pathlib import Path
+from types import SimpleNamespace
+import gc
+import json
+import sys
+import weakref
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import coretax_browser as driver
+
+
+TAXPAYER = 'fixture-taxpayer'
+RECORD = 'fixture-record'
+LIST_URL = driver.ORIGIN + '/returnsheets/id-ID/submitted-returnsheets/' + TAXPAYER
+DETAIL_URL = driver.ORIGIN + '/returnsheets/id-ID/fixture-return/' + TAXPAYER + '/' + RECORD
+META = {'Jenis Pajak': 'Fixture', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Normal'}
+
+
+class SignalSource:
+    def __init__(self):
+        self.listeners = {}
+
+    def on(self, name, callback):
+        self.listeners.setdefault(name, []).append(callback)
+
+    def remove_listener(self, name, callback):
+        self.listeners[name].remove(callback)
+
+    def emit(self, name, value):
+        for callback in list(self.listeners.get(name, [])):
+            callback(value)
+
+
+def response(rows=None, *, url=None, total=None, successful=True, status=200):
+    rows = [{'RecordId': RECORD}] if rows is None else rows
+    payload = {'IsSuccessful': successful, 'Payload': {
+        'Data': rows, 'TotalRecords': len(rows) if total is None else total}}
+    return SimpleNamespace(
+        url=url or driver.ORIGIN + '/returnsheet/api/returnsheetsfixture',
+        request=SimpleNamespace(resource_type='xhr'),
+        headers={'content-type': 'application/json'}, status=status,
+        json=lambda: payload,
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_browser_wait(monkeypatch):
+    # The protocol fixtures have no rendering or loading overlays.
+    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+
+
+@pytest.mark.parametrize('url', [
+    'https://untrusted.invalid/returnsheet/api/returnsheetsfixture',
+    'https://untrusted.invalid/?path=/returnsheet/api/returnsheetsfixture',
+    driver.ORIGIN.replace('https:', 'http:') + '/returnsheet/api/returnsheetsfixture',
+    driver.ORIGIN + ':444/returnsheet/api/returnsheetsfixture',
+    driver.ORIGIN.replace('https://', 'https://user@') + '/returnsheet/api/returnsheetsfixture',
+])
+def test_observer_rejects_list_payloads_outside_trusted_https_origin(url):
+    observer = driver.ListObserver(SignalSource())
+    observer.on_response(response(url=url))
+    with pytest.raises(RuntimeError, match='No verifiable'):
+        observer.wait(0, timeout=0)
+
+
+@pytest.mark.parametrize('changes', [
+    {'successful': 'false'}, {'successful': 1}, {'successful': None},
+    {'status': 500}, {'total': True}, {'total': -1}, {'rows': ['not-a-record']},
+])
+def test_observer_rejects_unsuccessful_or_malformed_list_payloads(changes):
+    observer = driver.ListObserver(SignalSource())
+    observer.on_response(response(**changes))
+    with pytest.raises(RuntimeError):
+        observer.wait(0, timeout=0)
+
+
+def test_observer_requires_explicit_success():
+    item = response()
+    del item.json()['IsSuccessful']
+    observer = driver.ListObserver(SignalSource())
+    observer.on_response(item)
+    with pytest.raises(RuntimeError):
+        observer.wait(0, timeout=0)
+
+
+def test_observer_releases_previous_batches():
+    class WeakRow(dict):
+        pass
+
+    observer = driver.ListObserver(SignalSource())
+    old_row = WeakRow(RecordId='fixture-previous-record')
+    old_ref = weakref.ref(old_row)
+    observer.on_response(response([old_row]))
+    del old_row
+    observer.on_response(response())
+    gc.collect()
+    assert old_ref() is None, 'Completed list batches must not accumulate in the observer'
+
+
+def test_observer_returns_the_response_that_finished_during_ui_settling(monkeypatch):
+    observer = driver.ListObserver(SignalSource())
+    observer.on_response(response([{'RecordId': 'fixture-before-render'}]))
+    monkeypatch.setattr(driver, 'wait_idle', lambda page: observer.on_response(response()))
+    assert observer.wait(0)['rows'] == [{'RecordId': RECORD}]
+
+
+def test_observer_sequence_does_not_reset_when_old_batches_are_released():
+    observer = driver.ListObserver(SignalSource())
+    for index in range(3):
+        marker = observer.sequence
+        observer.on_response(response([{'RecordId': f'fixture-{index}'}]))
+        assert observer.wait(marker)['rows'] == [{'RecordId': f'fixture-{index}'}]
+    with pytest.raises(RuntimeError, match='No verifiable'):
+        observer.wait(observer.sequence, timeout=0)
+
+
+class Container:
+    def query_selector(self, selector):
+        return None
+
+    def dispose(self):
+        pass
+
+
+class View:
+    def __init__(self, page):
+        self.page = page
+
+    def count(self):
+        return 1
+
+    def evaluate(self, script):
+        if self.page.unrelated_popup is not None:
+            self.page.context.emit('page', self.page.unrelated_popup)
+        self.page.emit('popup', self.page.popup)
+        self.page.context.emit('page', self.page.popup)
+
+
+class Table:
+    def __init__(self, page):
+        self.page = page
+        self.first = self
+
+    def element_handle(self):
+        return self
+
+    def evaluate_handle(self, script):
+        return Container()
+
+    def evaluate(self, script):
+        return {'headers': list(META), 'rows': [list(META.values())], 'footer': []}
+
+    def locator(self, selector):
+        return View(self.page) if selector == 'button[id=ViewButton]' else self
+
+    def nth(self, index):
+        assert index == 0
+        return self
+
+
+class DetailPage:
+    def __init__(self, url):
+        self.url = url
+        self.closed = False
+
+    def wait_for_load_state(self, state, timeout):
+        pass
+
+    def set_viewport_size(self, size):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+class SourcePage(SignalSource):
+    def __init__(self, popup_url=DETAIL_URL):
+        super().__init__()
+        self.context = SignalSource()
+        self.url = LIST_URL
+        self.navigated = []
+        self.popup = DetailPage(popup_url)
+        self.unrelated_popup = None
+
+    def goto(self, url, **kwargs):
+        self.navigated.append(url)
+        self.url = url
+        self.emit('response', response())
+
+    def locator(self, selector):
+        return Table(self)
+
+
+def run_fixture(list_url=LIST_URL):
+    return {'npwp': '0000000000000001', 'year': 2025, 'year_basis': 'period',
+            'inventory_complete': True, 'errors': [], 'records': [
+                {'key': 'fixture-key', 'record_id': RECORD, 'meta': dict(META),
+                 'list_url': list_url, 'list_page': 1, 'list_page_size': None,
+                 'capture_complete': False, 'sections': []}]}
+
+
+def install_capture(monkeypatch):
+    monkeypatch.setattr(driver, 'capture_detail', lambda page, **kwargs: {
+        'sections': [{'name': 'Synthetic fixture', 'fields': [{'label': 'Fixture', 'value': '001'}], 'tables': []}],
+        'capture_complete': True, 'errors': [],
+    })
+
+
+@pytest.mark.parametrize('list_url', [
+    'https://untrusted.invalid/returnsheets/id-ID/submitted-returnsheets/' + TAXPAYER,
+    LIST_URL.replace('https:', 'http:'),
+    driver.ORIGIN + '/returnsheets/id-ID/delete-return/' + TAXPAYER,
+])
+def test_detail_resume_rejects_unsafe_list_url_before_navigation(tmp_path, monkeypatch, list_url):
+    install_capture(monkeypatch)
+    page = SourcePage()
+    result = driver.collect_details(page, run_fixture(list_url), tmp_path)
+    assert page.navigated == [], 'Untrusted checkpoint URLs must be rejected before browser navigation'
+    assert not result['complete']
+
+
+def test_detail_provenance_uses_url_path_when_list_has_query_and_fragment(tmp_path, monkeypatch):
+    install_capture(monkeypatch)
+    page = SourcePage()
+    result = driver.collect_details(page, run_fixture(LIST_URL + '?page=1#fixture'), tmp_path)
+    assert result['complete'], result['errors']
+    assert result['records'][0]['detail_url'] == DETAIL_URL
+
+
+def test_detail_capture_rejects_other_record_for_same_taxpayer(tmp_path, monkeypatch):
+    install_capture(monkeypatch)
+    page = SourcePage(DETAIL_URL.replace(RECORD, 'fixture-other-record'))
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert not result['complete'], 'A matching taxpayer does not establish return identity'
+    assert not result['records'][0]['sections']
+    assert page.popup.closed
+
+
+def test_readonly_view_uses_popup_from_the_initiating_page():
+    page = SourcePage()
+    unrelated = DetailPage(DETAIL_URL.replace(RECORD, 'unrelated-fixture-record'))
+    page.unrelated_popup = unrelated
+    detail, is_popup = driver.open_return_readonly(page, Table(page), TAXPAYER)
+    assert detail is page.popup, 'An unrelated tab in a reused context is not the selected return'
+    assert is_popup
+    assert not unrelated.closed
+
+
+@pytest.mark.parametrize('target', [
+    DETAIL_URL.replace('https:', 'http:'),
+    'https://untrusted.invalid/returnsheets/' + TAXPAYER + '/' + RECORD,
+    DETAIL_URL.replace(TAXPAYER, 'fixture-other-taxpayer'),
+])
+def test_readonly_view_closes_rejected_popup(target):
+    page = SourcePage(target)
+    with pytest.raises(RuntimeError):
+        driver.open_return_readonly(page, Table(page), TAXPAYER)
+    assert page.popup.closed, 'Failed popup navigation must release the tab it created'
+    assert not page.listeners.get('popup')
+
+
+def write_checkpoint(folder, record, ordinal=1, **changes):
+    checkpoint_dir = folder / 'returns'
+    checkpoint_dir.mkdir(exist_ok=True)
+    saved = {**record, 'scope': ['0000000000000001', 2025, 'period'],
+             'capture_complete': True, 'detail_url': DETAIL_URL,
+             'sections': [{'name': 'Synthetic saved section', 'fields': [], 'tables': []}], **changes}
+    (checkpoint_dir / f'{ordinal:04d}.json').write_text(json.dumps(saved), encoding='utf-8')
+
+
+@pytest.mark.parametrize('changes', [
+    {'meta': {**META, 'Masa Pajak': 'Januari 2024'}},
+    {'list_url': LIST_URL.replace(TAXPAYER, 'fixture-other-taxpayer')},
+    {'list_page': 99}, {'key': 'fixture-other-key'},
+    {'detail_url': DETAIL_URL.replace(RECORD, 'fixture-other-record')},
+])
+def test_resume_rejects_checkpoint_with_different_inventory_provenance(tmp_path, changes):
+    run = run_fixture()
+    write_checkpoint(tmp_path, run['records'][0], **changes)
+    with pytest.raises(RuntimeError, match='checkpoint'):
+        driver.collect_details(SourcePage(), run, tmp_path)
+
+
+def test_resume_copies_capture_fields_without_overwriting_inventory(tmp_path):
+    run = run_fixture()
+    write_checkpoint(tmp_path, run['records'][0], untrusted_extra='not inventory data')
+    result = driver.collect_details(SourcePage(), run, tmp_path)
+    assert result['complete']
+    assert result['records'][0]['sections'][0]['name'] == 'Synthetic saved section'
+    assert 'untrusted_extra' not in result['records'][0]
+
+
+def test_limited_run_validates_scope_of_later_checkpoints_before_reconciliation(tmp_path, monkeypatch):
+    install_capture(monkeypatch)
+    run = run_fixture()
+    for index in (2, 3):
+        run['records'].append({**run['records'][0], 'record_id': f'fixture-record-{index}', 'key': f'fixture-key-{index}'})
+    write_checkpoint(tmp_path, run['records'][2], ordinal=3,
+                     scope=['0000000000000002', 2024, 'period'])
+    with pytest.raises(RuntimeError, match='checkpoint'):
+        driver.collect_details(SourcePage(), run, tmp_path, detail_limit=1)
+
+
+class PagerButton:
+    def __init__(self, container, delta):
+        self.container, self.delta = container, delta
+
+    def click(self):
+        self.container.index += self.delta
+
+    def evaluate(self, script):
+        self.click()
+
+
+class PagedTable:
+    def __init__(self, pages, start=0):
+        self.pages, self.index = pages, start
+        self.disposed = False
+
+    def element_handle(self):
+        return self
+
+    def evaluate_handle(self, script):
+        return self
+
+    def evaluate(self, script):
+        number, value = self.pages[self.index]
+        if script == driver.STATE_JS:
+            return json.dumps({'p': [number], 'rows': [value]})
+        return {'headers': ['Fixture'], 'rows': [[value]], 'footer': []}
+
+    def query_selector(self, selector):
+        if 'p-paginator-prev' in selector and self.index:
+            return PagerButton(self, -1)
+        if 'p-paginator-next' in selector and self.index + 1 < len(self.pages):
+            return PagerButton(self, 1)
+        return None
+
+    def dispose(self):
+        self.disposed = True
+
+
+def test_table_capture_resets_retained_page_with_previous_when_first_is_absent():
+    table = PagedTable([(1, 'fixture-one'), (2, 'fixture-two')], start=1)
+    captured = driver.capture_table(SignalSource(), table, 1, max_pages=5)
+    assert captured['rows'] == [['fixture-one'], ['fixture-two']]
+    assert captured['complete']
+
+
+def test_repeated_final_page_is_partial_even_when_next_becomes_disabled():
+    table = PagedTable([(1, 'fixture-one'), (2, 'fixture-two'), (1, 'fixture-one')])
+    captured = driver.capture_table(SignalSource(), table, 1, max_pages=5)
+    assert not captured['complete'], 'A repeated terminal page is not complete pagination'
+    assert captured['rows'] == [['fixture-one'], ['fixture-two']]
+
+
+class EmptyLocator:
+    @property
+    def first(self):
+        return self
+
+    def count(self):
+        return 0
+
+
+class AccordionControl:
+    def __init__(self, panel, position):
+        self.panel, self.position = panel, position
+
+    def evaluate(self, script):
+        self.panel.expanded[self.position] = True
+
+    def dispose(self):
+        pass
+
+
+class CollapsedControls:
+    def __init__(self, panel):
+        self.panel = panel
+
+    def count(self):
+        return len(self.element_handles())
+
+    def element_handles(self):
+        return [AccordionControl(self.panel, i) for i, expanded in enumerate(self.panel.expanded) if not expanded]
+
+    def nth(self, index):
+        return self.element_handles()[index]
+
+
+class AccordionPanel:
+    def __init__(self):
+        self.expanded = [False, False]
+        self.first = self
+
+    def wait_for(self, **kwargs):
+        pass
+
+    def locator(self, selector):
+        if selector.startswith('.p-accordion-header'):
+            return CollapsedControls(self)
+        return EmptyLocator()
+
+    def evaluate(self, script):
+        return [{'label': f'Fixture {i}', 'value': f'0{i}'}
+                for i, expanded in enumerate(self.expanded, 1) if expanded]
+
+    def inner_text(self):
+        return 'Synthetic accordion fixture'
+
+
+def test_detail_captures_every_initially_collapsed_accordion():
+    panel = AccordionPanel()
+    captured = driver.capture_detail(SimpleNamespace(locator=lambda selector: panel))
+    assert captured['capture_complete'], captured['errors']
+    assert captured['sections'][0]['fields'] == [
+        {'label': 'Fixture 1', 'value': '01'}, {'label': 'Fixture 2', 'value': '02'}]
+
+
+def test_detail_list_reset_obeys_page_limit(tmp_path, monkeypatch):
+    page = SourcePage()
+
+    class StuckPrevious:
+        clicks = 0
+
+        def evaluate(self, script):
+            self.clicks += 1
+            if self.clicks > 2:
+                raise RuntimeError('Synthetic watchdog: unbounded Previous loop')
+            page.emit('response', response())
+
+    previous = StuckPrevious()
+
+    class StuckContainer(Container):
+        def query_selector(self, selector):
+            return previous if 'p-paginator-prev' in selector else None
+
+    monkeypatch.setattr(Table, 'evaluate_handle', lambda self, script: StuckContainer())
+    captured = driver.collect_details(page, run_fixture(), tmp_path, max_pages=2)
+    assert previous.clicks <= 2, 'max_pages must bound Previous navigation as well as Next'
+    assert not captured['complete']
+    assert 'page limit' in captured['errors'][0]['message']

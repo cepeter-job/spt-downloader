@@ -142,3 +142,42 @@ def test_table_source_total_mismatch_is_reported_as_partial():
         assert not result['capture_complete'], 'Unreconciled source count must not be marked complete'
         assert result['errors']
         browser.close()
+
+
+def test_detail_expands_all_collapsed_accordions():
+    import coretax_browser as driver
+    fixture = '''<div class="main-content">
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('fixture-one').hidden=false">Fixture one</a></div>
+    <div id="fixture-one" hidden><label for="value-one">Fixture one value</label><input id="value-one" disabled value="001"></div>
+    <div class="p-accordion-header"><a aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('fixture-two').hidden=false">Fixture two</a></div>
+    <div id="fixture-two" hidden><label for="value-two">Fixture two value</label><input id="value-two" disabled value="002"></div>
+    </div>'''
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(1500)
+        page.set_content(fixture)
+        captured = driver.capture_detail(page)
+        assert captured['capture_complete'], captured['errors']
+        assert [field['value'] for field in captured['sections'][0]['fields']] == ['001', '002']
+        browser.close()
+
+
+def test_capture_resets_with_previous_when_first_control_is_absent():
+    import coretax_browser as driver
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel='msedge', headless=True)
+        page = browser.new_page()
+        page.set_content(HTML)
+        page.evaluate('''() => {
+          const paginator=document.querySelector('.p-paginator');
+          const previous=document.createElement('button'); previous.className='p-paginator-prev'; previous.textContent='Previous';
+          previous.onclick=()=>{paginator.querySelector('.p-highlight').textContent='1'; paginator.querySelector('.p-paginator-next').disabled=false; previous.disabled=true;};
+          paginator.prepend(previous); paginator.querySelector('.p-highlight').textContent='2'; paginator.querySelector('.p-paginator-next').disabled=true;
+        }''')
+        captured = driver.capture_detail(page, max_pages=5)
+        table = captured['sections'][1]['tables'][0]
+        assert table['rows'] == [['001', '1.000,00']] * 4
+        assert table['pages'] == 2
+        assert captured['capture_complete']
+        browser.close()

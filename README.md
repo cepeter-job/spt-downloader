@@ -4,7 +4,7 @@ Local, authorized Coretax SPT capture and split-file Excel export.
 
 ## Run on Windows
 
-1. Open the cloned `spt-downloader` folder and run **setup.cmd** first (requires `uv` and installed Edge or Chrome). Then double-click **run.cmd**.
+1. Open the cloned `spt-downloader` folder and run **setup.cmd** first (requires `uv` 0.12.18 or newer and installed Edge or Chrome). Then double-click **run.cmd**.
 2. Enter the **exact 16-digit NPWP** and **four-digit tax year**. Separators/spaces are rejected, not silently normalized.
 3. Sign in directly in the separate browser window if prompted; complete password, CAPTCHA or MFA there. Press Enter in the script terminal after signing in. An existing local automation browser on port 9235 is reused by the launcher.
 4. Open the Excel file in the printed `output` folder. Check **Ringkasan → Status** and **Audit** before relying on completeness.
@@ -41,11 +41,11 @@ For each selected return, the tool clicks only the observed **View** control, ve
 - **SPT_Unifikasi.xlsx:** all captured PPh Unifikasi periods and amendments in one workbook.
 - **Other tax types:** one `SPT_<type>.xlsx` each; filenames are checked for collisions before any workbook is written.
 
-Each type workbook contains its own type-specific Ringkasan/Daftar SPT, the run Audit, and only that type's detail worksheets. All periods and amendment identifiers are retained. No absent tax-type files are fabricated. Detail sheets link back to resume.xlsx. Keep all generated workbooks together in the same folder and do not rename them; hyperlinks are relative so the whole folder can be moved. Existing single-file exports are not deleted. Use a new output folder when changing the NPWP, year, year basis, or test scope. A different NPWP/year/year-basis cannot overwrite an existing run.json output scope.
+Each type workbook contains its own type-specific Ringkasan/Daftar SPT, the run Audit, and only that type's detail worksheets. All periods and amendment identifiers are retained. No absent tax-type files are fabricated. Detail sheets link back to resume.xlsx. Keep all generated workbooks together in the same folder and do not rename them; hyperlinks are relative so the whole folder can be moved. Existing single-file exports are not deleted; choose a new folder if it contains other workbooks. All new workbooks are staged and verified before replacing the previous set, with rollback if a later file replacement fails. Abrupt power loss is not a transactional filesystem guarantee. Use a new output folder when changing the NPWP, year, year basis, or test scope. A different NPWP/year/year-basis cannot overwrite an existing run.json output scope.
 
 The raw checkpoint command `--resume` is independent of the Excel filename `resume.xlsx`; it still resumes capture from inventory.json and return checkpoints. `--from-json` rebuilds all the split Excel files offline without opening the browser.
 
-Identifiers and source figures are stored as literal text to preserve leading zeros, Indonesian number formatting and source precision. Summary counts are numeric. Source strings beginning with `=` are **not** executed as Excel formulas. The workbook is not encrypted; handle it as confidential taxpayer data.
+Identifiers and source figures are stored as literal text to preserve leading zeros, Indonesian number formatting and source precision. Summary counts are numeric. Source strings beginning with `=` are **not** executed as Excel formulas. Values that Excel cannot represent exactly, including a field/table cell longer than 32,767 characters, unsupported XML controls or numeric precision that would be lost, stop the export explicitly. Long page-context text is split across cells without truncation; the raw JSON remains available for recovery. Only HTTP/HTTPS source URLs become active links; other URL text is preserved without an executable link. The workbook is not encrypted; handle it as confidential taxpayer data.
 
 ## Checkpoints and recovery
 
@@ -75,7 +75,7 @@ Exit codes: **0** complete supported scope; **2** partial; **1** blocked; **130*
 
 Use only an account and taxpayer records you are authorized to access. The script never asks for a password, CAPTCHA answer, card or verification code. Login is performed by you in the browser; persistent login cookies may remain in the dedicated browser profile. The profile is separate from your personal Firefox/Chrome/Edge profile. Neither profiles, credentials, tax output nor the virtual environment is included in the distributable ZIP. No tax data is uploaded to a cloud scraping service by this tool. This chat's live inspection does not change that local execution model.
 
-If a local debugging browser is reused, its endpoint must be localhost. Other local programs may be able to access that session while the debugging browser is open, so close the dedicated automation window after use. Never expose its port to the network. The normal fresh-browser path does not enable a debugging port.
+If a local debugging browser is reused, its endpoint must be a localhost HTTP/HTTPS origin without credentials, path, query or fragment. Other local programs may be able to access that session while the debugging browser is open, so close the dedicated automation window after use. Never expose its port to the network. The normal fresh-browser path does not enable a debugging port.
 
 No submission, cancellation, email, PDF-generation or arbitrary row-action buttons are clicked. If the View selector or page structure changes, the tool reports an error rather than guessing an action.
 
@@ -90,7 +90,7 @@ No submission, cancellation, email, PDF-generation or arbitrary row-action butto
 Development tests use locally served synthetic HTML fixtures, explicitly separate from taxpayer outputs:
 
 ```bat
-uv pip install --python .venv\Scripts\python.exe pytest==9.1.1
+uv pip install --python .venv\Scripts\python.exe -r requirements-test.txt
 .venv\Scripts\python.exe -m pytest tests -q --basetemp "%LOCALAPPDATA%\hermes\cache\scratch\coretax-tests"
 ```
 
@@ -99,6 +99,14 @@ The tool has been exercised against the authorized intranet session as well as t
 ## Development repository
 
 Development takes place in https://github.com/cepeter-job/spt-downloader. The repository contains source, documentation and synthetic fixture tests only. Never commit real taxpayer data, captured JSON, Excel outputs, browser profiles, credentials or cookies. Existing local tax outputs stay outside this repository.
+
+## Continuous verification
+
+GitHub Actions runs the synthetic test suite on Windows with CPython 3.11 and the installed Edge browser for pull requests and pushes to `main` and `feat/windows-desktop`. It audits the installed runtime, test and available desktop-build dependencies with `pip-audit`; a weekly scheduled run checks dependencies without rebuilding the app. An unavailable advisory service fails the check so an unverified audit cannot look successful.
+
+The workflow pins actions by commit and uv to the patched 0.12.18 release. Its uv cache contains dependency packages, never browser profiles, tax outputs or test workspaces. PRs can restore the cache but do not save it. Desktop builds, when present, run after tests and dependency audit in the same job, exercise the frozen GUI, and upload only the allowlisted executable, license, usage instructions, self-test report and SHA-256 manifest. Artifact names include the tested commit. Dependabot groups weekly dependency and action update PRs for review.
+
+For the findings, verification boundaries and follow-up priorities, see [the October 2026 audit](docs/audit-2026-10-12.md).
 
 ## License
 
