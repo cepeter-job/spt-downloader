@@ -20,6 +20,15 @@ def self_test(report=None):
             app=App(root,Path(folder));root.update_idletasks()
             assert app.start_button.cget('text')=='Mulai'
             assert app.stop_button.instate(['disabled'])
+            dialog=app.settings();root.update_idletasks()
+            def descendants(widget):
+                for child in widget.winfo_children():
+                    yield child;yield from descendants(child)
+            widgets=list(descendants(dialog))
+            labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
+            assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup'}<=labels
+            assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
+            app._settings_close()
             assert all((resource_root()/name).is_file() for name in WORKER_FILES)
             if getattr(sys,'frozen',False):assert (resource_root()/'tools'/'uv.exe').is_file()
             app.on_event({'type':'progress','percent':42,'message':'Self-test synthetic progress'})
@@ -27,7 +36,8 @@ def self_test(report=None):
             data={'ok':True,'python':sys.version.split()[0],'bits':struct.calcsize('P')*8,
                   'frozen':bool(getattr(sys,'frozen',False)),
                   'worker_resources':list(WORKER_FILES),'uv_bundled':(resource_root()/'tools'/'uv.exe').is_file(),
-                  'gui_controls':['NPWP','Tahun pajak','Mulai','Stop','Pengaturan','Buka Hasil'],
+                  'gui_controls':['NPWP','Tahun pajak','Mulai','Stop','Pengaturan','Buka Hasil','Cek Kredensial','Batalkan Cek'],
+                  'credential_check_controls':True,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
             if report:

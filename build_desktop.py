@@ -57,6 +57,7 @@ def build(output):
     data=json.loads(report.read_text(encoding='utf-8'))
     if not (data['ok'] and data['frozen'] and data['uv_bundled'] and data['bits']==64
             and data['worker_resources']==list(WORKER_FILES)
+            and data['credential_check_controls'] and 'Cek Kredensial' in data['gui_controls']
             and not data['credentials_accessed'] and not data['live_scrape']):
         raise RuntimeError('Packaged application self-test failed')
     shutil.copy2(ROOT/'LICENSE',output/'LICENSE.txt')
@@ -67,6 +68,8 @@ def build(output):
         'Worker setup uses compatible installed Python or portable CPython 3.11 in LocalAppData\\SPTDownloader.\n'
         'First setup may require internet access; exporting requires authorized intranet access and Edge/Chrome.\n'
         'Enter your account/password only in Pengaturan; the password is stored in Windows Credential Manager.\n'
+        'Save settings, then choose Cek Kredensial: fresh isolated session, one saved login attempt, no scraping/export.\n'
+        'Login berhasil requires verified saved-password submission; CAPTCHA/MFA and timeouts remain explicit.\n'
         'NPWP is exactly 16 ASCII digits; tax year is four digits. Mulai runs one read-only job.\n'
         'CAPTCHA/MFA and unknown login layouts require completing login in the application browser.\n'
         'Stop preserves local PARTIAL checkpoints; only owned browser processes are closed.\n'

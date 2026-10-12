@@ -10,6 +10,12 @@ Download the `SPTDownloader-Windows-x64` artifact from [Build Windows app](https
 4. Progress displays stage-weighted work and processed/verified SPT counts; setup has an indeterminate indicator where no denominator exists. **100% only means COMPLETE after verified workbook publication and owned browser cleanup.** CAPTCHA/MFA and unknown/unsafe sign-in layouts switch to the application's visible browser; solve challenges there. Stored credentials are never used for unknown forms or tax submission buttons. If headless session transfer is rejected, the application remains visible.
 5. Use **Buka Hasil** after publication. **Stop** preserves private local PARTIAL checkpoints and closes only owned worker/browser descendants; a stubborn worker is terminated after 15 seconds. Closing the window during a job asks for confirmation. Previously downloaded exports are never overwritten or deleted.
 
+### Cek Kredensial (login otomatis)
+
+Open **Pengaturan**, save the exact login origin/account/password, then press **Cek Kredensial**. No NPWP/year is required. The check runs in the owned background worker, creates a fresh temporary browser profile and tries the saved account once. It never reuses the export profile or starts scraping/exporting. Unsaved settings disable the check; **Simpan** keeps the dialog open so you can check immediately. **Batalkan Cek**, Escape or closing settings stops the owned check before the dialog closes.
+
+**Login berhasil** appears only after the saved credential was actually submitted and the authorized Coretax taxpayer-search marker is visible. An already-authenticated SSO session is reported as **password belum diuji**, not a valid saved password. CAPTCHA/MFA and unknown form layouts report why manual action is needed; a timeout is **belum terverifikasi**, not proof of a wrong password. Origin/account mismatches and network/credential-store failures have explicit messages. The result is transient, not a persistent guarantee that a password is still valid later. Normal **Mulai** continues to use automatic login when the inspected form and saved entry match; challenges are never bypassed.
+
 ### Windows paths and confidentiality
 
 The actual Windows Known Folder API resolves Downloads, including OneDrive, relocated, network and non-ASCII locations. Successful jobs publish only the verified Excel set:

@@ -11,6 +11,7 @@ import uuid
 from .runtime import SetupCancelled,ensure_runtime,worker_source
 from .windows import ProcessJob
 from .paths import downloads_folder
+from .credentials import ALLOWED_ORIGINS
 
 
 def validate_job_scope(npwp,year):
@@ -23,7 +24,7 @@ def validate_job_scope(npwp,year):
     return npwp,int(text)
 
 
-def parse_event(line,job_id):
+def parse_event(line,job_id,operation='export'):
     if len(line)>16384:return None
     try:event=json.loads(line)
     except (ValueError,TypeError):return None
@@ -36,6 +37,12 @@ def parse_event(line,job_id):
     if kind not in ('progress','login_required','terminal'):return None
     if any(not isinstance(event[k],str) or len(event[k])>500 for k in ('message','stage') if k in event):return None
     if any(type(event[k]) is not int or event[k]<0 for k in ('processed','total','verified','scanned') if k in event):return None
+    if operation=='login_check':
+        if percent!=0 or event.get('output') is not None:return None
+        if kind=='terminal' and event.get('status') not in (
+                'LOGIN_OK','LOGIN_UNVERIFIED','LOGIN_MANUAL','LOGIN_BLOCKED','LOGIN_ERROR','CANCELLED','ERROR'):return None
+        return event
+    if operation!='export':return None
     if kind=='terminal':
         status=event.get('status')
         if status not in ('COMPLETE','PARTIAL','CANCELLED','BLOCKED','ERROR'):return None
@@ -52,6 +59,7 @@ class JobController:
         self.root=Path(root)
         self.on_event=on_event
         self.active=False
+        self.operation='export'
         self.job_id=None
         self.process=None
         self._job=None
@@ -75,7 +83,18 @@ class JobController:
     def start(self,npwp,year,browser='msedge',headless=True):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
         npwp,year=validate_job_scope(npwp,year)
+        return self._start_worker(['--npwp',npwp,'--year',str(year)],browser,headless,'export')
+
+    def start_login_check(self,origin,account,browser='msedge',headless=True):
+        if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
+        if origin not in ALLOWED_ORIGINS:raise ValueError('Origin login tidak disetujui.')
+        if not isinstance(account,str) or not account.strip() or len(account)>256 or '\0' in account:
+            raise ValueError('Simpan akun sebelum mengecek kredensial.')
+        return self._start_worker(['--check-login','--origin',origin,'--account',account],browser,headless,'login_check')
+
+    def _start_worker(self,arguments,browser,headless,operation):
         if browser not in ('msedge','chrome'):raise ValueError('Browser tidak valid.')
+        self.operation=operation
         self.job_id=uuid.uuid4().hex
         self.active=True
         self._preparing=True
@@ -95,7 +114,7 @@ class JobController:
                 environment.update({'PYTHONUTF8':'1','PYTHONIOENCODING':'utf-8'})
                 environment.pop('PYTHONPATH',None);environment.pop('PYTHONHOME',None)
                 environment.pop('DEBUG',None);environment.pop('PWDEBUG',None)
-                argv=[str(python),'-u','-m','spt_desktop.worker','--npwp',npwp,'--year',str(year),
+                argv=[str(python),'-u','-m','spt_desktop.worker',*arguments,
                       '--root',str(self.root),'--job-id',job_id,'--browser',browser]
                 if not headless:argv.append('--visible')
                 self._job=ProcessJob()
@@ -111,7 +130,7 @@ class JobController:
                             if len(line)>16384:
                                 while line and not line.endswith('\n'):line=process.stdout.readline(16385)
                                 continue
-                            event=parse_event(line,job_id)
+                            event=parse_event(line,job_id,operation=operation)
                             if event:self._enqueue(event)
                     except (OSError,ValueError):pass
                 def drain_errors():
@@ -167,6 +186,9 @@ class JobController:
                     except OSError:pass
         event=self._terminal
         expected={'COMPLETE':0,'PARTIAL':2,'BLOCKED':3,'CANCELLED':4,'ERROR':1}
+        if self.operation=='login_check':
+            expected={'LOGIN_OK':0,'LOGIN_UNVERIFIED':5,'LOGIN_MANUAL':6,'LOGIN_BLOCKED':3,
+                      'LOGIN_ERROR':1,'ERROR':1,'CANCELLED':4}
         if self._cancel.is_set():
             event={'job_id':self.job_id,'type':'terminal','status':'CANCELLED','percent':self._percent,
                    'output':None,'message':'Dihentikan. Checkpoint lokal dipertahankan.'}

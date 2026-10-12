@@ -10,7 +10,8 @@ import threading
 import coretax
 from coretax_exporter import validate_scope
 from coretax_browser import CaptureCancelled,collect_inventory,collect_details
-from .auth import AuthBlocked,authenticate_owned
+from .auth import AuthBlocked,authenticate_owned,check_saved_credentials
+from .credentials import ALLOWED_ORIGINS
 from .events import Progress
 from .output import publish_workbooks
 from .paths import downloads_folder
@@ -76,18 +77,43 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled):
         return 1
 
 
+def run_login_check(root,job_id,browser,headless,origin,account,emit,cancelled):
+    def check_cancel():
+        if cancelled():raise CaptureCancelled('Stop requested')
+    try:
+        check_cancel()
+        emit({'job_id':job_id,'type':'progress','stage':'login_check','percent':0,
+              'message':'Mengecek kredensial tersimpan dengan sesi baru…'})
+        with playwright_factory() as playwright:
+            status,message=check_saved_credentials(playwright,root,origin,account,browser,headless,check_cancel)
+        check_cancel()
+    except CaptureCancelled:
+        status,message='CANCELLED','Pengecekan kredensial dibatalkan; tidak ada ekspor.'
+    except Exception:
+        status,message='LOGIN_ERROR','Pengecekan gagal; periksa koneksi intranet, browser, dan izin workspace.'
+    emit({'job_id':job_id,'type':'terminal','stage':'login_check','status':status,
+          'percent':0,'output':None,'message':message})
+    return {'LOGIN_OK':0,'LOGIN_UNVERIFIED':5,'LOGIN_MANUAL':6,'LOGIN_BLOCKED':3,
+            'LOGIN_ERROR':1,'CANCELLED':4}[status]
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Owned read-only Coretax GUI worker')
-    parser.add_argument('--npwp',required=True)
-    parser.add_argument('--year',required=True)
+    parser.add_argument('--npwp')
+    parser.add_argument('--year')
+    parser.add_argument('--check-login',action='store_true')
+    parser.add_argument('--origin',choices=ALLOWED_ORIGINS)
+    parser.add_argument('--account')
     parser.add_argument('--root',required=True,type=Path)
     parser.add_argument('--job-id',required=True)
     parser.add_argument('--browser',choices=['msedge','chrome'],default='msedge')
     parser.add_argument('--visible',action='store_true')
     args=parser.parse_args(argv)
-    try:validate_scope(args.npwp,args.year)
-    except ValueError:
-        return 1
+    if args.check_login:
+        if not args.origin or not args.account or len(args.account)>256 or not args.account.strip():return 1
+    else:
+        try:validate_scope(args.npwp,args.year)
+        except ValueError:return 1
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',args.job_id):return 1
     started,cancelled=threading.Event(),threading.Event()
     def listen():
@@ -110,6 +136,8 @@ def main(argv=None):
         Progress(args.job_id,emit).finished(False,None,status='BLOCKED',message='Worker tidak menerima izin mulai dari GUI.')
         return 3
     with contextlib.redirect_stdout(sys.stderr):
+        if args.check_login:
+            return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
         return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,emit,cancelled.is_set)
 
 

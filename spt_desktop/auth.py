@@ -1,5 +1,7 @@
 """Use only an inspected origin-bound sign-in form; challenges stay manual."""
 import time
+import tempfile
+from pathlib import Path
 from urllib.parse import urljoin,urlsplit
 from .credentials import ALLOWED_ORIGINS,read_login
 
@@ -21,42 +23,56 @@ def authenticated(page):
             and page.locator('#ObjectPermitNumber:visible').count()==1)
 
 
-def try_saved_login(page,check_cancel):
-    check_cancel()
-    origin=_origin(page.url)
-    if origin not in ALLOWED_ORIGINS:return False
+def _has_challenge(page):
     challenges='[autocomplete="one-time-code"],#captcha,.g-recaptcha,.h-captcha,iframe[src*="captcha" i],input[name*="captcha" i]'
-    if page.locator(challenges).count():return False
+    return bool(page.locator(challenges).count())
+
+
+def _login_fields(page):
+    origin=_origin(page.url)
+    if origin not in ALLOWED_ORIGINS:return None
+    if _has_challenge(page):return None
     forms=page.locator('form')
-    if forms.count()!=1:return False
+    if forms.count()!=1:return None
     form=forms.first
     meta=form.evaluate('(e)=>({method:e.method,action:e.action})')
-    if str(meta['method']).lower()!='post' or _origin(meta['action'])!=origin:return False
+    if str(meta['method']).lower()!='post' or _origin(meta['action'])!=origin:return None
     identifiers=form.locator('input[autocomplete="username"],input[type="email"],input[name="username" i],input[id="username" i]')
     passwords=form.locator('input[type="password"]')
     buttons=form.locator('button[type="submit"],input[type="submit"]')
-    if identifiers.count()!=1 or passwords.count()!=1 or buttons.count()!=1:return False
+    if identifiers.count()!=1 or passwords.count()!=1 or buttons.count()!=1:return None
     identifier,password,button=identifiers.first,passwords.first,buttons.first
-    if password.get_attribute('autocomplete')=='new-password':return False
-    if not all(e.is_visible() and e.is_enabled() for e in (identifier,password,button)):return False
+    if password.get_attribute('autocomplete')=='new-password':return None
+    if not all(e.is_visible() and e.is_enabled() for e in (identifier,password,button)):return None
     target=button.get_attribute('formaction')
-    if target and _origin(urljoin(page.url,target))!=origin:return False
-    if (button.get_attribute('formmethod') or 'post').lower()!='post':return False
-    label=(button.get_attribute('aria-label') or button.inner_text() or button.get_attribute('value') or '').strip().casefold()
-    if label not in ('login','log in','sign in','masuk'):return False
-    segments=[part.casefold() for part in urlsplit(meta['action']).path.split('/') if part]
+    if target and _origin(urljoin(page.url,target))!=origin:return None
+    if (button.get_attribute('formmethod') or 'post').lower()!='post':return None
+    visible_label=button.locator('.indicator-label:visible')
+    caption=visible_label.first.inner_text() if visible_label.count()==1 else button.inner_text()
+    label=(button.get_attribute('aria-label') or caption or button.get_attribute('value') or '').strip().casefold()
+    if label not in ('login','log in','sign in','masuk'):return None
+    action=urljoin(page.url,target) if target else meta['action']
+    segments=[part.casefold() for part in urlsplit(action).path.split('/') if part]
     login_paths={'login','log-in','signin','sign-in','logon','session','sessions','authenticate','authentication'}
-    if segments and not any(part in login_paths for part in segments):return False
-    if not segments and not any(part.casefold() in login_paths for part in urlsplit(page.url).path.split('/')):return False
-    if any(part in {'returnsheets','registration','submit','logout','signout'} for part in segments):return False
+    if segments and not any(part in login_paths for part in segments):return None
+    if not segments and not any(part.casefold() in login_paths for part in urlsplit(page.url).path.split('/')):return None
+    if any(part in {'returnsheets','registration','submit','logout','signout'} for part in segments):return None
     editable=form.locator('input,textarea,select')
     fields=0
     for index in range(editable.count()):
         field=editable.nth(index)
         if field.is_visible() and field.is_enabled() and field.get_attribute('type') not in ('submit','button'):
-            if field.get_attribute('readonly') is not None:return False
+            if field.get_attribute('readonly') is not None:return None
             fields+=1
-    if fields!=2:return False
+    if fields!=2:return None
+    return origin,identifier,password,button
+
+
+def try_saved_login(page,check_cancel):
+    check_cancel()
+    fields=_login_fields(page)
+    if fields is None:return False
+    origin,identifier,password,button=fields
     try:
         login=read_login(origin)
         if login is None:return False
@@ -121,3 +137,72 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
     except BaseException:
         if context is not None:context.close()
         raise
+
+
+
+def check_saved_credentials(playwright,root,origin,account,browser,headless,check_cancel,timeout=20):
+    """Verify one saved login, never an old session or a manually replaced password."""
+    from coretax_browser import CaptureCancelled
+    if origin not in ALLOWED_ORIGINS or browser not in ('msedge','chrome'):
+        raise ValueError('Origin/browser pengecekan tidak disetujui.')
+    if not isinstance(account,str) or not account.strip() or '\0' in account:
+        raise ValueError('Akun tersimpan harus dipilih dari Pengaturan.')
+    check_cancel()
+    cache=Path(root)/'cache'
+    cache.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='login-check-',dir=cache) as fresh:
+        context=None
+        try:
+            context=playwright.chromium.launch_persistent_context(fresh,channel=browser,headless=headless)
+            def guard(route):
+                request=route.request
+                target=_origin(request.url)
+                if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
+                    route.abort()
+                else:route.fallback()
+            context.route('**/*',guard)
+            page=context.pages[0] if context.pages else context.new_page()
+            page.goto(SEARCH_URL,wait_until='domcontentloaded',timeout=30000)
+            check_cancel()
+            if authenticated(page):
+                return 'LOGIN_UNVERIFIED','Sesi SSO tersedia, tetapi password tersimpan belum diuji.'
+            current=_origin(page.url)
+            if current not in ALLOWED_ORIGINS:
+                return 'LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.'
+            if current!=origin:
+                return 'LOGIN_BLOCKED',f'Origin login berbeda. Pilih {current} di Pengaturan lalu Simpan.'
+            if _has_challenge(page):
+                return 'LOGIN_MANUAL','CAPTCHA/MFA terdeteksi; selesaikan melalui login manual saat Mulai.'
+            fields=_login_fields(page)
+            if fields is None:
+                return 'LOGIN_MANUAL','Form login belum dikenali dengan aman; gunakan login manual saat Mulai.'
+            login=read_login(origin)
+            if login is None:
+                return 'LOGIN_BLOCKED','Kredensial belum disimpan untuk origin ini; isi Pengaturan lalu Simpan.'
+            if login.identifier!=account:
+                return 'LOGIN_BLOCKED','Akun tersimpan berbeda dari Pengaturan; masukkan akun/password lalu Simpan.'
+            _,identifier,password,button=fields
+            check_cancel()
+            identifier.fill(login.identifier,timeout=5000)
+            password.fill(login.password,timeout=5000)
+            button.click(timeout=5000)
+            del login
+            deadline=time.monotonic()+timeout
+            while time.monotonic()<deadline:
+                check_cancel()
+                if authenticated(page):
+                    return 'LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.'
+                if _has_challenge(page):
+                    return 'LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.'
+                if _origin(page.url) not in ALLOWED_ORIGINS:
+                    return 'LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.'
+                time.sleep(0.1)
+            return 'LOGIN_UNVERIFIED','Login belum terverifikasi dalam batas waktu; periksa akun, password, atau koneksi. Tidak ada percobaan ulang otomatis.'
+        except CaptureCancelled:
+            raise
+        except Exception:
+            # Fill/navigation exceptions may contain secrets or token-bearing URLs.
+            check_cancel()
+            return 'LOGIN_ERROR','Pengecekan gagal; periksa koneksi intranet, browser, dan akses Windows Credential Manager.'
+        finally:
+            if context is not None:context.close()

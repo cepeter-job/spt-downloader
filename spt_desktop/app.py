@@ -41,6 +41,11 @@ class App:
         self.preferences=load_preferences(self.workspace)
         self.controller=controller or JobController(self.workspace,self.on_event)
         self._closing=False;self._result=None
+        self._settings_dialog=None
+        self._credential_status=None
+        self._settings_refresh=None
+        self._settings_close=None
+        self._settings_closing=False
         root.title('SPT Downloader');root.minsize(540,390)
         style=ttk.Style(root)
         style.configure('Title.TLabel',font=('Segoe UI',18,'bold'))
@@ -98,11 +103,27 @@ class App:
     def stop(self):
         if self.controller.active:
             self.controller.stop()
-            self.status.set('Menghentikan pekerjaan… maksimum 15 detik untuk worker; checkpoint dipertahankan.')
+            if getattr(self.controller,'operation','export')=='login_check':
+                message='Menghentikan pengecekan… maksimum 15 detik; tidak ada ekspor.'
+                if self._credential_status is not None:self._credential_status.set(message)
+                self.status.set(message)
+            else:self.status.set('Menghentikan pekerjaan… maksimum 15 detik untuk worker; checkpoint dipertahankan.')
             self.stop_button.state(['disabled'])
 
     def on_event(self,event):
         kind=event['type']
+        if getattr(self.controller,'operation','export')=='login_check':
+            message=event.get('message','')[:500]
+            self.status.set(message)
+            if self._credential_status is not None:self._credential_status.set(message)
+            if kind=='terminal':
+                self.bar.stop();self.bar.configure(mode='determinate');self.bar['value']=0
+                self.percent.set('—');self._running(False)
+                if self._settings_refresh:self._settings_refresh(preserve_status=True)
+                if self._settings_closing and self._settings_close:self._settings_close()
+            else:
+                self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
+            return
         if kind=='setup':
             self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
         else:
@@ -136,13 +157,17 @@ class App:
         else:messagebox.showerror('Hasil tidak ditemukan','Folder hasil tidak lagi tersedia.',parent=self.root)
 
     def settings(self):
+        if self._settings_dialog is not None:
+            self._settings_dialog.focus_set();return
         if self.controller.active:return
         dialog=tk.Toplevel(self.root);dialog.title('Pengaturan SPT Downloader')
+        self._settings_dialog=dialog;self._settings_closing=False
         dialog.transient(self.root);dialog.grab_set()
         frame=ttk.Frame(dialog,padding=20);frame.pack(fill='both',expand=True);frame.columnconfigure(1,weight=1)
         origin=tk.StringVar(dialog,value=self.preferences['login_origin'])
         identifier=tk.StringVar(dialog,value=self.preferences['identifier']);password=tk.StringVar(dialog)
         browser=tk.StringVar(dialog,value=self.preferences['browser']);hidden=tk.BooleanVar(dialog,value=self.preferences['headless'])
+        self._credential_status=tk.StringVar(dialog,value='Kredensial belum dicek. Cek tidak melakukan scraping atau ekspor.')
         controls=[('Origin login',ttk.Combobox(frame,textvariable=origin,values=ALLOWED_ORIGINS,state='readonly',width=40)),
                   ('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
                   ('Password baru',ttk.Entry(frame,textvariable=password,show='●',width=40)),
@@ -150,31 +175,78 @@ class App:
         for row,(label,widget) in enumerate(controls):
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
-        ttk.Checkbutton(frame,text='Jalankan headless bila sesi memungkinkan',variable=hidden).grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Password tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nCAPTCHA/MFA tetap diselesaikan langsung di browser.',wraplength=520).grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
+        hidden_button=ttk.Checkbutton(frame,text='Jalankan headless bila sesi memungkinkan',variable=hidden)
+        hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Password tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
+        buttons=ttk.Frame(frame);buttons.grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        check_buttons=ttk.Frame(frame);check_buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        traces=[]
+        def selected():
+            return {'browser':browser.get(),'headless':hidden.get(),'login_origin':origin.get(),'identifier':identifier.get()}
+        def refresh(*args,preserve_status=False):
+            active=self.controller.active
+            dirty=bool(password.get()) or selected()!=self.preferences
+            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button]:
+                widget.state(['disabled' if active else '!disabled'])
+            check_button.state(['disabled' if active or dirty or not identifier.get().strip() else '!disabled'])
+            cancel_button.state(['!disabled' if active and not self._settings_closing else 'disabled'])
+            if not active and not preserve_status:
+                self._credential_status.set('Simpan perubahan dahulu sebelum Cek Kredensial.' if dirty else
+                    'Kredensial belum dicek. Cek tidak melakukan scraping atau ekspor.')
         def close():
-            password.set('');dialog.grab_release();dialog.destroy();self.settings_button.focus_set()
+            if self.controller.active:
+                self._settings_closing=True;self.stop();refresh(preserve_status=True);return
+            for variable,token in traces:variable.trace_remove('write',token)
+            password.set('');dialog.grab_release();dialog.destroy()
+            self._settings_dialog=None;self._credential_status=None
+            self._settings_refresh=None;self._settings_close=None;self._settings_closing=False
+            self.settings_button.focus_set()
         def save():
+            if self.controller.active:return
             try:
                 if password.get():
                     if not identifier.get().strip():raise ValueError('Masukkan akun sebelum menyimpan password.')
                     save_login(origin.get(),identifier.get(),password.get())
                 elif identifier.get()!=self.preferences['identifier']:
                     raise ValueError('Isi password baru ketika mengganti akun; atau pertahankan akun kosong untuk login manual.')
-                preferences={'browser':browser.get(),'headless':hidden.get(),'login_origin':origin.get(),'identifier':identifier.get()}
+                preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
             except ValueError as error:messagebox.showerror('Pengaturan belum disimpan',str(error),parent=dialog);return
             except OSError:messagebox.showerror('Pengaturan belum disimpan','Windows menolak penyimpanan kredensial/preferensi. Periksa izin workspace.',parent=dialog);return
-            close();self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
+            password.set('');refresh()
+            self._credential_status.set('Pengaturan disimpan. Tekan Cek Kredensial untuk menguji login otomatis.')
+            self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
         def remove():
+            if self.controller.active:return
             if not messagebox.askyesno('Hapus kredensial?','Hapus kredensial aplikasi untuk origin terpilih dari Windows Credential Manager?',parent=dialog,default='no'):return
             try:delete_login(origin.get())
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
             password.set('');identifier.set('');self.preferences['identifier']=''
             save_preferences(self.workspace,self.preferences)
-        buttons=ttk.Frame(frame);buttons.grid(row=6,column=0,columnspan=2,sticky='w',pady=12)
-        ttk.Button(buttons,text='Simpan',command=save).pack(side='left',padx=(0,8))
-        ttk.Button(buttons,text='Hapus kredensial',command=remove).pack(side='left',padx=(0,8))
-        ttk.Button(buttons,text='Batal',command=close).pack(side='left')
+            self._credential_status.set('Kredensial origin terpilih dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
+        def check():
+            if self.controller.active:return
+            if password.get() or selected()!=self.preferences:
+                self._credential_status.set('Simpan perubahan dahulu sebelum Cek Kredensial.');return
+            try:
+                self.controller.start_login_check(origin.get(),identifier.get(),browser.get(),hidden.get())
+            except (ValueError,RuntimeError) as error:
+                self._credential_status.set(str(error));return
+            self._running(True);refresh(preserve_status=True)
+            self._credential_status.set('Menyiapkan pengecekan kredensial tersimpan…')
+            self.status.set('Menyiapkan pengecekan kredensial tersimpan…')
+            self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
+        save_button=ttk.Button(buttons,text='Simpan',command=save);save_button.pack(side='left',padx=(0,8))
+        remove_button=ttk.Button(buttons,text='Hapus kredensial',command=remove);remove_button.pack(side='left',padx=(0,8))
+        ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
+        check_button=ttk.Button(check_buttons,text='Cek Kredensial',command=check,underline=0)
+        check_button.pack(side='left',padx=(0,8))
+        cancel_button=ttk.Button(check_buttons,text='Batalkan Cek',command=self.stop,state='disabled')
+        cancel_button.pack(side='left')
+        self._settings_refresh=refresh;self._settings_close=close
+        for variable in (origin,identifier,password,browser,hidden):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
+        dialog.bind('<Alt-c>',lambda e:check());refresh()
         controls[1][1].focus_set()
+        return dialog
