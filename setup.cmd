@@ -1,5 +1,7 @@
 @echo off
 setlocal
+rem Pilihan managed ditetapkan oleh perintah di bawah dalam environment lokal script.
+set "UV_PYTHON_PREFERENCE="
 cd /d "%~dp0"
 where uv >nul 2>nul
 if errorlevel 1 (
