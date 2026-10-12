@@ -24,6 +24,10 @@ def self_test(report=None):
             def descendants(widget):
                 for child in widget.winfo_children():
                     yield child;yield from descendants(child)
+            main_labels={w.cget('text') for w in descendants(root) if w.winfo_class()=='TLabel'}
+            personal_use_labels=sorted(text for text in main_labels if 'for personal use' in text)
+            assert personal_use_labels==['Coretax → Excel · for personal use only','for personal use : punto ap']
+            assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels)
             widgets=list(descendants(dialog))
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
             assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup'}<=labels
@@ -37,7 +41,7 @@ def self_test(report=None):
                   'frozen':bool(getattr(sys,'frozen',False)),
                   'worker_resources':list(WORKER_FILES),'uv_bundled':(resource_root()/'tools'/'uv.exe').is_file(),
                   'gui_controls':['NPWP','Tahun pajak','Mulai','Stop','Pengaturan','Buka Hasil','Cek Kredensial','Batalkan Cek'],
-                  'credential_check_controls':True,
+                  'credential_check_controls':True,'personal_use_labels':personal_use_labels,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
             if report:

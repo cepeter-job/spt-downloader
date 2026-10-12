@@ -58,6 +58,7 @@ def build(output):
     if not (data['ok'] and data['frozen'] and data['uv_bundled'] and data['bits']==64
             and data['worker_resources']==list(WORKER_FILES)
             and data['credential_check_controls'] and 'Cek Kredensial' in data['gui_controls']
+            and data['personal_use_labels']==['Coretax → Excel · for personal use only','for personal use : punto ap']
             and not data['credentials_accessed'] and not data['live_scrape']):
         raise RuntimeError('Packaged application self-test failed')
     shutil.copy2(ROOT/'LICENSE',output/'LICENSE.txt')
