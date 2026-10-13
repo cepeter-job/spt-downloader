@@ -118,7 +118,9 @@ def _wait_login_fields(page,expected_origin,check_cancel,timeout=5):
 
 def try_saved_login(page,check_cancel):
     check_cancel()
-    fields=_wait_login_fields(page,_origin(page.url),check_cancel)
+    fields=_login_fields(page)
+    if fields is None:
+        fields=_wait_login_fields(page,_origin(page.url),check_cancel)
     if fields is None:return False
     try:
         fields,current=_bind_login_fields(page,fields)
@@ -250,8 +252,10 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                 return 'LOGIN_BLOCKED',f'Origin login berbeda. Pilih {current} di Pengaturan lalu Simpan.'
             if _has_challenge(page):
                 return 'LOGIN_MANUAL','CAPTCHA/MFA terdeteksi; selesaikan melalui login manual saat Mulai.'
-            fields=_wait_login_fields(page,origin,check_cancel,timeout=min(5,timeout))
+            fields=_login_fields(page)
             if fields is None:
+                fields=_wait_login_fields(page,origin,check_cancel,timeout=min(5,timeout))
+            if fields is None or fields[0]!=origin:
                 return 'LOGIN_MANUAL','Form login belum dikenali dengan aman; gunakan login manual saat Mulai.'
             fields,current_form=_bind_login_fields(page,fields)
             changed_form=('LOGIN_MANUAL','Form login berubah; gunakan login manual saat Mulai.')
