@@ -6,9 +6,9 @@ Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan meng
 
 ## Memakai aplikasi Windows
 
-**Status PR #6:** susunan workbook per masa dilanjutkan dengan pemilihan SPT dan konfirmasi penggantian hasil pada desktop. Implementasi Tugas 1–2 pada branch PR telah lulus verifikasi otomatis pada commit yang dicatat dalam rencana. Unduhan PDF serta perubahan autentikasi dan teks global tetap merupakan pekerjaan berikutnya. Lihat [rencana dan bukti pengujian](docs/superpowers/plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite).
+**Fitur tersedia:** workbook per masa, pemilihan SPT, dan konfirmasi penggantian hasil desktop sudah digabung lewat PR #6. Unduhan PDF serta penyesuaian autentikasi dan teks global masih dalam rencana berikutnya; penerimaan manual dilakukan setelah seluruh fitur/UI dikonsolidasikan. Lihat [rencana dan bukti pengujian](docs/superpowers/plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite).
 
-Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.11.17` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. Artifact Python 3.14 adalah kandidat pengujian. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
+Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.14.8` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. GUI dan worker memakai CPython 3.14.8 x64/GIL yang sama. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
 Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan administrator atau Python pada PATH. Lokasi portable yang dapat dipakai adalah `%LOCALAPPDATA%\Programs\SPTDownloader`. Executable belum memiliki tanda tangan Authenticode dari penerbit; checksum dan provenance build memiliki fungsi berbeda dari tanda tangan penerbit.
 

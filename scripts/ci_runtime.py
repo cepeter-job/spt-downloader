@@ -7,13 +7,13 @@ import subprocess
 import sys
 import tempfile
 
-from spt_desktop.runtime import ensure_runtime, locked_requirements, python_version, resource_root
+from spt_desktop.runtime import PYTHON_PROFILES, ensure_runtime, locked_requirements, python_version, resource_root
 from spt_desktop.windows import ProcessJob
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', choices=('production', 'candidate'), required=True)
+    parser.add_argument('--profile', choices=tuple(PYTHON_PROFILES), required=True)
     args = parser.parse_args(argv)
     if sys.platform != 'win32':
         raise RuntimeError('The real worker setup smoke test requires Windows.')

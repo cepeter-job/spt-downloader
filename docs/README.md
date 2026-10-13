@@ -10,7 +10,7 @@ Panduan ini ditujukan bagi kontributor SPT Downloader. Untuk menjalankan aplikas
 | Menulis teks antarmuka, merancang layar, atau menyiapkan fitur baru | [Panduan UI/UX desain B](ui-ux/README.md) |
 | Memahami batas GUI/worker, akses baca Coretax, identitas, ekspor, dan Stop | [Arsitektur](arsitektur.md) |
 | Memahami job CI, biaya CPU, cache, check wajib, dan artifact | [CI dan rilis](ci-dan-rilis.md) |
-| Memperbarui Python/dependensi atau mengevaluasi Python 3.14 | [Kebijakan Python dan kompatibilitas](python-314.md) |
+| Memperbarui dependensi atau produksi Python 3.14 | [Kebijakan Python dan kompatibilitas](python-314.md) |
 | Menjalankan pemeriksaan Coretax aktual dengan izin yang sesuai | [Penerimaan manual](penerimaan-manual.md) |
 | Menangani kegagalan setup, browser, output, atau CI | [Pemecahan masalah](pemecahan-masalah.md) |
 | Menelusuri alasan perbaikan keamanan sebelumnya | [Audit 12 Oktober 2026](audit-2026-10-12.md) |

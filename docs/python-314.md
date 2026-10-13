@@ -1,105 +1,83 @@
-# Kebijakan Python dan persiapan 3.14
+# Kebijakan produksi CPython 3.14
 
 [Kembali ke dokumentasi](README.md)
 
-Sumber pin adalah `PYTHON_PROFILES`, `UV_VERSION`, dan `RUNTIME_LOCK` pada [spt_desktop/runtime.py](../spt_desktop/runtime.py). Persyaratan build dibaca dari sumber yang sama oleh [build_desktop.py](../build_desktop.py). Ubah kebijakan, lock, pengujian, workflow, dan dokumentasi dalam satu perubahan yang dapat ditinjau.
+## Versi yang didukung
 
-## Kebijakan saat ini
-
-| Komponen | Profil/versi | Makna |
+| Komponen | Pin produksi | Kontrak |
 | --- | --- | --- |
-| GUI/executable produksi | CPython **3.11.17**, Windows x64, GIL aktif | Profil default `production`. |
-| Worker pengguna | Managed CPython **3.11.17**, Windows x64, GIL aktif | Tetap produksi, termasuk saat GUI kandidat dipakai. |
-| GUI/executable kandidat | CPython **3.14.8**, Windows x64, GIL aktif | Profil `candidate` khusus evaluasi build/GUI. |
-| Worker kandidat di CI | Managed CPython **3.14.8**, Windows x64, GIL aktif | Diuji melalui smoke bootstrap terisolasi; tidak mengganti default worker pengguna. |
-| Paket/installer `uv` | **0.12.22** | Versi exact untuk katalog interpreter, lock, CI, dan bundel. |
+| GUI dan executable Windows | **CPython 3.14.8**, Windows x64, GIL aktif | Satu profil: `production`. |
+| Worker di mesin pengguna | **Managed CPython 3.14.8**, Windows x64, GIL aktif | Dibuat oleh `uv` di LocalAppData, bukan Python sistem. |
+| CLI `setup.cmd` | **Managed CPython 3.14.8**, Windows x64, GIL aktif | Versi sama dengan GUI/worker. |
+| `uv` | **0.12.22** | Exact pin untuk katalog managed Python, build, dan instalasi lock. |
 
-Versi minor saja tidak cukup. Runtime memeriksa patch version, implementasi, arsitektur 64-bit, status free-threaded, lokasi interpreter dasar di workspace managed, serta versi seluruh dependency yang dikunci. Distribusi free-threaded bukan target saat ini. Instalasi baru memakai key katalog exact `cpython-VERSI-windows-x86_64-none`; request `+gil` dipakai saat memilih interpreter yang sudah terpasang. Pada uv 0.12.22, request unduhan dengan akhiran `+gil` tidak menemukan entri katalog, walaupun discovery interpreter mendukungnya. Metadata runtime tetap memverifikasi bahwa GIL aktif.
+Sumber kebenaran adalah `PYTHON_PROFILES`, `UV_VERSION`, `RUNTIME_LOCK`, dan `WORKER_FILES` di [spt_desktop/runtime.py](../spt_desktop/runtime.py). Profil evaluasi `candidate` telah dipensiunkan: tidak boleh menjadi jalur distribusi atau cara diam-diam memilih 3.11. `build_desktop.py`, pemilih matrix `scripts/ci_route.py`, uji worker `scripts/ci_runtime.py`, serta `setup.cmd` memakai satu versi produksi.
 
-Python 3.11 telah masuk fase pemeliharaan keamanan; installer Windows Python.org 3.11 terakhir adalah 3.11.9. Karena itu, menerima interpreter sistem 3.11 apa saja akan mempertahankan patch lama. Jalur produksi menggunakan distribusi managed melalui `uv` pada versi patch yang dipin. Kandidat 3.14 disiapkan bersamaan, dengan gate yang harus lulus sebelum promosi. Rujukan upstream: [rilis Python](https://www.python.org/downloads/), [Python 3.11.9](https://www.python.org/downloads/release/python-3119/), dan [versi serta distribusi Python pada uv](https://docs.astral.sh/uv/concepts/python-versions/).
+Perubahan ini menggantikan profil produksi lama **3.11.17**. Dokumen plan/audit terdahulu boleh tetap mencatat versi saat eksperimen tersebut dilakukan, tetapi tidak menentukan versi distribusi baru.
 
-`uv` membawa katalog interpreter yang terkait dengan versinya. Mengganti pin Python harus memastikan versi `uv` tersebut dapat menemukan distribusi yang tepat, termasuk Tcl/Tk untuk GUI Windows. Memasang runtime GIL tidak membuktikan Tcl/Tk, wheel native, atau PyInstaller telah bekerja; semuanya memiliki gate tersendiri.
+Tepat versi patch, CPython, 64-bit, dan GIL aktif wajib dibuktikan. Versi minor saja, interpreter free-threaded, build 32-bit, atau Python sistem yang tersedia di PATH bukan substitusi. `uv` memakai kunci unduhan `cpython-3.14.8-windows-x86_64-none`; saat menemukan interpreter terpasang gunakan request `3.14.8+gil`. Sufiks `+gil` pada kunci **unduhan** tidak tersedia di katalog uv 0.12.22. Distribusi managed tetap diverifikasi lewat metadata interpreter, bukan hanya nama paket unduhan.
 
-## Runtime terisolasi dan fingerprint
+## Migrasi mesin yang sudah memiliki Python 3.11
 
-Worker memakai interpreter managed di `%LOCALAPPDATA%\SPTDownloader\python` dan environment di `runtime`. Tidak ada ketergantungan pada Python sistem, registrasi global, atau perubahan PATH untuk menjalankan worker. Persiapan menggunakan `--no-bin` dan `--no-registry`.
+Tidak perlu menghapus `%LOCALAPPDATA%\\SPTDownloader`, profil browser, checkpoint, atau berkas hasil pajak. Jalankan executable produksi 3.14.8 yang dihasilkan oleh CI sesuai petunjuk [verifikasi artifact](ci-dan-rilis.md#memverifikasi-artifact). Saat aplikasi membutuhkan worker:
 
-Fingerprint mencakup byte resource worker, lock runtime, profil/versi Python, dan versi `uv`. Penanda siap hanya ditulis setelah interpreter dan seluruh paket terkunci diverifikasi. Penanda yang ada tidak dipercaya sendirian: interpreter, lokasi base, import paket, versi, dan fingerprint diperiksa kembali. Kegagalan atau Stop menghapus kesempatan menganggap setup selesai dan tetap dapat dicoba ulang.
+1. `ensure_runtime` memeriksa byte sumber worker, lock, versi Python, dan uv, lalu menguji ulang interpreter nyata, versi paket, arsitektur, status GIL, dan lokasi interpreter managed.
+2. Worker lama 3.11.17 **tidak** memenuhi profil baru, walaupun file `runtime-ready.txt` masih ada. Penanda siap lama ditolak; worker environment dalam `runtime` dibentuk ulang memakai 3.14.8 dengan `uv venv --clear`.
+3. Dependensi diinstal ulang dari `locks/runtime.txt` dengan hash SHA-256 dan wheel saja. Penanda siap baru dibuat **setelah** seluruh verifikasi lolos.
+4. Kegagalan/Stop tidak dianggap siap; setup bisa dicoba ulang. Perubahan worker tidak boleh menyingkirkan profil, checkpoint, export, ataupun recovery yang tersimpan di direktori lain.
 
-`locks/runtime.txt` masuk `WORKER_FILES`. Jangan memperbarui requirements tanpa lock, menghapus hash agar instalasi lewat, atau menyalin environment siap dari mesin lain. Perubahan resource/lock harus menyebabkan pemeriksaan ulang yang benar tanpa memasukkan profil/output ke paket.
+Pekerjaan yang sudah berjalan sebaiknya diselesaikan atau dihentikan secara normal sebelum mengganti executable. Jangan menjalankan GUI lama dan baru untuk pekerjaan pengguna yang sama secara bersamaan. Perlu koneksi ke unduhan Python/dependensi pada penggunaan pertama setelah promosi.
 
-## Memperbarui dependensi dan lock
+## Dependensi dan lock
 
-| Input | Lock teresolusi | Isi |
+| Input | Lock yang diverifikasi | Tujuan |
 | --- | --- | --- |
-| `requirements.txt` | `locks/runtime.txt` | Playwright/openpyxl dan seluruh dependensi transitif worker. |
-| `requirements-test.txt` | `locks/test.txt` | Runtime dan dependency tes. |
-| `requirements-build.txt` | `locks/build.txt` | Runtime, tes, `uv`, dan PyInstaller beserta transitifnya. |
-| `requirements-audit.txt` | `locks/audit.txt` | Tool audit yang terisolasi dari aplikasi. |
+| `requirements.txt` | `locks/runtime.txt` | Runtime Playwright/openpyxl dan transitif worker. |
+| `requirements-test.txt` | `locks/test.txt` | Dependensi suite sintetis. |
+| `requirements-build.txt` | `locks/build.txt` | PyInstaller, uv dan seluruh persyaratan build. |
+| `requirements-audit.txt` | `locks/audit.txt` | Tool audit terisolasi. |
 
-Input memuat pin langsung yang ditinjau. Lock memuat hasil resolusi lengkap dan hash SHA-256. Script [scripts/update_locks.py](../scripts/update_locks.py) membuat lock universal dengan batas Python yang didukung, wheel saja, serta constraint berantai runtime → test → build. Seluruh resolusi harus berhasil sebelum berkas lock yang ada diganti.
-
-Dengan `uv` 0.12.22 pada PATH, jalankan dari root checkout:
+Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.12.22`:
 
 ```powershell
-.venv/Scripts/python.exe -m scripts.update_locks
 .venv/Scripts/python.exe -m scripts.update_locks --check
-```
-
-Perintah pertama mempertahankan versi transitif yang sudah dipilih selama masih sesuai dengan input. `--check` melakukan resolusi pembanding tanpa menulis lock dan gagal bila ditemukan drift. Untuk memperbarui transitif yang diizinkan pin langsung, gunakan perubahan terpisah yang disengaja:
-
-```powershell
-.venv/Scripts/python.exe -m scripts.update_locks --upgrade
-```
-
-`--offline` hanya sesuai bila metadata yang diperlukan sudah ada di cache. Mode ini tidak menggantikan audit advisory terkini. Tinjau diff versi, semua hash, serta alasan upgrade, kemudian instal ulang environment dari lock:
-
-```powershell
 uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
 ```
 
-`--only-binary :all:` membuat wheel yang tidak tersedia menjadi kegagalan eksplisit. Jangan menurunkan syarat tersebut untuk membangun sdist secara tidak sengaja pada mesin pengguna. Audit runtime/build dan jalankan matrix kedua versi Python setelah pembaruan; hash memastikan paket sesuai lock, bukan membuktikan paket bebas kerentanan.
+Untuk pembaruan lock yang memang disetujui, jalankan `python -m scripts.update_locks` lalu `--check`; gunakan `--upgrade` hanya ketika versi transitif perlu dinaikkan dengan sengaja. Hash memastikan kesesuaian paket, bukan ketiadaan advisory; pemeriksaan keamanan tetap wajib.
 
-## Menguji kandidat Python 3.14
+## Verifikasi produksi
 
-Gunakan environment dan output baru di luar checkout agar profil produksi tetap dapat direproduksi. Contoh PowerShell:
+Pada Windows x64, instal `uv` sesuai pin, lalu dari checkout:
 
 ```powershell
-$SptCandidateRoot = Join-Path $env:LOCALAPPDATA "SPTDownloader-Dev/python314"
 uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
-uv venv --managed-python --python 3.14.8+gil "$SptCandidateRoot/venv"
-uv pip sync --python "$SptCandidateRoot/venv/Scripts/python.exe" --require-hashes --only-binary :all: locks/build.txt
-& "$SptCandidateRoot/venv/Scripts/python.exe" -m pytest tests -p scripts.ci_tests --ci-workload portable -q --basetemp "$SptCandidateRoot/tests-portable"
-& "$SptCandidateRoot/venv/Scripts/python.exe" -m pytest tests -p scripts.ci_tests --ci-workload windows -q --basetemp "$SptCandidateRoot/tests-windows"
-& "$SptCandidateRoot/venv/Scripts/python.exe" spt_gui.py --self-test --report "$SptCandidateRoot/source-selftest.json"
-& "$SptCandidateRoot/venv/Scripts/python.exe" build_desktop.py --python-profile candidate --output "$SptCandidateRoot/dist"
+uv venv --managed-python --python 3.14.8+gil .venv
+uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
+.venv/Scripts/python.exe -m scripts.update_locks --check
+.venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q --basetemp "$env:TEMP/spt314-tests"
+.venv/Scripts/python.exe -m scripts.ci_runtime --profile production
+.venv/Scripts/python.exe spt_gui.py --self-test --report "$env:TEMP/spt314-source.json"
+.venv/Scripts/python.exe build_desktop.py --python-profile production --output dist
 ```
 
-`--python-profile candidate` memilih interpreter untuk **build/GUI**. Executable tersebut masih menyiapkan worker produksi 3.11.17 ketika pengguna menekan Mulai; ia tidak menyediakan tombol umum untuk mengganti worker. Laporan frozen mencatat interpreter GUI, `build_profile`, serta `worker_python`, sehingga perbedaan ini dapat diperiksa.
+`scripts.ci_runtime` membutuhkan `RUNNER_TEMP` pada CI Windows untuk menjalankan bootstrap terisolasi, uji **fresh managed install** dan **ready-state reuse** tanpa akun. Untuk mesin lokal, atur `RUNNER_TEMP` pada direktori scratch yang aman atau gunakan hasil smoke resmi CI. `--basetemp` dapat dibersihkan pytest: jangan arahkan ke folder pengguna yang berisi data.
 
-CI juga menjalankan [scripts/ci_runtime.py](../scripts/ci_runtime.py) dengan masing-masing `--profile production` dan `--profile candidate`. Script membuat workspace sementara Windows, menjalankan setup worker nyata, mengimpor seluruh paket terkunci, memeriksa exact version/x64/GIL/lokasi managed, lalu mengulang setup untuk membuktikan reuse penanda siap. Tidak ada browser akun atau capture live. Script membutuhkan `RUNNER_TEMP` dari lingkungan CI dan tidak dimaksudkan sebagai launcher pekerjaan Coretax pengguna.
+Di Linux untuk pengujian portable saja:
 
-Regresi ekspor offline juga diuji pada kedua profil. Sejak Python 3.12, [`tempfile.mkdtemp`](https://docs.python.org/3.14/library/tempfile.html#tempfile.mkdtemp) selalu mengembalikan path absolut meskipun direktori induk relatif. Pemindai output menyamakan folder dan pengecualian staging secara leksikal agar `--from-json` dengan path relatif tetap bekerja pada 3.14. Tes mencakup output eksplisit, direktori capture sebagai default, serta penolakan symlink/junction; tidak cukup hanya menguji folder absolut.
+```bash
+uv python install cpython-3.14.8-linux-x86_64-gnu --no-bin --no-registry
+uv venv --managed-python --python 3.14.8+gil .venv
+uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
+.venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q --basetemp /tmp/spt314-portable-tests
+```
 
-## Gate promosi menjadi produksi
+CI memakai **satu** entri matrix production 3.14.8 untuk Linux portable, Windows keseluruhan suite, fresh/reused worker, audit terkunci, source/frozen GUI, packaging, pemeriksaan checksum, dan pembacaan kembali artifact berdasarkan ID. Setiap gate harus lulus pada commit yang sama. Runtime Windows/Tk/Edge dan rollback sistem berkas tidak dapat disertifikasi oleh Linux saja. Lihat [CI dan rilis](ci-dan-rilis.md).
 
-Promosi ke Python 3.14 baru dapat diputuskan setelah bukti berikut tersedia pada commit kandidat yang sama:
+## Batas dan langkah kembali
 
-| Gate | Bukti yang harus diperiksa |
-| --- | --- |
-| Resolusi dan supply chain | Semua lock cocok dengan input; hash/wheel tersedia untuk Windows x64 kedua profil; audit dependency berhasil. |
-| Logika portable | Scope, preservasi data, export/rollback, event, dan tes runtime sintetis lulus. |
-| Browser | Playwright dan dependency native mengimpor serta menjalankan Edge fixture, termasuk provenance, binding login, paginasi, dan pembatalan. |
-| GUI/native Windows | Tk tersedia, form/Stop bekerja pada fixture, Known Folder dan Job Object memenuhi kontrak. |
-| Bootstrap worker nyata | Fresh managed install dan reuse tervalidasi pada profil kandidat tanpa akun. |
-| Packaging | Source self-test dan frozen self-test lulus, interpreter/profil/resource/Tcl/Tk benar, exact artifact dibaca kembali. |
-| Penerimaan mesin target | Checklist Windows, login berizin, scope SPT yang disepakati, dan Excel aktual selesai atau keterbatasannya dinyatakan. |
-| Keputusan rilis | Default worker/build, pin, fingerprint, label artifact, dokumentasi, dan langkah kembali ke produksi lama diubah bersama setelah review. |
+Migrasi teknis tidak sama dengan penerimaan pada portal Coretax aktual. Fixture Edge, self-test GUI, dan workbook sintetis tidak membuktikan akses, login, atau hasil SPT nyata. Penerimaan Windows dan Coretax berizin tetap mengikuti [checklist manual](penerimaan-manual.md), dan boleh dilakukan setelah fitur/UI lain digabung.
 
-Klasifikasi dukungan Python pada halaman package adalah petunjuk untuk penelitian, bukan pengganti gate aplikasi. Lihat [catatan perubahan PyInstaller](https://pyinstaller.org/en/stable/CHANGES.html), [Playwright 1.63.0](https://pypi.org/project/playwright/1.63.0/), [greenlet 3.5.6](https://pypi.org/project/greenlet/3.5.6/), dan [build Windows python-build-standalone](https://github.com/astral-sh/python-build-standalone/blob/main/cpython-windows/build.py) saat mengevaluasi dependency/runtime.
+Jika build 3.14 bermasalah pada mesin pengguna, gunakan **artifact produksi 3.11.17 yang sebelumnya telah diverifikasi** sebagai jalur pemulihan sementara—misalnya [hasil PR #6, commit c036135](https://github.com/cepeter-job/spt-downloader/actions/runs/38240317586/artifacts/11741888300). Cocokkan SHA, artifact ID, dan checksum sebelum menjalankannya. GUI lama akan meminta worker managed 3.11.17 dan membentuk ulang environment runtime jika perlu; jangan menyalin ulang environment siap, menghapus profil/hasil/checkpoint, atau mengganti file pajak sebagai cara downgrade. Hentikan semua job sebelum beralih versi.
 
-Jika satu gate gagal, perbaiki ketidakcocokan spesifik dan ulangi bagian yang relevan. Jangan meloloskan matrix kandidat dengan mengabaikan kegagalan atau mengubah default pengguna sebelum bukti lengkap. Simpan artifact produksi yang telah diverifikasi untuk pemulihan; kembali ke versi sebelumnya tidak boleh menimpa profil atau hasil pajak secara sembarang.
-
-## Batas yang tetap memerlukan tindakan eksternal
-
-Status aturan repository harus dibaca dari GitHub secara terpisah dari hasil CI; [ruleset main](https://github.com/cepeter-job/spt-downloader/rules/24914050) telah diverifikasi aktif pada 12 Oktober 2026. Signing masih memerlukan identitas/sertifikat penerbit yang dikelola maintainer. Acceptance live memerlukan operator dan NPWP/tahun yang memang diizinkan. Aturan repository, signing, dan acceptance dicatat terpisah dari status matrix; lihat [CI dan rilis](ci-dan-rilis.md) serta [penerimaan manual](penerimaan-manual.md).
+Executable tidak otomatis memiliki tanda tangan Authenticode. Provenance/checksum tidak menggantikan sertifikat penerbit. Aturan branch, tanda tangan code, dan penerimaan data nyata adalah gate yang berbeda dari keberhasilan unit/CI.

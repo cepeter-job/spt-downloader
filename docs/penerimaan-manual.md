@@ -63,4 +63,4 @@ Kegagalan file terkunci atau listrik padam tidak perlu dibuat pada data nyata. G
 
 Gunakan salah satu hasil per skenario: **lulus**, **gagal**, **terblokir**, atau **tidak diuji**. Catat perbedaan yang terlihat, tahap, versi build, dan referensi catatan privat yang dapat diperiksa. Jangan menyalin identitas, isi halaman, cookie, atau password ke ringkasan publik.
 
-Penerimaan Python 3.14 perlu menyebut profil kandidat secara eksplisit. Lulus pada satu mesin/scope tidak membuktikan seluruh portal atau seluruh jenis SPT. Bila gagal, tambahkan reproduksi sintetis yang sesuai dan ulangi gate terkait setelah perbaikan; status promosi tetap tertunda sampai bukti yang diwajibkan tersedia.
+Penerimaan produksi Python 3.14.8 perlu mencatat commit, artifact ID, versi GUI, serta versi managed worker. Lulus pada satu mesin/scope tidak membuktikan seluruh portal atau semua jenis SPT. Migrasi konfigurasi produksi dapat digabung setelah gate otomatis lengkap; status **penerimaan manual** tetap belum diuji sampai operator melakukannya pada seluruh fitur/UI terkonsolidasi.

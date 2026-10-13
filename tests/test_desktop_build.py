@@ -42,13 +42,13 @@ def report(profile='production'):
             'credentials_accessed': False, 'live_scrape': False}
 
 
-@pytest.mark.parametrize('profile', ['production', 'candidate'])
-def test_frozen_report_accepts_only_the_requested_patched_python(profile):
-    builder().validate_report(report(profile), profile)
-    wrong = report(profile)
-    wrong['python'] = '3.11.9' if profile == 'production' else python_version()
-    with pytest.raises(RuntimeError, match='self-test'):
-        builder().validate_report(wrong, profile)
+def test_frozen_report_requires_python_314_for_gui_and_worker():
+    builder().validate_report(report(), 'production')
+    for key in ('python', 'worker_python'):
+        wrong = report()
+        wrong[key] = '3.11.17'
+        with pytest.raises(RuntimeError, match='self-test'):
+            builder().validate_report(wrong, 'production')
 
 
 @pytest.mark.parametrize('key,value', [('python_implementation', 'PyPy'), ('free_threaded', True),
@@ -62,12 +62,12 @@ def test_frozen_report_rejects_missing_runtime_evidence(key, value):
         builder().validate_report(data)
 
 
-@pytest.mark.parametrize('version', [(3, 11, 9), (3, 11, 16), (3, 14, 8)])
+@pytest.mark.parametrize('version', [(3, 11, 17), (3, 14, 7), (3, 14, 9)])
 def test_production_build_rejects_unsupported_interpreter_before_writing(monkeypatch, tmp_path, version):
     build = builder()
     monkeypatch.setattr(build.sys, 'platform', 'win32')
     monkeypatch.setattr(build.sys, 'version_info', version)
     output = tmp_path / 'artifact'
-    with pytest.raises(RuntimeError, match='3.11.17'):
+    with pytest.raises(RuntimeError, match='3.14.8'):
         build.build(output)
     assert not output.exists()

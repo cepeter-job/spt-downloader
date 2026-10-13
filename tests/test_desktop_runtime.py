@@ -20,6 +20,23 @@ def runtime_module():
     return importlib.import_module('spt_desktop.runtime')
 
 
+def test_python_314_is_the_only_release_profile():
+    runtime = runtime_module()
+    assert runtime.PYTHON_PROFILES == {'production': '3.14.8'}
+    assert runtime.python_version() == '3.14.8'
+    with pytest.raises(ValueError, match='profil'):
+        runtime.python_version('candidate')
+
+
+def test_windows_cli_setup_uses_the_same_exact_production_runtime():
+    runtime = runtime_module()
+    script = (Path(__file__).resolve().parents[1] / 'setup.cmd').read_text(encoding='utf-8')
+    version = runtime.python_version()
+    assert f'cpython-{version}-windows-x86_64-none' in script
+    assert f'--python {version}+gil' in script
+    assert 'cpython-3.11.17-' not in script
+
+
 class SyntheticCommands:
     def __init__(self, root, source):
         self.root = root
@@ -116,7 +133,7 @@ def test_runtime_uses_managed_patched_python_and_hashed_isolated_dependencies(se
     assert not any(str(commands.system) in c for c in commands.calls)
     installs = [c for c in commands.calls if c[1:3] == ['python', 'install']]
     assert len(installs) == 1
-    assert installs[0][3:] == ['cpython-3.11.17-windows-x86_64-none', '--install-dir',
+    assert installs[0][3:] == ['cpython-3.14.8-windows-x86_64-none', '--install-dir',
                               str(root / 'python'), '--no-bin', '--no-registry']
     syncs = [c for c in commands.calls if c[1:3] == ['pip', 'sync']]
     assert len(syncs) == 1 and '--require-hashes' in syncs[0] and '--only-binary' in syncs[0]
@@ -124,22 +141,38 @@ def test_runtime_uses_managed_patched_python_and_hashed_isolated_dependencies(se
     assert notices
 
 
-@pytest.mark.parametrize('version,bits', [([3, 11, 9], 64), ([3, 11, 16], 64),
-                                        ([3, 14, 8], 64), ([3, 11, 17], 32)])
+def test_previously_ready_311_worker_is_rebuilt_for_314(setup):
+    runtime, root, _, commands = setup
+    previous = root / 'runtime' / 'Scripts' / 'python.exe'
+    previous.parent.mkdir(parents=True)
+    previous.touch()
+    ready = root / 'runtime-ready.txt'
+    ready.write_text('legacy-311-fingerprint', encoding='ascii')
+    assert commands.managed_version == [3, 11, 17]
+
+    result = runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    assert result == previous
+    assert commands.managed_version == [3, 14, 8]
+    assert ready.read_text(encoding='ascii') != 'legacy-311-fingerprint'
+    assert any(call[1:3] == ['python', 'install'] and
+               call[3] == 'cpython-3.14.8-windows-x86_64-none' for call in commands.calls)
+    assert any(call[1] == 'venv' and '--clear' in call for call in commands.calls)
+
+
+@pytest.mark.parametrize('version,bits', [([3, 11, 17], 64), ([3, 14, 7], 64),
+                                        ([3, 14, 9], 64), ([3, 14, 8], 32)])
 def test_unsupported_interpreter_is_rejected(version, bits):
     runtime = runtime_module()
     assert not runtime._compatible({'implementation': 'CPython', 'version': version,
                                     'bits': bits, 'free_threaded': False})
 
 
-def test_candidate_profile_prepares_only_the_explicit_candidate_version(setup):
+def test_retired_candidate_profile_never_creates_a_runtime(setup):
     runtime, root, _, commands = setup
-    assert not (root / 'python').exists()
-    runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile='candidate')
-    installs = [c for c in commands.calls if c[1:3] == ['python', 'install']]
-    assert len(installs) == 1
-    assert installs[0][3] == 'cpython-3.14.8-windows-x86_64-none'
-    assert any(c[1:3] == ['python', 'find'] and '--managed-python' in c for c in commands.calls)
+    with pytest.raises(ValueError, match='profil'):
+        runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile='candidate')
+    assert commands.calls == [] and not root.exists()
 
 
 def test_unknown_profile_never_creates_or_downloads_a_runtime(setup):
@@ -158,8 +191,7 @@ def test_missing_python_and_uv_use_only_bundled_and_managed_tools(setup, monkeyp
     assert any(c[1:3] == ['python', 'install'] for c in commands.calls)
 
 
-@pytest.mark.parametrize('profile', ['production', 'candidate'])
-def test_inherited_python_preference_cannot_conflict_with_owned_selection(setup, monkeypatch, profile):
+def test_inherited_python_preference_cannot_conflict_with_owned_selection(setup, monkeypatch):
     runtime, root, _, commands = setup
     monkeypatch.setenv('UV_PYTHON_PREFERENCE', 'only-managed')
     original_run = commands.run
@@ -171,7 +203,7 @@ def test_inherited_python_preference_cannot_conflict_with_owned_selection(setup,
         return original_run(argv, env, cancelled, timeout)
 
     monkeypatch.setattr(runtime, '_run', reject_conflicting_preference)
-    python = runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile=profile)
+    python = runtime.ensure_runtime(root, lambda _: None, lambda: False, python_profile='production')
     assert python.is_file()
     assert (root / 'runtime-ready.txt').is_file()
 
@@ -281,9 +313,8 @@ def test_existing_runtime_backed_by_system_python_is_recreated(setup):
 
 def test_free_threaded_python_is_not_an_approved_runtime():
     runtime = runtime_module()
-    for profile, version in [('production', [3, 11, 17]), ('candidate', [3, 14, 8])]:
-        assert not runtime._compatible({'implementation': 'CPython', 'version': version,
-                                        'bits': 64, 'free_threaded': True}, profile)
+    assert not runtime._compatible({'implementation': 'CPython', 'version': [3, 14, 8],
+                                    'bits': 64, 'free_threaded': True}, 'production')
 
 
 def test_probe_imports_transitive_distributions_with_hyphenated_names(monkeypatch):

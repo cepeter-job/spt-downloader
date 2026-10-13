@@ -20,10 +20,10 @@ env:
   PYTHONUTF8: '1'
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
 
-# Batas paralelisme selama migrasi Python: maksimal 2 runner tes portable,
-# 2 runner tes Windows, dan 1 runner audit secara bersamaan. Setiap runner
-# menjalankan satu proses pytest; Tk, Credential Manager, dan proses milik aplikasi tetap serial.
-# Dua runner build dimulai setelah seluruh tes dan audit lulus.
+# Python 3.14.8 adalah satu-satunya profil produksi; matrix dibangkitkan
+# dari spt_desktop/runtime.py. Setiap runner menjalankan satu proses pytest;
+# Tk, Credential Manager, dan proses milik aplikasi tetap serial.
+# Build baru dimulai setelah tes Windows/portable dan audit lulus.
 jobs:
   route:
     name: Route changes and validate workflows
@@ -173,8 +173,7 @@ jobs:
     if: needs.route.outputs.mode != 'docs'
     runs-on: windows-2022
     timeout-minutes: 15
-    # Pin runtime/build tidak memiliki marker Python, sehingga environment Windows
-    # ini mengaudit gabungan paket/versi untuk kedua interpreter CI.
+    # Audit hanya paket terkunci untuk runtime produksi CPython 3.14.8.
     # Alat audit terisolasi dan ikut diaudit. Database advisory tidak disimpan dalam cache.
     defaults:
       run:

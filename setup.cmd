@@ -15,11 +15,11 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-rem Python 3.11 Windows resmi berhenti di 3.11.9; distribusi managed menyediakan patch 3.11.17.
-uv python install cpython-3.11.17-windows-x86_64-none --no-bin --no-registry
+rem Gunakan CPython managed 3.14.8 x64/GIL tepat tanpa memasang Python global.
+uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
 if errorlevel 1 exit /b 1
 rem Hanya environment proyek yang disiapkan ulang; Python sistem tidak diubah.
-uv venv --managed-python --python 3.11.17+gil --clear .venv
+uv venv --managed-python --python 3.14.8+gil --clear .venv
 if errorlevel 1 exit /b 1
 uv pip sync --python ".venv\Scripts\python.exe" --require-hashes --only-binary :all: locks/runtime.txt
 if errorlevel 1 exit /b 1
