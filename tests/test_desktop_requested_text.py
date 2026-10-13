@@ -140,3 +140,57 @@ def test_packaging_rejects_missing_or_old_requested_ui_evidence(key):
     missing = {**valid, 'ui_text': {name: text for name, text in EXPECTED_TEXT.items() if name != key}}
     with pytest.raises(RuntimeError, match='self-test'):
         build_desktop.validate_report(missing)
+
+
+@pytest.mark.parametrize('width,height', [(540, 390), (900, 700)])
+def test_requested_header_is_the_real_visible_heading_not_only_the_window_caption(tmp_path, monkeypatch, width, height):
+    with window(tmp_path, monkeypatch) as (root, application, controller):
+        root.geometry(f'{width}x{height}')
+        root.deiconify()
+        root.update()
+        headings = [widget for widget in descendants(root) if isinstance(widget, ttk.Label)
+                    and str(widget.cget('style')) == 'Title.TLabel']
+        assert len(headings) == 1
+        heading = headings[0]
+        assert heading.cget('text') == EXPECTED_TEXT['title']
+        assert root.title() == heading.cget('text')
+        assert heading.winfo_ismapped()
+        left = heading.winfo_rootx() - root.winfo_rootx()
+        top = heading.winfo_rooty() - root.winfo_rooty()
+        assert 0 <= left and left + heading.winfo_width() <= root.winfo_width()
+        assert 0 <= top and top + heading.winfo_height() <= root.winfo_height()
+        assert heading.winfo_width() >= heading.winfo_reqwidth()
+        assert heading.winfo_height() >= heading.winfo_reqheight()
+        assert controller.starts == []
+
+
+def test_requested_downloads_description_replaces_the_old_hierarchy_hint(tmp_path, monkeypatch):
+    with window(tmp_path, monkeypatch) as (root, application, controller):
+        labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
+        assert labels.count(EXPECTED_TEXT['results']) == 1
+        obsolete = 'Hasil: Downloads → NPWP - NAMA WP → TAHUN PAJAK → WAKTU EKSPOR.'
+        assert not any(obsolete in text for text in labels), 'Replace the old hint; do not display both'
+        assert any('Setup Python/uv otomatis saat Mulai.' in text for text in labels)
+        assert controller.starts == []
+
+
+def test_self_test_does_not_report_a_new_caption_over_an_old_real_header(tmp_path, monkeypatch):
+    import spt_gui
+    original_app = spt_gui.App
+
+    def app_with_changed_real_heading(*args, **kwargs):
+        application = original_app(*args, **kwargs)
+        heading = next(widget for widget in descendants(application.root)
+                       if isinstance(widget, ttk.Label) and str(widget.cget('style')) == 'Title.TLabel')
+        heading.configure(text='SYNTHETIC MISMATCHED REAL HEADER')
+        return application
+
+    monkeypatch.setattr(app_module, 'JobController', lambda *args, **kwargs: Controller())
+    monkeypatch.setattr(app_module, 'save_login', forbidden_credentials)
+    monkeypatch.setattr(app_module, 'delete_login', forbidden_credentials)
+    monkeypatch.setattr(spt_gui, 'App', app_with_changed_real_heading)
+    report = tmp_path / 'must-not-attest-an-old-header.json'
+    with pytest.raises(AssertionError):
+        spt_gui.self_test(report)
+    assert not report.exists()
+    gc.collect()
