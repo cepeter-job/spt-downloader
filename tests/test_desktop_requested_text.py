@@ -23,6 +23,7 @@ class Controller:
 
     def __init__(self):
         self.starts = []
+        self.job_id = None
 
     def poll(self):
         pass
@@ -33,6 +34,15 @@ class Controller:
     def start(self, npwp, year, browser, headless):
         self.starts.append((npwp, year, browser, headless))
         self.active = True
+        self.job_id = f'synthetic-ui-{len(self.starts)}'
+        return self.job_id
+
+
+def settle(root):
+    done = tk.BooleanVar(root)
+    root.after(250, lambda: done.set(True))
+    root.wait_variable(done)
+    root.update_idletasks()
 
 
 def descendants(widget):
@@ -67,12 +77,12 @@ def window(tmp_path, monkeypatch):
         gc.collect()
 
 
-@pytest.mark.parametrize('width,height', [(540, 390), (900, 700)])
+@pytest.mark.parametrize('width,height', [(540, 390), (900, 700), (640, 560), (1120, 800)])
 def test_exact_window_title_and_results_label_are_visible_without_clipping(tmp_path, monkeypatch, width, height):
     with window(tmp_path, monkeypatch) as (root, application, controller):
         root.geometry(f'{width}x{height}')
         root.deiconify()
-        root.update()
+        settle(root)
         assert root.title() == EXPECTED_TEXT['title']
         labels = [widget for widget in descendants(root) if isinstance(widget, ttk.Label)]
         result = [widget for widget in labels if widget.cget('text') == EXPECTED_TEXT['results']]
@@ -142,12 +152,12 @@ def test_packaging_rejects_missing_or_old_requested_ui_evidence(key):
         build_desktop.validate_report(missing)
 
 
-@pytest.mark.parametrize('width,height', [(540, 390), (900, 700)])
+@pytest.mark.parametrize('width,height', [(540, 390), (900, 700), (640, 560), (1120, 800)])
 def test_requested_header_is_the_real_visible_heading_not_only_the_window_caption(tmp_path, monkeypatch, width, height):
     with window(tmp_path, monkeypatch) as (root, application, controller):
         root.geometry(f'{width}x{height}')
         root.deiconify()
-        root.update()
+        settle(root)
         headings = [widget for widget in descendants(root) if isinstance(widget, ttk.Label)
                     and str(widget.cget('style')) == 'Title.TLabel']
         assert len(headings) == 1

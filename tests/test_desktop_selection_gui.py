@@ -8,7 +8,7 @@ from spt_desktop.app import App
 
 
 class ConsentController:
-    active = True
+    active = False
     operation = 'export'
     job_id = 'synthetic-job'
 
@@ -17,6 +17,14 @@ class ConsentController:
         self.replies = []
         self.reads = []
         self.stopped = False
+        self.starts = 0
+
+    def start(self, *args):
+        assert not self.active
+        self.starts += 1
+        self.job_id = 'synthetic-job' if self.starts == 1 else 'next-synthetic-job'
+        self.active = True
+        return self.job_id
 
     def read_request(self, event):
         assert event['job_id'] == self.job_id
@@ -51,6 +59,7 @@ def window(tmp_path, payload, kind='selection'):
     root.report_callback_exception = lambda *error: callback_errors.append(error)
     controller = ConsentController(payload)
     app = App(root, tmp_path, controller=controller)
+    app.npwp.set('0000000000000001');app.year.set('2025');app.start()
     event = consent_event(controller, kind)
     try:
         app.on_event(event)
@@ -244,8 +253,12 @@ def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_pa
         entry.insert(0, 'Februari')
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         assert root.grab_current() is None
-        controller.job_id = 'next-synthetic-job'
+        controller.active = False
+        app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
+                      'percent': 20, 'message': 'Synthetic cancellation completed'})
         controller.stopped = False
+        app.start()
+        assert controller.job_id == 'next-synthetic-job'
         app.on_event(consent_event(controller, request_id='b' * 32))
         root.update()
         reopened = [child for child in root.winfo_children() if isinstance(child, tk.Toplevel)]
