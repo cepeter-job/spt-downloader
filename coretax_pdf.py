@@ -33,7 +33,8 @@ def verified_declarations(run):
 
 def _directories(path):
     result = {}
-    for parent in (path, *path.parents):
+    # Reject a redirected ancestor even when its descendant does not exist.
+    for parent in reversed((path, *path.parents)):
         info = parent.lstat()
         if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
                 or getattr(info, 'st_file_attributes', 0) & 1024):
