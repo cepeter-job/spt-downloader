@@ -6,18 +6,18 @@
 
 **Arsitektur:** perluas exporter, capture browser, dan worker desktop yang sudah ada. Helper layout murni dipakai bersama oleh ekspor dan verifier. Permintaan interaktif terikat pada job; pertahankan pemeriksaan origin/provenance dan pembatalan. Pustaka browser/Excel tidak diimpor ke proses GUI.
 
-**Toolchain:** baseline tersinkron `main e99464a`: CPython produksi 3.11.17/GIL, uv 0.12.22, Tkinter stdlib, Playwright 1.63.0, openpyxl 3.1.5, pytest 9.1.1, dan lock dengan hash. Python 3.14.8 tetap profil kandidat. Tidak ada dependensi produksi baru.
+**Toolchain:** baseline desain awal `main e99464a` memakai produksi 3.11.17/GIL dan kandidat 3.14.8; bukti historis dua profil di bawah tetap dipertahankan. Pada head terverifikasi `3cc500e49764b4daa4ad11fcfbcdf8891ee62377`, produksi GUI/worker sudah CPython 3.14.8 x64/GIL. Pin aktual mengikuti `PYTHON_PROFILES` dan lock berhash; tidak ada dependensi produksi baru untuk Tugas 3–4.
 
 **Spesifikasi:** [desain pemilihan SPT dan workbook](../specs/2026-10-12-period-selection-layout-design.md).
 
-**Batas publikasi terbaru:** PR #6 mencakup Tugas 1 dan Tugas 2: pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi dan verifikasi otomatis Tugas 2 selesai pada commit yang dicatat di bawah. Tugas 3 (PDF), Tugas 4 (pengenalan autentikasi dan teks global), serta penerimaan fitur lengkap pada Tugas 5 tetap tertunda.
+**Batas publikasi terbaru:** PR #6 mencakup Tugas 1–2. Tugas 3–4 terverifikasi otomatis pada head produk `3cc500e49764b4daa4ad11fcfbcdf8891ee62377` di draft PR #8; PR belum digabung. Tugas 5 merekonsiliasi sepuluh persyaratan serta menutup review kode dan dokumentasi. Pengguna memberikan izin terpisah untuk commit/push lima dokumen Task 5 saja, tanpa merge atau publikasi pilot. Penerimaan portal live belum terbukti. Lihat [matriks penerimaan dan artifact](../reports/2026-10-13-feature-acceptance.md); perubahan dokumentasi tidak mengubah ikatan bukti pada head produk tersebut.
 
 ## Batas umum
 
 - Pertahankan NPWP/ID, nilai sumber, dan baris duplikat secara persis; gunakan tes sintetis saja.
 - Folder: `SPT Masa 21`, `SPT Masa Unifikasi`, `SPT Masa PPN`; satu workbook per masa sumber, dengan sheet Normal/Pembetulan terpisah.
-- Form Badan memiliki sheet masing-masing. Rencana PDF hanya mengizinkan laporan keuangan yang sudah tersedia dan diperiksa sebagai aksi baca.
-- Teks persis yang direncanakan pada Tugas 4, belum diterapkan: `jalankan proses sedot di background`; `Hasil Sedot berada di folder Downloads Windows`; `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`.
+- Form Badan memiliki sheet masing-masing. Implementasi PDF hanya mengizinkan laporan keuangan/auditan yang sudah tersedia dan diperiksa sebagai aksi baca; byte, hash, scope dan deklarasi publikasinya diverifikasi.
+- Tiga teks Tugas 4 sudah diterapkan dan di-attest source/frozen: `jalankan proses sedot di background`; `Hasil Sedot berada di folder Downloads Windows`; `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`. Teks Downloads menggantikan hint lama; header nyata diperiksa terpisah dari caption OS.
 - Jangan melonggarkan autentikasi, menebak aksi remote, meng-commit data privat, melakukan overwrite otomatis, atau menjalankan browser pada thread UI.
 - Persyaratan awal rencana meminta persetujuan terpisah sebelum commit/push. Ikuti scope publikasi yang benar-benar diizinkan pengguna pada sesi terkait.
 
@@ -83,9 +83,9 @@ Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan 
 
 **Antarmuka:** `download_financial_attachments(page, record, folder, check_cancel=None) -> list[dict]` menyimpan PDF tervalidasi dan metadata label/path relatif/status/byte/hash. Integrasi dilakukan sebelum halaman detail Badan yang diperiksa ditutup. Publisher menyertakan hanya PDF yang dideklarasikan dan tervalidasi bersama XLSX.
 
-- [ ] Buat/jalankan tes browser/HTTP sintetis untuk href teramati, kontrol tak tersedia, origin/redirect/HTML asing, batas ukuran, pembatalan, dan path output.
-- [ ] Terapkan unduhan GET dari tautan yang sudah ada; jangan menebak URL atau mengeklik pembuatan/submit dokumen. Pertahankan PARTIAL untuk kontrol belum didukung atau kegagalan.
-- [ ] Verifikasi byte/hash PDF dan tautan relatif; perbarui allowlist resource dan tes build.
+- [x] Buat/jalankan tes browser/HTTP sintetis untuk href teramati, kontrol tak tersedia, origin/redirect/HTML asing, batas ukuran, pembatalan, dan path output.
+- [x] Terapkan unduhan GET dari tautan yang sudah ada; jangan menebak URL atau mengeklik pembuatan/submit dokumen. Pertahankan PARTIAL untuk kontrol belum didukung atau kegagalan.
+- [x] Verifikasi byte/hash PDF dan tautan relatif; perbarui allowlist resource dan tes build. Exact GREEN `a6d76eb7fca24be80c438efd2b1e456bceacf9b5`, run `38338852350`, 563 tes Windows; suite terbaru kembali menjalankan seluruh kontrak PDF. Bukti lengkap ada pada laporan penerimaan.
 
 ### Tugas 4: Pengenalan autentikasi dan teks UI
 
@@ -93,16 +93,16 @@ Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan 
 
 **Antarmuka:** pertahankan `_login_fields`, binding kontrol, origin tepat, dan kepemilikan kredensial. Diagnostik alasan yang disanitasi serta penantian kondisi hanya ditambah bila didukung bukti; tidak ada data kredensial dalam diagnostik.
 
-- [ ] Buat/jalankan fixture RED untuk kesiapan form asinkron dan caption/field yang dikenal, sambil tetap menolak challenge, field tambahan, serta aksi tak aman.
-- [ ] Terapkan perbaikan pengenalan yang sempit dan teks yang disetujui; perbarui assertion self-test source/frozen.
-- [ ] Jalankan suite autentikasi/binding/pembatalan dan GUI. Pengenalan portal live tetap belum terverifikasi sampai benar-benar diperiksa.
+- [x] Buat/jalankan fixture RED untuk kesiapan form asinkron dan caption/field yang dikenal, sambil tetap menolak challenge, field tambahan, serta aksi tak aman.
+- [x] Terapkan perbaikan pengenalan yang sempit dan teks yang disetujui; perbarui assertion self-test source/frozen. Empat kontrak tambahan header nyata/hint/mutasi terbukti RED pada `02a0d5e016900010e11efb7bf14d79f4eacba91d`, run `38352112259`.
+- [x] Jalankan suite autentikasi/binding/pembatalan dan GUI. Head `3cc500e49764b4daa4ad11fcfbcdf8891ee62377`, run `38353364106`, lulus 600 tes Windows/367 portable; source/frozen dan artifact `11791354479` terverifikasi. Pengenalan portal live tetap belum terverifikasi sampai benar-benar diperiksa.
 
 ### Tugas 5: Penerimaan fitur lengkap, review, dan artifact
 
 **Berkas:** kontrak output `AGENTS.md`, `README.md`, ekspektasi tes, artifact di luar repo, serta laporan penerimaan.
 
-- [ ] Petakan seluruh sepuluh persyaratan ke tes yang dijalankan; perbarui dokumentasi sesuai kontrak yang disetujui.
-- [ ] Jalankan seluruh pytest dengan basetemp scratch unik; periksa XLSX sintetis dan seluruh tautan/jumlah file.
-- [ ] Dapatkan review kode/keamanan independen dan perbaiki temuan penting dengan tes regresi.
-- [ ] Bangun executable Windows di luar repo, jalankan self-test source/frozen, verifikasi checksum artifact dan keamanan resource, lalu laporkan hasil serta batas penerimaan live.
-- [ ] Sajikan diff dan commit sesuai scope yang diizinkan pengguna. PR #6 mencakup Tugas 1 dan Tugas 2; penerimaan fitur lengkap tetap menunggu Tugas 3–4 serta verifikasi seluruh sepuluh persyaratan.
+- [x] Petakan seluruh sepuluh persyaratan ke node inventaris suite yang dijalankan; dokumentasi diperbarui sebagai draft lokal sesuai kontrak yang disetujui.
+- [x] Jalankan seluruh pytest pada GitHub runner dengan basetemp di luar repo; kontrak menulis/membuka ulang XLSX sintetis serta memeriksa tautan/jumlah file. Tidak ada pytest/product import/Tk/browser/build/EXE lokal untuk verifikasi ini.
+- [x] Dapatkan review kode/keamanan independen pada seluruh delta 12 modul produksi PR #8. Dugaan dot-segment href diregrade independen sebagai NotBug: URL resolution tidak membypass origin atau filesystem. Tidak ada temuan Critical/Important terbukti yang tertinggal; ACL server/keaslian isi PDF tetap bukan jaminan downloader.
+- [x] Bangun executable Windows pada runner, jalankan self-test source/frozen, verifikasi artifact ID `11791354479`, lima berkas/four checksum manifest/17 resource eksplisit, lalu laporkan batas penerimaan live pada laporan penerimaan.
+- [x] Review dokumentasi independen PASS (`deleg_8c9b98c1`), diff disajikan, dan pengguna menyetujui commit/push lima dokumen Task 5 saja. Jangan merge/auto-merge. Izin ini tidak mencakup publikasi pilot JSON-first; implementasi pilot sebagai alternatif DOM tetap mengikuti urutan setelah penutupan Tugas 5.

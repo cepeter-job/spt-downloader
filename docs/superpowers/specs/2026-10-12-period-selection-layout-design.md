@@ -2,7 +2,7 @@
 
 Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windows-desktop` ke `013dd19`. Desain ini membatasi revisi pada alur capture, ekspor, dan desktop yang sudah ada.
 
-**Batas publikasi terbaru PR #6:** mencakup susunan workbook pada Tugas 1 dan Tugas 2, yaitu pemilihan SPT serta konfirmasi penggantian hasil desktop. Batas publikasi lama yang hanya mencakup Tugas 1 sudah digantikan. Implementasi dan verifikasi otomatis Tugas 2 selesai pada commit yang dicatat dalam rencana. Unduhan PDF pada Tugas 3 serta perubahan autentikasi dan teks global pada Tugas 4 tetap tertunda. Lihat [rencana dan bukti pengujian](../plans/2026-10-12-period-selection-layout.md).
+**Batas publikasi terbaru:** PR #6 mencakup Tugas 1–2. Implementasi PDF Tugas 3 serta autentikasi/teks Tugas 4 terverifikasi otomatis pada head produk `3cc500e49764b4daa4ad11fcfbcdf8891ee62377` di draft PR #8; PR belum digabung. Review kode/dokumentasi Tugas 5 ditutup dan pengguna menyetujui commit/push lima dokumen Task 5 saja, tanpa merge. Bukti eksekusi tetap terikat pada head produk tersebut; penerimaan portal live belum terbukti. Lihat [rencana](../plans/2026-10-12-period-selection-layout.md) dan [matriks sepuluh persyaratan](../reports/2026-10-13-feature-acceptance.md).
 
 ## Kontrak output
 
@@ -10,7 +10,7 @@ Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windo
 - `SPT Masa 21`, `SPT Masa Unifikasi`, dan `SPT Masa PPN` memiliki folder terpisah, masing-masing tepat satu workbook per masa sumber literal. Normal dan seluruh pembetulan yang dipilih untuk masa yang sama berada dalam workbook tersebut, dengan sheet deskriptif yang berbeda.
 - SPT Badan tetap di `SPT_Badan.xlsx`, dengan satu sheet per form/bagian teramati, seperti Induk dan L1-D. Bedakan Normal/Pembetulan dan gunakan ordinal yang aman dari benturan nama. Jangan membuat form yang tidak teramati. Path bagian lengkap menjadi identitas agar bagian dari dua induk berbeda tidak tergabung.
 - Gunakan field/tabel datar yang dapat difilter, header dibekukan, lebar kolom, dan bukti sumber. Pertahankan ID/nilai mentah, baris duplikat, caption, serta asal pembetulan secara persis. Tambahkan angka analisis hanya setelah presisinya tervalidasi; teks sumber tidak berubah.
-- Rencana PDF: unduh hanya tautan PDF laporan keuangan/auditan yang sudah ada dan telah diperiksa sebagai aksi baca pada Induk Badan. Jangan membuat dokumen remote atau menebak URL API. Gunakan konteks browser yang berizin, origin HTTPS yang tepat, unduhan GET tanpa redirect yang belum diperiksa, batas ukuran, dan validasi PDF. Kontrol yang belum didukung atau kegagalan tetap dilaporkan PARTIAL.
+- PDF Tugas 3: unduh hanya tautan PDF laporan keuangan/auditan yang sudah ada dan telah diperiksa sebagai aksi baca pada Induk Badan. Jangan membuat dokumen remote atau menebak URL API. Gunakan konteks browser yang berizin, origin HTTPS tepat, GET tanpa redirect, batas ukuran/tenggat/signature/footer/hash. Metadata saja bukan byte PDF. Hanya deklarasi COMPLETE terikat pada SPT terpilih ikut publikasi; kontrol yang belum didukung atau kegagalan tetap PARTIAL.
 
 ## Interaksi desktop pada implementasi Tugas 2
 
@@ -21,18 +21,18 @@ Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windo
 
 Dialog dan protokol persetujuan ini khusus desktop. CLI tetap menentukan cakupan lewat argumen/checkpoint dan tidak memakai keputusan dari dialog desktop.
 
-## Autentikasi dan teks persis yang direncanakan
+## Autentikasi dan teks persis yang diterapkan pada Tugas 4
 
-- Reproduksi celah pengenalan dengan fixture sintetis dan DOM yang telah diperiksa/disanitasi. Pertahankan pembatas origin, form, submit, binding kontrol, CAPTCHA/MFA, serta larangan mencatat rahasia.
-- Judul: `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`
+- Celah kesiapan form awal direproduksi melalui fixture sintetis. Penantian terbatas hanya saat form belum siap; form siap tetap melewati pengenal strict yang sama. Pertahankan origin/account/control/action binding, jalur manual untuk challenge/unknown, serta larangan mencatat rahasia. Jangan mengklaim loop post-login yang tidak diubah sudah diperbaiki.
+- Header nyata dan caption OS: `Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang`
 - Pengaturan background: `jalankan proses sedot di background`
-- Deskripsi output: `Hasil Sedot berada di folder Downloads Windows`
+- Deskripsi output: `Hasil Sedot berada di folder Downloads Windows`, menggantikan hint hierarki lama tanpa menghapus informasi setup. Self-test membaca widget nyata, bukan hanya string caption; build menolak attestation hilang/keliru.
 - Pertahankan subtitle penggunaan pribadi dan kredit yang sudah ada.
 
 ## Verifikasi dan batas bukti
 
-Bukti RED dan GREEN pemilihan/overwrite beserta commit tepatnya dicatat pada [Tugas 2](../plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite). Suite pada commit implementasi tersebut, self-test source/frozen, dan pemeriksaan artifact telah lulus pada kedua profil Python. Penerimaan fitur lengkap tetap menunggu Tugas 3–4 serta pemeriksaan live berizin. Semua fixture baru harus sintetis; periksa pilihan ID, byte file yang dipertahankan, jumlah workbook, nilai sumber, dan tautan relatif.
+Bukti historis RED/GREEN pemilihan/overwrite dicatat pada [Tugas 2](../plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite); dua profil Python pada bukti lama bukan profil aktif terbaru. Pada run `38353364106`, produksi GUI/worker CPython 3.14.8/GIL lulus 600 tes Windows dan 367 tes portable; source/frozen, persiapan worker/pemakaian ulang, serta artifact `11791354479` diverifikasi berdasarkan hash dan tree yang sama dengan head. Seluruh sepuluh kontrak dipetakan pada laporan penerimaan; angka test group beririsan. Fixture baru tetap sintetis; tidak ada eksekusi produk lokal untuk pekerjaan ini.
 
-Tugas 3–4 masih memerlukan pengujian byte/origin/redirect/pembatalan PDF, pengenalan/binding autentikasi, dan teks global yang direncanakan. Pengujian dialog saat ini juga belum membuktikan perilaku keyboard/fokus pada jendela terlihat, aksesibilitas Windows, atau performa inventaris besar.
+Kontrak otomatis byte/origin/redirect/pembatalan/custody PDF, kesiapan/binding autentikasi, teks global, dan header nyata Tugas 3–4 sudah dijalankan. Ini tidak membuktikan semua layout portal, keaslian isi laporan PDF, ACL server, seluruh perilaku keyboard/fokus, aksesibilitas Windows, atau performa inventaris besar. Penerimaan live berizin tetap terpisah dari penerimaan otomatis.
 
-Probe DOM login aktual mengalami timeout. Tidak ada capture wajib pajak nyata atau pengiriman kredensial dalam pekerjaan desain ini. Pengenalan portal dan kontrol unduhan keuangan memerlukan bukti nyata sebelum dinyatakan lulus penerimaan live. Persyaratan awal rencana meminta konfirmasi pengguna secara terpisah sebelum commit/push; batas publikasi yang disepakati dicatat pada rencana dan PR terkait.
+Probe DOM login pada desain awal mengalami timeout; pada tahap desain tersebut tidak ada capture wajib pajak nyata atau pengiriman kredensial. Sesudahnya, pengguna menyediakan capture JSON privat yang diperiksa lokal secara baca-saja di luar repo; data tersebut tidak diunggah atau dijadikan fixture. Tidak ada akses portal live untuk verifikasi Tugas 3–5 ini. Pengenalan portal dan kontrol keuangan memerlukan bukti nyata sebelum dinyatakan lulus penerimaan live. Commit/push mengikuti scope yang disetujui, tanpa merge/auto-merge. Pilot JSON-first Badan sebagai alternatif DOM baru dimulai setelah Tugas 5 ditutup, bukan menggantikan kontrak ini.
