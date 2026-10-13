@@ -298,3 +298,28 @@ def test_overwrite_displays_the_exact_prior_export_folder(tmp_path):
         visible_text = [str(widget.cget('text')) for widget in widgets(dialog) if 'text' in widget.keys()]
         assert any(folder in text for text in visible_text)
         assert not controller.replies
+
+
+def test_confirmed_selection_updates_progress_before_first_detail_finishes(tmp_path):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        app.status.set('Pilih SPT yang akan disedot.')
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january']})]
+        assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
+        assert not dialog.winfo_exists() and not controller.stopped
+        assert app.percent.get() != '100%'
+
+
+def test_stale_selection_reply_does_not_start_fake_capture_progress(tmp_path, monkeypatch):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        original = 'Pilih SPT yang akan disedot.'
+        app.status.set(original)
+        monkeypatch.setattr(controller, 'respond', lambda *args: False)
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert app.status.get() == original
+        assert not controller.replies and not controller.stopped
+        assert not dialog.winfo_exists()

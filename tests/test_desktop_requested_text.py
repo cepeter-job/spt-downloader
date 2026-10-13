@@ -194,3 +194,34 @@ def test_self_test_does_not_report_a_new_caption_over_an_old_real_header(tmp_pat
         spt_gui.self_test(report)
     assert not report.exists()
     gc.collect()
+
+
+def test_requested_punto_footer_is_absent_but_other_credit_is_retained(tmp_path, monkeypatch):
+    with window(tmp_path, monkeypatch) as (root, application, controller):
+        labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
+        assert 'for personal use : punto ap' not in labels
+        assert 'Coretax → Excel · for personal use only' in labels
+        assert controller.starts == []
+
+
+def test_source_credit_is_an_exact_comment_not_an_extra_visible_label():
+    import io
+    from pathlib import Path
+    import tokenize
+    source = Path(app_module.__file__).read_text(encoding='utf-8')
+    comments = [token.string for token in tokenize.generate_tokens(io.StringIO(source).readline)
+                if token.type == tokenize.COMMENT]
+    assert comments.count('#punto ami priyono') == 1
+
+
+def test_source_selftest_attests_only_the_retained_personal_use_label(tmp_path, monkeypatch):
+    from spt_gui import self_test
+    monkeypatch.setattr(app_module, 'JobController', lambda *args, **kwargs: Controller())
+    monkeypatch.setattr(app_module, 'save_login', forbidden_credentials)
+    monkeypatch.setattr(app_module, 'delete_login', forbidden_credentials)
+    report = tmp_path / 'requested-footer-selftest.json'
+    assert self_test(report) == 0
+    data = json.loads(report.read_text(encoding='utf-8'))
+    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only']
+    assert data['credentials_accessed'] is False and data['live_scrape'] is False
+    gc.collect()
