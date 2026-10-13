@@ -8,6 +8,8 @@ from tkinter import ttk,messagebox
 from .controller import JobController,validate_job_scope
 from .credentials import ALLOWED_ORIGINS,save_login,delete_login
 
+#punto ami priyono
+
 DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':''}
 
 
@@ -84,7 +86,6 @@ class App:
         self.results_label.pack(anchor='w')
         ttk.Label(hints,text='Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.',wraplength=510).pack(anchor='w')
         body.rowconfigure(10,weight=1)
-        ttk.Label(body,text='for personal use : punto ap').grid(row=10,column=0,columnspan=3,sticky='se',pady=(12,0))
         root.update_idletasks()
         root.minsize(max(540,body.winfo_reqwidth()),max(390,body.winfo_reqheight()))
         root.protocol('WM_DELETE_WINDOW',self.request_close)
@@ -268,6 +269,9 @@ class App:
             # A stale response may arrive during terminal cleanup. Do not turn
             # that dismissal into a new cancellation of the worker's result.
             if not self.controller.respond(kind,request_id,payload):return 'break'
+            if kind=='selection' and self._export_job_active(job_id):
+                total=len(payload['selected_ids'])
+                self.status.set(f'SPT diproses 0/{total}; terverifikasi 0.')
         except (OSError,ValueError,RuntimeError):
             self._interaction_error(job_id,'Keputusan belum bisa diproses.')
         return 'break'

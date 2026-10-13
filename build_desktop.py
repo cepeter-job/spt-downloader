@@ -41,7 +41,7 @@ def validate_report(data, python_profile='production'):
             and data.get('worker_python') == python_version()
             and data.get('worker_resources') == list(WORKER_FILES)
             and data.get('credential_check_controls') and 'Cek Kredensial' in data.get('gui_controls', [])
-            and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only', 'for personal use : punto ap']
+            and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only']
             and data.get('ui_text') == {
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                 'background':'jalankan proses sedot di background',

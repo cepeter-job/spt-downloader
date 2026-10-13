@@ -85,7 +85,7 @@ def test_exact_window_title_and_results_label_are_visible_without_clipping(tmp_p
         assert 0 <= top and top + result.winfo_height() <= root.winfo_height()
         assert result.winfo_width() >= result.winfo_reqwidth()
         assert result.winfo_height() >= result.winfo_reqheight()
-        assert any(widget.cget('text') == 'for personal use : punto ap' for widget in labels)
+        assert not any(widget.cget('text') == 'for personal use : punto ap' for widget in labels)
         assert controller.starts == []
 
 
@@ -123,8 +123,7 @@ def test_self_test_reports_actual_requested_widget_text_without_accounts(tmp_pat
     data = json.loads(report.read_text(encoding='utf-8'))
     assert data.get('ui_text') == EXPECTED_TEXT
     assert data['live_scrape'] is False and data['credentials_accessed'] is False
-    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only',
-                                           'for personal use : punto ap']
+    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only']
     gc.collect()
 
 

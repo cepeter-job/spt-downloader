@@ -28,7 +28,7 @@ def self_test(report=None):
                     yield child;yield from descendants(child)
             main_labels={w.cget('text') for w in descendants(root) if w.winfo_class()=='TLabel'}
             personal_use_labels=sorted(text for text in main_labels if 'for personal use' in text)
-            assert personal_use_labels==['Coretax → Excel · for personal use only','for personal use : punto ap']
+            assert personal_use_labels==['Coretax → Excel · for personal use only']
             assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels)
             widgets=list(descendants(dialog))
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}

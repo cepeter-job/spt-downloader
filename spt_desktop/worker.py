@@ -65,6 +65,8 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     # Baca hanya detail terbaru agar total biaya progress tetap linear.
                     verified+=bool(data['records'][ordinal-1].get('capture_complete'))
                     progress.details(ordinal,len(data['records']),verified)
+                if run['records']:
+                    progress.details(0,len(run['records']),0)
                 run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel)
                 if not run['records']:progress.details(0,0,0)
             finally:
