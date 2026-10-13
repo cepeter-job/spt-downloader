@@ -182,3 +182,34 @@ def test_verified_checkpoint_restores_record_bound_financial_metadata(tmp_path, 
     assert restored['attachments'] == saved['attachments']
     assert restored['scope'] == RECORD['scope']
     assert restored['detail_url'] == DETAIL
+
+
+def test_partial_capture_retry_reuses_identical_pdf_without_replacing_saved_bytes(routed, tmp_path, monkeypatch):
+    page, requests = routed()
+    capture_table = driver.capture_table
+    attempts = []
+
+    def transient_table_error(*args, **kwargs):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise RuntimeError('SYNTHETIC TRANSIENT TABLE FAILURE')
+        return capture_table(*args, **kwargs)
+
+    monkeypatch.setattr(driver, 'capture_table', transient_table_error)
+    first = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+    assert not first['capture_complete'] and first['errors']
+    item = first['attachments'][0]
+    assert item['status'] == 'COMPLETE'
+    path = tmp_path / item['relative_path']
+    before = path.stat()
+    assert path.read_bytes() == PDF
+
+    second = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+
+    assert len(attempts) == 2, 'The failed table must actually be retried'
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL), ('GET', PDF_URL)]
+    assert second['capture_complete'] and not second['errors']
+    assert second['attachments'] == first['attachments']
+    after = path.stat()
+    assert (after.st_dev, after.st_ino, after.st_mtime_ns) == (before.st_dev, before.st_ino, before.st_mtime_ns)
+    assert path.read_bytes() == PDF

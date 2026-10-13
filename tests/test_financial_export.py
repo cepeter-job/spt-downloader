@@ -146,3 +146,32 @@ def test_same_pdf_path_cannot_belong_to_two_selected_return_records(tmp_path):
     with pytest.raises(ValueError, match='(?i)financial|attachment|pdf'):
         export_split_workbooks(run, tmp_path)
     assert not list(tmp_path.rglob('*.xlsx'))
+
+
+@pytest.mark.parametrize('legacy_attachments', ['missing', 'empty'])
+def test_live_resume_reinspects_legacy_corporate_checkpoint_without_pdf_evidence(tmp_path, monkeypatch, legacy_attachments):
+    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    monkeypatch.setattr(protocol, 'META', {**protocol.META, 'Jenis Pajak': 'PPh Badan'})
+    run = protocol.run_fixture()
+    record = run['records'][0]
+    changes = {} if legacy_attachments == 'missing' else {'attachments': []}
+    protocol.write_checkpoint(tmp_path, record, **changes)
+    item = metadata(record['record_id'])
+    inspected = []
+
+    def capture(page, **kwargs):
+        inspected.append(kwargs['record']['record_id'])
+        assert kwargs['record'] is record and kwargs['folder'] == tmp_path
+        return {'sections': [{'name': 'Induk', 'fields': [{'label': 'Literal', 'value': '0000123'}],
+                              'tables': [], 'text': 'SYNTHETIC REINSPECTION'}],
+                'attachments': [deepcopy(item)], 'capture_complete': True, 'errors': []}
+
+    monkeypatch.setattr(driver, 'capture_detail', capture)
+    page = protocol.SourcePage()
+    result = driver.collect_details(page, run, tmp_path)
+
+    assert inspected == [record['record_id']], 'A legacy COMPLETE flag does not prove financial capture'
+    assert page.navigated == [record['list_url']] and page.popup.closed
+    assert result['complete'] and result['records'][0]['attachments'] == [item]
+    saved = json.loads((tmp_path / 'returns' / '0001.json').read_text(encoding='utf-8'))
+    assert saved['attachments'] == [item] and saved['scope'] == [run['npwp'], run['year'], run['year_basis']]
