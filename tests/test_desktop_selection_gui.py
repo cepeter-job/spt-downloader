@@ -318,3 +318,16 @@ def test_overwrite_displays_the_exact_prior_export_folder(tmp_path):
         visible_text = [str(widget.cget('text')) for widget in widgets(dialog) if 'text' in widget.keys()]
         assert any(folder in text for text in visible_text)
         assert not controller.replies
+
+
+def test_selection_acknowledgement_updates_native_metrics_before_worker_event(tmp_path):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert app.view.scope_selected.get() == '1'
+        assert 'SPT diproses: 0 / 1' in app.view.metric_text.get()
+        assert 'Lengkap: 0' in app.view.metric_text.get()
+        assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
+        assert app._ui_state.terminal_status is None and app.percent.get() != '100%'
+        assert not dialog.winfo_exists() and not controller.stopped

@@ -219,3 +219,18 @@ def test_state_module_has_no_gui_or_file_dependencies():
             assert node.level == 0
             modules.append(node.module.split('.')[0])
     assert set(modules) <= {'dataclasses', 'typing', 're', '__future__', 'collections'}
+
+
+def test_selected_reply_seeds_zero_detail_counts_without_inventory_leak():
+    from spt_desktop.ui_state import Counters, begin_export, reduce_export, record_reply
+    state = reduce_export(begin_export('job-a', NPWP, '2025'),
+        event(stage='inventory', processed=4, total=4, scanned=90), controller_active=True)
+    state = reduce_export(state,
+        event('selection_required', stage='selection', request_id=REQUEST), controller_active=True)
+    reply = dict(job_id='job-a', kind='selection', request_id=REQUEST, selected_count=2)
+    accepted = record_reply(state, **reply)
+    assert accepted.inventory == Counters(processed=4, total=4, scanned=90)
+    assert accepted.details == Counters(processed=0, total=2, verified=0)
+    assert accepted.selected_count == 2 and accepted.consent is None
+    assert accepted.terminal_status is None and accepted.percent < 100
+    assert record_reply(accepted, **reply) == accepted

@@ -206,3 +206,11 @@ def test_self_test_does_not_report_a_new_caption_over_an_old_real_header(tmp_pat
         spt_gui.self_test(report)
     assert not report.exists()
     gc.collect()
+
+
+def test_consolidated_native_shell_excludes_removed_owner_footer(tmp_path, monkeypatch):
+    with window(tmp_path, monkeypatch) as (root, application, controller):
+        labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
+        assert 'for personal use : punto ap' not in labels
+        assert 'Coretax → Excel · for personal use only' in labels
+        assert controller.starts == []
