@@ -13,7 +13,7 @@ import tempfile
 import uuid
 
 import coretax
-from coretax_exporter import validate_export_run, validate_scope, workbook_groups
+from coretax_exporter import validate_export_run, validate_scope, workbook_groups, read_workbook_proof
 from coretax_pdf import attachment_declarations, verified_declarations, pdf_custody, copy_held_pdfs
 from .paths import safe_taxpayer_name
 from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
@@ -141,11 +141,19 @@ def _group_identities(groups):
 
 
 def _workbook_scope(run, path, relative):
-    """Read old headers and literal layout identity independently of run.json."""
+    """Read physical form proof or legacy headers independently of run.json."""
     try:
         with _open_workbook(path) as stream:
             workbook = coretax.load_workbook(stream, read_only=True, data_only=False)
             try:
+                proof = read_workbook_proof(workbook)
+                if proof is not None:
+                    if any(proof[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
+                        raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
+                    groups = workbook_groups(proof)
+                    if relative == 'resume.xlsx' or set(groups) != {relative}:
+                        raise ValueError('Unknown workbook filename or literal period scope')
+                    return _group_identities(groups)
                 summary = workbook['Ringkasan']
                 basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
                 if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
@@ -187,18 +195,30 @@ def _approved_existing_pdfs(run, target, actual):
     with _open_workbook(path) as stream:
         workbook = coretax.load_workbook(stream, data_only=False)
         try:
-            for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
-                relative = row[5].value
-                if relative not in selected:
-                    continue
-                item = selected[relative]
-                if (relative in old or row[0].value != item['record_id']
-                        or row[2].value != 'COMPLETE' or not row[5].hyperlink
-                        or row[5].hyperlink.target != relative):
-                    raise ValueError('Existing financial PDF lacks its bound Audit declaration')
-                old[relative] = {'label': row[1].value, 'status': row[2].value,
-                                 'bytes': row[3].value, 'hash': row[4].value,
-                                 'relative_path': relative}
+            proof = read_workbook_proof(workbook)
+            if proof is not None:
+                for record in proof['records']:
+                    for attachment in record.get('attachments', []):
+                        relative = attachment.get('relative_path')
+                        if relative not in selected:
+                            continue
+                        if (relative in old or record.get('record_id') != selected[relative]['record_id']
+                                or attachment['status'] != 'COMPLETE'):
+                            raise ValueError('Existing financial PDF lacks its bound workbook proof')
+                        old[relative] = dict(attachment)
+            else:
+                for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+                    relative = row[5].value
+                    if relative not in selected:
+                        continue
+                    item = selected[relative]
+                    if (relative in old or row[0].value != item['record_id']
+                            or row[2].value != 'COMPLETE' or not row[5].hyperlink
+                            or row[5].hyperlink.target != relative):
+                        raise ValueError('Existing financial PDF lacks its bound Audit declaration')
+                    old[relative] = {'label': row[1].value, 'status': row[2].value,
+                                     'bytes': row[3].value, 'hash': row[4].value,
+                                     'relative_path': relative}
         finally:
             workbook.close()
     if set(old) != set(selected) or _fingerprint(path) != before:
@@ -569,7 +589,7 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
     parent = _parent(run, downloads)
     snapshot = expected_outputs if expected_outputs is not None else existing_outputs(run, downloads)
     if snapshot is not None:
-        if not overwrite:
+        if not overwrite and any(name != 'resume.xlsx' for name in snapshot['files']):
             raise FileExistsError('Existing output requires explicit overwrite consent')
         if source.is_relative_to(downloads):
             raise ValueError('Overwrite recovery requires a private source outside Downloads')

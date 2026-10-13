@@ -7,6 +7,11 @@ import tkinter as tk
 from tkinter import ttk,messagebox
 from .controller import JobController,validate_job_scope
 from .credentials import ALLOWED_ORIGINS,save_login,delete_login
+from .ui_copy import copy_text
+from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
+from .ui_views import MainView
+
+#punto ami priyono
 
 DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':''}
 
@@ -49,135 +54,200 @@ class App:
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
-        root.title('Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang');root.minsize(540,390)
-        style=ttk.Style(root)
-        style.configure('Title.TLabel',font=('Segoe UI',18,'bold'))
-        style.configure('TButton',padding=(12,12))
-        body=ttk.Frame(root,padding=20);body.pack(fill='both',expand=True)
-        body.columnconfigure(1,weight=1)
-        ttk.Label(body,text='Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',style='Title.TLabel',wraplength=500).grid(row=0,column=0,columnspan=3,sticky='w')
-        ttk.Label(body,text='Coretax → Excel · for personal use only').grid(row=1,column=0,columnspan=3,sticky='w',pady=(4,16))
-        self.npwp=tk.StringVar(root);self.year=tk.StringVar(root,value=str(date.today().year))
-        ttk.Label(body,text='NPWP (16 digit)').grid(row=2,column=0,sticky='w',padx=(0,12))
-        self.npwp_entry=ttk.Entry(body,textvariable=self.npwp,width=30)
-        self.npwp_entry.grid(row=2,column=1,columnspan=2,sticky='ew',pady=6)
-        ttk.Label(body,text='Tahun pajak').grid(row=3,column=0,sticky='w',padx=(0,12))
-        self.year_entry=ttk.Entry(body,textvariable=self.year,width=10)
-        self.year_entry.grid(row=3,column=1,sticky='w',pady=6)
-        buttons=ttk.Frame(body);buttons.grid(row=4,column=0,columnspan=3,sticky='ew',pady=12)
-        self.start_button=ttk.Button(buttons,text='Mulai',command=self.start,underline=0)
-        self.start_button.pack(side='left',padx=(0,8))
-        self.stop_button=ttk.Button(buttons,text='Stop',command=self.stop,underline=0,state='disabled')
-        self.stop_button.pack(side='left',padx=(0,8))
-        self.settings_button=ttk.Button(buttons,text='Pengaturan',command=self.settings,underline=0)
-        self.settings_button.pack(side='left')
-        self.percent=tk.StringVar(root,value='0%')
-        ttk.Label(body,textvariable=self.percent,font=('Segoe UI',14,'bold')).grid(row=5,column=2,sticky='e')
-        self.bar=ttk.Progressbar(body,maximum=100,mode='determinate')
-        self.bar.grid(row=6,column=0,columnspan=3,sticky='ew',pady=(6,10))
-        self.status=tk.StringVar(root,value='Siap. Masukkan NPWP dan tahun pajak, lalu tekan Mulai.')
-        ttk.Label(body,textvariable=self.status,wraplength=500).grid(row=7,column=0,columnspan=3,sticky='w')
-        self.open_button=ttk.Button(body,text='Buka Hasil',command=self.open_result,state='disabled')
-        self.open_button.grid(row=8,column=0,sticky='w',pady=(14,8))
-        hints=ttk.Frame(body);hints.grid(row=9,column=0,columnspan=3,sticky='w',pady=(8,0))
-        self.results_label=ttk.Label(hints,text='Hasil Sedot berada di folder Downloads Windows')
-        self.results_label.pack(anchor='w')
-        ttk.Label(hints,text='Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.',wraplength=510).pack(anchor='w')
-        body.rowconfigure(10,weight=1)
-        ttk.Label(body,text='for personal use : punto ap').grid(row=10,column=0,columnspan=3,sticky='se',pady=(12,0))
-        root.update_idletasks()
-        root.minsize(max(540,body.winfo_reqwidth()),max(390,body.winfo_reqheight()))
-        root.protocol('WM_DELETE_WINDOW',self.request_close)
-        root.bind('<Alt-m>',lambda e:self.start());root.bind('<Alt-s>',lambda e:self.stop())
-        root.bind('<Alt-p>',lambda e:self.settings())
-        self.npwp_entry.bind('<Return>',lambda e:self.start())
-        self.year_entry.bind('<Return>',lambda e:self.start())
-        self.npwp_entry.focus_set();root.after(100,self._poll)
+        self._ui_state = ExportState()
+        self._poll_after = None
+        self._poll_failed = False
+        self._disposed = False
+        root.title(copy_text('app.title'))
+        self.view = MainView(root, year_default=str(date.today().year),
+                            on_start=self.start, on_stop=self.stop,
+                            on_settings=self.settings, on_open_result=self.open_result)
+        self.view.pack(fill='both', expand=True)
+        for name in ('npwp', 'year', 'status', 'percent', 'npwp_entry', 'year_entry',
+                     'start_button', 'stop_button', 'settings_button', 'open_button',
+                     'bar', 'results_label'):
+            setattr(self, name, getattr(self.view, name))
+        root.protocol('WM_DELETE_WINDOW', self.request_close)
+        root.bind('<Alt-m>', lambda event: self.start())
+        root.bind('<Alt-s>', lambda event: self.stop())
+        root.bind('<Alt-p>', lambda event: self.settings())
+        self.npwp_entry.bind('<Return>', lambda event: self.start())
+        self.year_entry.bind('<Return>', lambda event: self.start())
+        root.bind('<Destroy>', self._on_destroy, add='+')
+        self.npwp_entry.focus_set()
+        self._poll_after = root.after(100, self._poll)
 
-    def _running(self,active):
-        self.start_button.state(['disabled' if active else '!disabled'])
-        self.stop_button.state(['!disabled' if active else 'disabled'])
-        self.settings_button.state(['disabled' if active else '!disabled'])
-        for entry in (self.npwp_entry,self.year_entry):entry.state(['disabled' if active else '!disabled'])
+    def _running(self, active):
+        stopping = (active and getattr(self.controller, 'job_id', None) == self._interaction_stopped_job)
+        self.view.set_busy(active, stopping=stopping)
 
     def start(self):
-        if self.controller.active or self._closing:return
+        if self.controller.active or self._closing or self._disposed:
+            return
+        errors = scope_errors(self.npwp.get(), self.year.get())
+        self.view.show_errors(errors)
+        if errors:
+            self.status.set('Periksa kembali NPWP dan tahun pajak.')
+            (self.npwp_entry if 'npwp' in errors else self.year_entry).focus_set()
+            return
         self._close_interaction()
         try:
-            npwp,year=validate_job_scope(self.npwp.get(),self.year.get())
-            self.controller.start(npwp,str(year),self.preferences['browser'],self.preferences['headless'])
-        except (ValueError,RuntimeError) as error:
-            messagebox.showerror('Tidak dapat mulai',str(error),parent=self.root);return
-        self._interaction_seen.clear();self._interaction_stopped_job=None
-        self._result=None;self.open_button.state(['disabled'])
-        self.percent.set('0%');self.bar['value']=0;self._running(True)
+            npwp, year = validate_job_scope(self.npwp.get(), self.year.get())
+            job_id = self.controller.start(npwp, str(year), self.preferences['browser'], self.preferences['headless'])
+            self._ui_state = begin_export(job_id, npwp, str(year))
+        except (ValueError, RuntimeError) as error:
+            messagebox.showerror('Tidak dapat mulai', str(error), parent=self.root)
+            return
+        self._interaction_seen.clear()
+        self._interaction_stopped_job = None
+        self._poll_failed = False
+        self._result = None
+        self.status.set('Menyiapkan aplikasi untuk mengunduh SPT.')
+        self.view.render(self._ui_state, active=True)
+        self.stop_button.focus_set()
 
     def stop(self):
-        if self.controller.active:
-            self._interaction_stopped_job=getattr(self.controller,'job_id',None)
+        job_id = getattr(self.controller, 'job_id', None)
+        if not self.controller.active:
             self._close_interaction()
-            self.controller.stop()
-            if getattr(self.controller,'operation','export')=='login_check':
-                message='Menghentikan pengecekan… maksimum 15 detik; tidak ada ekspor.'
-                if self._credential_status is not None:self._credential_status.set(message)
-                self.status.set(message)
-            else:self.status.set('Menghentikan pekerjaan… maksimum 15 detik untuk worker; checkpoint dipertahankan.')
-            self.stop_button.state(['disabled'])
-        else:self._close_interaction()
-
-    def on_event(self,event):
-        kind=event['type']
-        if event.get('job_id') is not None and event['job_id']!=getattr(self.controller,'job_id',None):return
-        if kind=='terminal':
-            self._interaction_stopped_job=getattr(self.controller,'job_id',None)
-            self._close_interaction()
-        if kind in ('selection_required','overwrite_required') and not self._export_job_active(event.get('job_id')):
             return
-        if getattr(self.controller,'operation','export')=='login_check':
-            message=event.get('message','')[:500]
+        if self._interaction_stopped_job == job_id:
+            return
+        self._interaction_stopped_job = job_id
+        self._close_interaction()
+        self.controller.stop()
+        if getattr(self.controller, 'operation', 'export') == 'login_check':
+            message = 'Menghentikan pengecekan… tidak ada ekspor.'
+            if self._credential_status is not None:
+                self._credential_status.set(message)
             self.status.set(message)
-            if self._credential_status is not None:self._credential_status.set(message)
-            if kind=='terminal':
-                self.bar.stop();self.bar.configure(mode='determinate');self.bar['value']=0
-                self.percent.set('—');self._running(False)
-                if self._settings_refresh:self._settings_refresh(preserve_status=True)
-                if self._settings_closing and self._settings_close:self._settings_close()
-            else:
-                self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
-            return
-        if kind=='setup':
-            self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
+            self._running(True)
         else:
-            self.bar.stop();self.bar.configure(mode='determinate')
-            percent=event.get('percent',0);self.bar['value']=percent;self.percent.set(f'{percent}%')
-        self.status.set(event.get('message','')[:500])
-        if kind=='selection_required':
+            self._ui_state = mark_stopping(self._ui_state)
+            self.status.set('Menghentikan unduhan… data sementara tetap disimpan.')
+            self.view.render(self._ui_state, active=True)
+        self.stop_button.state(['disabled'])
+
+    def on_event(self, event):
+        if self._disposed:
+            return
+        job_id = getattr(self.controller, 'job_id', None)
+        if not job_id or event.get('job_id') != job_id:
+            return
+        kind = event['type']
+        if kind == 'terminal' and self.controller.active:
+            return
+        if getattr(self.controller, 'operation', 'export') == 'login_check':
+            if kind != 'terminal' and self._interaction_stopped_job == job_id:
+                return
+            message = event.get('message', '')[:500]
+            self.status.set(message)
+            if self._credential_status is not None:
+                self._credential_status.set(message)
+            if kind == 'terminal':
+                self.bar.stop()
+                self.bar.configure(mode='determinate', value=0)
+                self.percent.set('—')
+                self._running(False)
+                if self._settings_refresh:
+                    self._settings_refresh(preserve_status=True)
+                if self._settings_closing and self._settings_close:
+                    self._settings_close()
+            else:
+                if str(self.bar['mode']) != 'indeterminate':
+                    self.bar.configure(mode='indeterminate')
+                    self.bar.start(20)
+                self.percent.set('—')
+            return
+        if kind in ('selection_required', 'overwrite_required'):
+            if (not self._export_job_active(job_id)
+                    or (job_id, event.get('request_id')) in self._interaction_seen):
+                return
+        state = reduce_export(self._ui_state, event, controller_active=self.controller.active)
+        if state is self._ui_state:
+            return
+        self._ui_state = state
+        self.status.set(event.get('message', '')[:500])
+        if kind == 'terminal':
+            self._interaction_stopped_job = job_id
+            self._close_interaction()
+            self.status.set(state.terminal_status + ' · ' + event.get('message', '')[:450])
+            self._result = Path(state.output) if state.output else None
+        self.view.render(state, active=self.controller.active)
+        if kind == 'selection_required':
             self.selection_dialog(event)
-        elif kind=='overwrite_required':
+        elif kind == 'overwrite_required':
             self.overwrite_dialog(event)
-        elif kind=='terminal':
-            self._running(False)
-            self.status.set(event.get('status','ERROR')+' · '+event.get('message','')[:450])
-            if event.get('output') and event.get('status') in ('COMPLETE','PARTIAL'):
-                self._result=Path(event['output']);self.open_button.state(['!disabled'])
-            self.npwp_entry.focus_set()
+        elif kind == 'terminal':
+            # The result pane may have scrolled the form out of view.
+            # Keep keyboard focus on a visible action rather than the hidden input.
+            target = self.open_button if self.open_button.instate(['!disabled']) else self.start_button
+            target.focus_set()
 
     def _poll(self):
-        try:self.controller.poll()
+        self._poll_after = None
+        if self._disposed:
+            return
+        try:
+            self.controller.poll()
         except Exception:
-            self.controller.close()
-            self.on_event({'type':'terminal','status':'ERROR','percent':0,'message':'Worker tidak dapat dipantau. Tidak ada hasil COMPLETE.'})
+            # A monitoring error is not proof that the owned process has exited.
+            # Request cleanup once, but leave the UI busy until the controller is idle.
+            if not self._poll_failed:
+                self._poll_failed = True
+                self._interaction_stopped_job = getattr(self.controller, 'job_id', None)
+                self._close_interaction()
+                self.controller.close()
+                if getattr(self.controller, 'operation', 'export') == 'export':
+                    self._ui_state = mark_stopping(self._ui_state)
+                    self.view.render(self._ui_state, active=self.controller.active)
+                else:
+                    self._running(self.controller.active)
+            self.status.set('Proses belum bisa dipantau. Menunggu proses berhenti; hasil belum dinyatakan selesai.')
+            if not self.controller.active and self._ui_state.job_id == getattr(self.controller, 'job_id', None):
+                self.on_event({'job_id': self._ui_state.job_id, 'type': 'terminal', 'status': 'ERROR',
+                    'percent': min(99, self._ui_state.percent or 0), 'output': None,
+                    'message': 'Proses tidak dapat dipantau. Periksa koneksi dan buka ulang aplikasi.'})
         if self._interaction is not None and not self._interaction_current(self._interaction):
             self._close_interaction()
         if self._closing and not self.controller.active:
-            self.controller.close();self.root.destroy();return
-        self.root.after(100,self._poll)
+            self.controller.close()
+            self._dispose()
+            self.root.destroy()
+            return
+        self._poll_after = self.root.after(100, self._poll)
+
+    def _on_destroy(self, event):
+        if event.widget is self.root:
+            self._dispose()
+
+    def _dispose(self):
+        if self._disposed:
+            return
+        self._disposed = True
+        if self._poll_after is not None:
+            try:
+                self.root.after_cancel(self._poll_after)
+            except tk.TclError:
+                # Root teardown may already have removed the pending poll command.
+                pass
+            self._poll_after = None
+        self.view.dispose()
 
     def request_close(self):
+        if self._disposed:
+            return
         if self.controller.active:
-            if not messagebox.askyesno('Hentikan pekerjaan?','Hentikan worker milik aplikasi dan tutup jendela? Checkpoint lokal tidak dihapus.',parent=self.root,default='no'):return
-            self._closing=True;self.stop()
-        else:self._close_interaction();self.controller.close();self.root.destroy()
+            if not messagebox.askyesno('Hentikan pekerjaan?', 'Hentikan worker milik aplikasi dan tutup jendela? Checkpoint lokal tidak dihapus.',
+                                       parent=self.root, default='no'):
+                return
+            self._closing = True
+            self.stop()
+        else:
+            self._close_interaction()
+            self.controller.close()
+            self._dispose()
+            self.root.destroy()
 
     def open_result(self):
         if self._result and self._result.is_dir():os.startfile(str(self._result))
@@ -268,6 +338,15 @@ class App:
             # A stale response may arrive during terminal cleanup. Do not turn
             # that dismissal into a new cancellation of the worker's result.
             if not self.controller.respond(kind,request_id,payload):return 'break'
+            if self._export_job_active(job_id):
+                self._ui_state = record_reply(self._ui_state, job_id=job_id, kind=kind,
+                    request_id=request_id,
+                    selected_count=len(payload['selected_ids']) if kind == 'selection' else None,
+                    overwrite=payload.get('overwrite'))
+                if kind == 'selection':
+                    total = self._ui_state.selected_count
+                    self.status.set(f'SPT diproses 0/{total}; terverifikasi 0.')
+                self.view.render(self._ui_state, active=True)
         except (OSError,ValueError,RuntimeError):
             self._interaction_error(job_id,'Keputusan belum bisa diproses.')
         return 'break'
@@ -467,6 +546,7 @@ class App:
                 self.controller.start_login_check(origin.get(),identifier.get(),browser.get(),hidden.get())
             except (ValueError,RuntimeError) as error:
                 self._credential_status.set(str(error));return
+            self._poll_failed = False
             self._running(True);refresh(preserve_status=True)
             self._credential_status.set('Menyiapkan pengecekan kredensial tersimpan…')
             self.status.set('Menyiapkan pengecekan kredensial tersimpan…')

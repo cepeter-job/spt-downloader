@@ -12,9 +12,13 @@ ACCOUNT='SYNTHETIC_ACCOUNT'
 class Controller:
     active=False
     operation='export'
-    def __init__(self):self.checks=[];self.exports=[];self.stops=0
-    def start_login_check(self,*args):self.checks.append(args);self.operation='login_check';self.active=True
-    def start(self,*args):self.exports.append(args)
+    def __init__(self):self.checks=[];self.exports=[];self.stops=0;self.job_id=None
+    def start_login_check(self,*args):
+        self.checks.append(args);self.operation='login_check';self.active=True
+        self.job_id=f'synthetic-login-{len(self.checks)}';return self.job_id
+    def start(self,*args):
+        self.exports.append(args);self.operation='export';self.active=True
+        self.job_id=f'synthetic-export-{len(self.exports)}';return self.job_id
     def stop(self):self.stops+=1
     def poll(self):return self.active
     def close(self):self.active=False
@@ -53,7 +57,7 @@ def test_check_button_launches_only_saved_account_no_npwp_no_password(window):
     assert app.start_button.instate(['disabled'])
     assert button(root,'Simpan').instate(['disabled'])
     ctl.active=False
-    app.on_event({'type':'terminal','status':'LOGIN_OK','percent':0,'output':None,'message':'Login berhasil; kredensial tersimpan terverifikasi.'})
+    app.on_event({'job_id':ctl.job_id,'type':'terminal','status':'LOGIN_OK','percent':0,'output':None,'message':'Login berhasil; kredensial tersimpan terverifikasi.'})
     assert 'Login berhasil' in app._credential_status.get()
     assert button(root,'Cek Kredensial').instate(['!disabled'])
     assert app.open_button.instate(['disabled']) and app.percent.get()!='100%'
@@ -88,7 +92,7 @@ def test_closing_settings_cancels_and_waits_for_terminal_cleanup(window):
     button(root,'Tutup').invoke()
     assert ctl.stops==1 and dialog.winfo_exists()
     ctl.active=False
-    app.on_event({'type':'terminal','status':'CANCELLED','percent':0,'output':None,'message':'Pengecekan dibatalkan.'})
+    app.on_event({'job_id':ctl.job_id,'type':'terminal','status':'CANCELLED','percent':0,'output':None,'message':'Pengecekan dibatalkan.'})
     assert not dialog.winfo_exists() and app._settings_dialog is None
 
 
@@ -96,12 +100,14 @@ def test_check_keeps_previous_export_result_and_displays_honest_failure(window):
     root,app,ctl,path=window
     previous=path/'old-export';previous.mkdir();(previous/'resume.xlsx').write_bytes(b'SYNTHETIC_UNREAD_TRANSPORT_ONLY')
     app._result=previous;app.open_button.state(['!disabled'])
+    export_state=app._ui_state
     app.settings();root.update_idletasks()
     assert 'Cek Kredensial' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
     button(root,'Cek Kredensial').invoke()
     ctl.active=False
-    app.on_event({'type':'terminal','status':'LOGIN_UNVERIFIED','percent':0,'output':None,'message':'Login belum terverifikasi; periksa koneksi.'})
+    app.on_event({'job_id':ctl.job_id,'type':'terminal','status':'LOGIN_UNVERIFIED','percent':0,'output':None,'message':'Login belum terverifikasi; periksa koneksi.'})
     assert app._result==previous and app.open_button.instate(['!disabled'])
+    assert app._ui_state==export_state
     assert 'belum terverifikasi' in app._credential_status.get()
 
 

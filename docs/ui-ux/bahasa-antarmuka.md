@@ -1,74 +1,77 @@
 # Menulis bahasa antarmuka
 
-[Kembali ke panduan](README.md)
+**Penyesuaian konsolidasi, 13 Oktober 2026:** permintaan PR #14 menghapus footer nama pribadi dan ID `app.credit`; subtitle umum serta lima teks terkunci lainnya tetap. Katalog aktif berisi 43 ID. SPT kini hanya berisi worksheet form; Ringkasan/Daftar SPT/Audit berada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF tetap meminta persetujuan.
+
+[Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
+
+**Baseline 13 Oktober 2026:** `be67f5153a07ce100048d67191a02ca1d0fca1db`. Naskah di bawah mengikuti pemilihan SPT, struktur hasil, serta teks khusus pemilik yang terbaru. ID katalog adalah rancangan presentasi, belum klaim bahwa kode telah menggunakannya.
 
 ## Nada yang digunakan
 
-Tulis seperti memberi petunjuk kepada rekan kerja yang sedang memakai aplikasi. Langsung ke hal yang perlu diketahui. Gunakan bahasa Indonesia sehari-hari yang tetap pantas untuk pekerjaan: **sudah**, **belum**, **bisa**, **coba**, **simpan**, dan **buka**. Tidak perlu bahasa gaul, sapaan berulang, humor, emoji, atau meniru manusia dengan berkata “saya sedang bekerja”.
+Tulis seperti memberi petunjuk kepada rekan kerja yang sedang memakai aplikasi. Langsung ke hal yang perlu diketahui. Gunakan bahasa Indonesia sehari-hari yang tetap pantas untuk pekerjaan: **sudah**, **belum**, **bisa**, **coba**, **simpan**, dan **buka**. Hindari sapaan berulang, jargon mesin, emoji, atau berpura-pura menjadi manusia dengan berkata “saya sedang bekerja”.
 
-Natural tidak berarti longgar secara fakta. **Belum lengkap** tetap peringatan. **Password belum bisa dipastikan** bukan sinonim password salah. Jangan menyebut data aman, lengkap, benar secara pajak, atau tersimpan jika pemeriksaannya belum membuktikan hal itu.
+**Pengecualian eksplisit pemilik:** pertahankan judul humor dan kata “Sedot” yang dikunci di bawah. Jangan menghapusnya memakai aturan gaya umum. Humor tidak diperluas ke error, ancaman kehilangan data, atau persetujuan penggantian.
 
-Petunjuk ini sejalan dengan prinsip pesan langsung, berorientasi tindakan, dan tidak menyalahkan pengguna dalam [panduan penulisan Windows](https://learn.microsoft.com/en-us/windows/apps/design/style/writing-style). Contoh bahasa Indonesia dan pilihan kata di bawah adalah keputusan proyek ini.
+Natural tidak berarti longgar secara fakta. **Belum lengkap** tetap peringatan. **Password belum bisa dipastikan** bukan password salah. Jangan menyebut data aman, benar secara pajak, lengkap untuk seluruh tahun, atau tersimpan jika pemeriksaan belum membuktikannya.
+
+Petunjuk langsung, berorientasi tindakan, dan tidak menyalahkan pengguna sejalan dengan [panduan penulisan Windows](https://learn.microsoft.com/en-us/windows/apps/design/style/writing-style). Pilihan kata Indonesia dan pengecualian pemilik adalah keputusan proyek ini.
 
 ## Aturan praktis
 
-Satu pesan memuat satu pokok utama. Judul menjawab apa yang terjadi. Isi menjelaskan dampak atau langkah berikutnya, biasanya cukup satu atau dua kalimat. Tombol menyebut tindakan, bukan **Ya**, **Lanjut**, atau **OK** jika akibatnya belum jelas.
+Satu pesan memuat satu pokok utama. Judul menjawab apa yang terjadi. Isi menjelaskan dampak atau langkah berikutnya, biasanya satu atau dua kalimat. Tombol menyebut tindakan, bukan **Ya**, **Lanjut**, atau **OK** jika akibatnya belum jelas.
 
-Gunakan sentence case. Label dan tombol tanpa titik; kalimat utuh memakai titik. Hindari judul huruf kapital panjang. Kata “Anda” dipakai bila membantu, tidak harus ada di setiap kalimat. Jangan menambahkan “mohon”, “silakan”, “harap”, atau “dengan demikian” hanya agar terdengar sopan.
+Gunakan sentence case; label/tombol tanpa titik, kalimat utuh memakai titik. Kata “Anda” tidak harus ada di setiap kalimat. Jangan menambahkan “mohon”, “silakan”, “harap”, atau “dengan demikian” hanya agar terdengar sopan. Teks pemilik yang dikunci mempertahankan kapitalisasi dan tanda baca aslinya.
 
-Jangan menjanjikan waktu yang tidak diketahui. **Menyimpan hasil unduhan** lebih tepat daripada **Sebentar lagi selesai**. Tenggat login 5 menit adalah batas kesempatan login, bukan perkiraan waktu tunggu. Batas terminasi worker 15 detik bukan janji bahwa seluruh jendela pasti tutup dalam 15 detik.
+Jangan menjanjikan waktu yang tidak diketahui. **Menyimpan hasil unduhan** lebih tepat daripada **Sebentar lagi selesai**. Tenggat login 5 menit berlaku pada kesempatan login manual, bukan perkiraan durasi pekerjaan. Consent memiliki tenggat 600 detik pada worker; tidak berarti GUI mengetahui countdown exact. Batas terminasi worker 15 detik bukan janji seluruh jendela pasti tutup dalam 15 detik.
 
-Istilah pajak dan nama berkas yang membantu pencarian tetap dipertahankan: NPWP, tahun pajak, masa, pembetulan, `resume.xlsx`, dan lembar **Audit**. “Berdasarkan tahun pajak” tidak boleh berubah menjadi “tahun lapor”. File hasil tidak disebut salinan lengkap seluruh Coretax.
+Istilah pajak dan nama berkas yang membantu pencarian tetap dipertahankan: NPWP, tahun pajak, masa, pembetulan, `resume.xlsx`, dan **Audit**. Tahun pajak bukan tahun pelaporan. Nilai metadata tabel tetap literal. COMPLETE berlaku untuk pilihan saat ini serta cakupan yang didukung, bukan salinan lengkap seluruh Coretax.
 
 ## Tiga lapis teks
 
 **Tampilan utama:** bahasa untuk menyelesaikan pekerjaan. Contoh: “Hasil unduhan belum lengkap. Lihat lembar Audit di resume.xlsx untuk rinciannya.”
 
-**Rincian opsional:** kode status, tahap, atau lokasi yang memang diperlukan untuk dukungan. Jelaskan istilahnya. Tidak ada password, token, cookie, isi SPT, atau exception mentah. Kode `PARTIAL` boleh ditampilkan di sini, bukan menjadi satu-satunya label hasil.
+**Rincian opsional:** kode status, tahap, atau konteks aman yang diperlukan untuk dukungan. Tidak ada password, token, cookie, isi SPT, atau exception mentah. Kode `PARTIAL` boleh tampil di sini, bukan satu-satunya label hasil. Path/ID yang diperlukan dialog persetujuan tetap hanya pada jendela lokal, bukan log publik.
 
-**Dokumentasi developer/reviewer:** `job_id`, schema, exit code, cleanup, runtime, invariants, dan instruksi implementasi. Jangan bocorkan kalimat seperti “jangan mengarang persentase” atau “controller harus selesai” ke layar pengguna. Catatan bahwa data mockup hanya contoh ditempatkan pada wadah review, bukan ditiru sebagai fungsi aplikasi produksi.
+**Dokumentasi developer/reviewer:** `job_id`, `request_id`, schema, exit code, cleanup, runtime, dan invariants. Jangan bocorkan kalimat “controller harus selesai” ke layar pengguna. Watermark data contoh dan pemilih skenario MagicPath bukan fungsi aplikasi produksi.
+
+## Teks khusus yang tidak diganti
+
+| ID | Teks exact |
+| --- | --- |
+| `app.title` | Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang |
+| `settings.background.label` | jalankan proses sedot di background |
+| `results.location_hint` | Hasil Sedot berada di folder Downloads Windows |
+| `app.subtitle` | Coretax → Excel · for personal use only |
+| `selection.confirm` | Sedot SPT terpilih |
+
+Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/tests/test_desktop_selection_gui.py).
 
 ## Kosakata yang konsisten
 
-| Hindari di layar utama | Gunakan | Catatan |
+| Istilah teknis | Teks pengguna | Catatan |
 | --- | --- | --- |
-| Cakupan ekspor | Data yang akan diunduh | Cakupan tetap istilah yang sah di dokumen teknis. |
-| Origin login | Situs login | Domain sebenarnya tetap terlihat penuh. Jangan menyamarkan tujuan login. |
-| Kredensial | Akun dan password; login tersimpan | Pada tombol: **Cek login**, **Hapus login**. |
-| Headless | Sembunyikan browser saat mengunduh | Jelaskan browser tetap muncul saat perlu login. |
-| Workbook | File Excel | Nama file asli tidak diubah. |
-| Checkpoint | Data sementara | Jangan menjanjikan otomatis dilanjutkan. |
-| Rekonsiliasi | Mencocokkan atau memeriksa daftar | Dokumentasi tetap menjelaskan syarat teknis sebenarnya. |
-| COMPLETE | Selesai | Hanya setelah controller mengesahkan hasil. |
-| PARTIAL | Belum lengkap | Jangan diganti “selesai dengan catatan” atau centang hijau. |
-| Terverifikasi, untuk hitungan SPT | Lengkap | Hanya jika `capture_complete`/verified benar. Bukan jaminan kebenaran isi pajak. |
+| Cakupan ekspor | Data yang akan diunduh | Sesudah inventaris, pengguna memilih SPT. |
+| Origin login | Situs login | Domain sebenarnya tetap terlihat penuh. |
+| Kredensial | Akun dan password; login tersimpan | Tombol **Cek login**, **Hapus login**. |
+| Headless | Gunakan checkbox pemilik yang dikunci | Tambahkan: “Jika memungkinkan. Browser tetap muncul saat perlu login.” |
+| Workbook | File Excel | Nama dan subfolder asli tidak diubah. |
+| Checkpoint | Data sementara | Tidak menjanjikan otomatis dilanjutkan atau selalu sudah dibuat. |
+| COMPLETE | Selesai | Hanya setelah controller mengesahkan hasil subset. |
+| PARTIAL | Belum lengkap | Bukan “selesai dengan catatan” atau centang hijau. |
+| Verified, hitungan SPT | Lengkap | Pemeriksaan kelengkapan capture, bukan kebenaran pajak. |
 | Belum terverifikasi | Belum pasti lengkap | Bukan otomatis gagal atau belum diproses. |
-| Satu cakupan. Satu hasil. | Ringkasan unduhan | Hapus slogan yang tidak membantu tugas. |
-
-## Contoh sebelum dan sesudah
-
-| Sebelum | Sesudah |
-| --- | --- |
-| Ekspor selesai dan terverifikasi | **File Excel sudah siap** |
-| Publikasi hasil dan pembersihan proses harus selesai sebelum aplikasi menyatakan COMPLETE. | **Menyimpan file ke Downloads dan menyelesaikan pemeriksaan terakhir.** |
-| Checkpoint lokal dipertahankan. | **Data sementara tetap disimpan di komputer.** |
-| LOGIN_UNVERIFIED · Belum terbukti | **Password belum bisa dipastikan** |
-| Runtime dan dependensi worker disiapkan secara terpisah. | **Menyiapkan komponen yang dibutuhkan.** |
-| Periksa origin, ketersediaan kredensial, serta kecocokan akun. | **Periksa situs login dan akun yang disimpan di Pengaturan.** |
+| Ringkasan pekerjaan | Ringkasan unduhan | NPWP/tahun, jumlah pilihan hanya bila diketahui. |
 
 ## Katalog teks inti
 
-ID di bawah adalah identitas presentasi usulan. Belum ada klaim bahwa ID tersebut sudah digunakan oleh kode Tkinter.
-
 | ID | Teks |
 | --- | --- |
-| `app.title` | Unduh SPT ke Excel |
 | `form.title` | Masukkan NPWP dan tahun pajak |
-| `form.help` | Semua masa dan pembetulan yang ditemukan ikut diunduh. |
+| `form.help` | Setelah daftar muncul, pilih SPT yang ingin diunduh. |
 | `form.npwp.label` | NPWP (16 digit) |
 | `form.npwp.help` | Ketik 16 angka, tanpa spasi, titik, atau tanda hubung. |
 | `form.npwp.error` | Isi NPWP dengan 16 angka (0–9), tanpa pemisah. |
-| `form.year.help` | Pilih tahun pajak, bukan tahun lapor. |
+| `form.year.help` | Gunakan tahun pajak, bukan tahun pelaporan. |
 | `form.year.error` | Gunakan 4 angka, dari 1900 sampai 2100. |
 | `action.start` | Mulai unduh |
 | `action.stop` | Hentikan unduhan |
@@ -82,23 +85,31 @@ ID di bawah adalah identitas presentasi usulan. Belum ada klaim bahwa ID tersebu
 | `settings.check` | Cek login |
 | `settings.cancel_check` | Batalkan cek |
 | `settings.delete` | Hapus login |
+| `download.exported.title` | File Excel sudah dibuat |
 | `download.complete.title` | File Excel sudah siap |
+| `download.complete.body` | Hasil untuk SPT yang dipilih sudah disimpan dan diperiksa. |
 | `download.partial.title` | Hasil unduhan belum lengkap |
 | `download.stopping.title` | Menghentikan unduhan… |
 | `download.cancelled.title` | Unduhan dihentikan |
 | `download.error.title` | Unduhan belum berhasil |
 | `login.unverified.title` | Password belum bisa dipastikan |
 
-Untuk hasil parsial, **Buka hasil sementara** hanya tampil bersama judul **Hasil unduhan belum lengkap** dan penjelasan Audit. “Sementara” berarti hasil yang sudah tersedia, bukan file yang otomatis diperbarui atau pasti dilengkapi nanti. Jika tidak ada output yang lolos pemeriksaan, jangan tampilkan tombol buka.
+Template pemilihan, dialog penggantian, dan delta ID lain ada pada bagian 11 [spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md). Perubahan copy ID yang sama harus selaras; jangan membuat ID baru hanya karena susunan kata diperbaiki.
 
 ## Pesan bersyarat, bukan dugaan
 
-Jika jumlah lengkap benar-benar tersedia: “{processed} dari {total} SPT sudah diproses. Kelengkapan {verified} SPT sudah diperiksa.” Jangan memasukkan nilai kosong sebagai `0` atau menyebut jumlah yang belum final sebagai total pasti.
+Jika counter detail valid: “{processed} dari {total} SPT sudah diproses. Kelengkapan {verified} SPT sudah diperiksa.” Jangan memasukkan nilai kosong sebagai `0` atau memakai jumlah unit inventaris sebagai total SPT. Terminal tidak membawa manifest file/PDF: jangan membuat counter PDF dari perkiraan.
 
-`LOGIN_UNVERIFIED` memiliki lebih dari satu penyebab. Jika penyebab SSO diketahui, gunakan “Coretax sudah terbuka lewat SSO. Password yang disimpan belum diuji.” Jika batas waktu diketahui, gunakan “Pemeriksaan belum selesai dalam batas waktu. Ini tidak berarti password salah.” Jika kode belum menyediakan alasan yang aman dan terstruktur, gunakan “Pemeriksaan belum memastikan password. Ini tidak berarti password salah.” Jangan menebak alasan dari URL atau exception mentah.
+Untuk hasil parsial, **Buka hasil sementara** hanya tampil bersama judul **Hasil unduhan belum lengkap** dan penjelasan Audit. “Sementara” tidak berarti otomatis diperbarui atau pasti dilengkapi nanti. Tanpa output yang disahkan controller, tombol buka tidak tersedia.
 
-Pada kegagalan dua penyimpanan, jangan memakai “Tidak ada perubahan tersimpan” tanpa bukti. Gunakan “Sebagian perubahan mungkin belum tersimpan. Periksa akses penyimpanan Windows, lalu simpan lagi.” Dialog harus tetap terbuka agar pengguna bisa memeriksa kondisinya.
+Petunjuk hasil: “Simpan seluruh folder hasil beserta subfoldernya. Jangan mengganti nama file agar tautannya tetap berfungsi.” PDF keuangan/auditan Badan ikut hanya jika tersedia melalui tautan yang didukung dan lolos pemeriksaan. BPE/lampiran lain tidak dijanjikan. Hapus kalimat lama yang mengecualikan seluruh PDF; jangan menggantinya dengan janji semua PDF tersedia.
+
+Penggantian: “File di bawah akan diganti seluruhnya dengan hasil pilihan kali ini. SPT lain yang sebelumnya berada dalam file yang sama tidak ikut dipertahankan. File lain yang tidak tercantum tetap ada.” Jangan menyebut merge data atau semua hasil lama pasti tetap ada. `resume.xlsx` baru merangkum pilihan kali ini.
+
+`LOGIN_UNVERIFIED` tidak membuktikan password salah. Gunakan alasan SSO/timeout hanya bila ada reason code yang aman dan terstruktur. Jika belum ada, gunakan “Pemeriksaan belum memastikan password. Ini tidak berarti password salah.” Jangan menebak dari URL, substring pesan, atau exception.
+
+Pada kegagalan dua penyimpanan, jangan mengatakan “Tidak ada perubahan tersimpan” tanpa bukti. Gunakan “Sebagian perubahan mungkin belum tersimpan. Periksa akses penyimpanan Windows, lalu simpan lagi.” Dialog tetap terbuka. Pembatalan memakai “Data sementara yang sudah dibuat tetap disimpan di komputer”, bukan jaminan checkpoint selalu ada.
 
 ## Pemeriksaan naskah
 
-Baca teks dengan suara biasa. Apakah orang yang tidak mengenal kode akan tahu harus berbuat apa? Hapus istilah internal, pengulangan, slogan, permintaan maaf otomatis, dan janji yang tidak bisa dibuktikan. Setelah kata diganti, periksa lebar tombol, baris pesan, shortcut, fokus, serta versi jendela kecil. Jangan meloloskan pesan yang enak dibaca tetapi salah arti.
+Baca teks dengan suara biasa. Apakah pengguna tahu harus berbuat apa? Hapus jargon, pengulangan, slogan baru yang tidak membantu, permintaan maaf otomatis, dan janji yang tidak bisa dibuktikan. Pertahankan pengecualian pemilik yang dikunci. Sesudah teks berubah, periksa lebar tombol, wrap, shortcut, fokus, serta compact. Jangan meloloskan pesan yang enak dibaca tetapi salah arti. Tes/self-test yang mengikat label lama diperbarui secara eksplisit bersama implementasi, bukan dihapus untuk meloloskan perubahan.

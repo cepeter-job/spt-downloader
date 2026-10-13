@@ -8,7 +8,7 @@ from spt_desktop.app import App
 
 
 class ConsentController:
-    active = True
+    active = False
     operation = 'export'
     job_id = 'synthetic-job'
 
@@ -17,6 +17,14 @@ class ConsentController:
         self.replies = []
         self.reads = []
         self.stopped = False
+        self.starts = 0
+
+    def start(self, *args):
+        assert not self.active
+        self.starts += 1
+        self.job_id = 'synthetic-job' if self.starts == 1 else 'next-synthetic-job'
+        self.active = True
+        return self.job_id
 
     def read_request(self, event):
         assert event['job_id'] == self.job_id
@@ -51,6 +59,7 @@ def window(tmp_path, payload, kind='selection'):
     root.report_callback_exception = lambda *error: callback_errors.append(error)
     controller = ConsentController(payload)
     app = App(root, tmp_path, controller=controller)
+    app.npwp.set('0000000000000001');app.year.set('2025');app.start()
     event = consent_event(controller, kind)
     try:
         app.on_event(event)
@@ -59,6 +68,7 @@ def window(tmp_path, payload, kind='selection'):
         assert len(dialogs) == 1
         yield root, app, controller, dialogs[0]
     finally:
+        app._dispose()
         for token in root.tk.call('after', 'info'):
             root.after_cancel(token)
         if hasattr(app, '_close_interaction'):
@@ -113,6 +123,7 @@ def test_selection_starts_empty_and_search_sends_only_the_clicked_return(tmp_pat
         button.invoke()
         root.update()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-february']})]
+        assert app._ui_state.selected_count == 1 and app.view.scope_selected.get() == '1'
         assert not dialog.winfo_exists() and not controller.stopped
 
 
@@ -131,6 +142,8 @@ def test_overwrite_dialog_defaults_to_preserving_existing_files(tmp_path):
         decline.invoke()
         root.update()
         assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
+        assert app._ui_state.view_state == 'cancellation_pending'
+        assert app._ui_state.terminal_status is None
         assert not dialog.winfo_exists()
 
 
@@ -241,8 +254,12 @@ def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_pa
         entry.insert(0, 'Februari')
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         assert root.grab_current() is None
-        controller.job_id = 'next-synthetic-job'
+        controller.active = False
+        app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
+                      'percent': 20, 'message': 'Synthetic cancellation completed'})
         controller.stopped = False
+        app.start()
+        assert controller.job_id == 'next-synthetic-job'
         app.on_event(consent_event(controller, request_id='b' * 32))
         root.update()
         reopened = [child for child in root.winfo_children() if isinstance(child, tk.Toplevel)]
@@ -270,6 +287,8 @@ def test_closing_overwrite_preserves_existing_files(tmp_path):
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         root.update()
         assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
+        assert app._ui_state.view_state == 'cancellation_pending'
+        assert app._ui_state.terminal_status is None
         assert not dialog.winfo_exists()
 
 
@@ -285,6 +304,7 @@ def test_rejected_consent_dismisses_without_cancelling_terminal_cleanup(tmp_path
             approve = button(dialog, 'Ganti file tersebut')
         approve.invoke()
         root.update()
+        assert app._ui_state.selected_count is None
         assert not dialog.winfo_exists() and not controller.replies and not controller.stopped
         controller.active = False
         app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'ERROR',
@@ -298,3 +318,41 @@ def test_overwrite_displays_the_exact_prior_export_folder(tmp_path):
         visible_text = [str(widget.cget('text')) for widget in widgets(dialog) if 'text' in widget.keys()]
         assert any(folder in text for text in visible_text)
         assert not controller.replies
+
+
+def test_selection_acknowledgement_updates_native_metrics_before_worker_event(tmp_path):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert app.view.scope_selected.get() == '1'
+        assert 'SPT diproses: 0 / 1' in app.view.metric_text.get()
+        assert 'Lengkap: 0' in app.view.metric_text.get()
+        assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
+        assert app._ui_state.terminal_status is None and app.percent.get() != '100%'
+        assert not dialog.winfo_exists() and not controller.stopped
+
+
+def test_confirmed_selection_updates_progress_before_first_detail_finishes(tmp_path):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        app.status.set('Pilih SPT yang akan disedot.')
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january']})]
+        assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
+        assert not dialog.winfo_exists() and not controller.stopped
+        assert app.percent.get() != '100%'
+
+
+def test_stale_selection_reply_does_not_start_fake_capture_progress(tmp_path, monkeypatch):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        original = 'Pilih SPT yang akan disedot.'
+        app.status.set(original)
+        monkeypatch.setattr(controller, 'respond', lambda *args: False)
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert app.status.get() == original
+        assert not controller.replies and not controller.stopped
+        assert not dialog.winfo_exists()

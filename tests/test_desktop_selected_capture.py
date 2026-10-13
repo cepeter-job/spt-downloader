@@ -10,7 +10,8 @@ from test_split_output import fixture_run
 from test_desktop_orchestration import synthetic_browser
 
 
-def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on_choice=False, marker=None):
+def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on_choice=False, marker=None,
+                 before_capture=None):
     assert 'requests' in inspect.signature(worker.run_job).parameters, 'Worker selection handshake is missing'
     state = {'captured': [], 'requests': []}
     synthetic_browser(worker, monkeypatch, state)
@@ -35,6 +36,8 @@ def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on
 
     def capture(page, data, folder, on_progress, check_cancel):
         check_cancel()
+        if before_capture is not None:
+            before_capture(data, events)
         state['captured'] = [record['record_id'] for record in data['records']]
         for ordinal, record in enumerate(data['records'], 1):
             record['capture_complete'] = True
@@ -143,3 +146,24 @@ def test_worker_without_a_consent_channel_never_captures_all_records(tmp_path, m
     assert not state.get('browser_started') or state['browser_closed']
     assert not state.get('driver_started') or state['driver_closed']
     assert not (tmp_path / 'Downloads').exists()
+
+
+def test_worker_announces_zero_completed_details_before_starting_capture(tmp_path, monkeypatch):
+    observed = []
+
+    def at_capture_start(data, events):
+        details = tuple(dict(event) for event in events if event.get('type') == 'progress'
+                        and event.get('stage') == 'details')
+        observed.append((len(data['records']), details))
+
+    status, events, state, _ = selected_job(tmp_path, monkeypatch, ['21-january'],
+                                           before_capture=at_capture_start)
+    assert status == 0 and events[-1]['status'] == 'COMPLETE'
+    assert len(observed) == 1 and state['captured'] == ['21-january']
+    record_count, details = observed[0]
+    assert len(details) == 1, 'Capture started before its initial progress event'
+    event = details[0]
+    assert event['processed'] == event['verified'] == 0
+    assert event['total'] == record_count == 1
+    assert event['message'] == 'SPT diproses 0/1; terverifikasi 0.'
+    assert event['percent'] < 100

@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import coretax
+import json
 from openpyxl import load_workbook
 
 
@@ -41,19 +42,21 @@ def test_save_output_separates_resume_and_period_files(tmp_path):
         'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx': run['records'][4:]}
     for filename, records in expected.items():
         wb = load_workbook(tmp_path / filename)
-        assert len(wb.sheetnames[3:]) == len(records), 'Periods/amendments were split into separate files or lost'
-        assert wb['Daftar SPT'].max_row == 4 + len(records)
-        assert [wb['Daftar SPT'].cell(5+i, 4).value for i in range(len(records))] == [r['meta']['Masa Pajak'] for r in records]
-        assert [wb['Daftar SPT'].cell(5+i, 5).value for i in range(len(records))] == [r['meta']['Model SPT'] for r in records]
-        markers = [cell.value for ws in wb.worksheets[3:] for row in ws for cell in row if cell.value in {r['key'] for r in run['records']}]
+        assert len(wb.sheetnames) == len(records), 'Periods/amendments were split into separate files or lost'
+        assert {'Ringkasan', 'Daftar SPT', 'Audit'}.isdisjoint(wb.sheetnames)
+        proof = json.loads(wb.properties.identifier)
+        assert proof['npwp'] == run['npwp'] and proof['year'] == run['year']
+        assert [r['record_id'] for r in proof['records']] == [r['record_id'] for r in records]
+        assert [r['meta']['Masa Pajak'] for r in proof['records']] == [r['meta']['Masa Pajak'] for r in records]
+        assert [r['meta']['Model SPT'] for r in proof['records']] == [r['meta']['Model SPT'] for r in records]
+        markers = [cell.value for ws in wb.worksheets for row in ws for cell in row if cell.value in {r['key'] for r in run['records']}]
         assert markers == [r['key'] for r in records], 'Another tax type leaked into this workbook'
-        for row in wb['Daftar SPT'].iter_rows(min_row=5):
-            assert row[1].value == records[0]['meta']['Jenis Pajak']
+        assert all(r['meta']['Jenis Pajak'] == records[0]['meta']['Jenis Pajak'] for r in proof['records'])
         wb.close()
     resume.close()
 
 
-def test_resume_links_to_correct_external_detail_and_back(tmp_path):
+def test_resume_links_to_correct_external_detail_without_generic_backlink(tmp_path):
     run = fixture_run()
     coretax.save_output(run, tmp_path)
     assert (tmp_path / 'resume.xlsx').is_file(), 'Separate resume workbook missing'
@@ -66,9 +69,9 @@ def test_resume_links_to_correct_external_detail_and_back(tmp_path):
         target = load_workbook(tmp_path / link.target)
         sheet_name = link.location.rsplit('!', 1)[0].strip("'")
         assert sheet_name in target.sheetnames
-        back = target[sheet_name]['A2'].hyperlink
-        assert back.target == ('../resume.xlsx' if '/' in link.target else 'resume.xlsx')
-        assert back.location == "'Daftar SPT'!A1"
+        assert target[sheet_name]['A1'].value == 'Induk'
+        assert not any(cell.hyperlink and 'resume.xlsx' in (cell.hyperlink.target or '')
+                       for row in target[sheet_name] for cell in row)
         target.close()
     resume.close()
 

@@ -101,11 +101,12 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
                             'msedge', True, emitted.append, lambda: False,requests=requests)
 
     details = [event for event in emitted if event['stage'] == 'details']
+    assert (details[0]['processed'], details[0]['total'], details[0]['verified']) == (0, len(outcomes), 0)
     expected = 0
-    for ordinal, (event, complete) in enumerate(zip(details, outcomes), 1):
+    for ordinal, (event, complete) in enumerate(zip(details[1:], outcomes), 1):
         expected += complete
         assert (event['processed'], event['total'], event['verified']) == (ordinal, len(outcomes), expected)
-    assert len(details) == len(outcomes)
+    assert len(details) == len(outcomes) + 1
     assert result == 2 and emitted[-1]['status'] == 'PARTIAL'
     assert max(event['percent'] for event in emitted) < 100
     assert reads <= 2 * len(outcomes), 'Progress memindai ulang seluruh prefix pada tiap detail'

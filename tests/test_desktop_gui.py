@@ -38,17 +38,28 @@ def test_simple_window_controls_and_partial_progress_are_real_tkinter(tmp_path):
     app=module('app')
     root=tk.Tk();root.withdraw()
     try:
-        window=app.App(root,tmp_path)
+        class SyntheticController:
+            active=False
+            operation='export'
+            job_id=None
+            def start(self,*args):
+                self.active=True;self.job_id='synthetic-view-job';return self.job_id
+            def poll(self):return self.active
+            def close(self):self.active=False
+        ctl=SyntheticController()
+        window=app.App(root,tmp_path,controller=ctl)
         root.update_idletasks()
         assert window.npwp.get()==''
         assert not window.start_button.instate(['disabled'])
         assert window.stop_button.instate(['disabled'])
         assert window.open_button.instate(['disabled'])
-        window.on_event({'type':'progress','percent':42,'message':'Synthetic progress'})
+        window.npwp.set('0000000000000001');window.year.set('2025');window.start()
+        window.on_event({'job_id':ctl.job_id,'type':'progress','stage':'details','percent':42,'message':'Synthetic progress'})
         root.update_idletasks()
         assert window.percent.get()=='42%'
         assert int(window.bar['value'])==42
-        window.on_event({'type':'terminal','status':'PARTIAL','percent':99,'output':None,'message':'Synthetic PARTIAL'})
+        ctl.active=False
+        window.on_event({'job_id':ctl.job_id,'type':'terminal','status':'PARTIAL','percent':99,'output':None,'message':'Synthetic PARTIAL'})
         root.update_idletasks()
         assert window.percent.get()=='99%'
         assert window.open_button.instate(['disabled'])

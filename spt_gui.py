@@ -16,11 +16,32 @@ from spt_desktop.windows import InstanceLock
 
 
 def self_test(report=None):
+    class SyntheticController:
+        # Injection proves that constructing/rendering the GUI never prepares a worker.
+        active = False
+        operation = 'export'
+        job_id = None
+
+        def start(self, npwp, year, browser, headless):
+            self.job_id = 'synthetic-self-test'
+            self.active = True
+            return self.job_id
+
+        def poll(self):
+            return self.active
+
+        def stop(self):
+            self.active = False
+
+        def close(self):
+            self.active = False
+
     root=tk.Tk();root.withdraw();app=None
     try:
         with tempfile.TemporaryDirectory(prefix='spt-desktop-selftest-') as folder:
-            app=App(root,Path(folder));root.update_idletasks()
-            assert app.start_button.cget('text')=='Mulai'
+            app=App(root,Path(folder),controller=SyntheticController());root.update_idletasks()
+            assert app.start_button.cget('text')=='Mulai unduh'
+            assert app.npwp.get()==''
             assert app.stop_button.instate(['disabled'])
             dialog=app.settings();root.update_idletasks()
             def descendants(widget):
@@ -28,7 +49,7 @@ def self_test(report=None):
                     yield child;yield from descendants(child)
             main_labels={w.cget('text') for w in descendants(root) if w.winfo_class()=='TLabel'}
             personal_use_labels=sorted(text for text in main_labels if 'for personal use' in text)
-            assert personal_use_labels==['Coretax → Excel · for personal use only','for personal use : punto ap']
+            assert personal_use_labels==['Coretax → Excel · for personal use only']
             assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels)
             widgets=list(descendants(dialog))
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
@@ -46,10 +67,15 @@ def self_test(report=None):
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                 'background':'jalankan proses sedot di background',
                 'results':'Hasil Sedot berada di folder Downloads Windows'}
+            gui_controls=sorted({w.cget('text') for w in descendants(root)
+                                 if w.winfo_class()=='TButton'})
             app._settings_close()
             assert all((resource_root()/name).is_file() for name in WORKER_FILES)
             if getattr(sys,'frozen',False):assert (resource_root()/'tools'/'uv.exe').is_file()
-            app.on_event({'type':'progress','percent':42,'message':'Self-test synthetic progress'})
+            app.npwp.set('0000000000000001');app.year.set('2025')
+            app.start()
+            app.on_event({'job_id':app.controller.job_id,'type':'progress','stage':'details',
+                          'percent':42,'message':'Self-test synthetic progress'})
             assert app.percent.get()=='42%'
             data={'ok':True,'python':sys.version.split()[0],'bits':struct.calcsize('P')*8,
                   'python_implementation':platform.python_implementation(),
@@ -59,7 +85,7 @@ def self_test(report=None):
                   'worker_python':python_version(),
                   'frozen':bool(getattr(sys,'frozen',False)),
                   'worker_resources':list(WORKER_FILES),'uv_bundled':(resource_root()/'tools'/'uv.exe').is_file(),
-                  'gui_controls':['NPWP','Tahun pajak','Mulai','Stop','Pengaturan','Buka Hasil','Cek Kredensial','Batalkan Cek'],
+                  'gui_controls':gui_controls,
                   'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
@@ -69,7 +95,7 @@ def self_test(report=None):
             elif sys.stdout:print(json.dumps(data))
             return 0
     finally:
-        if app is not None:app.controller.close()
+        if app is not None:app.controller.close();app._dispose()
         # Retire the self-test's recurring poll before another Tk root exists.
         for callback in root.tk.splitlist(root.tk.call('after','info')):
             root.after_cancel(callback)

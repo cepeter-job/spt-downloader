@@ -23,6 +23,7 @@ class Controller:
 
     def __init__(self):
         self.starts = []
+        self.job_id = None
 
     def poll(self):
         pass
@@ -33,6 +34,15 @@ class Controller:
     def start(self, npwp, year, browser, headless):
         self.starts.append((npwp, year, browser, headless))
         self.active = True
+        self.job_id = f'synthetic-ui-{len(self.starts)}'
+        return self.job_id
+
+
+def settle(root):
+    done = tk.BooleanVar(root)
+    root.after(250, lambda: done.set(True))
+    root.wait_variable(done)
+    root.update_idletasks()
 
 
 def descendants(widget):
@@ -60,6 +70,8 @@ def window(tmp_path, monkeypatch):
         controller.close()
         if application is not None and application._settings_close:
             application._settings_close()
+        if application is not None:
+            application._dispose()
         for callback in root.tk.splitlist(root.tk.call('after', 'info')):
             root.after_cancel(callback)
         root.destroy()
@@ -67,12 +79,12 @@ def window(tmp_path, monkeypatch):
         gc.collect()
 
 
-@pytest.mark.parametrize('width,height', [(540, 390), (900, 700)])
+@pytest.mark.parametrize('width,height', [(540, 390), (900, 700), (640, 560), (1120, 800)])
 def test_exact_window_title_and_results_label_are_visible_without_clipping(tmp_path, monkeypatch, width, height):
     with window(tmp_path, monkeypatch) as (root, application, controller):
         root.geometry(f'{width}x{height}')
         root.deiconify()
-        root.update()
+        settle(root)
         assert root.title() == EXPECTED_TEXT['title']
         labels = [widget for widget in descendants(root) if isinstance(widget, ttk.Label)]
         result = [widget for widget in labels if widget.cget('text') == EXPECTED_TEXT['results']]
@@ -85,7 +97,7 @@ def test_exact_window_title_and_results_label_are_visible_without_clipping(tmp_p
         assert 0 <= top and top + result.winfo_height() <= root.winfo_height()
         assert result.winfo_width() >= result.winfo_reqwidth()
         assert result.winfo_height() >= result.winfo_reqheight()
-        assert any(widget.cget('text') == 'for personal use : punto ap' for widget in labels)
+        assert not any(widget.cget('text') == 'for personal use : punto ap' for widget in labels)
         assert controller.starts == []
 
 
@@ -123,8 +135,7 @@ def test_self_test_reports_actual_requested_widget_text_without_accounts(tmp_pat
     data = json.loads(report.read_text(encoding='utf-8'))
     assert data.get('ui_text') == EXPECTED_TEXT
     assert data['live_scrape'] is False and data['credentials_accessed'] is False
-    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only',
-                                           'for personal use : punto ap']
+    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only']
     gc.collect()
 
 
@@ -142,12 +153,12 @@ def test_packaging_rejects_missing_or_old_requested_ui_evidence(key):
         build_desktop.validate_report(missing)
 
 
-@pytest.mark.parametrize('width,height', [(540, 390), (900, 700)])
+@pytest.mark.parametrize('width,height', [(540, 390), (900, 700), (640, 560), (1120, 800)])
 def test_requested_header_is_the_real_visible_heading_not_only_the_window_caption(tmp_path, monkeypatch, width, height):
     with window(tmp_path, monkeypatch) as (root, application, controller):
         root.geometry(f'{width}x{height}')
         root.deiconify()
-        root.update()
+        settle(root)
         headings = [widget for widget in descendants(root) if isinstance(widget, ttk.Label)
                     and str(widget.cget('style')) == 'Title.TLabel']
         assert len(headings) == 1
@@ -193,4 +204,35 @@ def test_self_test_does_not_report_a_new_caption_over_an_old_real_header(tmp_pat
     with pytest.raises(AssertionError):
         spt_gui.self_test(report)
     assert not report.exists()
+    gc.collect()
+
+
+def test_consolidated_native_shell_excludes_removed_owner_footer(tmp_path, monkeypatch):
+    with window(tmp_path, monkeypatch) as (root, application, controller):
+        labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
+        assert 'for personal use : punto ap' not in labels
+        assert 'Coretax → Excel · for personal use only' in labels
+        assert controller.starts == []
+
+
+def test_source_credit_is_an_exact_comment_not_an_extra_visible_label():
+    import io
+    from pathlib import Path
+    import tokenize
+    source = Path(app_module.__file__).read_text(encoding='utf-8')
+    comments = [token.string for token in tokenize.generate_tokens(io.StringIO(source).readline)
+                if token.type == tokenize.COMMENT]
+    assert comments.count('#punto ami priyono') == 1
+
+
+def test_source_selftest_attests_only_the_retained_personal_use_label(tmp_path, monkeypatch):
+    from spt_gui import self_test
+    monkeypatch.setattr(app_module, 'JobController', lambda *args, **kwargs: Controller())
+    monkeypatch.setattr(app_module, 'save_login', forbidden_credentials)
+    monkeypatch.setattr(app_module, 'delete_login', forbidden_credentials)
+    report = tmp_path / 'requested-footer-selftest.json'
+    assert self_test(report) == 0
+    data = json.loads(report.read_text(encoding='utf-8'))
+    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only']
+    assert data['credentials_accessed'] is False and data['live_scrape'] is False
     gc.collect()
