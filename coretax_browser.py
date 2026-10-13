@@ -186,7 +186,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     return result
 
 
-def capture_detail(page, max_pages=1000, check_cancel=None):
+def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
     _check_cancel(check_cancel)
     page.locator('.main-content').wait_for(timeout=45000)
@@ -194,8 +194,12 @@ def capture_detail(page, max_pages=1000, check_cancel=None):
     root = page.locator('.main-content').first
     sections = []
     errors = []
+    attachments = []
+    financial_required = record is not None and record['meta'].get('Jenis Pajak') == 'PPh Badan'
+    financial_attempted = False
 
     def capture_panel(panel, name):
+        nonlocal financial_attempted
         # Accordion hanya membuka isi; jangan klik tombol aksi yang belum dikenali.
         expanders = panel.locator('.p-accordion-header a[aria-expanded=false]').element_handles()
         try:
@@ -227,6 +231,17 @@ def capture_detail(page, max_pages=1000, check_cancel=None):
             except Exception as exc:
                 errors.append({'object': f'{name}/table {i+1}', 'message': str(exc).split('\n')[0]})
         sections.append(section)
+        # Another form hides Induk; read its inspected href before traversal advances.
+        if financial_required and not financial_attempted and name.rsplit(' / ', 1)[-1] == 'Induk':
+            from coretax_attachments import download_financial_attachments
+            financial_attempted = True
+            captured_attachments = download_financial_attachments(page, record, folder, check_cancel=check_cancel)
+            _check_cancel(check_cancel)
+            attachments.extend(captured_attachments)
+            for attachment in captured_attachments:
+                if attachment['status'] != 'COMPLETE':
+                    errors.append({'object': name + '/' + attachment['label'],
+                                   'message': 'Financial PDF control is unsupported or download incomplete'})
         nested = panel.locator('.p-tabview')
         if nested.count():
             visit_view(nested.first, name + ' / ')
@@ -265,10 +280,16 @@ def capture_detail(page, max_pages=1000, check_cancel=None):
             capture_panel(root, 'Halaman SPT')
     except Exception as exc:
         errors.append({'object': 'SPT detail', 'message': str(exc).split('\n')[0]})
+    if financial_required and not financial_attempted:
+        attachments.append({'label': 'Laporan Keuangan', 'relative_path': None,
+                            'status': 'PARTIAL', 'bytes': 0, 'hash': None})
+        errors.append({'object': 'Induk/Laporan Keuangan',
+                       'message': 'No inspected corporate Induk found; financial PDF capture unsupported'})
     meaningful = any(s['fields'] or s['tables'] for s in sections)
     if not meaningful:
         errors.append({'object': 'SPT detail', 'message': 'No structured fields or tables captured; unsupported detail layout'})
-    return {'sections': sections, 'capture_complete': meaningful and not errors, 'errors': errors}
+    return {'sections': sections, 'capture_complete': meaningful and not errors,
+            'errors': errors, 'attachments': attachments}
 
 
 ORIGIN = 'https://coretax.intranet.pajak.go.id'
@@ -554,7 +575,7 @@ def read_detail_checkpoint(path, record, scope):
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
     # Berkas detail tidak boleh menimpa identitas atau metadata asal inventaris.
-    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope') if field in saved}
+    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments') if field in saved}
 
 
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None):
@@ -575,7 +596,10 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
             checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
             if checkpoint.exists():
                 saved = read_detail_checkpoint(checkpoint, record, scope)
-                if saved.get('capture_complete'):
+                # COMPLETE lama belum membuktikan inspeksi lampiran Badan.
+                # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
+                needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+                if saved.get('capture_complete') and (not needs_financial or saved.get('attachments')):
                     record.update(saved)
                     print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
                     if on_progress:
@@ -642,8 +666,10 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
                 detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'])
                 detail.set_viewport_size({'width': 1600, 'height': 1000})
-                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel)
+                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
+                                         record=record, folder=folder)
                 record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
+                record['attachments'] = capture.get('attachments', [])
                 for error in capture['errors']:
                     _check_cancel(check_cancel)
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})

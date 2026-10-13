@@ -16,7 +16,8 @@ UV_VERSION = '0.12.22'
 PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (
-    'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'requirements.txt',
+    'coretax.py', 'coretax_browser.py', 'coretax_exporter.py',
+    'coretax_attachments.py', 'coretax_pdf.py', 'requirements.txt',
     RUNTIME_LOCK,
     'spt_desktop/__init__.py', 'spt_desktop/paths.py',
     'spt_desktop/credentials.py', 'spt_desktop/windows.py',

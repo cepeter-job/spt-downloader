@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 import posixpath
 from collections import Counter, defaultdict
 from decimal import Decimal
+import hashlib
 import math
 import re
 import sys
@@ -109,6 +110,44 @@ def type_scope_description(run, tax):
             'Audit mencatat keseluruhan proses. ' + run.get('scope_description', ''))
 
 
+def _validate_financial_attachments(record, scope, seen_paths):
+    attachments = record.get('attachments', [])
+    if not isinstance(attachments, list):
+        raise ValueError('Financial attachments must be a list.')
+    if not attachments:
+        return
+    identifier = record.get('record_id')
+    if (not isinstance(identifier, str) or not identifier or len(identifier) > 512
+            or record.get('scope') != scope or record['meta'].get('Jenis Pajak') != 'PPh Badan'):
+        raise ValueError('Financial attachments require a bound corporate return and export scope.')
+    validate_excel_value(identifier, 'financial attachment return identifier')
+    record_key = hashlib.sha256(identifier.encode('utf-8')).hexdigest()[:32]
+    for attachment in attachments:
+        if not isinstance(attachment, dict) or not isinstance(attachment.get('label'), str):
+            raise ValueError('Financial attachment metadata or label is invalid.')
+        validate_excel_value(attachment['label'], 'financial attachment label')
+        status = attachment.get('status')
+        size = attachment.get('bytes')
+        path = attachment.get('relative_path')
+        digest = attachment.get('hash')
+        if status == 'PARTIAL':
+            if (record.get('capture_complete') or type(size) is not int or size != 0
+                    or path not in ('', None) or digest not in ('', None)):
+                raise ValueError('PARTIAL financial attachments cannot declare a file or complete capture.')
+            continue
+        if (status != 'COMPLETE' or type(size) is not int or not 0 < size <= 20 * 1024 * 1024
+                or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
+                or attachment['label'].strip() not in ('Laporan Keuangan', 'Laporan Keuangan yang Telah Diaudit*')):
+            raise ValueError('Financial PDF completion, byte count, hash or label is invalid.')
+        # This checks naming/scope, not authenticity: the publisher must still
+        # lock the declared file and verify its actual bytes and digest.
+        if (not isinstance(path, str)
+                or not re.fullmatch(r'attachments/' + record_key + r'/[0-9a-f]{64}\.pdf', path)
+                or path.casefold() in seen_paths):
+            raise ValueError('Financial PDF path is unsafe, repeated or belongs to another return.')
+        seen_paths.add(path.casefold())
+
+
 def validate_export_run(run):
     """Periksa scope, flag kelengkapan, dan nilai sel sebelum menulis hasil."""
     validate_scope(run.get('npwp'), run.get('year'))
@@ -134,6 +173,7 @@ def validate_export_run(run):
         validate_excel_value(error.get('message', str(error)), 'error.message')
     expected_scope = [run['npwp'], run['year'], basis]
     seen_identifiers = set()
+    seen_attachment_paths = set()
     for ordinal, record in enumerate(run['records'], 1):
         location = f'record {ordinal}'
         meta = record['meta']
@@ -150,6 +190,7 @@ def validate_export_run(run):
             raise ValueError(f'{location} capture_complete must be a boolean.')
         if run['complete'] and not captured:
             raise ValueError(f'A COMPLETE run contains an incomplete capture at {location}.')
+        _validate_financial_attachments(record, expected_scope, seen_attachment_paths)
         for key in ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak',
                     'Model SPT', 'Nomor Bukti Penerimaan', 'Tanggal Submit SPT'):
             validate_excel_value(meta.get(key, ''), f'{location} metadata.{key}')
@@ -449,6 +490,19 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
         put(audit, ar, 5, 'ERROR / PARTIAL')
         put(audit, ar, 6, error.get('message', str(error)))
         ar += 1
+    if any(record.get('attachments') for record in records):
+        header(audit, ar, ['ID SPT', 'Lampiran PDF', 'Status', 'Byte', 'SHA-256', 'Berkas relatif'])
+        ar += 1
+        for record in records:
+            for attachment in record.get('attachments', []):
+                values = [record['record_id'], attachment['label'], attachment['status'],
+                          attachment['bytes'], attachment.get('hash'), attachment.get('relative_path')]
+                for col, value in enumerate(values, 1):
+                    cell = put(audit, ar, col, value)
+                    if col == 6 and attachment['status'] == 'COMPLETE':
+                        cell.hyperlink = value
+                        cell.font = Font(color=BLUE, underline='single')
+                ar += 1
     for ordinal, record in enumerate(records, 1):
         meta = record['meta']
         url = record.get('detail_url', '')

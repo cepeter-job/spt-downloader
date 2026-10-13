@@ -103,3 +103,41 @@ def test_unchanged_inspected_login_can_submit_once(login_page, monkeypatch):
     monkeypatch.setattr(auth, 'read_login', lambda origin: Login('SYNTHETIC_ACCOUNT', 'SYNTHETIC_PASSWORD_ONLY'))
     assert auth.try_saved_login(login_page, lambda: None)
     assert login_page.actions == ['identifier', 'password', 'submit']
+
+
+def test_initial_inspection_cannot_use_another_approved_origins_credential(login_page, monkeypatch, tmp_path):
+    page = login_page
+    other_origin = next(origin for origin in auth.ALLOWED_ORIGINS if origin != ORIGIN)
+    inspected = auth._login_fields
+    moved = False
+    reads = []
+    closed = []
+
+    def inspect_after_origin_moves(current):
+        nonlocal moved
+        if not moved:
+            moved = True
+            current.url = other_origin + '/login'
+            new_document(current)
+            current.form.action = other_origin + '/session'
+        return inspected(current)
+
+    page.goto = lambda *args, **kwargs: None
+    context = SimpleNamespace(pages=[page], route=lambda *args: None,
+                              close=lambda: closed.append(True))
+    engine = SimpleNamespace(chromium=SimpleNamespace(
+        launch_persistent_context=lambda *args, **kwargs: context))
+    monkeypatch.setattr(auth, '_login_fields', inspect_after_origin_moves)
+    monkeypatch.setattr(auth, 'authenticated', lambda current: False)
+    monkeypatch.setattr(auth, '_at_home', lambda current: False)
+    monkeypatch.setattr(auth, '_has_challenge', lambda current: False)
+    monkeypatch.setattr(auth, 'read_login', lambda origin: (
+        reads.append(origin) or Login('SYNTHETIC_ACCOUNT', 'SYNTHETIC_PASSWORD_ONLY')))
+    status, message = auth.check_saved_credentials(
+        engine, tmp_path, ORIGIN, 'SYNTHETIC_ACCOUNT', 'msedge', True,
+        lambda: None, timeout=0)
+    assert moved and auth._origin(page.url) == other_origin
+    assert status == 'LOGIN_MANUAL'
+    assert reads == [] and page.actions == []
+    assert closed == [True]
+    assert 'SYNTHETIC_PASSWORD_ONLY' not in message

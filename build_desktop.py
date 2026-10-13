@@ -42,6 +42,10 @@ def validate_report(data, python_profile='production'):
             and data.get('worker_resources') == list(WORKER_FILES)
             and data.get('credential_check_controls') and 'Cek Kredensial' in data.get('gui_controls', [])
             and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only', 'for personal use : punto ap']
+            and data.get('ui_text') == {
+                'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
+                'background':'jalankan proses sedot di background',
+                'results':'Hasil Sedot berada di folder Downloads Windows'}
             and data.get('credentials_accessed') is False and data.get('live_scrape') is False):
         raise RuntimeError('Packaged application self-test failed')
 

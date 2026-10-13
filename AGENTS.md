@@ -16,9 +16,13 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 
 `resume.xlsx` contains the global summary/index/audit. Periodic PPh Pasal 21/26, PPh Unifikasi and PPN get one workbook per literal source period under `SPT Masa 21`, `SPT Masa Unifikasi` and `SPT Masa PPN`. Normal and distinct amendments share their period workbook with explicit sheet names. PPh Badan uses `SPT_Badan.xlsx` with one sheet per observed form and amendment. Other observed tax types retain one type workbook. Preserve the entire folder hierarchy and exact relative links; reject case-insensitive path collisions and verify NPWP/year/basis before replacing outputs. Keep raw source values and duplicates; numeric analysis columns are optional and never replace source evidence.
 
+Financial PDFs are limited to ordinary inspected read-only links exposed on the verified selected corporate Induk. Preserve explicit record/scope declarations, size/signature/hash checks, byte custody, cancellation and relative links; metadata alone is not a downloaded PDF. Publish only declared COMPLETE PDFs, never unrelated files in the job folder. Unsupported controls and failed downloads remain PARTIAL; do not invent API endpoints or remote generation actions.
+
 ## Verification
 
 Create a local `.venv` with the production CPython/GIL pin in `spt_desktop.runtime.PYTHON_PROFILES`. Install the resolved test environment using `uv pip sync --python <venv-python> --require-hashes --only-binary :all: locks/test.txt`; use `locks/build.txt` for packaging. Run `python -m pytest tests -q` on Windows with a dedicated scratch `--basetemp` outside the repository. Linux can run the reviewed portable subset through `-p scripts.ci_tests --ci-workload portable`; Windows runs the full suite. Browser tests use isolated local synthetic HTML fixtures and an installed Microsoft Edge; they are not live taxpayer tests. Verify changed behavior, output counts, literal source text and links before committing.
+
+For this user-authorized work, pytest, product imports, native/Tk/browser fixtures, source/frozen self-tests, builds and EXE execution are GitHub-runner-only. Local AST/source checks and artifact hash/metadata inspection are not execution evidence. Do not modify user-owned CI merely to obtain GREEN. Bind claims to exact head/merge tree/run/artifact ID and preserve recovery work.
 
 Use an existing saved JSON capture for offline export/layout checks when appropriate, but keep that capture and its generated files outside version control. Review `git diff --cached --name-only` and staged content for private data before any push. Preserve the existing LICENSE.
 

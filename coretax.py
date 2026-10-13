@@ -18,6 +18,7 @@ from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
 from coretax_exporter import validate_scope, validate_export_run, export_split_workbooks, workbook_groups, detail_sheet_title, record_sheet_titles
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
+from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 
 BASE = Path(__file__).resolve().parent
 
@@ -84,7 +85,7 @@ def workbook_files(folder, exclude=None):
     return found
 
 
-def verify_outputs(run, folder, *, allow_extra=False):
+def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     """Verifikasi set Excel dan tautan pembetulan, termasuk saat Python memakai -O.
 
     Pemeriksaan ini memakai exception eksplisit agar optimasi interpreter tidak
@@ -129,6 +130,12 @@ def verify_outputs(run, folder, *, allow_extra=False):
                 raise ValueError('Resume links to an incorrect detail sheet or amendment')
     finally:
         resume.close()
+
+
+def verify_outputs(run, folder, *, allow_extra=False):
+    """Verify declared held PDF bytes as well as the existing workbook scope."""
+    with pdf_custody(run, folder):
+        _verify_workbook_outputs(run, folder, allow_extra=allow_extra)
 
 
 def _check_output_scope(run, folder, staging=None):
@@ -217,17 +224,23 @@ def save_output(run, folder):
     staging = Path(tempfile.mkdtemp(prefix='.spt-export-', dir=folder))
     retain_recovery = False
     try:
-        files = export_split_workbooks(run, staging)
-        saved_run = {**run, 'output_files': list(files)}
-        verify_outputs(saved_run, staging)
-        (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
-        _check_output_scope(run, folder, staging)
-        # Pertahankan backup sejak publikasi dimulai, termasuk jika penanganan
-        # pemulihan terinterupsi. Bersihkan hanya setelah keberhasilan terbukti.
-        retain_recovery = True
-        _publish_output(staging, folder, [*files, 'run.json'])
-        retain_recovery = False
-        run['output_files'] = list(files)
+        current = {**run, 'output_attachments': attachment_declarations(run)}
+        with pdf_custody(current, folder) as (attachments, streams):
+            # Downloads already placed these private source PDFs. Keep their
+            # readers held while publishing the new workbooks/checkpoint; do
+            # not replace the source PDF names just to regenerate Excel.
+            copy_held_pdfs(attachments, streams, staging)
+            files = export_split_workbooks(current, staging)
+            saved_run = {**current, 'output_files': list(files)}
+            verify_outputs(saved_run, staging)
+            (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
+            _check_output_scope(run, folder, staging)
+            # Retain recovery once publication starts, even on interruption.
+            retain_recovery = True
+            _publish_output(staging, folder, [*files, 'run.json'])
+            retain_recovery = False
+            run['output_files'] = list(files)
+            run['output_attachments'] = current['output_attachments']
     finally:
         if not retain_recovery:
             shutil.rmtree(staging)

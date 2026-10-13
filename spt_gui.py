@@ -16,7 +16,7 @@ from spt_desktop.windows import InstanceLock
 
 
 def self_test(report=None):
-    root=tk.Tk();root.withdraw()
+    root=tk.Tk();root.withdraw();app=None
     try:
         with tempfile.TemporaryDirectory(prefix='spt-desktop-selftest-') as folder:
             app=App(root,Path(folder));root.update_idletasks()
@@ -34,6 +34,18 @@ def self_test(report=None):
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
             assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup'}<=labels
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
+            background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
+            assert len(background)==1
+            headings=[w for w in descendants(root) if w.winfo_class()=='TLabel'
+                      and str(w.cget('style'))=='Title.TLabel']
+            assert len(headings)==1
+            ui_text={'title':headings[0].cget('text'),'background':background[0].cget('text'),
+                     'results':app.results_label.cget('text')}
+            assert root.title()==ui_text['title']
+            assert ui_text=={
+                'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
+                'background':'jalankan proses sedot di background',
+                'results':'Hasil Sedot berada di folder Downloads Windows'}
             app._settings_close()
             assert all((resource_root()/name).is_file() for name in WORKER_FILES)
             if getattr(sys,'frozen',False):assert (resource_root()/'tools'/'uv.exe').is_file()
@@ -48,7 +60,7 @@ def self_test(report=None):
                   'frozen':bool(getattr(sys,'frozen',False)),
                   'worker_resources':list(WORKER_FILES),'uv_bundled':(resource_root()/'tools'/'uv.exe').is_file(),
                   'gui_controls':['NPWP','Tahun pajak','Mulai','Stop','Pengaturan','Buka Hasil','Cek Kredensial','Batalkan Cek'],
-                  'credential_check_controls':True,'personal_use_labels':personal_use_labels,
+                  'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
             if report:
@@ -56,7 +68,12 @@ def self_test(report=None):
                 report.write_text(json.dumps(data,indent=2),encoding='utf-8')
             elif sys.stdout:print(json.dumps(data))
             return 0
-    finally:root.destroy()
+    finally:
+        if app is not None:app.controller.close()
+        # Retire the self-test's recurring poll before another Tk root exists.
+        for callback in root.tk.splitlist(root.tk.call('after','info')):
+            root.after_cancel(callback)
+        root.destroy()
 
 
 def main(argv=None):

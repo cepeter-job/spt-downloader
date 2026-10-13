@@ -39,6 +39,9 @@ def report(profile='production'):
             'worker_python': python_version(), 'worker_resources': list(WORKER_FILES),
             'credential_check_controls': True, 'gui_controls': ['Cek Kredensial'],
             'personal_use_labels': ['Coretax → Excel · for personal use only', 'for personal use : punto ap'],
+            'ui_text': {'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
+                        'background': 'jalankan proses sedot di background',
+                        'results': 'Hasil Sedot berada di folder Downloads Windows'},
             'credentials_accessed': False, 'live_scrape': False}
 
 
