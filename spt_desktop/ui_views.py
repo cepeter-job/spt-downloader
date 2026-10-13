@@ -284,6 +284,8 @@ class MainView(ttk.Frame):
             start = end = self.npwp_entry
         if not start.winfo_ismapped() or not end.winfo_ismapped():
             return
+        # Reflowed children have now settled; use the final scroll region.
+        self._update_scrollregion()
         above = self.canvas.winfo_rooty()
         below = above + self.canvas.winfo_height()
         first, last = start.winfo_rooty(), end.winfo_rooty() + end.winfo_height()
@@ -373,7 +375,9 @@ class MainView(ttk.Frame):
                         padx=(0, self.px(8)), pady=(self.px(4) if wrap else 0, 0))
         self._update_scrollregion()
         if self._pending_reveal is not None and self._reveal_after is None:
-            self._reveal_after = self.after_idle(self._reveal_priority)
+            # Tk may still be arranging the newly re-gridded compact summary
+            # during the next idle; reveal against its settled measurements.
+            self._reveal_after = self.after(60, self._reveal_priority)
 
     def _update_scrollregion(self, event=None):
         if not self._disposed:
