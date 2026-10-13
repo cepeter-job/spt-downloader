@@ -2,7 +2,7 @@
 
 **Keputusan pemilik, 12 Oktober 2026:** gunakan desain **B**, pertahankan **Tkinter/ttk**, dan utamakan proses serta hasil yang mudah dipahami sebelum menambah fitur. Bahasa antarmuka harus terasa seperti petunjuk dari rekan kerja, bukan log mesin atau dokumen teknis.
 
-**Pembaruan 13 Oktober 2026:** [spesifikasi implementasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md) merekonsiliasi arah B dengan kode `be67f5153a07ce100048d67191a02ca1d0fca1db`. Pemilihan SPT, persetujuan penggantian, workbook per masa, PDF keuangan/auditan Badan yang didukung, dan teks khusus pemilik sudah ada pada baseline. Struktur visual B serta peningkatan UX yang dijelaskan spesifikasi belum dinyatakan terimplementasi. Paket B-copy-2 dan baseline `e99464a2…` adalah riwayat desain, bukan kontrak terbaru untuk area yang berubah.
+**Pembaruan 13 Oktober 2026:** [spesifikasi implementasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md) merekonsiliasi arah B dengan kode `be67f5153a07ce100048d67191a02ca1d0fca1db`. Pemilihan SPT, persetujuan penggantian, workbook per masa, PDF keuangan/auditan Badan yang didukung, dan teks khusus pemilik sudah ada pada baseline. Irisan 1 sudah diimplementasikan pada branch PR #12: katalog teks, state murni, shell ttk regular/compact, dan integrasi App/self-test. T1–T4 serta gerbang otomatis T5 lulus; inspeksi visual Windows belum dilakukan dan PR belum merged. Lihat [bukti tahap 1](../superpowers/reports/2026-10-13-ui-b-phase1-evidence.md). Peningkatan dialog/hasil/Pengaturan dan pengujian menyeluruh tahap berikutnya belum dianggap selesai. Paket B-copy-2 dan baseline `e99464a2…` adalah riwayat desain, bukan kontrak terbaru untuk area yang berubah.
 
 ## Mulai dari sini
 
@@ -53,7 +53,7 @@ Sumber kontrak: [arsitektur pada baseline](https://github.com/cepeter-job/spt-do
 
 Gunakan `ttk.Entry`, `ttk.Combobox` readonly, `ttk.Checkbutton`, `ttk.Button`, `ttk.Progressbar`, `ttk.Treeview` dengan scrollbar, dan `Toplevel`. Pertahankan titlebar Windows asli. Jangan menggambar seluruh antarmuka di Canvas demi mengejar screenshot. Canvas boleh menjadi viewport bagi frame berisi widget native.
 
-Kelompokkan pola berulang, bukan membuat abstraksi untuk setiap label. B-TK-1 memisahkan tanggung jawab state presentasi, katalog teks, style/layout, dan view. Nama modul di spesifikasi adalah usulan, bukan file yang sudah ditambahkan. Pertahankan `App(root, workspace, controller=None)` serta API consent controller. Jangan mengubah allowlist worker hanya untuk menambah teks GUI.
+Kelompokkan pola berulang, bukan membuat abstraksi untuk setiap label. B-TK-1 memisahkan tanggung jawab state presentasi, katalog teks, style/layout, dan view. Pada irisan 1, `spt_desktop/ui_state.py`, `ui_copy.py`, `ui_theme.py`, dan `ui_views.py` sudah ditambahkan. Modul tersebut belum berarti semua pola/status tahap berikutnya selesai. Pertahankan `App(root, workspace, controller=None)` serta API consent controller. Jangan mengubah allowlist worker hanya untuk menambah teks GUI.
 
 Katalog teks memakai ID stabil seperti `download.complete.title`, bukan teks itu sendiri sebagai key. Placeholder bernama, misalnya `{processed}`, `{total}`, dan `{verified}`, diperiksa sebelum format. Hindari merangkai potongan kalimat. Nilai tidak diketahui bukan nol. Jika event tidak menyediakan penyebab rinci, gunakan pesan generik yang aman, bukan menebak dari exception.
 
