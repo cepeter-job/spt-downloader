@@ -537,6 +537,7 @@ class App:
                 self.controller.start_login_check(origin.get(),identifier.get(),browser.get(),hidden.get())
             except (ValueError,RuntimeError) as error:
                 self._credential_status.set(str(error));return
+            self._poll_failed = False
             self._running(True);refresh(preserve_status=True)
             self._credential_status.set('Menyiapkan pengecekan kredensial tersimpan…')
             self.status.set('Menyiapkan pengecekan kredensial tersimpan…')
