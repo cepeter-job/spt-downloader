@@ -26,7 +26,7 @@ def artifact(tmp_path):
         'python': '3.14.8', 'python_implementation': 'CPython', 'free_threaded': False,
         'tcl': '8.6.15', 'tk': '8.6.15', 'worker_python': python_version(),
         'worker_resources': list(WORKER_FILES), 'credential_check_controls': True,
-        'gui_controls': ['Cek Kredensial'], 'build_profile': 'candidate',
+        'gui_controls': ['Cek Kredensial'], 'build_profile': 'production',
         'personal_use_labels': ['Coretax → Excel · for personal use only', 'for personal use : punto ap'],
     }))
     return tmp_path
@@ -70,7 +70,7 @@ def test_artifact_damage_cannot_receive_provenance(artifact, damage):
 
 @pytest.mark.parametrize('key,value', [('tk', ''), ('worker_resources', []),
                                       ('credential_check_controls', False),
-                                      ('build_profile', 'production')])
+                                      ('build_profile', 'candidate')])
 def test_incomplete_frozen_runtime_evidence_cannot_be_checksummed(artifact, key, value):
     path = artifact / 'build-selftest.json'
     report = json.loads(path.read_text())

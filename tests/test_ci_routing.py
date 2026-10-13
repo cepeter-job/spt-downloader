@@ -21,6 +21,23 @@ def ci_module(name):
     return module
 
 
+def test_ci_matrix_and_audit_use_the_promoted_production_version(monkeypatch, tmp_path):
+    route = ci_module('ci_route')
+    monkeypatch.setattr(route, 'changed_paths', lambda *_: ['spt_desktop/runtime.py'])
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+    monkeypatch.setenv('GITHUB_REF', 'refs/pull/12/merge')
+    monkeypatch.setenv('PR_BASE_SHA', 'a' * 40)
+    monkeypatch.setenv('GITHUB_SHA', 'b' * 40)
+    target = tmp_path / 'github-output'
+    monkeypatch.setenv('GITHUB_OUTPUT', str(target))
+    route.main(['route'])
+    data = dict(line.split('=', 1) for line in target.read_text().splitlines())
+    assert data['production_python'] == '3.14.8'
+    assert json.loads(data['python_matrix']) == {
+        'include': [{'profile': 'production', 'python': '3.14.8'}]
+    }
+
+
 @pytest.mark.parametrize('paths, expected', [
     (['README.md', 'docs/development.md'], 'docs'),
     (['AGENTS.md', 'docs/audit/notes.md'], 'docs'),

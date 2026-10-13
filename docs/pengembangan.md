@@ -6,7 +6,7 @@
 
 Gunakan Windows x64 untuk memverifikasi GUI Tk, Edge, Credential Manager, Known Folders, Job Objects, dan executable frozen. Tes portable dapat dijalankan di Linux. Akses intranet atau akun Coretax tidak diperlukan untuk development sintetis.
 
-Toolchain produksi memakai CPython **3.11.17 x64 dengan GIL** dan `uv` **0.12.22**. CPython **3.14.8** dipakai sebagai kandidat kompatibilitas. Versi tersebut harus mengikuti [kebijakan Python](python-314.md) dan sumber kebijakan pada commit yang sedang dikerjakan; jangan mengganti pin dengan `latest` atau sekadar `3.11`.
+Toolchain produksi memakai CPython **3.14.8 x64 dengan GIL** untuk GUI, worker dan CLI, serta `uv` **0.12.22**. Satu-satunya profil adalah `production`. Versi harus mengikuti [kebijakan Python](python-314.md) pada commit yang dikerjakan; jangan mengganti pin dengan `latest` atau sekadar `3.14`.
 
 Clone repositori dan buat branch perubahan dari `main` yang sudah diperbarui. Nama seperti `fix/checkpoint-scope` atau `feat/export-layout` cukup menjelaskan maksudnya. Jangan memindahkan profil browser, capture JSON, workbook nyata, atau kredensial ke checkout. Simpan data dan ruang tes di direktori terpisah.
 
@@ -16,8 +16,8 @@ Pasang `uv` dari distribusi resmi yang diverifikasi, lalu pastikan versi yang ak
 
 ```powershell
 uv --version
-uv python install cpython-3.11.17-windows-x86_64-none --no-bin --no-registry
-uv venv --python 3.11.17+gil --managed-python .venv
+uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+uv venv --python 3.14.8+gil --managed-python .venv
 uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
 .venv/Scripts/python.exe --version
 ```
@@ -77,8 +77,8 @@ Tes yang dilewati karena platform bukan kegagalan, tetapi juga bukan bukti lulus
 Linux cukup untuk perubahan logika portable. Instal interpreter produksi dan lock tes ke `.venv`, lalu jalankan workload portable:
 
 ```bash
-uv python install cpython-3.11.17-linux-x86_64-gnu --no-bin
-uv venv --python 3.11.17+gil --managed-python .venv
+uv python install cpython-3.14.8-linux-x86_64-gnu --no-bin
+uv venv --python 3.14.8+gil --managed-python .venv
 uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
 .venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q --basetemp /tmp/spt-downloader-tests-portable
 ```
@@ -99,7 +99,7 @@ uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :al
 
 Build lokal bukan artifact rilis terverifikasi dari GitHub. Workflow menambahkan manifest checksum dan publikasi artifact dengan identitas commit; ikuti [CI dan rilis](ci-dan-rilis.md) untuk pemeriksaannya. Jangan mengemas seluruh `dist`, workspace, atau folder hasil capture secara rekursif.
 
-Build kandidat Python 3.14 memakai environment serta output terpisah; lihat [langkah kandidat](python-314.md#menguji-kandidat-python-314).
+Executable produksi dan worker wajib sama-sama memakai Python 3.14.8. Lihat [verifikasi produksi](python-314.md#verifikasi-produksi) dan [langkah pemulihan](python-314.md#batas-dan-langkah-kembali).
 
 ## Kontribusi dan review
 
@@ -110,7 +110,7 @@ Untuk bug perilaku, buat reproduksi sintetis yang menunjukkan kegagalan sebelumn
 Sebelum mengajukan PR:
 
 1. Baca [arsitektur](arsitektur.md) pada area yang berubah dan pertahankan [LICENSE](../LICENSE).
-2. Jalankan tes relevan; perubahan browser/Tk/native memerlukan bukti Windows. Perubahan toolchain memerlukan kedua profil Python dan build yang sesuai.
+2. Jalankan tes relevan; perubahan browser/Tk/native memerlukan bukti Windows. Perubahan toolchain memerlukan suite dan build profil produksi 3.14.8, serta bukti instalasi worker baru/pakai ulang.
 3. Perbarui dokumentasi jika command, output, runtime, resource, atau kontrak berubah.
 4. Jalankan `git diff --check`, `git status --short`, dan tinjau diff. Tinjau juga `git diff --cached --name-only` serta konten staged sebelum push.
 5. Pastikan tidak ada NPWP nyata, JSON capture, workbook/PDF, cookie, log rahasia, profil, environment, sertifikat privat, atau token dalam perubahan.

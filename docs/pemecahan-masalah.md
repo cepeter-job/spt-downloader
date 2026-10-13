@@ -57,7 +57,7 @@ Jika tes baru hanya muncul pada workload Windows, itu default konservatif pemili
 
 Cache miss sah dan harus tetap menghasilkan instalasi dari lock. Bila cache dicurigai, bandingkan job dengan kunci yang benar dan instalasi baru; jangan memasukkan `.venv` atau profil browser ke cache. Audit advisory yang gagal terhubung tetap belum terverifikasi dan harus diulang setelah layanan tersedia.
 
-Untuk kandidat Python 3.14, catat versi yang benar-benar dipakai, error import/wheel/Tk/PyInstaller, serta workload pertama yang gagal. Perbaiki kompatibilitas atau dependency secara terarah; jangan mengubah `continue-on-error` untuk menganggap kandidat lulus.
+Untuk produksi Python 3.14.8, catat versi GUI dan worker yang benar-benar dipakai, error import/wheel/Tk/PyInstaller, serta workload pertama yang gagal. Perbaiki kompatibilitas secara terarah; jangan memakai `continue-on-error` untuk melewatkan tes.
 
 ## Melaporkan bug tanpa data rahasia
 
