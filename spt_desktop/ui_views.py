@@ -131,7 +131,8 @@ class MainView(ttk.Frame):
         self.year_field = ttk.Frame(self.fields, style='SPT.Card.TFrame')
         for holder in (self.npwp_field, self.year_field):
             holder.columnconfigure(0, weight=1)
-        ttk.Label(self.npwp_field, text=copy_text('form.npwp.label'), style='SPT.Label.TLabel').grid(row=0, sticky='w')
+        self.npwp_label = ttk.Label(self.npwp_field, text=copy_text('form.npwp.label'), style='SPT.Label.TLabel')
+        self.npwp_label.grid(row=0, sticky='w')
         ttk.Label(self.year_field, text='Tahun pajak', style='SPT.Label.TLabel').grid(row=0, sticky='w')
         self.npwp_entry = ttk.Entry(self.npwp_field, textvariable=self.npwp, width=24, style='SPT.TEntry')
         self.year_entry = ttk.Entry(self.year_field, textvariable=self.year, width=10, style='SPT.TEntry')
@@ -281,7 +282,7 @@ class MainView(ttk.Frame):
         elif priority == 'progress':
             start, end = self.progress_title_label, self.bar
         else:
-            start = end = self.npwp_entry
+            start, end = self.npwp_label, self.npwp_entry
         if not start.winfo_ismapped() or not end.winfo_ismapped():
             return
         # Reflowed children have now settled; use the final scroll region.
@@ -289,9 +290,21 @@ class MainView(ttk.Frame):
         above = self.canvas.winfo_rooty()
         below = above + self.canvas.winfo_height()
         first, last = start.winfo_rooty(), end.winfo_rooty() + end.winfo_height()
+        offset = self.canvas.canvasy(0)
+        # If the compact summary title and the primary action fit together
+        # at scroll position zero, keep both visible instead of clipping
+        # the summary heading merely to add unnecessary bottom whitespace.
+        if (priority in ('form', 'progress') and self.scope_title.winfo_ismapped()
+                and self.window.winfo_width() / self.scale < 960
+                and self.scope_title.winfo_rooty() + offset >= above
+                and last + offset <= below):
+            if offset > 0:
+                self.canvas.yview_moveto(0)
+            return
         if first >= above and last <= below:
             return
-        margin = self.px(6)
+        height = max(0, last - first)
+        margin = min(self.px(6), max(0, (self.canvas.winfo_height() - height) // 2))
         if last > below:
             shift = last - below + margin
         else:
@@ -305,11 +318,14 @@ class MainView(ttk.Frame):
         if self._disposed or self.winfo_width() <= 1 or self.canvas.winfo_width() <= 1:
             return
         policy = layout_policy(self.window.winfo_width() / self.scale, 0)
-        padding = self.px(16 if policy.compact else 24)
+        # Keep the usable viewport large enough for a field label and entry
+        # even when Windows restores the minimum-size application window.
+        tiny = policy.compact and self.window.winfo_height() / self.scale < 480
+        padding = self.px(8 if tiny else (16 if policy.compact else 24))
         self.configure(padding=padding)
         available = self.canvas.winfo_width()
         self.canvas.itemconfigure(self._canvas_window, width=available)
-        gap, summary_width = self.px(policy.gap_dip), self.px(policy.summary_width_dip)
+        gap, summary_width = self.px(10 if policy.compact else policy.gap_dip), self.px(policy.summary_width_dip)
         main_width = available if policy.compact else max(1, available - summary_width - gap)
         content_width = max(self.px(160), main_width - self.px(24 if policy.compact else 32))
         policy = layout_policy(self.window.winfo_width() / self.scale, content_width / self.scale)
@@ -326,8 +342,11 @@ class MainView(ttk.Frame):
         self.workspace.columnconfigure(0, weight=1)
         self.workspace.columnconfigure(1, weight=0, minsize=0 if policy.compact else summary_width)
         self.scope_panel.grid_propagate(policy.compact)
-        self.scope_panel.configure(padding=self.px(10 if policy.compact else 16))
-        self.scope_title.grid_configure(pady=(0, self.px(6 if policy.compact else 12)))
+        self.scope_panel.configure(padding=self.px(8 if policy.compact else 16))
+        self.scope_title.grid_configure(pady=(0, self.px(4 if policy.compact else 12)))
+        for entry in (self.npwp_entry, self.year_entry):
+            entry.grid_configure(pady=(0, self.px(4)) if policy.compact
+                                 else (self.px(4), self.px(8)))
         for column in range(3):
             self.scope_panel.columnconfigure(column, weight=1 if policy.compact else (1 if column == 0 else 0))
         for ordinal, holder in enumerate(self._scope_holders):
