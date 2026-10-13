@@ -251,7 +251,7 @@ class MainView(ttk.Frame):
     @staticmethod
     def _wrap(label, width):
         width = max(80, int(width))
-        if int(label.cget('wraplength')) != width:
+        if int(label.cget('wraplength') or 0) != width:
             label.configure(wraplength=width)
 
     def _reflow(self):
