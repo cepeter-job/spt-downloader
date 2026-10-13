@@ -32,6 +32,14 @@ CPython 3.14.8 sudah menjadi satu-satunya profil produksi; tidak ada build kandi
 
 Pemilih [scripts/ci_tests.py](../scripts/ci_tests.py) memilih subset portable untuk feedback awal dan kompatibilitas Linux. Workload Windows menjalankan **seluruh suite**, termasuk tes portable yang memiliki cabang perilaku Windows. Pengulangan ini disengaja agar perilaku seperti junction tidak hilang dari cakupan. Manifest collection harus membuktikan subset portable benar, inventaris Windows lengkap, serta versi Python/commit sesuai. Tes baru selalu terjangkau suite Windows, lalu dapat dimasukkan ke subset portable setelah ditinjau.
 
+## Benchmark opsional pembagian tes Windows
+
+Workflow [windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml) hanya aktif lewat `workflow_dispatch` atau PR yang mengubah konfigurasi benchmark/CI terkait. Benchmark ini **tidak mengganti** job `windows`, check wajib `Windows tests and dependency audit`, urutan packaging, maupun verifikasi artifact produksi.
+
+Benchmark menjalankan tiga environment Windows 2022 dengan CPython 3.14.8 dan lock yang sama: satu suite penuh secara serial, dua job lain masing-masing mengeksekusi satu shard. Semua job memakai **satu proses pytest berurutan per runner**, tanpa `xdist`, data wajib pajak, atau akun Coretax. Hash stabil atas node ID mendistribusikan test secara deterministik; manifest menyimpan semua node ID, subset aktual, SHA, platform, status akhir dan durasi pytest.
+
+Job perbandingan menolak manifest yang tidak cocok atau tidak lengkap: seluruh node pada dua shard harus disjoint, bergabung tepat menjadi suite serial, dan mengikuti pembagian hash yang ditetapkan. Ringkasan menunjukkan waktu pytest serial versus durasi shard terlama. Itu **bukan** percepatan CI total: waktu antre runner, setup, build dan attestation belum dihitung. Jangan mengganti jalur produksi dengan shard tanpa bukti eksekusi Windows nyata, pengukuran berulang dan peninjauan khusus.
+
 ## Cache dan CPU
 
 Cache menyimpan unduhan/paket `uv` serta interpreter managed. Kunci memisahkan OS, arsitektur, versi Python, peran workload, serta isi lock dan requirements. Cache tidak menjadi bukti bahwa environment sudah terverifikasi: instalasi tetap memakai lock dan hash, dan runtime memeriksa kesiapan aktual.
