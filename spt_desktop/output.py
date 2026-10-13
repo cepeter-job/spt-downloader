@@ -14,6 +14,7 @@ import uuid
 
 import coretax
 from coretax_exporter import validate_export_run, validate_scope, workbook_groups
+from coretax_pdf import attachment_declarations, verified_declarations, pdf_custody, copy_held_pdfs
 from .paths import safe_taxpayer_name
 from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
 
@@ -125,7 +126,8 @@ def _selected(run):
     if (not isinstance(declared, list) or any(not isinstance(name, str) for name in declared)
             or len(declared) != len(set(declared)) or set(declared) != set(names)):
         raise ValueError('Invalid workbook filename declaration')
-    return names, _group_identities(groups)
+    pdf_names = [item['relative_path'] for item in verified_declarations(run)]
+    return [*pdf_names, *names], _group_identities(groups)
 
 
 def _group_identities(groups):
@@ -168,6 +170,53 @@ def _workbook_scope(run, path, relative):
         raise ValueError('Existing workbook scope cannot be verified') from error
 
 
+def _pdf_files(folder):
+    # The existing workbook scan rejects every reparse point before this scan.
+    return {path.relative_to(folder).as_posix() for path in folder.rglob('*')
+            if path.suffix.casefold() == '.pdf' and path.is_file()}
+
+
+def _approved_existing_pdfs(run, target, actual):
+    selected = {item['relative_path']: item for item in verified_declarations(run)
+                if item['relative_path'] in actual}
+    if not selected:
+        return
+    path = coretax.output_path(target, 'SPT_Badan.xlsx')
+    before = _fingerprint(path)
+    old = {}
+    with _open_workbook(path) as stream:
+        workbook = coretax.load_workbook(stream, data_only=False)
+        try:
+            for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+                relative = row[5].value
+                if relative not in selected:
+                    continue
+                item = selected[relative]
+                if (relative in old or row[0].value != item['record_id']
+                        or row[2].value != 'COMPLETE' or not row[5].hyperlink
+                        or row[5].hyperlink.target != relative):
+                    raise ValueError('Existing financial PDF lacks its bound Audit declaration')
+                old[relative] = {'label': row[1].value, 'status': row[2].value,
+                                 'bytes': row[3].value, 'hash': row[4].value,
+                                 'relative_path': relative}
+        finally:
+            workbook.close()
+    if set(old) != set(selected) or _fingerprint(path) != before:
+        raise ValueError('Existing financial PDF Audit scope changed or cannot authorize replacement')
+    records = []
+    for record in run['records']:
+        items = [old[item['relative_path']] for item in record.get('attachments', [])
+                 if item.get('relative_path') in old]
+        if items:
+            records.append({**record, 'attachments': items})
+    previous = {**run, 'records': records}
+    previous['output_attachments'] = attachment_declarations(previous)
+    # Old byte/hash evidence comes from the scope-checked physical workbook,
+    # never a private run.json or the newly downloaded replacement's digest.
+    with pdf_custody(previous, target):
+        pass
+
+
 def _inspect(run, downloads, target):
     names, selected_identities = _selected(run)
     parent = _parent(run, downloads)
@@ -176,8 +225,9 @@ def _inspect(run, downloads, target):
         raise ValueError('Output destination changed or is outside the approved Downloads scope')
     directories = _directories(target)
     actual = coretax.workbook_files(target)
+    actual_pdfs = _pdf_files(target)
     folded = {}
-    for name in sorted(actual | set(names)):
+    for name in sorted(actual | actual_pdfs | set(names)):
         if name.casefold() in folded and folded[name.casefold()] != name:
             raise ValueError('Existing workbook filename collision')
         folded[name.casefold()] = name
@@ -201,10 +251,20 @@ def _inspect(run, downloads, target):
     if any(name in identities and identities[name] != identity
            for name, identity in selected_identities.items()):
         raise ValueError('Tax type or literal period filename collision with existing output scope')
+    pdf_states = {}
+    for name in sorted(actual_pdfs):
+        path = coretax.output_path(target, name)
+        _include_directories(directories, path.parent)
+        pdf_states[name] = _fingerprint(path)
+    _approved_existing_pdfs(run, target, actual_pdfs)
+    for name, fingerprint in {**fingerprints, **pdf_states}.items():
+        if _fingerprint(coretax.output_path(target, name)) != fingerprint:
+            raise ValueError('Existing output bytes changed during consent inspection')
     _check_directories(directories)
     return {'target': str(target), 'scope': (run['npwp'], run['year'], run['year_basis']),
-            'selected_files': names, 'files': [name for name in names if name in actual],
-            'directories': directories, 'workbooks': fingerprints}
+            'selected_files': names,
+            'files': [name for name in names if name in actual | actual_pdfs],
+            'directories': directories, 'workbooks': fingerprints, 'attachments': pdf_states}
 
 
 def existing_outputs(run, downloads):
@@ -250,8 +310,10 @@ def _copy_verified(original, target):
 
 
 def _check_files(target, states):
-    if coretax.workbook_files(target) != set(states):
-        raise ValueError('Output workbook set changed during publication')
+    workbooks = {name for name in states if name.endswith('.xlsx')}
+    pdfs = {name for name in states if name.endswith('.pdf')}
+    if coretax.workbook_files(target) != workbooks or _pdf_files(target) != pdfs:
+        raise ValueError('Output workbook/PDF set changed during publication')
     for name, fingerprint in states.items():
         if _fingerprint(coretax.output_path(target, name)) != fingerprint:
             raise ValueError('Output workbook changed during publication')
@@ -417,7 +479,7 @@ def _clean_displaced(entries, guard, directories):
 def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel, guard, directories):
     target = Path(snapshot['target'])
     names = snapshot['selected_files']
-    states = dict(snapshot['workbooks'])
+    states = {**snapshot['workbooks'], **snapshot['attachments']}
     backup = recovery / 'backup'
     _prepare_directory(backup, guard, directories)
     for name in names:
@@ -432,6 +494,8 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
     _revalidate(run, downloads, snapshot)
     new_states = {name: _fingerprint(coretax.output_path(staging, name)) for name in names}
     entries = []
+    pdf_locks = ExitStack()
+    pdf_names = {item['relative_path'] for item in verified_declarations(run)}
     try:
         for name in names:
             _cancel(check_cancel)
@@ -460,6 +524,10 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
             _cancel(check_cancel)
             _check_directories(directories)
             _move_no_replace(entry.staged, destination)
+            if name in pdf_names:
+                pdf_locks.enter_context(locked_file(destination))
+                if _fingerprint(destination) != new_states[name]:
+                    raise ValueError('Financial PDF bytes/identity changed at native publication')
             states[name] = new_states[name]
         _cancel(check_cancel)
         _check_directories(directories)
@@ -467,6 +535,8 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
         coretax.verify_outputs(run, target, allow_extra=True)
         _cancel(check_cancel)
     except BaseException as failure:
+        # Deny-delete PDF readers must close before the native rollback moves.
+        pdf_locks.close()
         errors = _rollback(entries, guard, directories)
         retained = _clean_displaced(entries, guard, directories)
         if errors or retained:
@@ -477,6 +547,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
         if retained:
             raise _RecoveryRequired(recovery, retained)
     finally:
+        pdf_locks.close()
         for entry in entries:
             for item in (entry.original, entry.removed):
                 if item is not None:
@@ -514,18 +585,31 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
         staging_identity = _identity(staging.lstat())
         recovery = None
         retain_recovery = False
+        retain_staging = False
         try:
             _include_directories(directories, staging)
             guard.include(directories)
+            attachments = verified_declarations(run)
+            pdf_names = {item['relative_path'] for item in attachments}
+            for item in attachments:
+                staged = coretax.output_path(staging, item['relative_path'])
+                _prepare_directory(staged.parent, guard, directories)
+            with pdf_custody(run, source) as (items, streams):
+                copy_held_pdfs(items, streams, staging)
             for name in names:
+                if name in pdf_names:
+                    continue
                 _cancel(check_cancel)
                 original, staged = coretax.output_path(source, name), coretax.output_path(staging, name)
                 _include_directories(directories, original.parent)
                 _prepare_directory(staged.parent, guard, directories)
                 _copy_verified(original, staged)
-            coretax.verify_outputs(run, staging)
-            _cancel(check_cancel)
-            _check_directories(directories)
+            with pdf_custody(run, staging):
+                coretax.verify_outputs(run, staging)
+                # A real staged-PDF cancellation barrier runs with native
+                # deny-write/delete readers held, not an unprotected checksum.
+                _cancel(check_cancel)
+                _check_directories(directories)
             if snapshot is not None:
                 # Private copies may be on another drive; actual file moves never are.
                 recovery = Path(tempfile.mkdtemp(prefix='.spt-publish-', dir=source.parent))
@@ -556,16 +640,44 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
             if final.exists():
                 raise FileExistsError('Result folder already exists; overwrite consent is required')
             _cancel(check_cancel)
+            staged_directories = {name: identity for name, identity in directories.items()
+                                  if Path(name).is_relative_to(staging)}
             final_directories = {str(final / Path(name).relative_to(staging)): identity
-                                 for name, identity in directories.items() if Path(name).is_relative_to(staging)}
-            # Release only the owned subtree for its final rename; all ancestors stay pinned.
+                                 for name, identity in staged_directories.items()}
+            pdf_states = {name: _fingerprint(coretax.output_path(staging, name)) for name in pdf_names}
+            # The deny-delete readers must close before a native directory move.
+            # Reacquire and compare the exact moved identities/bytes before
+            # returning a result; quarantine an unsuccessful owned PDF tree.
             _release_tree(staging, guard, directories)
-            _move_no_replace(staging, final)
-            directories.update(final_directories)
-            guard.include(directories)
-            coretax.verify_outputs(run, final)
-            return final
+            try:
+                _move_no_replace(staging, final)
+                directories.update(final_directories)
+                guard.include(directories)
+                with pdf_custody(run, final):
+                    for name, state in pdf_states.items():
+                        if _fingerprint(coretax.output_path(final, name)) != state:
+                            raise ValueError('Financial PDF changed across native directory publication')
+                    coretax.verify_outputs(run, final)
+                    if attachments:
+                        _cancel(check_cancel)
+                return final
+            except BaseException as failure:
+                if (attachments and final.exists()
+                        and _identity(final.lstat()) == staging_identity):
+                    retain_staging = True
+                    try:
+                        _release_tree(final, guard, directories)
+                        _move_no_replace(final, staging)
+                        directories.update(staged_directories)
+                        guard.include(directories)
+                    except BaseException as quarantine_error:
+                        raise _RecoveryRequired(staging, [final]) from quarantine_error
+                    # Preserve the actual failed bytes, including a concurrent
+                    # version, rather than deleting an unverified moved tree.
+                    raise _RecoveryRequired(staging, []) from failure
+                raise
         finally:
-            _remove_owned(staging, staging_identity, guard, directories)
+            if not retain_staging:
+                _remove_owned(staging, staging_identity, guard, directories)
             if recovery is not None and not retain_recovery:
                 _remove_owned(recovery, recovery_identity, guard, directories)
