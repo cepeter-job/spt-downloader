@@ -16,7 +16,7 @@ def locks(tmp_path, monkeypatch):
 
     def resolve(command, **kwargs):
         if '--version' in command:
-            return subprocess.CompletedProcess(command, 0, 'uv 0.12.22 (synthetic)\n')
+            return subprocess.CompletedProcess(command, 0, f'uv {updater.UV_VERSION} (synthetic)\n')
         output = Path(command[command.index('--output-file') + 1])
         if output.stem == state['fail']:
             raise subprocess.CalledProcessError(1, command)
