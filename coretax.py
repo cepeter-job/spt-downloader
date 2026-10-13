@@ -16,17 +16,24 @@ from urllib.parse import urlparse
 
 from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
-from coretax_exporter import validate_scope, validate_export_run, export_split_workbooks, workbook_groups, detail_sheet_title, record_sheet_titles
+from coretax_exporter import (validate_scope, validate_export_run, export_split_workbooks,
+                             workbook_groups, detail_sheet_title, record_sheet_titles,
+                             workbook_proof, read_workbook_proof)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 
 BASE = Path(__file__).resolve().parent
 
 
-def verify_workbook(path, run, *, include_details=True):
+def verify_workbook(path, run, *, include_details=True, include_administration=True):
     """Cocokkan scope, status, jumlah baris, dan lembar dengan data run."""
     wb = load_workbook(path, read_only=True, data_only=False)
     try:
+        if not include_administration:
+            proof = read_workbook_proof(wb)
+            if proof is None or proof != workbook_proof(run):
+                raise ValueError('Workbook scope/PDF proof differs from selected records')
+            return set(wb.sheetnames)
         checks = (
             (wb['Ringkasan']['B4'].value == run['npwp'], 'NPWP mismatch in output'),
             (wb['Ringkasan']['B4'].data_type == 's', 'NPWP was not preserved as text'),
@@ -110,7 +117,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         raise ValueError('Invalid source workbook path')
     verify_workbook(folder / 'resume.xlsx', run, include_details=False)
     sheet_names = {
-        filename: verify_workbook(folder / filename, {**run, 'records': records})
+        filename: verify_workbook(folder / filename, {**run, 'records': records}, include_administration=False)
         for filename, records in grouped.items()
     }
     # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
@@ -167,10 +174,15 @@ def _check_output_scope(run, folder, staging=None):
         try:
             workbook = load_workbook(path, read_only=True)
             try:
-                summary = workbook['Ringkasan']
-                expected_basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-                matches = (summary['B4'].value == run['npwp'] and summary['B4'].data_type == 's'
-                           and summary['B5'].value == run['year'] and summary['B7'].value == expected_basis)
+                proof = read_workbook_proof(workbook)
+                if proof is not None:
+                    matches = (all(proof[key] == run[key] for key in ('npwp', 'year', 'year_basis'))
+                               and set(workbook_groups(proof)) == {relative})
+                else:
+                    summary = workbook['Ringkasan']
+                    expected_basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
+                    matches = (summary['B4'].value == run['npwp'] and summary['B4'].data_type == 's'
+                               and summary['B5'].value == run['year'] and summary['B7'].value == expected_basis)
             finally:
                 workbook.close()
         except Exception as error:

@@ -8,7 +8,6 @@ import pytest
 @pytest.mark.parametrize(('key', 'expected'), [
     ('app.title', 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang'),
     ('app.subtitle', 'Coretax → Excel · for personal use only'),
-    ('app.credit', 'for personal use : punto ap'),
     ('settings.background.label', 'jalankan proses sedot di background'),
     ('results.location_hint', 'Hasil Sedot berada di folder Downloads Windows'),
     ('selection.confirm', 'Sedot SPT terpilih'),
@@ -69,8 +68,9 @@ def test_catalog_matches_all_approved_spec_entries():
     section = spec.split('## 11. Teks final', 1)[1].split('## 12.', 1)[0]
     rows = [line.split('|') for line in section.splitlines() if line.startswith('| `')]
     expected = {row[1].strip(' `'): row[2].strip() for row in rows}
-    assert len(expected) == 44
-    assert all(COPY[key] == value for key, value in expected.items())
+    assert len(expected) == 43
+    assert dict(COPY) == expected
+    assert 'app.credit' not in COPY
 
 
 def test_copy_module_has_only_standard_library_imports():

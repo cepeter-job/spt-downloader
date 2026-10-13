@@ -134,7 +134,8 @@ def record_reply(state: ExportState, *, job_id: str, kind: str, request_id: str,
         return state
     if kind == 'selection' and type(selected_count) is int and selected_count > 0:
         return replace(state, view_state='selection_submitted',
-                       selected_count=selected_count, consent=None)
+                       selected_count=selected_count, consent=None,
+                       details=Counters(processed=0, total=selected_count, verified=0))
     if kind == 'overwrite' and type(overwrite) is bool:
         return replace(state, view_state='publishing' if overwrite else 'cancellation_pending', consent=None)
     return state

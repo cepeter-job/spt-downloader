@@ -1,5 +1,7 @@
 # Menulis bahasa antarmuka
 
+**Penyesuaian konsolidasi, 13 Oktober 2026:** permintaan PR #14 menghapus footer nama pribadi dan ID `app.credit`; subtitle umum serta lima teks terkunci lainnya tetap. Katalog aktif berisi 43 ID. SPT kini hanya berisi worksheet form; Ringkasan/Daftar SPT/Audit berada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF tetap meminta persetujuan.
+
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
 **Baseline 13 Oktober 2026:** `be67f5153a07ce100048d67191a02ca1d0fca1db`. Naskah di bawah mengikuti pemilihan SPT, struktur hasil, serta teks khusus pemilik yang terbaru. ID katalog adalah rancangan presentasi, belum klaim bahwa kode telah menggunakannya.
@@ -40,7 +42,6 @@ Istilah pajak dan nama berkas yang membantu pencarian tetap dipertahankan: NPWP,
 | `settings.background.label` | jalankan proses sedot di background |
 | `results.location_hint` | Hasil Sedot berada di folder Downloads Windows |
 | `app.subtitle` | Coretax → Excel · for personal use only |
-| `app.credit` | for personal use : punto ap |
 | `selection.confirm` | Sedot SPT terpilih |
 
 Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/tests/test_desktop_selection_gui.py).

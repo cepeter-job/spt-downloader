@@ -81,7 +81,7 @@ Target visual: teks biasa minimal 4,5:1, teks besar serta komponen/fokus relevan
 
 Figma/Penpot opsional, tidak menjadi syarat melanjutkan pekerjaan. Paket B-copy-2 dan 36 mockup adalah referensi historis yang perlu diselaraskan untuk layar terbaru. SVG bukan pengganti component instances atau binding; keberhasilan build prototipe bukan bukti aplikasi Tkinter sudah diuji.
 
-Tiga teks khusus pemilik, subtitle/kredit, dan **Sedot SPT terpilih** dipertahankan sesuai [katalog](bahasa-antarmuka.md). Aturan gaya umum tidak boleh menghapus humor atau kata yang secara eksplisit diminta dan sudah dikontrak tes.
+Tiga teks khusus pemilik, subtitle, dan **Sedot SPT terpilih** dipertahankan sesuai [katalog](bahasa-antarmuka.md). Aturan gaya umum tidak boleh menghapus humor atau kata yang secara eksplisit diminta dan sudah dikontrak tes.
 
 Setiap perubahan mencatat alasan, copy ID/layar terdampak, kondisi pemicu, sumber data, tindakan tombol, pemeriksaan yang dijalankan, dan bukti yang belum tersedia. Perbarui docs/aset bersama implementasi. Saat codebase berubah, pin commit dan periksa kembali App/controller/interaction/worker/output/runtime serta tes consent/teks.
 
@@ -90,3 +90,5 @@ Setiap perubahan mencatat alasan, copy ID/layar terdampak, kondisi pemicu, sumbe
 Arah B sudah dipilih; spesifikasi B-TK-1 tersedia untuk review. Setelah disetujui, buat rencana implementasi kecil per tahap. Perubahan dokumen bukan izin merge atau deployment otomatis.
 
 Sesuai [AGENTS.md](../../AGENTS.md), pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE dijalankan hanya pada GitHub runner. Lokal hanya pemeriksaan dokumen/source/AST dan hash/metadata. Jangan mengubah CI/ruleset untuk mendapatkan GREEN. Bukti baseline Windows, aksesibilitas, performa, dan penerimaan manual tetap dibedakan dari pemeriksaan dokumentasi.
+
+Permintaan PR #14 menghapus footer nama pribadi, bukan subtitle umum atau petunjuk Downloads. Katalog aktif memuat 43 ID; jangan mengembalikan `app.credit` dari rancangan historis.

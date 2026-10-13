@@ -4,11 +4,11 @@ Modul ini tidak mengakses browser. coretax.save_output menangani staging,
 verifikasi, dan publikasi set workbook yang dihasilkan di sini.
 """
 from pathlib import Path
-from pathlib import PurePosixPath
-import posixpath
+
 from collections import Counter, defaultdict
 from decimal import Decimal
 import hashlib
+import json
 import math
 import re
 import sys
@@ -285,7 +285,7 @@ def amendment_label(record):
 
 def record_forms(record):
     sections = record.get('sections', [])
-    if record['meta'].get('Jenis Pajak') != 'PPh Badan' or not sections:
+    if not sections:
         return [('SPT', sections)]
     groups = {}
     for section in sections:
@@ -347,8 +347,8 @@ def numeric_analysis(value, label):
         return None
 
 
-def render_form(detail, sections, ordinal, form_index):
-    row, serial = 5, 0
+def render_form(detail, sections, ordinal, form_index, *, start_row=5):
+    row, serial = start_row, 0
     def data_table(labels, values):
         nonlocal row, serial
         header(detail, row, labels)
@@ -416,7 +416,7 @@ def render_form(detail, sections, ordinal, form_index):
             for offset in range(0, len(text), 30000):
                 put(detail, row, 1, text[offset:offset+30000])
                 row += 1
-    detail.print_title_rows = '1:3'
+    detail.print_title_rows = '1:3' if start_row == 5 else None
     detail.print_area = f'A1:{get_column_letter(max(detail.max_column, 4))}{max(row, 5)}'
 
 
@@ -432,8 +432,101 @@ def tax_type_filename(tax_type):
     return f'SPT_{title}.xlsx'
 
 
-def export_workbook(run, path, *, include_details=True, detail_targets=None, resume_file=None):
+def workbook_proof(run):
+    """Keep scope and PDF custody declarations outside visible form cells."""
+    meta_keys = ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak',
+                 'Model SPT', 'Nomor Bukti Penerimaan', 'Tanggal Submit SPT')
+    records = []
+    for record in run['records']:
+        proof = {
+            'meta': {key: record['meta'][key] for key in meta_keys if key in record['meta']},
+            'capture_complete': record.get('capture_complete', False),
+            'sections': [{'name': section['name']} for section in record.get('sections', [])],
+        }
+        for key in ('record_id', 'scope', 'attachments', 'source_status'):
+            if key in record:
+                proof[key] = record[key]
+        records.append(proof)
+    return {'format': 'spt-downloader-forms', 'version': 1,
+            'npwp': run['npwp'], 'year': run['year'], 'year_basis': run['year_basis'],
+            'complete': run['complete'], 'records': records}
+
+
+def _unique_proof_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate workbook proof key')
+        result[key] = value
+    return result
+
+
+def read_workbook_proof(workbook):
+    """Validate physical forms-only evidence; absent metadata permits legacy reads.
+
+    This is a scope declaration, not a signature or proof of authentic tax data.
+    Native PDF byte/hash custody is still required independently.
+    """
+    raw = workbook.properties.identifier
+    if raw is None:
+        return None
+    try:
+        proof = json.loads(raw, object_pairs_hook=_unique_proof_keys)
+        required = {'format', 'version', 'npwp', 'year', 'year_basis', 'complete', 'records'}
+        if (not isinstance(proof, dict) or set(proof) != required
+                or proof['format'] != 'spt-downloader-forms'
+                or type(proof['version']) is not int or proof['version'] != 1
+                or not isinstance(proof['records'], list)):
+            raise ValueError('Invalid workbook proof schema')
+        allowed = {'meta', 'capture_complete', 'sections', 'record_id', 'scope',
+                   'attachments', 'source_status'}
+        for record in proof['records']:
+            if (not isinstance(record, dict) or not set(record).issubset(allowed)
+                    or not {'meta', 'capture_complete', 'sections'}.issubset(record)
+                    or not isinstance(record['meta'], dict)
+                    or not isinstance(record['sections'], list)
+                    or any(not isinstance(section, dict) or set(section) != {'name'}
+                           or not isinstance(section['name'], str) for section in record['sections'])):
+                raise ValueError('Invalid workbook record proof')
+        validate_export_run(proof)
+        if workbook_proof(proof) != proof:
+            raise ValueError('Workbook proof contains unsupported source metadata')
+        expected = [title for ordinal, record in enumerate(proof['records'], 1)
+                    for title in record_sheet_titles(ordinal, record)]
+        if (workbook.sheetnames != expected
+                or any(sheet.sheet_state != 'visible' for sheet in workbook)):
+            raise ValueError('Workbook form sheets differ from their proof')
+        workbook_groups(proof)
+        return proof
+    except (ValueError, TypeError, KeyError, AttributeError) as error:
+        raise ValueError('Workbook scope/PDF proof cannot be verified') from error
+
+
+def _export_form_workbook(run, path):
+    wb = Workbook()
+    wb.remove(wb.active)
+    wb.properties.identifier = json.dumps(workbook_proof(run), ensure_ascii=False,
+                                          sort_keys=True, allow_nan=False)
+    for ordinal, record in enumerate(run['records'], 1):
+        for form_index, (title, (_, sections)) in enumerate(
+                zip(record_sheet_titles(ordinal, record), record_forms(record)), 1):
+            detail = wb.create_sheet(title)
+            setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
+            detail.oddFooter.center.text = None
+            render_form(detail, sections, ordinal, form_index, start_row=1)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+
+
+def export_workbook(run, path, *, include_details=True, detail_targets=None, resume_file=None,
+                    include_administration=True):
     validate_export_run(run)
+    if not include_administration:
+        if not include_details or not run['records']:
+            raise ValueError('A forms-only workbook requires selected return details')
+        _export_form_workbook(run, path)
+        return
     wb = Workbook()
     summary = wb.active
     summary.title = 'Ringkasan'
@@ -570,8 +663,7 @@ def export_split_workbooks(run, folder):
         group_run = {**run, 'records': records,
             'scope_description': type_scope_description(run, records[0]['meta']['Jenis Pajak'])}
         path = folder / filename
-        back = posixpath.relpath('resume.xlsx', str(PurePosixPath(filename).parent))
-        export_workbook(group_run, path, resume_file=back)
+        export_workbook(group_run, path, include_administration=False)
         files[filename] = path
     export_workbook(run, files['resume.xlsx'], include_details=False, detail_targets=targets)
     return files

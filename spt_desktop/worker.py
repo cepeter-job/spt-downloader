@@ -65,6 +65,8 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     # Baca hanya detail terbaru agar total biaya progress tetap linear.
                     verified+=bool(data['records'][ordinal-1].get('capture_complete'))
                     progress.details(ordinal,len(data['records']),verified)
+                if run['records']:
+                    progress.details(0,len(run['records']),0)
                 run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel)
                 if not run['records']:progress.details(0,0,0)
             finally:
@@ -77,8 +79,11 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         downloads = downloads_folder()
         previous = existing_outputs(run, downloads)
         overwrite = False
-        if previous is not None:
-            reply = requests.request('overwrite', {'files': previous['files'],
+        # The refreshed index is automatic; selected SPT/PDF bytes still need consent.
+        overwrite_files = ([] if previous is None else
+                           [name for name in previous['files'] if name != 'resume.xlsx'])
+        if overwrite_files:
+            reply = requests.request('overwrite', {'files': overwrite_files,
                                                    'folder': previous['target']}, progress.percent)
             check_cancel()
             if (not isinstance(reply, dict) or set(reply) != {'overwrite'}

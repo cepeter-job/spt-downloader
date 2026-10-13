@@ -1,5 +1,7 @@
 # Spesifikasi implementasi MagicPath B → Tkinter/ttk
 
+**Penyesuaian konsolidasi, 13 Oktober 2026:** permintaan PR #14 menghapus footer nama pribadi dan ID `app.credit`; subtitle umum serta lima teks terkunci lainnya tetap. Katalog aktif berisi 43 ID. SPT kini hanya berisi worksheet form; Ringkasan/Daftar SPT/Audit berada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF tetap meminta persetujuan.
+
 **Proyek:** `cepeter-job/spt-downloader`  
 **Revisi:** B-TK-1 · 13 Oktober 2026  
 **Baseline kode:** `be67f5153a07ce100048d67191a02ca1d0fca1db` (`main` setelah konsolidasi PR #8)  
@@ -28,7 +30,7 @@ Batas pekerjaan ini adalah dokumentasi. Tahap berikutnya memerlukan review spesi
 | Makna COMPLETE | Mudah terbaca sebagai seluruh SPT dalam tahun. | Berlaku untuk subset yang disetujui dan cakupan yang didukung. Jangan mengklaim semua SPT tahunan telah diunduh. |
 | Susunan Excel | Satu workbook per jenis; semua file rata dalam satu folder. | Workbook masa berada dalam subfolder; Badan memakai sheet per form/pembetulan. Pertahankan seluruh hierarki dan tautan relatif. |
 | PDF | Kalimat B menolak semua PDF. | PDF laporan keuangan/auditan Badan dari tautan baca yang didukung dapat ikut dipublikasikan setelah verifikasi. BPE/lampiran lain tetap tidak dijanjikan. |
-| Identitas aplikasi | Judul generik dan checkbox dengan bahasa B. | Pertahankan tiga teks khusus pemilik, subtitle, kredit, dan tombol `Sedot SPT terpilih` yang sudah dikontrak tes. |
+| Identitas aplikasi | Judul generik dan checkbox dengan bahasa B. | Pertahankan tiga teks khusus pemilik, subtitle, dan tombol `Sedot SPT terpilih` yang sudah dikontrak tes. |
 | Runtime | Catatan lama merujuk Python 3.11. | Profil produksi pada [runtime][runtime] adalah CPython `3.14.8`; redesign tidak mengubah pin, dependensi, atau allowlist worker. |
 | Bukti penerimaan | Laporan/README masih dapat menyebut PR #8 draft. | Status historis bukan status branch terbaru. Pin spesifikasi ke commit; jangan menganggap catatan lama sebagai bukti eksekusi baru. |
 
@@ -87,7 +89,7 @@ Tk root — titlebar Windows asli
    │  ├─ content_slot: FormView | ProgressView | ResultView
    │  └─ ScopeSummary: NPWP, tahun, jumlah pilihan bila diketahui
    ├─ action_bar: aksi untuk state aktif, tetap terjangkau
-   └─ footer: results_label yang diminta + kredit
+   └─ footer: results_label yang diminta
 ```
 
 Teks header panjang milik pemilik tetap satu `Title.TLabel` yang nyata, membungkus sesuai lebar tersedia. Caption Windows dan isi heading harus sama persis. Jangan menyembunyikan heading di balik caption, menggantinya dengan slogan B, atau memperbesar minimum jendela untuk menutupi masalah layout. `results_label` tampil tepat sekali. Sumber kontrak: [test_desktop_requested_text.py][text-tests].
@@ -250,10 +252,9 @@ Teks berikut **dikunci**, termasuk kapitalisasi dan tanda baca:
 | `settings.background.label` | jalankan proses sedot di background |
 | `results.location_hint` | Hasil Sedot berada di folder Downloads Windows |
 | `app.subtitle` | Coretax → Excel · for personal use only |
-| `app.credit` | for personal use : punto ap |
 | `selection.confirm` | Sedot SPT terpilih |
 
-Tiga teks pertama dikunci oleh [tes requested text][text-tests], subtitle/kredit ikut self-test, dan selection confirm dipakai [tes consent GUI][selection-tests]. Jangan “memanusiakan” lagi teks ini dengan menghapus humor yang sengaja diminta. Humor tidak diperluas ke error, peringatan kehilangan data, atau persetujuan penggantian.
+Tiga teks pertama dikunci oleh [tes requested text][text-tests], subtitle ikut self-test, dan selection confirm dipakai [tes consent GUI][selection-tests]. Jangan “memanusiakan” lagi teks ini dengan menghapus humor yang sengaja diminta. Humor tidak diperluas ke error, peringatan kehilangan data, atau persetujuan penggantian.
 
 Katalog berikut merupakan delta terhadap katalog B-copy-2; ID lama dipakai ulang ketika maknanya sama, tidak membuat ID berdasarkan isi kalimat.
 

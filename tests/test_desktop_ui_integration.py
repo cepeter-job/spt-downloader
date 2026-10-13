@@ -77,6 +77,7 @@ def window(tmp_path, monkeypatch):
                     root.after_cancel(token)
                 root.destroy()
         except tk.TclError:
+            # Close-path tests may have already destroyed the root interpreter.
             pass
         del app
         gc.collect()

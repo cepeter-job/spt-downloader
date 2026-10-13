@@ -19,7 +19,7 @@ Review the footer/copy migration, initial selected-scope counters, late/stopped 
 ## Tasks
 
 - [ ] Independently review immutable PR #12 and #14 diffs plus the design-only PR #13; verify #11 ancestry.
-- [ ] Add native GUI and pure-state regression tests before integration repair; publish the tests and read their expected failure on the exact GitHub head.
+- [x] Add native GUI and pure-state regression tests before integration repair; publish the tests and read their expected failure on the exact GitHub head.
 - [ ] Merge the approved branch histories into #12, retaining both sets of tests. Remove only the retired footer/copy ID; initialize zero selected detail counts only after accepted current-job consent; address reviewed cleanup/import/return comments and align current docs.
 - [ ] Run the unchanged complete runner pipeline, review the actual integration diff, read the exact artifact and hashes, resolve substantiated review threads, merge with expected head SHA, and read back main/PR state.
 
@@ -34,3 +34,5 @@ Review the footer/copy migration, initial selected-scope counters, late/stopped 
 ## Verification
 
 Use the existing `Build Windows app` PR workflow. Local checks are limited to source/AST, Git diffs, and downloaded artifact metadata/hashes, never product imports or tests. Bind RED/GREEN, Windows and portable counts, packaging, and artifact proof to their exact SHA and run. Main provenance is verified separately after merge.
+
+RED verified: head `588a8f1504ca3ad7960a09ef9926497e8650c291`, run `38421339789`, Windows job `115379231184`: exactly the three new assertions failed; 719 existing Windows tests passed. Failure causes were the retired footer still present and absent initial detail/GUI counters.

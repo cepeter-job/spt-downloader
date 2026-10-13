@@ -1,5 +1,7 @@
 # MagicPath B — Tahap 1: State, Copy, dan Shell — Implementation Plan
 
+**Penyesuaian konsolidasi, 13 Oktober 2026:** permintaan PR #14 menghapus footer nama pribadi dan ID `app.credit`; subtitle umum serta lima teks terkunci lainnya tetap. Katalog aktif berisi 43 ID. SPT kini hanya berisi worksheet form; Ringkasan/Daftar SPT/Audit berada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF tetap meminta persetujuan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended when delegation is available) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Menghasilkan irisan pertama B-TK-1 yang dapat dijalankan dan diuji: jendela utama Tkinter/ttk dengan bahasa yang disetujui, formulir, ringkasan pekerjaan, penanda tahap, dan progres yang tidak menyesatkan.
@@ -13,7 +15,7 @@
 ## Global Constraints
 
 1. Pertahankan `App(root, workspace, controller=None)`, API controller, private consent channel, satu job aktif, Stop, dan verifikasi COMPLETE. Tidak mengubah capture, PDF, layout Excel, origin allowlist, Credential Manager, CLI, `WORKER_FILES`, pin Python, dependensi, atau workflow.
-2. Enam teks terkunci pada tabel di bawah wajib literal. NPWP tetap string 16 digit ASCII tanpa normalisasi; tahun empat digit 1900–2100. Pemilihan SPT tetap eksplisit, bukan unduh semua otomatis.
+2. Lima teks terkunci pada tabel di bawah wajib literal. NPWP tetap string 16 digit ASCII tanpa normalisasi; tahun empat digit 1900–2100. Pemilihan SPT tetap eksplisit, bukan unduh semua otomatis.
 3. Target shell: 1120 × 800 DIP; dua kolom mulai 960 DIP; formulir satu kolom di bawah 560 DIP lebar isi atau ketika teks tidak muat. Penanda compact 2 × 2; gap 24 DIP; ringkasan sekitar 244 DIP; spasi 4/8/12/16/24/32 DIP; kontrol 40–44 DIP. Jangan memperkecil font atau membesarkan minimum melebihi work area.
 4. Pertahankan polling 100 ms. Debounce reflow 75 ms dengan satu callback tertunda. Tidak ada Tk pada thread worker, parsing workbook/PDF pada GUI, ETA rekaan, event mentah di log, atau progres 100% sebelum terminal COMPLETE dari controller. Anggaran latency/performa B-TK-1 tetap target yang belum dibuktikan.
 5. [AGENTS.md](../../../AGENTS.md): pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE **hanya di GitHub runner**. Lokal boleh pemeriksaan dokumen/source/AST dan hash; itu bukan bukti runtime. Merge, deployment, dan akses Coretax nyata memerlukan keputusan terpisah.
@@ -72,12 +74,11 @@ Pemeriksaan independen paling berguna saat eksekusi adalah penelusuran fixture/s
 | --- | --- |
 | `app.title` | Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang |
 | `app.subtitle` | Coretax → Excel · for personal use only |
-| `app.credit` | for personal use : punto ap |
 | `settings.background.label` | jalankan proses sedot di background |
 | `results.location_hint` | Hasil Sedot berada di folder Downloads Windows |
 | `selection.confirm` | Sedot SPT terpilih |
 
-T1 menyediakan katalog B-TK-1 bagian 11. T4 baru memakai teks yang diperlukan jendela utama: judul, subtitle, kredit, form, tombol Mulai/Hentikan/Buka, dan tahap. Caption Pengaturan `Cek Kredensial`/`Batalkan Cek` tetap baseline sampai tahap 3 agar perubahan ini tidak menyeret validator build dan tes login. Teks tersebut bukan pengecualian permanen terhadap katalog; ini urutan migrasi.
+T1 menyediakan katalog B-TK-1 bagian 11. T4 baru memakai teks yang diperlukan jendela utama: judul, subtitle, form, tombol Mulai/Hentikan/Buka, dan tahap. Caption Pengaturan `Cek Kredensial`/`Batalkan Cek` tetap baseline sampai tahap 3 agar perubahan ini tidak menyeret validator build dan tes login. Teks tersebut bukan pengecualian permanen terhadap katalog; ini urutan migrasi.
 
 ### 3.2 State ekspor murni
 
@@ -139,7 +140,7 @@ Siklus runner untuk setiap tugas:
 
 **Interfaces:** Consumes katalog B-TK-1 bagian 11. Produces `COPY: Mapping[str, str]`, `STAGE_LABELS: tuple[str, str, str, str]`, `copy_text(key: str, **values: str | int) -> str`.
 
-- [ ] **Step 1 — Tulis tes kontrak berikut, termasuk parametrization enam teks terkunci.**
+- [ ] **Step 1 — Tulis tes kontrak berikut, termasuk parametrization lima teks terkunci.**
 
 ```python
 def test_main_copy_is_exact_and_selection_is_not_automatic():
@@ -164,12 +165,12 @@ def test_selection_summary_requires_named_integer_counts():
         copy_text('key.yang.tidak.ada')
 ```
 
-Tambahkan `test_locked_owner_copy_is_literal` untuk seluruh tabel 3.1 dan `test_template_rejects_extra_or_negative_counts`: parameter berlebih/kurang → ValueError, counter negatif → ValueError, tipe salah termasuk bool → TypeError. Enam teks dibandingkan literal independen, bukan mengambil expected dari COPY yang sedang diuji.
+Tambahkan `test_locked_owner_copy_is_literal` untuk seluruh tabel 3.1 dan `test_template_rejects_extra_or_negative_counts`: parameter berlebih/kurang → ValueError, counter negatif → ValueError, tipe salah termasuk bool → TypeError. Lima teks dibandingkan literal independen, bukan mengambil expected dari COPY yang sedang diuji.
 
 - [ ] **Step 2 — Buktikan RED di runner:** `.venv\Scripts\python.exe -m pytest tests/test_desktop_ui_copy.py -q --basetemp "$env:RUNNER_TEMP/spt-b-t1"`. Expected: tes baru gagal karena modul belum ada; collection tetap bisa selesai.
 - [ ] **Step 3 — Implementasikan tiga interface T1.** Kamus sederhana, template bernama, validasi parameter eksplisit; tanpa i18n framework. Masukkan katalog yang disetujui, tetapi jangan ubah caption dialog existing pada tugas ini. Tidak ada import Tk atau modul produk lain.
 - [ ] **Step 4 — Buktikan GREEN untuk perintah T1 dan full Windows suite.** Tambahkan pemeriksaan AST import murni dalam tes; jangan menyebut pemeriksaan AST lokal sebagai bukti tes.
-- [ ] **Step 5 — Review dan catat checkpoint T1.** Periksa diff enam teks terkunci dan isi form.help, catat RED/GREEN SHA serta node ID. Tidak melanjutkan jika teks hilang atau template diam-diam menerima parameter salah.
+- [ ] **Step 5 — Review dan catat checkpoint T1.** Periksa diff lima teks terkunci dan isi form.help, catat RED/GREEN SHA serta node ID. Tidak melanjutkan jika teks hilang atau template diam-diam menerima parameter salah.
 
 ### T2 — State dan counter terpisah dari widget
 

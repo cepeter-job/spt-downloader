@@ -29,10 +29,12 @@ def test_one_period_one_workbook_and_amendments_stay_together(tmp_path):
         'SPT Masa PPN/SPT_PPN_Januari 2025.xlsx'}
     wb = load_workbook(tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx')
     try:
-        assert wb['Daftar SPT'].max_row == 6
-        assert any('Normal' in name for name in wb.sheetnames[3:])
-        assert any('Pembetulan' in name for name in wb.sheetnames[3:])
-        assert wb[wb.sheetnames[3]]['A2'].hyperlink.target == '../resume.xlsx'
+        assert len(wb.sheetnames) == 2
+        assert any('Normal' in name for name in wb.sheetnames)
+        assert any('Pembetulan' in name for name in wb.sheetnames)
+        assert all(ws['A1'].value == 'Induk' for ws in wb)
+        assert not any(cell.hyperlink and 'resume.xlsx' in (cell.hyperlink.target or '')
+                       for ws in wb for row in ws for cell in row)
     finally:
         wb.close()
 
@@ -45,12 +47,12 @@ def test_corporate_forms_are_separate_and_amendments_unique(tmp_path):
     files = exporter.export_split_workbooks(run, tmp_path)
     wb = load_workbook(files['SPT_Badan.xlsx'])
     try:
-        names = wb.sheetnames[3:]
+        names = wb.sheetnames
         assert len(names) == 4
         assert len({name.casefold() for name in names}) == 4
         assert any('Induk' in name and 'Normal' in name for name in names)
         assert any('L1-D' in name and 'Pembetulan' in name for name in names)
-        for ws in wb.worksheets[3:]:
+        for ws in wb.worksheets:
             assert not any(r.min_row >= 6 for r in ws.merged_cells.ranges)
     finally:
         wb.close()
@@ -71,7 +73,7 @@ def test_nested_corporate_sections_keep_full_source_identity(tmp_path):
     coretax.verify_outputs(run, tmp_path)
     wb = load_workbook(files['SPT_Badan.xlsx'])
     try:
-        details = wb.worksheets[3:]
+        details = wb.worksheets
         assert len(details) == len(expected)
         markers = {marker for _, marker in expected}
         for ws, (name, marker) in zip(details, expected):
@@ -91,7 +93,7 @@ def test_fields_and_tables_are_filterable_with_numeric_and_raw_values(tmp_path):
     exporter.export_split_workbooks(run,tmp_path)
     wb = load_workbook(tmp_path/'SPT_Badan.xlsx')
     try:
-        ws=wb.worksheets[3]
+        ws=wb.worksheets[0]
         assert ws.tables and ws.freeze_panes
         cells=[c for row in ws for c in row]
         assert sum(c.value=='001' for c in cells)==2
@@ -129,12 +131,12 @@ def test_long_form_captions_keep_unique_short_names_and_source_text(tmp_path):
     files=exporter.export_split_workbooks(run,tmp_path)
     wb=load_workbook(files['SPT_Badan.xlsx'])
     try:
-        titles=wb.sheetnames[3:]
+        titles=wb.sheetnames
         assert len(titles)==8
         assert len({s.casefold() for s in titles})==8
         assert all(len(s)<=31 for s in titles)
         for name in names:
-            assert any(c.value==name for ws in wb.worksheets[3:] for row in ws for c in row)
+            assert any(c.value==name for ws in wb.worksheets for row in ws for c in row)
     finally:
         wb.close()
 
@@ -179,7 +181,7 @@ def test_derived_table_headers_are_unique_without_changing_source_captions(tmp_p
     files=exporter.export_split_workbooks(run,tmp_path)
     wb=load_workbook(files['SPT_Badan.xlsx'])
     try:
-        ws=wb.worksheets[3]
+        ws=wb.worksheets[0]
         for table in ws.tables.values():
             labels=[col.name.casefold() for col in table.tableColumns]
             assert len(labels)==len(set(labels))

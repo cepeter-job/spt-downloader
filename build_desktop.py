@@ -41,7 +41,7 @@ def validate_report(data, python_profile='production'):
             and data.get('worker_python') == python_version()
             and data.get('worker_resources') == list(WORKER_FILES)
             and data.get('credential_check_controls') and 'Cek Kredensial' in data.get('gui_controls', [])
-            and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only', 'for personal use : punto ap']
+            and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only']
             and data.get('ui_text') == {
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                 'background':'jalankan proses sedot di background',
@@ -97,7 +97,8 @@ def build(output, python_profile='production'):
         'Login berhasil hanya muncul setelah pengiriman sandi tersimpan terverifikasi.\n'
         'NPWP harus tepat 16 digit ASCII; tahun pajak empat digit. Mulai menjalankan satu pekerjaan baca-saja.\n'
         'Setelah inventaris, pilih SPT lalu klik Sedot SPT terpilih. Tidak ada pilihan otomatis.\n'
-        'Periksa folder dan file pada konfirmasi penggantian; setiap file diganti seluruhnya sesuai pilihan saat ini.\n'
+        'resume.xlsx diperbarui otomatis setelah verifikasi scope; file SPT/PDF yang sudah ada tetap memerlukan konfirmasi.\n'
+        'Periksa folder dan daftar SPT/PDF pada konfirmasi; setiap file disetujui diganti seluruhnya sesuai pilihan saat ini.\n'
         'Jangan ganti mempertahankan file lama. Workbook masa lain tetap tersimpan; resume.xlsx mengindeks pilihan saat ini.\n'
         'Selesaikan CAPTCHA/MFA dan halaman login yang belum dikenali secara manual di browser aplikasi.\n'
         'Stop mempertahankan checkpoint PARTIAL lokal; hanya proses browser milik aplikasi yang ditutup.\n'

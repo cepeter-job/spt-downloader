@@ -54,7 +54,7 @@ Daftar besar dirender bertahap tanpa memotong data. Selama generasi filter/rende
 
 ## Penggantian file
 
-Tampilkan folder persis dari request dan semua path yang akan diganti, termasuk PDF bila ada. Jangan hanya menampilkan basename atau memilih sendiri folder terakhir. Scroll dua arah tersedia. **Jangan ganti** fokus awal; X/Escape sama dengan jawaban `overwrite=False`. **Ganti file tersebut** mengirim `True`. Alt+S tetap Stop langsung.
+Penggantian `resume.xlsx` saja berlangsung otomatis setelah verifikasi scope dan race. Jika SPT/PDF terpilih akan diganti, tampilkan folder persis dari request dan semua path yang akan diganti, termasuk PDF bila ada. Jangan hanya menampilkan basename atau memilih sendiri folder terakhir. Scroll dua arah tersedia. **Jangan ganti** fokus awal; X/Escape sama dengan jawaban `overwrite=False`. **Ganti file tersebut** mengirim `True`. Alt+S tetap Stop langsung.
 
 Jelaskan bahwa file diganti seluruhnya, bukan merge baris. SPT lain dalam file yang diganti tidak otomatis dipertahankan. File masa lain yang tidak diganti tetap ada; `resume.xlsx` baru hanya mengindeks pilihan proses saat ini. Setelah setuju, tunggu terminal dan verifikasi backend; jangan langsung menampilkan sukses.
 
@@ -115,3 +115,5 @@ Label terlihat dan fokus biru belum membuktikan aksesibilitas native. Uji name/r
 Uji DPI 100/125/150/200%, pembesaran teks, multi-monitor, High Contrast, Tab/Shift+Tab, Enter/Space/Escape, dan shortcut. Reflow harus mempertahankan informasi scope; jangan meluluskan clipping dengan minimum jendela melebihi work area. Sasaran ukuran/performa B-TK-1 adalah target belum terukur.
 
 Ukur GUI terpisah dari worker/browser; batasi event, status history, row-batch, serta callback tertunda. Pertahankan polling baseline dan update widget inkremental. Seluruh pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE hanya di GitHub runner sesuai [AGENTS.md](../../AGENTS.md). Pemeriksaan dokumen lokal bukan bukti runtime atau aksesibilitas.
+
+Kontrak workbook terkonsolidasi: Ringkasan, Daftar SPT, dan Audit hanya berada di `resume.xlsx`. Workbook SPT berisi worksheet per form/tab dan pembetulan teramati, tanpa banner/header/footer administratif atau sheet administratif tersembunyi. Hyperlink dari resume menuju form tetap relatif.

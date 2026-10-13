@@ -7,7 +7,6 @@ COPY: Mapping[str, str] = MappingProxyType({'app.title': 'Coretax SPT downloader
  'settings.background.label': 'jalankan proses sedot di background',
  'results.location_hint': 'Hasil Sedot berada di folder Downloads Windows',
  'app.subtitle': 'Coretax → Excel · for personal use only',
- 'app.credit': 'for personal use : punto ap',
  'selection.confirm': 'Sedot SPT terpilih',
  'form.title': 'Masukkan NPWP dan tahun pajak',
  'form.help': 'Setelah daftar muncul, pilih SPT yang ingin diunduh.',

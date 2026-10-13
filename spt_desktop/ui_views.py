@@ -106,7 +106,6 @@ class MainView(ttk.Frame):
         self.footer.columnconfigure(0, weight=1)
         self.results_label = ttk.Label(self.footer, text=copy_text('results.location_hint'), style='SPT.Stage.TLabel', wraplength=self.px(500))
         self.results_label.grid(row=0, column=0, sticky='ew')
-        ttk.Label(self.footer, text=copy_text('app.credit'), style='SPT.Stage.TLabel').grid(row=1, column=0, sticky='e')
         self.canvas.bind('<Configure>', lambda event: self.request_reflow())
         self.workspace.bind('<Configure>', self._update_scrollregion)
         self.bind('<Configure>', lambda event: self.request_reflow())
@@ -402,10 +401,11 @@ class MainView(ttk.Frame):
         if not self._disposed:
             self.canvas.configure(scrollregion=self.canvas.bbox('all'))
 
-    def _wheel(self, event):
+    def _wheel(self, event) -> str | None:
         if not self._disposed and (event.widget is self.canvas or str(event.widget).startswith(str(self.workspace))):
             self.canvas.yview_scroll(-int(event.delta / 120), 'units')
             return 'break'
+        return None
 
     def _reveal_focus(self, event):
         if self._disposed or not str(event.widget).startswith(str(self.workspace)):
@@ -430,6 +430,7 @@ class MainView(ttk.Frame):
                 try:
                     self.after_cancel(callback)
                 except tk.TclError:
+                    # Widget destruction may already have removed this Tcl timer.
                     pass
         self._reflow_after = None
         self._reveal_after = None

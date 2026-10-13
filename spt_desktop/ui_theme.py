@@ -1,6 +1,5 @@
 """Native ttk presentation metrics, without changing process DPI awareness."""
-import ctypes
-from ctypes import wintypes
+import ctypes.wintypes
 from dataclasses import dataclass
 import tkinter as tk
 from tkinter import ttk
@@ -32,25 +31,25 @@ def effective_scale(root: tk.Misc) -> float:
 def client_work_area(root: tk.Tk) -> tuple[int, int]:
     """Use measured window borders; never guess the taskbar or titlebar size."""
     class MonitorInfo(ctypes.Structure):
-        _fields_ = [('size', wintypes.DWORD), ('monitor', wintypes.RECT),
-                    ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
+        _fields_ = [('size', ctypes.wintypes.DWORD), ('monitor', ctypes.wintypes.RECT),
+                    ('work', ctypes.wintypes.RECT), ('flags', ctypes.wintypes.DWORD)]
 
     api = ctypes.WinDLL('user32', use_last_error=True)
-    api.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
-    api.GetAncestor.restype = wintypes.HWND
-    api.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
-    api.MonitorFromWindow.restype = wintypes.HANDLE
-    api.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MonitorInfo)]
-    api.GetMonitorInfoW.restype = wintypes.BOOL
+    api.GetAncestor.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.UINT]
+    api.GetAncestor.restype = ctypes.wintypes.HWND
+    api.MonitorFromWindow.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
+    api.MonitorFromWindow.restype = ctypes.wintypes.HANDLE
+    api.GetMonitorInfoW.argtypes = [ctypes.wintypes.HANDLE, ctypes.POINTER(MonitorInfo)]
+    api.GetMonitorInfoW.restype = ctypes.wintypes.BOOL
     for name in ('GetWindowRect', 'GetClientRect'):
         function = getattr(api, name)
-        function.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
-        function.restype = wintypes.BOOL
+        function.argtypes = [ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.RECT)]
+        function.restype = ctypes.wintypes.BOOL
     hwnd = api.GetAncestor(root.winfo_id(), 2)  # GA_ROOT includes native non-client borders.
     monitor = api.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST.
     info = MonitorInfo()
     info.size = ctypes.sizeof(info)
-    outer, inner = wintypes.RECT(), wintypes.RECT()
+    outer, inner = ctypes.wintypes.RECT(), ctypes.wintypes.RECT()
     if (not hwnd or not monitor or not api.GetMonitorInfoW(monitor, ctypes.byref(info))
             or not api.GetWindowRect(hwnd, ctypes.byref(outer))
             or not api.GetClientRect(hwnd, ctypes.byref(inner))):

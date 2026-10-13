@@ -33,7 +33,7 @@ Catat build/commit, run ID dan artifact ID bila dari GitHub, profil Python, tang
 - [ ] Jenis SPT atau tahun yang tidak ada pada scope tidak diberi berkas/data fiktif.
 - [ ] Layout yang tidak dikenali, error halaman, atau data berubah di tengah run terlihat sebagai batas/masalah, bukan COMPLETE palsu.
 
-Isi PDF/BPE/lampiran, pembuatan dokumen, dan dialog drill-down per baris berada di luar cakupan. Jangan menekan tombol submit, pembatalan SPT, email, atau pembuatan dokumen untuk melengkapi checklist ini.
+PDF laporan keuangan/auditan hanya boleh diambil dari href baca biasa yang sudah terlihat pada Induk Badan terverifikasi. Cocokkan deklarasi, byte/hash dan tautan relatif pada Audit resume; metadata saja bukan unduhan. PDF/BPE/lampiran lain, pembuatan dokumen, dan dialog drill-down per baris tetap di luar cakupan. Jangan menekan tombol submit, pembatalan SPT, email, atau pembuatan dokumen untuk melengkapi checklist ini.
 
 ## Stop dan pemulihan
 
@@ -53,9 +53,11 @@ Kegagalan file terkunci atau listrik padam tidak perlu dibuat pada data nyata. G
 - [ ] Folder memakai NPWP, nama wajib pajak yang benar, tahun, serta identitas run baru.
 - [ ] Folder distribusi hasil berisi set workbook yang diharapkan; JSON pemulihan dan profil tidak ikut disalin.
 - [ ] `resume.xlsx` memiliki Ringkasan, Daftar SPT, Audit, status, dan jumlah yang sesuai.
-- [ ] Satu workbook per jenis yang ada memuat seluruh masa/pembetulan terambil. Workbook jenis yang tidak ada tidak dibuat.
+- [ ] SPT Badan memiliki workbook tersendiri; SPT Masa memiliki satu workbook per masa literal dalam folder jenis. Setiap form/tab teramati dan pembetulan memiliki sheet sendiri. Workbook jenis/masa yang tidak ada tidak dibuat.
+- [ ] Workbook SPT hanya berisi form, tanpa Ringkasan/Daftar SPT/Audit/banner/header/footer cetak tambahan; field sumber dan header kolom tetap ada.
 - [ ] Sampel NPWP/identifier dengan nol awal, teks angka Indonesia, dan nilai sumber tetap persis ketika diperiksa di Excel.
-- [ ] Tautan indeks menuju workbook, lembar, dan pembetulan yang tepat; tautan kembali ke resume bekerja.
+- [ ] Tautan indeks resume menuju workbook, lembar, dan pembetulan yang tepat; SPT tidak diberi backlink generik ke resume.
+- [ ] Pada scope yang sama, hanya resume yang sudah ada diperbarui tanpa dialog; SPT/PDF terpilih yang sudah ada tetap meminta consent. Penolakan membatalkan publikasi tanpa mengubah resume atau file lama.
 - [ ] Salinan seluruh folder ke lokasi uji lain tetap memiliki tautan relatif yang berfungsi tanpa mengganti nama berkas.
 - [ ] COMPLETE hanya tampil bila inventaris/detail dan publikasi sudah terverifikasi; hasil parsial tetap diberi status serta catatan batas.
 

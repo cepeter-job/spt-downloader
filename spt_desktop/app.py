@@ -11,6 +11,8 @@ from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
 from .ui_views import MainView
 
+#punto ami priyono
+
 DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':''}
 
 
@@ -227,6 +229,7 @@ class App:
             try:
                 self.root.after_cancel(self._poll_after)
             except tk.TclError:
+                # Root teardown may already have removed the pending poll command.
                 pass
             self._poll_after = None
         self.view.dispose()
@@ -340,6 +343,9 @@ class App:
                     request_id=request_id,
                     selected_count=len(payload['selected_ids']) if kind == 'selection' else None,
                     overwrite=payload.get('overwrite'))
+                if kind == 'selection':
+                    total = self._ui_state.selected_count
+                    self.status.set(f'SPT diproses 0/{total}; terverifikasi 0.')
                 self.view.render(self._ui_state, active=True)
         except (OSError,ValueError,RuntimeError):
             self._interaction_error(job_id,'Keputusan belum bisa diproses.')
