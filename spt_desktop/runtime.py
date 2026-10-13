@@ -13,7 +13,7 @@ import time
 from .windows import ProcessJob
 
 UV_VERSION = '0.12.22'
-PYTHON_PROFILES = {'production': '3.11.17', 'candidate': '3.14.8'}
+PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'requirements.txt',
@@ -228,7 +228,7 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
     ready.unlink(missing_ok=True)
     uv = _uv(root, source, environment, cancelled)
     if not _compatible(info, python_profile) or not _managed(info, root):
-        # Installer resmi Windows 3.11 berhenti di 3.11.9; gunakan distribusi managed berpatch.
+        # Gunakan versi patch terkelola yang tepat, termasuk saat mengganti worker 3.11 lama.
         request = version + '+gil'
         # +gil berlaku untuk pencarian instalasi; katalog unduhan uv memakai kunci varian default.
         download = f'cpython-{version}-windows-x86_64-none'
