@@ -3,7 +3,7 @@ import base64
 import hashlib
 from pathlib import Path
 import stat
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 import uuid
 
 from coretax_browser import list_taxpayer_id, trusted_origin, verify_detail_url
@@ -17,10 +17,16 @@ _SCAN = r'''() => [...document.querySelectorAll('a, button, input')]
     .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
     .map(el => ({label: el.innerText || el.value || el.getAttribute('aria-label') || '',
                 href: el.tagName === 'A' ? el.getAttribute('href') : null,
+                resolved_href: el.tagName === 'A' ? el.href : null,
+                document_url: window.location.href,
                 unsafe: el.tagName !== 'A' || el.hasAttribute('onclick') ||
                         el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')}))'''
 
-_START = r'''async ({key, url, limit, timeout}) => {
+_START = r'''async ({key, url, limit, timeout, document_url}) => {
+    // A Python-side scope check cannot bind a later browser evaluation.
+    if (window.location.href !== document_url) {
+        throw new Error('Inspected financial document changed before request');
+    }
     const controller = new AbortController();
     const state = {controller, reader: null, total: 0, timer: null};
     Object.defineProperty(window, key, {value: state, configurable: true});
@@ -102,13 +108,13 @@ def _verify_page(page, record):
     verify_detail_url(page.url, taxpayer, identifier)
 
 
-def _read_pdf(page, url, check_cancel):
+def _read_pdf(page, url, check_cancel, document_url):
     key = '_spt_financial_' + uuid.uuid4().hex
     data = bytearray()
     try:
         _cancel(check_cancel)
         page.evaluate(_START, {'key': key, 'url': url, 'limit': MAX_PDF_BYTES,
-                               'timeout': _DOWNLOAD_TIMEOUT_MS})
+                               'timeout': _DOWNLOAD_TIMEOUT_MS, 'document_url': document_url})
         _cancel(check_cancel)
         while True:
             _cancel(check_cancel)
@@ -137,8 +143,13 @@ def _financial_url(page_url, control):
     if (control.get('unsafe') or not isinstance(href, str) or not href
             or href != href.strip() or '\\' in href or any(ord(char) < 32 for char in href)):
         raise ValueError('Financial control is not an inspected ordinary href')
-    url = urljoin(page_url, href)
-    if not trusted_origin(url) or urlparse(url).fragment or not urlparse(url).path.lower().endswith('.pdf'):
+    if control.get('document_url') != page_url:
+        raise ValueError('Financial control belongs to a changed detail document')
+    # Native anchor resolution includes document <base> and URL normalization;
+    # raw-href checks above remain required even when the resolved URL is safe.
+    url = control.get('resolved_href')
+    if (not isinstance(url, str) or not trusted_origin(url) or urlparse(url).fragment
+            or not urlparse(url).path.lower().endswith('.pdf')):
         raise ValueError('Financial href is outside the supported PDF contract')
     return url
 
@@ -169,8 +180,9 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
             _cancel(check_cancel)
             label = control['label']
             try:
+                _verify_page(page, record)
                 url = _financial_url(page.url, control)
-                data = _read_pdf(page, url, check_cancel)
+                data = _read_pdf(page, url, check_cancel, control['document_url'])
                 _verify_page(page, record)
                 _cancel(check_cancel)
                 record_key = hashlib.sha256(record['record_id'].encode('utf-8')).hexdigest()[:32]
