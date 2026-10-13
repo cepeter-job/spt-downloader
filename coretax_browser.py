@@ -663,8 +663,10 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
                 detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'])
                 detail.set_viewport_size({'width': 1600, 'height': 1000})
-                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel)
+                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
+                                         record=record, folder=folder)
                 record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
+                record['attachments'] = capture.get('attachments', [])
                 for error in capture['errors']:
                     _check_cancel(check_cancel)
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
