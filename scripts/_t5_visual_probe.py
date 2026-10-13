@@ -225,11 +225,63 @@ def snapshot(out, key, width, height, state):
         except tk.TclError:pass
 
 
+def try_larger_virtual_desktop():
+    """Only alter this disposable hosted Windows runner, never the product DPI mode."""
+    class DevMode(ctypes.Structure):
+        _fields_ = [('device', wintypes.WCHAR*32),('spec',wintypes.WORD),
+            ('driver',wintypes.WORD),('size',wintypes.WORD),('extra',wintypes.WORD),
+            ('fields',wintypes.DWORD),('x',wintypes.LONG),('y',wintypes.LONG),
+            ('orientation',wintypes.DWORD),('fixed',wintypes.DWORD),
+            ('color',wintypes.SHORT),('duplex',wintypes.SHORT),
+            ('yresolution',wintypes.SHORT),('tt',wintypes.SHORT),('collate',wintypes.SHORT),
+            ('form',wintypes.WCHAR*32),('log_pixels',wintypes.WORD),
+            ('bits_per_pixel',wintypes.DWORD),('pixels_width',wintypes.DWORD),
+            ('pixels_height',wintypes.DWORD),('display_flags',wintypes.DWORD),
+            ('display_frequency',wintypes.DWORD),('icm_method',wintypes.DWORD),
+            ('icm_intent',wintypes.DWORD),('media_type',wintypes.DWORD),
+            ('dither_type',wintypes.DWORD),('reserved1',wintypes.DWORD),
+            ('reserved2',wintypes.DWORD),('panning_width',wintypes.DWORD),
+            ('panning_height',wintypes.DWORD)]
+    expected=220
+    if ctypes.sizeof(DevMode)!=expected:
+        print('SKIP_RESOLUTION_CHANGE_BAD_STRUCT',ctypes.sizeof(DevMode),flush=True)
+        return 'not attempted: devmode layout mismatch'
+    user32.EnumDisplaySettingsW.argtypes=(wintypes.LPCWSTR,wintypes.DWORD,ctypes.POINTER(DevMode))
+    user32.EnumDisplaySettingsW.restype=wintypes.BOOL
+    user32.ChangeDisplaySettingsW.argtypes=(ctypes.POINTER(DevMode),wintypes.DWORD)
+    user32.ChangeDisplaySettingsW.restype=wintypes.LONG
+    modes=[]
+    for idx in range(512):
+        mode=DevMode();mode.size=ctypes.sizeof(DevMode)
+        if not user32.EnumDisplaySettingsW(None,idx,ctypes.byref(mode)):
+            break
+        if mode.bits_per_pixel>=24:
+            modes.append((int(mode.pixels_width),int(mode.pixels_height),idx))
+    candidates=sorted((m for m in modes if m[0]>=1280 and m[1]>=900),
+                      key=lambda x:(x[0]*x[1],x[0]))
+    print('AVAILABLE_DISPLAY_MODES',len(modes), 'larger',candidates[:10],flush=True)
+    for width,height,idx in candidates:
+        mode=DevMode();mode.size=ctypes.sizeof(DevMode)
+        if not user32.EnumDisplaySettingsW(None,idx,ctypes.byref(mode)):
+            continue
+        mode.fields=0x00080000|0x00100000
+        if user32.ChangeDisplaySettingsW(ctypes.byref(mode),2)!=0:
+            continue
+        status=user32.ChangeDisplaySettingsW(ctypes.byref(mode),0)
+        if status==0:
+            time.sleep(1)
+            print('DISPLAY_RESOLUTION_CHANGED',width,height,flush=True)
+            return f'{width}x{height}'
+    print('NO_LARGER_DISPLAY_MODE_AVAILABLE',flush=True)
+    return 'larger mode unavailable'
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--out',type=Path,required=True)
     args=parser.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
+    display_result=try_larger_virtual_desktop()
     states=[('regular-idle',1120,800,'idle'),('compact-idle',640,560,'idle'),
             ('compact-invalid',640,560,'invalid'),('regular-details',1120,800,'details'),
             ('compact-details',640,560,'details'),('regular-complete',1120,800,'complete'),
@@ -240,7 +292,7 @@ def main():
         reports.append(data)
         print('FRAME',key,data['client'],data['screen'],{m:e['color_sample_count'] for m,e in data['images'].items()},flush=True)
     assert all(any(im['ok'] and im['color_sample_count']>24 for im in entry['images'].values()) for entry in reports)
-    (args.out/'manifest.json').write_text(json.dumps({'synthetic':True,'no_portal':True,'frames':reports},ensure_ascii=False,indent=2),encoding='utf-8')
+    (args.out/'manifest.json').write_text(json.dumps({'synthetic':True,'no_portal':True,'display_setup':display_result,'frames':reports},ensure_ascii=False,indent=2),encoding='utf-8')
     print('T5_SYNTHETIC_CAPTURE_OK',len(reports),flush=True)
 
 if __name__=='__main__':
