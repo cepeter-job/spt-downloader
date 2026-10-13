@@ -259,3 +259,92 @@ def test_staged_pdf_mutation_cannot_advertise_complete_export(tmp_path):
     assert (source / run['records'][0]['attachments'][0]['relative_path']).read_bytes() == PDF
     assert not [path for path in downloads.rglob('resume.xlsx')
                 if not any(parent.name.startswith('.spt-') for parent in path.parents)]
+
+
+def test_pdf_changed_while_consent_is_open_is_never_authorized(tmp_path):
+    source = tmp_path / 'old-private-job'
+    run = financial_run(source)
+    coretax.save_output(run, source)
+    downloads = tmp_path / 'Downloads'
+    final = output.publish_workbooks(run, source, downloads, 'synthetic-old')
+    replacement = tmp_path / 'new-private-job'
+    selected = financial_run(replacement)
+    coretax.save_output(selected, replacement)
+    snapshot = output.existing_outputs(selected, downloads)
+    relative = declarations(run)[0]['relative_path']
+    assert (final / relative).is_file(), 'The old selected PDF was not published'
+    (final / relative).write_bytes(CHANGED_PDF)
+    before = {path.relative_to(final).as_posix(): path.read_bytes()
+              for path in final.rglob('*') if path.is_file()}
+    with pytest.raises(ValueError, match='(?i)pdf|attachment|hash|digest|changed|consent'):
+        output.publish_workbooks(selected, replacement, downloads, 'synthetic-stale-pdf',
+                                 overwrite=True, expected_outputs=snapshot)
+    assert {path.relative_to(final).as_posix(): path.read_bytes()
+            for path in final.rglob('*') if path.is_file()} == before
+    assert (replacement / relative).read_bytes() == PDF
+
+
+@pytest.mark.parametrize('tamper', ['record_id', 'digest'])
+def test_old_pdf_overwrite_requires_independent_physical_audit_binding(tmp_path, tamper):
+    source = tmp_path / 'old-private-job'
+    run = financial_run(source)
+    coretax.save_output(run, source)
+    downloads = tmp_path / 'Downloads'
+    final = output.publish_workbooks(run, source, downloads, 'synthetic-old-audit')
+    assert all((final / item['relative_path']).is_file() for item in declarations(run)), (
+        'The physical old PDF required by its Audit was not published')
+    path = final / 'SPT_Badan.xlsx'
+    workbook = load_workbook(path)
+    try:
+        for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+            if row[5].hyperlink and row[5].hyperlink.target.endswith('.pdf'):
+                row[0 if tamper == 'record_id' else 4].value = (
+                    'SYNTHETIC FOREIGN RETURN' if tamper == 'record_id' else '0' * 64)
+                break
+        else:
+            pytest.fail('The real old physical PDF Audit row was not exercised')
+        workbook.save(path)
+    finally:
+        workbook.close()
+    before = {path.relative_to(final).as_posix(): path.read_bytes()
+              for path in final.rglob('*') if path.is_file()}
+    replacement = tmp_path / 'replacement-private-job'
+    selected = financial_run(replacement)
+    coretax.save_output(selected, replacement)
+    with pytest.raises(ValueError, match='(?i)pdf|attachment|audit|scope|hash|digest'):
+        output.existing_outputs(selected, downloads)
+    assert {path.relative_to(final).as_posix(): path.read_bytes()
+            for path in final.rglob('*') if path.is_file()} == before
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Native directory rename byte-custody boundary')
+def test_pdf_mutated_after_actual_native_directory_move_is_quarantined(tmp_path, monkeypatch):
+    source = tmp_path / 'private-job'
+    run = financial_run(source)
+    coretax.save_output(run, source)
+    downloads = tmp_path / 'Downloads'
+    relative = declarations(run)[0]['relative_path']
+    real_move = output._move_no_replace
+    attempted = []
+
+    def mutate_after_move(original, destination):
+        # Intercept the real move, not a mock pretending publication succeeded.
+        is_staging_tree = original.is_dir() and original.name.startswith('.spt-')
+        result = real_move(original, destination)
+        if is_staging_tree and not attempted:
+            path = destination / relative
+            if path.is_file():
+                attempted.append(path)
+                path.write_bytes(CHANGED_PDF)
+        return result
+
+    monkeypatch.setattr(output, '_move_no_replace', mutate_after_move)
+    with pytest.raises((OSError, ValueError, RuntimeError),
+                       match='(?i)pdf|attachment|hash|digest|changed|recovery|sharing|access'):
+        output.publish_workbooks(run, source, downloads, 'synthetic-rename-race')
+    assert attempted, 'The real native directory-move PDF boundary was not exercised'
+    assert (source / relative).read_bytes() == PDF
+    assert not [path for path in downloads.rglob('resume.xlsx')
+                if not any(parent.name.startswith('.spt-') for parent in path.parents)]
+    assert any(path.read_bytes() == CHANGED_PDF for path in downloads.rglob('*.pdf')), (
+        'The actual changed bytes must remain recoverable, not be silently deleted')
