@@ -2,10 +2,10 @@
 
 **Penyesuaian konsolidasi, 13 Oktober 2026:** permintaan PR #14 menghapus footer nama pribadi dan ID `app.credit`; subtitle umum serta lima teks terkunci lainnya tetap. Katalog aktif berisi 43 ID. SPT kini hanya berisi worksheet form; Ringkasan/Daftar SPT/Audit berada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF tetap meminta persetujuan.
 
-**Proyek:** `cepeter-job/spt-downloader`  
-**Revisi:** B-TK-1 · 13 Oktober 2026  
-**Baseline kode:** `be67f5153a07ce100048d67191a02ca1d0fca1db` (`main` setelah konsolidasi PR #8)  
-**Baseline visual:** MagicPath komponen `460285747178659840`, revisi `460301118992445440`, `warmly-meadow-4315`  
+**Proyek:** `cepeter-job/spt-downloader`
+**Revisi:** B-TK-1 · 13 Oktober 2026
+**Baseline kode:** `be67f5153a07ce100048d67191a02ca1d0fca1db` (`main` setelah konsolidasi PR #8)
+**Baseline visual:** MagicPath komponen `460285747178659840`, revisi `460301118992445440`, `warmly-meadow-4315`
 **Status:** spesifikasi untuk review. Arah B dan Tkinter/ttk sudah dipilih; dokumen ini tidak menyatakan implementasi, penerimaan Windows, merge, atau deployment sudah dilakukan.
 
 [Prototipe B](https://designs.magicpath.ai/v1/warmly-meadow-4315) · [Kode yang ditinjau](https://github.com/cepeter-job/spt-downloader/tree/be67f5153a07ce100048d67191a02ca1d0fca1db) · [Panduan UI/UX](../../ui-ux/README.md)
@@ -209,7 +209,7 @@ Gunakan payload `files` dan `folder` yang telah dibaca controller. Tampilkan fol
 
 Copy inti:
 
-> **Ganti hasil sebelumnya?**  
+> **Ganti hasil sebelumnya?**
 > File di bawah akan diganti seluruhnya dengan hasil pilihan kali ini. SPT lain yang sebelumnya berada dalam file yang sama tidak ikut dipertahankan. File lain yang tidak tercantum tetap ada.
 
 **Jangan ganti** menerima fokus awal dan mengirim `{'overwrite': False}`; Escape/X sama dengan pilihan tersebut. **Ganti file tersebut** mengirim `{'overwrite': True}`. Alt+S tetap Stop langsung, bukan persetujuan. Hanya controller/worker yang menulis jawaban dan memulai publikasi. Worker saat ini selalu mengirim folder untuk permintaan penggantian, tetapi validator dialog baseline masih menerima payload tanpa folder. B-TK-1 menetapkan penguatan presentasi: payload tanpa konteks folder tidak boleh membuka aksi persetujuan destruktif. Ini perubahan yang harus diuji, bukan klaim perilaku baseline. Fixture lama tanpa folder perlu diperbarui atau dipakai khusus untuk menguji jalur penolakan; jangan melemahkan persetujuan demi fixture.
