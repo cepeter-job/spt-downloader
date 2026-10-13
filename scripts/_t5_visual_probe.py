@@ -196,10 +196,28 @@ def snapshot(out, key, width, height, state):
             assert app.results_label.cget('text')=='Hasil Sedot berada di folder Downloads Windows'
             assert app.view.footer.winfo_ismapped()
             assert all(x['width']>0 and x['height']>0 for x in rects.values())
+            def scroll_state():
+                return {'yview':list(app.view.canvas.yview()),
+                        'scrollregion':str(app.view.canvas.cget('scrollregion')),
+                        'workspace_height':app.view.workspace.winfo_height(),
+                        'entry':bounds(app.npwp_entry),
+                        'year_entry':bounds(app.year_entry),
+                        'result':bounds(app.view.result_title_label),
+                        'pending':app.view._pending_reveal,
+                        'reveal_callback':app.view._reveal_after}
+            before=scroll_state()
+            # Diagnostic only, after all evidence screenshots. Does the same
+            # reveal algorithm scroll once the geometry has fully settled?
+            app.view._pending_reveal=app.view._priority_area(app.view._state)
+            app.view._reveal_priority()
+            tick(root)
+            after=scroll_state()
             report={'key':key,'state':state,'request':[width,height],
                     'client':[root.winfo_width(),root.winfo_height()],
                     'screen':[root.winfo_screenwidth(),root.winfo_screenheight()],
-                    'rects':rects,'status':app.status.get(),'images':images}
+                    'rects':rects,'status':app.status.get(),'images':images,
+                    'scroll_diagnostic':{'before':before,'after_manual_reveal':after}}
+            print('SCROLL',key,before['yview'],after['yview'],before['workspace_height'],flush=True)
             app._dispose();controller.close()
             return report
     finally:
