@@ -2,7 +2,7 @@
 
 Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windows-desktop` ke `013dd19`. Desain ini membatasi revisi pada alur capture, ekspor, dan desktop yang sudah ada.
 
-**Batas publikasi terbaru:** PR #6 mencakup Tugas 1–2. Implementasi PDF Tugas 3 serta autentikasi/teks Tugas 4 terverifikasi otomatis pada head produk `3cc500e49764b4daa4ad11fcfbcdf8891ee62377` di draft PR #8; PR belum digabung. Review kode/dokumentasi Tugas 5 ditutup dan pengguna menyetujui commit/push lima dokumen Task 5 saja, tanpa merge. Bukti eksekusi tetap terikat pada head produk tersebut; penerimaan portal live belum terbukti. Lihat [rencana](../plans/2026-10-12-period-selection-layout.md) dan [matriks sepuluh persyaratan](../reports/2026-10-13-feature-acceptance.md).
+**Batas publikasi terbaru:** PR #6 mencakup Tugas 1–2. PDF, autentikasi/teks, dan follow-up base/konteks PDF terverifikasi pada head produk `89a3830d65bae04660f90d75992f06c78003088f` di draft PR #8; PR belum digabung. Tugas 5 dibuka kembali sesudah dokumentasi awal dan pengguna menyetujui regresi/perbaikan PDF. Lima kegagalan direproduksi, perbaikan direview, lalu seluruh 608 tes Windows lulus. Bukti eksekusi tetap terikat pada head produk tersebut; penerimaan portal live belum terbukti. Lihat [rencana](../plans/2026-10-12-period-selection-layout.md) dan [matriks sepuluh persyaratan](../reports/2026-10-13-feature-acceptance.md).
 
 ## Kontrak output
 
@@ -11,6 +11,7 @@ Disetujui pengguna melalui chat pada 12 Oktober 2026 setelah menarik `feat/windo
 - SPT Badan tetap di `SPT_Badan.xlsx`, dengan satu sheet per form/bagian teramati, seperti Induk dan L1-D. Bedakan Normal/Pembetulan dan gunakan ordinal yang aman dari benturan nama. Jangan membuat form yang tidak teramati. Path bagian lengkap menjadi identitas agar bagian dari dua induk berbeda tidak tergabung.
 - Gunakan field/tabel datar yang dapat difilter, header dibekukan, lebar kolom, dan bukti sumber. Pertahankan ID/nilai mentah, baris duplikat, caption, serta asal pembetulan secara persis. Tambahkan angka analisis hanya setelah presisinya tervalidasi; teks sumber tidak berubah.
 - PDF Tugas 3: unduh hanya tautan PDF laporan keuangan/auditan yang sudah ada dan telah diperiksa sebagai aksi baca pada Induk Badan. Jangan membuat dokumen remote atau menebak URL API. Gunakan konteks browser yang berizin, origin HTTPS tepat, GET tanpa redirect, batas ukuran/tenggat/signature/footer/hash. Metadata saja bukan byte PDF. Hanya deklarasi COMPLETE terikat pada SPT terpilih ikut publikasi; kontrol yang belum didukung atau kegagalan tetap PARTIAL.
+- Resolusi target PDF mengikuti href native browser, termasuk base dokumen; guard href mentah tetap berlaku. Scope record dan URL dokumen observasi diperiksa sebelum GET, termasuk pada giliran JS yang memulai fetch. Pergantian detail setelah scan atau sebelum fetch tidak mengesahkan request yang tertinggal.
 
 ## Interaksi desktop pada implementasi Tugas 2
 
@@ -31,7 +32,7 @@ Dialog dan protokol persetujuan ini khusus desktop. CLI tetap menentukan cakupan
 
 ## Verifikasi dan batas bukti
 
-Bukti historis RED/GREEN pemilihan/overwrite dicatat pada [Tugas 2](../plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite); dua profil Python pada bukti lama bukan profil aktif terbaru. Pada run `38353364106`, produksi GUI/worker CPython 3.14.8/GIL lulus 600 tes Windows dan 367 tes portable; source/frozen, persiapan worker/pemakaian ulang, serta artifact `11791354479` diverifikasi berdasarkan hash dan tree yang sama dengan head. Seluruh sepuluh kontrak dipetakan pada laporan penerimaan; angka test group beririsan. Fixture baru tetap sintetis; tidak ada eksekusi produk lokal untuk pekerjaan ini.
+Bukti historis RED/GREEN pemilihan/overwrite dicatat pada [Tugas 2](../plans/2026-10-12-period-selection-layout.md#tugas-2-capture-sesuai-pilihan-dan-dialog-overwrite); dua profil Python pada bukti lama bukan profil aktif terbaru. Pada run `38360875900`, produksi GUI/worker CPython 3.14.8/GIL lulus 608 tes Windows dan 367 tes portable/241 deselected; source/frozen, persiapan worker/pemakaian ulang, serta artifact `11794902211` diverifikasi berdasarkan hash dan tree yang sama dengan head. Seluruh sepuluh kontrak dipetakan pada laporan penerimaan; angka test group beririsan. Fixture baru tetap sintetis; tidak ada eksekusi produk lokal untuk pekerjaan ini.
 
 Kontrak otomatis byte/origin/redirect/pembatalan/custody PDF, kesiapan/binding autentikasi, teks global, dan header nyata Tugas 3–4 sudah dijalankan. Ini tidak membuktikan semua layout portal, keaslian isi laporan PDF, ACL server, seluruh perilaku keyboard/fokus, aksesibilitas Windows, atau performa inventaris besar. Penerimaan live berizin tetap terpisah dari penerimaan otomatis.
 

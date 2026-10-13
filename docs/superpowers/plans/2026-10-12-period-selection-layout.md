@@ -10,7 +10,7 @@
 
 **Spesifikasi:** [desain pemilihan SPT dan workbook](../specs/2026-10-12-period-selection-layout-design.md).
 
-**Batas publikasi terbaru:** PR #6 mencakup Tugas 1–2. Tugas 3–4 terverifikasi otomatis pada head produk `3cc500e49764b4daa4ad11fcfbcdf8891ee62377` di draft PR #8; PR belum digabung. Tugas 5 merekonsiliasi sepuluh persyaratan serta menutup review kode dan dokumentasi. Pengguna memberikan izin terpisah untuk commit/push lima dokumen Task 5 saja, tanpa merge atau publikasi pilot. Penerimaan portal live belum terbukti. Lihat [matriks penerimaan dan artifact](../reports/2026-10-13-feature-acceptance.md); perubahan dokumentasi tidak mengubah ikatan bukti pada head produk tersebut.
+**Batas publikasi terbaru:** PR #6 mencakup Tugas 1–2. Tugas 3–4 dan follow-up PDF terverifikasi pada head produk `89a3830d65bae04660f90d75992f06c78003088f` di draft PR #8; PR belum digabung. Setelah publikasi lima dokumen awal, Tugas 5 dibuka kembali untuk temuan base/konteks dokumen PDF yang belum tercakup. Pengguna mengizinkan regresi/perbaikan PDF di PR #8; RED 5 kegagalan diperbaiki menjadi GREEN 608 tes. Laporan penerimaan dikoreksi terhadap bukti baru. Tidak ada izin merge atau publikasi pilot; penerimaan portal live belum terbukti. Lihat [matriks penerimaan dan artifact](../reports/2026-10-13-feature-acceptance.md).
 
 ## Batas umum
 
@@ -87,6 +87,8 @@ Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan 
 - [x] Terapkan unduhan GET dari tautan yang sudah ada; jangan menebak URL atau mengeklik pembuatan/submit dokumen. Pertahankan PARTIAL untuk kontrol belum didukung atau kegagalan.
 - [x] Verifikasi byte/hash PDF dan tautan relatif; perbarui allowlist resource dan tes build. Exact GREEN `a6d76eb7fca24be80c438efd2b1e456bceacf9b5`, run `38338852350`, 563 tes Windows; suite terbaru kembali menjalankan seluruh kontrak PDF. Bukti lengkap ada pada laporan penerimaan.
 
+Follow-up base/konteks PDF: test-only `925d29c184e5690e3dc50db940906443ffc9d244`, run `38359524325`, mereproduksi lima kegagalan sebelum perbaikan. Perbaikan satu modul direview dan dipublikasikan pada `89a3830d65bae04660f90d75992f06c78003088f`; run `38360875900` lulus 608 tes Windows dan 367 portable/241 deselected. Capture memakai href native browser sambil mempertahankan guard mentah, pemeriksaan selected-record sebelum GET, dan binding lokasi pada JS pre-fetch.
+
 ### Tugas 4: Pengenalan autentikasi dan teks UI
 
 **Berkas:** `spt_desktop/auth.py`, `app.py`, `spt_gui.py`, `build_desktop.py`, serta tes autentikasi/branding/GUI.
@@ -103,6 +105,6 @@ Desktop tidak memilih semua SPT secara otomatis. Menutup pemilihan atau menekan 
 
 - [x] Petakan seluruh sepuluh persyaratan ke node inventaris suite yang dijalankan; dokumentasi diperbarui sebagai draft lokal sesuai kontrak yang disetujui.
 - [x] Jalankan seluruh pytest pada GitHub runner dengan basetemp di luar repo; kontrak menulis/membuka ulang XLSX sintetis serta memeriksa tautan/jumlah file. Tidak ada pytest/product import/Tk/browser/build/EXE lokal untuk verifikasi ini.
-- [x] Dapatkan review kode/keamanan independen pada seluruh delta 12 modul produksi PR #8. Dugaan dot-segment href diregrade independen sebagai NotBug: URL resolution tidak membypass origin atau filesystem. Tidak ada temuan Critical/Important terbukti yang tertinggal; ACL server/keaslian isi PDF tetap bukan jaminan downloader.
-- [x] Bangun executable Windows pada runner, jalankan self-test source/frozen, verifikasi artifact ID `11791354479`, lima berkas/four checksum manifest/17 resource eksplisit, lalu laporkan batas penerimaan live pada laporan penerimaan.
+- [x] Review awal 12 modul produksi dilakukan, namun melewatkan catatan P2 base/konteks. Temuan tersebut direproduksi dengan delapan regresi, diperbaiki setelah RED, dan perbaikan direview `deleg_f9e2a38f` sebelum GREEN. Dugaan dot-segment yang berbeda tetap NotBug. ACL server/keaslian isi PDF bukan jaminan downloader.
+- [x] Bangun executable Windows pada runner, jalankan self-test source/frozen, verifikasi artifact ID `11794902211`, lima berkas/empat checksum manifest/17 resource eksplisit, lalu laporkan batas penerimaan live pada laporan penerimaan. Head/merge tree terbaru sama: `6f4e913372904b9142d40e84bf017df0063c79fa`.
 - [x] Review dokumentasi independen PASS (`deleg_8c9b98c1`), diff disajikan, dan pengguna menyetujui commit/push lima dokumen Task 5 saja. Jangan merge/auto-merge. Izin ini tidak mencakup publikasi pilot JSON-first; implementasi pilot sebagai alternatif DOM tetap mengikuti urutan setelah penutupan Tugas 5.
