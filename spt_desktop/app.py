@@ -49,7 +49,7 @@ class App:
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
-        root.title('SPT Downloader');root.minsize(540,390)
+        root.title('Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang');root.minsize(540,390)
         style=ttk.Style(root)
         style.configure('Title.TLabel',font=('Segoe UI',18,'bold'))
         style.configure('TButton',padding=(12,12))
@@ -79,7 +79,10 @@ class App:
         ttk.Label(body,textvariable=self.status,wraplength=500).grid(row=7,column=0,columnspan=3,sticky='w')
         self.open_button=ttk.Button(body,text='Buka Hasil',command=self.open_result,state='disabled')
         self.open_button.grid(row=8,column=0,sticky='w',pady=(14,8))
-        ttk.Label(body,text='Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.\nHasil: Downloads → NPWP - NAMA WP → TAHUN PAJAK → WAKTU EKSPOR.',wraplength=510).grid(row=9,column=0,columnspan=3,sticky='w',pady=(8,0))
+        hints=ttk.Frame(body);hints.grid(row=9,column=0,columnspan=3,sticky='w',pady=(8,0))
+        self.results_label=ttk.Label(hints,text='Hasil Sedot berada di folder Downloads Windows')
+        self.results_label.pack(anchor='w')
+        ttk.Label(hints,text='Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.\nHasil: Downloads → NPWP - NAMA WP → TAHUN PAJAK → WAKTU EKSPOR.',wraplength=510).pack(anchor='w')
         body.rowconfigure(10,weight=1)
         ttk.Label(body,text='for personal use : punto ap').grid(row=10,column=0,columnspan=3,sticky='se',pady=(12,0))
         root.update_idletasks()
@@ -406,7 +409,7 @@ class App:
         for row,(label,widget) in enumerate(controls):
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
-        hidden_button=ttk.Checkbutton(frame,text='Jalankan headless bila sesi memungkinkan',variable=hidden)
+        hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
         hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,text='Password tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
         buttons=ttk.Frame(frame);buttons.grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
