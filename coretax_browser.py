@@ -596,7 +596,10 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
             checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
             if checkpoint.exists():
                 saved = read_detail_checkpoint(checkpoint, record, scope)
-                if saved.get('capture_complete'):
+                # COMPLETE lama belum membuktikan inspeksi lampiran Badan.
+                # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
+                needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+                if saved.get('capture_complete') and (not needs_financial or saved.get('attachments')):
                     record.update(saved)
                     print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
                     if on_progress:

@@ -11,7 +11,6 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as source_browser
-from coretax_browser import CaptureCancelled
 
 # Even an accidentally followed redirect must not target the real portal.
 # Existing browser-safety tests separately cover the production origin pin.
@@ -194,9 +193,9 @@ def test_stop_wins_before_request_or_before_persisting_completed_bytes(routed, t
 
     def cancelled():
         if not during_read or ('GET', PDF_URL) in requests:
-            raise CaptureCancelled('synthetic financial download stop')
+            raise source_browser.CaptureCancelled('synthetic financial download stop')
 
-    with pytest.raises(CaptureCancelled):
+    with pytest.raises(source_browser.CaptureCancelled):
         module.download_financial_attachments(page, deepcopy(RECORD), tmp_path, check_cancel=cancelled)
     assert not list(tmp_path.rglob('*.pdf'))
     if not during_read:

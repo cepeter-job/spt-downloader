@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import uuid
 
 from coretax_browser import list_taxpayer_id, trusted_origin, verify_detail_url
-from spt_desktop.output_windows import DirectoryGuard
+from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_PDF_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT_MS = 30000
@@ -194,25 +194,42 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
                 _include_folder(guard, directory)
                 name = hashlib.sha256(url.encode('utf-8')).hexdigest() + '.pdf'
                 target = directory / name
-                created = None
-                try:
-                    with target.open('xb') as stream:
-                        created = target.lstat()
+                if target.exists():
+                    # Retry PARTIAL boleh memakai byte identik dari GET terbaru,
+                    # tetapi tidak boleh mengganti file lama atau mengikuti symlink.
+                    with locked_file(target) as existing:
+                        digest, size = hashlib.sha256(), 0
+                        for chunk in iter(lambda: existing.read(1048576), b''):
+                            _cancel(check_cancel)
+                            size += len(chunk)
+                            if size > len(data):
+                                raise ValueError('Existing financial PDF differs from the inspected response')
+                            digest.update(chunk)
                         _cancel(check_cancel)
-                        stream.write(data)
-                        stream.flush()
-                        _cancel(check_cancel)
-                except BaseException:
-                    # Exclusive creation grants cleanup of our inode only; a
-                    # name substituted by another writer is never our consent.
-                    if created is not None:
-                        try:
-                            current = target.lstat()
-                            if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
-                                target.unlink()
-                        except OSError:
-                            pass
-                    raise
+                        if size != len(data) or digest.hexdigest() != hashlib.sha256(data).hexdigest():
+                            raise ValueError('Existing financial PDF differs from the inspected response')
+                else:
+                    created = None
+                    try:
+                        with target.open('xb') as stream:
+                            created = target.lstat()
+                            _cancel(check_cancel)
+                            stream.write(data)
+                            stream.flush()
+                            _cancel(check_cancel)
+                    except BaseException:
+                        # Exclusive creation grants cleanup of our inode only; a
+                        # name substituted by another writer is never our consent.
+                        if created is not None:
+                            try:
+                                current = target.lstat()
+                                if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                                    target.unlink()
+                            except OSError:
+                                # Jangan tutupi pembatalan asli dengan kegagalan cleanup.
+                                # Byte yang tersisa tetap privat, tanpa deklarasi COMPLETE.
+                                pass
+                        raise
                 results.append({'label': label, 'relative_path': target.relative_to(folder).as_posix(),
                                 'status': 'COMPLETE', 'bytes': len(data),
                                 'hash': hashlib.sha256(data).hexdigest()})

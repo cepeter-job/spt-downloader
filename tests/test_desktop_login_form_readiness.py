@@ -1,5 +1,4 @@
 """A delayed already-supported form, not an invented portal/login selector."""
-import json
 
 import pytest
 
@@ -8,7 +7,7 @@ from spt_desktop.credentials import Login
 import test_desktop_login_home_browser as flow
 
 # Reuse the real routed Edge fixture; every non-fixture request is aborted.
-from test_desktop_login_home_browser import browser
+browser = flow.browser
 
 
 @pytest.mark.parametrize('operation', ['check', 'export'])

@@ -8,7 +8,6 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
-from coretax_browser import CaptureCancelled
 
 ORIGIN = 'https://coretax.synthetic.invalid'
 RECORD = {
@@ -136,9 +135,9 @@ def test_stop_during_financial_get_propagates_instead_of_becoming_partial(routed
 
     def stop_after_financial_request():
         if ('GET', PDF_URL) in requests:
-            raise CaptureCancelled('SYNTHETIC STOP DURING FINANCIAL GET')
+            raise driver.CaptureCancelled('SYNTHETIC STOP DURING FINANCIAL GET')
 
-    with pytest.raises(CaptureCancelled):
+    with pytest.raises(driver.CaptureCancelled):
         driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path,
                               check_cancel=stop_after_financial_request)
     assert requests == [('GET', DETAIL), ('GET', PDF_URL)]

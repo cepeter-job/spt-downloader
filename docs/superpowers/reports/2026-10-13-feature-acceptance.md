@@ -1,5 +1,7 @@
 # Penerimaan otomatis sepuluh persyaratan SPT Downloader
 
+**Catatan konsolidasi 13 Oktober 2026:** angka 608 di bawah adalah bukti historis untuk head yang disebut. Review konsolidasi berikutnya menemukan dua celah resume; tiga regresi di `df0baaf2b326824b1093fe7f5c02636572d637f3` benar-benar gagal sementara 608 tes lama lulus pada [run 38365660042](https://github.com/cepeter-job/spt-downloader/actions/runs/38365660042). Perbaikan memakai ulang hanya PDF yang sama dengan byte GET terbaru melalui reader terkunci, serta mengambil ulang checkpoint Badan tanpa bukti lampiran ketika resume live. File berbeda tetap tidak ditimpa; capture lama tetap dapat diekspor offline. Bukti gate konsolidasi terbaru terikat pada head/run di [PR #8](https://github.com/cepeter-job/spt-downloader/pull/8), bukan angka historis ini.
+
 **Status:** bukti otomatis terbaru terverifikasi setelah Tugas 5 dibuka kembali untuk celah href/konteks dokumen PDF. Penutupan awal pada commit dokumentasi `584d46902ec21e08a08af65b723c4a634f07f175` belum mencakup celah itu dan tidak boleh dianggap penerimaan final. Pengguna kemudian menyetujui regresi/perbaikan PDF di PR #8; perbaikan teruji pada head di bawah. Tidak ada merge atau klaim penerimaan portal live. Pembaruan laporan ini merupakan koreksi bukti, bukan klaim eksekusi ulang untuk commit dokumentasi sesudahnya.
 
 ## Commit dan eksekusi
