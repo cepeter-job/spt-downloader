@@ -96,12 +96,14 @@ def test_check_keeps_previous_export_result_and_displays_honest_failure(window):
     root,app,ctl,path=window
     previous=path/'old-export';previous.mkdir();(previous/'resume.xlsx').write_bytes(b'SYNTHETIC_UNREAD_TRANSPORT_ONLY')
     app._result=previous;app.open_button.state(['!disabled'])
+    export_state=app._ui_state
     app.settings();root.update_idletasks()
     assert 'Cek Kredensial' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
     button(root,'Cek Kredensial').invoke()
     ctl.active=False
     app.on_event({'type':'terminal','status':'LOGIN_UNVERIFIED','percent':0,'output':None,'message':'Login belum terverifikasi; periksa koneksi.'})
     assert app._result==previous and app.open_button.instate(['!disabled'])
+    assert app._ui_state==export_state
     assert 'belum terverifikasi' in app._credential_status.get()
 
 

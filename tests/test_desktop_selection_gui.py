@@ -113,6 +113,7 @@ def test_selection_starts_empty_and_search_sends_only_the_clicked_return(tmp_pat
         button.invoke()
         root.update()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-february']})]
+        assert app._ui_state.selected_count == 1 and app.view.scope_selected.get() == '1'
         assert not dialog.winfo_exists() and not controller.stopped
 
 
@@ -131,6 +132,8 @@ def test_overwrite_dialog_defaults_to_preserving_existing_files(tmp_path):
         decline.invoke()
         root.update()
         assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
+        assert app._ui_state.view_state == 'cancellation_pending'
+        assert app._ui_state.terminal_status is None
         assert not dialog.winfo_exists()
 
 
@@ -270,6 +273,8 @@ def test_closing_overwrite_preserves_existing_files(tmp_path):
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         root.update()
         assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
+        assert app._ui_state.view_state == 'cancellation_pending'
+        assert app._ui_state.terminal_status is None
         assert not dialog.winfo_exists()
 
 
@@ -285,6 +290,7 @@ def test_rejected_consent_dismisses_without_cancelling_terminal_cleanup(tmp_path
             approve = button(dialog, 'Ganti file tersebut')
         approve.invoke()
         root.update()
+        assert app._ui_state.selected_count is None
         assert not dialog.winfo_exists() and not controller.replies and not controller.stopped
         controller.active = False
         app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'ERROR',
