@@ -167,6 +167,7 @@ def test_compact_idle_has_both_field_entries_immediately_visible(shell):
     assert view.scope_panel.winfo_height() <= 125, 'Compact summary must not crowd out the main task'
     assert _fits_scroll_viewport(view, view.npwp_entry)
     assert _fits_scroll_viewport(view, view.year_entry)
+    assert _fits_scroll_viewport(view, view.scope_title), 'Compact summary heading must not be scrolled half away'
 
 
 def test_compact_active_progress_is_visible_without_scrolling(shell):
@@ -180,6 +181,7 @@ def test_compact_active_progress_is_visible_without_scrolling(shell):
     settle(root)
     assert _fits_scroll_viewport(view, view.progress_title_label)
     assert _fits_scroll_viewport(view, view.bar)
+    assert _fits_scroll_viewport(view, view.scope_title)
     assert view.percent.get() == '66%'
 
 
@@ -189,6 +191,9 @@ def test_tiny_initial_window_shows_npwp_entry_without_scroll_action(shell):
     settle(root)
     assert view.scope_panel.winfo_ismapped(), 'The summary remains reachable by scrolling up'
     assert _fits_scroll_viewport(view, view.npwp_entry)
+    caption = next(widget for widget in view.npwp_field.winfo_children()
+                   if widget.winfo_class() == 'TLabel' and widget.cget('text') == 'NPWP (16 digit)')
+    assert _fits_scroll_viewport(view, caption), 'Tiny window must keep the first field label with its entry'
 
 
 def test_compact_terminal_result_is_visible_without_manual_scroll(shell):
