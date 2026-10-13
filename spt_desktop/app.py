@@ -177,7 +177,10 @@ class App:
         elif kind == 'overwrite_required':
             self.overwrite_dialog(event)
         elif kind == 'terminal':
-            self.npwp_entry.focus_set()
+            # The result pane may have scrolled the form out of view.
+            # Keep keyboard focus on a visible action rather than the hidden input.
+            target = self.open_button if self.open_button.instate(['!disabled']) else self.start_button
+            target.focus_set()
 
     def _poll(self):
         self._poll_after = None
