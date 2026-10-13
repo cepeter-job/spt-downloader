@@ -2,7 +2,7 @@
 
 **Tanggal:** 13 Oktober 2026. **PR:** [#12](https://github.com/cepeter-job/spt-downloader/pull/12), branch `feat/ui-b-phase1`.
 
-**Status:** T1–T4 selesai. Pemeriksaan otomatis, artifact, dan review sumber T5 selesai; inspeksi visual native Windows belum dilakukan. PR tetap draft, belum merged atau deployed. Ini bukan klaim seluruh redesign B atau seluruh kriteria AC01–AC28 selesai.
+**Status (13 Oktober 2026):** T1–T5 untuk irisan pertama telah diverifikasi, termasuk screenshot native Windows sintetis, tes fokus keyboard dan readback artifact untuk commit produk `7aa2f095`. PR tetap draft, belum merged atau deployed. Ini bukan penerimaan manual Coretax maupun klaim seluruh redesign B/AC01–AC28 selesai.
 
 [Rencana yang disetujui](../plans/2026-10-13-magicpath-b-tkinter-phase1.md) · [Spesifikasi B-TK-1](../specs/2026-10-13-magicpath-b-tkinter-design.md) · [Panduan UI/UX](../../ui-ux/README.md).
 
@@ -14,7 +14,7 @@
 | T2 | `ui_state.py`: state murni terikat job, counter inventaris/rincian terpisah, persentase bukan sertifikasi, respons consent hanya dicatat setelah diterima controller. | 48 kasus tes baru. |
 | T3 | `ui_theme.py` dan `ui_views.py`: ttk nyata, named fonts, pengukuran work area, ringkasan di atas pada compact, gulir, reflow terbatas, timer milik view dibersihkan. | 14 kasus tes baru; empat ukuran jendela diuji. Bukan bukti screenshot atau matriks DPI menyeluruh. |
 | T4 | `App` memakai shell baru; validasi inline; klik/Enter/Alt+M memakai satu guard; Stop idempotent; event asing ditolak; self-test memakai controller sintetis terinjeksi. | 20 kasus integrasi baru dan migrasi fixture existing; seluruh suite Windows lulus. |
-| T5 | Full Windows/portable, source/frozen self-test, readback artifact exact-ID, pemeriksaan byte/hash, dan review sumber agen terpisah. | Lulus otomatis. Inspeksi visual Windows masih terbuka. |
+| T5 | Full Windows/portable, source/frozen, artifact, review sumber, delapan screenshot native sintetis regular/compact/minimum, serta regresi fokus keyboard. | Selesai untuk cakupan visual tahap 1. Bukti tambahan dan batasnya pada bagian 8. |
 
 Baseline produk `be67f5153a07ce100048d67191a02ca1d0fca1db`; parent dokumentasi `00da93ce90bcf42221f824df849cfda9c979f6c7`. Head produk yang diuji dan direview adalah **`e25f8bd163b1c9c3c84f4aee136698644e410192`**. Commit laporan ini datang sesudah head tersebut dan hanya menyentuh dokumentasi; hasil runtime di bawah tidak diberi label sebagai eksekusi commit laporan.
 
@@ -39,7 +39,9 @@ Full suite setelah perbaikan: **713 lulus**. Cleanup tidak diklaim selesai hanya
 
 Perbaikan teardown fixture membuang timer milik view melalui `app._dispose()` sebelum timer milik root tes; tidak menghapus pemeriksaan callback error atau mengurangi kontrak lifecycle. Seluruh pytest, fixture Tk/browser, source/frozen self-test, dan build berjalan pada GitHub runner, bukan vm148 atau container ChatGPT.
 
-## 4. Bukti runner akhir untuk head produk
+## 4. Bukti runner pertama (arsip historis)
+
+> Bagian 4–5 mempertahankan bukti product head `e25f8bd` dari sebelum perbaikan visual T5. **Bukti runner dan artifact paling baru berada pada bagian 8.** Jangan memakai angka 713 sebagai hasil terakhir.
 
 | Pemeriksaan | Hasil yang dibaca |
 | --- | --- |
@@ -93,9 +95,31 @@ Review sumber independen dilakukan oleh agen Codex dengan konteks baru, read-onl
 | Bagian | Status |
 | --- | --- |
 | T1–T4 dan gerbang otomatis T5 | Selesai pada head produk yang dipin di atas. |
-| Inspeksi screenshot shell regular/compact Windows | **Belum dilakukan.** T5 tidak ditandai selesai penuh; artifact existing tidak memuat screenshot. |
+| Inspeksi screenshot shell regular/compact Windows | **Selesai untuk 8 keadaan sintetis**, ukuran client 1120×800, 640×560, dan 540×390 (lihat bagian 8). |
 | High Contrast, Narrator/NVDA, DPI antar-monitor, benchmark aplikasi | Belum dilakukan; tetap kebutuhan tahap berikutnya, bukan disimpulkan dari tes geometry. |
 | Redesign dialog pemilihan/penggantian, dirty settings, seluruh hasil/login; penerimaan Coretax/Excel manual | Di luar irisan pertama atau menunggu penerimaan terpisah; fungsi baseline dan regresinya dipertahankan. |
 | Merge, rilis, deployment, dan tahap 2 | Tidak dijalankan atau disetujui otomatis oleh pekerjaan ini. |
 
-PR tetap draft untuk menampilkan batas T5 tersebut. Tidak ada permintaan mengulang persetujuan implementasi tahap 1; hanya bukti visual/penerimaan yang masih terbuka. Catatan baseline dan proposal lama tidak diperlakukan sebagai status produk terkini.
+PR tetap draft karena keputusan merge/deployment dan penerimaan manual masih terpisah. Bukti visual T5 sintetis sudah diperoleh; catatan baseline dan proposal lama tidak diperlakukan sebagai status produk terkini.
+
+## 8. Penutupan T5: review visual native dan regresi fokus (13 Oktober 2026)
+
+**Produk yang dinyatakan lulus pengujian T5:** `7aa2f0958aa113f4bae9afea75e8da8382dc9a53` pada [GitHub Actions run 38402368800](https://github.com/cepeter-job/spt-downloader/actions/runs/38402368800), checkout PR merge `52a4ac7f0a7f02a4ba7e7209004de28b0699b0a6`. Run tersebut selesai **success**: **719/719 tes Windows lulus** (168,64 detik), 367 tes portable lulus (352 tidak dipilih di jalur Linux tambahan, tetapi tercakup pada Windows), audit dependensi dan packaging lulus. Kedua inventory artefak terbaca dengan 719 node sama, seluruh 719 dipilih pada Windows, dan kedua regresi fokus compact termasuk di dalamnya.
+
+**Artifact produk terbaru:** [11815323374](https://github.com/cepeter-job/spt-downloader/actions/runs/38402368800/artifacts/11815323374), ZIP SHA-256 `efb09ca02652b5fdc20702c2761a393f7eed89a6b45e119af9a6eead71944ee7`. Artifact benar-benar diunduh, memuat tepat `SPTDownloader.exe`, `LICENSE.txt`, `README.txt`, `build-selftest.json`, `SHA256SUMS.txt`; empat checksum payload cocok. Report frozen berisi CPython 3.14.8 (GIL), Tcl/Tk 9.0.4, `credentials_accessed=false`, `live_scrape=false`, serta tiga teks khusus pemilik yang tepat. Screenshot bukan bagian executable dan tidak dimasukkan ke payload distribusi.
+
+### Sumber dan keadaan visual
+
+Review memakai **delapan screenshot dari Windows 2022 asli**, bukan gambar mockup, dengan CPython 3.14.8 dan controller sintetis tanpa browser, login, pajak nyata atau Excel/PDF. Capture Windows memakai `PrintWindow`, display virtual 1440×900. Client window 1120×800 (regular), 640×560 (compact), 540×390 (minimum), termasuk native titlebar. Sumber: [PR diagnostik terpisah #15](https://github.com/cepeter-job/spt-downloader/pull/15), [run 38397827128](https://github.com/cepeter-job/spt-downloader/actions/runs/38397827128), [artifact 11812836577](https://github.com/cepeter-job/spt-downloader/actions/runs/38397827128/artifacts/11812836577), ZIP SHA-256 `a07b796ea198562958221702a3689245246184a040b11a2ffd4e38d4ef1a347c`. Capture menggunakan tree UI `b9fddc0`; commit `7aa2f095` berikutnya hanya memperbaiki perpindahan fokus setelah terminal tanpa mengubah struktur/layout gambar. Delapan file berisi `regular-idle`, `regular-details`, `regular-complete`, `compact-idle`, `compact-invalid`, `compact-details`, `compact-partial`, `tiny-idle`. SHA tiap PNG dan ukuran layar dicocokkan dengan manifest. Arsip ZIP dan contact sheet juga disimpan di Library pengguna untuk menghindari bergantung hanya pada retensi artifact Actions.
+
+Hasil inspeksi: judul, empat tahap, form/input, status, tombol dan petunjuk Downloads terlihat pada layar yang relevan. Ringkasan regular tetap di kanan; compact menjadi tiga kolom di atas tugas. Progress 66% dan aksi PARTIAL tampak tanpa scroll manual. Pada 540×390, ruang tidak cukup untuk seluruh form, tetapi label NPWP dan Entry langsung terlihat, sementara konten lain tersedia melalui scroll. Warna bilah progres mengikuti tema Windows (hijau pada runner), tidak dipaksa menjadi biru seperti CSS MagicPath.
+
+### Defect → RED → GREEN
+
+| Defect yang ditangkap T5 | Bukti RED sebelum perbaikan | Bukti akhirnya |
+| --- | --- | --- |
+| Ringkasan compact terlalu tinggi, input/progres keluar viewport | [Run 38394513552](https://github.com/cepeter-job/spt-downloader/actions/runs/38394513552): empat tes compact baru gagal, 713 existing lulus. | Ringkasan 3 kolom dan reveal tindakan; screenshot menunjukkan form/progres. |
+| Judul ringkasan terpotong; label NPWP terpotong di jendela minimum | [Run 38396755580](https://github.com/cepeter-job/spt-downloader/actions/runs/38396755580): dua tes gagal, 715 lulus. | Padding dan scroll disesuaikan; screenshot setelah `b9fddc0` membuktikan keterbacaan. |
+| Fokus keyboard tetap berada pada NPWP yang tersembunyi setelah terminal | [Run 38399422347](https://github.com/cepeter-job/spt-downloader/actions/runs/38399422347): dua tes gagal, 717 lulus. | `App.on_event` memfokuskan tindakan Buka hasil ketika tersedia atau Mulai unduh jika tidak; run 38402368800 menunjukkan 719 lulus. |
+
+**Status T5:** review visual sintetis/native, regresi keyboard yang ditemukan, full suite, source/frozen, dan hash artifact **selesai untuk cakupan irisan 1**. Tidak diartikan sebagai persetujuan pemilik atas UI akhir, uji High Contrast, Narrator/NVDA, 200% text scaling, DPI multi-monitor, benchmark RAM/performa, atau penerimaan Coretax/Excel secara manual. PR #12 tetap tidak di-merge; keputusan merge, deployment dan tahap 2 menunggu instruksi terpisah. Screenshot diagnostik PR #15 tidak ikut ke branch produk; tidak ada perubahan user-owned CI agar tes berlalu.
