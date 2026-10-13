@@ -90,22 +90,25 @@ def test_audit_contains_literal_relative_pdf_link_and_bound_metadata_without_ext
     for name, include_details in [('resume.xlsx', False), ('SPT_Badan.xlsx', True)]:
         workbook = load_workbook(files[name])
         try:
-            expected = ['Ringkasan', 'Daftar SPT', 'Audit']
             if include_details:
-                expected += [title for ordinal, record in enumerate(run['records'], 1)
-                             for title in record_sheet_titles(ordinal, record)]
-            assert workbook.sheetnames == expected
-            linked = [cell for row in workbook['Audit'] for cell in row
-                      if cell.hyperlink and cell.hyperlink.target == item['relative_path']]
-            assert len(linked) == 1, 'A declared PDF needs one relative link in the existing Audit'
-            values = [cell.value for cell in workbook['Audit'][linked[0].row]]
-            assert all(value in values for value in [run['records'][0]['record_id'], LABEL,
-                                                     'COMPLETE', len(PDF), item['hash']])
-            assert linked[0].data_type == 's'
-            if include_details:
-                source_values = [cell.value for sheet in workbook.worksheets[3:] for row in sheet for cell in row]
+                assert workbook.sheetnames == ['001.01 Normal Induk', '002.01 Pembetulan 1 Induk']
+                proof = json.loads(workbook.properties.identifier)
+                assert proof['npwp'] == run['npwp'] and proof['year'] == run['year']
+                assert proof['records'][0]['record_id'] == run['records'][0]['record_id']
+                assert proof['records'][0]['scope'] == [run['npwp'], run['year'], run['year_basis']]
+                assert proof['records'][0]['attachments'] == [item]
+                source_values = [cell.value for sheet in workbook.worksheets for row in sheet for cell in row]
                 assert '0000123' in source_values and '1.234,56' in source_values
                 assert source_values.count('0007') == 2
+            else:
+                assert workbook.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit']
+                linked = [cell for row in workbook['Audit'] for cell in row
+                          if cell.hyperlink and cell.hyperlink.target == item['relative_path']]
+                assert len(linked) == 1, 'A declared PDF needs one relative link in the resume Audit'
+                values = [cell.value for cell in workbook['Audit'][linked[0].row]]
+                assert all(value in values for value in [run['records'][0]['record_id'], LABEL,
+                                                         'COMPLETE', len(PDF), item['hash']])
+                assert linked[0].data_type == 's'
         finally:
             workbook.close()
 

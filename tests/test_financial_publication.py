@@ -50,8 +50,16 @@ def declarations(run):
 def assert_audit_targets(folder, name, expected):
     workbook = load_workbook(folder / name)
     try:
-        links = [cell.hyperlink.target for row in workbook['Audit'] for cell in row
-                 if cell.hyperlink and cell.hyperlink.target.endswith('.pdf')]
+        if name == 'resume.xlsx':
+            links = [cell.hyperlink.target for row in workbook['Audit'] for cell in row
+                     if cell.hyperlink and cell.hyperlink.target.endswith('.pdf')]
+        else:
+            assert {'Ringkasan', 'Daftar SPT', 'Audit'}.isdisjoint(workbook.sheetnames)
+            proof = json.loads(workbook.properties.identifier)
+            assert proof['npwp'] == '0000000000000001'
+            assert proof['year'] == 2025 and proof['year_basis'] == 'period'
+            links = [item['relative_path'] for record in proof['records']
+                     for item in record.get('attachments', []) if item['status'] == 'COMPLETE']
         assert set(links) == set(expected) and len(links) == len(expected)
         for relative in links:
             assert (folder / relative).read_bytes() == expected[relative]
@@ -284,8 +292,9 @@ def test_pdf_changed_while_consent_is_open_is_never_authorized(tmp_path):
     assert (replacement / relative).read_bytes() == PDF
 
 
+@pytest.mark.parametrize('format_name', ['legacy', 'forms'])
 @pytest.mark.parametrize('tamper', ['record_id', 'digest'])
-def test_old_pdf_overwrite_requires_independent_physical_audit_binding(tmp_path, tamper):
+def test_old_pdf_overwrite_requires_independent_physical_declaration_binding(tmp_path, tamper, format_name):
     source = tmp_path / 'old-private-job'
     run = financial_run(source)
     coretax.save_output(run, source)
@@ -294,15 +303,30 @@ def test_old_pdf_overwrite_requires_independent_physical_audit_binding(tmp_path,
     assert all((final / item['relative_path']).is_file() for item in declarations(run)), (
         'The physical old PDF required by its Audit was not published')
     path = final / 'SPT_Badan.xlsx'
+    if format_name == 'legacy':
+        from coretax_exporter import export_workbook
+        export_workbook(run, path)
     workbook = load_workbook(path)
     try:
-        for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
-            if row[5].hyperlink and row[5].hyperlink.target.endswith('.pdf'):
-                row[0 if tamper == 'record_id' else 4].value = (
-                    'SYNTHETIC FOREIGN RETURN' if tamper == 'record_id' else '0' * 64)
-                break
+        if format_name == 'legacy':
+            for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+                if row[5].hyperlink and row[5].hyperlink.target.endswith('.pdf'):
+                    row[0 if tamper == 'record_id' else 4].value = (
+                        'SYNTHETIC FOREIGN RETURN' if tamper == 'record_id' else '0' * 64)
+                    break
+            else:
+                pytest.fail('The real old physical PDF Audit row was not exercised')
         else:
-            pytest.fail('The real old physical PDF Audit row was not exercised')
+            assert isinstance(workbook.properties.identifier, str), 'Nonvisual PDF proof is missing'
+            proof = json.loads(workbook.properties.identifier)
+            record = proof['records'][0]
+            assert record['record_id'] == run['records'][0]['record_id']
+            assert record['attachments'] == run['records'][0]['attachments']
+            if tamper == 'record_id':
+                record['record_id'] = 'SYNTHETIC FOREIGN RETURN'
+            else:
+                record['attachments'][0]['hash'] = '0' * 64
+            workbook.properties.identifier = json.dumps(proof, ensure_ascii=False)
         workbook.save(path)
     finally:
         workbook.close()
