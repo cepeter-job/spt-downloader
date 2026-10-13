@@ -234,3 +234,95 @@ def test_private_output_cannot_redirect_through_a_real_junction(routed, tmp_path
             alias.rmdir()
         else:
             alias.unlink()
+
+
+def set_document_base(page, href):
+    page.evaluate('''href => {
+        let base = document.querySelector('base');
+        if (!base) {
+            base = document.createElement('base');
+            document.head.append(base);
+        }
+        base.href = href;
+    }''', href)
+
+
+@pytest.mark.parametrize('base_href', ['/synthetic-existing/', ORIGIN + '/synthetic-existing/'])
+def test_pdf_get_uses_the_inspected_browser_resolved_href_with_document_base(routed, tmp_path, base_href):
+    module = attachments()
+    page, requests = routed('<a href="statement.pdf">Laporan Keuangan</a>')
+    set_document_base(page, base_href)
+    assert page.locator('a').evaluate('anchor => anchor.href') == PDF_URL
+
+    result = module.download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+
+    downloaded(result, tmp_path)
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
+
+
+def test_foreign_document_base_cannot_turn_a_raw_relative_href_into_an_approved_get(routed, tmp_path):
+    module = attachments()
+    page, requests = routed('<a href="/synthetic-existing/statement.pdf">Laporan Keuangan</a>')
+    set_document_base(page, 'https://outside.synthetic.invalid/published/')
+    assert page.locator('a').evaluate('anchor => anchor.href') == 'https://outside.synthetic.invalid/synthetic-existing/statement.pdf'
+
+    result = module.download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+
+    partial(result)
+    assert requests == [('GET', DETAIL)] and not list(tmp_path.rglob('*.pdf'))
+
+
+def test_absolute_approved_pdf_href_is_not_rejected_only_because_document_base_is_foreign(routed, tmp_path):
+    module = attachments()
+    page, requests = routed('<a href="' + PDF_URL + '">Laporan Keuangan</a>')
+    set_document_base(page, 'https://outside.synthetic.invalid/published/')
+    assert page.locator('a').evaluate('anchor => anchor.href') == PDF_URL
+
+    result = module.download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+
+    downloaded(result, tmp_path)
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
+
+
+@pytest.mark.parametrize('href', [' ' + PDF_URL, ORIGIN + '/synthetic-existing\\statement.pdf'])
+def test_browser_url_normalization_cannot_bypass_the_existing_raw_href_guards(routed, tmp_path, href):
+    module = attachments()
+    page, requests = routed('<a href="' + href + '">Laporan Keuangan</a>')
+    # Browser normalization is not permission to discard unsafe raw evidence.
+    assert page.locator('a').evaluate('anchor => anchor.href') == PDF_URL
+
+    result = module.download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+
+    partial(result)
+    assert requests == [('GET', DETAIL)] and not list(tmp_path.rglob('*.pdf'))
+
+
+@pytest.mark.parametrize('boundary', ['after_scan', 'before_fetch'])
+def test_changed_detail_document_is_rejected_before_any_pdf_get(routed, tmp_path, monkeypatch, boundary):
+    module = attachments()
+    page, requests = routed('<a href="' + PDF_URL + '">Laporan Keuangan</a>')
+    other_detail = RECORD['list_url'] + '/OTHER_SYNTHETIC_RETURN'
+    page.route(other_detail, lambda route: route.fulfill(
+        body='<main class="main-content"><h1>Other synthetic return</h1></main>',
+        content_type='text/html'))
+    evaluate = page.evaluate
+    reached = []
+
+    def evaluate_with_document_change(expression, *args, **kwargs):
+        if boundary == 'before_fetch' and expression == module._START and not reached:
+            reached.append(boundary)
+            page.goto(other_detail, wait_until='domcontentloaded')
+        result = evaluate(expression, *args, **kwargs)
+        if boundary == 'after_scan' and expression == module._SCAN and not reached:
+            reached.append(boundary)
+            page.goto(other_detail, wait_until='domcontentloaded')
+        return result
+
+    # Inject real navigation at the existing browser boundary, not a fake URL.
+    monkeypatch.setattr(page, 'evaluate', evaluate_with_document_change)
+    result = module.download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+
+    assert reached == [boundary]
+    partial(result)
+    assert requests == [('GET', DETAIL), ('GET', other_detail)]
+    assert not list(tmp_path.rglob('*.pdf'))
