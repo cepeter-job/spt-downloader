@@ -36,8 +36,12 @@ def self_test(report=None):
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
             background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
             assert len(background)==1
-            ui_text={'title':root.title(),'background':background[0].cget('text'),
+            headings=[w for w in descendants(root) if w.winfo_class()=='TLabel'
+                      and str(w.cget('style'))=='Title.TLabel']
+            assert len(headings)==1
+            ui_text={'title':headings[0].cget('text'),'background':background[0].cget('text'),
                      'results':app.results_label.cget('text')}
+            assert root.title()==ui_text['title']
             assert ui_text=={
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                 'background':'jalankan proses sedot di background',
