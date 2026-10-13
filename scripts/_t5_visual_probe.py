@@ -201,6 +201,10 @@ def snapshot(out, key, width, height, state):
                         'scrollregion':str(app.view.canvas.cget('scrollregion')),
                         'workspace_height':app.view.workspace.winfo_height(),
                         'entry':bounds(app.npwp_entry),
+                        'caption':bounds(next(child for child in app.view.npwp_field.winfo_children()
+                                              if child.winfo_class()=='TLabel' and child.cget('text')=='NPWP (16 digit)')),
+                        'scope_title':bounds(app.view.scope_title),
+                        'form_title':bounds(app.view.form_title),
                         'year_entry':bounds(app.year_entry),
                         'result':bounds(app.view.result_title_label),
                         'pending':app.view._pending_reveal,
