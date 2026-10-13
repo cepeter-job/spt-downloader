@@ -24,6 +24,13 @@ class Controller:
         self.operation = 'export'
         return self.job_id
 
+    def start_login_check(self, *args):
+        assert not self.active
+        self.job_id = 'synthetic-login-check'
+        self.operation = 'login_check'
+        self.active = True
+        return self.job_id
+
     def poll(self):
         return self.active
 
@@ -65,6 +72,7 @@ def window(tmp_path, monkeypatch):
                 app._close_interaction()
                 if app._settings_close:
                     app._settings_close()
+                app._dispose()
                 for token in root.tk.splitlist(root.tk.call('after', 'info')):
                     root.after_cancel(token)
                 root.destroy()
@@ -237,3 +245,32 @@ def test_closing_root_disposes_view_and_poll_callbacks(window, monkeypatch):
     monkeypatch.setattr(root, 'destroy', observed_destroy)
     app.request_close()
     assert not owned & set(before_destroy)
+
+
+def test_new_login_check_gets_its_own_poll_failure_cleanup(window, monkeypatch):
+    root, app, controller, _ = window
+    begin(app)
+    def broken():
+        raise RuntimeError('Synthetic monitoring failure')
+    def cleanup():
+        controller.closes += 1
+    monkeypatch.setattr(controller, 'poll', broken)
+    monkeypatch.setattr(controller, 'close', cleanup)
+    settle(root)
+    assert controller.closes == 1
+    monkeypatch.setattr(controller, 'poll', lambda: controller.active)
+    controller.active = False
+    app.on_event(progress(controller, type='terminal', status='CANCELLED'))
+    app.preferences['identifier'] = 'SYNTHETIC_ACCOUNT'
+    dialog = app.settings()
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+    check = next(w for w in descendants(dialog) if w.winfo_class() == 'TButton'
+                 and w.cget('text') == 'Cek Kredensial')
+    check.invoke()
+    assert controller.operation == 'login_check' and controller.active
+    monkeypatch.setattr(controller, 'poll', broken)
+    settle(root)
+    assert controller.closes == 2, 'A new login job must request its own cleanup'

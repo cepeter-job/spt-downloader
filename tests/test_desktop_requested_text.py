@@ -70,6 +70,8 @@ def window(tmp_path, monkeypatch):
         controller.close()
         if application is not None and application._settings_close:
             application._settings_close()
+        if application is not None:
+            application._dispose()
         for callback in root.tk.splitlist(root.tk.call('after', 'info')):
             root.after_cancel(callback)
         root.destroy()

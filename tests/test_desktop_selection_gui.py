@@ -68,6 +68,7 @@ def window(tmp_path, payload, kind='selection'):
         assert len(dialogs) == 1
         yield root, app, controller, dialogs[0]
     finally:
+        app._dispose()
         for token in root.tk.call('after', 'info'):
             root.after_cancel(token)
         if hasattr(app, '_close_interaction'):
