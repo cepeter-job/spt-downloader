@@ -1,10 +1,12 @@
 """Jalankan subset Linux yang ditinjau dan seluruh pengujian regresi Windows."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import sys
+import time
 
 
 # Hanya modul portable yang telah ditinjau masuk jalur Linux tambahan. Windows
@@ -15,6 +17,7 @@ PORTABLE_FILES = frozenset({
     'tests/test_ci_artifacts.py',
     'tests/test_ci_python_cache.py',
     'tests/test_ci_routing.py',
+    'tests/test_ci_sharding.py',
     'tests/test_dependency_locks.py',
     'tests/test_desktop_build.py',
     'tests/test_desktop_credentials.py',
@@ -46,10 +49,34 @@ def workload_for(nodeid):
             and test not in WINDOWS_TESTS else 'windows')
 
 
+def shard_for(nodeid, count):
+    # Assignment is stable across separately provisioned CI runners.
+    digest = hashlib.sha256(nodeid.encode('utf-8')).digest()
+    return int.from_bytes(digest[:8], 'big') % count
+
+
 def pytest_addoption(parser):
     group = parser.getgroup('CI workload routing')
     group.addoption('--ci-workload', choices=('all', 'portable', 'windows'), default='all')
-    group.addoption('--ci-manifest', help='Write only synthetic test node IDs and runner metadata.')
+    group.addoption('--ci-manifest', help='Write synthetic node IDs and runner metadata.')
+    group.addoption('--ci-benchmark', action='store_true',
+                    help='Measure a separate full-suite benchmark without changing production.')
+    group.addoption('--ci-shard', choices=('0/2', '1/2'),
+                    help='Run one of two Windows benchmark shards.')
+
+
+def pytest_sessionstart(session):
+    config = session.config
+    benchmark, shard = config.getoption('--ci-benchmark'), config.getoption('--ci-shard')
+    if shard and not benchmark:
+        from pytest import UsageError
+        raise UsageError('--ci-shard requires --ci-benchmark.')
+    if benchmark:
+        if config.getoption('--ci-workload') != 'windows' or not config.getoption('--ci-manifest'):
+            from pytest import UsageError
+            raise UsageError('Benchmark requires Windows workload and an evidence manifest.')
+        config._ci_benchmark_started = time.monotonic()
+
 
 
 def pytest_collection_modifyitems(config, items):
@@ -61,13 +88,37 @@ def pytest_collection_modifyitems(config, items):
             (selected if workload_for(item.nodeid) == workload else excluded).append(item)
         items[:] = selected
         config.hook.pytest_deselected(items=excluded)
+    shard = config.getoption('--ci-shard')
+    if shard:
+        index = int(shard[0])
+        selected, excluded = [], []
+        for item in items:
+            (selected if shard_for(item.nodeid, 2) == index else excluded).append(item)
+        items[:] = selected
+        config.hook.pytest_deselected(items=excluded)
     manifest = config.getoption('--ci-manifest')
     if manifest:
-        Path(manifest).write_text(json.dumps({
+        report = {
             'workload': workload, 'python': platform.python_version(),
             'platform': sys.platform, 'commit': os.environ.get('GITHUB_SHA', ''),
             'all': all_nodes, 'selected': sorted(item.nodeid for item in items),
-        }, indent=2) + '\n', encoding='utf-8')
+        }
+        if shard:
+            report['shard'] = {'index': int(shard[0]), 'count': 2}
+        Path(manifest).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+
+
+def pytest_sessionfinish(session, exitstatus):
+    config = session.config
+    if not config.getoption('--ci-benchmark'):
+        return
+    path = Path(config.getoption('--ci-manifest'))
+    if not path.exists():
+        return
+    report = json.loads(path.read_text(encoding='utf-8'))
+    report['exitstatus'] = int(exitstatus)
+    report['elapsed_seconds'] = time.monotonic() - config._ci_benchmark_started
+    path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
 def check_inventories(portable, windows, python_version, commit):
