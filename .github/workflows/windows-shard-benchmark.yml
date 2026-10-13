@@ -1,0 +1,130 @@
+name: Benchmark Windows test sharding
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-build.yml'
+      - '.github/workflows/windows-shard-benchmark.yml'
+      - 'scripts/ci_tests.py'
+      - 'scripts/ci_shard_benchmark.py'
+      - 'tests/test_ci_sharding.py'
+
+permissions:
+  contents: read
+
+# Isolated from the production build and from its required branch check.
+concurrency:
+  group: windows-shard-benchmark-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHONUTF8: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  benchmark:
+    name: Windows benchmark (${{ matrix.mode }})
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        mode: [serial, shard-0, shard-1]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHON_VERSION: '3.14.8'
+      BENCHMARK_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned uv and read-only production integration cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.12.22'
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-python: true
+          save-cache: false
+          cache-dependency-glob: |
+            requirements*.txt
+            locks/*.txt
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ env.PYTHON_VERSION }}-integration
+      - name: Install the identical hash-locked Windows test environment
+        run: |
+          python -I -S scripts/ci_python_cache.py --python-version "$env:PYTHON_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run the complete synthetic Windows suite serially or as one shard
+        run: |
+          $pytestArgs = @(
+            '-m', 'pytest', 'tests', '-p', 'scripts.ci_tests', '--ci-workload', 'windows',
+            '-q', '--ci-benchmark', '--ci-manifest', "$env:RUNNER_TEMP/test-inventory.json",
+            '--basetemp', "$env:RUNNER_TEMP/spt-pytest-benchmark", '--durations=10'
+          )
+          if ($env:BENCHMARK_MODE -ne 'serial') {
+            $shardIndex = $env:BENCHMARK_MODE.Substring(6)
+            $pytestArgs += @('--ci-shard', "$shardIndex/2")
+          }
+          & .venv/Scripts/python.exe @pytestArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish synthetic benchmark inventory and pytest timing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-benchmark-${{ matrix.mode }}-${{ github.sha }}
+          path: ${{ runner.temp }}/test-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
+  compare:
+    name: Compare serial and 2-shard Windows tests
+    needs: [benchmark]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      BENCHMARK_RESULT: ${{ needs.benchmark.result }}
+      PYTHON_VERSION: '3.14.8'
+    steps:
+      - name: Require all three Windows benchmark variants to pass
+        shell: bash
+        run: test "$BENCHMARK_RESULT" = 'success'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download serial evidence from this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-benchmark-serial-${{ github.sha }}
+          path: ${{ runner.temp }}/benchmark-serial
+      - name: Download shard 0 evidence from this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-benchmark-shard-0-${{ github.sha }}
+          path: ${{ runner.temp }}/benchmark-shard-0
+      - name: Download shard 1 evidence from this run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-benchmark-shard-1-${{ github.sha }}
+          path: ${{ runner.temp }}/benchmark-shard-1
+      - name: Verify exact full coverage and compare measured pytest time
+        shell: bash
+        run: >-
+          python3 -m scripts.ci_shard_benchmark
+          "$RUNNER_TEMP/benchmark-serial/test-inventory.json"
+          "$RUNNER_TEMP/benchmark-shard-0/test-inventory.json"
+          "$RUNNER_TEMP/benchmark-shard-1/test-inventory.json"
+          --python-version "$PYTHON_VERSION" --commit "$GITHUB_SHA"
+          --summary "$GITHUB_STEP_SUMMARY"
