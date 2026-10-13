@@ -149,3 +149,58 @@ def test_progress_never_opens_output_or_restarts_indeterminate_timer(shell):
     assert view.open_button.instate(['disabled'])
     view.set_busy(True, stopping=True)
     assert all(w.instate(['disabled']) for w in (view.start_button, view.stop_button, view.settings_button))
+
+
+def _fits_scroll_viewport(view, widget):
+    """Actual on-screen bounds; mapped widgets can still be below the fold."""
+    top = view.canvas.winfo_rooty()
+    bottom = top + view.canvas.winfo_height()
+    return top <= widget.winfo_rooty() and widget.winfo_rooty() + widget.winfo_height() <= bottom
+
+
+def test_compact_idle_has_both_field_entries_immediately_visible(shell):
+    root, view, _ = shell
+    root.geometry('640x560')
+    settle(root)
+    assert view.scope_panel.winfo_ismapped()
+    assert view.scope_panel.winfo_y() < view.content_slot.winfo_y()
+    assert view.scope_panel.winfo_height() <= 125, 'Compact summary must not crowd out the main task'
+    assert _fits_scroll_viewport(view, view.npwp_entry)
+    assert _fits_scroll_viewport(view, view.year_entry)
+
+
+def test_compact_active_progress_is_visible_without_scrolling(shell):
+    root, view, _ = shell
+    from spt_desktop.ui_state import begin_export, reduce_export
+    state = begin_export('synthetic-job', '0000000000000001', '2025')
+    state = reduce_export(state, {'job_id':'synthetic-job','type':'progress','stage':'details',
+        'percent':66,'processed':6,'total':9,'verified':5},controller_active=True)
+    view.render(state, active=True)
+    root.geometry('640x560')
+    settle(root)
+    assert _fits_scroll_viewport(view, view.progress_title_label)
+    assert _fits_scroll_viewport(view, view.bar)
+    assert view.percent.get() == '66%'
+
+
+def test_tiny_initial_window_shows_npwp_entry_without_scroll_action(shell):
+    root, view, _ = shell
+    root.geometry('540x390')
+    settle(root)
+    assert view.scope_panel.winfo_ismapped(), 'The summary remains reachable by scrolling up'
+    assert _fits_scroll_viewport(view, view.npwp_entry)
+
+
+def test_compact_terminal_result_is_visible_without_manual_scroll(shell):
+    root, view, _ = shell
+    from spt_desktop.ui_state import begin_export, reduce_export
+    state = begin_export('synthetic-job', '0000000000000001', '2025')
+    view.render(state,active=True)
+    state = reduce_export(state, {'job_id':'synthetic-job', 'type':'terminal',
+        'status':'PARTIAL', 'percent':90, 'output':'synthetic-output'},controller_active=False)
+    view.render(state,active=False)
+    root.geometry('640x560')
+    settle(root)
+    assert view.result_panel.winfo_ismapped()
+    assert _fits_scroll_viewport(view, view.result_title_label)
+    assert _fits_scroll_viewport(view, view.result_status_label)
