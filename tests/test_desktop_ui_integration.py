@@ -274,3 +274,35 @@ def test_new_login_check_gets_its_own_poll_failure_cleanup(window, monkeypatch):
     monkeypatch.setattr(controller, 'poll', broken)
     settle(root)
     assert controller.closes == 2, 'A new login job must request its own cleanup'
+
+
+@pytest.mark.parametrize('status,has_output,focus_name', [
+    ('PARTIAL', True, 'open_button'),
+    ('CANCELLED', False, 'start_button'),
+])
+def test_compact_terminal_focus_targets_visible_outcome_after_reveal(
+        window, tmp_path, status, has_output, focus_name):
+    root, app, controller, _ = window
+    root.geometry('540x390')
+    settle(root)
+    begin(app)
+    root.update_idletasks()
+    controller.active = False
+    output = tmp_path / 'synthetic-output'
+    if has_output:
+        output.mkdir()
+    event = progress(controller, type='terminal', status=status, percent=90,
+                     output=str(output) if has_output else None)
+    app.on_event(event)
+    settle(root)  # Allows both reflow and delayed scroll reveal to finish.
+    focus = root.focus_get()
+    expected = getattr(app, focus_name)
+    assert focus is expected, 'Focus must remain on an actionable visible control after result scroll'
+    assert expected.winfo_ismapped() and expected.instate(['!disabled'])
+    assert app.view.result_title_label.winfo_ismapped()
+    top = app.view.canvas.winfo_rooty()
+    bottom = top + app.view.canvas.winfo_height()
+    title = app.view.result_title_label
+    assert top <= title.winfo_rooty()
+    assert title.winfo_rooty() + title.winfo_height() <= bottom
+    assert root.focus_get() is not app.npwp_entry
