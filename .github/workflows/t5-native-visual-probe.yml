@@ -1,0 +1,39 @@
+name: T5 synthetic Windows visual evidence (temporary)
+on:
+  pull_request:
+    branches: [feat/ui-b-phase1]
+    paths:
+      - '.github/workflows/t5-native-visual-probe.yml'
+      - 'scripts/_t5_visual_probe.py'
+permissions:
+  contents: read
+jobs:
+  capture:
+    name: Capture native Tkinter frames without accounts
+    runs-on: windows-2022
+    timeout-minutes: 12
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Set up pinned production interpreter; no dependencies
+        shell: pwsh
+        run: |
+          uv python install 3.14.8
+          uv venv --managed-python --python '3.14.8+gil' .venv
+      - name: Capture synthetic UI states with Windows GDI
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe scripts/_t5_visual_probe.py --out "$env:RUNNER_TEMP/t5-native-visual"
+      - name: Upload screenshot evidence only (synthetic)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: t5-native-visual-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 4
+          path: ${{ runner.temp }}/t5-native-visual/
