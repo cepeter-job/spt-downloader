@@ -32,6 +32,10 @@ class MainView(ttk.Frame):
         self.scale = effective_scale(self.window)
         self._disposed = False
         self._reflow_after = None
+        self._reveal_after = None
+        self._pending_reveal = 'form'
+        self._last_geometry = None
+        self._last_compact = None
         self._indeterminate = False
         self._state = ExportState()
         self._root_bindings = []
@@ -75,8 +79,10 @@ class MainView(ttk.Frame):
         self.content_slot.columnconfigure(0, weight=1)
         self.scope_panel = ttk.Frame(self.workspace, style='SPT.Card.TFrame', padding=self.px(16))
         self.scope_panel.columnconfigure(0, weight=1)
-        ttk.Label(self.scope_panel, text='Ringkasan unduhan', style='SPT.Heading.TLabel').grid(row=0, sticky='w', pady=(0, self.px(12)))
+        self.scope_title = ttk.Label(self.scope_panel, text='Ringkasan unduhan', style='SPT.Heading.TLabel')
+        self.scope_title.grid(row=0, column=0, columnspan=3, sticky='w', pady=(0, self.px(12)))
         self._scope_labels = []
+        self._scope_holders = []
         for row, (caption, value) in enumerate((('NPWP', self.scope_npwp), ('Tahun pajak', self.scope_year),
                                                 ('SPT dipilih', self.scope_selected)), start=1):
             holder = ttk.Frame(self.scope_panel, style='SPT.Card.TFrame')
@@ -86,6 +92,7 @@ class MainView(ttk.Frame):
             label = ttk.Label(holder, textvariable=value, style='SPT.Label.TLabel', wraplength=self.px(200))
             label.grid(row=1, sticky='ew')
             self._scope_labels.append(label)
+            self._scope_holders.append(holder)
         self._build_form()
         self._build_status()
         self.action_bar = ttk.Frame(self, style='SPT.Shell.TFrame')
@@ -167,6 +174,9 @@ class MainView(ttk.Frame):
     def render(self, state: ExportState, *, active: bool) -> None:
         if self._disposed:
             return
+        if (state.view_state != self._state.view_state
+                or state.terminal_status != self._state.terminal_status):
+            self._pending_reveal = self._priority_area(state)
         self._state = state
         self.scope_npwp.set(state.npwp or '—')
         self.scope_year.set(state.year or '—')
@@ -254,6 +264,40 @@ class MainView(ttk.Frame):
         if int(label.cget('wraplength') or 0) != width:
             label.configure(wraplength=width)
 
+    @staticmethod
+    def _priority_area(state: ExportState) -> str:
+        if state.terminal_status is not None:
+            return 'result'
+        return 'form' if state.view_state in ('idle', 'form_invalid') else 'progress'
+
+    def _reveal_priority(self):
+        """Show the actual input, progress, or outcome when a compact viewport is short."""
+        self._reveal_after = None
+        priority, self._pending_reveal = self._pending_reveal, None
+        if self._disposed or priority is None or self.canvas.winfo_height() <= 1:
+            return
+        if priority == 'result':
+            start, end = self.result_title_label, self.result_status_label
+        elif priority == 'progress':
+            start, end = self.progress_title_label, self.bar
+        else:
+            start = end = self.npwp_entry
+        if not start.winfo_ismapped() or not end.winfo_ismapped():
+            return
+        above = self.canvas.winfo_rooty()
+        below = above + self.canvas.winfo_height()
+        first, last = start.winfo_rooty(), end.winfo_rooty() + end.winfo_height()
+        if first >= above and last <= below:
+            return
+        margin = self.px(6)
+        if last > below:
+            shift = last - below + margin
+        else:
+            shift = first - above - margin
+        extent = max(1, self.workspace.winfo_height())
+        limit = max(0, extent - self.canvas.winfo_height())
+        self.canvas.yview_moveto(min(limit, max(0, self.canvas.canvasy(0) + shift)) / extent)
+
     def _reflow(self):
         self._reflow_after = None
         if self._disposed or self.winfo_width() <= 1 or self.canvas.winfo_width() <= 1:
@@ -265,13 +309,30 @@ class MainView(ttk.Frame):
         self.canvas.itemconfigure(self._canvas_window, width=available)
         gap, summary_width = self.px(policy.gap_dip), self.px(policy.summary_width_dip)
         main_width = available if policy.compact else max(1, available - summary_width - gap)
-        content_width = max(self.px(160), main_width - self.px(32))
+        content_width = max(self.px(160), main_width - self.px(24 if policy.compact else 32))
         policy = layout_policy(self.window.winfo_width() / self.scale, content_width / self.scale)
+        geometry = (self.winfo_width(), self.winfo_height())
+        if (self._last_geometry is not None
+                and (self._last_compact != policy.compact
+                     or geometry[1] < self._last_geometry[1] - self.px(12))):
+            self._pending_reveal = self._priority_area(self._state)
+        self._last_compact, self._last_geometry = policy.compact, geometry
+        self.form.configure(padding=self.px(12 if policy.compact else 16))
+        self.progress_panel.configure(padding=self.px(12 if policy.compact else 16))
         self.content_slot.grid_remove()
         self.scope_panel.grid_remove()
         self.workspace.columnconfigure(0, weight=1)
         self.workspace.columnconfigure(1, weight=0, minsize=0 if policy.compact else summary_width)
         self.scope_panel.grid_propagate(policy.compact)
+        self.scope_panel.configure(padding=self.px(10 if policy.compact else 16))
+        self.scope_title.grid_configure(pady=(0, self.px(6 if policy.compact else 12)))
+        for column in range(3):
+            self.scope_panel.columnconfigure(column, weight=1 if policy.compact else (1 if column == 0 else 0))
+        for ordinal, holder in enumerate(self._scope_holders):
+            holder.grid(row=1 if policy.compact else ordinal + 1,
+                        column=ordinal if policy.compact else 0, sticky='ew',
+                        padx=(0, self.px(8)) if policy.compact and ordinal < 2 else (0, 0),
+                        pady=(0, 0) if policy.compact else (0, self.px(8)))
         if policy.compact:
             self.scope_panel.grid(row=0, column=0, sticky='ew', pady=(0, gap))
             self.content_slot.grid(row=1, column=0, sticky='ew')
@@ -298,7 +359,9 @@ class MainView(ttk.Frame):
                        self.metrics_label, self.status_label, self.setup_hint, self.result_title_label, self.result_status_label):
             self._wrap(label, content_width)
         for label in self._scope_labels:
-            self._wrap(label, (available if policy.compact else summary_width) - self.px(32))
+            width = ((available - self.px(20) - self.px(16)) // 3 if policy.compact
+                     else summary_width - self.px(32))
+            self._wrap(label, width)
         outer = self.winfo_width() - 2 * padding
         self._wrap(self.heading, outer - self.settings_button.winfo_reqwidth() - self.px(12))
         self._wrap(self.subtitle, outer)
@@ -309,6 +372,8 @@ class MainView(ttk.Frame):
             button.grid(row=1 if wrap else 0, column=0 if wrap else ordinal, sticky='w',
                         padx=(0, self.px(8)), pady=(self.px(4) if wrap else 0, 0))
         self._update_scrollregion()
+        if self._pending_reveal is not None and self._reveal_after is None:
+            self._reveal_after = self.after_idle(self._reveal_priority)
 
     def _update_scrollregion(self, event=None):
         if not self._disposed:
@@ -337,12 +402,14 @@ class MainView(ttk.Frame):
         if self._disposed:
             return
         self._disposed = True
-        if self._reflow_after is not None:
-            try:
-                self.after_cancel(self._reflow_after)
-            except tk.TclError:
-                pass
-            self._reflow_after = None
+        for callback in (self._reflow_after, self._reveal_after):
+            if callback is not None:
+                try:
+                    self.after_cancel(callback)
+                except tk.TclError:
+                    pass
+        self._reflow_after = None
+        self._reveal_after = None
         try:
             self.bar.stop()
             for sequence, identifier in self._root_bindings:
