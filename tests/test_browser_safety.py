@@ -246,6 +246,100 @@ def test_detail_capture_rejects_other_record_for_same_taxpayer(tmp_path, monkeyp
     assert page.popup.closed
 
 
+@pytest.mark.parametrize('identifier', [None, '', 123, True])
+def test_detail_does_not_substitute_aggregate_or_coerce_record_id_before_view(tmp_path, monkeypatch, identifier):
+    calls = []
+    original_view = View.evaluate
+    def observed_view(view, script):
+        calls.append(view.page.url)
+        return original_view(view, script)
+    monkeypatch.setattr(View, 'evaluate', observed_view)
+    install_capture(monkeypatch)
+
+    class InvalidIdentityPage(SourcePage):
+        def goto(self, url, **kwargs):
+            self.navigated.append(url)
+            self.url = url
+            self.emit('response', response([{
+                'RecordId': identifier, 'AggregateIdentifier': RECORD,
+                'TaxpayerAggregateIdentifier': TAXPAYER}]))
+
+    result = driver.collect_details(InvalidIdentityPage(), run_fixture(), tmp_path)
+    assert calls == [], 'Fresh list RecordId must be verified before any View action'
+    assert not result['complete']
+    assert not result['records'][0]['capture_complete']
+
+
+def test_detail_rejects_foreign_taxpayer_in_fresh_rows_before_view(tmp_path, monkeypatch):
+    calls = []
+    original_view = View.evaluate
+    def observed_view(view, script):
+        calls.append(view.page.url)
+        return original_view(view, script)
+    monkeypatch.setattr(View, 'evaluate', observed_view)
+    install_capture(monkeypatch)
+
+    class ForeignIdentityPage(SourcePage):
+        def goto(self, url, **kwargs):
+            self.navigated.append(url)
+            self.url = url
+            self.emit('response', response([{
+                'RecordId': RECORD, 'TaxpayerAggregateIdentifier': 'fixture-other-taxpayer'}]))
+
+    result = driver.collect_details(ForeignIdentityPage(), run_fixture(), tmp_path)
+    assert calls == [], 'Matching metadata and RecordId do not override a foreign taxpayer'
+    assert not result['complete']
+    assert result['errors']
+
+
+def test_detail_refinds_record_after_reordering_instead_of_clicking_saved_position(tmp_path, monkeypatch):
+    clicked = []
+    install_capture(monkeypatch)
+
+    class ReorderedView(View):
+        def __init__(self, page, position):
+            super().__init__(page)
+            self.position = position
+
+        def evaluate(self, script):
+            clicked.append(self.position)
+            super().evaluate(script)
+
+    class ReorderedTable(Table):
+        def __init__(self, page, position=None):
+            super().__init__(page)
+            self.position = position
+
+        def evaluate(self, script):
+            # Identical captions cannot identify which return is selected.
+            return {'headers': list(META), 'rows': [list(META.values()), list(META.values())], 'footer': []}
+
+        def locator(self, selector):
+            if selector == 'button[id=ViewButton]':
+                return ReorderedView(self.page, self.position)
+            return self
+
+        def nth(self, index):
+            return ReorderedTable(self.page, index)
+
+    class ReorderedPage(SourcePage):
+        def goto(self, url, **kwargs):
+            self.navigated.append(url)
+            self.url = url
+            self.emit('response', response([
+                {'RecordId': 'fixture-other-record', 'TaxpayerAggregateIdentifier': TAXPAYER},
+                {'RecordId': RECORD, 'TaxpayerAggregateIdentifier': TAXPAYER}]))
+
+        def locator(self, selector):
+            return ReorderedTable(self)
+
+    run = run_fixture()
+    run['records'][0]['row_position'] = 0
+    result = driver.collect_details(ReorderedPage(), run, tmp_path)
+    assert clicked == [1], 'A saved position is not a RecordId when ordering changes'
+    assert result['complete'], result['errors']
+
+
 def test_readonly_view_uses_popup_from_the_initiating_page():
     page = SourcePage()
     unrelated = DetailPage(DETAIL_URL.replace(RECORD, 'unrelated-fixture-record'))
