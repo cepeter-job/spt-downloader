@@ -93,8 +93,10 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
         assert len(forms) == 4, 'Masa tabs are still flattened into one sheet per return'
         assert len({sheet.title.casefold() for sheet in forms}) == 4
         assert [sheet['A1'].value for sheet in forms] == names + names
-        assert sum('Normal' in sheet.title for sheet in forms) == 2
-        assert sum('Pembetulan 2' in sheet.title for sheet in forms) == 2
+        assert [sheet.title for sheet in forms] == ['Induk', 'Lampiran - Rincian',
+                                                   'Induk (2)', 'Lampiran - Rincian (2)']
+        proof = exporter.read_workbook_proof(workbook)
+        assert [record['meta']['Model SPT'] for record in proof['records']] == ['Normal', 'Amendment 002']
         expected = Counter(field['value'] for record in run['records']
                            for section in record['sections'] for field in section['fields'])
         observed = Counter(cell.value for sheet in forms for row in sheet for cell in row

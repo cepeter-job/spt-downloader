@@ -295,13 +295,33 @@ def record_forms(record):
     return list(groups.items())
 
 
-def record_sheet_titles(ordinal, record):
+def record_sheet_titles(ordinal, record, *, used=None, legacy=False):
+    used = set() if used is None else used
     result = []
     for index, (form, _) in enumerate(record_forms(record), 1):
         form = re.sub(r'[\[\]:*?/\\]', '-', form)
-        prefix = f'{ordinal:03d}.{index:02d} {amendment_label(record)} '
-        result.append((prefix + form)[:31])
+        if legacy:
+            # Exact historical names remain a valid physical proof, not a rename wildcard.
+            prefix = f'{ordinal:03d}.{index:02d} {amendment_label(record)} '
+            result.append((prefix + form)[:31])
+            continue
+        base = form[:31] or 'SPT'
+        title = base
+        number = 2
+        while title.casefold() in used:
+            suffix = f' ({number})'
+            title = base[:31 - len(suffix)] + suffix
+            number += 1
+        used.add(title.casefold())
+        result.append(title)
     return result
+
+
+def workbook_sheet_titles(records, *, reserved=(), legacy=False):
+    """One source-ordered namespace shared by writers, links and physical proof."""
+    used = {title.casefold() for title in reserved}
+    return [record_sheet_titles(ordinal, record, used=used, legacy=legacy)
+            for ordinal, record in enumerate(records, 1)]
 
 
 def workbook_groups(run):
@@ -491,9 +511,10 @@ def read_workbook_proof(workbook):
         validate_export_run(proof)
         if workbook_proof(proof) != proof:
             raise ValueError('Workbook proof contains unsupported source metadata')
-        expected = [title for ordinal, record in enumerate(proof['records'], 1)
-                    for title in record_sheet_titles(ordinal, record)]
-        if (workbook.sheetnames != expected
+        expected = [title for titles in workbook_sheet_titles(proof['records']) for title in titles]
+        historical = [title for titles in workbook_sheet_titles(proof['records'], legacy=True)
+                      for title in titles]
+        if (workbook.sheetnames not in (expected, historical)
                 or any(sheet.sheet_state != 'visible' for sheet in workbook)):
             raise ValueError('Workbook form sheets differ from their proof')
         workbook_groups(proof)
@@ -507,9 +528,10 @@ def _export_form_workbook(run, path):
     wb.remove(wb.active)
     wb.properties.identifier = json.dumps(workbook_proof(run), ensure_ascii=False,
                                           sort_keys=True, allow_nan=False)
-    for ordinal, record in enumerate(run['records'], 1):
+    for ordinal, (record, titles) in enumerate(
+            zip(run['records'], workbook_sheet_titles(run['records'])), 1):
         for form_index, (title, (_, sections)) in enumerate(
-                zip(record_sheet_titles(ordinal, record), record_forms(record)), 1):
+                zip(titles, record_forms(record)), 1):
             detail = wb.create_sheet(title)
             setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
             detail.oddFooter.center.text = None
@@ -596,12 +618,13 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                         cell.hyperlink = value
                         cell.font = Font(color=BLUE, underline='single')
                 ar += 1
+    title_groups = workbook_sheet_titles(records, reserved=wb.sheetnames) if include_details else []
     for ordinal, record in enumerate(records, 1):
         meta = record['meta']
         url = record.get('detail_url', '')
         if include_details:
             title_label, scope_label = detail_labels(run, record)
-            titles = record_sheet_titles(ordinal, record)
+            titles = title_groups[ordinal - 1]
             for form_index, (sheet_title, (_, sections)) in enumerate(zip(titles, record_forms(record)), 1):
                 detail = wb.create_sheet(sheet_title)
                 setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A6')
@@ -657,9 +680,9 @@ def export_split_workbooks(run, folder):
     files = {'resume.xlsx': folder / 'resume.xlsx'}
     ordinals = {id(record): index for index, record in enumerate(run['records'], 1)}
     for filename, records in groups.items():
-        for local_ordinal, record in enumerate(records, 1):
+        for record, titles in zip(records, workbook_sheet_titles(records)):
             global_ordinal = ordinals[id(record)]
-            targets[global_ordinal] = (filename, detail_sheet_title(local_ordinal, record))
+            targets[global_ordinal] = (filename, titles[0])
         group_run = {**run, 'records': records,
             'scope_description': type_scope_description(run, records[0]['meta']['Jenis Pajak'])}
         path = folder / filename

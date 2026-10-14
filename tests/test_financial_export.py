@@ -91,7 +91,7 @@ def test_audit_contains_literal_relative_pdf_link_and_bound_metadata_without_ext
         workbook = load_workbook(files[name])
         try:
             if include_details:
-                assert workbook.sheetnames == ['001.01 Normal Induk', '002.01 Pembetulan 1 Induk']
+                assert workbook.sheetnames == ['Induk', 'Induk (2)']
                 proof = json.loads(workbook.properties.identifier)
                 assert proof['npwp'] == run['npwp'] and proof['year'] == run['year']
                 assert proof['records'][0]['record_id'] == run['records'][0]['record_id']

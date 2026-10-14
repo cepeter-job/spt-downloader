@@ -30,8 +30,9 @@ def test_one_period_one_workbook_and_amendments_stay_together(tmp_path):
     wb = load_workbook(tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx')
     try:
         assert len(wb.sheetnames) == 2
-        assert any('Normal' in name for name in wb.sheetnames)
-        assert any('Pembetulan' in name for name in wb.sheetnames)
+        assert wb.sheetnames == ['Induk', 'Induk (2)']
+        proof = exporter.read_workbook_proof(wb)
+        assert [record['meta']['Model SPT'] for record in proof['records']] == ['Normal', 'Pembetulan ke-1']
         assert all(ws['A1'].value == 'Induk' for ws in wb)
         assert not any(cell.hyperlink and 'resume.xlsx' in (cell.hyperlink.target or '')
                        for ws in wb for row in ws for cell in row)
@@ -50,8 +51,9 @@ def test_corporate_forms_are_separate_and_amendments_unique(tmp_path):
         names = wb.sheetnames
         assert len(names) == 4
         assert len({name.casefold() for name in names}) == 4
-        assert any('Induk' in name and 'Normal' in name for name in names)
-        assert any('L1-D' in name and 'Pembetulan' in name for name in names)
+        assert names == ['Induk', 'L1-D', 'Induk (2)', 'L1-D (2)']
+        proof = exporter.read_workbook_proof(wb)
+        assert [record['meta']['Model SPT'] for record in proof['records']] == ['Normal', 'Amendment 001']
         for ws in wb.worksheets:
             assert not any(r.min_row >= 6 for r in ws.merged_cells.ranges)
     finally:
