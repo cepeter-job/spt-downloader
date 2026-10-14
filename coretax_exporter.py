@@ -14,6 +14,7 @@ import re
 import sys
 from urllib.parse import urlsplit
 from openpyxl import Workbook
+from coretax_pph21 import template_workbook, render_template_form
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.hyperlink import Hyperlink
@@ -524,18 +525,32 @@ def read_workbook_proof(workbook):
 
 
 def _export_form_workbook(run, path):
-    wb = Workbook()
-    wb.remove(wb.active)
+    title_plan = workbook_sheet_titles(run['records'])
+    if all(record['meta']['Jenis Pajak'] == 'PPh Pasal 21/26' for record in run['records']):
+        wb, templates = template_workbook([title for titles in title_plan for title in titles])
+    else:
+        wb = Workbook()
+        wb.remove(wb.active)
+        templates = {}
     wb.properties.identifier = json.dumps(workbook_proof(run), ensure_ascii=False,
                                           sort_keys=True, allow_nan=False)
-    for ordinal, (record, titles) in enumerate(
-            zip(run['records'], workbook_sheet_titles(run['records'])), 1):
-        for form_index, (title, (_, sections)) in enumerate(
+    for ordinal, (record, titles) in enumerate(zip(run['records'], title_plan), 1):
+        for form_index, (title, (form, sections)) in enumerate(
                 zip(titles, record_forms(record)), 1):
-            detail = wb.create_sheet(title)
-            setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
-            detail.oddFooter.center.text = None
-            render_form(detail, sections, ordinal, form_index, start_row=1)
+            template = templates.get(form.casefold())
+            if template is not None:
+                detail = wb.copy_worksheet(template)
+                detail.title = title
+                render_template_form(detail, form, sections)
+            else:
+                detail = wb.create_sheet(title)
+                setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
+                detail.oddFooter.center.text = None
+                render_form(detail, sections, ordinal, form_index, start_row=1)
+    for template in templates.values():
+        wb.remove(template)
+    if templates:
+        wb.active = 0
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)

@@ -55,7 +55,14 @@ def test_amendments_keep_all_forms_with_only_minimal_duplicate_suffixes(tmp_path
     workbook = load_workbook(files[filename])
     try:
         assert workbook.sheetnames == ['Induk', 'L-IA', 'Induk (2)', 'L-IA (2)']
-        assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'L-IA', 'Induk', 'L-IA']
+        captions = ['Induk', 'L-IA']
+        if tax == 'PPh Pasal 21/26':
+            captions = ['Induk SPT PPh Pasal 21/26',
+                'DAFTAR PEMOTONGAN BULANAN PAJAK PENGHASILAN PASAL 21 BAGI PEGAWAI TETAP DAN '
+                'PENSIUNAN YANG MENERIMA UANG TERKAIT PENSIUN SECARA BERKALA SERTA BAGI PEGAWAI '
+                'NEGERI SIPIL, ANGGOTA TENTARA NASIONAL INDONESIA, ANGGOTA KEPOLISIAN REPUBLIK '
+                'INDONESIA, PEJABAT NEGARA, DAN PENSIUNANNYA']
+        assert [sheet['A1'].value for sheet in workbook] == captions + captions
         assert all(not re.match(r'[0-9]{3}\.[0-9]{2} ', name) for name in workbook.sheetnames)
         markers = [cell.value for sheet in workbook for row in sheet for cell in row
                    if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')]

@@ -33,7 +33,7 @@ def test_one_period_one_workbook_and_amendments_stay_together(tmp_path):
         assert wb.sheetnames == ['Induk', 'Induk (2)']
         proof = exporter.read_workbook_proof(wb)
         assert [record['meta']['Model SPT'] for record in proof['records']] == ['Normal', 'Pembetulan ke-1']
-        assert all(ws['A1'].value == 'Induk' for ws in wb)
+        assert all(ws['A1'].value == 'Induk SPT PPh Pasal 21/26' for ws in wb)
         assert not any(cell.hyperlink and 'resume.xlsx' in (cell.hyperlink.target or '')
                        for ws in wb for row in ws for cell in row)
     finally:

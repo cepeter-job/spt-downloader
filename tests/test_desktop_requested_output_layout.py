@@ -54,7 +54,8 @@ def test_split_spt_workbooks_have_only_forms_and_administrative_sheets_stay_in_r
             else:
                 assert ADMIN.isdisjoint(workbook.sheetnames), 'Administrative sheets still leak into SPT files'
                 assert all(sheet.sheet_state == 'visible' for sheet in workbook)
-                assert all(sheet['A1'].value == 'Induk' for sheet in workbook)
+                caption = 'Induk SPT PPh Pasal 21/26' if name.startswith('SPT Masa 21/') else 'Induk'
+                assert all(sheet['A1'].value == caption for sheet in workbook)
         finally:
             workbook.close()
 
@@ -92,7 +93,8 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
         forms = [sheet for sheet in workbook if sheet.title not in ADMIN]
         assert len(forms) == 4, 'Masa tabs are still flattened into one sheet per return'
         assert len({sheet.title.casefold() for sheet in forms}) == 4
-        assert [sheet['A1'].value for sheet in forms] == names + names
+        captions = ['Induk SPT PPh Pasal 21/26', names[1]] if tax == 'PPh Pasal 21/26' else names
+        assert [sheet['A1'].value for sheet in forms] == captions + captions
         assert [sheet.title for sheet in forms] == ['Induk', 'Lampiran - Rincian',
                                                    'Induk (2)', 'Lampiran - Rincian (2)']
         proof = exporter.read_workbook_proof(workbook)
