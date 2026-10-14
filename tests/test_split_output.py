@@ -69,7 +69,12 @@ def test_resume_links_to_correct_external_detail_without_generic_backlink(tmp_pa
         target = load_workbook(tmp_path / link.target)
         sheet_name = link.location.rsplit('!', 1)[0].strip("'")
         assert sheet_name in target.sheetnames
-        caption = 'Induk SPT PPh Pasal 21/26' if link.target.startswith('SPT Masa 21/') else 'Induk'
+        caption = 'Induk'
+        for directory, expected in [('SPT Masa 21/', 'Induk SPT PPh Pasal 21/26'),
+                                    ('SPT Masa PPN/', 'Induk SPT PPN'),
+                                    ('SPT Masa Unifikasi/', 'Induk SPT PPh Unifikasi')]:
+            if link.target.startswith(directory):
+                caption = expected
         assert target[sheet_name]['A1'].value == caption
         assert not any(cell.hyperlink and 'resume.xlsx' in (cell.hyperlink.target or '')
                        for row in target[sheet_name] for cell in row)

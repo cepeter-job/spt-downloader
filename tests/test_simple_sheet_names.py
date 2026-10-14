@@ -62,6 +62,10 @@ def test_amendments_keep_all_forms_with_only_minimal_duplicate_suffixes(tmp_path
                 'PENSIUNAN YANG MENERIMA UANG TERKAIT PENSIUN SECARA BERKALA SERTA BAGI PEGAWAI '
                 'NEGERI SIPIL, ANGGOTA TENTARA NASIONAL INDONESIA, ANGGOTA KEPOLISIAN REPUBLIK '
                 'INDONESIA, PEJABAT NEGARA, DAN PENSIUNANNYA']
+        if tax == 'PPN':
+            captions = ['Induk SPT PPN', 'L-IA']
+        elif tax == 'PPh Unifikasi':
+            captions = ['Induk SPT PPh Unifikasi', 'L-IA']
         assert [sheet['A1'].value for sheet in workbook] == captions + captions
         assert all(not re.match(r'[0-9]{3}\.[0-9]{2} ', name) for name in workbook.sheetnames)
         markers = [cell.value for sheet in workbook for row in sheet for cell in row

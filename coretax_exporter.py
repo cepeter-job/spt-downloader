@@ -15,6 +15,9 @@ import sys
 from urllib.parse import urlsplit
 from openpyxl import Workbook
 from coretax_pph21 import template_workbook, render_template_form
+from coretax_masa_templates import (RESOURCES as MASA_RESOURCES,
+                                    template_workbook as masa_template_workbook,
+                                    render_template_form as render_masa_template)
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.hyperlink import Hyperlink
@@ -526,8 +529,12 @@ def read_workbook_proof(workbook):
 
 def _export_form_workbook(run, path):
     title_plan = workbook_sheet_titles(run['records'])
-    if all(record['meta']['Jenis Pajak'] == 'PPh Pasal 21/26' for record in run['records']):
+    taxes = {record['meta']['Jenis Pajak'] for record in run['records']}
+    tax = next(iter(taxes)) if len(taxes) == 1 else None
+    if tax == 'PPh Pasal 21/26':
         wb, templates = template_workbook([title for titles in title_plan for title in titles])
+    elif tax in MASA_RESOURCES:
+        wb, templates = masa_template_workbook(tax, [title for titles in title_plan for title in titles])
     else:
         wb = Workbook()
         wb.remove(wb.active)
@@ -541,7 +548,10 @@ def _export_form_workbook(run, path):
             if template is not None:
                 detail = wb.copy_worksheet(template)
                 detail.title = title
-                render_template_form(detail, form, sections)
+                if tax == 'PPh Pasal 21/26':
+                    render_template_form(detail, form, sections)
+                else:
+                    render_masa_template(detail, tax, form, sections)
             else:
                 detail = wb.create_sheet(title)
                 setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
