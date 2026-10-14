@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
+from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
+                          adapt_inventory_page, validate_inventory_rows)
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 CELL_JS = r'''(cell) => {
@@ -329,51 +331,162 @@ def verify_detail_url(url, taxpayer_id, record_id=None):
 
 
 class ListObserver:
-    """Amati respons daftar milik UI tanpa membaca cookie atau header autentikasi.
-
-    Simpan hanya respons terakhir dan nomor urut monotonik. Pemanggil menunggu
-    respons baru, sehingga respons lama tidak dianggap hasil navigasi berikutnya.
-    """
-    def __init__(self, page):
+    """Keep one owned response/byte buffer and a monotonic freshness marker."""
+    def __init__(self, page, check_cancel=None):
         self.page = page
+        self.check_cancel = check_cancel
         self.sequence = 0
         self.latest = None
         page.on('response', self.on_response)
 
     def on_response(self, response):
+        request = response.request
         if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/')
-                or response.request.resource_type not in ('xhr', 'fetch')):
+                or request.resource_type not in ('xhr', 'fetch')):
             return
         if 'json' not in response.headers.get('content-type', '').lower():
             return
         try:
-            data = response.json()
+            frame = getattr(request, 'frame', None)
+            main_frame = getattr(self.page, 'main_frame', None)
+            if frame is not None and main_frame is not None and frame != main_frame:
+                return
+            body_reader = getattr(response, 'body', None)
+            body = body_reader() if callable(body_reader) else None
+            data = json.loads(body) if isinstance(body, bytes) else response.json()
+            if not isinstance(data, dict):
+                return
             payload = data.get('Payload', data.get('payload', {}))
-            if (isinstance(payload, dict) and isinstance(payload.get('Data'), list)
-                    and all(isinstance(row, dict) for row in payload['Data'])
-                    and type(payload.get('TotalRecords')) is int and payload['TotalRecords'] >= 0):
-                self.sequence += 1
-                self.latest = {'total': payload['TotalRecords'], 'rows': payload['Data'],
-                               'successful': 200 <= response.status < 300
-                               and data.get('IsSuccessful', data.get('isSuccessful')) is True}
+            if not isinstance(payload, dict):
+                return
+            rows, total = payload.get('Data'), payload.get('TotalRecords')
+            if rows is None and type(total) is int and total == 0:
+                rows = []
+            if not (isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+                    and type(total) is int and total >= 0):
+                return
+            binding = None
+            if isinstance(body, bytes) and urlparse(response.url).path == SUBMITTED_ENDPOINT:
+                posted = getattr(request, 'post_data_json', None)
+                keys = ('TaxpayerAggregateIdentifier', 'First', 'Rows', 'Filters',
+                        'isArchieved', 'LanguageId', 'SortField', 'SortOrder')
+                binding = {
+                    'response_url': response.url, 'method': getattr(request, 'method', None),
+                    'http_status': response.status, 'frame_url': getattr(frame, 'url', None),
+                    'request': {key: posted[key] for key in keys if key in posted} if isinstance(posted, dict) else None,
+                }
+            self.sequence += 1
+            self.latest = {'total': total, 'rows': rows, 'body': body, 'binding': binding,
+                           'sequence': self.sequence,
+                           'successful': 200 <= response.status < 300
+                           and data.get('IsSuccessful', data.get('isSuccessful')) is True}
         except Exception:
+            # An unreadable response cannot replace the last verified event.
+            # wait(after) still requires a newer usable event or fails closed.
             pass
 
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
         while self.sequence <= after:
+            _check_cancel(self.check_cancel)
             if time.monotonic() >= deadline:
                 raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
+        _check_cancel(self.check_cancel)
         wait_idle(self.page)
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
-        return result
+        return {**result, 'after_sequence': after}
 
     def close(self):
         self.page.remove_listener('response', self.on_response)
         self.latest = None
+
+
+REFERENCE_ROWS_JS = r'''(table) => {
+ const value=CELL;
+ const headerRows=table.tHead ? [...table.tHead.rows].filter(r=>![...r.cells].some(c=>c.querySelector('p-columnfilter,input,select'))) : [];
+ if(headerRows.length!==1 || [...headerRows[0].cells].some(c=>c.colSpan!==1||c.rowSpan!==1))return {supported:false};
+ const headers=[...headerRows[0].cells].map(value);
+ const wanted=['Jenis Pajak','Jenis Surat Pemberitahuan Pajak','Masa Pajak','Status SPT','Kanal','Model SPT'];
+ if(wanted.some(h=>headers.filter(v=>v===h).length!==1))return {supported:false};
+ const rows=[...table.tBodies].flatMap(b=>[...b.rows]).filter(r=>!r.classList.contains('p-datatable-emptymessage'))
+ .filter(r=>!(r.cells.length===1&&r.cells[0].colSpan>1&&/tidak ada data|no records|no data/i.test(r.textContent)));
+ return {supported:true,rows:rows.map(row=>Object.fromEntries(wanted.map(h=>[h,value(row.cells[headers.indexOf(h)])])))};
+}'''.replace('CELL', CELL_JS)
+
+
+def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, basis,
+                        page_number, folder, source_number, check_cancel):
+    """Adapt a bound submitted page; read only reference captions, not its grid."""
+    _check_cancel(check_cancel)
+    validate_inventory_rows(response['rows'], taxpayer_id)
+    submitted = urlparse(source['url']).path.startswith('/returnsheets/id-ID/submitted-returnsheets/')
+    if not submitted:
+        return {'eligible': False, 'reason': 'unobserved_status_schema', 'rows': []}
+    if not isinstance(response.get('body'), bytes):
+        return {'eligible': False, 'reason': 'unavailable_original_response_bytes', 'rows': []}
+    if not isinstance(response.get('binding'), dict):
+        raise JsonSafetyError('Submitted response lacks verified request/frame/source binding')
+    context = {
+        **response['binding'], 'npwp': npwp, 'year': year, 'year_basis': basis,
+        'taxpayer_id': taxpayer_id, 'source_url': source['url'], 'source_status': source['label'],
+        'page': page_number, 'sequence': response['sequence'], 'after_sequence': response['after_sequence'],
+        'date_format': 'dd-MM-yyyy', 'timezone': None, 'lookup_labels': {},
+    }
+    # Safety is evaluated before even the narrow reference read or fallback.
+    probe = adapt_inventory_page(response['body'], context)
+    raw_folder = folder / 'listing-responses'
+    raw_folder.mkdir(exist_ok=True)
+    raw_name = f'{source_number:04d}-{page_number:04d}-{response["sequence"]:08d}.json'
+    with (raw_folder / raw_name).open('xb') as handle:
+        handle.write(response['body'])
+    _check_cancel(check_cancel)
+    if not response['rows']:
+        return probe
+    # Only annual corporate codes have an observed native metadata contract.
+    if any(row.get('TaxTypeCode') != 'ICT_RCIT' or row.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+           for row in response['rows']):
+        return {'eligible': False, 'reason': 'unobserved_tax_metadata_schema', 'rows': []}
+    references = table.evaluate(REFERENCE_ROWS_JS)
+    if not references.get('supported'):
+        return {'eligible': False, 'reason': 'unsupported_reference_layout', 'rows': []}
+    if len(references['rows']) != len(response['rows']):
+        raise JsonSafetyError('Reference DOM rows contradict source count')
+    labels = {field: {} for field in LOOKUP_HEADERS}
+    verified_labels = {'TaxTypeCode': ('ICT_RCIT', 'PPh Badan'),
+                       'ReturnSheetTypeCode': ('ICT_RCITR', 'SPT PPh Badan Rupiah'),
+                       'ReturnSheetStatusCode': ('SUBMITTED', 'Dilaporkan'),
+                       'ChannelCode': ('TAXPAYER_PORTAL', 'Portal Wajib Pajak')}
+    for api_row, captions in zip(response['rows'], references['rows']):
+        _check_cancel(check_cancel)
+        if 'ReturnSheetModel' in api_row and captions['Model SPT'] != api_row['ReturnSheetModel']:
+            raise JsonSafetyError('Reference row order/model differs from source identity')
+        period = api_row.get('TaxPeriodCode')
+        if not isinstance(period, str) or not re.fullmatch(r'0112\d{4}', period):
+            return {'eligible': False, 'reason': 'unobserved_period_schema', 'rows': []}
+        if captions['Masa Pajak'] != 'Januari - Desember ' + period[-4:]:
+            raise JsonSafetyError('Period reference caption contradicts source code')
+        for field, header in LOOKUP_HEADERS.items():
+            code = api_row.get(field)
+            caption = captions[header]
+            if not isinstance(code, str) or not caption:
+                return {'eligible': False, 'reason': 'unsupported_reference_code', 'rows': []}
+            if field in verified_labels and code == verified_labels[field][0] and caption != verified_labels[field][1]:
+                return {'eligible': False, 'reason': 'unsupported_reference_locale', 'rows': []}
+            if code in labels[field] and labels[field][code] != caption:
+                raise JsonSafetyError('Conflicting captions for a source reference code')
+            labels[field][code] = caption
+    context['lookup_labels'] = labels
+    context['timezone'] = page.evaluate('() => Intl.DateTimeFormat().resolvedOptions().timeZone')
+    _check_cancel(check_cancel)
+    result = adapt_inventory_page(response['body'], context)
+    for row in result['rows']:
+        row['source_identity']['body_file'] = 'listing-responses/' + raw_name
+        row['source_identity']['rendering'] = {'date_format': context['date_format'], 'timezone': context['timezone'],
+                                             'reference_source': 'bound-current-grid-reference-cells'}
+    return result
 
 
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
@@ -402,7 +515,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     if exact is None:
         raise RuntimeError('NPWP search returned no exact NPWP match; input is not normalized')
     taxpayer_name = cells[exact + 1] if exact + 1 < len(cells) else ''
-    observer = ListObserver(page)
+    observer = ListObserver(page, check_cancel=check_cancel)
     errors, audit, sources = [], [], []
     try:
         before = observer.sequence
@@ -457,20 +570,40 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 seen_ids = set()
                 for page_index in range(max_pages):
                     _check_cancel(check_cancel)
-                    grid = table.evaluate(TABLE_JS)
-                    if len(grid['rows']) != len(response['rows']):
-                        raise RuntimeError('Return-list DOM row count does not match the UI response')
-                    entry['scanned'] += len(grid['rows'])
+                    if response['total'] != entry['total']:
+                        raise RuntimeError('Source list changed during capture; rerun with a new output folder')
+                    adapted = _inventory_metadata(page, table, response, source, taxpayer_id,
+                                                   npwp, year, basis, page_index + 1, folder,
+                                                   len(audit), check_cancel)
+                    entry['requested_source'] = 'json-first'
+                    if adapted['eligible']:
+                        page_rows = adapted['rows']
+                        entry['used_source'] = 'json' if entry.get('used_source', 'json') == 'json' else 'mixed-pages'
+                    else:
+                        _check_cancel(check_cancel)
+                        grid = table.evaluate(TABLE_JS)
+                        if len(grid['rows']) != len(response['rows']):
+                            raise RuntimeError('Return-list DOM row count does not match the UI response')
+                        identifiers = validate_inventory_rows(response['rows'], taxpayer_id)
+                        page_rows = [{'record_id': identifier, 'meta': dict(zip(grid['headers'], values))}
+                                     for identifier, values in zip(identifiers, grid['rows'])]
+                        entry['used_source'] = 'dom-fallback' if entry.get('used_source', 'dom-fallback') == 'dom-fallback' else 'mixed-pages'
+                        entry['fallback_reason'] = adapted['reason']
+                    entry.setdefault('metadata_pages', []).append({
+                        'page': page_index + 1, 'used_source': 'json' if adapted['eligible'] else 'dom-fallback',
+                        'reason': adapted['reason'], 'sequence': response['sequence'],
+                    })
+                    entry['scanned'] += len(page_rows)
                     if on_progress:
                         on_progress({'completed': len(audit)-1, 'total': len(sources), 'scanned': entry['scanned']})
                     batch = []
-                    for position, (values, api_row) in enumerate(zip(grid['rows'], response['rows'])):
+                    for position, page_row in enumerate(page_rows):
                         _check_cancel(check_cancel)
-                        identifier = str(api_row.get('RecordId') or api_row.get('AggregateIdentifier') or '')
-                        if not identifier or identifier in seen_ids:
-                            raise RuntimeError('Missing or repeated SPT identifier; pagination cannot be certified')
+                        identifier = page_row['record_id']
+                        if identifier in seen_ids:
+                            raise RuntimeError('Repeated SPT identifier; pagination cannot be certified')
                         seen_ids.add(identifier)
-                        meta = dict(zip(grid['headers'], values))
+                        meta = page_row['meta']
                         try:
                             selected = in_scope(meta, year, basis)
                         except ValueError as exc:
@@ -482,6 +615,9 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                                       'list_url': source['url'], 'list_page': page_index + 1, 'row_position': position,
                                       'list_page_size': int(current_size.inner_text().strip()) if current_size and current_size.inner_text().strip().isdigit() else None,
                                       'capture_complete': False, 'sections': []}
+                            for field in ('source_identity', 'source_fields'):
+                                if field in page_row:
+                                    record[field] = page_row[field]
                             batch.append(record)
                     entry['selected'] += len(batch)
                     with batch_path.open('a', encoding='utf-8') as handle:
@@ -584,7 +720,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    observer = ListObserver(page)
+    observer = ListObserver(page, check_cancel=check_cancel)
     active_group, current_response = None, None
     run['errors'] = [e for e in run.get('errors', []) if e.get('phase') != 'details']
     scope = [run['npwp'], run['year'], run['year_basis']]
@@ -652,7 +788,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         current_response = observer.wait(before)
                     container.dispose()
                     active_group = group
-                identifiers = [str(r.get('RecordId') or r.get('AggregateIdentifier') or '') for r in current_response['rows']]
+                identifiers = validate_inventory_rows(current_response['rows'], taxpayer_id)
                 if record['record_id'] not in identifiers:
                     raise RuntimeError('Inventoried SPT is not on the expected source page; rerun inventory')
                 position = identifiers.index(record['record_id'])

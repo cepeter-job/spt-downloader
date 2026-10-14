@@ -105,9 +105,10 @@ def test_inventory_reads_every_page_and_filters_to_selected_year(tmp_path):
     search=f'''<div class="main-content"><input id="ObjectPermitNumber"><table><tbody></tbody></table></div>
     <script>document.querySelector('input').onkeydown=e=>{{if(e.key==='Enter'){{let row=document.createElement('tr'); row.innerHTML='<td>0000000000000001</td><td>Fixture</td><td><button>Pilih</button></td>'; row.querySelector('button').onclick=()=>location.href='{origin}/returnsheets/id-ID/not-submitted-returnsheets/{taxpayer_id}'; document.querySelector('tbody').appendChild(row);}}}};</script>'''
     def listing(submitted):
+        endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
         return f'''<a href="/returnsheets/id-ID/submitted-returnsheets/{taxpayer_id}">SPT Dilaporkan</a><div class="main-content"><h2>Fixture taxpayer</h2>
         <p-table><table><thead><tr><th></th><th>Jenis Pajak</th><th>Masa Pajak</th><th>Model SPT</th></tr></thead><tbody></tbody></table><div class="p-paginator"><button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="offset=2;load()">Next</button></div></p-table></div>
-        <script>let offset=0; function load(){{fetch('/returnsheet/api/returnsheetsfixture',{{method:'POST',body:JSON.stringify({{First:offset,Rows:2,Submitted:{str(submitted).lower()}}})}}).then(r=>r.json()).then(d=>{{document.querySelector('tbody').innerHTML=d.Payload.Data.map(x=>'<tr><td><button id="ViewButton">View</button></td><td>PPh</td><td>'+x.Period+'</td><td>Normal</td></tr>').join(''); document.querySelector('.p-highlight').textContent=offset/2+1;document.querySelector('.p-paginator-next').disabled=offset+d.Payload.Data.length>=d.Payload.TotalRecords;}})}}load();</script>'''
+        <script>let offset=0; function load(){{fetch('{endpoint}',{{method:'POST',body:JSON.stringify({{TaxpayerAggregateIdentifier:'{taxpayer_id}',First:offset,Rows:2,Filters:[],isArchieved:false,Submitted:{str(submitted).lower()}}})}}).then(r=>r.json()).then(d=>{{document.querySelector('tbody').innerHTML=d.Payload.Data.map(x=>'<tr><td><button id="ViewButton">View</button></td><td>PPh</td><td>'+x.Period+'</td><td>Normal</td></tr>').join(''); document.querySelector('.p-highlight').textContent=offset/2+1;document.querySelector('.p-paginator-next').disabled=offset+d.Payload.Data.length>=d.Payload.TotalRecords;}})}}load();</script>'''
     with sync_playwright() as p:
         browser=p.chromium.launch(channel='msedge',headless=True)
         page=browser.new_page()
@@ -115,7 +116,8 @@ def test_inventory_reads_every_page_and_filters_to_selected_year(tmp_path):
             url=route.request.url
             if '/returnsheet/api/' in url:
                 data=route.request.post_data_json
-                rows=[{'RecordId':f'fixture-{i}','Period':period} for i,period in enumerate(periods)] if data['Submitted'] else []
+                assert data['TaxpayerAggregateIdentifier'] == taxpayer_id
+                rows=[{'RecordId':f'fixture-{i}','Period':period,'TaxpayerAggregateIdentifier':taxpayer_id} for i,period in enumerate(periods)] if data['Submitted'] else []
                 route.fulfill(json={'IsSuccessful':True,'Payload':{'TotalRecords':len(rows),'Data':rows[data['First']:data['First']+2]}})
             elif '/taxpayer-search' in url:
                 route.fulfill(body=search,content_type='text/html')
