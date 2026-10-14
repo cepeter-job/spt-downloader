@@ -102,6 +102,7 @@ def primary(form=None, *, outer_draft=True, sequence=1):
 
 def observed(*extra_paths):
     return [{'name': 'Induk', 'paths': [['MainFormData'], *extra_paths],
+             'primary': {'endpoint': PRIMARY_URL, 'request_json': None},
              'grids': [], 'responses': [], 'dependencies': []}]
 
 
@@ -741,3 +742,78 @@ def test_financial_statement_metadata_remains_source_evidence_not_complete_pdf_c
     eligible(result)
     assert values_at(result, '/FinancialStatement/0/FileName') == [('string', 'SYNTHETIC-metadata-only.pdf')]
     assert 'attachments' not in result and selected_record()['capture_complete'] is False
+
+
+@pytest.mark.parametrize('failure', ['undeclared-endpoint', 'wrong-primary-request', 'missing-primary-binding'])
+def test_primary_shape_never_replaces_trusted_endpoint_and_request_binding(failure):
+    forms = observed()
+    item = primary()
+    if failure == 'undeclared-endpoint':
+        item['context']['url'] = ORIGIN + '/returnsheet/api/fixture-unbound'
+    elif failure == 'wrong-primary-request':
+        item['context']['request_json'] = request('UNOBSERVED PRIMARY')
+    else:
+        forms[0].pop('primary')
+    ineligible(adapt([item], forms=forms))
+
+
+@pytest.mark.parametrize('numeric_location', ['inner-tin', 'outer-tin'])
+def test_taxpayer_numbers_cannot_bind_literal_npwp_via_numeric_string_subclass(numeric_location):
+    literal = '1000000000000001'
+    scope = [literal, 2025, 'period']
+    record = selected_record()
+    record['scope'] = list(scope)
+    form = current_form()
+    form['MainFormData']['Tin'] = Number(literal) if numeric_location == 'inner-tin' else literal
+    envelope = json.loads(primary(form)['body'])
+    envelope['Payload']['TIN'] = Number(literal) if numeric_location == 'outer-tin' else literal
+    item = packet(envelope)
+    item['context']['scope'] = list(scope)
+    with pytest.raises(native.JsonSafetyError):
+        adapt([item], record=record, scope=scope)
+
+
+@pytest.mark.parametrize('unsupported', ['missing-aggregate-binding', 'missing-ui-paths', 'failed-http', 'missing-main'])
+def test_known_primary_identity_contradiction_aborts_even_when_source_is_already_ineligible(unsupported):
+    record, forms, form = selected_record(), observed(), current_form()
+    form['ReturnSheetRecordIdentifier'] = FOREIGN_ID
+    if unsupported == 'missing-aggregate-binding':
+        record['source_identity'].pop('aggregate_id')
+        record['source_fields'].pop('AggregateIdentifier')
+    elif unsupported == 'missing-ui-paths':
+        forms[0]['paths'] = []
+    elif unsupported == 'missing-main':
+        form.pop('MainFormData')
+    item = primary(form)
+    if unsupported == 'failed-http':
+        item['context']['status'] = 400
+    with pytest.raises(native.JsonSafetyError):
+        adapt([item], record=record, forms=forms)
+
+
+def test_changed_bound_page_is_safety_failure_even_when_both_indices_are_unsupported():
+    forms = observed()
+    declare_grid(forms)
+    a = grid_packet([source_row()], 1, sequence=2, index=1)
+    b = grid_packet([source_row('SYNTHETIC CHANGED')], 1, sequence=3, index=1)
+    with pytest.raises(native.JsonSafetyError):
+        adapt([primary(), a, b], forms=forms)
+
+
+def test_empty_object_is_visible_as_source_type_and_literal_not_discarded():
+    form = current_form()
+    form['L11BFormData'] = {}
+    result = adapt([primary(form)], forms=observed(['L11BFormData']))
+    eligible(result)
+    assert values_at(result, '/L11BFormData') == [('object', '{}')]
+
+
+def test_source_root_count_is_distinct_from_expanded_evidence_row_count():
+    form = current_form()
+    form['MainFormData']['AccountingMethod'] = 'SYNTHETIC ACCOUNTING METHOD'
+    result = adapt([primary(form)])
+    eligible(result)
+    assert result['coverage']['source_root_count'] == len(form)
+    assert result['coverage']['evidence_row_count'] == len(source_rows(result))
+    assert result['coverage']['evidence_row_count'] != result['coverage']['source_root_count']
+    assert ['/IsDraft', 'boolean', False] in result['provenance']['controls']
