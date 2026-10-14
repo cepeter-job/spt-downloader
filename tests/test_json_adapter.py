@@ -817,3 +817,49 @@ def test_source_root_count_is_distinct_from_expanded_evidence_row_count():
     assert result['coverage']['evidence_row_count'] == len(source_rows(result))
     assert result['coverage']['evidence_row_count'] != result['coverage']['source_root_count']
     assert ['/IsDraft', 'boolean', False] in result['provenance']['controls']
+
+
+def test_additional_grid_payload_source_is_not_silently_discarded():
+    forms = observed()
+    declare_grid(forms)
+    item = grid_packet([source_row()], 1)
+    envelope = json.loads(item['body'])
+    envelope['Payload']['Footer'] = {'TaxBase': Number('9.0000')}
+    extra = packet(envelope, 2, endpoint=GRID_URL, request=request('A'))
+    ineligible(adapt([primary(), extra], forms=forms))
+
+
+@pytest.mark.parametrize(('kind', 'explicit_null'), [('footer', False), ('footer', True),
+                                                    ('dependency', False), ('dependency', True)])
+def test_missing_payload_is_not_manufactured_as_explicit_null_source(kind, explicit_null):
+    forms, req = observed(), request('SYNTHETIC NULL SOURCE')
+    endpoint = FOOTER_URL if kind == 'footer' else LOOKUP_URL
+    if kind == 'footer':
+        forms[0]['responses'].append({'name': 'SYNTHETIC NULL FOOTER', 'endpoint': endpoint, 'requests': [req]})
+    else:
+        forms[0]['dependencies'].append({'endpoint': endpoint, 'request_json': req})
+    envelope = {'IsSuccessful': True}
+    if explicit_null:
+        envelope['Payload'] = None
+    result = adapt([primary(), packet(envelope, 2, endpoint=endpoint, request=req)], forms=forms)
+    if explicit_null:
+        eligible(result)
+        if kind == 'footer':
+            assert source_rows(result, 'SYNTHETIC NULL FOOTER') == [['/Payload', 'null', None]]
+    else:
+        ineligible(result)
+
+
+@pytest.mark.parametrize('field', ['TIN', 'PeriodYear'])
+def test_provable_outer_identity_conflict_is_not_hidden_by_unsupported_current_form(field):
+    envelope = json.loads(primary()['body'])
+    if field == 'TIN':
+        envelope['Payload']['CurrentFormData'] = None
+        envelope['Payload']['TIN'] = '0000000000000002'
+    else:
+        form = current_form()
+        form.pop('MainFormData')
+        envelope['Payload']['CurrentFormData'] = wire(form)
+        envelope['Payload']['PeriodYear'] = 2024
+    with pytest.raises(native.JsonSafetyError):
+        adapt([packet(envelope)])
