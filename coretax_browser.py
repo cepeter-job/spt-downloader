@@ -341,7 +341,7 @@ class ListObserver:
 
     def on_response(self, response):
         request = response.request
-        if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/')
+        if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/returnsheets')
                 or request.resource_type not in ('xhr', 'fetch')):
             return
         if 'json' not in response.headers.get('content-type', '').lower():
@@ -662,7 +662,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     return result
 
 
-def open_return_readonly(page, row, taxpayer_id, record_id=None):
+def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture=None):
     """Buka satu kontrol View yang dikenali dan verifikasi asal detailnya."""
     # Hanya tombol View persis yang telah diamati; jangan menebak aksi baris lain.
     view = row.locator('button[id=ViewButton]')
@@ -685,6 +685,8 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None):
         detail = opened[0] if opened else page
         detail.wait_for_load_state('domcontentloaded', timeout=60000)
         verify_detail_url(detail.url, taxpayer_id, record_id)
+        if json_capture is not None:
+            json_capture.bind_detail_page(detail)
         verified = True
         return detail, bool(opened)
     finally:

@@ -695,15 +695,14 @@ def test_invalid_ordinal_is_not_normalized_into_a_private_path(tmp_path, ordinal
 
 @pytest.mark.parametrize('scope', [
     ['0000000000000001', 2024, 'period'],
-    ['0000000000000002', 2024, 'receipt'],
+    ['0000000000000002', 2024, 'submission'],
 ])
 def test_valid_scope_values_are_preserved_in_private_manifest(tmp_path, scope):
     module = capture_module()
     context = Context()
     page = Page(context, DETAIL_URL)
     item = record()
-    item['meta']['Tanggal Terima'] = '01-01-2024'
-    item['meta']['Tanggal Submit'] = '01-01-2024'
+    item['meta']['Tanggal Submit SPT'] = '01-01-2024'
     with module.DetailJsonCapture(context, page, item, scope, tmp_path, ordinal=7) as capture:
         exchange(context, page)
         capture.bind_detail_page(page)

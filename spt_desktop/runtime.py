@@ -17,6 +17,7 @@ PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py',
+    'coretax_json_capture.py',
     'coretax_attachments.py', 'coretax_pdf.py', 'requirements.txt',
     RUNTIME_LOCK,
     'spt_desktop/__init__.py', 'spt_desktop/paths.py',
