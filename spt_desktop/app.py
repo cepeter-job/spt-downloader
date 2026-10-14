@@ -397,6 +397,8 @@ class App:
             row=6,column=0,columnspan=2,sticky='w',pady=(4,12))
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='e')
         ttk.Button(buttons,text='Hentikan unduhan',command=lambda:self._cancel_interaction(interaction)).pack(side='left',padx=(0,8))
+        ordered_iids=list(rows)
+        descending=None
 
         def selected_ids():
             chosen=set(tree.selection()) & set(tree.get_children())
@@ -414,8 +416,22 @@ class App:
             children=tree.get_children()
             if children:tree.delete(*children)
             query=search.get().strip().casefold()
-            for iid,(_,values,text) in rows.items():
+            for iid in ordered_iids:
+                _,values,text=rows[iid]
                 if query in text:tree.insert('', 'end',iid=iid,values=values)
+            update_selection()
+
+        def sort_type():
+            nonlocal ordered_iids,descending
+            if not self._interaction_current(interaction):return
+            descending=False if descending is None else not descending
+            # Always sort the original inventory so equal captions retain their order.
+            ordered_iids=sorted(rows,key=lambda iid:rows[iid][1][0].casefold(),reverse=descending)
+            visible=set(tree.get_children())
+            visible_order=[iid for iid in ordered_iids if iid in visible]
+            # Moving items preserves selection and focus under the active filter.
+            for position,iid in enumerate(visible_order):tree.move(iid,'',position)
+            tree.heading('type',text='Jenis pajak '+('▼' if descending else '▲'))
             update_selection()
 
         def confirm():
@@ -426,6 +442,7 @@ class App:
 
         submit=ttk.Button(buttons,text='Sedot SPT terpilih',state='disabled',command=confirm)
         submit.pack(side='left')
+        tree.heading('type',command=sort_type)
         tree.bind('<<TreeviewSelect>>',update_selection)
         interaction['traces'].append((search,search.trace_add('write',filter_records)))
         dialog.protocol('WM_DELETE_WINDOW',lambda:self._cancel_interaction(interaction))
