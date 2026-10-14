@@ -299,8 +299,16 @@ def test_ambiguous_headers_partial_tables_and_unknown_fields_stay_visible_as_raw
     fields = [{'label': 'SYNTHETIC UNMAPPED FIELD', 'value': '=SUM(1,2)'},
               {'label': 'SYNTHETIC UNMAPPED FIELD', 'value': '=SUM(1,2)'}]
     text = 'SYNTHETIC CONTEXT MUST REMAIN VISIBLE'
-    workbook = export(tax, source_run(tax, [section(form, fields=fields, tables=tables, text=text)]), tmp_path)
+    run = source_run(tax, [section(form, fields=fields, tables=tables, text=text)])
+    with pytest.raises(ValueError, match='capture completion contradicts a table completion flag'):
+        exporter.validate_export_run(run)
+    run['complete'] = False
+    run['records'][0]['capture_complete'] = False
+    workbook = export(tax, run, tmp_path)
     try:
+        proof = exporter.read_workbook_proof(workbook)
+        assert proof['complete'] is False
+        assert proof['records'][0]['capture_complete'] is False
         assert all(workbook[form].cell(first, col).value is None for col in range(1, len(headers) + 1))
         expected = Counter(value for table in tables for row in table['rows'] for value in row)
         expected.update(field['value'] for field in fields)
