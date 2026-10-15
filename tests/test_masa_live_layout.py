@@ -1,0 +1,78 @@
+"""Public portal layout with synthetic values; executed only on the runner."""
+from test_pph21_template import section
+from playwright.sync_api import sync_playwright
+import coretax_browser as driver
+from test_ppn_unifikasi_templates import export, source_run, source_table
+
+HEADERS = ['NO', 'DETIL', 'PAJAK PENGHASILAN / SETOR SENDIRI',
+           'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN', 'PPh DITANGGUNG PEMERINTAH',
+           'JUMLAH PPh DIBAYAR', 'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN '
+           'This row contain the total amount of payment deducted by the refunded amount prior to the amendment.',
+           'PPh KURANG BAYAR / LEBIH BAYAR KARENA PEMBETULAN']
+
+
+def test_unifikasi_annotated_header_maps_body(tmp_path):
+    values = ['1', 'Pasal 4 Ayat 2', '11', '13', '17', '19', '23', '29']
+    data = source_table('Tabel 1', HEADERS, [values])
+    data.update(group='B. PAJAK PENGHASILAN', body_row_count=1)
+    wb = export('PPh Unifikasi', source_run('PPh Unifikasi', [section('INDUK', tables=[data])]), tmp_path)
+    try:
+        assert [wb['INDUK'].cell(12,c).value for c in range(1,9)] == values
+    finally:
+        wb.close()
+
+
+def test_unifikasi_explicit_footer_spans_align_total_slots(tmp_path):
+    footer = ['TOTAL OF INCOME TAX', '31', '37', '41', '43', '47', '53']
+    data = source_table('Tabel 1', HEADERS, [footer])
+    data.update(group='B. PAJAK PENGHASILAN', body_row_count=0,
+                footer=[footer], footer_spans=[[2,1,1,1,1,1,1]])
+    wb = export('PPh Unifikasi', source_run('PPh Unifikasi', [section('INDUK', tables=[data])]), tmp_path)
+    try:
+        assert [wb['INDUK'].cell(27,c).value for c in range(3,9)] == footer[1:]
+        assert wb['INDUK']['B27'].value is None
+    finally:
+        wb.close()
+
+
+def test_unifikasi_prefixed_bppu_caption_maps_known_columns(tmp_path):
+    data = source_table('Tabel 1', ['NO.', 'NAMA', 'PAJAK PENGHASILAN'], [['1', 'SYNTHETIC PAYEE', '2,02']])
+    data.update(group='TABEL I. BPPU', body_row_count=1)
+    wb = export('PPh Unifikasi', source_run('PPh Unifikasi', [section('DAFTAR-I', tables=[data])]), tmp_path)
+    try:
+        assert wb['DAFTAR-I']['C5'].value == 'SYNTHETIC PAYEE'
+        assert wb['DAFTAR-I']['J5'].value == '2,02'
+    finally:
+        wb.close()
+
+
+PPN_COLUMNS = ['Harga Jual/Penggantian/ Nilai Ekspor/DPP (Rupiah)',
+               'DPP Nilai Lain/ DPP (Rupiah)', 'PPN (Rupiah)', 'PPnBM (Rupiah)']
+
+
+def _grid_cells(values, inputs=False):
+    return '<div class="col-md-5"><div class="row">' + ''.join(
+        '<div class="col-md-3">' +
+        (f'<p-inputnumber><span><input disabled value="{value}"></span></p-inputnumber>'
+         if inputs and value is not None else ('' if inputs else value)) + '</div>'
+        for value in values) + '</div></div>'
+
+
+def test_ppn_observed_four_column_layout_binds_headers_not_input_order(tmp_path):
+    label='Penyerahan yang PPN atau PPN dan PPnBM-nya harus dipungut sendiri lainnya (dengan Faktur Pajak Kode 01, 09 dan 10)'
+    html='<div class="p-tabview-panel"><div class="p-accordion-header"><span class="p-accordion-header-text">I. PENYERAHAN BARANG DAN JASA</span></div><div class="p-accordion-content">'
+    html+='<div class="row"><div class="col-md-7"></div>'+_grid_cells(PPN_COLUMNS)+'</div>'
+    html+='<div class="row"><div class="col-md-7"><label>'+label+'</label></div>'+_grid_cells(['11',None,'17','19'],True)+'</div></div></div>'
+    with sync_playwright() as p:
+        browser=p.chromium.launch(channel='msedge',headless=True)
+        try:
+            page=browser.new_page();page.set_content(html)
+            fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
+            assert [f.get('column_label') for f in fields] == [PPN_COLUMNS[0],PPN_COLUMNS[2],PPN_COLUMNS[3]]
+        finally:
+            browser.close()
+    wb=export('PPN',source_run('PPN',[section('INDUK',fields=fields)]),tmp_path)
+    try:
+        assert [wb['INDUK'].cell(15,c).value for c in range(5,9)] == ['11',None,'17','19']
+    finally:
+        wb.close()
