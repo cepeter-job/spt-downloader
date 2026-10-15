@@ -836,29 +836,42 @@ def _identity_checked_packets(packets, record, scope):
 
 def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
     from coretax_json import adapt_corporate_detail
-    corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+    tax = record['meta'].get('Jenis Pajak')
+    corporate = tax == 'PPh Badan'
+    masa = tax in ('PPN', 'PPh Unifikasi')
+    request_checker = None
     if corporate:
-        _check_corporate_request_identities(capture.request_observations(), record, scope)
+        request_checker = _check_corporate_request_identities
+    elif masa:
+        from coretax_masa_json import adapt_masa_detail, check_masa_request_identities
+        request_checker = check_masa_request_identities
+    if request_checker is not None:
+        request_checker(capture.request_observations(), record, scope)
     forms = observe_corporate_forms(page, record, scope, capture,
         max_pages=max_pages, check_cancel=check_cancel) if corporate else None
     observations = capture.request_observations()
-    if corporate:
-        _check_corporate_request_identities(observations, record, scope)
+    if request_checker is not None:
+        request_checker(observations, record, scope)
     if any(item.get('status') in (401, 403) for item in observations):
         raise JsonSafetyError('Detail HTTP authorization was rejected')
     manifest = capture.drain(check_cancel=check_cancel)
-    if corporate:
-        _check_corporate_request_identities(capture.request_observations(), record, scope)
+    if request_checker is not None:
+        request_checker(capture.request_observations(), record, scope)
     if any(reason in manifest['reasons'] for reason in (
             'secret-body', 'secret-request', 'invalid-json', 'response-source-mismatch',
             'request-context-unavailable', 'authorization-rejected')):
         raise JsonSafetyError('Detail JSON privacy or source verification failed')
     bodies = capture.iter_bodies(check_cancel=check_cancel)
+    decoded = None
     if corporate:
         bodies = _identity_checked_packets(bodies, record, scope)
-    decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
-                                     observed_forms=forms or []) if corporate else None
-    if not corporate:
+        decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
+                                        observed_forms=forms or [])
+    elif masa:
+        # Safety checks run even without a verified Masa observer/projection.
+        # Missing coverage permits DOM fallback; contradictory source data does not.
+        decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=[])
+    else:
         for packet in bodies:
             _check_cancel(check_cancel)
             if packet['context']['status'] in (401, 403):
