@@ -245,7 +245,7 @@ _STLG_SUM_PATHS = (
 )
 
 
-def _ppn_source_number(form, path, evidence):
+def _ppn_source_scalar(form, path, evidence):
     value = form
     for index, key in enumerate(path):
         if value is None:
@@ -258,9 +258,14 @@ def _ppn_source_number(form, path, evidence):
             evidence.append({'path': list(path), 'type': 'missing', 'value': None})
             return None
         value = value[key]
+    evidence.append(_evidence(value, list(path)))
+    return value
+
+
+def _ppn_source_number(form, path, evidence):
+    value = _ppn_source_scalar(form, path, evidence)
     if value is not None and type(value) is not _CorporateNumber:
         raise _UnsupportedMetadata('unsupported_ppn_amount_source_type')
-    evidence.append(_evidence(value, list(path)))
     if value is not None:
         _decimal(value)
     return value
@@ -293,6 +298,67 @@ def project_ppn_amount(form, control, *, model):
     rendered = ('0' if nullish_zero else '') if value is None else _number(value, 0, locale='id-ID')
     return {'value': rendered, 'rule': 'nullish_zero' if nullish_zero else 'direct_final_path',
             'provenance': evidence}
+
+
+# Columns bind footer source fields independently of grid row fields. In B2,
+# TotalOtherTaxBase intentionally has no nullish-zero operator in the UI.
+_PPN_FOOTERS = {
+    'A-1': ('A1FormListOfExportTaxableGoodsOrServices', 4, (('Total', True),)),
+    'A-2': ('A2FormListOfOutputTaxesOnDomesticDeliveries', 5,
+            (('TotalTaxBase', True), ('TotalOtherTaxBase', True), ('TotalVAT', True), ('TotalSTLG', True))),
+    'B-1': ('B1FormListTaxesCreditedOnTheImportTaxableGoods', 5,
+            (('TotalTaxBase', True), ('TotalVAT', True), ('TotalSTLG', True))),
+    'B-2': ('B2FormListTaxesThatCanBeCreditedForDomesticTaxableGoods', 5,
+            (('TotalSellingPrice', True), ('TotalOtherTaxBase', False), ('TotalVAT', True), ('TotalSTLG', True))),
+    'B-3': ('B3FormListOfInputTaxesUncredit', 5,
+            (('TotalSellingPrice', True), ('TotalOtherTaxBase', True), ('TotalVAT', True), ('TotalSTLG', True))),
+}
+_LC_INDUK_CONTROLS = (
+    ('TaxBase', 'TotalVATandSTLGCollectedByOtherPartiesSellingPrice'),
+    ('OtherTaxBase', 'TotalVATandSTLGCollectedByOtherPartiesOtherTaxBase'),
+    ('VAT', 'TotalVATandSTLGCollectedByOtherPartiesVAT'),
+    ('STLG', 'TotalVATandSTLGCollectedByOtherPartiesSTLG'),
+)
+_FOOTER_DECIMAL_STRING = re.compile(r'[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?')
+
+
+def project_ppn_footer(form_name, form, *, lc_footer=None):
+    """Project totals only; caller must bind packets, endpoint and completion.
+
+    C's successful footer response supersedes both stored Induk and C totals.
+    Never derive a footer by summing the visible page or reuse a stale prefill.
+    """
+    if not isinstance(form, dict):
+        raise _UnsupportedMetadata('unsupported_ppn_footer_form')
+    if form_name == 'C':
+        if not isinstance(lc_footer, dict):
+            raise _UnsupportedMetadata('unbound_ppn_lc_footer')
+        source, source_kind, root, span = lc_footer, 'lc_footer', None, 9
+        fields = tuple((field, True) for field, _ in _LC_INDUK_CONTROLS)
+    else:
+        binding = _PPN_FOOTERS.get(form_name)
+        if binding is None:
+            raise _UnsupportedMetadata('unsupported_ppn_footer_binding')
+        root, span, fields = binding
+        source, source_kind = form, 'prefill_form'
+    cells, evidence = [], []
+    for field, nullish_zero in fields:
+        path = (root, field) if root is not None else (field,)
+        value = _ppn_source_scalar(source, path, evidence)
+        evidence[-1]['source'] = source_kind
+        # Decimal accepts underscores and other strings the JS pipe does not.
+        # Accept only reviewed decimal strings; retain the original lexeme.
+        if type(value) is str and value != '' and not _FOOTER_DECIMAL_STRING.fullmatch(value.strip()):
+            raise _UnsupportedMetadata('unsupported_ppn_footer_numeric_string')
+        if value is None and nullish_zero:
+            value = '0'
+        cells.append(render_grid_value(value, 'number', footer=True))
+    induk_values = {}
+    if form_name == 'C':
+        induk_values = {control: value for (_, control), value in zip(_LC_INDUK_CONTROLS, cells)}
+    return {'footer': [['TOTAL', *cells, '']],
+            'footer_spans': [[span, *([1] * len(cells)), 1]],
+            'induk_values': induk_values, 'provenance': evidence}
 
 
 _PPN_DOMESTIC_COLUMNS = (
