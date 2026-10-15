@@ -5,6 +5,7 @@ import pytest
 from openpyxl import load_workbook
 
 from spt_desktop import output
+from coretax_pdf import attachment_declarations, verified_declarations
 from test_financial_publication import CHANGED_PDF
 from test_model_workbook_publication import legacy_export, physical_bytes
 
@@ -16,7 +17,11 @@ def test_legacy_migration_verifies_unselected_old_complete_pdf(tmp_path, format_
     run, old = legacy_export(downloads, format_name=format_name)
     selected = deepcopy(run)
     selected['records'] = selected['records'][:1]
+    selected['output_attachments'] = attachment_declarations(selected)
+    assert verified_declarations(selected) == selected['output_attachments']
+    output.existing_outputs(selected, downloads)
     unselected = old / run['records'][2]['attachments'][0]['relative_path']
+    assert unselected.is_file()
     if mutation == 'missing':
         unselected.unlink()
     else:
@@ -32,6 +37,9 @@ def test_legacy_migration_verifies_unselected_old_complete_pdf(tmp_path, format_
 def test_legacy_migration_resume_binds_first_physical_form_of_the_right_model(tmp_path, format_name, mutation):
     downloads = tmp_path / 'Downloads'
     run, old = legacy_export(downloads, format_name=format_name)
+    run['output_attachments'] = attachment_declarations(run)
+    assert verified_declarations(run) == run['output_attachments']
+    output.existing_outputs(run, downloads)
     workbook = load_workbook(old / 'resume.xlsx')
     try:
         link = workbook['Daftar SPT']['A6'].hyperlink
