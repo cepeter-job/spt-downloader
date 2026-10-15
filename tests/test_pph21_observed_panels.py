@@ -56,18 +56,40 @@ def test_induk_annotation_keeps_amount_and_literal_label(tmp_path, tax, amount_r
     ('L-III', 'BP26', ['JENIS PAJAK', 'OBJEK PAJAK']),
 ])
 def test_appendix_projects_known_extras_but_not_footer(tmp_path, form, group, extra):
-    headers = list(COMMON_HEADERS) + extra
-    headers[4] += ' (dd-mm-yyyy)'
-    values = row() + ['SYNTHETIC EXTRA ' + name for name in extra]
+    headers = [name for name in COMMON_HEADERS if name not in (
+        ('FASILITAS PERPAJAKAN', 'KAP-KJS') if form == 'L-II' else ('Negara',))]
+    if form == 'L-II':
+        headers.insert(8, extra[0])
+    else:
+        headers.insert(3, extra[0])
+        headers.insert(7, extra[1])
+    source = dict(zip(COMMON_HEADERS, row()))
+    source.update({name: 'SYNTHETIC EXTRA ' + name for name in extra})
+    values = [source[name] for name in headers]
+    expected = [source[name] if name in headers else None for name in COMMON_HEADERS]
+    headers[headers.index('TANGGAL BUKTI PEMOTONGAN')] += ' (dd-mm-yyyy)'
     footer = ['SYNTHETIC FOOTER', '47,00']
     data = table('Tabel 2', [values, footer], headers=headers)
     data.update(group=group, body_row_count=1)
     wb = export(run_for([section(form, tables=[data])]), tmp_path)
     try:
-        assert [wb[form].cell(11, c).value for c in range(1, 14)] == row()
+        assert [wb[form].cell(11, c).value for c in range(1, 14)] == expected
         assert wb[form]['A12'].value is None
-        for value in values[-len(extra):] + [footer[0]]:
+        for value in [source[name] for name in extra] + [footer[0]]:
             assert any(cell.value == value for cells in wb[form] for cell in cells)
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize('tax', ['21', '26'])
+def test_government_alias_never_fills_deducted_block(tmp_path, tax):
+    data = table('Tabel 1', [['1.', f'PAJAK PENGHASILAN PASAL {tax} DITANGGUNG PEMERINTAH',
+                              'SYNTHETIC-KAP', '53,00']], headers=INDUK_HEADERS)
+    data['group'] = f'I. PAJAK PENGHASILAN PASAL {tax} YANG DIPOTONG'
+    wb = export(run_for([section('Induk', tables=[data])]), tmp_path)
+    try:
+        assert all(wb['Induk'].cell(r, 4).value is None for r in (12, 21, 26, 35))
+        assert any(cell.value == '53,00' for cells in wb['Induk'] for cell in cells)
     finally:
         wb.close()
 

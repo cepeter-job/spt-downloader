@@ -32,7 +32,7 @@ CELL_JS = r'''(cell) => {
 
 GROUP_JS = r'''(element) => {
  const visible=e=>!!e.getClientRects().length;
- const headings='h1,h2,h3,h4,h5,h6,[role="heading"],legend,.p-accordion-header-text';
+ const headings='h1,h2,h3,h4,h5,h6,[role="heading"],legend,.p-accordion-header-text,.p-panel-title';
  // Stop at another table: its heading cannot label this table/group.
  for(let current=element;current && !current.matches('.p-tabview-panel');current=current.parentElement){
   for(let sibling=current.previousElementSibling;sibling;sibling=sibling.previousElementSibling){

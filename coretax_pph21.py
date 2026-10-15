@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
-                                    _grow, _raw_evidence, _body_rows)
+                                    _grow, _raw_evidence, _body_rows, _table_projection)
 
 
 RESOURCE = Path(__file__).resolve().parent / 'resources' / 'pph21_format.xlsx'
@@ -20,6 +20,20 @@ INDUK_BLOCKS = [(10, 11, 12, 17), (19, 20, 21, 21),
 def template_workbook(reserved_titles):
     return load_template_workbook(RESOURCE, ['Induk', 'L-IA', 'L-IB', 'L-II', 'L-III'],
                                   reserved_titles)
+
+
+def _induk_row_matches(sheet, row, values):
+    if _key(values.get(1)) != _key(sheet.cell(row, 1).value):
+        return False
+    label = str(values.get(2) or '')
+    # Match observed annotations/labels only in their fixed semantic slots;
+    # the original label is still written unchanged as source evidence.
+    if row in (16, 30):
+        label = label.removesuffix(' This row contain the total amount of payment before amendment.')
+    government_tax = {21: '21', 35: '26'}.get(row)
+    if government_tax and _key(label) == _key(f'PAJAK PENGHASILAN PASAL {government_tax} DITANGGUNG PEMERINTAH'):
+        return True
+    return _key(label) == _key(sheet.cell(row, 2).value)
 
 
 def _induk(sheet, sections):
@@ -46,11 +60,10 @@ def _induk(sheet, sections):
                     continue
                 named = name == _key(sheet.cell(candidate[0], 1).value)
                 ordinal = not table.get('group') and re.fullmatch(r'Tabel\s+\d+', table.get('name', ''), re.I)
-                signatures = [{1: sheet.cell(r, 1).value, 2: sheet.cell(r, 2).value}
-                              for r in range(candidate[2], candidate[3] + 1)]
-                matches = body and all(any(all(_key(dict(zip(projection, values)).get(c)) == _key(sig[c])
-                                                       for c in (1, 2)) for sig in signatures)
-                                       for values in body)
+                matches = body and all(
+                    any(_induk_row_matches(sheet, r, dict(zip(projection, values)))
+                        for r in range(candidate[2], candidate[3] + 1))
+                    for values in body)
                 if named or (ordinal and matches):
                     candidates.append((candidate, projection))
             if len(candidates) != 1 or not table.get('complete', True):
@@ -62,8 +75,7 @@ def _induk(sheet, sections):
             for values in body:
                 projected = {column: value for column, value in zip(mapping, values)}
                 matches = [r for r in range(block[2], block[3] + 1)
-                           if _key(projected.get(1)) == _key(sheet.cell(r, 1).value)
-                           and _key(projected.get(2)) == _key(sheet.cell(r, 2).value)]
+                           if _induk_row_matches(sheet, r, projected)]
                 if len(matches) != 1 or matches[0] in used_rows:
                     pending.append(values)
                     continue
@@ -97,13 +109,18 @@ def _appendix(sheet, form, sections):
             header = blocks[index][1]
             width = 14 if form == 'l-ia' else 13
             labels = [sheet.cell(header, column).value for column in range(1, width + 1)]
-            mapping = _mapping(table, labels)
+            body, pending = _body_rows(table)
+            extra_headers = {'l-ii': ('MASA PEEROLEHAN PENGHASILAN',),
+                             'l-iii': ('JENIS PAJAK', 'OBJEK PAJAK')}.get(form, ())
+            projected, mapping, has_extras = _table_projection(
+                {**table, 'rows': body}, labels, extra_headers=extra_headers)
             if mapping is None or not table.get('complete', True):
                 tables_left.append(table)
                 continue
-            body, pending = _body_rows(table)
-            grouped[index].extend((mapping, values) for values in body)
-            if pending:
+            grouped[index].extend((mapping, values) for values in projected['rows'])
+            if has_extras:
+                tables_left.append(table)
+            elif pending:
                 tables_left.append({**table, 'rows': pending})
     offset = 0
     for (_, _, first, last), rows in zip(blocks, grouped):

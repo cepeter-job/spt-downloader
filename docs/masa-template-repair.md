@@ -12,6 +12,6 @@ Perbaikan ini menjembatani hasil DOM ke template yang sudah disetujui, tanpa men
 
 ## Verifikasi
 
-Regresi sintetis: `tests/test_masa_mapping_regressions.py`, `tests/test_masa_dom_context.py`, dan `tests/test_resume_capture_scope.py`. Jalankan melalui workflow Windows yang ada, bersama suite lengkap, source GUI/worker self-test, frozen self-test, dan pemeriksaan artifact exact commit. Tidak mengubah workflow untuk memperoleh GREEN. Eksekusi lokal produk/pytest/build tetap dilarang oleh AGENTS.md; AST dan pemeriksaan hash bukan bukti eksekusi.
+Regresi sintetis: `tests/test_masa_mapping_regressions.py`, `tests/test_masa_dom_context.py`, `tests/test_resume_capture_scope.py`, dan `tests/test_pph21_observed_panels.py`. Judul panel PrimeNG terdekat harus mengalahkan judul accordion luar. Alias deskripsi Induk dibatasi pada slot semantik yang teramati; nilai dan teks sumber tidak diubah. Kolom tambahan teramati L-II/L-III tetap menjadi bukti mentah, sementara kolom yang pasti padanannya diisi ke template dan footer tidak menjadi baris detail. Jalankan melalui workflow Windows yang ada, bersama suite lengkap, source GUI/worker self-test, frozen self-test, dan pemeriksaan artifact exact commit. Tidak mengubah workflow untuk memperoleh GREEN. Eksekusi lokal produk/pytest/build tetap dilarang oleh AGENTS.md; AST dan pemeriksaan hash bukan bukti eksekusi.
 
 Berkas XLSX referensi adalah resource tersanitasi yang sudah tersimpan pada repository. Jangan menggantinya dengan workbook pajak nyata atau memasukkan checkpoint privat ke CI.
