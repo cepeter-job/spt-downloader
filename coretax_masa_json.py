@@ -90,19 +90,44 @@ def _identity_field(source, name, expected, reasons, *, scalar_type=str):
         raise JsonSafetyError('Masa source identity contradicts selection: ' + name)
 
 
+def _check_period_evidence(code, record, scope, reasons):
+    """Validate source period evidence even when the listing binding is absent."""
+    if type(code) is not str or not re.fullmatch(r'[0-9]{8}', code):
+        raise JsonSafetyError('Masa source period is not a literal native code')
+    first, last, year = int(code[:2]), int(code[2:4]), int(code[4:])
+    if not 1 <= first <= last <= 12:
+        raise JsonSafetyError('Masa source period month bounds are invalid')
+    if scope[2] == 'period' and year != scope[1]:
+        raise JsonSafetyError('Masa source period contradicts scope year')
+    label = record.get('meta', {}).get('Masa Pajak')
+    known_label = isinstance(label, str) and any(
+        re.fullmatch(re.escape(month) + r' [0-9]{4}', label) for month in _MONTHS)
+    if known_label and (first != last or label != f'{_MONTHS[first - 1]} {year}'):
+        raise JsonSafetyError('Masa source period contradicts selected display period')
+    if not known_label:
+        reasons.append('unverified_masa_display_period')
+    return code
+
+
 def _check_primary(payload, record, selected, scope, period, tax, reasons):
     if not isinstance(payload, dict):
         reasons.append('unsupported_masa_primary_payload')
         return None
     _identity_field(payload, 'TIN', scope[0], reasons)
     _identity_field(payload, 'TaxpayerIdentifier', selected['frame_taxpayer'], reasons)
+    outer_period = None
+    if 'PeriodCode' in payload:
+        outer_period = _check_period_evidence(payload['PeriodCode'], record, scope, reasons)
     _identity_field(payload, 'PeriodCode', period, reasons)
+    # This cross-check reference is not a substitute for the missing listing
+    # binding: its missing/unbound reasons still prevent native eligibility.
+    checked_period = period if period is not None else outer_period
     model = 'NORMAL' if record.get('meta', {}).get('Model SPT') == 'Normal' else None
     _identity_field(payload, 'ReturnSheetModel', model, reasons)
     if model is None:
         reasons.append('unsupported_masa_model_binding')
-    if period is not None:
-        year, first, last = period[4:], str(int(period[:2])), str(int(period[2:4]))
+    if checked_period is not None:
+        year, first, last = checked_period[4:], str(int(checked_period[:2])), str(int(checked_period[2:4]))
         if tax == 'PPN':
             _identity_field(payload, 'PeriodYear', year, reasons, scalar_type=_CorporateNumber)
             _identity_field(payload, 'PeriodMonth', first, reasons, scalar_type=_CorporateNumber)
@@ -125,7 +150,9 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
         return None
     _identity_field(form, 'ReturnSheetRecordIdentifier', selected['record_id'], reasons)
     _identity_field(form, 'ReturnSheetAggregateIdentifier', selected['aggregate_id'], reasons)
-    _identity_field(form, 'TaxPeriodCode', period, reasons)
+    if 'TaxPeriodCode' in form:
+        _check_period_evidence(form['TaxPeriodCode'], record, scope, reasons)
+    _identity_field(form, 'TaxPeriodCode', checked_period, reasons)
     _identity_field(form, 'TIN' if tax == 'PPN' else 'TaxIdentificationNumber', scope[0], reasons)
     if tax == 'PPN':
         _identity_field(form, 'TaxType', 'VAT_VAT', reasons)
