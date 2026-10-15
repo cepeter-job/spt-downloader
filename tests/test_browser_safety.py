@@ -139,6 +139,10 @@ class View:
     def count(self):
         return 1
 
+    def click(self, **kwargs):
+        # Retain the same event observers when the real driver uses a pointer.
+        return self.evaluate('(e)=>e.click()')
+
     def evaluate(self, script):
         if self.page.unrelated_popup is not None:
             self.page.context.emit('page', self.page.unrelated_popup)
