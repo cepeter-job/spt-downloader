@@ -26,11 +26,19 @@
 
 ## Eksekusi
 
-- [ ] T1: Tambah kontrak sintetis backend dan integrasi; publish test-only PR; baca RED GitHub runner sebelum source.
-- [ ] T2: Implementasi diagnostic_store.py dan diagnostics.py, instrumentasi entry/controller/worker/runtime/capture/PDF/export/publish/GUI. Pertahankan API bisnis.
+- [x] T1: Tambah kontrak sintetis backend dan integrasi; publish test-only PR; baca RED GitHub runner sebelum source.
+- [x] T2: Implementasi diagnostic_store.py dan diagnostics.py, instrumentasi entry/controller/worker/runtime/capture/PDF/export/publish/GUI. Pertahankan API bisnis.
 - [ ] T3: Review independen source + privacy/path/concurrency; perbaiki blocker; jalankan full Windows/portable/source/frozen/build via workflow yang ada.
 - [ ] T4: Baca artefak exact ID/digest/report; dokumentasikan cara mereproduksi bug dan batas logging. PR tetap terpisah dan tidak merged.
 
 ## Referensi desain
 
 Python Logging Cookbook: file handler multi-proses tidak boleh memakai file bersama tanpa serialisasi; OWASP Logging Cheat Sheet: allowlist, minimisasi data, pengujian kegagalan logging, batas penyimpanan. Tidak ada sertifikasi kepatuhan hukum atau security audit menyeluruh yang diklaim.
+
+## Bukti antara dan penutupan
+
+T1 test-only `cb170751e4155be9857166daf36656b8d28e6af7` pada run `38682575566` membuktikan 40 kegagalan kontrak baru dengan 748 tes lama lulus. Integrasi `f4b37ae39d6c748d7fddaaf0ba1642e3528965a7`, run `38683897790`, mengungkap sembilan kegagalan Windows (786 lulus) dan satu portable; root discovery, concurrent mkdir, metadata retensi Windows, orphan lease, dan Stop sebelum izin kemudian diperbaiki setelah bukti itu.
+
+Commit `66cf0ad98b538c9a2e554af193a5e5a578359f44`, run `38686052589`, lulus 794 tes Windows dan seluruh 369 portable, tetapi satu race test masih gagal bersama peringatan finalizer Tk di luar thread GUI. Fixture self-test baru belum melakukan `gc.collect()` pada thread GUI seperti fixture native lainnya. Cleanup itu ditambahkan tanpa mengubah batas waktu/semua assertion race; dua thread yang benar-benar mencapai mkdir kini juga dipastikan. Tidak ada pelonggaran protokol, default logger, CI, atau skip tes.
+
+Review sumber/integrasi privasi dan perbaikan dilakukan secara independen. T3/T4 hanya ditutup setelah run final dan artefak commit yang sama berhasil; koordinat immutable dan hasil terbarunya dicatat di [PR #19](https://github.com/cepeter-job/spt-downloader/pull/19), agar bukti historis di dokumen ini tidak dianggap sebagai hasil commit setelahnya. Penerimaan portal nyata, integrasi PR #18, dan merge tidak termasuk pekerjaan logging ini.

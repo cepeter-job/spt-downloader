@@ -1,5 +1,6 @@
 """Synthetic local diagnostics contracts; never use real taxpayer inputs."""
 from concurrent.futures import ThreadPoolExecutor
+import gc
 import importlib
 import importlib.util
 import json
@@ -400,9 +401,14 @@ def test_frozen_diagnostic_evidence_is_positive_and_fail_closed():
 def test_source_selftest_really_exercises_private_logging(tmp_path):
     from spt_gui import self_test
     target = tmp_path / 'selftest.json'
-    assert self_test(target) == 0
-    data = json.loads(target.read_text())
-    assert data['diagnostics'] == {'schema': 1, 'safe_logging': True}
+    try:
+        assert self_test(target) == 0
+        data = json.loads(target.read_text())
+        assert data['diagnostics'] == {'schema': 1, 'safe_logging': True}
+    finally:
+        # Match the native GUI fixtures: unreachable Tk Variables must be
+        # finalized on this test's UI thread, not a later diagnostic sink.
+        gc.collect()
 
 
 @pytest.mark.parametrize('level', ['INFO', 'OFF'])
@@ -423,8 +429,10 @@ def test_simultaneous_first_sessions_both_survive_directory_creation_race(tmp_pa
     d = diagnostics()
     barrier = threading.Barrier(2)
     mkdir = Path.mkdir
+    contenders = []
     def concurrent_creation(path, *args, **kwargs):
         if path == tmp_path / 'logs':
+            contenders.append(threading.get_ident())
             barrier.wait(timeout=3)
         return mkdir(path, *args, **kwargs)
     monkeypatch.setattr(Path, 'mkdir', concurrent_creation)
@@ -434,6 +442,7 @@ def test_simultaneous_first_sessions_both_survive_directory_creation_race(tmp_pa
         assert first.flush() and second.flush()
     finally:
         first.close(); second.close()
+    assert len(contenders) == 2 and len(set(contenders)) == 2
     assert len({r['session_id'] for r in records(tmp_path)}) == 2
 
 

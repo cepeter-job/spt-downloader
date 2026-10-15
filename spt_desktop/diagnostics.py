@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import queue
-import re
 import sys
 import threading
 import time
@@ -290,6 +289,7 @@ def session(root, role, *, job_id=None, level=None):
         try:
             log = DiagnosticLog(root, role, job_id=job_id, level=level or configured_level())
         except Exception:
+            # An unavailable logger must not prevent the caller from running.
             pass
         _active = log
         yield log
@@ -299,6 +299,7 @@ def session(root, role, *, job_id=None, level=None):
             try:
                 log.close()
             except Exception:
+                # Preserve the product outcome even when diagnostic shutdown fails.
                 pass
 
 
@@ -316,6 +317,7 @@ def record(event, **fields):
         if _active is not None:
             return _active.record(event, **fields)
     except Exception:
+        # Optional instrumentation cannot replace an operation's error or Stop.
         pass
     return False
 

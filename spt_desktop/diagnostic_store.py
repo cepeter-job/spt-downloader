@@ -198,6 +198,7 @@ class SegmentStore:
                         lease_info = lease.lstat()
                         self._remove(lease, (lease_info.st_dev, lease_info.st_ino))
                     except FileNotFoundError:
+                        # The owner may have removed its closed lease already.
                         pass
         if count >= self.max_files:
             raise OSError('Diagnostic retention budget is occupied by active files')
