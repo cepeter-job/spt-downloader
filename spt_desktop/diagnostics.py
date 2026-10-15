@@ -265,18 +265,20 @@ def configured_level():
 
 
 def default_root(workspace=None):
-    override = os.environ.get('SPT_LOG_ROOT')
-    if override is not None:
-        return Path(override)
-    if workspace is not None:
-        return Path(workspace)
-    if sys.platform == 'win32':
-        from .paths import workspace_root
-        try:
+    try:
+        override = os.environ.get('SPT_LOG_ROOT')
+        if override is not None:
+            return Path(override)
+        if workspace is not None:
+            return Path(workspace)
+        if sys.platform == 'win32':
+            from .paths import workspace_root
             return workspace_root()
-        except OSError:
-            return Path('.')
-    return Path.home() / '.local' / 'state' / 'spt-downloader'
+        return Path.home() / '.local' / 'state' / 'spt-downloader'
+    except Exception:
+        # Resolving diagnostics is optional too. Relative roots are disabled,
+        # never interpreted as permission to write into the working directory.
+        return Path('.')
 
 
 @contextmanager

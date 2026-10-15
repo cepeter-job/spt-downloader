@@ -13,6 +13,8 @@ Nama file: `diag-<gui|worker|cli>-<session UUID>-<segmen>.jsonl`. Satu baris ada
 
 ## INFO, DEBUG, dan OFF
 
+Worker baru membuka sink setelah menerima izin mulai; Stop/EOF sebelum izin tidak membuat folder workspace/log. GUI tetap mencatat rekonsiliasi proses.
+
 Default **INFO** mencatat lifecycle, fase berdurasi, persetujuan, terminal yang disahkan controller, serta error. **DEBUG** menambahkan progres/count dan penolakan protokol. Tidak ada level yang membuka akses ke data pajak atau rahasia.
 
 PowerShell, sebelum membuka executable dari terminal yang sama:

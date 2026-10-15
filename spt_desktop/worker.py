@@ -158,8 +158,7 @@ def main(argv=None):
         try:validate_scope(args.npwp,args.year)
         except ValueError:return 1
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',args.job_id):return 1
-    with diagnostics.session(diagnostics.default_root(args.root), 'worker', job_id=args.job_id):
-        return _authorized(args)
+    return _authorized(args)
 
 
 def _authorized(args):
@@ -192,7 +191,10 @@ def _authorized(args):
         diagnostics.record('operation.failed', status='BLOCKED', level='WARNING')
         Progress(args.job_id,emit).finished(False,None,status='BLOCKED',message='Worker tidak menerima izin mulai dari GUI.')
         return 3
-    with contextlib.redirect_stdout(sys.stderr):
+    # No filesystem changes for Stop/EOF before start authorization.
+    diagnostic_session = (contextlib.nullcontext() if cancelled.is_set() else
+        diagnostics.session(diagnostics.default_root(args.root), 'worker', job_id=args.job_id))
+    with diagnostic_session, contextlib.redirect_stdout(sys.stderr):
         if args.check_login:
             return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
         return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,

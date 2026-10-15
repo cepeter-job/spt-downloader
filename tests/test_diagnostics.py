@@ -355,10 +355,21 @@ from spt_desktop import worker,diagnostics
 if sys.argv[2]=='BROKEN':
  def fail(*args): raise OSError('SYNTHETIC DISK ERROR PRIVATE')
  diagnostics.SegmentStore.write=fail
-sys.stdin=io.StringIO(json.dumps({'job_id':'test-job','command':'start'})+'\n')
+import threading
+finished=threading.Event()
+class Commands:
+ sent=False
+ def readline(self, *args):
+  if not self.sent:
+   self.sent=True
+   return json.dumps({'job_id':'test-job','command':'start'})+'\n'
+  finished.wait(10)
+  return ''
+sys.stdin=Commands()
 def fake(*args,**kwargs):
  print('SYNTHETIC PRIVATE DIAGNOSTIC',file=sys.stderr)
  args[6]({'job_id':'test-job','type':'terminal','status':'BLOCKED','percent':0,'output':None})
+ finished.set()
  return 3
 worker.run_job=fake
 raise SystemExit(worker.main(['--root',sys.argv[1],'--job-id','test-job','--npwp','0000000000000001','--year','2025']))
@@ -369,6 +380,10 @@ raise SystemExit(worker.main(['--root',sys.argv[1],'--job-id','test-job','--npwp
     assert result.stdout == json.dumps({'job_id':'test-job','type':'terminal','status':'BLOCKED','percent':0,'output':None})+'\n'
     assert result.stderr == 'SYNTHETIC PRIVATE DIAGNOSTIC\n'
     assert 'SYNTHETIC PRIVATE' not in json.dumps(records(tmp_path))
+    if mode == 'INFO':
+        assert records(tmp_path), 'Enabled logger must actually run in the parity case'
+    elif mode == 'OFF':
+        assert not (tmp_path / 'logs').exists()
 
 
 def test_frozen_diagnostic_evidence_is_positive_and_fail_closed():

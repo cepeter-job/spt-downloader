@@ -10,6 +10,7 @@ import time
 from .output_windows import DirectoryGuard
 
 _NAME = re.compile(r'(diag-(?:gui|worker|cli)-[0-9a-f]{32})-[0-9]{5}\.jsonl')
+_LEASE = re.compile(r'(diag-(?:gui|worker|cli)-[0-9a-f]{32})\.active')
 
 
 def _regular(info):
@@ -80,7 +81,7 @@ class SegmentStore:
                 try:
                     info = path.lstat()
                 except FileNotFoundError:
-                    path.mkdir(mode=0o700)
+                    path.mkdir(mode=0o700, exist_ok=True)
                     info = path.lstat()
                 if not stat.S_ISDIR(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
                     raise ValueError('Diagnostic directory is redirected')
@@ -166,10 +167,25 @@ class SegmentStore:
                 if ordinal >= 4096:
                     raise OSError('Diagnostic directory has too many entries')
                 match = _NAME.fullmatch(entry.name)
-                if match:
-                    info = entry.stat(follow_symlinks=False)
-                    if _regular(info):
-                        candidates.append((info.st_mtime, Path(entry.path), info, match[1]))
+                lease = _LEASE.fullmatch(entry.name)
+                if match or lease:
+                    path = Path(entry.path)
+                    try:
+                        # Windows DirEntry.stat supplies zero link/identity
+                        # fields. lstat is required for custody and retention.
+                        info = path.lstat()
+                    except FileNotFoundError:
+                        continue
+                    if not _regular(info):
+                        continue
+                    if match:
+                        candidates.append((info.st_mtime, path, info, match[1]))
+                    elif not self._active(lease[1]):
+                        # Reclaim a crashed session even if it never produced
+                        # its first segment. Namespace lock prevents a new lease
+                        # owner from appearing between this check and removal.
+                        self._remove(path, (info.st_dev, info.st_ino))
+
         count = len(candidates)
         cutoff = time.time() - self.retention_days * 86400
         for modified, path, info, prefix in sorted(candidates):
