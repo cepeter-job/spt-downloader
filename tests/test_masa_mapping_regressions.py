@@ -131,3 +131,46 @@ def test_ppn_repeated_label_uses_group_column_not_order(tmp_path):
         assert wb['Induk']['H69'].value is None
     finally:
         wb.close()
+
+
+def test_ppn_appendix_dom_headers_and_extra_source_column(tmp_path):
+    headers = ['No.', 'Nama Pembeli BKP/Penerima JKP', 'NPWP/Nomor Paspor',
+               'Nomor Faktur Pajak', 'Tanggal Faktur Pajak (dd-MM-yyyy)',
+               'DPP', 'DPP Nilai Lain', 'PPN', 'PPnBM', 'Kode Transaksi', 'Faktur Pajak']
+    values = ['1','SYNTHETIC BUYER','0000000000000001','SYN-INVOICE','01-01-2025','17','19','23','0','01','EXTRA SYNTHETIC PROOF']
+    wb = exported(tmp_path, 'PPN', [section('A-2',tables=[table('Tabel 1',[values],headers=headers)])])
+    try:
+        assert wb['A-2']['B5'].value == 'SYNTHETIC BUYER'
+        assert wb['A-2']['E5'].value == '01-01-2025'
+        assert wb['A-2']['H5'].value == '23'
+        assert any(c.value == 'EXTRA SYNTHETIC PROOF' for cells in wb['A-2'] for c in cells)
+    finally:
+        wb.close()
+
+
+def test_unifikasi_group_and_equal_duplicate_currency_columns(tmp_path):
+    ref = load_workbook(RESOURCES/'unifikasi_format.xlsx')
+    sh = ref['Daftar I']
+    headers = [sh.cell(4,c).value for c in range(1,18)]
+    values = ['1','SYNTHETIC PAYEE','0000000000000001','SYN-ID','01-01-2025','SYN-CODE','0','IDR','17','1','19','21','0','0','0','SYN-TKU','Normal']
+    headers.insert(12,'Mata Uang'); values.insert(12,'IDR')
+    data = table('Tabel 1',[values],headers=headers)
+    data['group'] = sh['A2'].value
+    wb = exported(tmp_path,'PPh Unifikasi',[section('DAFTAR-I',tables=[data])])
+    try:
+        assert wb['DAFTAR-I']['B5'].value == 'SYNTHETIC PAYEE'
+        assert wb['DAFTAR-I']['H5'].value == 'IDR'
+        assert wb['DAFTAR-I']['Q5'].value == 'Normal'
+    finally:
+        wb.close(); ref.close()
+
+
+def test_resume_reports_unmapped_template_evidence(tmp_path):
+    run = run_for([section('Induk', fields=[{'label':'UNSUPPORTED SYNTHETIC AMOUNT','field':'','value':'17'}])])
+    exporter.export_split_workbooks(run,tmp_path)
+    wb = load_workbook(tmp_path/'resume.xlsx')
+    try:
+        assert wb['Ringkasan']['B23'].value == 'PARTIAL'
+        assert any(c.value == 'Pemetaan template' for cells in wb['Audit'] for c in cells)
+    finally:
+        wb.close()
