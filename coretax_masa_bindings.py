@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 import re
 
-from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata
+from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, _corporate_request_key
 
 _MAX_EXACT_INTEGER = Decimal('9007199254740991')
 _JAKARTA = timezone(timedelta(hours=7))
@@ -246,16 +246,59 @@ _PPN_GRID_COLUMNS = {
             ('STLG', 'number'), ('Information', 'text')),
     'B-2': _PPN_DOMESTIC_COLUMNS,
     'B-3': _PPN_DOMESTIC_COLUMNS,
+    'C': (('SellerTin', 'text'), ('SellerName', 'text'), ('BuyerTin', 'text'),
+          ('BuyerName', 'text'), ('TypeOfVat', 'reference'), ('BillingNumber', 'text'),
+          ('BillingDate', 'date'), ('CodeAndSerialNumber', 'text'), ('TaxBase', 'number'),
+          ('OtherTaxBase', 'number'), ('VAT', 'number'), ('STLG', 'number'), ('Information', 'text')),
+}
+_UNIFIKASI_WITHHOLDING_COLUMNS = (
+    ('TaxIdentificationNumber', 'text'), ('TaxpayerName', 'text'), ('WithholdingSlipsNumber', 'text'),
+    ('WithholdingSlipsDate', 'date'), ('TaxArticle', 'text'), ('TaxObjectCode', 'text'),
+    ('TaxObject', 'text'), ('TaxBase', 'number'), ('TaxRate', 'number2'), ('IncomeTax', 'number'),
+    ('TaxCertificate', 'reference'), ('PaymentMethod', 'reference'), ('BranchId', 'text'),
+    ('Status', 'text'), ('RevenueCode', 'text'),
+)
+_UNIFIKASI_SELF_PAYMENT_COLUMNS = (
+    ('TaxArticle', 'text'), ('TaxObjectCode', 'text'), ('TaxObject', 'reference'),
+    ('TaxBase', 'number'), ('TaxRate', 'number2'), ('IncomeTax', 'number'),
+    ('TaxCertificate', 'reference'), ('BranchId', 'text'), ('Status', 'text'), ('RevenueCode', 'text'),
+)
+_UNIFIKASI_GRID_COLUMNS = {
+    'list-i-bpu': _UNIFIKASI_WITHHOLDING_COLUMNS,
+    'list-i-bpnr': _UNIFIKASI_WITHHOLDING_COLUMNS,
+    'list-ii-sp': _UNIFIKASI_SELF_PAYMENT_COLUMNS,
+    'list-ii-cy': _UNIFIKASI_SELF_PAYMENT_COLUMNS,
+    'attachment-i': (
+        ('RecipientIdentificationNumber', 'text'), ('RecipientName', 'text'), ('RecipientAccountId', 'text'),
+        ('GiverIdentificationNumber', 'text'), ('GiverName', 'text'), ('GiverAccountId', 'text'),
+        ('TaxObjectCode', 'text'), ('BillingDocumentNumber', 'text'), ('BillingDocumentDate', 'date'),
+        ('TaxBase', 'number'), ('TaxRate', 'number2'), ('IncomeTax', 'number'),
+        ('TaxCertificate', 'reference'), ('BranchId', 'text'), ('Status', 'text'), ('RevenueCode', 'text')),
 }
 
 
-def project_ppn_grid(form_name, pages, headers, *, record_id, timezone_name):
-    """Project validated PPN page bodies without deduplication or missing cells.
+def project_ppn_grid(form_name, pages, headers, *, record_id, timezone_name, lookups=None):
+    return _project_masa_grid(_PPN_GRID_COLUMNS.get(form_name), pages, headers,
+                              record_id=record_id, timezone_name=timezone_name,
+                              lookups=lookups, ppn_form=form_name)
 
-    Endpoint/build/header-label binding is the observer/adapter's responsibility;
-    this function additionally enforces selected-record identity and page coverage.
+
+def project_unifikasi_grid(grid_name, pages, headers, *, record_id, timezone_name, lookups):
+    return _project_masa_grid(_UNIFIKASI_GRID_COLUMNS.get(grid_name), pages, headers,
+                              record_id=record_id, timezone_name=timezone_name,
+                              lookups=lookups, global_ordinal=True)
+
+
+def _project_masa_grid(columns, pages, headers, *, record_id, timezone_name,
+                       lookups, ppn_form=None, global_ordinal=False):
+    """Share page custody for the observed grids, not their semantic bindings.
+
+    Endpoint/build/header/reference binding remains the observer/adapter's job;
+    these checks additionally prevent mixing selected records and page scopes.
     """
-    columns = _PPN_GRID_COLUMNS.get(form_name)
+    lookups = {} if lookups is None else lookups
+    if not isinstance(lookups, dict):
+        raise _UnsupportedMetadata('unverified_masa_reference_bindings')
     if (columns is None or not isinstance(headers, list) or len(headers) != len(columns) + 1
             or any(type(h) is not str or not h for h in headers)
             or not isinstance(pages, list) or not pages):
@@ -273,10 +316,18 @@ def project_ppn_grid(form_name, pages, headers, *, record_id, timezone_name):
             raise JsonSafetyError('PPN grid request belongs to a different selected return')
     rows, provenance, sequences = [], [], set()
     total = None
+    query_scope = None
     for page in pages:
         request, payload = page['request'], page.get('payload')
         if 'ReturnSheetRecordId' not in request:
             raise _UnsupportedMetadata('missing_ppn_grid_record_binding')
+        if request.get('Filters', []) != []:
+            raise _UnsupportedMetadata('filtered_masa_grid_is_not_full_coverage')
+        current_scope = _corporate_request_key({key: value for key, value in request.items()
+                                               if key not in ('First', 'Rows')})
+        if query_scope is not None and query_scope != current_scope:
+            raise JsonSafetyError('Masa grid query scope or sorting changed between pages')
+        query_scope = current_scope
         first, size = request.get('First'), request.get('Rows')
         if type(first) is not int or first < 0 or type(size) is not int or not 0 < size <= 1000:
             raise JsonSafetyError('PPN grid request page bounds are invalid')
@@ -303,19 +354,33 @@ def project_ppn_grid(form_name, pages, headers, *, record_id, timezone_name):
         for index, source in enumerate(data):
             if not isinstance(source, dict):
                 raise _UnsupportedMetadata('unsupported_ppn_grid_row')
-            # The native component uses Data.indexOf(row)+1 on each page.
-            rendered = [str(index + 1)]
+            # PPN components use page-local Data.indexOf; generic Unifikasi
+            # RowNumber includes the request offset and a trailing dot.
+            rendered = [f'{first + index + 1}.' if global_ordinal else str(index + 1)]
             for key, kind in columns:
                 if key not in source:
                     raise _UnsupportedMetadata('missing_ppn_grid_source_column')
                 value = source[key]
                 provenance.append({**_evidence(value, ['Data', index, key]), 'sequence': sequence})
-                if (form_name == 'A-2' and key == 'TIN' and value == '0000000000000000'
+                if (ppn_form == 'A-2' and key == 'TIN' and value == '0000000000000000'
                         and source.get('DocumentNumberByBuyerInfor') is not None):
                     value = source['DocumentNumberByBuyerInfor']
                     provenance.append({**_evidence(value, ['Data', index, 'DocumentNumberByBuyerInfor']),
                                        'sequence': sequence})
-                rendered.append(render_grid_value(value, kind, timezone_name=timezone_name))
+                if kind == 'reference':
+                    if value is None or value == '':
+                        rendered.append('')
+                        continue
+                    mapping = lookups.get(key)
+                    if (type(value) is not str or not isinstance(mapping, dict)
+                            or type(mapping.get(value)) is not str):
+                        raise _UnsupportedMetadata('unbound_masa_reference_description')
+                    provenance[-1]['lookup'] = key
+                    rendered.append(mapping[value])
+                else:
+                    rendered.append(render_grid_value(value, 'number' if kind == 'number2' else kind,
+                                                      fraction=2 if kind == 'number2' else 0,
+                                                      timezone_name=timezone_name))
             rows.append(rendered)
     if len(rows) != total:
         raise _UnsupportedMetadata('incomplete_ppn_grid_pages')
