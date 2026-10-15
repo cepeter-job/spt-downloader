@@ -9,10 +9,10 @@ from coretax_json import _corporate_json, _UnsupportedMetadata, JsonSafetyError
 RECORD = '00000000-0000-4000-8000-000000000001'
 
 
-def project(form, pages, headers):
+def project(form, pages, headers, **options):
     implementation = getattr(importlib.import_module('coretax_masa_bindings'), 'project_ppn_grid', None)
     assert callable(implementation), 'PPN grid projection is not implemented'
-    return implementation(form, pages, headers, record_id=RECORD, timezone_name='Asia/Jakarta')
+    return implementation(form, pages, headers, record_id=RECORD, timezone_name='Asia/Jakarta', **options)
 
 
 def page(rows, total, first=0, size=2):
@@ -99,3 +99,24 @@ def test_explicit_zero_total_with_empty_grid_is_complete():
     assert result['table']['rows'] == []
     assert result['table']['body_row_count'] == result['table']['source_total'] == 0
     assert result['table']['complete'] is True
+
+
+def test_ppn_c_uses_buyer_seller_fields_and_bound_transaction_labels():
+    source = _corporate_json('''{"SellerTin":"000001","SellerName":"SELLER",
+        "BuyerTin":"000002","BuyerName":"BUYER","TypeOfVat":"SYNTHETIC-CODE",
+        "BillingNumber":"000003","BillingDate":"2025-01-02","CodeAndSerialNumber":"000004",
+        "TaxBase":1000,"OtherTaxBase":900,"VAT":100,"STLG":0,"Information":"INFO"}''')
+    result = project('C', [page([source], 1)], ['column'] * 14,
+                     lookups={'TypeOfVat': {'SYNTHETIC-CODE': 'SYNTHETIC LABEL'}})
+    assert result['table']['rows'] == [['1', '000001', 'SELLER', '000002', 'BUYER',
+        'SYNTHETIC LABEL', '000003', '02-01-2025', '000004', '1.000', '900', '100', '0', 'INFO']]
+
+
+@pytest.mark.parametrize('kind', ['filtered', 'changed_sort'])
+def test_ppn_filtered_or_changed_sort_pages_are_not_full_coverage(kind):
+    pages = [page([row(), row()], 3), page([row()], 3, first=2)]
+    for item in pages: item['request'].update(Filters=[], SortField='', SortOrder=1)
+    if kind == 'filtered': pages[0]['request']['Filters'] = [{'field': 'TIN', 'value': 'SYNTHETIC'}]
+    else: pages[1]['request']['SortField'] = 'TaxBase'
+    with pytest.raises((JsonSafetyError, _UnsupportedMetadata)):
+        project('A-2', pages, ['column'] * 10)
