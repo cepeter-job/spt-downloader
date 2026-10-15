@@ -92,7 +92,11 @@ FIELDS_JS = r'''(root) => {
   const label=labelFor(e);
   const labels=[...e.parentElement.querySelectorAll(':scope > label')]
    .filter(l=>visible(l)&&l.innerText.trim()!==label&&!l.htmlFor);
-  return {group:group(e),column_label:labels.length===1?labels[0].innerText.trim():''};
+  const result={};
+  const heading=group(e);
+  if(heading)result.group=heading;
+  if(labels.length===1)result.column_label=labels[0].innerText.trim();
+  return result;
  };
  const include=e=>e.closest('.p-tabview-panel')===owner && !e.closest('table') && !e.closest('[hidden],[aria-hidden="true"]');
  [...root.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')].filter(include).forEach(e=>{

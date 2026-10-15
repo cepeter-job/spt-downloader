@@ -176,7 +176,7 @@ def _unifikasi_induk(sheet, sections):
     return pending
 
 
-def _appendix(sheet, blocks, sections):
+def _appendix(sheet, blocks, sections, tax):
     grouped = [[] for _ in blocks]
     fields, pending = [], []
     for section in sections:
@@ -201,10 +201,17 @@ def _appendix(sheet, blocks, sections):
                 targets = [label for label in labels if _header_key(label) in {_header_key(a) for a in alternatives}]
                 if len(targets) == 1:
                     aliases.update({a: targets[0] for a in alternatives})
+            extras = ['Masa Pajak', 'KODE IP TERKAIT', 'TANGGAL IP TERKAIT', 'Faktur Pajak']
+            if tax == 'PPh Unifikasi':
+                aliases.update({'PAJAK PENGHASILAN': 'PAJAK PENGHASILAN (Rp)',
+                                'NITKU / NOMOR IDENTITAS SUBUNIT ORGANISASI': 'ID TEMPAT KEGIATAN USAHA'})
+                # DPP and gross income are not interchangeable. Retain the DPP,
+                # rate and government-payment columns as raw evidence instead.
+                extras.extend(['DASAR PENGENAAN PAJAK (Rp)', 'TINGKAT (%)',
+                               'UANG PERSEDIAAN / PEMBAYARAN LANGSUNG (UNTUK WP INSTANSI PEMERINTAH DENGAN DANA APBN)'])
             body, leftovers = _body_rows(table)
             projected, mapping, changed = _table_projection(
-                {**table, 'rows': body, 'body_row_count': len(body)}, labels, aliases,
-                ('Masa Pajak', 'KODE IP TERKAIT', 'TANGGAL IP TERKAIT', 'Faktur Pajak'))
+                {**table, 'rows': body, 'body_row_count': len(body)}, labels, aliases, extras)
             if mapping is None:
                 pending.append(table)
                 continue
@@ -235,6 +242,6 @@ def render_template_form(sheet, tax, form, sections):
         style_row = 4
     else:
         blocks = (PPN_BLOCKS if tax == 'PPN' else UNIFIKASI_BLOCKS)[form.casefold()]
-        fields, tables = _appendix(sheet, blocks, sections)
+        fields, tables = _appendix(sheet, blocks, sections, tax)
         style_row = blocks[0][2]
     return _raw_evidence(sheet, sections, fields, tables, style_row)

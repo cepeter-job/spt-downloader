@@ -70,6 +70,15 @@ def test_lia_date_header_maps_body_but_not_short_footer(tmp_path):
         wb.close()
 
 
+def test_numeric_zero_body_values_are_not_treated_as_empty(tmp_path):
+    values = [0] * len(IA_HEADERS)
+    wb = exported(tmp_path, 'PPh Pasal 21/26', [section('L-IA', tables=[table('Tabel 1', [values], ia=True)])])
+    try:
+        assert [wb['L-IA'].cell(5,c).value for c in range(1,len(values)+1)] == values
+    finally:
+        wb.close()
+
+
 def test_pph21_group_evidence_not_ordinal(tmp_path):
     data = table('Tabel 1', [row('SYNTHETIC BPA2')])
     data['group'] = 'Daftar Bukti Pemotongan BPA2'

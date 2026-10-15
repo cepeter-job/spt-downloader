@@ -733,7 +733,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
     wb.save(path)
 
 
-def export_split_workbooks(run, folder):
+def export_split_workbooks(run, folder, *, mapping_reports=None):
     """Buat resume, workbook masa, dan form Badan; publikasi ditangani pemanggil."""
     validate_export_run(run)
     folder = Path(folder)
@@ -753,6 +753,8 @@ def export_split_workbooks(run, folder):
         path = folder / filename
         reports.extend(export_workbook(group_run, path, include_administration=False))
         files[filename] = path
-    run['template_mapping'] = reports
-    export_workbook(run, files['resume.xlsx'], include_details=False, detail_targets=targets)
+    if mapping_reports is not None:
+        mapping_reports.extend(reports)
+    export_workbook({**run, 'template_mapping': reports}, files['resume.xlsx'],
+                    include_details=False, detail_targets=targets)
     return files

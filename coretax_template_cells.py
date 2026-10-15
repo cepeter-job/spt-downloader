@@ -64,7 +64,7 @@ def _body_rows(table):
     width = len(table.get('headers', []))
     body, pending = [], []
     for index, values in enumerate(rows):
-        if index < count and len(values) == width and any(str(v or '').strip() for v in values):
+        if index < count and len(values) == width and any(v is not None and str(v).strip() for v in values):
             body.append(values)
         else:
             pending.append(values)
@@ -79,22 +79,8 @@ def _table_projection(table, labels, aliases=None, extra_headers=()):
     indices = [i for i, value in enumerate(headers) if _header_key(value) not in extras]
     projected = {**table, 'headers': [headers[i] for i in indices],
                  'rows': [[values[i] for i in indices if i < len(values)] for values in table.get('rows', [])]}
-    # Repeated currency columns occur in separate source header groups. Collapse
-    # only when every complete row proves equality; otherwise keep the raw table.
-    kept, seen = [], {}
-    for i, header in enumerate(projected['headers']):
-        key = _header_key(header)
-        if key in seen:
-            other = seen[key]
-            if key != _key('Mata Uang') or any(len(values) != len(projected['headers']) or values[i] != values[other]
-                                              for values in projected['rows']):
-                return table, None, False
-        else:
-            kept.append(i)
-            seen[key] = i
-    if len(kept) != len(projected['headers']):
-        projected = {**projected, 'headers': [projected['headers'][i] for i in kept],
-                     'rows': [[values[i] for i in kept] for values in projected['rows']]}
+    if any(len(values) != len(headers) for values in table.get('rows', [])):
+        return table, None, False
     changed = projected['headers'] != headers
     return projected, _mapping(projected, labels, aliases), changed
 
