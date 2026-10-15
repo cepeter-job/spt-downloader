@@ -89,6 +89,7 @@ FIELDS_JS = r'''(root) => {
   return e.getAttribute('aria-label')||e.getAttribute('formcontrolname')||e.name||e.id||'Unnamed field';
  };
  const gridColumn=e=>{
+  if(!e.closest('p-inputnumber'))return '';
   const cell=e.closest('.col-md-3');
   if(!cell || !cell.parentElement.matches('.row'))return '';
   const grid=cell.parentElement, columns=[...grid.children];

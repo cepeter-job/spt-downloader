@@ -122,6 +122,18 @@ def test_ppn_observed_labels_bind_reference_slots_without_restating_template(tmp
         wb.close()
 
 
+def test_ppn_semantic_aliases_do_not_escape_their_verified_sections(tmp_path):
+    fields=[{'label':'Kompensasi kelebihan Pajak Masukan','field':'','group':'I. PEROLEHAN BARANG DAN JASA','column_label':'PPN (Rupiah)','value':'17,00'},
+            {'label':'PPN yang wajib dibayar kembali','field':'','group':'','column_label':'PPN (Rupiah)','value':'19,00'}]
+    wb=export('PPN',source_run('PPN',[section('INDUK',fields=fields)]),tmp_path)
+    try:
+        assert wb['INDUK']['G32'].value is None
+        assert wb['INDUK']['E56'].value is None
+        assert any(c.value=='19,00' for cells in wb['INDUK'] for c in cells)
+    finally:
+        wb.close()
+
+
 def test_ppn_grid_does_not_assign_amount_units_to_plain_text_metadata():
     html='<div class="p-tabview-panel"><div class="p-accordion-content">'
     html+='<div class="row">'+_grid_cells(PPN_COLUMNS)+'</div>'

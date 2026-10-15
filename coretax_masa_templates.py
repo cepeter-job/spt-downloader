@@ -123,15 +123,31 @@ def _ppn_fields(sheet, fields):
         candidates = []
         for block in PPN_INDUK:
             caption = _key(str(sheet.cell(block[0], 1).value or '') + ' ' + str(sheet.cell(block[0], 2).value or ''))
-            if group and group != caption:
+            captions = {caption}
+            # The approved reference repeats outgoing/export wording in some
+            # input/collection slots. Preserve its cells; bind only the observed
+            # section-specific labels, never a global import/export synonym.
+            if block[0] == 26 and caption == _key('II. PENYERAHAN BARANG DAN JASA'):
+                captions.add(_key('II. PEROLEHAN BARANG DAN JASA'))
+            if group and group not in captions:
                 continue
+            bound_column = column
+            observed_dpp = {26: 'Harga Jual/Penggantian/Nilai Impor/DPP (Rupiah)',
+                            67: 'HARGA JUAL/PENGGANTIAN/DPP (Rupiah)',
+                            73: 'HARGA JUAL/PENGGANTIAN/DPP (Rupiah)'}.get(block[0])
+            reference_dpp = _header_key('Harga Jual/Penggantian/ Nilai Ekspor/DPP (Rupiah)')
+            if (observed_dpp and column == _header_key(observed_dpp)
+                    and _header_key(sheet.cell(block[1], 5).value) == reference_dpp):
+                bound_column = reference_dpp
             for row in range(block[2], block[3] + 1):
                 labels = {_key(sheet.cell(row, c).value) for c in range(1, 5)
                           if sheet.cell(row, c).value is not None}
+                if row == 56 and group == caption and _key(sheet['A56'].value) == _key('PPN terutang'):
+                    labels.add(_key('PPN yang wajib dibayar kembali'))
                 if not label or label not in labels:
                     continue
                 if column:
-                    columns = [c for c in range(5, 9) if column == _header_key(sheet.cell(block[1], c).value)]
+                    columns = [c for c in range(5, 9) if bound_column == _header_key(sheet.cell(block[1], c).value)]
                 else:
                     columns = [single[row]] if row in single else []
                 candidates.extend((row, c) for c in columns)
