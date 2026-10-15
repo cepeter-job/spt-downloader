@@ -714,6 +714,41 @@ def capture_financial_detail(page, **kwargs):
     return capture_financial(page, **kwargs)
 
 
+def _check_corporate_request_identities(observations, record, scope):
+    from coretax_corporate import GRID_ROLES
+    grid_paths = {'/returnsheet/api/loadcit/' + suffix
+                  for roles in GRID_ROLES.values() for _, suffix, _ in roles}
+    period = record.get('source_fields', {}).get('TaxPeriodCode')
+    expected_year = period[-4:] if isinstance(period, str) and re.search(r'[0-9]{4}$', period) else None
+    if expected_year is None and scope[2] == 'period':
+        expected_year = str(scope[1])
+    for item in observations:
+        url = item['url']
+        if not trusted_origin(url):
+            continue
+        path = urlparse(url).path
+        if path == '/returnsheet/api/prefillreturnsheet/corporate-income':
+            field = 'RecordId'
+        elif path in grid_paths:
+            field = 'ReturnSheetRecordId'
+        else:
+            continue
+        request_data = item.get('request_json')
+        if not isinstance(request_data, dict):
+            continue
+        # Missing evidence grants no JSON eligibility. Explicit contradictions
+        # remain fatal even when the build/forms or response MIME are unknown.
+        if field in request_data:
+            value = request_data[field]
+            if type(value) is not str or value != record['record_id']:
+                raise JsonSafetyError('Known corporate request contradicts selected return')
+        if (path == '/returnsheet/api/loadcit/l4-table-a-grid'
+                and expected_year is not None and 'PeriodYear' in request_data):
+            value = request_data['PeriodYear']
+            if type(value) is not str or value != expected_year:
+                raise JsonSafetyError('Known corporate request contradicts selected period')
+
+
 def _identity_checked_packets(packets, record, scope):
     from coretax_json import (_corporate_json, _corporate_primary,
                               _corporate_selected, _UnsupportedMetadata)
@@ -738,11 +773,18 @@ def _identity_checked_packets(packets, record, scope):
 def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+    if corporate:
+        _check_corporate_request_identities(capture.request_observations(), record, scope)
     forms = observe_corporate_forms(page, record, scope, capture,
         max_pages=max_pages, check_cancel=check_cancel) if corporate else None
-    if any(item.get('status') in (401, 403) for item in capture.request_observations()):
+    observations = capture.request_observations()
+    if corporate:
+        _check_corporate_request_identities(observations, record, scope)
+    if any(item.get('status') in (401, 403) for item in observations):
         raise JsonSafetyError('Detail HTTP authorization was rejected')
     manifest = capture.drain(check_cancel=check_cancel)
+    if corporate:
+        _check_corporate_request_identities(capture.request_observations(), record, scope)
     if any(reason in manifest['reasons'] for reason in (
             'secret-body', 'secret-request', 'invalid-json', 'response-source-mismatch',
             'request-context-unavailable', 'authorization-rejected')):

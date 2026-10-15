@@ -115,6 +115,7 @@ class DetailJsonCapture:
         self._guard = DirectoryGuard()
         self._listeners = []
         self._requests = {}
+        self._observations = []
         self._active = False
         self._bound = None
         self._bound_url = None
@@ -205,9 +206,14 @@ class DetailJsonCapture:
                 if _has_secret(request_json):
                     self._reason('secret-request')
                     return
-            self._requests[request] = {'target': target, 'frame': frame, 'frame_url': frame.url,
-                                       'url': request.url, 'method': request.method,
-                                       'request_json': request_json, 'sequence': self._seen,
+            # Keep bounded metadata after MIME exclusion/drain, but never keep
+            # the driver request/response or its body through this ledger.
+            observation = {'target': target, 'frame_url': frame.url, 'url': request.url,
+                           'method': request.method, 'request_json': request_json,
+                           'sequence': self._seen, 'status': None}
+            self._observations.append(observation)
+            self._requests[request] = {**observation, 'frame': frame,
+                                       'observation': observation,
                                        'state': 'pending', 'response': None}
         except Exception:
             # Driver/JSON exception text may contain credentials; never persist it.
@@ -225,6 +231,7 @@ class DetailJsonCapture:
             # Authorization failure is decisive even when the server sends HTML.
             # Keep only the status: no rejected body is read or persisted.
             entry['status'] = response.status
+            entry['observation']['status'] = entry['status']
             if entry['status'] in (401, 403):
                 entry['state'] = 'failed'
                 self._reason('authorization-rejected')
@@ -262,6 +269,7 @@ class DetailJsonCapture:
             raise JsonSafetyError('Detail page changed inside a capture attempt')
         self._bound = detail
         self._bound_url = detail.url
+        self._observations = [item for item in self._observations if item['target'] is detail]
         for request, entry in list(self._requests.items()):
             if entry['target'] is not detail:
                 self._requests.pop(request)
@@ -384,12 +392,13 @@ class DetailJsonCapture:
         return json.loads(json.dumps(self._result))
 
     def request_observations(self):
-        """Expose bounded readonly request metadata, never driver bodies/headers."""
+        """Expose this attempt's bounded metadata, including excluded replies."""
         self._cancel()
         self._verify_binding()
         keys = ('url', 'method', 'frame_url', 'sequence', 'request_json', 'status')
         return json.loads(json.dumps([{key: item.get(key) for key in keys}
-                                      for item in self._requests.values()]))
+                                      for item in self._observations
+                                      if item['target'] is self._bound]))
 
     def iter_bodies(self, check_cancel=None):
         self._cancel(check_cancel)
@@ -429,6 +438,7 @@ class DetailJsonCapture:
     def close(self):
         self._active = False
         self._requests.clear()
+        self._observations.clear()
         for event, callback in reversed(self._listeners):
             try:
                 self.context.remove_listener(event, callback)

@@ -135,12 +135,17 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         request = event['request_json']
                         if event['url'] != endpoint or event['method'] != 'POST' or not isinstance(request,dict):
                             continue
-                        if request.get('ReturnSheetRecordId') != record['record_id']:
+                        if 'ReturnSheetRecordId' not in request:
+                            return None
+                        if request['ReturnSheetRecordId'] != record['record_id']:
                             raise JsonSafetyError('Observed grid belongs to a different selected return')
                         if group is not None and request.get('GroupType') != group:
                             continue
-                        if name == 'L4' and request.get('PeriodYear') != record.get('source_fields',{}).get('TaxPeriodCode','')[-4:]:
-                            raise JsonSafetyError('Observed grid year contradicts selected period')
+                        if name == 'L4':
+                            if 'PeriodYear' not in request:
+                                return None
+                            if request['PeriodYear'] != record.get('source_fields',{}).get('TaxPeriodCode','')[-4:]:
+                                raise JsonSafetyError('Observed grid year contradicts selected period')
                         first, rows = request.get('First'), request.get('Rows')
                         if type(first) is not int or first < 0 or type(rows) is not int or rows <= 0:
                             return None
