@@ -330,3 +330,43 @@ def test_synthetic_native_fixture_navigation_and_grid_handlers_are_independently
         assert fixture.unexpected == []
     finally:
         fixture.close()
+
+
+@pytest.mark.parametrize('missing', ['ReturnSheetRecordId', 'PeriodYear'])
+def test_approved_native_build_missing_grid_identity_uses_whole_dom(
+        browser, tmp_path, monkeypatch, missing):
+    native_collector()
+
+    class MissingL4Identity(NativeFixture):
+        def grid_html(self, selector, endpoint, identity, name, total=0):
+            if endpoint == '/loadcit/l4-table-a-grid':
+                identity = {key: value for key, value in identity.items() if key != missing}
+            return super().grid_html(selector, endpoint, identity, name, total)
+
+        def route(self, route):
+            request = route.request
+            if request.url.endswith('/loadcit/l4-table-a-grid'):
+                body = request.post_data_json
+                assert request.method == 'POST' and missing not in body
+                other = 'PeriodYear' if missing == 'ReturnSheetRecordId' else 'ReturnSheetRecordId'
+                assert body[other] == ('2025' if other == 'PeriodYear' else corpus.RECORD_ID)
+                self.requests.append({'url': request.url, 'method': request.method, 'body': body})
+                route.fulfill(content_type='application/json', body=corpus.wire({
+                    'IsSuccessful': True, 'Payload': {'Data': [], 'TotalRecords': 0, 'Index': None}}))
+                return
+            super().route(route)
+
+    fixture = MissingL4Identity(browser, tmp_path, monkeypatch, groups=True)
+    try:
+        result = fixture.collect()
+        assert result['complete'] is True and result['errors'] == []
+        record = result['records'][0]
+        assert record['detail_source']['used'] == 'dom'
+        assert any(f.get('value') == '0000777' for s in record['sections'] for f in s.get('fields', []))
+        assert not any('/MainFormData/NetIncomeBeforeTax' in str(t)
+                       for s in record['sections'] for t in s.get('tables', []))
+        assert any(r['url'].endswith('/loadcit/l4-table-a-grid') and missing not in r['body']
+                   for r in fixture.requests)
+        assert fixture.unexpected == []
+    finally:
+        fixture.close()
