@@ -376,6 +376,14 @@ class DetailJsonCapture:
         self._result = {**result, 'manifest': manifest, 'manifest_sha256': self._manifest_hash}
         return json.loads(json.dumps(self._result))
 
+    def request_observations(self):
+        """Expose bounded readonly request metadata, never driver bodies/headers."""
+        self._cancel()
+        self._verify_binding()
+        keys = ('url', 'method', 'frame_url', 'sequence', 'request_json', 'status')
+        return json.loads(json.dumps([{key: item.get(key) for key in keys}
+                                      for item in self._requests.values()]))
+
     def iter_bodies(self, check_cancel=None):
         self._cancel(check_cancel)
         if self._result is None:
@@ -429,3 +437,76 @@ class DetailJsonCapture:
             if exception_type is None:
                 raise JsonSafetyError('Private capture cleanup failed') from None
         return False
+
+
+def checkpoint_bodies(folder, capture, record, scope):
+    """Reacquire original private bytes; reject lexical escapes before any read."""
+    from pathlib import PurePosixPath
+    if not isinstance(capture, dict):
+        raise JsonSafetyError('Missing private capture checkpoint')
+    reference = capture.get('manifest')
+    if (not isinstance(reference, str) or '\\' in reference or ':' in reference
+            or not re.fullmatch(r'returns/json/[0-9]{4,}/[a-f0-9]{32}/manifest\.json', reference)):
+        raise JsonSafetyError('Unsafe private capture manifest reference')
+    relative = PurePosixPath(reference)
+    root = Path(folder).absolute()
+    if '..' in root.parts:
+        raise JsonSafetyError('Unsafe private capture folder')
+
+    def hold(guard, directory):
+        guard.include({parent: _ordinary_directory(parent)
+                       for parent in reversed([directory, *directory.parents])})
+
+    def read(guard, name, maximum):
+        hold(guard, (root / name).parent)
+        with locked_file(root / name) as stream:
+            raw = stream.read(maximum + 1)
+        if len(raw) > maximum:
+            raise JsonSafetyError('Private checkpoint exceeds its byte budget')
+        return raw
+
+    try:
+        with DirectoryGuard() as guard:
+            raw = read(guard, reference, 8 * 1024 * 1024)
+            if hashlib.sha256(raw).hexdigest() != capture.get('manifest_sha256'):
+                raise JsonSafetyError('Private checkpoint manifest bytes changed')
+            saved = _json(raw)
+            expected = {**saved, 'manifest': reference, 'manifest_sha256': hashlib.sha256(raw).hexdigest()}
+            if json.dumps(capture, sort_keys=True) != json.dumps(expected, sort_keys=True):
+                raise JsonSafetyError('Private checkpoint manifest metadata changed')
+            if (type(saved.get('version')) is not int or saved['version'] != 1
+                    or saved.get('scope') != list(scope) or type(saved['scope'][1]) is not int
+                    or saved.get('record_id') != record['record_id']
+                    or saved.get('source_url') != record['list_url']
+                    or saved.get('attempt') != relative.parent.name
+                    or saved.get('detail_url') != record.get('detail_url')):
+                raise JsonSafetyError('Private checkpoint identity or attempt changed')
+            descriptors = saved.get('responses')
+            if not isinstance(descriptors, list) or len(descriptors) > MAX_RESPONSES:
+                raise JsonSafetyError('Private checkpoint response budget changed')
+            packets, total, seen = [], 0, set()
+            for descriptor in descriptors:
+                name = descriptor.get('relative_path')
+                if (not isinstance(name, str) or '\\' in name or ':' in name
+                        or PurePosixPath(name).parent != relative.parent
+                        or not re.fullmatch(r'response-[0-9]{4,}\.json', PurePosixPath(name).name)
+                        or name in seen or descriptor.get('attempt') != saved['attempt']
+                        or descriptor.get('record_id') != record['record_id']
+                        or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
+                        or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
+                        or descriptor['bytes'] > MAX_BODY_BYTES):
+                    raise JsonSafetyError('Unsafe private checkpoint response reference')
+                seen.add(name)
+                total += descriptor['bytes']
+                if total > MAX_TOTAL_BYTES:
+                    raise JsonSafetyError('Private checkpoint attempt budget changed')
+                body = read(guard, name, MAX_BODY_BYTES)
+                if len(body) != descriptor['bytes'] or hashlib.sha256(body).hexdigest() != descriptor.get('sha256'):
+                    raise JsonSafetyError('Private checkpoint response bytes changed')
+                payload = _json(body)
+                if _has_secret(payload):
+                    raise JsonSafetyError('Private checkpoint no longer meets privacy policy')
+                packets.append({'body': body, 'payload': payload, 'context': descriptor})
+            return packets
+    except (OSError, ValueError, TypeError, KeyError, IndexError):
+        raise JsonSafetyError('Private checkpoint custody cannot be safely verified') from None

@@ -6,12 +6,17 @@ penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
 import time
 import re
 import json
+import os
+from contextlib import nullcontext
+from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
 from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
                           adapt_inventory_page, validate_inventory_rows)
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from coretax_json import validate_detail_source
+from coretax_corporate import CIT_SOURCE_SHA256
 
 CELL_JS = r'''(cell) => {
  const clone=cell.cloneNode(true);
@@ -674,7 +679,7 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture
     page.on('popup', callback)
     verified = False
     try:
-        view.evaluate('(e)=>e.click()')
+        view.click()
         deadline = time.monotonic() + 20
         while not opened and page.url == previous_url:
             if time.monotonic() > deadline:
@@ -699,9 +704,108 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture
                     pass  # Pertahankan error navigasi jika popup sudah ditutup.
 
 
-def read_detail_checkpoint(path, record, scope):
+def observe_corporate_forms(page, record, scope, capture, **kwargs):
+    from coretax_corporate import observe_forms
+    return observe_forms(page, record, scope, capture, approved_digest=CIT_SOURCE_SHA256, **kwargs)
+
+
+def capture_financial_detail(page, **kwargs):
+    from coretax_corporate import capture_financial
+    return capture_financial(page, **kwargs)
+
+
+def _identity_checked_packets(packets, record, scope):
+    from coretax_json import (_corporate_json, _corporate_primary,
+                              _corporate_selected, _UnsupportedMetadata, ORIGIN)
+    selected = _corporate_selected(record, scope)
+    for packet in packets:
+        if packet['context']['url'] == ORIGIN + '/returnsheet/api/prefillreturnsheet/corporate-income':
+            envelope = _corporate_json(packet['body'])
+            payload = envelope.get('Payload') if isinstance(envelope, dict) else None
+            if isinstance(payload, dict) and 'CurrentFormData' in payload:
+                try:
+                    # Negative identity checks do not grant UI coverage. In
+                    # particular, unknown builds cannot hide a known TIN/ID clash.
+                    _corporate_primary(payload, record, selected, scope, [], {})
+                except _UnsupportedMetadata:
+                    pass
+        yield packet
+
+
+def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
+    from coretax_json import adapt_corporate_detail
+    corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+    forms = observe_corporate_forms(page, record, scope, capture,
+        max_pages=max_pages, check_cancel=check_cancel) if corporate else None
+    if any(item.get('status') in (401, 403) for item in capture.request_observations()):
+        raise JsonSafetyError('Detail HTTP authorization was rejected')
+    manifest = capture.drain(check_cancel=check_cancel)
+    if any(reason in manifest['reasons'] for reason in (
+            'secret-body', 'secret-request', 'invalid-json', 'response-source-mismatch',
+            'request-context-unavailable')):
+        raise JsonSafetyError('Detail JSON privacy or source verification failed')
+    bodies = capture.iter_bodies(check_cancel=check_cancel)
+    if corporate:
+        bodies = _identity_checked_packets(bodies, record, scope)
+    decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
+                                     observed_forms=forms or []) if corporate else None
+    if not corporate:
+        for packet in bodies:
+            _check_cancel(check_cancel)
+            if packet['context']['status'] in (401, 403):
+                raise JsonSafetyError('Detail HTTP authorization was rejected')
+    _check_cancel(check_cancel)
+    eligible = corporate and forms is not None and manifest['complete'] and decoded['eligible']
+    audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
+             'capture': manifest}
+    if decoded is not None:
+        audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
+    if eligible:
+        result = capture_financial_detail(page, record=record, folder=folder, check_cancel=check_cancel)
+        result['sections'] = decoded['sections']
+        audit['reason'] = 'verified_native_corporate_source'
+    else:
+        audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
+                           else 'unsupported_observed_forms_or_capture')
+        result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
+                                record=record, folder=folder)
+    result['detail_source'] = audit
+    return result
+
+
+def _atomic_checkpoint(path, value):
+    from coretax_pdf import _directories
+    from spt_desktop.output_windows import DirectoryGuard
+    path = Path(path).absolute()
+    temporary = path.with_name(path.name + '.' + uuid4().hex + '.tmp')
+    created = None
+    with DirectoryGuard() as guard:
+        guard.include(_directories(path.parent))
+        try:
+            with temporary.open('xb') as stream:
+                info = os.fstat(stream.fileno())
+                created = (info.st_dev, info.st_ino)
+                stream.write(json.dumps(value, ensure_ascii=False, indent=2).encode('utf-8'))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if created is not None and temporary.exists():
+                current = temporary.lstat()
+                if (current.st_dev, current.st_ino) == created:
+                    temporary.unlink()
+
+
+def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
     """Terima hanya hasil capture dengan identitas dan scope inventaris yang sama."""
-    saved = json.loads(path.read_text(encoding='utf-8'))
+    validate_detail_source(detail_source)
+    path = Path(path).absolute()
+    from coretax_pdf import _directories
+    from spt_desktop.output_windows import DirectoryGuard, locked_file
+    with DirectoryGuard() as guard:
+        guard.include(_directories(path.parent))
+        with locked_file(path) as stream:
+            saved = json.load(stream)
     identity_fields = ('key', 'record_id', 'meta', 'list_url', 'list_page', 'list_page_size',
                        'row_position', 'source_status')
     if (not isinstance(saved, dict) or saved.get('scope') != scope
@@ -712,28 +816,48 @@ def read_detail_checkpoint(path, record, scope):
             verify_detail_url(saved.get('detail_url'), list_taxpayer_id(record['list_url']), record['record_id'])
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
+    audit = saved.get('detail_source')
+    if audit is not None:
+        if (not isinstance(audit, dict) or type(audit.get('version')) is not int or audit['version'] != 1
+                or audit.get('requested') not in ('dom', 'json-first') or audit.get('used') not in ('dom', 'json')):
+            raise JsonSafetyError('Checkpoint detail-source descriptor is unsupported')
+        if audit['used'] == 'json' and (audit['requested'] != 'json-first' or detail_source != 'json-first'):
+            raise JsonSafetyError('Checkpoint JSON source does not match the requested mode')
+        if audit.get('capture') is not None or audit['used'] == 'json':
+            from coretax_json_capture import checkpoint_bodies
+            checkpoint_bodies(path.parent.parent, audit.get('capture'), saved, scope)
+        if audit['used'] == 'json':
+            from coretax_pdf import pdf_custody
+            probe = {'npwp': scope[0], 'year': scope[1], 'year_basis': scope[2],
+                     'complete': False, 'records': [saved]}
+            probe['output_attachments'] = [{**item, 'record_id': saved['record_id'], 'scope': list(scope)}
+                for item in saved.get('attachments', []) if item['status'] == 'COMPLETE']
+            with pdf_custody(probe, path.parent.parent):
+                pass
     # Berkas detail tidak boleh menimpa identitas atau metadata asal inventaris.
-    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments') if field in saved}
+    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments', 'detail_source') if field in saved}
 
 
-def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None):
+def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None, *, detail_source='dom'):
     """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
+    validate_detail_source(detail_source)
     _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    observer = ListObserver(page, check_cancel=check_cancel)
+    observer = None
     active_group, current_response = None, None
     run['errors'] = [e for e in run.get('errors', []) if e.get('phase') != 'details']
     scope = [run['npwp'], run['year'], run['year_basis']]
     run['complete'] = False
     attempted = 0
     try:
+        observer = ListObserver(page, check_cancel=check_cancel)
         for ordinal, record in enumerate(run['records'], 1):
             _check_cancel(check_cancel)
             checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
             if checkpoint.exists():
-                saved = read_detail_checkpoint(checkpoint, record, scope)
+                saved = read_detail_checkpoint(checkpoint, record, scope, detail_source=detail_source)
                 # COMPLETE lama belum membuktikan inspeksi lampiran Badan.
                 # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
                 needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
@@ -749,7 +873,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
             attempted += 1
             record['scope'] = [run['npwp'], run['year'], run['year_basis']]
             print(f"Detail {ordinal}/{len(run['records'])}: {record['meta'].get('Jenis Pajak', '')} | {record['meta'].get('Masa Pajak', '')}", flush=True)
-            detail, is_popup = None, False
+            detail, is_popup, json_capture = None, False, None
             try:
                 taxpayer_id = list_taxpayer_id(record['list_url'])
                 group = (record['list_url'], record['list_page'])
@@ -802,18 +926,38 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     _check_cancel(check_cancel)
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'])
-                detail.set_viewport_size({'width': 1600, 'height': 1000})
-                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
-                                         record=record, folder=folder)
+                session = nullcontext(None)
+                if detail_source == 'json-first':
+                    from coretax_json_capture import DetailJsonCapture
+                    session = DetailJsonCapture(page.context, page, record, scope, folder,
+                                                ordinal=ordinal, check_cancel=check_cancel)
+                with session as json_capture:
+                    detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'],
+                                                            json_capture=json_capture)
+                    detail.set_viewport_size({'width': 1600, 'height': 1000})
+                    if json_capture is None:
+                        capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
+                                                 record=record, folder=folder)
+                    else:
+                        capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
+                if 'detail_source' in capture:
+                    record['detail_source'] = capture['detail_source']
                 record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
                 record['attachments'] = capture.get('attachments', [])
                 for error in capture['errors']:
                     _check_cancel(check_cancel)
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
+            except CaptureCancelled:
+                record.update(capture_complete=False, sections=[], attachments=[])
+                record.pop('detail_source', None)
+                raise
             except Exception as exc:
                 active_group = None
                 record['capture_complete'] = False
+                if isinstance(exc, JsonSafetyError) and json_capture is not None:
+                    record.update(sections=[], attachments=[])
+                    record.pop('detail_source', None)
+                    raise
                 run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
                 print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
             finally:
@@ -821,17 +965,18 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     detail.close()
                 elif detail is not None:
                     active_group = None
-                checkpoint.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
-                (folder / 'run.json').write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding='utf-8')
+                _atomic_checkpoint(checkpoint, record)
+                _atomic_checkpoint(folder / 'run.json', run)
                 if on_progress:
                     on_progress(run, ordinal)
     finally:
-        observer.close()
+        if observer is not None:
+            observer.close()
     # Baca ulang checkpoint tersimpan dan agregasikan sebelum menetapkan COMPLETE.
     for ordinal, record in enumerate(run['records'], 1):
         _check_cancel(check_cancel)
         checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
         if checkpoint.exists():
-            record.update(read_detail_checkpoint(checkpoint, record, scope))
+            record.update(read_detail_checkpoint(checkpoint, record, scope, detail_source=detail_source))
     run['complete'] = bool(run.get('inventory_complete')) and not run['errors'] and all(r.get('capture_complete') for r in run['records'])
     return run

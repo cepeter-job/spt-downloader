@@ -314,6 +314,8 @@ def parser():
     cli.add_argument('--non-interactive', action='store_true', help='Requires NPWP/year and an authenticated session; never prompts for credentials')
     cli.add_argument('--inventory-only', action='store_true', help='Capture SPT list only; output is explicitly PARTIAL for full-detail scope')
     cli.add_argument('--detail-limit', type=int, help='Test-only detail limit; output stays PARTIAL if any return remains unexported')
+    cli.add_argument('--detail-source', choices=['dom', 'json-first'], default='dom',
+                     help='DOM by default; opt-in JSON hybrid with whole-record DOM fallback')
     cli.add_argument('--max-pages', type=int, default=1000, help='Safety cap per list/table; reaching it is reported as PARTIAL')
     return cli
 
@@ -380,7 +382,8 @@ def main(argv=None):
                     if ordinal % 5 == 0:
                         current_run['complete'] = False
                         save_output(current_run, folder)
-                collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit, on_progress=progress)
+                collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit,
+                                on_progress=progress, detail_source=args.detail_source)
             run['finished_at'] = datetime.now().astimezone().isoformat()
             run['duration_seconds'] = round(time.monotonic() - start, 2)
             output_path = save_output(run, folder)

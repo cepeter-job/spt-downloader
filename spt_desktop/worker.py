@@ -9,6 +9,7 @@ import sys
 import threading
 import coretax
 from coretax_exporter import validate_scope
+from coretax_json import validate_detail_source
 from coretax_browser import CaptureCancelled,collect_inventory,collect_details
 from .auth import AuthBlocked,authenticate_owned,check_saved_credentials
 from .credentials import ALLOWED_ORIGINS
@@ -23,7 +24,7 @@ def playwright_factory():
     return sync_playwright()
 
 
-def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None):
+def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None,detail_source='dom'):
     progress=Progress(job_id,emit)
     run=None
     folder=None
@@ -33,6 +34,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         emit({'job_id':job_id,'type':kind,'stage':'authentication',
               'percent':progress.percent,'message':message})
     try:
+        validate_detail_source(detail_source)
         npwp,year=validate_scope(npwp,year)
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',job_id):raise ValueError('Invalid job identifier')
         check_cancel()
@@ -67,7 +69,8 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     progress.details(ordinal,len(data['records']),verified)
                 if run['records']:
                     progress.details(0,len(run['records']),0)
-                run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel)
+                run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel,
+                                    detail_source=detail_source)
                 if not run['records']:progress.details(0,0,0)
             finally:
                 context.close()
@@ -143,6 +146,7 @@ def main(argv=None):
     parser.add_argument('--job-id',required=True)
     parser.add_argument('--browser',choices=['msedge','chrome'],default='msedge')
     parser.add_argument('--visible',action='store_true')
+    parser.add_argument('--detail-source',choices=['dom','json-first'],default='dom')
     args=parser.parse_args(argv)
     if args.check_login:
         if not args.origin or not args.account or len(args.account)>256 or not args.account.strip():return 1
@@ -182,7 +186,7 @@ def main(argv=None):
         if args.check_login:
             return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
         return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,
-                       emit,cancelled.is_set,requests=requests)
+                       emit,cancelled.is_set,requests=requests,detail_source=args.detail_source)
 
 
 if __name__=='__main__':

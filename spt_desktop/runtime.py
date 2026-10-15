@@ -17,7 +17,7 @@ PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py',
-    'coretax_json_capture.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
+    'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
     'resources/ppn_format.xlsx', 'resources/unifikasi_format.xlsx',
     'coretax_attachments.py', 'coretax_pdf.py', 'requirements.txt',

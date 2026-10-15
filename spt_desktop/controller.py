@@ -13,6 +13,7 @@ from .windows import ProcessJob
 from .paths import downloads_folder
 from .credentials import ALLOWED_ORIGINS
 from .interaction import read_message, select_records, write_reply
+from coretax_json import validate_detail_source
 
 
 def validate_job_scope(npwp,year):
@@ -87,10 +88,12 @@ class JobController:
             try:self._queue.put_nowait(event)
             except queue.Full:pass
 
-    def start(self,npwp,year,browser='msedge',headless=True):
+    def start(self,npwp,year,browser='msedge',headless=True,*,detail_source='dom'):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
+        validate_detail_source(detail_source)
         npwp,year=validate_job_scope(npwp,year)
-        return self._start_worker(['--npwp',npwp,'--year',str(year)],browser,headless,'export')
+        return self._start_worker(['--npwp',npwp,'--year',str(year),
+                                   '--detail-source',detail_source],browser,headless,'export')
 
     def start_login_check(self,origin,account,browser='msedge',headless=True):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')

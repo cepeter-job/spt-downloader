@@ -21,9 +21,9 @@ import test_financial_attachments as financial
 ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
 BUILD = b'/* SYNTHETIC CORPORATE BUILD -- no portal code or taxpayer data */'
 PDF_URL = corpus.ORIGIN + '/synthetic-existing/statement.pdf'
-GROUPS = ((1, 'Group 1'), (1, 'Group 2'), (1, 'Group 3'), (1, 'Group 4'), (1, 'Group 5'),
+GROUPS = ((1, 'Group 1'), (1, 'Group 2'), (1, 'Group 3'), (1, 'Group 4'), (1, 'Other Group'),
           (2, 'Permanent'), (2, 'Non-permanent'),
-          (3, 'Group 1'), (3, 'Group 2'), (3, 'Group 3'), (3, 'Group 4'), (3, 'Group 5'))
+          (3, 'Group 1'), (3, 'Group 2'), (3, 'Group 3'), (3, 'Group 4'), (3, 'Other Group'))
 
 
 @pytest.fixture(scope='module')
@@ -239,7 +239,7 @@ def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(br
         assert target[0]['rows'] == expected
         requests = [r for r in fixture.requests if '/loadcit/' in r['url']]
         assert {r['body']['GroupType'] for r in requests if '/l9-table-2-' in r['url']} == {'Permanent', 'Non-permanent'}
-        assert {r['body']['GroupType'] for r in requests if '/l9-table-3-' in r['url']} == {'Group 1','Group 2','Group 3','Group 4','Group 5'}
+        assert {r['body']['GroupType'] for r in requests if '/l9-table-3-' in r['url']} == {'Group 1','Group 2','Group 3','Group 4','Other Group'}
         assert {r['body']['First'] for r in requests if r['url'].endswith('/l9-table-1-grid')
                 and r['body']['GroupType'] == 'Group 1'} == {0,10,20,30,40,50}
     finally:

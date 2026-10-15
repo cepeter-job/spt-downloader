@@ -22,13 +22,26 @@ def self_test(report=None):
         operation = 'export'
         job_id = None
 
-        def start(self, npwp, year, browser, headless):
+        def start(self, npwp, year, browser, headless, *, detail_source='dom'):
+            self.detail_source = detail_source
             self.job_id = 'synthetic-self-test'
             self.active = True
             return self.job_id
 
         def poll(self):
             return self.active
+
+        def read_request(self, event):
+            return {'records': [
+                {'record_id': '::synthetic {return}; [literal] / id', 'meta': {'Jenis Pajak': 'PPN'}},
+                {'record_id': 'synthetic-badan-one', 'meta': {'Jenis Pajak': 'PPh Badan'}},
+                {'record_id': 'synthetic-21', 'meta': {'Jenis Pajak': 'PPh Pasal 21/26'}},
+                {'record_id': 'synthetic-badan-two', 'meta': {'Jenis Pajak': 'pph badan'}},
+            ]}
+
+        def respond(self, kind, request_id, payload):
+            self.selection_reply = (kind, request_id, payload)
+            return True
 
         def stop(self):
             self.active = False
@@ -69,11 +82,50 @@ def self_test(report=None):
                 'results':'Hasil Sedot berada di folder Downloads Windows'}
             gui_controls=sorted({w.cget('text') for w in descendants(root)
                                  if w.winfo_class()=='TButton'})
+            modes=[w for w in widgets if w.winfo_class()=='TCombobox'
+                   and tuple(w.cget('values'))==('DOM','JSON-hybrid (pilot)')]
+            assert len(modes)==1 and modes[0].get()=='DOM' and modes[0].instate(['readonly'])
+            mode_control={'labels':list(modes[0].cget('values')),'default':app.preferences['detail_source']}
+            modes[0].current(1)
+            next(w for w in widgets if w.winfo_class()=='TButton' and w.cget('text')=='Simpan').invoke()
+            from spt_desktop.app import load_preferences
+            mode_control['saved']=load_preferences(Path(folder))['detail_source']
+            assert mode_control['saved']=='json-first'
             app._settings_close()
             assert all((resource_root()/name).is_file() for name in WORKER_FILES)
             if getattr(sys,'frozen',False):assert (resource_root()/'tools'/'uv.exe').is_file()
             app.npwp.set('0000000000000001');app.year.set('2025')
             app.start()
+            mode_control['started']=app.controller.detail_source
+            assert mode_control['started']=='json-first'
+            app.on_event({'job_id':app.controller.job_id, 'type':'selection_required',
+                          'request_id':'a'*32, 'stage':'selection', 'percent':20,
+                          'message':'Synthetic selection self-test'})
+            root.update()
+            selection=app._interaction['dialog']
+            tree=next(w for w in descendants(selection) if w.winfo_class()=='Treeview')
+            original=list(tree.get_children())
+            chosen=(original[0],original[3])
+            tree.selection_set(chosen)
+            tree.event_generate('<<TreeviewSelect>>')
+            root.update()
+            sorting={'heading':tree.heading('type','text'), 'directions':[]}
+            values={iid:tuple(tree.item(iid,'values')) for iid in original}
+            for descending in (False,True):
+                root.tk.call(tree.heading('type','command'))
+                root.update()
+                observed=list(tree.get_children())
+                assert observed==sorted(original,key=lambda iid:values[iid][0].casefold(),reverse=descending)
+                assert set(tree.selection())==set(chosen)
+                assert {iid:tuple(tree.item(iid,'values')) for iid in observed}==values
+                sorting['directions'].append(tree.heading('type','text'))
+            next(w for w in descendants(selection) if w.winfo_class()=='TButton'
+                 and w.cget('text')=='Sedot SPT terpilih').invoke()
+            expected_ids=[values[iid][3] for iid in chosen]
+            assert app.controller.selection_reply==('selection','a'*32,{'selected_ids':expected_ids})
+            assert app._interaction is None
+            sorting['confirmed_ids']=app.controller.selection_reply[2]['selected_ids']
+            sorting['selection_preserved']=True
             app.on_event({'job_id':app.controller.job_id,'type':'progress','stage':'details',
                           'percent':42,'message':'Self-test synthetic progress'})
             assert app.percent.get()=='42%'
@@ -86,6 +138,8 @@ def self_test(report=None):
                   'frozen':bool(getattr(sys,'frozen',False)),
                   'worker_resources':list(WORKER_FILES),'uv_bundled':(resource_root()/'tools'/'uv.exe').is_file(),
                   'gui_controls':gui_controls,
+                  'detail_source_control':mode_control,
+                  'selection_sorting_control':sorting,
                   'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
