@@ -9,11 +9,12 @@ from coretax_json import JsonSafetyError
 from masa_json_fixtures import FOREIGN, NPWP, SCOPE, packet, payload, selected
 
 
-def adapt(bodies, tax, forms=None):
+def adapt(bodies, tax, forms=None, record=None):
     module = importlib.import_module('coretax_masa_json')
     implementation = getattr(module, 'adapt_masa_detail', None)
     assert callable(implementation), 'Native Masa packet adapter is not implemented'
-    return implementation(bodies, record=selected(tax), scope=SCOPE, observed_forms=forms)
+    return implementation(bodies, record=selected(tax) if record is None else record,
+                          scope=SCOPE, observed_forms=forms)
 
 
 @pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
@@ -148,3 +149,55 @@ def test_secret_in_nested_form_is_rejected_without_echoing_it(tax):
     with pytest.raises(JsonSafetyError) as error:
         adapt([packet(tax, data)], tax)
     assert secret not in str(error.value)
+
+
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
+@pytest.mark.parametrize('field,value', [('PeriodCode', '02022025'), ('PeriodCode', '01012024'),
+                                       ('PeriodCode', True)])
+def test_missing_native_period_does_not_hide_payload_scope_conflicts(tax, field, value):
+    record = selected(tax)
+    record['source_fields'].pop('TaxPeriodCode')
+    data = payload(tax); data[field] = value
+    with pytest.raises(JsonSafetyError):
+        adapt([packet(tax, data)], tax, record=record)
+
+
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
+def test_missing_native_period_still_checks_inner_outer_consistency(tax):
+    record = selected(tax)
+    record['source_fields'].pop('TaxPeriodCode')
+    data = payload(tax)
+    form = json.loads(data['FormData']); form['TaxPeriodCode'] = '02022025'
+    data['FormData'] = json.dumps(form)
+    with pytest.raises(JsonSafetyError):
+        adapt([packet(tax, data)], tax, record=record)
+
+
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
+def test_missing_native_identity_binding_never_hides_literal_record_conflict(tax):
+    record = selected(tax)
+    record.pop('source_fields'); record.pop('source_identity')
+    data = payload(tax)
+    form = json.loads(data['FormData']); form['ReturnSheetRecordIdentifier'] = FOREIGN
+    data['FormData'] = json.dumps(form)
+    with pytest.raises(JsonSafetyError):
+        adapt([packet(tax, data)], tax, record=record)
+
+
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
+@pytest.mark.parametrize('kind', ['duplicate_sequence', 'mixed_attempt', 'changed_bytes'])
+def test_existing_packet_guard_remains_enforced_for_masa(tax, kind):
+    first, second = packet(tax), packet(tax, sequence=2)
+    if kind == 'duplicate_sequence': second['context']['sequence'] = 1
+    elif kind == 'mixed_attempt': second['context']['attempt'] = 'b' * 32
+    else: second['body'] += b' '
+    with pytest.raises(JsonSafetyError):
+        adapt([first, second], tax)
+
+
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
+def test_excluded_requests_may_leave_capture_sequence_gaps(tax):
+    # Capture sequence counts observations, not only accepted response bodies.
+    result = adapt([packet(tax), packet(tax, sequence=3)], tax)
+    assert result['eligible'] is False
+    assert [e['sequence'] for e in result['provenance']['events']] == [1, 3]
