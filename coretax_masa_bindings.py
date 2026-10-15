@@ -59,6 +59,9 @@ def render_grid_value(value, kind, *, fraction=0, footer=False, timezone_name=No
             return value
         if footer and value == '':
             return ''
+        # Decimal accepts underscores which the UI's number pipe rejects.
+        if footer and type(value) is str and not _FOOTER_DECIMAL_STRING.fullmatch(value.strip()):
+            raise _UnsupportedMetadata('unsupported_masa_footer_numeric_string')
         return _number(value, fraction, locale='id-ID')
     if kind == 'date':
         if value is None:
@@ -245,7 +248,7 @@ _STLG_SUM_PATHS = (
 )
 
 
-def _ppn_source_scalar(form, path, evidence):
+def _source_scalar(form, path, evidence):
     value = form
     for index, key in enumerate(path):
         if value is None:
@@ -263,7 +266,7 @@ def _ppn_source_scalar(form, path, evidence):
 
 
 def _ppn_source_number(form, path, evidence):
-    value = _ppn_source_scalar(form, path, evidence)
+    value = _source_scalar(form, path, evidence)
     if value is not None and type(value) is not _CorporateNumber:
         raise _UnsupportedMetadata('unsupported_ppn_amount_source_type')
     if value is not None:
@@ -344,12 +347,8 @@ def project_ppn_footer(form_name, form, *, lc_footer=None):
     cells, evidence = [], []
     for field, nullish_zero in fields:
         path = (root, field) if root is not None else (field,)
-        value = _ppn_source_scalar(source, path, evidence)
+        value = _source_scalar(source, path, evidence)
         evidence[-1]['source'] = source_kind
-        # Decimal accepts underscores and other strings the JS pipe does not.
-        # Accept only reviewed decimal strings; retain the original lexeme.
-        if type(value) is str and value != '' and not _FOOTER_DECIMAL_STRING.fullmatch(value.strip()):
-            raise _UnsupportedMetadata('unsupported_ppn_footer_numeric_string')
         if value is None and nullish_zero:
             value = '0'
         cells.append(render_grid_value(value, 'number', footer=True))
@@ -359,6 +358,66 @@ def project_ppn_footer(form_name, form, *, lc_footer=None):
     return {'footer': [['TOTAL', *cells, '']],
             'footer_spans': [[span, *([1] * len(cells)), 1]],
             'induk_values': induk_values, 'provenance': evidence}
+
+
+_UNIFIKASI_FOOTERS = {
+    'list-i-bpnr': ((10, 1, 5), (
+        ('TotalIncomeTaxWithDirectPaymentBPUBPNR', 'JUMLAH PAJAK PENGHASILAN DITANGGUNG PEMERINTAH DENGAN MENGGUNAKAN METODE PEMBAYARAN LANGSUNG'),
+        ('TotalIncomeTaxBPUBPNR', 'JUMLAH PAJAK PENGHASILAN DITANGGUNG PEMERINTAH'),
+        ('TotalIncomeTaxPaidWithDirectPaymentBPUBPNR', 'JUMLAH PAJAK PENGHASILAN DIBAYAR DENGAN MENGGUNAKAN METODE PEMBAYARAN LANGSUNG'),
+        ('TotalIncomeTaxToBePaidBPUBPNR', 'JUMLAH PAJAK PENGHASILAN YANG HARUS DIBAYAR'),
+    )),
+    'list-ii-sp': ((6, 1, 4), (
+        ('TotalIncomeTaxSP', 'JUMLAH PPh YANG DITANGGUNG PEMERINTAH'),
+        ('TotalIncomeTaxToBePaidSP', 'JUMLAH PPh YANG HARUS DIBAYAR'),
+    )),
+    'list-ii-cy': ((6, 1, 4), (('TotalIncomeTaxToBePaidCY', 'JUMLAH PPh YANG HARUS DIBAYAR'),)),
+    'attachment-i': ((12, 1, 4), (('TotalIncomeTaxAttachment', 'TOTAL INCOME PAX TO BE PAID'),)),
+}
+
+
+def project_unifikasi_footer(grid_name, form):
+    """Bind totals to their visible grid, not to similarly named body columns."""
+    if not isinstance(form, dict):
+        raise _UnsupportedMetadata('unsupported_unifikasi_footer_source')
+    if grid_name == 'list-i-bpu':
+        # This grid explicitly sets showFooter=false, despite column footer keys.
+        return {'footer': [], 'footer_spans': [], 'provenance': []}
+    binding = _UNIFIKASI_FOOTERS.get(grid_name)
+    if binding is None:
+        raise _UnsupportedMetadata('unsupported_unifikasi_footer_grid')
+    spans, fields = binding
+    rows, evidence = [], []
+    for field, label in fields:
+        value = _source_scalar(form, (field,), evidence)
+        evidence[-1]['source'] = 'prefill_form'
+        displayed = render_grid_value('0' if value is None else value, 'number', footer=True)
+        rows.append([label, displayed, ''])
+    return {'footer': rows, 'footer_spans': [list(spans) for _ in rows], 'provenance': evidence}
+
+
+_UNIFIKASI_TEXT = {
+    'TaxIdentificationNumber': ('TaxIdentificationNumber',),
+    'FullName': ('Name',),
+    'Address': ('Address',),
+    'PhoneNumber': ('PhoneNumber',),
+    'StatementTIN': ('Signer', 'StatementTIN'),
+    'StatementFullName': ('Signer', 'StatementFullName'),
+}
+
+
+def project_unifikasi_text(form, control):
+    """Missing signer values require claims in the UI, so cannot be projected."""
+    path = _UNIFIKASI_TEXT.get(control)
+    if path is None or not isinstance(form, dict):
+        raise _UnsupportedMetadata('unsupported_unifikasi_text_binding')
+    evidence = []
+    value = _source_scalar(form, path, evidence)
+    if value is None and path[0] == 'Signer':
+        raise _UnsupportedMetadata('unverified_unifikasi_signer_claim_fallback')
+    if value is not None and type(value) is not str:
+        raise _UnsupportedMetadata('unsupported_unifikasi_text_type')
+    return {'value': '' if value is None else value, 'provenance': evidence}
 
 
 _PPN_DOMESTIC_COLUMNS = (
