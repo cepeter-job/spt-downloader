@@ -71,7 +71,10 @@ def test_lia_date_header_maps_body_but_not_short_footer(tmp_path):
 
 
 def test_numeric_zero_body_values_are_not_treated_as_empty(tmp_path):
-    values = [0] * len(IA_HEADERS)
+    from coretax_template_cells import _body_rows
+    assert _body_rows({'headers': ['Nilai'], 'rows': [[0]]}) == ([[0]], [])
+    values = row('SYNTHETIC ZERO AMOUNTS', ia=True)
+    values[6:9] = [0, 0, 0]
     wb = exported(tmp_path, 'PPh Pasal 21/26', [section('L-IA', tables=[table('Tabel 1', [values], ia=True)])])
     try:
         assert [wb['L-IA'].cell(5,c).value for c in range(1,len(values)+1)] == values

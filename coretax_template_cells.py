@@ -46,8 +46,10 @@ def _header_key(value):
 def _mapping(table, labels, aliases=None):
     headers = table.get('headers', [])
     aliases = {_header_key(k): _header_key(v) for k, v in (aliases or {}).items()}
-    keys = [aliases.get(_header_key(value), _header_key(value)) for value in headers]
     target = {_header_key(value): index + 1 for index, value in enumerate(labels) if value is not None}
+    keys = [_header_key(value) for value in headers]
+    # A canonical reference header wins over an alias used by another form.
+    keys = [key if key in target else aliases.get(key, key) for key in keys]
     if (not keys or any(not value for value in keys) or len(set(keys)) != len(keys)
             or any(value not in target for value in keys)
             or any(len(row) > len(headers) for row in table.get('rows', []))):
