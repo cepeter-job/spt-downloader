@@ -34,7 +34,7 @@ GRID_BODY = corpus.wire({'IsSuccessful': True,
                          'Payload': {'TotalRecords': 0, 'Data': [], 'Index': None}}).encode()
 
 
-def scenario(tmp_path, monkeypatch, path, request, suffix='', content_type='application/json'):
+def scenario(tmp_path, monkeypatch, path, request_data, suffix='', content_type='application/json'):
     collector()
     case = Scenario(tmp_path, monkeypatch)
     case.forms = None
@@ -42,7 +42,7 @@ def scenario(tmp_path, monkeypatch, path, request, suffix='', content_type='appl
     if content_type == 'text/html':
         raw = b'<html>SYNTHETIC unsupported response</html>'
     case.page.exchanges[0].update(url=corpus.ORIGIN + '/returnsheet/api/' + path + suffix,
-                                  post=deepcopy(request), raw=raw, content_type=content_type)
+                                  post=deepcopy(request_data), raw=raw, content_type=content_type)
     return case
 
 
@@ -58,13 +58,13 @@ def assert_rejected(case, *, before_body=False):
     case.assert_closed()
 
 
-@pytest.mark.parametrize('path,request', GRID_REQUESTS)
+@pytest.mark.parametrize('path,request_data', GRID_REQUESTS)
 @pytest.mark.parametrize('suffix', ['', '?source=synthetic'])
 @pytest.mark.parametrize('content_type', ['application/json', 'text/html'])
 def test_unknown_binding_rejects_foreign_request_on_every_known_grid(
-        tmp_path, monkeypatch, path, request, suffix, content_type):
-    request = {**request, 'ReturnSheetRecordId': 'synthetic-different-return'}
-    case = scenario(tmp_path, monkeypatch, path, request, suffix, content_type)
+        tmp_path, monkeypatch, path, request_data, suffix, content_type):
+    request_data = {**request_data, 'ReturnSheetRecordId': 'synthetic-different-return'}
+    case = scenario(tmp_path, monkeypatch, path, request_data, suffix, content_type)
     assert_rejected(case, before_body=True)
 
 
@@ -72,8 +72,8 @@ def test_unknown_binding_rejects_foreign_request_on_every_known_grid(
 @pytest.mark.parametrize('content_type', ['application/json', 'text/html'])
 def test_matching_primary_body_does_not_hide_foreign_primary_request(
         tmp_path, monkeypatch, suffix, content_type):
-    request = {**PRIMARY_REQUEST, 'RecordId': 'synthetic-different-return'}
-    case = scenario(tmp_path, monkeypatch, PRIMARY_PATH, request, suffix, content_type)
+    request_data = {**PRIMARY_REQUEST, 'RecordId': 'synthetic-different-return'}
+    case = scenario(tmp_path, monkeypatch, PRIMARY_PATH, request_data, suffix, content_type)
     assert_rejected(case, before_body=True)
 
 
@@ -81,8 +81,8 @@ def test_matching_primary_body_does_not_hide_foreign_primary_request(
 @pytest.mark.parametrize('suffix', ['', '?source=synthetic'])
 def test_known_l4_request_rejects_a_different_supplied_year(
         tmp_path, monkeypatch, year, suffix):
-    path, request = GRID_REQUESTS[0]
-    case = scenario(tmp_path, monkeypatch, path, {**request, 'PeriodYear': year}, suffix)
+    path, request_data = GRID_REQUESTS[0]
+    case = scenario(tmp_path, monkeypatch, path, {**request_data, 'PeriodYear': year}, suffix)
     assert_rejected(case, before_body=True)
 
 
@@ -91,13 +91,13 @@ def test_foreign_grid_request_arriving_during_drain_cannot_disappear(
         tmp_path, monkeypatch, content_type):
     case = scenario(tmp_path, monkeypatch, PRIMARY_PATH, PRIMARY_REQUEST)
     observe = driver.observe_corporate_forms
-    path, request = GRID_REQUESTS[1]
+    path, request_data = GRID_REQUESTS[1]
 
     def emit_late():
         response = network.exchange(
             case.page.context, case.page.popup,
             url=corpus.ORIGIN + '/returnsheet/api/' + path,
-            post={**request, 'ReturnSheetRecordId': 'synthetic-different-return'},
+            post={**request_data, 'ReturnSheetRecordId': 'synthetic-different-return'},
             raw=GRID_BODY if content_type == 'application/json' else b'<html>SYNTHETIC</html>',
             content_type=content_type)
         case.page.body_responses.append(response)
@@ -111,11 +111,11 @@ def test_foreign_grid_request_arriving_during_drain_cannot_disappear(
     assert len(case.page.body_responses) == 2
 
 
-@pytest.mark.parametrize('path,request', KNOWN_REQUESTS)
+@pytest.mark.parametrize('path,request_data', KNOWN_REQUESTS)
 @pytest.mark.parametrize('suffix', ['', '?source=synthetic'])
 def test_matching_known_request_without_bindings_still_uses_whole_dom(
-        tmp_path, monkeypatch, path, request, suffix):
-    case = scenario(tmp_path, monkeypatch, path, request, suffix)
+        tmp_path, monkeypatch, path, request_data, suffix):
+    case = scenario(tmp_path, monkeypatch, path, request_data, suffix)
     result = case.collect()
     assert result['complete'] is True and result['errors'] == []
     assert case.record['sections'] == DOM_SECTIONS
@@ -124,9 +124,9 @@ def test_matching_known_request_without_bindings_still_uses_whole_dom(
     case.assert_closed()
 
 
-@pytest.mark.parametrize('path,request', KNOWN_REQUESTS)
+@pytest.mark.parametrize('path,request_data', KNOWN_REQUESTS)
 def test_missing_request_identity_is_unsupported_not_an_invented_conflict(
-        tmp_path, monkeypatch, path, request):
+        tmp_path, monkeypatch, path, request_data):
     case = scenario(tmp_path, monkeypatch, path, {})
     result = case.collect()
     assert result['complete'] is True and result['errors'] == []
