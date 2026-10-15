@@ -334,25 +334,38 @@ def test_each_amendment_uses_independent_templates_and_exact_resume_links(tmp_pa
     for sec in amendment['sections']:
         sec['fields'][0]['value'] = 'SYNTHETIC AMENDMENT ' + sec['name']
     run['records'].append(amendment)
-    workbook = export(tax, run, tmp_path)
+    normal_file = TYPES[tax]['path']
+    amendment_file = normal_file.replace('_Normal.xlsx', '_Pembetulan 2.xlsx')
+    files = exporter.export_split_workbooks(run, tmp_path)
+    assert set(files) == {'resume.xlsx', normal_file, amendment_file}
+    coretax.verify_outputs(run, tmp_path)
+    workbook = load_workbook(tmp_path / normal_file)
+    amended = load_workbook(tmp_path / amendment_file)
     resume = load_workbook(tmp_path / 'resume.xlsx')
     reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
     try:
         forms = TYPES[tax]['forms']
-        assert workbook.sheetnames == forms + [form + ' (2)' for form in forms]
-        assert all(sheet.sheet_state == 'visible' for sheet in workbook)
-        proof = exporter.read_workbook_proof(workbook)
-        assert [r['meta']['Model SPT'] for r in proof['records']] == ['Normal', 'Pembetulan 2']
-        for ordinal, model in [(0, 'NORMAL'), (1, 'AMENDMENT')]:
+        assert workbook.sheetnames == amended.sheetnames == forms
+        for item in [workbook, amended]:
+            assert all(sheet.sheet_state == 'visible' for sheet in item)
+        proofs = [exporter.read_workbook_proof(item) for item in [workbook, amended]]
+        assert [[r['meta']['Model SPT'] for r in proof['records']] for proof in proofs] == [
+            ['Normal'], ['Pembetulan 2']]
+        assert [[r['record_id'] for r in proof['records']] for proof in proofs] == [
+            [run['records'][0]['record_id']], ['synthetic-template-amendment']]
+        for item, other, model in [(workbook, amended, 'NORMAL'), (amended, workbook, 'AMENDMENT')]:
             for form in forms:
-                name = form if ordinal == 0 else form + ' (2)'
-                assert len(cells_with(workbook, 'SYNTHETIC ' + model + ' ' + form)) == 1
-                assert_layout(workbook[name], reference[form])
+                marker = 'SYNTHETIC ' + model + ' ' + form
+                assert len(cells_with(item, marker)) == 1
+                assert not cells_with(other, marker)
+                assert_layout(item[form], reference[form])
         links = [cell.hyperlink for sheet in resume for row in sheet for cell in row if cell.hyperlink]
-        targets = {(link.target, link.location) for link in links if link.target == TYPES[tax]['path']}
-        assert {(TYPES[tax]['path'], "'Induk'!A1"), (TYPES[tax]['path'], "'Induk (2)'!A1")} <= targets
+        targets = {(link.target, link.location) for link in links
+                   if link.target in {normal_file, amendment_file}}
+        assert targets == {(normal_file, "'Induk'!A1"), (amendment_file, "'Induk'!A1")}
     finally:
         workbook.close()
+        amended.close()
         resume.close()
         reference.close()
 

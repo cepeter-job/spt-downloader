@@ -51,10 +51,10 @@ def run_for(sections, *, model='Normal', key='synthetic-21-normal'):
                          'capture_complete': True, 'detail_url': '', 'sections': sections}]}
 
 
-def export(run, folder):
+def export(run, folder, *, expected_file=JANUARY):
     exporter.export_split_workbooks(run, folder)
     coretax.verify_outputs(run, folder)
-    return load_workbook(folder / JANUARY)
+    return load_workbook(folder / expected_file)
 
 
 def cells_with(workbook, value):
@@ -137,7 +137,8 @@ def test_induk_header_fields_and_amounts_fill_only_their_reference_slots(tmp_pat
                     [['1', 'PAJAK PENGHASILAN PASAL 26 YANG DIPOTONG', '411127-100', '26,00']], headers=INDUK_HEADERS),
               table('II.PAJAK PENGHASILAN PASAL 26 YANG DITANGGUNG OLEH PEMERINTAH',
                     [['1', 'PAJAK PENGHASILAN PASAL 26 YANG DIPOTONG', '411127-100', '126,00']], headers=INDUK_HEADERS)]
-    wb = export(run_for([section('Induk', fields=fields, tables=tables)], model='Pembetulan ke-2'), tmp_path)
+    wb = export(run_for([section('Induk', fields=fields, tables=tables)], model='Pembetulan ke-2'),
+                tmp_path, expected_file='SPT Masa 21/SPT_21_Januari 2025_Pembetulan ke-2.xlsx')
     reference = load_workbook(REFERENCE)
     try:
         sheet = wb['Induk']

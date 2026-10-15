@@ -188,7 +188,7 @@ def test_resume_link_must_identify_exact_amendment_not_just_existing_sheet(tmp_p
     wb['Daftar SPT']['A6'].hyperlink.location = wb['Daftar SPT']['A5'].hyperlink.location
     wb.save(path)
     wb.close()
-    with pytest.raises(ValueError, match='detail'):
+    with pytest.raises(ValueError, match='type-workbook link'):
         coretax.verify_outputs(run, tmp_path)
 
 
