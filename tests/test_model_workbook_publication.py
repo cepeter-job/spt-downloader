@@ -76,7 +76,10 @@ def test_replacement_changes_only_selected_model_workbook_and_bound_pdf(tmp_path
         relative = record['attachments'][0]['relative_path']
         assert (final / targets[index]).read_bytes() == before[targets[index]]
         assert (final / relative).read_bytes() == before[relative] == PDF
-    assert resume_targets(final) == [targets[selected_index]]
+    # The global index includes both refreshed and retained model workbooks.
+    assert resume_targets(final)[0] == targets[selected_index]
+    assert set(resume_targets(final)) == set(targets)
+    assert len(resume_targets(final)) == len(targets)
     coretax.verify_outputs(selected, final, allow_extra=True)
 
 

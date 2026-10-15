@@ -134,10 +134,12 @@ def test_ppn_repeated_label_uses_group_column_not_order(tmp_path):
 
 
 def test_ppn_appendix_dom_headers_and_extra_source_column(tmp_path):
-    headers = ['No.', 'Nama Pembeli BKP/Penerima JKP', 'NPWP/Nomor Paspor',
-               'Nomor Faktur Pajak', 'Tanggal Faktur Pajak (dd-MM-yyyy)',
-               'DPP', 'DPP Nilai Lain', 'PPN', 'PPnBM', 'Kode Transaksi', 'Faktur Pajak']
-    values = ['1','SYNTHETIC BUYER','0000000000000001','SYN-INVOICE','01-01-2025','17','19','23','0','01','EXTRA SYNTHETIC PROOF']
+    ref = load_workbook(RESOURCES/'ppn_format.xlsx')
+    headers = [ref['A2'].cell(4,c).value for c in range(1,11)]
+    ref.close()
+    headers[4] += ' (dd-MM-yyyy)'
+    headers.append('Masa Pajak')
+    values = ['1','SYNTHETIC BUYER','0000000000000001','SYN-INVOICE','01-01-2025','17','19','23','0','SYN-REPLACED-INVOICE','EXTRA SYNTHETIC PROOF']
     wb = exported(tmp_path, 'PPN', [section('A-2',tables=[table('Tabel 1',[values],headers=headers)])])
     try:
         assert wb['A-2']['B5'].value == 'SYNTHETIC BUYER'
@@ -148,19 +150,24 @@ def test_ppn_appendix_dom_headers_and_extra_source_column(tmp_path):
         wb.close()
 
 
-def test_unifikasi_group_and_equal_duplicate_currency_columns(tmp_path):
+def test_unifikasi_observed_group_and_extra_headers_do_not_invent_gross_income(tmp_path):
     ref = load_workbook(RESOURCES/'unifikasi_format.xlsx')
-    sh = ref['Daftar I']
-    headers = [sh.cell(4,c).value for c in range(1,18)]
-    values = ['1','SYNTHETIC PAYEE','0000000000000001','SYN-ID','01-01-2025','SYN-CODE','0','IDR','17','1','19','21','0','0','0','SYN-TKU','Normal']
-    headers.insert(12,'Mata Uang'); values.insert(12,'IDR')
+    headers = ['NO.','NIK/NPWP','NAMA','NOMOR BUKTI POTONG','TANGGAL BUKTI POTONG',
+               'JENIS PAJAK','KODE OBJEK PAJAK','OBJEK PAJAK','DASAR PENGENAAN PAJAK (Rp)',
+               'TINGKAT (%)','PAJAK PENGHASILAN','FASILITAS PERPAJAKAN',
+               'UANG PERSEDIAAN / PEMBAYARAN LANGSUNG (UNTUK WP INSTANSI PEMERINTAH DENGAN DANA APBN)',
+               'NITKU / NOMOR IDENTITAS SUBUNIT ORGANISASI','STATUS','KAP-KJS']
+    values = ['1','0000000000000001','SYNTHETIC PAYEE','SYN-ID','01-01-2025','SYN-TAX',
+              'SYN-CODE','SYN-OBJECT','17','1','19','SYN-FACILITY','SYN-PAYMENT','SYN-TKU','Normal','SYN-KAP']
     data = table('Tabel 1',[values],headers=headers)
-    data['group'] = sh['A2'].value
+    data['group'] = ref['Daftar I']['B3'].value
     wb = exported(tmp_path,'PPh Unifikasi',[section('DAFTAR-I',tables=[data])])
     try:
-        assert wb['DAFTAR-I']['B5'].value == 'SYNTHETIC PAYEE'
-        assert wb['DAFTAR-I']['H5'].value == 'IDR'
-        assert wb['DAFTAR-I']['Q5'].value == 'Normal'
+        assert wb['DAFTAR-I']['C5'].value == 'SYNTHETIC PAYEE'
+        assert wb['DAFTAR-I']['J5'].value == '19'
+        assert wb['DAFTAR-I']['M5'].value == 'SYN-TKU'
+        assert wb['DAFTAR-I']['I5'].value is None, 'DPP is not evidence of gross income'
+        assert any(c.value == '17' for cells in wb['DAFTAR-I'] for c in cells)
     finally:
         wb.close(); ref.close()
 
