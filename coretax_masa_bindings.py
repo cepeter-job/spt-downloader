@@ -3,7 +3,7 @@
 These project source values; they do not establish identity or native eligibility.
 """
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 import re
 
 from coretax_json import _CorporateNumber, _UnsupportedMetadata
@@ -158,3 +158,75 @@ def project_unifikasi_tree(form, headers, *, locale):
                       'source_total': len(rows), 'footer': [footer],
                       'footer_spans': [[2, 1, 1, 1, 1, 1, 1]], 'complete': True},
             'provenance': provenance}
+
+
+# Explicit control->source bindings, not name-derived aliases. Boolean marks the
+# reviewed nullish-zero operator; unlisted controls are not supported yet.
+_PPN_AMOUNTS = {
+    'ExportOfTangibleGoods': (('A1FormListOfExportTaxableGoodsOrServices', 'Total'), False),
+    'CarryForwardOfInputTax': (('CarryForwardOfInputTax', 'VAT'), False),
+    'VATNeedRepayVAT': (('VATNeedToRepay', 'VAT'), False),
+    'DomesticDeliveriesUsingOtherValueTaxBaseSTLG': (
+        ('DomesticDeliveriesUsingOtherValue', 'SalesTaxLuxuryGoods'), True),
+    'ImportOfTaxableGoodsFromOusideCustomsAreaImportValue': (
+        ('ImportOfTaxableGoods', 'SellingPrice'), True),
+}
+_NORMAL_NULL_CONTROLS = frozenset({
+    'STLGUnderOverOnPreviousVATReturn', 'STLGUnderOverpaidDueAmmendment',
+    'VATIsUnderOrOverpaidAmandment',
+})
+_STLG_SUM_PATHS = (
+    ('DomesticDeliveriesUsingOtherValue', 'SalesTaxLuxuryGoods'),
+    ('DomesticDeliveriesToTourist', 'SalesTaxLuxuryGoods'),
+    ('DomesticDeliveriesOtherThanOtherValue', 'SalesTaxLuxuryGoods'),
+    ('DomesticDeliveriesSelfCollected', 'SalesTaxLuxuryGoods'),
+)
+
+
+def _ppn_source_number(form, path, evidence):
+    value = form
+    for key in path:
+        if value is None:
+            break
+        if not isinstance(value, dict):
+            raise _UnsupportedMetadata('unsupported_ppn_amount_path_shape')
+        if key not in value:
+            # This is missing-path evidence, not a fabricated JSON null.
+            evidence.append({'path': list(path), 'type': 'missing', 'value': None})
+            return None
+        value = value[key]
+    if value is not None and type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_ppn_amount_source_type')
+    evidence.append(_evidence(value, list(path)))
+    if value is not None:
+        _decimal(value)
+    return value
+
+
+def project_ppn_amount(form, control, *, model):
+    """Apply reviewed final-value precedence, retaining only real dependencies."""
+    if not isinstance(form, dict) or model != 'NORMAL':
+        raise _UnsupportedMetadata('unsupported_ppn_amount_model_or_source')
+    if control in _NORMAL_NULL_CONTROLS:
+        return {'value': '', 'rule': 'normal_model_null', 'provenance': []}
+    evidence = []
+    if control in ('STLGSelfCollected', 'STLGUnderOverpaid'):
+        total = Decimal(0)
+        for path in _STLG_SUM_PATHS:
+            value = _ppn_source_number(form, path, evidence)
+            total += _decimal(value) if value is not None else Decimal(0)
+        total = total.to_integral_value(rounding=ROUND_FLOOR)
+        rule = 'floor_sum_submitted_stlg'
+        if control == 'STLGUnderOverpaid':
+            value = _ppn_source_number(form, ('STLGCollectedByVATCollector', 'SalesTaxLuxuryGoods'), evidence)
+            total = (total - (_decimal(value) if value is not None else Decimal(0))).to_integral_value(rounding=ROUND_FLOOR)
+            rule = 'floor_difference_submitted_stlg'
+        return {'value': _number(str(total), 0, locale='id-ID'), 'rule': rule, 'provenance': evidence}
+    binding = _PPN_AMOUNTS.get(control)
+    if binding is None:
+        raise _UnsupportedMetadata('unverified_ppn_amount_control')
+    path, nullish_zero = binding
+    value = _ppn_source_number(form, path, evidence)
+    rendered = ('0' if nullish_zero else '') if value is None else _number(value, 0, locale='id-ID')
+    return {'value': rendered, 'rule': 'nullish_zero' if nullish_zero else 'direct_final_path',
+            'provenance': evidence}
