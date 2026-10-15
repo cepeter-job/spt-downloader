@@ -145,8 +145,10 @@ def _validate_financial_attachments(record, scope, seen_paths):
             raise ValueError('Financial PDF completion, byte count, hash or label is invalid.')
         # This checks naming/scope, not authenticity: the publisher must still
         # lock the declared file and verify its actual bytes and digest.
+        # Keep old nested declarations readable; never rewrite source proof.
         if (not isinstance(path, str)
-                or not re.fullmatch(r'attachments/' + record_key + r'/[0-9a-f]{64}\.pdf', path)
+                or not (re.fullmatch(r'LK_' + record_key + r'_[0-9a-f]{64}\.pdf', path)
+                        or re.fullmatch(r'attachments/' + record_key + r'/[0-9a-f]{64}\.pdf', path))
                 or path.casefold() in seen_paths):
             raise ValueError('Financial PDF path is unsafe, repeated or belongs to another return.')
         seen_paths.add(path.casefold())

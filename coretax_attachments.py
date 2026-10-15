@@ -186,14 +186,11 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
                 _verify_page(page, record)
                 _cancel(check_cancel)
                 record_key = hashlib.sha256(record['record_id'].encode('utf-8')).hexdigest()[:32]
-                directory = folder / 'attachments'
-                directory.mkdir(exist_ok=True)
-                _include_folder(guard, directory)
-                directory = directory / record_key
-                directory.mkdir(exist_ok=True)
-                _include_folder(guard, directory)
-                name = hashlib.sha256(url.encode('utf-8')).hexdigest() + '.pdf'
-                target = directory / name
+                # Bind the flat filename to the return as well as the observed
+                # URL: identical hrefs on distinct SPTs must never share a file.
+                url_key = hashlib.sha256(url.encode('utf-8')).hexdigest()
+                name = f'LK_{record_key}_{url_key}.pdf'
+                target = folder / name
                 if target.exists():
                     # Retry PARTIAL boleh memakai byte identik dari GET terbaru,
                     # tetapi tidak boleh mengganti file lama atau mengikuti symlink.

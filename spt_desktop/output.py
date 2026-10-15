@@ -154,10 +154,15 @@ def _workbook_scope(run, path, relative):
                 proof = read_workbook_proof(workbook)
                 targets = None
                 locations = []
+                nested_pdfs = False
                 if proof is not None:
                     if any(proof[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
                         raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
                     source = proof
+                    nested_pdfs = any(item['status'] == 'COMPLETE'
+                                      and item['relative_path'].startswith('attachments/')
+                                      for record in proof['records']
+                                      for item in record.get('attachments', []))
                     if relative == 'resume.xlsx':
                         raise ValueError('Unknown resume workbook scope')
                     offset = 0
@@ -184,6 +189,10 @@ def _workbook_scope(run, path, relative):
                         targets = [link.target if link else None for link in links]
                         locations = [link.location if link else None for link in links]
                     else:
+                        nested_pdfs = any(row[2].value == 'COMPLETE'
+                                          and isinstance(row[5].value, str)
+                                          and row[5].value.startswith('attachments/')
+                                          for row in workbook['Audit'].iter_rows(min_col=1, max_col=6))
                         form_locations = {"'" + title.replace("'", "''") + "'!A1"
                                           for title in workbook.sheetnames
                                           if title not in {'Ringkasan', 'Daftar SPT', 'Audit'}}
@@ -211,7 +220,7 @@ def _workbook_scope(run, path, relative):
                         identity = (meta.get('Jenis Pajak'), meta.get('Masa Pajak'), meta.get('Model SPT'))
                         filename = filenames[id(record)] if relative == 'resume.xlsx' else relative
                         references.append((filename, identity, location))
-                    return _group_identities(groups, legacy=legacy), references
+                    return _group_identities(groups, legacy=legacy), references, nested_pdfs
                 raise ValueError('Unknown workbook filename or literal period/model scope')
             finally:
                 workbook.close()
@@ -312,11 +321,12 @@ def _inspect(run, downloads, target):
         raise ValueError('Existing output scope has no known resume.xlsx')
     fingerprints, identities, indexed = {}, {}, {}
     physical_references, resume_references = [], []
+    nested_pdfs = False
     for name in sorted(actual):
         path = coretax.output_path(target, name)
         _include_directories(directories, path.parent)
         before = _fingerprint(path)
-        declared, references = _workbook_scope(run, path, name)
+        declared, references, workbook_nested_pdfs = _workbook_scope(run, path, name)
         if _fingerprint(path) != before:
             raise ValueError('Workbook changed while inspecting output scope')
         fingerprints[name] = before
@@ -326,6 +336,7 @@ def _inspect(run, downloads, target):
         else:
             identities.update(declared)
             physical_references.extend(references)
+            nested_pdfs = nested_pdfs or workbook_nested_pdfs
     if any(identities.get(name) != identity for name, identity in indexed.items()):
         raise ValueError('Existing resume references an unknown workbook scope')
     for name in indexed:
@@ -343,7 +354,10 @@ def _inspect(run, downloads, target):
         pdf_states[name] = _fingerprint(path)
     corporate_files = [name for name, (_, entries) in identities.items()
                        if any(tax == 'PPh Badan' for tax, period, model in entries)]
-    legacy_layout = any(layout == 'legacy' for layout, entries in identities.values())
+    flat_selected_pdfs = any('/' not in item['relative_path'] for item in verified_declarations(run))
+    # A new flat export must not leave old nested declarations in the same set.
+    legacy_layout = (any(layout == 'legacy' for layout, entries in identities.values())
+                     or (flat_selected_pdfs and nested_pdfs))
     _approved_existing_pdfs(run, target, actual_pdfs, corporate_files, validate_all=legacy_layout)
     for name, fingerprint in {**fingerprints, **pdf_states}.items():
         if _fingerprint(coretax.output_path(target, name)) != fingerprint:
