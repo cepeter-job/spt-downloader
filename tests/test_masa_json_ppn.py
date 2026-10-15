@@ -90,3 +90,25 @@ def test_observed_nullish_zero_rule_is_distinct_from_missing_unknown_path():
 def test_unknown_ppn_binding_cannot_guess_a_value(control, model):
     with pytest.raises(_UnsupportedMetadata):
         project({}, control, model)
+
+
+@pytest.mark.parametrize('control,root,leaf', [
+    ('CarryForwardOfInputTax', 'CarryForwardOfInputTax', 'VAT'),
+    ('ExportOfTangibleGoods', 'A1FormListOfExportTaxableGoodsOrServices', 'Total'),
+])
+def test_null_parent_provenance_points_to_existing_parent_not_nonexistent_child(control, root, leaf):
+    result = project({root: None}, control)
+    assert result['value'] == ''
+    assert result['provenance'] == [{'path': [root], 'type': 'null', 'value': None,
+                                    'requested_path': [root, leaf]}]
+
+
+def test_missing_path_is_not_reported_as_explicit_json_null():
+    result = project({}, 'CarryForwardOfInputTax')
+    assert result['provenance'][0]['type'] == 'missing'
+    assert result['provenance'][0]['path'] == ['CarryForwardOfInputTax', 'VAT']
+
+
+def test_scalar_parent_is_not_silently_treated_as_missing_child():
+    with pytest.raises(_UnsupportedMetadata):
+        project({'CarryForwardOfInputTax': _corporate_json('0')}, 'CarryForwardOfInputTax')
