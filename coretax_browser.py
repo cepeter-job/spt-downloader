@@ -716,18 +716,21 @@ def capture_financial_detail(page, **kwargs):
 
 def _identity_checked_packets(packets, record, scope):
     from coretax_json import (_corporate_json, _corporate_primary,
-                              _corporate_selected, _UnsupportedMetadata, ORIGIN)
+                              _corporate_selected, _UnsupportedMetadata)
     selected = _corporate_selected(record, scope)
     for packet in packets:
-        if packet['context']['url'] == ORIGIN + '/returnsheet/api/prefillreturnsheet/corporate-income':
+        url = packet['context']['url']
+        if (trusted_origin(url) and urlparse(url).path ==
+                '/returnsheet/api/prefillreturnsheet/corporate-income'):
             envelope = _corporate_json(packet['body'])
             payload = envelope.get('Payload') if isinstance(envelope, dict) else None
-            if isinstance(payload, dict) and 'CurrentFormData' in payload:
+            if isinstance(payload, dict):
                 try:
                     # Negative identity checks do not grant UI coverage. In
                     # particular, unknown builds cannot hide a known TIN/ID clash.
                     _corporate_primary(payload, record, selected, scope, [], {})
                 except _UnsupportedMetadata:
+                    # Missing coverage permits fallback, never identity clashes.
                     pass
         yield packet
 
@@ -742,7 +745,7 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     manifest = capture.drain(check_cancel=check_cancel)
     if any(reason in manifest['reasons'] for reason in (
             'secret-body', 'secret-request', 'invalid-json', 'response-source-mismatch',
-            'request-context-unavailable')):
+            'request-context-unavailable', 'authorization-rejected')):
         raise JsonSafetyError('Detail JSON privacy or source verification failed')
     bodies = capture.iter_bodies(check_cancel=check_cancel)
     if corporate:
@@ -832,8 +835,13 @@ def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
                      'complete': False, 'records': [saved]}
             probe['output_attachments'] = [{**item, 'record_id': saved['record_id'], 'scope': list(scope)}
                 for item in saved.get('attachments', []) if item['status'] == 'COMPLETE']
-            with pdf_custody(probe, path.parent.parent):
-                pass
+            try:
+                with pdf_custody(probe, path.parent.parent):
+                    pass
+            except (OSError, ValueError):
+                # A missing or changed PDF invalidates the checkpoint; do not
+                # expose private paths or turn this into a DOM fallback.
+                raise JsonSafetyError('Checkpoint PDF custody cannot be safely verified') from None
     # Berkas detail tidak boleh menimpa identitas atau metadata asal inventaris.
     return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments', 'detail_source') if field in saved}
 

@@ -69,8 +69,11 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     progress.details(ordinal,len(data['records']),verified)
                 if run['records']:
                     progress.details(0,len(run['records']),0)
+                # Default DOM keeps its existing call contract; only the
+                # explicitly selected hybrid mode adds capture options.
+                source_options = {'detail_source': detail_source} if detail_source == 'json-first' else {}
                 run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel,
-                                    detail_source=detail_source)
+                                    **source_options)
                 if not run['records']:progress.details(0,0,0)
             finally:
                 context.close()
@@ -185,8 +188,9 @@ def main(argv=None):
     with contextlib.redirect_stdout(sys.stderr):
         if args.check_login:
             return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
+        source_options = {'detail_source': args.detail_source} if args.detail_source == 'json-first' else {}
         return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,
-                       emit,cancelled.is_set,requests=requests,detail_source=args.detail_source)
+                       emit,cancelled.is_set,requests=requests,**source_options)
 
 
 if __name__=='__main__':

@@ -2,9 +2,7 @@
 from contextlib import nullcontext
 import gc
 import inspect
-import io
 import json
-from pathlib import Path
 import threading
 from types import SimpleNamespace
 import tkinter as tk

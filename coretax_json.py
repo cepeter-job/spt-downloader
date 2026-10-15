@@ -582,30 +582,34 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     main = root.get('MainFormData')
     if not isinstance(main, dict):
         raise _UnsupportedMetadata('missing_corporate_main_source')
+    # Validate every supplied identity before treating any missing field as
+    # unsupported coverage. Missing Tin must not hide a contradictory TaxYear.
+    if 'Tin' in main and (type(main['Tin']) is not str or main['Tin'] != scope[0]):
+        raise JsonSafetyError('Current corporate taxpayer number contradicts selected scope')
+    meta = record.get('meta', {})
+    year = None
+    if 'TaxYear' in main:
+        year = _corporate_integer(main['TaxYear'])
+        if not 1900 <= year <= 2100:
+            raise JsonSafetyError('Current corporate tax year is outside the selected source contract')
+        years = set(re.findall(r'(?<![0-9])(?:19|20|21)[0-9]{2}(?![0-9])', meta.get('Masa Pajak', '')))
+        if ((expected_year is not None and year != expected_year)
+                or (years and years != {str(year)})):
+            raise JsonSafetyError('Current corporate year contradicts native inventory period')
+        if scope[2] == 'period' and year != scope[1]:
+            raise JsonSafetyError('Current corporate tax year contradicts selected period scope')
+        if 'PeriodYear' in payload and _corporate_integer(payload['PeriodYear']) != year:
+            raise JsonSafetyError('Outer corporate year contradicts current source form')
     if 'Tin' not in main:
         raise _UnsupportedMetadata('missing_corporate_taxpayer_number')
-    if type(main['Tin']) is not str or main['Tin'] != scope[0]:
-        raise JsonSafetyError('Current corporate taxpayer number contradicts selected scope')
-    if 'TaxYear' not in main:
+    if year is None:
         raise _UnsupportedMetadata('missing_native_corporate_tax_year')
-    year = _corporate_integer(main['TaxYear'])
-    if not 1900 <= year <= 2100:
-        raise JsonSafetyError('Current corporate tax year is outside the selected source contract')
-    period = fields.get('TaxPeriodCode')
     if not isinstance(period, str) or not re.search(r'[0-9]{4}$', period):
         raise _UnsupportedMetadata('unsupported_native_corporate_period')
-    meta = record.get('meta', {})
-    years = set(re.findall(r'(?<![0-9])(?:19|20|21)[0-9]{2}(?![0-9])', meta.get('Masa Pajak', '')))
-    if year != int(period[-4:]) or years and years != {str(year)}:
-        raise JsonSafetyError('Current corporate year contradicts native inventory period')
-    if scope[2] == 'period' and year != scope[1]:
-        raise JsonSafetyError('Current corporate tax year contradicts selected period scope')
     if scope[2] == 'submission':
         submitted = meta.get('Tanggal Submit SPT', '')
         if not isinstance(submitted, str) or not re.fullmatch(r'[0-9]{2}-[0-9]{2}-' + str(scope[1]), submitted):
             raise _UnsupportedMetadata('unverified_corporate_submission_year')
-    if 'PeriodYear' in payload and _corporate_integer(payload['PeriodYear']) != year:
-        raise JsonSafetyError('Outer corporate year contradicts current source form')
     if missing_binding:
         raise _UnsupportedMetadata('missing_native_corporate_identity_binding')
     if type(root.get('IsDraft')) is not bool or type(payload.get('IsDraft')) is not bool:

@@ -9,7 +9,6 @@ import hashlib
 import html
 import inspect
 import json
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright

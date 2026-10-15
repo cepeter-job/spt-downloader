@@ -222,6 +222,13 @@ class DetailJsonCapture:
                 entry['state'] = 'failed'
                 self._reason('response-source-mismatch')
                 return
+            # Authorization failure is decisive even when the server sends HTML.
+            # Keep only the status: no rejected body is read or persisted.
+            entry['status'] = response.status
+            if entry['status'] in (401, 403):
+                entry['state'] = 'failed'
+                self._reason('authorization-rejected')
+                return
             content_type = response.header_value('content-type') or ''
             mime = content_type.split(';', 1)[0].strip().casefold()
             if mime != 'application/json' and not mime.endswith('+json'):
