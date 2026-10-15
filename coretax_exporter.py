@@ -328,23 +328,41 @@ def workbook_sheet_titles(records, *, reserved=(), legacy=False):
             for ordinal, record in enumerate(records, 1)]
 
 
-def workbook_groups(run):
-    """Kelompokkan masa sumber literal; sanitasi nama berkas tidak menyatukan identitas."""
+def workbook_groups(run, *, legacy=False):
+    """Pemisahan model memakai identitas literal, bukan label pembetulan turunan."""
     groups, identities = {}, {}
     periodic = {'PPh Pasal 21/26': '21', 'PPh Unifikasi': 'Unifikasi', 'PPN': 'PPN'}
     for record in run['records']:
         tax = record['meta'].get('Jenis Pajak')
         filename = tax_type_filename(tax)
         period = record['meta'].get('Masa Pajak', '')
-        identity = (tax, period) if tax in periodic else (tax,)
-        if tax in periodic:
-            component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', period).strip(' .')
-            if not component or len(component) > 120:
-                raise ValueError('Unsupported source period filename')
-            filename = f'SPT Masa {periodic[tax]}/{Path(filename).stem}_{component}.xlsx'
+        if legacy:
+            # Old physical proof stays readable; this branch never writes new exports.
+            identity = (tax, period) if tax in periodic else (tax,)
+            if tax in periodic:
+                component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', period).strip(' .')
+                if not component or len(component) > 120:
+                    raise ValueError('Unsupported source period filename')
+                filename = f'SPT Masa {periodic[tax]}/{Path(filename).stem}_{component}.xlsx'
+        else:
+            model = record['meta'].get('Model SPT', '')
+            identity = (tax, period, model)
+            components = []
+            for label, value in (('period', period), ('model', model)):
+                if not isinstance(value, str):
+                    raise ValueError(f'Unsupported source {label} filename')
+                component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', value).strip(' .')
+                if not component or len(component) > 120:
+                    raise ValueError(f'Unsupported source {label} filename')
+                components.append(component)
+            filename = f'{Path(filename).stem}_{components[0]}_{components[1]}.xlsx'
+            if len(filename.encode('utf-16-le')) // 2 > 255:
+                raise ValueError('Unsupported source period/model filename length')
+            if tax in periodic:
+                filename = f'SPT Masa {periodic[tax]}/{filename}'
         folded = filename.casefold()
         if folded in identities and identities[folded] != identity:
-            raise ValueError('Tax type or period filename collision; no workbook was overwritten')
+            raise ValueError('Tax type, period or model filename collision; no workbook was overwritten')
         identities[folded] = identity
         groups.setdefault(filename, []).append(record)
     return groups
@@ -521,7 +539,7 @@ def read_workbook_proof(workbook):
         if (workbook.sheetnames not in (expected, historical)
                 or any(sheet.sheet_state != 'visible' for sheet in workbook)):
             raise ValueError('Workbook form sheets differ from their proof')
-        workbook_groups(proof)
+        workbook_groups(proof, legacy=True)
         return proof
     except (ValueError, TypeError, KeyError, AttributeError) as error:
         raise ValueError('Workbook scope/PDF proof cannot be verified') from error

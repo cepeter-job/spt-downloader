@@ -21,7 +21,7 @@ def test_overwrite_replaces_only_selected_periods(tmp_path):
     run=fixture_run()
     coretax.save_output(run,tmp_path/'first-source')
     final=output.publish_workbooks(run,tmp_path/'first-source',tmp_path/'Downloads','first-job')
-    untouched=final/'SPT Masa 21/SPT_21_Februari 2025.xlsx'
+    untouched=final/'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx'
     before=untouched.read_bytes()
     selected=deepcopy(run)
     selected['records']=selected['records'][2:3]

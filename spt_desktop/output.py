@@ -13,8 +13,10 @@ import tempfile
 import uuid
 
 import coretax
-from coretax_exporter import validate_export_run, validate_scope, workbook_groups, read_workbook_proof
-from coretax_pdf import attachment_declarations, verified_declarations, pdf_custody, copy_held_pdfs
+from coretax_exporter import (validate_export_run, validate_scope, workbook_groups,
+                              read_workbook_proof, record_forms, _validate_financial_attachments)
+from coretax_pdf import (attachment_declarations, verified_declarations, pdf_custody,
+                         copy_held_pdfs, _verify_stream)
 from .paths import safe_taxpayer_name
 from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
 
@@ -130,46 +132,87 @@ def _selected(run):
     return [*pdf_names, *names], _group_identities(groups)
 
 
-def _group_identities(groups):
+def _group_identities(groups, *, legacy=False):
     result = {}
     for name, records in groups.items():
-        meta = records[0]['meta']
-        # The shared layout helper puts literal source periods in nested workbooks.
-        result[name] = ((meta['Jenis Pajak'], meta.get('Masa Pajak', ''))
-                        if '/' in name else (meta['Jenis Pajak'],))
+        identities = []
+        for record in records:
+            meta = record['meta']
+            identity = (meta['Jenis Pajak'], meta.get('Masa Pajak', ''), meta.get('Model SPT', ''))
+            if identity not in identities:
+                identities.append(identity)
+        result[name] = ('legacy' if legacy else 'model', tuple(identities))
     return result
 
 
 def _workbook_scope(run, path, relative):
-    """Read physical form proof or legacy headers independently of run.json."""
+    """Bind physical filenames and exact first-form links without run.json."""
     try:
         with _open_workbook(path) as stream:
-            workbook = coretax.load_workbook(stream, read_only=True, data_only=False)
+            workbook = coretax.load_workbook(stream, data_only=False)
             try:
                 proof = read_workbook_proof(workbook)
+                targets = None
+                locations = []
                 if proof is not None:
                     if any(proof[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
                         raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
-                    groups = workbook_groups(proof)
-                    if relative == 'resume.xlsx' or set(groups) != {relative}:
-                        raise ValueError('Unknown workbook filename or literal period scope')
-                    return _group_identities(groups)
-                summary = workbook['Ringkasan']
-                basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-                if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
-                        or summary['B5'].value != run['year'] or summary['B7'].value != basis
-                        or summary['B8'].value not in ('COMPLETE', 'PARTIAL')
-                        or 'Audit' not in workbook.sheetnames):
-                    raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
-                index = workbook['Daftar SPT']
-                records = [{'meta': {'Jenis Pajak': row[1], 'Masa Pajak': row[3]}}
-                           for row in index.iter_rows(min_row=5, min_col=1, max_col=5, values_only=True)]
-                if summary['B9'].value != len(records):
-                    raise ValueError('Existing workbook scope count cannot be verified')
-                groups = workbook_groups({'records': records})
-                if relative != 'resume.xlsx' and set(groups) != {relative}:
-                    raise ValueError('Unknown workbook filename or literal period scope')
-                return _group_identities(groups)
+                    source = proof
+                    if relative == 'resume.xlsx':
+                        raise ValueError('Unknown resume workbook scope')
+                    offset = 0
+                    for record in source['records']:
+                        title = workbook.sheetnames[offset].replace("'", "''")
+                        locations.append(f"'{title}'!A1")
+                        offset += len(record_forms(record))
+                else:
+                    summary = workbook['Ringkasan']
+                    basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
+                    if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
+                            or summary['B5'].value != run['year'] or summary['B7'].value != basis
+                            or summary['B8'].value not in ('COMPLETE', 'PARTIAL')
+                            or 'Audit' not in workbook.sheetnames):
+                        raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
+                    rows = list(workbook['Daftar SPT'].iter_rows(min_row=5, min_col=1, max_col=5))
+                    records = [{'meta': {'Jenis Pajak': row[1].value, 'Masa Pajak': row[3].value,
+                                         'Model SPT': row[4].value}} for row in rows]
+                    if summary['B9'].value != len(records):
+                        raise ValueError('Existing workbook scope count cannot be verified')
+                    source = {'records': records}
+                    links = [row[0].hyperlink for row in rows]
+                    if relative == 'resume.xlsx':
+                        targets = [link.target if link else None for link in links]
+                        locations = [link.location if link else None for link in links]
+                    else:
+                        form_locations = {"'" + title.replace("'", "''") + "'!A1"
+                                          for title in workbook.sheetnames
+                                          if title not in {'Ringkasan', 'Daftar SPT', 'Audit'}}
+                        for link in links:
+                            location = (link.target[1:] if link and link.target
+                                        and link.target.startswith('#') else None)
+                            if location not in form_locations:
+                                raise ValueError('Existing workbook first-form sheet link cannot be verified')
+                            locations.append(location)
+                for legacy in (False, True):
+                    try:
+                        groups = workbook_groups(source, legacy=legacy)
+                    except (ValueError, TypeError):
+                        continue
+                    if relative == 'resume.xlsx':
+                        filenames = {id(record): name for name, records in groups.items() for record in records}
+                        expected = [filenames[id(record)] for record in source['records']]
+                        if targets != expected:
+                            continue
+                    elif set(groups) != {relative}:
+                        continue
+                    references = []
+                    for record, location in zip(source['records'], locations):
+                        meta = record['meta']
+                        identity = (meta.get('Jenis Pajak'), meta.get('Masa Pajak'), meta.get('Model SPT'))
+                        filename = filenames[id(record)] if relative == 'resume.xlsx' else relative
+                        references.append((filename, identity, location))
+                    return _group_identities(groups, legacy=legacy), references
+                raise ValueError('Unknown workbook filename or literal period/model scope')
             finally:
                 workbook.close()
     except (ValueError, OSError):
@@ -177,52 +220,68 @@ def _workbook_scope(run, path, relative):
     except Exception as error:
         raise ValueError('Existing workbook scope cannot be verified') from error
 
-
 def _pdf_files(folder):
     # The existing workbook scan rejects every reparse point before this scan.
     return {path.relative_to(folder).as_posix() for path in folder.rglob('*')
             if path.suffix.casefold() == '.pdf' and path.is_file()}
 
 
-def _approved_existing_pdfs(run, target, actual):
+def _approved_existing_pdfs(run, target, actual, corporate_files, *, validate_all=False):
     selected = {item['relative_path']: item for item in verified_declarations(run)
                 if item['relative_path'] in actual}
-    if not selected:
+    if not selected and not validate_all:
         return
-    path = coretax.output_path(target, 'SPT_Badan.xlsx')
-    before = _fingerprint(path)
-    old = {}
-    with _open_workbook(path) as stream:
-        workbook = coretax.load_workbook(stream, data_only=False)
-        try:
-            proof = read_workbook_proof(workbook)
-            if proof is not None:
-                for record in proof['records']:
-                    for attachment in record.get('attachments', []):
-                        relative = attachment.get('relative_path')
-                        if relative not in selected:
+    old, record_ids = {}, {}
+    for name in corporate_files:
+        path = coretax.output_path(target, name)
+        before = _fingerprint(path)
+        with _open_workbook(path) as stream:
+            workbook = coretax.load_workbook(stream, data_only=False)
+            try:
+                proof = read_workbook_proof(workbook)
+                if proof is not None:
+                    for record in proof['records']:
+                        for attachment in record.get('attachments', []):
+                            relative = attachment.get('relative_path')
+                            if relative not in selected and not (validate_all and attachment['status'] == 'COMPLETE'):
+                                continue
+                            if (relative in old or attachment['status'] != 'COMPLETE'
+                                    or (relative in selected and record.get('record_id') != selected[relative]['record_id'])):
+                                raise ValueError('Existing financial PDF lacks its bound workbook proof')
+                            old[relative] = dict(attachment)
+                            record_ids[relative] = record.get('record_id')
+                else:
+                    for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+                        relative = row[5].value
+                        if relative not in selected and not (validate_all and row[2].value == 'COMPLETE'):
                             continue
-                        if (relative in old or record.get('record_id') != selected[relative]['record_id']
-                                or attachment['status'] != 'COMPLETE'):
-                            raise ValueError('Existing financial PDF lacks its bound workbook proof')
-                        old[relative] = dict(attachment)
-            else:
-                for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
-                    relative = row[5].value
-                    if relative not in selected:
-                        continue
-                    item = selected[relative]
-                    if (relative in old or row[0].value != item['record_id']
-                            or row[2].value != 'COMPLETE' or not row[5].hyperlink
-                            or row[5].hyperlink.target != relative):
-                        raise ValueError('Existing financial PDF lacks its bound Audit declaration')
-                    old[relative] = {'label': row[1].value, 'status': row[2].value,
-                                     'bytes': row[3].value, 'hash': row[4].value,
-                                     'relative_path': relative}
-        finally:
-            workbook.close()
-    if set(old) != set(selected) or _fingerprint(path) != before:
-        raise ValueError('Existing financial PDF Audit scope changed or cannot authorize replacement')
+                        if (relative in old or (relative in selected and row[0].value != selected[relative]['record_id'])
+                                or row[2].value != 'COMPLETE' or not row[5].hyperlink
+                                or row[5].hyperlink.target != relative):
+                            raise ValueError('Existing financial PDF lacks its bound Audit declaration')
+                        old[relative] = {'label': row[1].value, 'status': row[2].value,
+                                         'bytes': row[3].value, 'hash': row[4].value,
+                                         'relative_path': relative}
+                        record_ids[relative] = row[0].value
+            finally:
+                workbook.close()
+        if _fingerprint(path) != before:
+            raise ValueError('Existing financial PDF Audit scope changed during inspection')
+    if not set(selected) <= set(old):
+        raise ValueError('Existing financial PDF Audit scope cannot authorize replacement')
+    if validate_all:
+        scope = [run['npwp'], run['year'], run['year_basis']]
+        for relative in sorted(old.keys() - selected.keys()):
+            # Legacy Audit has no period/model DTO: use only its observed ID and
+            # scope-checked corporate workbook identity, never invent source values.
+            record = {'record_id': record_ids[relative], 'scope': scope,
+                      'meta': {'Jenis Pajak': 'PPh Badan'}, 'attachments': [old[relative]]}
+            _validate_financial_attachments(record, scope, set())
+            path = _safe_path(coretax.output_path(target, relative))
+            with DirectoryGuard() as guard:
+                guard.include(_directories(path.parent))
+                with locked_file(path) as stream:
+                    _verify_stream(stream, old[relative])
     records = []
     for record in run['records']:
         items = [old[item['relative_path']] for item in record.get('attachments', [])
@@ -231,11 +290,9 @@ def _approved_existing_pdfs(run, target, actual):
             records.append({**record, 'attachments': items})
     previous = {**run, 'records': records}
     previous['output_attachments'] = attachment_declarations(previous)
-    # Old byte/hash evidence comes from the scope-checked physical workbook,
-    # never a private run.json or the newly downloaded replacement's digest.
+    # Physical old proof, not new replacement metadata, authorizes the held bytes.
     with pdf_custody(previous, target):
         pass
-
 
 def _inspect(run, downloads, target):
     names, selected_identities = _selected(run)
@@ -254,20 +311,28 @@ def _inspect(run, downloads, target):
     if 'resume.xlsx' not in actual:
         raise ValueError('Existing output scope has no known resume.xlsx')
     fingerprints, identities, indexed = {}, {}, {}
+    physical_references, resume_references = [], []
     for name in sorted(actual):
         path = coretax.output_path(target, name)
         _include_directories(directories, path.parent)
         before = _fingerprint(path)
-        declared = _workbook_scope(run, path, name)
+        declared, references = _workbook_scope(run, path, name)
         if _fingerprint(path) != before:
             raise ValueError('Workbook changed while inspecting output scope')
         fingerprints[name] = before
         if name == 'resume.xlsx':
             indexed = declared
+            resume_references = references
         else:
             identities.update(declared)
+            physical_references.extend(references)
     if any(identities.get(name) != identity for name, identity in indexed.items()):
         raise ValueError('Existing resume references an unknown workbook scope')
+    for name in indexed:
+        expected_links = [reference for reference in physical_references if reference[0] == name]
+        actual_links = [reference for reference in resume_references if reference[0] == name]
+        if actual_links != expected_links:
+            raise ValueError('Existing resume first-form sheet link differs from its literal model scope')
     if any(name in identities and identities[name] != identity
            for name, identity in selected_identities.items()):
         raise ValueError('Tax type or literal period filename collision with existing output scope')
@@ -276,7 +341,10 @@ def _inspect(run, downloads, target):
         path = coretax.output_path(target, name)
         _include_directories(directories, path.parent)
         pdf_states[name] = _fingerprint(path)
-    _approved_existing_pdfs(run, target, actual_pdfs)
+    corporate_files = [name for name, (_, entries) in identities.items()
+                       if any(tax == 'PPh Badan' for tax, period, model in entries)]
+    legacy_layout = any(layout == 'legacy' for layout, entries in identities.values())
+    _approved_existing_pdfs(run, target, actual_pdfs, corporate_files, validate_all=legacy_layout)
     for name, fingerprint in {**fingerprints, **pdf_states}.items():
         if _fingerprint(coretax.output_path(target, name)) != fingerprint:
             raise ValueError('Existing output bytes changed during consent inspection')
@@ -284,7 +352,8 @@ def _inspect(run, downloads, target):
     return {'target': str(target), 'scope': (run['npwp'], run['year'], run['year_basis']),
             'selected_files': names,
             'files': [name for name in names if name in actual | actual_pdfs],
-            'directories': directories, 'workbooks': fingerprints, 'attachments': pdf_states}
+            'directories': directories, 'workbooks': fingerprints, 'attachments': pdf_states,
+            'legacy_layout': legacy_layout}
 
 
 def existing_outputs(run, downloads):
@@ -304,7 +373,9 @@ def existing_outputs(run, downloads):
         return None
     if len({path.name.casefold() for path in candidates}) != len(candidates):
         raise ValueError('Existing output folder filename collision')
-    return _inspect(run, downloads, max(candidates, key=lambda path: path.name))
+    snapshot = _inspect(run, downloads, max(candidates, key=lambda path: path.name))
+    # Never leave an old combined workbook declaring PDFs we replace in-place.
+    return None if snapshot['legacy_layout'] else snapshot
 
 
 def _revalidate(run, downloads, snapshot):

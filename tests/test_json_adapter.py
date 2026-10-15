@@ -704,9 +704,9 @@ def test_reopened_real_export_preserves_raw_values_types_paths_duplicates_and_re
            'inventory_complete': False, 'taxpayer_name': 'SYNTHETIC COMPANY',
            'started_at': 'fixture', 'audit': [], 'errors': [], 'records': [record]}
     files = exporter.export_split_workbooks(run, tmp_path)
-    assert set(files) == {'resume.xlsx', 'SPT_Badan.xlsx'}
+    assert set(files) == {'resume.xlsx', 'SPT_Badan_Tahun 2025_Pembetulan 001.xlsx'}
     coretax.verify_outputs(run, tmp_path)
-    workbook = load_workbook(tmp_path / 'SPT_Badan.xlsx')
+    workbook = load_workbook(tmp_path / 'SPT_Badan_Tahun 2025_Pembetulan 001.xlsx')
     resume = load_workbook(tmp_path / 'resume.xlsx')
     try:
         assert workbook.sheetnames == ['Induk']
@@ -724,7 +724,7 @@ def test_reopened_real_export_preserves_raw_values_types_paths_duplicates_and_re
                     if cell.value in {'9007199254740993.0000', '12.3400', NPWP, '=SUM(1,2)'}]
         assert literals and all(cell.data_type == 's' for cell in literals)
         links = [c.hyperlink for sheet in resume for row in sheet for c in row if c.hyperlink]
-        assert any(link.target == 'SPT_Badan.xlsx' and link.location == "'Induk'!A1" for link in links)
+        assert any(link.target == 'SPT_Badan_Tahun 2025_Pembetulan 001.xlsx' and link.location == "'Induk'!A1" for link in links)
         assert not list(tmp_path.rglob('*.pdf')), 'Decoder metadata is not downloaded PDF custody'
     finally:
         workbook.close()

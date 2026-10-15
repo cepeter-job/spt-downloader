@@ -22,13 +22,13 @@ TYPES = {
             'sha256': 'f426a2e428d62fa0af679024f8038195f6198780a2fc15817301982aa4d3fa16',
             'styles': 'c9bae8ced0551e1993d6d09c16fc304e0bc8bb98c1d2d7f6e06657ff7d5c3cc8',
             'forms': ['Induk', 'A1', 'A2', 'B1', 'B2', 'B3', 'C'],
-            'path': 'SPT Masa PPN/SPT_PPN_Januari 2025.xlsx',
+            'path': 'SPT Masa PPN/SPT_PPN_Januari 2025_Normal.xlsx',
             'resource': 'resources/ppn_format.xlsx'},
     'PPh Unifikasi': {'reference': 'unifikasi_format.xlsx',
                      'sha256': '2ad49e997b6404a687c273dc7d895245e6d03593b8d76678b0928f8573efc7a2',
                      'styles': 'e4fb3f3684fc70914742af99a321fb17d950cc75b44b8b553df49ca071f37f0c',
                      'forms': ['Induk', 'Daftar I', 'Daftar II', 'Lampiran I'],
-                     'path': 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx',
+                     'path': 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx',
                      'resource': 'resources/unifikasi_format.xlsx'},
 }
 FORMS = [(tax, form) for tax, config in TYPES.items() for form in config['forms']]

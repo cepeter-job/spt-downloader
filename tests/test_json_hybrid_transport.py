@@ -166,8 +166,9 @@ def test_offline_canonical_json_exports_real_workbooks_without_browser_or_native
     coretax.verify_outputs(saved, output)
     assert saved['records'] == original['records']
     assert {p.relative_to(output).as_posix() for p in output.rglob('*.xlsx')} == {
-        'resume.xlsx', 'SPT_Badan.xlsx', 'SPT Masa 21/SPT_21_Januari 2025.xlsx',
-        'SPT Masa 21/SPT_21_Februari 2025.xlsx', 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx'}
+        'resume.xlsx', 'SPT_Badan_Januari - Desember 2025_Normal.xlsx',
+        'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx',
+        'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx', 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx'}
     assert not (output / 'returns').exists()
 
 

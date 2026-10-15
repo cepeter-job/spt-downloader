@@ -27,7 +27,7 @@ def form_run(names=('Induk', 'L-IA'), *, amendments=False):
 def test_single_return_tabs_are_form_names_without_generated_prefixes(tmp_path):
     run = form_run()
     files = exporter.export_split_workbooks(run, tmp_path)
-    workbook = load_workbook(files['SPT_Badan.xlsx'])
+    workbook = load_workbook(files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx'])
     try:
         assert workbook.sheetnames == ['Induk', 'L-IA']
         assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'L-IA']
@@ -39,51 +39,52 @@ def test_single_return_tabs_are_form_names_without_generated_prefixes(tmp_path):
 
 
 @pytest.mark.parametrize('tax,filename', [
-    ('PPh Badan', 'SPT_Badan.xlsx'),
-    ('PPh Pasal 21/26', 'SPT Masa 21/SPT_21_Januari 2025.xlsx'),
-    ('PPh Unifikasi', 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx'),
-    ('PPN', 'SPT Masa PPN/SPT_PPN_Januari 2025.xlsx'),
+    ('PPh Badan', 'SPT_Badan_Januari - Desember 2025_Normal.xlsx'),
+    ('PPh Pasal 21/26', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'),
+    ('PPh Unifikasi', 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx'),
+    ('PPN', 'SPT Masa PPN/SPT_PPN_Januari 2025_Normal.xlsx'),
 ])
-def test_amendments_keep_all_forms_with_only_minimal_duplicate_suffixes(tmp_path, tax, filename):
+def test_amendments_keep_all_forms_in_separate_file_namespaces(tmp_path, tax, filename):
     run = form_run(amendments=True)
     for record in run['records']:
         record['meta']['Jenis Pajak'] = tax
         if tax != 'PPh Badan':
             record['meta']['Masa Pajak'] = 'Januari 2025'
     files = exporter.export_split_workbooks(run, tmp_path)
-    assert set(files) == {'resume.xlsx', filename}
-    workbook = load_workbook(files[filename])
-    try:
-        assert workbook.sheetnames == ['Induk', 'L-IA', 'Induk (2)', 'L-IA (2)']
-        captions = ['Induk', 'L-IA']
-        if tax == 'PPh Pasal 21/26':
-            captions = ['Induk SPT PPh Pasal 21/26',
-                'DAFTAR PEMOTONGAN BULANAN PAJAK PENGHASILAN PASAL 21 BAGI PEGAWAI TETAP DAN '
-                'PENSIUNAN YANG MENERIMA UANG TERKAIT PENSIUN SECARA BERKALA SERTA BAGI PEGAWAI '
-                'NEGERI SIPIL, ANGGOTA TENTARA NASIONAL INDONESIA, ANGGOTA KEPOLISIAN REPUBLIK '
-                'INDONESIA, PEJABAT NEGARA, DAN PENSIUNANNYA']
-        if tax == 'PPN':
-            captions = ['Induk SPT PPN', 'L-IA']
-        elif tax == 'PPh Unifikasi':
-            captions = ['Induk SPT PPh Unifikasi', 'L-IA']
-        assert [sheet['A1'].value for sheet in workbook] == captions + captions
-        assert all(not re.match(r'[0-9]{3}\.[0-9]{2} ', name) for name in workbook.sheetnames)
-        markers = [cell.value for sheet in workbook for row in sheet for cell in row
-                   if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')]
-        assert markers == ['SYNTHETIC 0 / Induk', 'SYNTHETIC 0 / L-IA',
-                           'SYNTHETIC 1 / Induk', 'SYNTHETIC 1 / L-IA']
-        proof = exporter.read_workbook_proof(workbook)
-        assert [record['meta']['Model SPT'] for record in proof['records']] == ['Normal', 'Pembetulan 2']
-        assert [record['record_id'] for record in proof['records']] == ['badan-normal', 'badan-amendment']
-    finally:
-        workbook.close()
+    expected = [filename, filename.replace('_Normal.xlsx', '_Pembetulan 2.xlsx')]
+    assert set(files) == {'resume.xlsx', *expected}
+    captions = ['Induk', 'L-IA']
+    if tax == 'PPh Pasal 21/26':
+        captions = ['Induk SPT PPh Pasal 21/26',
+            'DAFTAR PEMOTONGAN BULANAN PAJAK PENGHASILAN PASAL 21 BAGI PEGAWAI TETAP DAN '
+            'PENSIUNAN YANG MENERIMA UANG TERKAIT PENSIUN SECARA BERKALA SERTA BAGI PEGAWAI '
+            'NEGERI SIPIL, ANGGOTA TENTARA NASIONAL INDONESIA, ANGGOTA KEPOLISIAN REPUBLIK '
+            'INDONESIA, PEJABAT NEGARA, DAN PENSIUNANNYA']
+    elif tax == 'PPN':
+        captions = ['Induk SPT PPN', 'L-IA']
+    elif tax == 'PPh Unifikasi':
+        captions = ['Induk SPT PPh Unifikasi', 'L-IA']
+    for index, (filename, record) in enumerate(zip(expected, run['records'])):
+        workbook = load_workbook(files[filename])
+        try:
+            assert workbook.sheetnames == ['Induk', 'L-IA']
+            assert [sheet['A1'].value for sheet in workbook] == captions
+            assert all(not re.match(r'[0-9]{3}\.[0-9]{2} ', title) for title in workbook.sheetnames)
+            markers = [cell.value for sheet in workbook for row in sheet for cell in row
+                       if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')]
+            assert markers == [f'SYNTHETIC {index} / Induk', f'SYNTHETIC {index} / L-IA']
+            proof = exporter.read_workbook_proof(workbook)
+            assert [item['meta']['Model SPT'] for item in proof['records']] == [record['meta']['Model SPT']]
+            assert [item['record_id'] for item in proof['records']] == [record['record_id']]
+        finally:
+            workbook.close()
     coretax.verify_outputs(run, tmp_path)
 
 
 def test_case_insensitive_form_collisions_preserve_source_case_and_each_form(tmp_path):
     run = form_run(('Induk', 'induk', 'INDUK'))
     files = exporter.export_split_workbooks(run, tmp_path)
-    workbook = load_workbook(files['SPT_Badan.xlsx'])
+    workbook = load_workbook(files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx'])
     try:
         assert workbook.sheetnames == ['Induk', 'induk (2)', 'INDUK (3)']
         assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'induk', 'INDUK']
@@ -95,7 +96,7 @@ def test_case_insensitive_form_collisions_preserve_source_case_and_each_form(tmp
 def test_sanitized_collisions_do_not_merge_different_source_forms(tmp_path):
     run = form_run(('L/IA', 'L:IA', 'L-IA'))
     files = exporter.export_split_workbooks(run, tmp_path)
-    workbook = load_workbook(files['SPT_Badan.xlsx'])
+    workbook = load_workbook(files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx'])
     try:
         assert workbook.sheetnames == ['L-IA', 'L-IA (2)', 'L-IA (3)']
         assert [sheet['A1'].value for sheet in workbook] == ['L/IA', 'L:IA', 'L-IA']
@@ -108,7 +109,7 @@ def test_truncation_reserves_suffix_space_and_preserves_full_source_captions(tmp
     names = ('A' * 40 + ' first', 'A' * 40 + ' second', 'A' * 40 + ' third')
     run = form_run(names)
     files = exporter.export_split_workbooks(run, tmp_path)
-    workbook = load_workbook(files['SPT_Badan.xlsx'])
+    workbook = load_workbook(files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx'])
     try:
         assert workbook.sheetnames == ['A' * 31, 'A' * 27 + ' (2)', 'A' * 27 + ' (3)']
         assert [sheet['A1'].value for sheet in workbook] == list(names)
@@ -126,8 +127,10 @@ def test_literal_numbered_form_name_is_not_overwritten_by_an_earlier_suffix(tmp_
     third['sections'] = [{'name': 'Induk (2)', 'fields': [
         {'label': 'Marker', 'value': 'SYNTHETIC THIRD FORM'}], 'tables': [], 'text': ''}]
     run['records'].append(third)
-    files = exporter.export_split_workbooks(run, tmp_path)
-    workbook = load_workbook(files['SPT_Badan.xlsx'])
+    # Explicitly reconstruct the old combined writer to retain its collision contract.
+    path = tmp_path / 'synthetic-legacy-combined.xlsx'
+    exporter.export_workbook(run, path, include_administration=False)
+    workbook = load_workbook(path)
     try:
         assert workbook.sheetnames == ['Induk', 'Induk (2)', 'Induk (2) (2)']
         assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'Induk', 'Induk (2)']
@@ -141,16 +144,20 @@ def test_resume_links_resolve_to_the_right_return_not_only_an_existing_duplicate
     run = form_run(amendments=True)
     coretax.save_output(run, tmp_path)
     resume = load_workbook(tmp_path / 'resume.xlsx')
-    target = load_workbook(tmp_path / 'SPT_Badan.xlsx')
     try:
         links = [resume['Daftar SPT'].cell(row, 1).hyperlink for row in (5, 6)]
-        assert [link.target for link in links] == ['SPT_Badan.xlsx', 'SPT_Badan.xlsx']
-        assert [link.location for link in links] == ["'Induk'!A1", "'Induk (2)'!A1"]
+        assert [link.target for link in links] == [
+            'SPT_Badan_Januari - Desember 2025_Normal.xlsx',
+            'SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx']
+        assert [link.location for link in links] == ["'Induk'!A1", "'Induk'!A1"]
         for link, marker in zip(links, ['SYNTHETIC 0 / Induk', 'SYNTHETIC 1 / Induk']):
-            name = link.location.rsplit('!', 1)[0].strip("'")
-            assert marker in [cell.value for row in target[name] for cell in row]
+            target = load_workbook(tmp_path / link.target)
+            try:
+                name = link.location.rsplit('!', 1)[0].strip("'")
+                assert marker in [cell.value for row in target[name] for cell in row]
+            finally:
+                target.close()
     finally:
-        target.close()
         resume.close()
     coretax.verify_outputs(run, tmp_path)
 
@@ -159,7 +166,7 @@ def test_each_period_workbook_starts_its_own_form_name_namespace(tmp_path):
     run = fixture_run()
     run['records'] = run['records'][2:4]
     files = exporter.export_split_workbooks(run, tmp_path)
-    expected = ['SPT Masa 21/SPT_21_Januari 2025.xlsx', 'SPT Masa 21/SPT_21_Februari 2025.xlsx']
+    expected = ['SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx', 'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx']
     assert set(files) == {'resume.xlsx', *expected}
     for filename in expected:
         workbook = load_workbook(files[filename])
@@ -187,8 +194,8 @@ def test_legacy_administrative_writer_reserves_its_index_and_audit_names(tmp_pat
 
 def test_pre_change_forms_only_v1_workbook_remains_verifiable(tmp_path):
     run = form_run(amendments=True)
-    files = exporter.export_split_workbooks(run, tmp_path)
-    path = files['SPT_Badan.xlsx']
+    path = tmp_path / 'SPT_Badan.xlsx'
+    exporter.export_workbook(run, path, include_administration=False)
     workbook = load_workbook(path)
     try:
         old_names = ['001.01 Normal Induk', '001.02 Normal L-IA',
@@ -215,7 +222,7 @@ def test_pre_change_forms_only_v1_workbook_remains_verifiable(tmp_path):
 def test_simple_tab_names_do_not_weaken_physical_form_proof(tmp_path, mutation):
     run = form_run()
     files = exporter.export_split_workbooks(run, tmp_path)
-    path = files['SPT_Badan.xlsx']
+    path = files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx']
     workbook = load_workbook(path)
     try:
         if mutation == 'rename':

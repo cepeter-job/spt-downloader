@@ -135,7 +135,7 @@ def test_closing_selection_cancels_without_implicitly_selecting_every_record(tmp
 
 
 def test_overwrite_dialog_defaults_to_preserving_existing_files(tmp_path):
-    with window(tmp_path, {'files': ['resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025.xlsx']}, 'overwrite') as (root, app, controller, dialog):
+    with window(tmp_path, {'files': ['resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx']}, 'overwrite') as (root, app, controller, dialog):
         buttons = [widget for widget in widgets(dialog) if widget.winfo_class() == 'TButton']
         decline = next(widget for widget in buttons if widget.cget('text') == 'Jangan ganti')
         assert not controller.replies

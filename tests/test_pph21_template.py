@@ -13,7 +13,7 @@ import coretax_exporter as exporter
 from spt_desktop import runtime
 
 REFERENCE = Path(__file__).parent / 'fixtures' / 'pph21_format.xlsx'
-JANUARY = 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
+JANUARY = 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
 FORMS = ['Induk', 'L-IA', 'L-IB', 'L-II', 'L-III']
 COMMON_HEADERS = ['NO.', 'NIK/NPWP', 'NAMA', 'NOMOR BUKTI POTONG',
                   'TANGGAL BUKTI PEMOTONGAN', 'KODE OBJEK PAJAK',
@@ -299,22 +299,29 @@ def test_normal_amendment_and_next_period_keep_separate_layouts_proof_and_resume
     wb = export(normal, tmp_path)
     reference = load_workbook(REFERENCE)
     resume = load_workbook(tmp_path / 'resume.xlsx')
-    feb = load_workbook(tmp_path / 'SPT Masa 21/SPT_21_Februari 2025.xlsx')
+    amendment_file = 'SPT Masa 21/SPT_21_Januari 2025_Pembetulan ke-2.xlsx'
+    february_file = 'SPT Masa 21/SPT_21_Februari 2025_Pembetulan ke-2.xlsx'
+    amended = load_workbook(tmp_path / amendment_file)
+    feb = load_workbook(tmp_path / february_file)
     try:
-        assert wb.sheetnames == ['Induk', 'L-IA', 'Induk (2)', 'L-IA (2)']
+        assert wb.sheetnames == amended.sheetnames == feb.sheetnames == ['Induk', 'L-IA']
         assert wb['L-IA']['C5'].value == 'SYNTHETIC NORMAL'
-        assert wb['L-IA (2)']['C5'].value == 'SYNTHETIC AMENDMENT'
-        assert_layout(wb['L-IA (2)'], reference['L-IA'])
-        assert feb.sheetnames == ['Induk', 'L-IA']
-        proof = exporter.read_workbook_proof(wb)
-        assert [r['record_id'] for r in proof['records']] == ['synthetic-21-normal', 'synthetic-21-amendment']
-        assert [r['meta']['Model SPT'] for r in proof['records']] == ['Normal', 'Pembetulan ke-2']
+        assert amended['L-IA']['C5'].value == feb['L-IA']['C5'].value == 'SYNTHETIC AMENDMENT'
+        assert_layout(wb['L-IA'], reference['L-IA'])
+        assert_layout(amended['L-IA'], reference['L-IA'])
+        assert_layout(feb['L-IA'], reference['L-IA'])
+        proofs = [exporter.read_workbook_proof(item) for item in [wb, amended, feb]]
+        assert [[r['record_id'] for r in proof['records']] for proof in proofs] == [
+            ['synthetic-21-normal'], ['synthetic-21-amendment'], ['synthetic-21-february']]
+        assert [[r['meta']['Model SPT'] for r in proof['records']] for proof in proofs] == [
+            ['Normal'], ['Pembetulan ke-2'], ['Pembetulan ke-2']]
         assert [(resume['Daftar SPT'].cell(r, 1).hyperlink.target,
                  resume['Daftar SPT'].cell(r, 1).hyperlink.location) for r in [5, 6, 7]] == [
-            (JANUARY, "'Induk'!A1"), (JANUARY, "'Induk (2)'!A1"),
-            ('SPT Masa 21/SPT_21_Februari 2025.xlsx', "'Induk'!A1")]
+            (JANUARY, "'Induk'!A1"), (amendment_file, "'Induk'!A1"),
+            (february_file, "'Induk'!A1")]
     finally:
         wb.close()
+        amended.close()
         reference.close()
         resume.close()
         feb.close()
@@ -335,7 +342,7 @@ def test_template_is_shipped_and_used_from_the_copied_worker_resource_tree(tmp_p
                'import json; from openpyxl import load_workbook; '
                'r=json.loads(Path("fixture-input.json").read_text()); '
                'export_split_workbooks(r,Path("out")); '
-               'w=load_workbook(Path("out")/"SPT Masa 21/SPT_21_Januari 2025.xlsx"); '
+               'w=load_workbook(Path("out")/"SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx"); '
                'assert w["Induk"]["A1"].value=="Induk SPT PPh Pasal 21/26"; w.close()')
     import json
     (copied / 'fixture-input.json').write_text(json.dumps(run_for([section('Induk')])), encoding='utf-8')
@@ -348,7 +355,7 @@ def test_other_tax_types_keep_the_existing_generic_form_output(tmp_path):
     run['records'][0]['meta']['Jenis Pajak'] = 'PPh Badan'
     exporter.export_split_workbooks(run, tmp_path)
     coretax.verify_outputs(run, tmp_path)
-    wb = load_workbook(tmp_path / 'SPT_Badan.xlsx')
+    wb = load_workbook(tmp_path / 'SPT_Badan_Januari 2025_Normal.xlsx')
     try:
         assert wb['Induk']['A1'].value == 'Induk'
         assert wb['Induk'].freeze_panes == 'A3'

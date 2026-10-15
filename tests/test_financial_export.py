@@ -85,32 +85,40 @@ def test_audit_contains_literal_relative_pdf_link_and_bound_metadata_without_ext
     original = deepcopy(run)
     files = export_split_workbooks(run, tmp_path)
     assert run == original, 'Adding PDF links must not rewrite captured source data'
-    assert set(files) == {'resume.xlsx', 'SPT_Badan.xlsx'}
+    normal = 'SPT_Badan_Januari - Desember 2025_Normal.xlsx'
+    amendment = 'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx'
+    assert set(files) == {'resume.xlsx', normal, amendment}
     item = run['records'][0]['attachments'][0]
-    for name, include_details in [('resume.xlsx', False), ('SPT_Badan.xlsx', True)]:
+    for name, selected in [(normal, run['records'][0]), (amendment, run['records'][1])]:
         workbook = load_workbook(files[name])
         try:
-            if include_details:
-                assert workbook.sheetnames == ['Induk', 'Induk (2)']
-                proof = json.loads(workbook.properties.identifier)
-                assert proof['npwp'] == run['npwp'] and proof['year'] == run['year']
-                assert proof['records'][0]['record_id'] == run['records'][0]['record_id']
-                assert proof['records'][0]['scope'] == [run['npwp'], run['year'], run['year_basis']]
-                assert proof['records'][0]['attachments'] == [item]
-                source_values = [cell.value for sheet in workbook.worksheets for row in sheet for cell in row]
+            assert workbook.sheetnames == ['Induk']
+            proof = json.loads(workbook.properties.identifier)
+            assert proof['npwp'] == run['npwp'] and proof['year'] == run['year']
+            assert len(proof['records']) == 1
+            record = proof['records'][0]
+            assert record['record_id'] == selected['record_id']
+            assert record['meta'] == selected['meta']
+            assert record['scope'] == [run['npwp'], run['year'], run['year_basis']]
+            assert record.get('attachments', []) == selected.get('attachments', [])
+            if name == normal:
+                source_values = [cell.value for sheet in workbook for row in sheet for cell in row]
                 assert '0000123' in source_values and '1.234,56' in source_values
                 assert source_values.count('0007') == 2
-            else:
-                assert workbook.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit']
-                linked = [cell for row in workbook['Audit'] for cell in row
-                          if cell.hyperlink and cell.hyperlink.target == item['relative_path']]
-                assert len(linked) == 1, 'A declared PDF needs one relative link in the resume Audit'
-                values = [cell.value for cell in workbook['Audit'][linked[0].row]]
-                assert all(value in values for value in [run['records'][0]['record_id'], LABEL,
-                                                         'COMPLETE', len(PDF), item['hash']])
-                assert linked[0].data_type == 's'
         finally:
             workbook.close()
+    workbook = load_workbook(files['resume.xlsx'])
+    try:
+        assert workbook.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit']
+        linked = [cell for row in workbook['Audit'] for cell in row
+                  if cell.hyperlink and cell.hyperlink.target == item['relative_path']]
+        assert len(linked) == 1, 'A declared PDF needs one relative link in the resume Audit'
+        values = [cell.value for cell in workbook['Audit'][linked[0].row]]
+        assert all(value in values for value in [run['records'][0]['record_id'], LABEL,
+                                                 'COMPLETE', len(PDF), item['hash']])
+        assert linked[0].data_type == 's'
+    finally:
+        workbook.close()
 
 
 def test_partial_pdf_is_reported_in_audit_without_a_file_hyperlink(tmp_path):

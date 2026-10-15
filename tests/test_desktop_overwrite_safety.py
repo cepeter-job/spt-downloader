@@ -38,13 +38,13 @@ def test_consent_snapshot_lists_only_workbooks_that_would_be_replaced(tmp_path):
     run, source, downloads, final = previous_and_selected(tmp_path)
     before = workbook_bytes(final)
     snapshot = output.existing_outputs(run, downloads)
-    assert set(snapshot['files']) == {'resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025.xlsx'}
+    assert set(snapshot['files']) == {'resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'}
     assert workbook_bytes(final) == before
     assert not list(downloads.rglob('*.json'))
     assert output.publish_workbooks(run, source, downloads, 'second-job', overwrite=True,
                                     expected_outputs=snapshot) == final
-    assert (final / 'SPT Masa 21/SPT_21_Februari 2025.xlsx').read_bytes() == before[
-        'SPT Masa 21/SPT_21_Februari 2025.xlsx']
+    assert (final / 'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx').read_bytes() == before[
+        'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx']
 
 
 def test_workbook_changed_while_consent_is_open_is_not_replaced(tmp_path):
@@ -76,7 +76,7 @@ def test_unknown_or_case_alias_workbook_cannot_be_authorized(tmp_path, alias):
     if alias == 'RESUME.xlsx':
         (final / 'resume.xlsx').rename(final / alias)
     else:
-        shutil.copy2(final / 'SPT_Badan.xlsx', final / alias)
+        shutil.copy2(final / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx', final / alias)
     before = workbook_bytes(final)
     with pytest.raises(ValueError, match='filename|collision|scope|unknown'):
         output.publish_workbooks(run, source, downloads, 'second-job', overwrite=True)
@@ -126,7 +126,7 @@ def test_junction_at_replace_boundary_cannot_overwrite_unapproved_outside_bytes(
     snapshot = output.existing_outputs(run, downloads)
     before = workbook_bytes(final)
     period = final / 'SPT Masa 21'
-    selected_path = period / 'SPT_21_Januari 2025.xlsx'
+    selected_path = period / 'SPT_21_Januari 2025_Normal.xlsx'
     moved = tmp_path / 'original-period'
     outside = tmp_path / 'unapproved-outside'
     outside.mkdir()
@@ -184,7 +184,7 @@ def test_junction_at_replace_boundary_cannot_overwrite_unapproved_outside_bytes(
 def test_selected_file_changed_at_replace_boundary_is_preserved_and_not_certified(tmp_path, monkeypatch, mutation):
     run, source, downloads, final = previous_and_selected(tmp_path)
     snapshot = output.existing_outputs(run, downloads)
-    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
+    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
     original_bytes = selected_path.read_bytes()
     raced_bytes = b'SYNTHETIC CONCURRENT VERSION: PRESERVE THESE DISTINCT UNAPPROVED BYTES'
     real_move = output._move_no_replace
@@ -289,14 +289,14 @@ def test_blocked_rollback_retains_private_originals_for_recovery(tmp_path, monke
     assert replaced
     recovery = Path(str(failure.value).split('recovery files retained at ', 1)[1])
     assert recovery.is_dir() and not recovery.is_relative_to(downloads)
-    for name in ('resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025.xlsx'):
+    for name in ('resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'):
         assert any(path.read_bytes() == before[name] for path in recovery.rglob(Path(name).name))
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows no-clobber publication regression')
 def test_a_workbook_appearing_in_the_empty_destination_gap_is_kept(tmp_path, monkeypatch):
     run, source, downloads, final = previous_and_selected(tmp_path)
-    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
+    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
     original_bytes = selected_path.read_bytes()
     newcomer = b'SYNTHETIC GAP ARRIVAL: THIS DIFFERENT FILE MUST NOT BE OVERWRITTEN'
     real_move = output._move_no_replace
@@ -324,7 +324,7 @@ def test_a_workbook_appearing_in_the_empty_destination_gap_is_kept(tmp_path, mon
 def test_exception_immediately_after_moving_original_aside_preserves_it(tmp_path, monkeypatch):
     run, source, downloads, final = previous_and_selected(tmp_path)
     before = workbook_bytes(final)
-    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
+    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
     real_move = output._move_no_replace
     attempted = False
 
@@ -346,7 +346,7 @@ def test_exception_immediately_after_moving_original_aside_preserves_it(tmp_path
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows same-volume recovery regression')
 def test_failed_private_recovery_copy_keeps_and_records_the_raced_version(tmp_path, monkeypatch):
     run, source, downloads, final = previous_and_selected(tmp_path)
-    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
+    selected_path = final / 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
     raced_bytes = b'SYNTHETIC RECOVERY COPY FAILURE: THIS ACTUAL DISPLACED VERSION MUST SURVIVE'
     real_move = output._move_no_replace
     real_copy = output.shutil.copy2

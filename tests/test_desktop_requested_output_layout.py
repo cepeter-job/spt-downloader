@@ -16,8 +16,8 @@ from test_split_output import fixture_run
 
 
 ADMIN = {'Ringkasan', 'Daftar SPT', 'Audit'}
-JANUARY = 'SPT Masa 21/SPT_21_Januari 2025.xlsx'
-FEBRUARY = 'SPT Masa 21/SPT_21_Februari 2025.xlsx'
+JANUARY = 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
+FEBRUARY = 'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx'
 
 
 def values(workbook):
@@ -77,10 +77,7 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
     names = ['Induk', 'Lampiran / Rincian']
     normal['sections'] = [
         {'name': name, 'fields': [{'label': 'Marker', 'value': 'SYNTHETIC NORMAL ' + name}],
-         'tables': [], 'text': 'SYNTHETIC SOURCE CONTEXT ' + name}
-        for name in names
-    ]
-    # A repeated capture of the same tab stays on that tab, with every raw value retained.
+         'tables': [], 'text': 'SYNTHETIC SOURCE CONTEXT ' + name} for name in names]
     normal['sections'].append({'name': names[1], 'fields': [
         {'label': 'Marker', 'value': 'SYNTHETIC NORMAL DUPLICATE'}], 'tables': [], 'text': ''})
     amendment = deepcopy(normal)
@@ -91,30 +88,26 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
             field['value'] = field['value'].replace('NORMAL', 'AMENDMENT')
     run['records'].append(amendment)
     files = exporter.export_split_workbooks(run, tmp_path)
-    filename = f'{directory}/{prefix}_Januari 2025.xlsx'
-    assert set(files) == {'resume.xlsx', filename}
-    workbook = load_workbook(files[filename])
-    try:
-        forms = [sheet for sheet in workbook if sheet.title not in ADMIN]
-        assert len(forms) == 4, 'Masa tabs are still flattened into one sheet per return'
-        assert len({sheet.title.casefold() for sheet in forms}) == 4
-        induk = {'PPh Pasal 21/26': 'Induk SPT PPh Pasal 21/26',
-                 'PPN': 'Induk SPT PPN',
-                 'PPh Unifikasi': 'Induk SPT PPh Unifikasi'}[tax]
-        captions = [induk, names[1]]
-        assert [sheet['A1'].value for sheet in forms] == captions + captions
-        assert [sheet.title for sheet in forms] == ['Induk', 'Lampiran - Rincian',
-                                                   'Induk (2)', 'Lampiran - Rincian (2)']
-        proof = exporter.read_workbook_proof(workbook)
-        assert [record['meta']['Model SPT'] for record in proof['records']] == ['Normal', 'Amendment 002']
-        expected = Counter(field['value'] for record in run['records']
-                           for section in record['sections'] for field in section['fields'])
-        observed = Counter(cell.value for sheet in forms for row in sheet for cell in row
-                           if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')
-                           and 'SOURCE CONTEXT' not in cell.value)
-        assert observed == expected
-    finally:
-        workbook.close()
+    expected = [f'{directory}/{prefix}_Januari 2025_Normal.xlsx',
+                f'{directory}/{prefix}_Januari 2025_Amendment 002.xlsx']
+    assert set(files) == {'resume.xlsx', *expected}
+    induk = {'PPh Pasal 21/26': 'Induk SPT PPh Pasal 21/26', 'PPN': 'Induk SPT PPN',
+             'PPh Unifikasi': 'Induk SPT PPh Unifikasi'}[tax]
+    for filename, record in zip(expected, run['records']):
+        workbook = load_workbook(files[filename])
+        try:
+            assert ADMIN.isdisjoint(workbook.sheetnames)
+            assert workbook.sheetnames == ['Induk', 'Lampiran - Rincian']
+            assert [sheet['A1'].value for sheet in workbook] == [induk, names[1]]
+            proof = exporter.read_workbook_proof(workbook)
+            assert [item['meta']['Model SPT'] for item in proof['records']] == [record['meta']['Model SPT']]
+            expected_values = Counter(field['value'] for section in record['sections'] for field in section['fields'])
+            observed = Counter(cell.value for sheet in workbook for row in sheet for cell in row
+                               if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')
+                               and 'SOURCE CONTEXT' not in cell.value)
+            assert observed == expected_values
+        finally:
+            workbook.close()
 
 
 def test_spreadsheet_banners_and_print_headers_are_removed_without_losing_source_data(tmp_path):
@@ -128,7 +121,7 @@ def test_spreadsheet_banners_and_print_headers_are_removed_without_losing_source
                  'rows': [['001', '001', '1.000,00'], ['001', '001', '1.000,00']], 'complete': True}],
         text='SYNTHETIC SOURCE CONTEXT — retained exactly')
     exporter.export_split_workbooks(run, tmp_path)
-    workbook = load_workbook(tmp_path / 'SPT_Badan.xlsx')
+    workbook = load_workbook(tmp_path / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx')
     try:
         detail = next(sheet for sheet in workbook if sheet.title not in ADMIN)
         assert detail['A1'].value == 'Induk', 'Generic header still precedes the actual source form'
@@ -157,7 +150,7 @@ def test_forms_only_file_keeps_nonvisual_scope_and_declared_pdf_proof(tmp_path):
     source = tmp_path / 'private-financial-job'
     run = financial_run(source)
     coretax.save_output(run, source)
-    workbook = load_workbook(source / 'SPT_Badan.xlsx')
+    workbook = load_workbook(source / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx')
     try:
         assert ADMIN.isdisjoint(workbook.sheetnames)
         proof = workbook.properties.identifier
@@ -181,7 +174,7 @@ def test_forms_only_verification_rejects_changed_nonvisual_proof(tmp_path, mutat
     source = tmp_path / 'private-financial-job'
     run = financial_run(source)
     coretax.save_output(run, source)
-    path = source / 'SPT_Badan.xlsx'
+    path = source / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx'
     workbook = load_workbook(path)
     try:
         proof = workbook.properties.identifier

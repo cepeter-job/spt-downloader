@@ -132,7 +132,7 @@ class NativeFixture:
         return ('<' + selector + '><p-table data-fixture-config="' + config + '"><h3>' + name + '</h3>'
                 '<table><thead><tr><th>Value</th></tr></thead><tbody></tbody></table>'
                 '<div class="p-paginator"><span class="p-paginator-current"></span>'
-                '<span class="p-dropdown-label">10</span>'
+                '<span class="p-dropdown-label">10</span><span class="p-paginator-page p-highlight">1</span>'
                 '<button class="p-paginator-prev" onclick="turn(this,-10)">Prev</button>'
                 '<button class="p-paginator-next" onclick="turn(this,10)">Next</button></div></p-table></' + selector + '>')
 
@@ -170,6 +170,7 @@ class NativeFixture:
             '{First:c.first,Rows:10,SortField:"",SortOrder:1,Filters:[],LanguageId:"id-ID"});'
             'g.querySelector(".p-paginator-current").textContent="Showing "+(c.total?c.first+1:0)+'
             '" to "+Math.min(c.first+10,c.total)+" of "+c.total;'
+            'g.querySelector(".p-paginator-page.p-highlight").textContent=String(c.first/10+1);'
             'g.querySelector(".p-paginator-prev").disabled=c.first===0;'
             'g.querySelector(".p-paginator-next").disabled=c.first+10>=c.total;'
             'return fetch(' + json.dumps(corpus.ORIGIN + '/returnsheet/api') +
@@ -365,6 +366,11 @@ def test_approved_native_build_missing_grid_identity_uses_whole_dom(
         assert any(f.get('value') == '0000777' for s in record['sections'] for f in s.get('fields', []))
         assert not any('/MainFormData/NetIncomeBeforeTax' in str(t)
                        for s in record['sections'] for t in s.get('tables', []))
+        l9 = [table for section in record['sections'] if section['name'] == 'L9'
+              for table in section.get('tables', [])]
+        assert sum(len(table['rows']) for table in l9) == 60
+        assert all(row == ['0000'] for table in l9 for row in table['rows'])
+        assert all(table['complete'] for table in l9) and max(table['pages'] for table in l9) == 6
         assert any(r['url'].endswith('/loadcit/l4-table-a-grid') and missing not in r['body']
                    for r in fixture.requests)
         assert fixture.unexpected == []
