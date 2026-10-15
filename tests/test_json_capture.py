@@ -788,7 +788,7 @@ def test_real_initial_prefill_before_view_returns_is_bound_and_list_observer_unp
                 detail, is_popup = driver.open_return_readonly(page, row, TAXPAYER, RECORD, json_capture=capture)
                 detail.wait_for_function('document.body.dataset.ready === "yes"')
                 result = capture.drain()
-                assert result['complete'] is True and result['counts']['accepted'] == 1
+                assert result['complete'] is True and result['counts']['accepted'] == 1, result
                 assert observer.sequence == 0 and observer.latest is None
                 assert is_popup is popup
                 saved = stored(tmp_path, result)
