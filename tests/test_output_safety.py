@@ -37,7 +37,7 @@ def test_offline_cli_exports_to_relative_output_folder(tmp_path, relative_output
     assert result.returncode == 2, result.stderr
     saved_run = json.loads((folder / 'run.json').read_text(encoding='utf-8'))
     coretax.verify_outputs(saved_run, folder)
-    assert len(list(folder.rglob('*.xlsx'))) == 5
+    assert len(list(folder.rglob('*.xlsx'))) == 6
     assert not list(folder.glob('.spt-export-*'))
 
 
@@ -104,8 +104,8 @@ def test_untracked_workbook_cannot_be_overwritten(tmp_path):
 def test_case_insensitive_existing_filename_collision_is_rejected(tmp_path):
     run = fixture_run()
     coretax.save_output(run, tmp_path)
-    existing = tmp_path / 'SPT_Badan.xlsx'
-    existing.rename(tmp_path / 'spt_badan.XLSX')
+    existing = tmp_path / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx'
+    existing.rename(tmp_path / 'spt_badan_januari - desember 2025_normal.XLSX')
     before = snapshot(tmp_path)
     with pytest.raises(FileExistsError, match='collision'):
         coretax.save_output(run, tmp_path)
@@ -132,7 +132,7 @@ def test_failed_replacement_rolls_back_completed_replacements(tmp_path, monkeypa
     def fail_one_replace(source, target):
         nonlocal failed
         target = Path(target)
-        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx' and not failed:
+        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx' and not failed:
             failed = True
             raise PermissionError('Synthetic workbook lock')
         return real_replace(source, target)
@@ -184,10 +184,11 @@ def test_resume_link_must_identify_exact_amendment_not_just_existing_sheet(tmp_p
     coretax.save_output(run, tmp_path)
     path = tmp_path / 'resume.xlsx'
     wb = load_workbook(path)
+    wb['Daftar SPT']['A6'].hyperlink.target = wb['Daftar SPT']['A5'].hyperlink.target
     wb['Daftar SPT']['A6'].hyperlink.location = wb['Daftar SPT']['A5'].hyperlink.location
     wb.save(path)
     wb.close()
-    with pytest.raises(ValueError, match='detail'):
+    with pytest.raises(ValueError, match='type-workbook link'):
         coretax.verify_outputs(run, tmp_path)
 
 
@@ -202,7 +203,7 @@ def test_interrupt_immediately_after_replace_rolls_back_that_file(tmp_path, monk
         nonlocal interrupted
         result = real_replace(source, target)
         target = Path(target)
-        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx' and not interrupted:
+        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx' and not interrupted:
             interrupted = True
             raise KeyboardInterrupt()
         return result
@@ -220,7 +221,7 @@ def test_blocked_rollback_keeps_recoverable_original_files(tmp_path, monkeypatch
     real_replace = Path.replace
     def fail_publication_and_rollback(source, target):
         target = Path(target)
-        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx' or source.parent.name == 'backup':
+        if target == tmp_path/'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx' or source.parent.name == 'backup':
             raise PermissionError('Synthetic persistent file lock')
         return real_replace(source, target)
     monkeypatch.setattr(Path, 'replace', fail_publication_and_rollback)
@@ -241,7 +242,7 @@ def test_interrupt_in_rollback_probe_keeps_recoverable_original_files(tmp_path, 
 
     def fail_later_publication(source, target):
         nonlocal publication_failed
-        if Path(target) == tmp_path/'SPT Masa 21/SPT_21_Januari 2025.xlsx':
+        if Path(target) == tmp_path/'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx':
             publication_failed = True
             raise PermissionError('Synthetic workbook lock')
         return real_replace(source, target)

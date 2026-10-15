@@ -9,10 +9,12 @@ import sys
 import threading
 import coretax
 from coretax_exporter import validate_scope
+from coretax_json import validate_detail_source
 from coretax_browser import CaptureCancelled,collect_inventory,collect_details
 from .auth import AuthBlocked,authenticate_owned,check_saved_credentials
 from .credentials import ALLOWED_ORIGINS
 from .events import Progress
+from . import diagnostics
 from .interaction import Requests, select_records
 from .output import existing_outputs, publish_workbooks
 from .paths import downloads_folder
@@ -23,7 +25,8 @@ def playwright_factory():
     return sync_playwright()
 
 
-def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None):
+def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None,detail_source='dom'):
+    diagnostics.record('operation.started', job_id=job_id, operation='export')
     progress=Progress(job_id,emit)
     run=None
     folder=None
@@ -33,6 +36,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         emit({'job_id':job_id,'type':kind,'stage':'authentication',
               'percent':progress.percent,'message':message})
     try:
+        validate_detail_source(detail_source)
         npwp,year=validate_scope(npwp,year)
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',job_id):raise ValueError('Invalid job identifier')
         check_cancel()
@@ -67,7 +71,11 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     progress.details(ordinal,len(data['records']),verified)
                 if run['records']:
                     progress.details(0,len(run['records']),0)
-                run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel)
+                # Default DOM keeps its existing call contract; only the
+                # explicitly selected hybrid mode adds capture options.
+                source_options = {'detail_source': detail_source} if detail_source == 'json-first' else {}
+                run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel,
+                                    **source_options)
                 if not run['records']:progress.details(0,0,0)
             finally:
                 context.close()
@@ -96,7 +104,8 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                                 overwrite=overwrite,expected_outputs=previous)
         progress.finished(bool(run['complete']),final)
         return 0 if run['complete'] else 2
-    except CaptureCancelled:
+    except CaptureCancelled as error:
+        diagnostics.record('operation.cancelled', job_id=job_id, error=error, status='CANCELLED')
         if run is not None and folder is not None:
             run['complete']=False
             run.setdefault('errors',[]).append({'object':'Cancellation','message':'User stopped the job; capture is PARTIAL'})
@@ -104,15 +113,18 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         progress.finished(False,None,status='CANCELLED',message='Dihentikan. Checkpoint lokal tetap tersedia; tidak ada hasil COMPLETE.')
         return 4
     except AuthBlocked as error:
+        diagnostics.record('operation.failed', job_id=job_id, level='WARNING', error=error, status='BLOCKED')
         progress.finished(False,None,status='BLOCKED',message=str(error))
         return 3
-    except Exception:
+    except Exception as error:
+        diagnostics.record('operation.failed', job_id=job_id, level='ERROR', error=error, status='ERROR')
         # Jangan kirim trace browser/kredensial atau data pajak ke log GUI.
         progress.finished(False,None,status='ERROR',message='Ekspor terhenti. Periksa koneksi, izin Downloads, dan checkpoint lokal; tidak ada hasil COMPLETE.')
         return 1
 
 
 def run_login_check(root,job_id,browser,headless,origin,account,emit,cancelled):
+    diagnostics.record('operation.started', job_id=job_id, operation='login_check')
     def check_cancel():
         if cancelled():raise CaptureCancelled('Stop requested')
     try:
@@ -124,8 +136,10 @@ def run_login_check(root,job_id,browser,headless,origin,account,emit,cancelled):
         check_cancel()
     except CaptureCancelled:
         status,message='CANCELLED','Pengecekan kredensial dibatalkan; tidak ada ekspor.'
-    except Exception:
+    except Exception as error:
+        diagnostics.record('operation.failed', job_id=job_id, level='ERROR', error=error, status='LOGIN_ERROR')
         status,message='LOGIN_ERROR','Pengecekan gagal; periksa koneksi intranet, browser, dan izin workspace.'
+    diagnostics.record('operation.finished', job_id=job_id, operation='login_check', status=status)
     emit({'job_id':job_id,'type':'terminal','stage':'login_check','status':status,
           'percent':0,'output':None,'message':message})
     return {'LOGIN_OK':0,'LOGIN_UNVERIFIED':5,'LOGIN_MANUAL':6,'LOGIN_BLOCKED':3,
@@ -143,6 +157,7 @@ def main(argv=None):
     parser.add_argument('--job-id',required=True)
     parser.add_argument('--browser',choices=['msedge','chrome'],default='msedge')
     parser.add_argument('--visible',action='store_true')
+    parser.add_argument('--detail-source',choices=['dom','json-first'],default='dom')
     args=parser.parse_args(argv)
     if args.check_login:
         if not args.origin or not args.account or len(args.account)>256 or not args.account.strip():return 1
@@ -150,6 +165,10 @@ def main(argv=None):
         try:validate_scope(args.npwp,args.year)
         except ValueError:return 1
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',args.job_id):return 1
+    return _authorized(args)
+
+
+def _authorized(args):
     started,cancelled=threading.Event(),threading.Event()
     output=sys.stdout
     def emit(item):
@@ -176,13 +195,18 @@ def main(argv=None):
                 requests.respond(item['command'],item['request_id'])
     threading.Thread(target=listen,daemon=True).start()
     if not started.wait(30):
+        diagnostics.record('operation.failed', status='BLOCKED', level='WARNING')
         Progress(args.job_id,emit).finished(False,None,status='BLOCKED',message='Worker tidak menerima izin mulai dari GUI.')
         return 3
-    with contextlib.redirect_stdout(sys.stderr):
+    # No filesystem changes for Stop/EOF before start authorization.
+    diagnostic_session = (contextlib.nullcontext() if cancelled.is_set() else
+        diagnostics.session(diagnostics.default_root(args.root), 'worker', job_id=args.job_id))
+    with diagnostic_session, contextlib.redirect_stdout(sys.stderr):
         if args.check_login:
             return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
+        source_options = {'detail_source': args.detail_source} if args.detail_source == 'json-first' else {}
         return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,
-                       emit,cancelled.is_set,requests=requests)
+                       emit,cancelled.is_set,requests=requests,**source_options)
 
 
 if __name__=='__main__':

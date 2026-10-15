@@ -3,6 +3,7 @@
 Login CLI diselesaikan pengguna di browser. Validasi data bersama dipakai oleh
 CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
 """
+from spt_desktop import diagnostics
 import argparse
 from datetime import datetime
 import json
@@ -18,7 +19,7 @@ from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
 from coretax_exporter import (validate_scope, validate_export_run, export_split_workbooks,
                              workbook_groups, detail_sheet_title, record_sheet_titles,
-                             workbook_proof, read_workbook_proof)
+                             workbook_proof, read_workbook_proof, workbook_sheet_titles)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 
@@ -120,18 +121,24 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         filename: verify_workbook(folder / filename, {**run, 'records': records}, include_administration=False)
         for filename, records in grouped.items()
     }
+    first_titles = {}
+    for filename, records in grouped.items():
+        titles = workbook_sheet_titles(records)
+        if {title for group in titles for title in group} != sheet_names[filename]:
+            titles = workbook_sheet_titles(records, legacy=True)
+        if {title for group in titles for title in group} != sheet_names[filename]:
+            raise ValueError('Workbook names do not match a supported physical form layout')
+        first_titles.update({id(record): group[0] for record, group in zip(records, titles)})
     # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
     resume = load_workbook(folder / 'resume.xlsx')
     try:
-        local_ordinals = {}
         for ordinal, record in enumerate(run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
             expected_file = next(name for name, records in grouped.items() if any(r is record for r in records))
             if not link or link.target != expected_file or not isinstance(link.location, str):
                 raise ValueError('Missing or incorrect type-workbook link')
             linked_sheet = link.location.rsplit('!', 1)[0][1:-1].replace("''", "'")
-            local_ordinals[expected_file] = local_ordinals.get(expected_file, 0) + 1
-            expected_sheet = detail_sheet_title(local_ordinals[expected_file], record)
+            expected_sheet = first_titles[id(record)]
             expected_location = "'" + expected_sheet.replace("'", "''") + "'!A1"
             if linked_sheet not in sheet_names[expected_file] or link.location != expected_location:
                 raise ValueError('Resume links to an incorrect detail sheet or amendment')
@@ -139,6 +146,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         resume.close()
 
 
+@diagnostics.traced('verify')
 def verify_outputs(run, folder, *, allow_extra=False):
     """Verify declared held PDF bytes as well as the existing workbook scope."""
     with pdf_custody(run, folder):
@@ -211,7 +219,8 @@ def _publish_output(staging, folder, names):
             target.parent.mkdir(parents=True, exist_ok=True)
             attempted.append(name)
             (staging / name).replace(target)
-    except BaseException:
+    except BaseException as error:
+        diagnostics.record('publish.rollback', phase='rollback', error=error, level='WARNING')
         try:
             for name in reversed(attempted):
                 if (staging / name).exists():
@@ -227,6 +236,7 @@ def _publish_output(staging, folder, names):
         raise
 
 
+@diagnostics.traced('export')
 def save_output(run, folder):
     """Validasi, tulis ke staging, baca ulang, lalu publikasikan seluruh set."""
     folder = Path(folder)
@@ -308,15 +318,18 @@ def parser():
     cli.add_argument('--non-interactive', action='store_true', help='Requires NPWP/year and an authenticated session; never prompts for credentials')
     cli.add_argument('--inventory-only', action='store_true', help='Capture SPT list only; output is explicitly PARTIAL for full-detail scope')
     cli.add_argument('--detail-limit', type=int, help='Test-only detail limit; output stays PARTIAL if any return remains unexported')
+    cli.add_argument('--detail-source', choices=['dom', 'json-first'], default='dom',
+                     help='DOM by default; opt-in JSON hybrid with whole-record DOM fallback')
     cli.add_argument('--max-pages', type=int, default=1000, help='Safety cap per list/table; reaching it is reported as PARTIAL')
     return cli
 
 
-def main(argv=None):
+def _main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
     if args.max_pages < 1 or args.detail_limit is not None and args.detail_limit < 1:
         cli.error('Page and detail limits must be positive')
+    diagnostics.record('operation.started', operation='offline' if args.from_json else 'resume' if args.resume else 'export')
     if args.from_json:
         run = json.loads(args.from_json.read_text(encoding='utf-8'))
         validate_scope(run['npwp'], run['year'])
@@ -374,7 +387,8 @@ def main(argv=None):
                     if ordinal % 5 == 0:
                         current_run['complete'] = False
                         save_output(current_run, folder)
-                collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit, on_progress=progress)
+                collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit,
+                                on_progress=progress, detail_source=args.detail_source)
             run['finished_at'] = datetime.now().astimezone().isoformat()
             run['duration_seconds'] = round(time.monotonic() - start, 2)
             output_path = save_output(run, folder)
@@ -386,6 +400,7 @@ def main(argv=None):
             print('Interrupted; existing checkpoints retained.', file=sys.stderr)
             return 130
         except Exception as exc:
+            diagnostics.record('operation.failed', error=exc, level='ERROR', status='ERROR')
             if run is not None:
                 run['complete'] = False
                 run['errors'].append({'object': 'Run', 'phase': 'details', 'message': str(exc).split('\n')[0]})
@@ -405,6 +420,19 @@ def main(argv=None):
     print(f'Checkpoints: {folder}')
     print(f"Duration: {run['duration_seconds']} seconds")
     return 0 if run['complete'] else 2
+
+
+def main(argv=None):
+    with diagnostics.session(diagnostics.default_root(), 'cli'):
+        try:
+            code = _main(argv)
+        except BaseException as error:
+            diagnostics.record('operation.cancelled' if isinstance(error, KeyboardInterrupt) else 'operation.failed',
+                               error=error, level='ERROR')
+            raise
+        diagnostics.record('operation.finished', exit_code=code,
+                           status={0:'COMPLETE', 2:'PARTIAL', 130:'CANCELLED'}.get(code, 'ERROR'))
+        return code
 
 
 if __name__ == '__main__':

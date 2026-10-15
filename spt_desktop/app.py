@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
-from .controller import JobController,validate_job_scope
+from .controller import JobController,validate_job_scope,validate_detail_source
+from . import diagnostics
 from .credentials import ALLOWED_ORIGINS,save_login,delete_login
 from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
@@ -13,7 +14,8 @@ from .ui_views import MainView
 
 #punto ami priyono
 
-DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':''}
+DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':'','detail_source':'dom'}
+DETAIL_SOURCE_LABELS={'dom':'DOM','json-first':'JSON-hybrid (pilot)'}
 
 
 def load_preferences(root):
@@ -25,11 +27,14 @@ def load_preferences(root):
     if type(data.get('headless')) is bool:result['headless']=data['headless']
     if data.get('login_origin') in ALLOWED_ORIGINS:result['login_origin']=data['login_origin']
     if isinstance(data.get('identifier'),str) and len(data['identifier'])<=256:result['identifier']=data['identifier']
+    if type(data.get('detail_source')) is str and data['detail_source'] in DETAIL_SOURCE_LABELS:
+        result['detail_source']=data['detail_source']
     return result
 
 
 def save_preferences(root,data):
     allowed={key:data.get(key,default) for key,default in DEFAULTS.items()}
+    validate_detail_source(allowed['detail_source'])
     if allowed['browser'] not in ('msedge','chrome') or allowed['login_origin'] not in ALLOWED_ORIGINS:
         raise ValueError('Preferensi browser/origin tidak valid.')
     if type(allowed['headless']) is not bool or not isinstance(allowed['identifier'],str):
@@ -43,6 +48,8 @@ def save_preferences(root,data):
 class App:
     def __init__(self,root,workspace,controller=None):
         self.root=root;self.workspace=Path(workspace)
+        self._previous_callback = root.report_callback_exception
+        root.report_callback_exception = self._report_callback
         self.preferences=load_preferences(self.workspace)
         self.controller=controller or JobController(self.workspace,self.on_event)
         self._closing=False;self._result=None
@@ -77,6 +84,18 @@ class App:
         self.npwp_entry.focus_set()
         self._poll_after = root.after(100, self._poll)
 
+    def _report_callback(self, kind, error, trace):
+        diagnostics.record('gui.callback_failed', error=error, level='ERROR')
+        self._previous_callback(kind, error, trace)
+
+    def open_logs(self):
+        try:
+            os.startfile(str(diagnostics.log_folder(self.workspace)))
+        except (OSError, ValueError):
+            messagebox.showerror('Log tidak tersedia',
+                'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
+                parent=self._settings_dialog or self.root)
+
     def _running(self, active):
         stopping = (active and getattr(self.controller, 'job_id', None) == self._interaction_stopped_job)
         self.view.set_busy(active, stopping=stopping)
@@ -93,7 +112,8 @@ class App:
         self._close_interaction()
         try:
             npwp, year = validate_job_scope(self.npwp.get(), self.year.get())
-            job_id = self.controller.start(npwp, str(year), self.preferences['browser'], self.preferences['headless'])
+            options = {} if self.preferences['detail_source']=='dom' else {'detail_source':self.preferences['detail_source']}
+            job_id = self.controller.start(npwp, str(year), self.preferences['browser'], self.preferences['headless'], **options)
             self._ui_state = begin_export(job_id, npwp, str(year))
         except (ValueError, RuntimeError) as error:
             messagebox.showerror('Tidak dapat mulai', str(error), parent=self.root)
@@ -190,7 +210,8 @@ class App:
             return
         try:
             self.controller.poll()
-        except Exception:
+        except Exception as error:
+            diagnostics.record('gui.poll_failed', error=error, level='ERROR')
             # A monitoring error is not proof that the owned process has exited.
             # Request cleanup once, but leave the UI busy until the controller is idle.
             if not self._poll_failed:
@@ -225,6 +246,7 @@ class App:
         if self._disposed:
             return
         self._disposed = True
+        self.root.report_callback_exception = self._previous_callback
         if self._poll_after is not None:
             try:
                 self.root.after_cancel(self._poll_after)
@@ -397,6 +419,8 @@ class App:
             row=6,column=0,columnspan=2,sticky='w',pady=(4,12))
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='e')
         ttk.Button(buttons,text='Hentikan unduhan',command=lambda:self._cancel_interaction(interaction)).pack(side='left',padx=(0,8))
+        ordered_iids=list(rows)
+        descending=None
 
         def selected_ids():
             chosen=set(tree.selection()) & set(tree.get_children())
@@ -414,8 +438,22 @@ class App:
             children=tree.get_children()
             if children:tree.delete(*children)
             query=search.get().strip().casefold()
-            for iid,(_,values,text) in rows.items():
+            for iid in ordered_iids:
+                _,values,text=rows[iid]
                 if query in text:tree.insert('', 'end',iid=iid,values=values)
+            update_selection()
+
+        def sort_type():
+            nonlocal ordered_iids,descending
+            if not self._interaction_current(interaction):return
+            descending=False if descending is None else not descending
+            # Always sort the original inventory so equal captions retain their order.
+            ordered_iids=sorted(rows,key=lambda iid:rows[iid][1][0].casefold(),reverse=descending)
+            visible=set(tree.get_children())
+            visible_order=[iid for iid in ordered_iids if iid in visible]
+            # Moving items preserves selection and focus under the active filter.
+            for position,iid in enumerate(visible_order):tree.move(iid,'',position)
+            tree.heading('type',text='Jenis pajak '+('▼' if descending else '▲'))
             update_selection()
 
         def confirm():
@@ -426,6 +464,7 @@ class App:
 
         submit=ttk.Button(buttons,text='Sedot SPT terpilih',state='disabled',command=confirm)
         submit.pack(side='left')
+        tree.heading('type',command=sort_type)
         tree.bind('<<TreeviewSelect>>',update_selection)
         interaction['traces'].append((search,search.trace_add('write',filter_records)))
         dialog.protocol('WM_DELETE_WINDOW',lambda:self._cancel_interaction(interaction))
@@ -480,23 +519,29 @@ class App:
         origin=tk.StringVar(dialog,value=self.preferences['login_origin'])
         identifier=tk.StringVar(dialog,value=self.preferences['identifier']);password=tk.StringVar(dialog)
         browser=tk.StringVar(dialog,value=self.preferences['browser']);hidden=tk.BooleanVar(dialog,value=self.preferences['headless'])
+        detail_source=tk.StringVar(dialog,value=DETAIL_SOURCE_LABELS[self.preferences['detail_source']])
         self._credential_status=tk.StringVar(dialog,value='Kredensial belum dicek. Cek tidak melakukan scraping atau ekspor.')
         controls=[('Origin login',ttk.Combobox(frame,textvariable=origin,values=ALLOWED_ORIGINS,state='readonly',width=40)),
                   ('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
                   ('Password baru',ttk.Entry(frame,textvariable=password,show='●',width=40)),
-                  ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20))]
+                  ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
+                  ('Sumber detail SPT',ttk.Combobox(frame,textvariable=detail_source,
+                    values=tuple(DETAIL_SOURCE_LABELS.values()),state='readonly',width=25))]
         for row,(label,widget) in enumerate(controls):
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
-        hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Password tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
-        buttons=ttk.Frame(frame);buttons.grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
-        check_buttons=ttk.Frame(frame);check_buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        hidden_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Password tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
+        check_buttons=ttk.Frame(frame);check_buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         def selected():
-            return {'browser':browser.get(),'headless':hidden.get(),'login_origin':origin.get(),'identifier':identifier.get()}
+            mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
+            return {'browser':browser.get(),'headless':hidden.get(),'login_origin':origin.get(),
+                    'identifier':identifier.get(),'detail_source':mode}
         def refresh(*args,preserve_status=False):
             active=self.controller.active
             dirty=bool(password.get()) or selected()!=self.preferences
@@ -526,7 +571,9 @@ class App:
                 preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
             except ValueError as error:messagebox.showerror('Pengaturan belum disimpan',str(error),parent=dialog);return
-            except OSError:messagebox.showerror('Pengaturan belum disimpan','Windows menolak penyimpanan kredensial/preferensi. Periksa izin workspace.',parent=dialog);return
+            except OSError as error:
+                diagnostics.record('settings.failed', error=error, level='ERROR')
+                messagebox.showerror('Pengaturan belum disimpan','Windows menolak penyimpanan kredensial/preferensi. Periksa izin workspace.',parent=dialog);return
             password.set('');refresh()
             self._credential_status.set('Pengaturan disimpan. Tekan Cek Kredensial untuk menguji login otomatis.')
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
@@ -559,7 +606,7 @@ class App:
         cancel_button=ttk.Button(check_buttons,text='Batalkan Cek',command=self.stop,state='disabled')
         cancel_button.pack(side='left')
         self._settings_refresh=refresh;self._settings_close=close
-        for variable in (origin,identifier,password,browser,hidden):traces.append((variable,variable.trace_add('write',refresh)))
+        for variable in (origin,identifier,password,browser,hidden,detail_source):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         dialog.bind('<Alt-c>',lambda e:check());refresh()
         controls[1][1].focus_set()

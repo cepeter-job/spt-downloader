@@ -34,6 +34,7 @@ def test_workflow_tests_builds_and_verifies_before_explicit_artifact_upload():
 
 def report(profile='production'):
     return {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
+        'diagnostics': {'schema': 1, 'safe_logging': True},
             'python': python_version(profile), 'python_implementation': 'CPython',
             'free_threaded': False, 'tcl': '8.6.15', 'tk': '8.6.15',
             'worker_python': python_version(), 'worker_resources': list(WORKER_FILES),

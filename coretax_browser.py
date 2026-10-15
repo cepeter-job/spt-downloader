@@ -3,13 +3,21 @@
 Modul ini tidak memasukkan password, mengambil token, atau menjalankan aksi
 penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
 """
+from spt_desktop import diagnostics
 import time
 import re
 import json
+import os
+from contextlib import nullcontext
+from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
+from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
+                          adapt_inventory_page, validate_inventory_rows)
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from coretax_json import validate_detail_source
+from coretax_corporate import CIT_SOURCE_SHA256
 
 CELL_JS = r'''(cell) => {
  const clone=cell.cloneNode(true);
@@ -186,6 +194,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     return result
 
 
+@diagnostics.traced('detail')
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
     _check_cancel(check_cancel)
@@ -229,6 +238,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if not captured['complete']:
                     errors.append({'object': name, 'message': captured['warning']})
             except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
                 errors.append({'object': f'{name}/table {i+1}', 'message': str(exc).split('\n')[0]})
         sections.append(section)
         # Another form hides Induk; read its inspected href before traversal advances.
@@ -279,6 +289,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
         else:
             capture_panel(root, 'Halaman SPT')
     except Exception as exc:
+        diagnostics.record('capture.partial', level='WARNING', error=exc)
         errors.append({'object': 'SPT detail', 'message': str(exc).split('\n')[0]})
     if financial_required and not financial_attempted:
         attachments.append({'label': 'Laporan Keuangan', 'relative_path': None,
@@ -329,53 +340,165 @@ def verify_detail_url(url, taxpayer_id, record_id=None):
 
 
 class ListObserver:
-    """Amati respons daftar milik UI tanpa membaca cookie atau header autentikasi.
-
-    Simpan hanya respons terakhir dan nomor urut monotonik. Pemanggil menunggu
-    respons baru, sehingga respons lama tidak dianggap hasil navigasi berikutnya.
-    """
-    def __init__(self, page):
+    """Keep one owned response/byte buffer and a monotonic freshness marker."""
+    def __init__(self, page, check_cancel=None):
         self.page = page
+        self.check_cancel = check_cancel
         self.sequence = 0
         self.latest = None
         page.on('response', self.on_response)
 
     def on_response(self, response):
-        if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/')
-                or response.request.resource_type not in ('xhr', 'fetch')):
+        request = response.request
+        if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/returnsheets')
+                or request.resource_type not in ('xhr', 'fetch')):
             return
         if 'json' not in response.headers.get('content-type', '').lower():
             return
         try:
-            data = response.json()
+            frame = getattr(request, 'frame', None)
+            main_frame = getattr(self.page, 'main_frame', None)
+            if frame is not None and main_frame is not None and frame != main_frame:
+                return
+            body_reader = getattr(response, 'body', None)
+            body = body_reader() if callable(body_reader) else None
+            data = json.loads(body) if isinstance(body, bytes) else response.json()
+            if not isinstance(data, dict):
+                return
             payload = data.get('Payload', data.get('payload', {}))
-            if (isinstance(payload, dict) and isinstance(payload.get('Data'), list)
-                    and all(isinstance(row, dict) for row in payload['Data'])
-                    and type(payload.get('TotalRecords')) is int and payload['TotalRecords'] >= 0):
-                self.sequence += 1
-                self.latest = {'total': payload['TotalRecords'], 'rows': payload['Data'],
-                               'successful': 200 <= response.status < 300
-                               and data.get('IsSuccessful', data.get('isSuccessful')) is True}
+            if not isinstance(payload, dict):
+                return
+            rows, total = payload.get('Data'), payload.get('TotalRecords')
+            if rows is None and type(total) is int and total == 0:
+                rows = []
+            if not (isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+                    and type(total) is int and total >= 0):
+                return
+            binding = None
+            if isinstance(body, bytes) and urlparse(response.url).path == SUBMITTED_ENDPOINT:
+                posted = getattr(request, 'post_data_json', None)
+                keys = ('TaxpayerAggregateIdentifier', 'First', 'Rows', 'Filters',
+                        'isArchieved', 'LanguageId', 'SortField', 'SortOrder')
+                binding = {
+                    'response_url': response.url, 'method': getattr(request, 'method', None),
+                    'http_status': response.status, 'frame_url': getattr(frame, 'url', None),
+                    'request': {key: posted[key] for key in keys if key in posted} if isinstance(posted, dict) else None,
+                }
+            self.sequence += 1
+            self.latest = {'total': total, 'rows': rows, 'body': body, 'binding': binding,
+                           'sequence': self.sequence,
+                           'successful': 200 <= response.status < 300
+                           and data.get('IsSuccessful', data.get('isSuccessful')) is True}
         except Exception:
+            # An unreadable response cannot replace the last verified event.
+            # wait(after) still requires a newer usable event or fails closed.
             pass
 
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
         while self.sequence <= after:
+            _check_cancel(self.check_cancel)
             if time.monotonic() >= deadline:
                 raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
+        _check_cancel(self.check_cancel)
         wait_idle(self.page)
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
-        return result
+        return {**result, 'after_sequence': after}
 
     def close(self):
         self.page.remove_listener('response', self.on_response)
         self.latest = None
 
 
+REFERENCE_ROWS_JS = r'''(table) => {
+ const value=CELL;
+ const headerRows=table.tHead ? [...table.tHead.rows].filter(r=>![...r.cells].some(c=>c.querySelector('p-columnfilter,input,select'))) : [];
+ if(headerRows.length!==1 || [...headerRows[0].cells].some(c=>c.colSpan!==1||c.rowSpan!==1))return {supported:false};
+ const headers=[...headerRows[0].cells].map(value);
+ const wanted=['Jenis Pajak','Jenis Surat Pemberitahuan Pajak','Masa Pajak','Status SPT','Kanal','Model SPT'];
+ if(wanted.some(h=>headers.filter(v=>v===h).length!==1))return {supported:false};
+ const rows=[...table.tBodies].flatMap(b=>[...b.rows]).filter(r=>!r.classList.contains('p-datatable-emptymessage'))
+ .filter(r=>!(r.cells.length===1&&r.cells[0].colSpan>1&&/tidak ada data|no records|no data/i.test(r.textContent)));
+ return {supported:true,rows:rows.map(row=>Object.fromEntries(wanted.map(h=>[h,value(row.cells[headers.indexOf(h)])])))};
+}'''.replace('CELL', CELL_JS)
+
+
+def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, basis,
+                        page_number, folder, source_number, check_cancel):
+    """Adapt a bound submitted page; read only reference captions, not its grid."""
+    _check_cancel(check_cancel)
+    validate_inventory_rows(response['rows'], taxpayer_id)
+    submitted = urlparse(source['url']).path.startswith('/returnsheets/id-ID/submitted-returnsheets/')
+    if not submitted:
+        return {'eligible': False, 'reason': 'unobserved_status_schema', 'rows': []}
+    if not isinstance(response.get('body'), bytes):
+        return {'eligible': False, 'reason': 'unavailable_original_response_bytes', 'rows': []}
+    if not isinstance(response.get('binding'), dict):
+        raise JsonSafetyError('Submitted response lacks verified request/frame/source binding')
+    context = {
+        **response['binding'], 'npwp': npwp, 'year': year, 'year_basis': basis,
+        'taxpayer_id': taxpayer_id, 'source_url': source['url'], 'source_status': source['label'],
+        'page': page_number, 'sequence': response['sequence'], 'after_sequence': response['after_sequence'],
+        'date_format': 'dd-MM-yyyy', 'timezone': None, 'lookup_labels': {},
+    }
+    # Safety is evaluated before even the narrow reference read or fallback.
+    probe = adapt_inventory_page(response['body'], context)
+    raw_folder = folder / 'listing-responses'
+    raw_folder.mkdir(exist_ok=True)
+    raw_name = f'{source_number:04d}-{page_number:04d}-{response["sequence"]:08d}.json'
+    with (raw_folder / raw_name).open('xb') as handle:
+        handle.write(response['body'])
+    _check_cancel(check_cancel)
+    if not response['rows']:
+        return probe
+    # Only annual corporate codes have an observed native metadata contract.
+    if any(row.get('TaxTypeCode') != 'ICT_RCIT' or row.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+           for row in response['rows']):
+        return {'eligible': False, 'reason': 'unobserved_tax_metadata_schema', 'rows': []}
+    references = table.evaluate(REFERENCE_ROWS_JS)
+    if not references.get('supported'):
+        return {'eligible': False, 'reason': 'unsupported_reference_layout', 'rows': []}
+    if len(references['rows']) != len(response['rows']):
+        raise JsonSafetyError('Reference DOM rows contradict source count')
+    labels = {field: {} for field in LOOKUP_HEADERS}
+    verified_labels = {'TaxTypeCode': ('ICT_RCIT', 'PPh Badan'),
+                       'ReturnSheetTypeCode': ('ICT_RCITR', 'SPT PPh Badan Rupiah'),
+                       'ReturnSheetStatusCode': ('SUBMITTED', 'Dilaporkan'),
+                       'ChannelCode': ('TAXPAYER_PORTAL', 'Portal Wajib Pajak')}
+    for api_row, captions in zip(response['rows'], references['rows']):
+        _check_cancel(check_cancel)
+        if 'ReturnSheetModel' in api_row and captions['Model SPT'] != api_row['ReturnSheetModel']:
+            raise JsonSafetyError('Reference row order/model differs from source identity')
+        period = api_row.get('TaxPeriodCode')
+        if not isinstance(period, str) or not re.fullmatch(r'0112\d{4}', period):
+            return {'eligible': False, 'reason': 'unobserved_period_schema', 'rows': []}
+        if captions['Masa Pajak'] != 'Januari - Desember ' + period[-4:]:
+            raise JsonSafetyError('Period reference caption contradicts source code')
+        for field, header in LOOKUP_HEADERS.items():
+            code = api_row.get(field)
+            caption = captions[header]
+            if not isinstance(code, str) or not caption:
+                return {'eligible': False, 'reason': 'unsupported_reference_code', 'rows': []}
+            if field in verified_labels and code == verified_labels[field][0] and caption != verified_labels[field][1]:
+                return {'eligible': False, 'reason': 'unsupported_reference_locale', 'rows': []}
+            if code in labels[field] and labels[field][code] != caption:
+                raise JsonSafetyError('Conflicting captions for a source reference code')
+            labels[field][code] = caption
+    context['lookup_labels'] = labels
+    context['timezone'] = page.evaluate('() => Intl.DateTimeFormat().resolvedOptions().timeZone')
+    _check_cancel(check_cancel)
+    result = adapt_inventory_page(response['body'], context)
+    for row in result['rows']:
+        row['source_identity']['body_file'] = 'listing-responses/' + raw_name
+        row['source_identity']['rendering'] = {'date_format': context['date_format'], 'timezone': context['timezone'],
+                                             'reference_source': 'bound-current-grid-reference-cells'}
+    return result
+
+
+@diagnostics.traced('inventory')
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
     """Temukan NPWP persis, simpan batch daftar, lalu rekonsiliasi inventaris."""
     _check_cancel(check_cancel)
@@ -402,7 +525,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     if exact is None:
         raise RuntimeError('NPWP search returned no exact NPWP match; input is not normalized')
     taxpayer_name = cells[exact + 1] if exact + 1 < len(cells) else ''
-    observer = ListObserver(page)
+    observer = ListObserver(page, check_cancel=check_cancel)
     errors, audit, sources = [], [], []
     try:
         before = observer.sequence
@@ -457,20 +580,40 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 seen_ids = set()
                 for page_index in range(max_pages):
                     _check_cancel(check_cancel)
-                    grid = table.evaluate(TABLE_JS)
-                    if len(grid['rows']) != len(response['rows']):
-                        raise RuntimeError('Return-list DOM row count does not match the UI response')
-                    entry['scanned'] += len(grid['rows'])
+                    if response['total'] != entry['total']:
+                        raise RuntimeError('Source list changed during capture; rerun with a new output folder')
+                    adapted = _inventory_metadata(page, table, response, source, taxpayer_id,
+                                                   npwp, year, basis, page_index + 1, folder,
+                                                   len(audit), check_cancel)
+                    entry['requested_source'] = 'json-first'
+                    if adapted['eligible']:
+                        page_rows = adapted['rows']
+                        entry['used_source'] = 'json' if entry.get('used_source', 'json') == 'json' else 'mixed-pages'
+                    else:
+                        _check_cancel(check_cancel)
+                        grid = table.evaluate(TABLE_JS)
+                        if len(grid['rows']) != len(response['rows']):
+                            raise RuntimeError('Return-list DOM row count does not match the UI response')
+                        identifiers = validate_inventory_rows(response['rows'], taxpayer_id)
+                        page_rows = [{'record_id': identifier, 'meta': dict(zip(grid['headers'], values))}
+                                     for identifier, values in zip(identifiers, grid['rows'])]
+                        entry['used_source'] = 'dom-fallback' if entry.get('used_source', 'dom-fallback') == 'dom-fallback' else 'mixed-pages'
+                        entry['fallback_reason'] = adapted['reason']
+                    entry.setdefault('metadata_pages', []).append({
+                        'page': page_index + 1, 'used_source': 'json' if adapted['eligible'] else 'dom-fallback',
+                        'reason': adapted['reason'], 'sequence': response['sequence'],
+                    })
+                    entry['scanned'] += len(page_rows)
                     if on_progress:
                         on_progress({'completed': len(audit)-1, 'total': len(sources), 'scanned': entry['scanned']})
                     batch = []
-                    for position, (values, api_row) in enumerate(zip(grid['rows'], response['rows'])):
+                    for position, page_row in enumerate(page_rows):
                         _check_cancel(check_cancel)
-                        identifier = str(api_row.get('RecordId') or api_row.get('AggregateIdentifier') or '')
-                        if not identifier or identifier in seen_ids:
-                            raise RuntimeError('Missing or repeated SPT identifier; pagination cannot be certified')
+                        identifier = page_row['record_id']
+                        if identifier in seen_ids:
+                            raise RuntimeError('Repeated SPT identifier; pagination cannot be certified')
                         seen_ids.add(identifier)
-                        meta = dict(zip(grid['headers'], values))
+                        meta = page_row['meta']
                         try:
                             selected = in_scope(meta, year, basis)
                         except ValueError as exc:
@@ -482,6 +625,9 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                                       'list_url': source['url'], 'list_page': page_index + 1, 'row_position': position,
                                       'list_page_size': int(current_size.inner_text().strip()) if current_size and current_size.inner_text().strip().isdigit() else None,
                                       'capture_complete': False, 'sections': []}
+                            for field in ('source_identity', 'source_fields'):
+                                if field in page_row:
+                                    record[field] = page_row[field]
                             batch.append(record)
                     entry['selected'] += len(batch)
                     with batch_path.open('a', encoding='utf-8') as handle:
@@ -503,6 +649,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 entry['result'] = 'RECONCILED'
                 container.dispose()
             except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
                 errors.append({'object': label, 'message': str(exc).split('\n')[0]})
                 print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
             (folder / ('inventory-' + str(len(audit)) + '.json')).write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -526,7 +673,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     return result
 
 
-def open_return_readonly(page, row, taxpayer_id, record_id=None):
+def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture=None):
     """Buka satu kontrol View yang dikenali dan verifikasi asal detailnya."""
     # Hanya tombol View persis yang telah diamati; jangan menebak aksi baris lain.
     view = row.locator('button[id=ViewButton]')
@@ -538,7 +685,7 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None):
     page.on('popup', callback)
     verified = False
     try:
-        view.evaluate('(e)=>e.click()')
+        view.click()
         deadline = time.monotonic() + 20
         while not opened and page.url == previous_url:
             if time.monotonic() > deadline:
@@ -549,6 +696,8 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None):
         detail = opened[0] if opened else page
         detail.wait_for_load_state('domcontentloaded', timeout=60000)
         verify_detail_url(detail.url, taxpayer_id, record_id)
+        if json_capture is not None:
+            json_capture.bind_detail_page(detail)
         verified = True
         return detail, bool(opened)
     finally:
@@ -561,9 +710,153 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None):
                     pass  # Pertahankan error navigasi jika popup sudah ditutup.
 
 
-def read_detail_checkpoint(path, record, scope):
+def observe_corporate_forms(page, record, scope, capture, **kwargs):
+    from coretax_corporate import observe_forms
+    return observe_forms(page, record, scope, capture, approved_digest=CIT_SOURCE_SHA256, **kwargs)
+
+
+def capture_financial_detail(page, **kwargs):
+    from coretax_corporate import capture_financial
+    return capture_financial(page, **kwargs)
+
+
+def _check_corporate_request_identities(observations, record, scope):
+    from coretax_corporate import GRID_ROLES
+    grid_paths = {'/returnsheet/api/loadcit/' + suffix
+                  for roles in GRID_ROLES.values() for _, suffix, _ in roles}
+    period = record.get('source_fields', {}).get('TaxPeriodCode')
+    expected_year = period[-4:] if isinstance(period, str) and re.search(r'[0-9]{4}$', period) else None
+    if expected_year is None and scope[2] == 'period':
+        expected_year = str(scope[1])
+    for item in observations:
+        url = item['url']
+        if not trusted_origin(url):
+            continue
+        path = urlparse(url).path
+        if path == '/returnsheet/api/prefillreturnsheet/corporate-income':
+            field = 'RecordId'
+        elif path in grid_paths:
+            field = 'ReturnSheetRecordId'
+        else:
+            continue
+        request_data = item.get('request_json')
+        if not isinstance(request_data, dict):
+            continue
+        # Missing evidence grants no JSON eligibility. Explicit contradictions
+        # remain fatal even when the build/forms or response MIME are unknown.
+        if field in request_data:
+            value = request_data[field]
+            if type(value) is not str or value != record['record_id']:
+                raise JsonSafetyError('Known corporate request contradicts selected return')
+        if (path == '/returnsheet/api/loadcit/l4-table-a-grid'
+                and expected_year is not None and 'PeriodYear' in request_data):
+            value = request_data['PeriodYear']
+            if type(value) is not str or value != expected_year:
+                raise JsonSafetyError('Known corporate request contradicts selected period')
+
+
+def _identity_checked_packets(packets, record, scope):
+    from coretax_json import (_corporate_json, _corporate_primary,
+                              _corporate_selected, _UnsupportedMetadata)
+    selected = _corporate_selected(record, scope)
+    for packet in packets:
+        url = packet['context']['url']
+        if (trusted_origin(url) and urlparse(url).path ==
+                '/returnsheet/api/prefillreturnsheet/corporate-income'):
+            envelope = _corporate_json(packet['body'])
+            payload = envelope.get('Payload') if isinstance(envelope, dict) else None
+            if isinstance(payload, dict):
+                try:
+                    # Negative identity checks do not grant UI coverage. In
+                    # particular, unknown builds cannot hide a known TIN/ID clash.
+                    _corporate_primary(payload, record, selected, scope, [], {})
+                except _UnsupportedMetadata:
+                    # Missing coverage permits fallback, never identity clashes.
+                    pass
+        yield packet
+
+
+def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
+    from coretax_json import adapt_corporate_detail
+    corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+    if corporate:
+        _check_corporate_request_identities(capture.request_observations(), record, scope)
+    forms = observe_corporate_forms(page, record, scope, capture,
+        max_pages=max_pages, check_cancel=check_cancel) if corporate else None
+    observations = capture.request_observations()
+    if corporate:
+        _check_corporate_request_identities(observations, record, scope)
+    if any(item.get('status') in (401, 403) for item in observations):
+        raise JsonSafetyError('Detail HTTP authorization was rejected')
+    manifest = capture.drain(check_cancel=check_cancel)
+    if corporate:
+        _check_corporate_request_identities(capture.request_observations(), record, scope)
+    if any(reason in manifest['reasons'] for reason in (
+            'secret-body', 'secret-request', 'invalid-json', 'response-source-mismatch',
+            'request-context-unavailable', 'authorization-rejected')):
+        raise JsonSafetyError('Detail JSON privacy or source verification failed')
+    bodies = capture.iter_bodies(check_cancel=check_cancel)
+    if corporate:
+        bodies = _identity_checked_packets(bodies, record, scope)
+    decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
+                                     observed_forms=forms or []) if corporate else None
+    if not corporate:
+        for packet in bodies:
+            _check_cancel(check_cancel)
+            if packet['context']['status'] in (401, 403):
+                raise JsonSafetyError('Detail HTTP authorization was rejected')
+    _check_cancel(check_cancel)
+    eligible = corporate and forms is not None and manifest['complete'] and decoded['eligible']
+    audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
+             'capture': manifest}
+    if decoded is not None:
+        audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
+    if eligible:
+        result = capture_financial_detail(page, record=record, folder=folder, check_cancel=check_cancel)
+        result['sections'] = decoded['sections']
+        audit['reason'] = 'verified_native_corporate_source'
+    else:
+        audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
+                           else 'unsupported_observed_forms_or_capture')
+        result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
+                                record=record, folder=folder)
+    result['detail_source'] = audit
+    return result
+
+
+def _atomic_checkpoint(path, value):
+    from coretax_pdf import _directories
+    from spt_desktop.output_windows import DirectoryGuard
+    path = Path(path).absolute()
+    temporary = path.with_name(path.name + '.' + uuid4().hex + '.tmp')
+    created = None
+    with DirectoryGuard() as guard:
+        guard.include(_directories(path.parent))
+        try:
+            with temporary.open('xb') as stream:
+                info = os.fstat(stream.fileno())
+                created = (info.st_dev, info.st_ino)
+                stream.write(json.dumps(value, ensure_ascii=False, indent=2).encode('utf-8'))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if created is not None and temporary.exists():
+                current = temporary.lstat()
+                if (current.st_dev, current.st_ino) == created:
+                    temporary.unlink()
+
+
+def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
     """Terima hanya hasil capture dengan identitas dan scope inventaris yang sama."""
-    saved = json.loads(path.read_text(encoding='utf-8'))
+    validate_detail_source(detail_source)
+    path = Path(path).absolute()
+    from coretax_pdf import _directories
+    from spt_desktop.output_windows import DirectoryGuard, locked_file
+    with DirectoryGuard() as guard:
+        guard.include(_directories(path.parent))
+        with locked_file(path) as stream:
+            saved = json.load(stream)
     identity_fields = ('key', 'record_id', 'meta', 'list_url', 'list_page', 'list_page_size',
                        'row_position', 'source_status')
     if (not isinstance(saved, dict) or saved.get('scope') != scope
@@ -574,32 +867,59 @@ def read_detail_checkpoint(path, record, scope):
             verify_detail_url(saved.get('detail_url'), list_taxpayer_id(record['list_url']), record['record_id'])
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
+    audit = saved.get('detail_source')
+    if audit is not None:
+        if (not isinstance(audit, dict) or type(audit.get('version')) is not int or audit['version'] != 1
+                or audit.get('requested') not in ('dom', 'json-first') or audit.get('used') not in ('dom', 'json')):
+            raise JsonSafetyError('Checkpoint detail-source descriptor is unsupported')
+        if audit['used'] == 'json' and (audit['requested'] != 'json-first' or detail_source != 'json-first'):
+            raise JsonSafetyError('Checkpoint JSON source does not match the requested mode')
+        if audit.get('capture') is not None or audit['used'] == 'json':
+            from coretax_json_capture import checkpoint_bodies
+            checkpoint_bodies(path.parent.parent, audit.get('capture'), saved, scope)
+        if audit['used'] == 'json':
+            from coretax_pdf import pdf_custody
+            probe = {'npwp': scope[0], 'year': scope[1], 'year_basis': scope[2],
+                     'complete': False, 'records': [saved]}
+            probe['output_attachments'] = [{**item, 'record_id': saved['record_id'], 'scope': list(scope)}
+                for item in saved.get('attachments', []) if item['status'] == 'COMPLETE']
+            try:
+                with pdf_custody(probe, path.parent.parent):
+                    pass
+            except (OSError, ValueError):
+                # A missing or changed PDF invalidates the checkpoint; do not
+                # expose private paths or turn this into a DOM fallback.
+                raise JsonSafetyError('Checkpoint PDF custody cannot be safely verified') from None
     # Berkas detail tidak boleh menimpa identitas atau metadata asal inventaris.
-    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments') if field in saved}
+    return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments', 'detail_source') if field in saved}
 
 
-def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None):
+@diagnostics.traced('details')
+def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None, *, detail_source='dom'):
     """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
+    validate_detail_source(detail_source)
     _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    observer = ListObserver(page)
+    observer = None
     active_group, current_response = None, None
     run['errors'] = [e for e in run.get('errors', []) if e.get('phase') != 'details']
     scope = [run['npwp'], run['year'], run['year_basis']]
     run['complete'] = False
     attempted = 0
     try:
+        observer = ListObserver(page, check_cancel=check_cancel)
         for ordinal, record in enumerate(run['records'], 1):
             _check_cancel(check_cancel)
             checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
             if checkpoint.exists():
-                saved = read_detail_checkpoint(checkpoint, record, scope)
+                saved = read_detail_checkpoint(checkpoint, record, scope, detail_source=detail_source)
                 # COMPLETE lama belum membuktikan inspeksi lampiran Badan.
                 # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
                 needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
                 if saved.get('capture_complete') and (not needs_financial or saved.get('attachments')):
+                    diagnostics.record('checkpoint.reused', phase='details')
                     record.update(saved)
                     print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
                     if on_progress:
@@ -611,7 +931,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
             attempted += 1
             record['scope'] = [run['npwp'], run['year'], run['year_basis']]
             print(f"Detail {ordinal}/{len(run['records'])}: {record['meta'].get('Jenis Pajak', '')} | {record['meta'].get('Masa Pajak', '')}", flush=True)
-            detail, is_popup = None, False
+            detail, is_popup, json_capture = None, False, None
             try:
                 taxpayer_id = list_taxpayer_id(record['list_url'])
                 group = (record['list_url'], record['list_page'])
@@ -652,7 +972,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         current_response = observer.wait(before)
                     container.dispose()
                     active_group = group
-                identifiers = [str(r.get('RecordId') or r.get('AggregateIdentifier') or '') for r in current_response['rows']]
+                identifiers = validate_inventory_rows(current_response['rows'], taxpayer_id)
                 if record['record_id'] not in identifiers:
                     raise RuntimeError('Inventoried SPT is not on the expected source page; rerun inventory')
                 position = identifiers.index(record['record_id'])
@@ -664,18 +984,39 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     _check_cancel(check_cancel)
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'])
-                detail.set_viewport_size({'width': 1600, 'height': 1000})
-                capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
-                                         record=record, folder=folder)
+                session = nullcontext(None)
+                if detail_source == 'json-first':
+                    from coretax_json_capture import DetailJsonCapture
+                    session = DetailJsonCapture(page.context, page, record, scope, folder,
+                                                ordinal=ordinal, check_cancel=check_cancel)
+                with session as json_capture:
+                    detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'],
+                                                            json_capture=json_capture)
+                    detail.set_viewport_size({'width': 1600, 'height': 1000})
+                    if json_capture is None:
+                        capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
+                                                 record=record, folder=folder)
+                    else:
+                        capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
+                if 'detail_source' in capture:
+                    record['detail_source'] = capture['detail_source']
                 record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
                 record['attachments'] = capture.get('attachments', [])
                 for error in capture['errors']:
                     _check_cancel(check_cancel)
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
+            except CaptureCancelled:
+                record.update(capture_complete=False, sections=[], attachments=[])
+                record.pop('detail_source', None)
+                raise
             except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
                 active_group = None
                 record['capture_complete'] = False
+                if isinstance(exc, JsonSafetyError) and json_capture is not None:
+                    record.update(sections=[], attachments=[])
+                    record.pop('detail_source', None)
+                    raise
                 run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
                 print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
             finally:
@@ -683,17 +1024,18 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     detail.close()
                 elif detail is not None:
                     active_group = None
-                checkpoint.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8')
-                (folder / 'run.json').write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding='utf-8')
+                _atomic_checkpoint(checkpoint, record)
+                _atomic_checkpoint(folder / 'run.json', run)
                 if on_progress:
                     on_progress(run, ordinal)
     finally:
-        observer.close()
+        if observer is not None:
+            observer.close()
     # Baca ulang checkpoint tersimpan dan agregasikan sebelum menetapkan COMPLETE.
     for ordinal, record in enumerate(run['records'], 1):
         _check_cancel(check_cancel)
         checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
         if checkpoint.exists():
-            record.update(read_detail_checkpoint(checkpoint, record, scope))
+            record.update(read_detail_checkpoint(checkpoint, record, scope, detail_source=detail_source))
     run['complete'] = bool(run.get('inventory_complete')) and not run['errors'] and all(r.get('capture_complete') for r in run['records'])
     return run

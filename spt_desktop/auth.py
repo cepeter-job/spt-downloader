@@ -1,4 +1,5 @@
 """Use only an inspected origin-bound sign-in form; challenges stay manual."""
+from spt_desktop import diagnostics
 import time
 import tempfile
 from pathlib import Path
@@ -169,6 +170,7 @@ def _wait_ready(page,deadline,check_cancel,emit=None):
     return False
 
 
+@diagnostics.traced('authentication')
 def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,manual_timeout=300):
     if browser not in ('msedge','chrome'):raise AuthBlocked('Pilih Microsoft Edge atau Chrome.')
     context=None
@@ -216,6 +218,7 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
 
 
 
+@diagnostics.traced('authentication')
 def check_saved_credentials(playwright,root,origin,account,browser,headless,check_cancel,timeout=20):
     """Verify one saved login, never an old session or a manually replaced password."""
     from coretax_browser import CaptureCancelled

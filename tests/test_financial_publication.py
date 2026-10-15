@@ -76,10 +76,14 @@ def test_cli_declares_bound_pdfs_separately_and_preserves_private_bytes(tmp_path
     assert run.get('output_attachments') == declarations(run), 'Bound PDF declarations are missing'
     saved = json.loads((source / 'run.json').read_text(encoding='utf-8'))
     assert saved['output_attachments'] == declarations(run)
-    assert set(run['output_files']) == {'resume.xlsx', 'SPT_Badan.xlsx'}
+    model_files = ['SPT_Badan_Januari - Desember 2025_Normal.xlsx',
+                   'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx']
+    assert set(run['output_files']) == {'resume.xlsx', *model_files}
     assert {relative: (source / relative).read_bytes() for relative in before} == before
-    for name in run['output_files']:
-        assert_audit_targets(source, name, before)
+    assert_audit_targets(source, 'resume.xlsx', before)
+    for name, record in zip(model_files, run['records']):
+        relative = record['attachments'][0]['relative_path']
+        assert_audit_targets(source, name, {relative: before[relative]})
     coretax.verify_outputs(run, source)
 
 
@@ -302,7 +306,7 @@ def test_old_pdf_overwrite_requires_independent_physical_declaration_binding(tmp
     final = output.publish_workbooks(run, source, downloads, 'synthetic-old-audit')
     assert all((final / item['relative_path']).is_file() for item in declarations(run)), (
         'The physical old PDF required by its Audit was not published')
-    path = final / 'SPT_Badan.xlsx'
+    path = final / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx'
     if format_name == 'legacy':
         from coretax_exporter import export_workbook
         export_workbook(run, path)

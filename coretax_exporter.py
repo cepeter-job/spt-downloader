@@ -14,6 +14,10 @@ import re
 import sys
 from urllib.parse import urlsplit
 from openpyxl import Workbook
+from coretax_pph21 import template_workbook, render_template_form
+from coretax_masa_templates import (RESOURCES as MASA_RESOURCES,
+                                    template_workbook as masa_template_workbook,
+                                    render_template_form as render_masa_template)
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.hyperlink import Hyperlink
@@ -141,8 +145,10 @@ def _validate_financial_attachments(record, scope, seen_paths):
             raise ValueError('Financial PDF completion, byte count, hash or label is invalid.')
         # This checks naming/scope, not authenticity: the publisher must still
         # lock the declared file and verify its actual bytes and digest.
+        # Keep old nested declarations readable; never rewrite source proof.
         if (not isinstance(path, str)
-                or not re.fullmatch(r'attachments/' + record_key + r'/[0-9a-f]{64}\.pdf', path)
+                or not (re.fullmatch(r'LK_' + record_key + r'_[0-9a-f]{64}\.pdf', path)
+                        or re.fullmatch(r'attachments/' + record_key + r'/[0-9a-f]{64}\.pdf', path))
                 or path.casefold() in seen_paths):
             raise ValueError('Financial PDF path is unsafe, repeated or belongs to another return.')
         seen_paths.add(path.casefold())
@@ -295,32 +301,70 @@ def record_forms(record):
     return list(groups.items())
 
 
-def record_sheet_titles(ordinal, record):
+def record_sheet_titles(ordinal, record, *, used=None, legacy=False):
+    used = set() if used is None else used
     result = []
     for index, (form, _) in enumerate(record_forms(record), 1):
         form = re.sub(r'[\[\]:*?/\\]', '-', form)
-        prefix = f'{ordinal:03d}.{index:02d} {amendment_label(record)} '
-        result.append((prefix + form)[:31])
+        if legacy:
+            # Exact historical names remain a valid physical proof, not a rename wildcard.
+            prefix = f'{ordinal:03d}.{index:02d} {amendment_label(record)} '
+            result.append((prefix + form)[:31])
+            continue
+        base = form[:31] or 'SPT'
+        title = base
+        number = 2
+        while title.casefold() in used:
+            suffix = f' ({number})'
+            title = base[:31 - len(suffix)] + suffix
+            number += 1
+        used.add(title.casefold())
+        result.append(title)
     return result
 
 
-def workbook_groups(run):
-    """Kelompokkan masa sumber literal; sanitasi nama berkas tidak menyatukan identitas."""
+def workbook_sheet_titles(records, *, reserved=(), legacy=False):
+    """One source-ordered namespace shared by writers, links and physical proof."""
+    used = {title.casefold() for title in reserved}
+    return [record_sheet_titles(ordinal, record, used=used, legacy=legacy)
+            for ordinal, record in enumerate(records, 1)]
+
+
+def workbook_groups(run, *, legacy=False):
+    """Pemisahan model memakai identitas literal, bukan label pembetulan turunan."""
     groups, identities = {}, {}
     periodic = {'PPh Pasal 21/26': '21', 'PPh Unifikasi': 'Unifikasi', 'PPN': 'PPN'}
     for record in run['records']:
         tax = record['meta'].get('Jenis Pajak')
         filename = tax_type_filename(tax)
         period = record['meta'].get('Masa Pajak', '')
-        identity = (tax, period) if tax in periodic else (tax,)
-        if tax in periodic:
-            component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', period).strip(' .')
-            if not component or len(component) > 120:
-                raise ValueError('Unsupported source period filename')
-            filename = f'SPT Masa {periodic[tax]}/{Path(filename).stem}_{component}.xlsx'
+        if legacy:
+            # Old physical proof stays readable; this branch never writes new exports.
+            identity = (tax, period) if tax in periodic else (tax,)
+            if tax in periodic:
+                component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', period).strip(' .')
+                if not component or len(component) > 120:
+                    raise ValueError('Unsupported source period filename')
+                filename = f'SPT Masa {periodic[tax]}/{Path(filename).stem}_{component}.xlsx'
+        else:
+            model = record['meta'].get('Model SPT', '')
+            identity = (tax, period, model)
+            components = []
+            for label, value in (('period', period), ('model', model)):
+                if not isinstance(value, str):
+                    raise ValueError(f'Unsupported source {label} filename')
+                component = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', value).strip(' .')
+                if not component or len(component) > 120:
+                    raise ValueError(f'Unsupported source {label} filename')
+                components.append(component)
+            filename = f'{Path(filename).stem}_{components[0]}_{components[1]}.xlsx'
+            if len(filename.encode('utf-16-le')) // 2 > 255:
+                raise ValueError('Unsupported source period/model filename length')
+            if tax in periodic:
+                filename = f'SPT Masa {periodic[tax]}/{filename}'
         folded = filename.casefold()
         if folded in identities and identities[folded] != identity:
-            raise ValueError('Tax type or period filename collision; no workbook was overwritten')
+            raise ValueError('Tax type, period or model filename collision; no workbook was overwritten')
         identities[folded] = identity
         groups.setdefault(filename, []).append(record)
     return groups
@@ -491,29 +535,52 @@ def read_workbook_proof(workbook):
         validate_export_run(proof)
         if workbook_proof(proof) != proof:
             raise ValueError('Workbook proof contains unsupported source metadata')
-        expected = [title for ordinal, record in enumerate(proof['records'], 1)
-                    for title in record_sheet_titles(ordinal, record)]
-        if (workbook.sheetnames != expected
+        expected = [title for titles in workbook_sheet_titles(proof['records']) for title in titles]
+        historical = [title for titles in workbook_sheet_titles(proof['records'], legacy=True)
+                      for title in titles]
+        if (workbook.sheetnames not in (expected, historical)
                 or any(sheet.sheet_state != 'visible' for sheet in workbook)):
             raise ValueError('Workbook form sheets differ from their proof')
-        workbook_groups(proof)
+        workbook_groups(proof, legacy=True)
         return proof
     except (ValueError, TypeError, KeyError, AttributeError) as error:
         raise ValueError('Workbook scope/PDF proof cannot be verified') from error
 
 
 def _export_form_workbook(run, path):
-    wb = Workbook()
-    wb.remove(wb.active)
+    title_plan = workbook_sheet_titles(run['records'])
+    taxes = {record['meta']['Jenis Pajak'] for record in run['records']}
+    tax = next(iter(taxes)) if len(taxes) == 1 else None
+    if tax == 'PPh Pasal 21/26':
+        wb, templates = template_workbook([title for titles in title_plan for title in titles])
+    elif tax in MASA_RESOURCES:
+        wb, templates = masa_template_workbook(tax, [title for titles in title_plan for title in titles])
+    else:
+        wb = Workbook()
+        wb.remove(wb.active)
+        templates = {}
     wb.properties.identifier = json.dumps(workbook_proof(run), ensure_ascii=False,
                                           sort_keys=True, allow_nan=False)
-    for ordinal, record in enumerate(run['records'], 1):
-        for form_index, (title, (_, sections)) in enumerate(
-                zip(record_sheet_titles(ordinal, record), record_forms(record)), 1):
-            detail = wb.create_sheet(title)
-            setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
-            detail.oddFooter.center.text = None
-            render_form(detail, sections, ordinal, form_index, start_row=1)
+    for ordinal, (record, titles) in enumerate(zip(run['records'], title_plan), 1):
+        for form_index, (title, (form, sections)) in enumerate(
+                zip(titles, record_forms(record)), 1):
+            template = templates.get(form.casefold())
+            if template is not None:
+                detail = wb.copy_worksheet(template)
+                detail.title = title
+                if tax == 'PPh Pasal 21/26':
+                    render_template_form(detail, form, sections)
+                else:
+                    render_masa_template(detail, tax, form, sections)
+            else:
+                detail = wb.create_sheet(title)
+                setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
+                detail.oddFooter.center.text = None
+                render_form(detail, sections, ordinal, form_index, start_row=1)
+    for template in templates.values():
+        wb.remove(template)
+    if templates:
+        wb.active = 0
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
@@ -596,12 +663,13 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                         cell.hyperlink = value
                         cell.font = Font(color=BLUE, underline='single')
                 ar += 1
+    title_groups = workbook_sheet_titles(records, reserved=wb.sheetnames) if include_details else []
     for ordinal, record in enumerate(records, 1):
         meta = record['meta']
         url = record.get('detail_url', '')
         if include_details:
             title_label, scope_label = detail_labels(run, record)
-            titles = record_sheet_titles(ordinal, record)
+            titles = title_groups[ordinal - 1]
             for form_index, (sheet_title, (_, sections)) in enumerate(zip(titles, record_forms(record)), 1):
                 detail = wb.create_sheet(sheet_title)
                 setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A6')
@@ -657,9 +725,9 @@ def export_split_workbooks(run, folder):
     files = {'resume.xlsx': folder / 'resume.xlsx'}
     ordinals = {id(record): index for index, record in enumerate(run['records'], 1)}
     for filename, records in groups.items():
-        for local_ordinal, record in enumerate(records, 1):
+        for record, titles in zip(records, workbook_sheet_titles(records)):
             global_ordinal = ordinals[id(record)]
-            targets[global_ordinal] = (filename, detail_sheet_title(local_ordinal, record))
+            targets[global_ordinal] = (filename, titles[0])
         group_run = {**run, 'records': records,
             'scope_description': type_scope_description(run, records[0]['meta']['Jenis Pajak'])}
         path = folder / filename

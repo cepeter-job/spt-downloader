@@ -28,21 +28,23 @@ def test_save_output_separates_resume_and_period_files(tmp_path):
     run = fixture_run()
     path = coretax.save_output(run, tmp_path)
     assert path.name == 'resume.xlsx', 'Separate resume workbook not implemented'
-    assert {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob('*.xlsx')} == {'resume.xlsx', 'SPT_Badan.xlsx',
-        'SPT Masa 21/SPT_21_Januari 2025.xlsx', 'SPT Masa 21/SPT_21_Februari 2025.xlsx',
-        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx'}
+    assert {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob('*.xlsx')} == {'resume.xlsx', 'SPT_Badan_Januari - Desember 2025_Normal.xlsx',
+        'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx',
+        'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx', 'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx',
+        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx'}
     resume = load_workbook(path)
     assert resume.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit'], 'Detailed SPT must not be embedded in resume.xlsx'
     assert resume['Daftar SPT'].max_row == 4 + len(run['records'])
     assert resume['Ringkasan']['B4'].value == run['npwp']
     assert resume['Ringkasan']['B4'].data_type == 's'
-    expected = {'SPT_Badan.xlsx': run['records'][:2],
-        'SPT Masa 21/SPT_21_Januari 2025.xlsx': run['records'][2:3],
-        'SPT Masa 21/SPT_21_Februari 2025.xlsx': run['records'][3:4],
-        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx': run['records'][4:]}
+    expected = {'SPT_Badan_Januari - Desember 2025_Normal.xlsx': run['records'][:1],
+        'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx': run['records'][1:2],
+        'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx': run['records'][2:3],
+        'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx': run['records'][3:4],
+        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx': run['records'][4:]}
     for filename, records in expected.items():
         wb = load_workbook(tmp_path / filename)
-        assert len(wb.sheetnames) == len(records), 'Periods/amendments were split into separate files or lost'
+        assert len(wb.sheetnames) == len(records), 'Observed forms of this selected model were lost or combined'
         assert {'Ringkasan', 'Daftar SPT', 'Audit'}.isdisjoint(wb.sheetnames)
         proof = json.loads(wb.properties.identifier)
         assert proof['npwp'] == run['npwp'] and proof['year'] == run['year']
@@ -62,14 +64,21 @@ def test_resume_links_to_correct_external_detail_without_generic_backlink(tmp_pa
     assert (tmp_path / 'resume.xlsx').is_file(), 'Separate resume workbook missing'
     resume = load_workbook(tmp_path / 'resume.xlsx')
     links = [resume['Daftar SPT'].cell(5+i, 1).hyperlink for i in range(len(run['records']))]
-    assert [link.target for link in links] == ['SPT_Badan.xlsx', 'SPT_Badan.xlsx',
-        'SPT Masa 21/SPT_21_Januari 2025.xlsx', 'SPT Masa 21/SPT_21_Februari 2025.xlsx',
-        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025.xlsx']
+    assert [link.target for link in links] == ['SPT_Badan_Januari - Desember 2025_Normal.xlsx',
+        'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx',
+        'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx', 'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx',
+        'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx']
     for link in links:
         target = load_workbook(tmp_path / link.target)
         sheet_name = link.location.rsplit('!', 1)[0].strip("'")
         assert sheet_name in target.sheetnames
-        assert target[sheet_name]['A1'].value == 'Induk'
+        caption = 'Induk'
+        for directory, expected in [('SPT Masa 21/', 'Induk SPT PPh Pasal 21/26'),
+                                    ('SPT Masa PPN/', 'Induk SPT PPN'),
+                                    ('SPT Masa Unifikasi/', 'Induk SPT PPh Unifikasi')]:
+            if link.target.startswith(directory):
+                caption = expected
+        assert target[sheet_name]['A1'].value == caption
         assert not any(cell.hyperlink and 'resume.xlsx' in (cell.hyperlink.target or '')
                        for row in target[sheet_name] for cell in row)
         target.close()
@@ -94,6 +103,7 @@ def test_split_filename_collision_is_rejected_before_writing(tmp_path):
     run['records'] = run['records'][:2]
     run['records'][0]['meta']['Jenis Pajak'] = 'A/B'
     run['records'][1]['meta']['Jenis Pajak'] = 'A:B'
+    run['records'][1]['meta']['Model SPT'] = run['records'][0]['meta']['Model SPT']
     with pytest.raises(ValueError, match='filename collision'):
         coretax.save_output(run, tmp_path)
     assert not list(tmp_path.glob('*.xlsx')), 'A colliding type must not overwrite another type file'

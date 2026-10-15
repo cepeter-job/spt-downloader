@@ -62,7 +62,7 @@ def test_selected_capture_never_opens_unconfirmed_returns_and_can_complete_subse
     assert state['browser_closed'] and state['driver_closed']
     folder = Path(events[-1]['output'])
     assert {path.relative_to(folder).as_posix() for path in folder.rglob('*.xlsx')} == {
-        'resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025.xlsx'}
+        'resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'}
     assert len(inventory['records']) == 5 and not inventory['complete']
     from openpyxl import load_workbook
     workbook = load_workbook(folder / 'resume.xlsx')
@@ -106,7 +106,7 @@ def test_worker_approved_overwrite_preserves_unselected_workbooks(tmp_path, monk
     run = fixture_run()
     worker.coretax.save_output(run, tmp_path / 'old-source')
     final = output.publish_workbooks(run, tmp_path / 'old-source', tmp_path / 'Downloads', 'old-job')
-    february = final / 'SPT Masa 21' / 'SPT_21_Februari 2025.xlsx'
+    february = final / 'SPT Masa 21' / 'SPT_21_Februari 2025_Normal.xlsx'
     before = february.read_bytes()
     marker = 'SYNTHETIC APPROVED JANUARY UPDATE'
     status, events, state, _ = selected_job(tmp_path, monkeypatch, ['21-january'],
@@ -117,7 +117,7 @@ def test_worker_approved_overwrite_preserves_unselected_workbooks(tmp_path, monk
     assert Path(events[-1]['output']) == final
     assert february.read_bytes() == before
     from openpyxl import load_workbook
-    workbook = load_workbook(final / 'SPT Masa 21' / 'SPT_21_Januari 2025.xlsx')
+    workbook = load_workbook(final / 'SPT Masa 21' / 'SPT_21_Januari 2025_Normal.xlsx')
     try:
         assert any(cell.value == marker for sheet in workbook for row in sheet for cell in row)
     finally:

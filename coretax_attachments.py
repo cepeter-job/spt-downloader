@@ -1,4 +1,5 @@
 """Read existing corporate financial PDFs without remote document actions."""
+from spt_desktop import diagnostics
 import base64
 import hashlib
 from pathlib import Path
@@ -154,6 +155,7 @@ def _financial_url(page_url, control):
     return url
 
 
+@diagnostics.traced('pdf')
 def download_financial_attachments(page, record, folder, check_cancel=None):
     """Return byte/hash metadata for observed PDFs; never swallow Stop.
 
@@ -175,6 +177,7 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
         controls = [item for item in page.evaluate(_SCAN) if item['label'].strip() in _LABELS]
         _cancel(check_cancel)
         if not controls:
+            diagnostics.record('pdf.partial', phase='pdf', level='WARNING')
             return [_partial('', 'No supported financial PDF control was observed')]
         for control in controls:
             _cancel(check_cancel)
@@ -186,14 +189,11 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
                 _verify_page(page, record)
                 _cancel(check_cancel)
                 record_key = hashlib.sha256(record['record_id'].encode('utf-8')).hexdigest()[:32]
-                directory = folder / 'attachments'
-                directory.mkdir(exist_ok=True)
-                _include_folder(guard, directory)
-                directory = directory / record_key
-                directory.mkdir(exist_ok=True)
-                _include_folder(guard, directory)
-                name = hashlib.sha256(url.encode('utf-8')).hexdigest() + '.pdf'
-                target = directory / name
+                # Bind the flat filename to the return as well as the observed
+                # URL: identical hrefs on distinct SPTs must never share a file.
+                url_key = hashlib.sha256(url.encode('utf-8')).hexdigest()
+                name = f'LK_{record_key}_{url_key}.pdf'
+                target = folder / name
                 if target.exists():
                     # Retry PARTIAL boleh memakai byte identik dari GET terbaru,
                     # tetapi tidak boleh mengganti file lama atau mengikuti symlink.
@@ -233,7 +233,8 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
                 results.append({'label': label, 'relative_path': target.relative_to(folder).as_posix(),
                                 'status': 'COMPLETE', 'bytes': len(data),
                                 'hash': hashlib.sha256(data).hexdigest()})
-            except Exception:
+            except Exception as error:
+                diagnostics.record('pdf.partial', phase='pdf', level='WARNING', error=error)
                 _cancel(check_cancel)
                 results.append(_partial(label, 'Observed financial PDF could not be verified or saved'))
     _cancel(check_cancel)
