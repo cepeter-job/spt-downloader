@@ -35,15 +35,68 @@ def _write(sheet, row, column, value):
         cell.data_type = 's'
 
 
-def _mapping(table, labels):
+def _header_key(value):
+    # DOM text can include a date-format hint or a tooltip, neither is a column.
+    # Raw source headers are retained; only the matching key is transformed.
+    text = re.split(r'\bTooltip\s*:', str(value or ''), maxsplit=1, flags=re.I)[0]
+    text = re.sub(r'\s*\(dd-mm-yyyy\)\s*$', '', text, flags=re.I)
+    return _key(text)
+
+
+def _mapping(table, labels, aliases=None):
     headers = table.get('headers', [])
-    keys = [_key(value) for value in headers]
-    target = {_key(value): index + 1 for index, value in enumerate(labels) if value is not None}
+    aliases = {_header_key(k): _header_key(v) for k, v in (aliases or {}).items()}
+    keys = [aliases.get(_header_key(value), _header_key(value)) for value in headers]
+    target = {_header_key(value): index + 1 for index, value in enumerate(labels) if value is not None}
     if (not keys or any(not value for value in keys) or len(set(keys)) != len(keys)
             or any(value not in target for value in keys)
             or any(len(row) > len(headers) for row in table.get('rows', []))):
         return None
     return [target[value] for value in keys]
+
+
+def _body_rows(table):
+    """Do not turn footer totals or collapsed physical cells into detail rows."""
+    rows = table.get('rows', [])
+    count = table.get('body_row_count', len(rows))
+    if type(count) is not int or not 0 <= count <= len(rows):
+        return [], rows
+    width = len(table.get('headers', []))
+    body, pending = [], []
+    for index, values in enumerate(rows):
+        if index < count and len(values) == width and any(str(v or '').strip() for v in values):
+            body.append(values)
+        else:
+            pending.append(values)
+    return body, pending
+
+
+def _table_projection(table, labels, aliases=None, extra_headers=()):
+    """Project explicitly supported DOM-only columns, retaining the original raw table."""
+    headers = table.get('headers', [])
+    target = {_header_key(v) for v in labels if v is not None}
+    extras = {_header_key(v) for v in extra_headers} - target
+    indices = [i for i, value in enumerate(headers) if _header_key(value) not in extras]
+    projected = {**table, 'headers': [headers[i] for i in indices],
+                 'rows': [[values[i] for i in indices if i < len(values)] for values in table.get('rows', [])]}
+    # Repeated currency columns occur in separate source header groups. Collapse
+    # only when every complete row proves equality; otherwise keep the raw table.
+    kept, seen = [], {}
+    for i, header in enumerate(projected['headers']):
+        key = _header_key(header)
+        if key in seen:
+            other = seen[key]
+            if key != _key('Mata Uang') or any(len(values) != len(projected['headers']) or values[i] != values[other]
+                                              for values in projected['rows']):
+                return table, None, False
+        else:
+            kept.append(i)
+            seen[key] = i
+    if len(kept) != len(projected['headers']):
+        projected = {**projected, 'headers': [projected['headers'][i] for i in kept],
+                     'rows': [[values[i] for i in kept] for values in projected['rows']]}
+    changed = projected['headers'] != headers
+    return projected, _mapping(projected, labels, aliases), changed
 
 
 def _copy_row_style(sheet, source_row, target_row, width):
@@ -79,9 +132,13 @@ def _grow(sheet, boundary, count, style_row):
 
 
 def _raw_evidence(sheet, sections, fields, tables, style_row):
+    unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
+    report = {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
+              'unmapped_tables': len(unresolved),
+              'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved)}
     texts = [section.get('text', '') for section in sections if section.get('text')]
     if not fields and not tables and not texts:
-        return
+        return report
     row = sheet.max_row + 2
     original_width = sheet.max_column
     def append(values):
@@ -113,3 +170,4 @@ def _raw_evidence(sheet, sections, fields, tables, style_row):
         append(['Teks halaman / konteks sumber'])
         for start in range(0, len(text), 30000):
             append([text[start:start + 30000]])
+    return report

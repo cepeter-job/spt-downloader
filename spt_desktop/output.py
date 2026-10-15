@@ -719,6 +719,9 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                 _cancel(check_cancel)
                 _check_directories(directories)
             if snapshot is not None:
+                _revalidate(run, downloads, snapshot)
+                coretax.write_folder_resume(run, snapshot['target'], staging / 'resume.xlsx')
+                _revalidate(run, downloads, snapshot)
                 # Private copies may be on another drive; actual file moves never are.
                 recovery = Path(tempfile.mkdtemp(prefix='.spt-publish-', dir=source.parent))
                 recovery_identity = _identity(recovery.lstat())

@@ -17,7 +17,7 @@ from openpyxl import Workbook
 from coretax_pph21 import template_workbook, render_template_form
 from coretax_masa_templates import (RESOURCES as MASA_RESOURCES,
                                     template_workbook as masa_template_workbook,
-                                    render_template_form as render_masa_template)
+                                    render_template_form as render_masa_template, canonical_form)
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.hyperlink import Hyperlink
@@ -548,6 +548,7 @@ def read_workbook_proof(workbook):
 
 
 def _export_form_workbook(run, path):
+    reports = []
     title_plan = workbook_sheet_titles(run['records'])
     taxes = {record['meta']['Jenis Pajak'] for record in run['records']}
     tax = next(iter(taxes)) if len(taxes) == 1 else None
@@ -564,19 +565,24 @@ def _export_form_workbook(run, path):
     for ordinal, (record, titles) in enumerate(zip(run['records'], title_plan), 1):
         for form_index, (title, (form, sections)) in enumerate(
                 zip(titles, record_forms(record)), 1):
-            template = templates.get(form.casefold())
+            template = templates.get(canonical_form(tax, form))
             if template is not None:
                 detail = wb.copy_worksheet(template)
                 detail.title = title
                 if tax == 'PPh Pasal 21/26':
-                    render_template_form(detail, form, sections)
+                    report = render_template_form(detail, form, sections)
                 else:
-                    render_masa_template(detail, tax, form, sections)
+                    report = render_masa_template(detail, tax, form, sections)
+                reports.append({'file': Path(path).name, 'form': form, **report})
             else:
                 detail = wb.create_sheet(title)
                 setup_sheet(detail, [36, 44, 36, 28, 28, 28, 28, 28, 28, 28, 28, 28], 'A3')
                 detail.oddFooter.center.text = None
                 render_form(detail, sections, ordinal, form_index, start_row=1)
+                if tax == 'PPh Pasal 21/26' or tax in MASA_RESOURCES:
+                    reports.append({'file': Path(path).name, 'form': form, 'complete': False,
+                                    'unmapped_fields': sum(len(s.get('fields', [])) for s in sections),
+                                    'unmapped_tables': sum(len(s.get('tables', [])) for s in sections)})
     for template in templates.values():
         wb.remove(template)
     if templates:
@@ -584,6 +590,8 @@ def _export_form_workbook(run, path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
+    wb.close()
+    return reports
 
 
 def export_workbook(run, path, *, include_details=True, detail_targets=None, resume_file=None,
@@ -592,8 +600,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
     if not include_administration:
         if not include_details or not run['records']:
             raise ValueError('A forms-only workbook requires selected return details')
-        _export_form_workbook(run, path)
-        return
+        return _export_form_workbook(run, path)
     wb = Workbook()
     summary = wb.active
     summary.title = 'Ringkasan'
@@ -650,6 +657,18 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
         put(audit, ar, 5, 'ERROR / PARTIAL')
         put(audit, ar, 6, error.get('message', str(error)))
         ar += 1
+    mapping_reports = run.get('template_mapping', [])
+    if mapping_reports:
+        put(summary, 23, 1, 'Pemetaan template pengambilan terbaru')
+        put(summary, 23, 2, 'COMPLETE' if all(r['complete'] for r in mapping_reports) else 'PARTIAL')
+        for report in mapping_reports:
+            values = ['Pemetaan template', report.get('unmapped_fields', 0),
+                      report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),
+                      'COMPLETE' if report['complete'] else 'PARTIAL',
+                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat bukti sumber di bawah form."]
+            for col, value in enumerate(values, 1):
+                put(audit, ar, col, value)
+            ar += 1
     if any(record.get('attachments') for record in records):
         header(audit, ar, ['ID SPT', 'Lampiran PDF', 'Status', 'Byte', 'SHA-256', 'Berkas relatif'])
         ar += 1
@@ -722,6 +741,7 @@ def export_split_workbooks(run, folder):
     for records in groups.values():
         validate_excel_value(type_scope_description(run, records[0]['meta']['Jenis Pajak']), 'type scope description')
     targets = {}
+    reports = []
     files = {'resume.xlsx': folder / 'resume.xlsx'}
     ordinals = {id(record): index for index, record in enumerate(run['records'], 1)}
     for filename, records in groups.items():
@@ -731,7 +751,8 @@ def export_split_workbooks(run, folder):
         group_run = {**run, 'records': records,
             'scope_description': type_scope_description(run, records[0]['meta']['Jenis Pajak'])}
         path = folder / filename
-        export_workbook(group_run, path, include_administration=False)
+        reports.extend(export_workbook(group_run, path, include_administration=False))
         files[filename] = path
+    run['template_mapping'] = reports
     export_workbook(run, files['resume.xlsx'], include_details=False, detail_targets=targets)
     return files

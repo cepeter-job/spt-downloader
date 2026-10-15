@@ -19,7 +19,8 @@ from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
 from coretax_exporter import (validate_scope, validate_export_run, export_split_workbooks,
                              workbook_groups, detail_sheet_title, record_sheet_titles,
-                             workbook_proof, read_workbook_proof, workbook_sheet_titles)
+                             workbook_proof, read_workbook_proof, workbook_sheet_titles,
+                             export_workbook)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 
@@ -93,6 +94,42 @@ def workbook_files(folder, exclude=None):
     return found
 
 
+def folder_resume_run(run, folder):
+    """Extend the index from verified retained form proofs, never inferred records."""
+    selected = set(workbook_groups(run)) | {'resume.xlsx'}
+    retained = sorted(workbook_files(folder) - selected)
+    if not retained:
+        return run
+    combined = {**run, 'records': list(run['records']), 'complete': run['complete'],
+                'scope_description': 'Indeks seluruh workbook terverifikasi dalam folder; mencakup hasil pengambilan sebelumnya.'}
+    for name in retained:
+        with output_path(folder, name).open('rb') as stream:
+            wb = load_workbook(stream, read_only=True, data_only=False)
+            try:
+                proof = read_workbook_proof(wb)
+                if proof is None or any(proof[k] != run[k] for k in ('npwp', 'year', 'year_basis')):
+                    raise ValueError('Retained workbook scope cannot be verified for global index')
+                if set(workbook_groups(proof)) != {name}:
+                    raise ValueError('Retained workbook filename does not match its scope')
+                combined['records'].extend(proof['records'])
+                combined['complete'] = combined['complete'] and proof['complete']
+            finally:
+                wb.close()
+    validate_export_run(combined)
+    return combined
+
+
+def write_folder_resume(run, existing, destination):
+    combined = folder_resume_run(run, existing)
+    targets = {}
+    ordinals = {id(record): index for index, record in enumerate(combined['records'], 1)}
+    for filename, records in workbook_groups(combined).items():
+        for record, titles in zip(records, workbook_sheet_titles(records)):
+            targets[ordinals[id(record)]] = (filename, titles[0])
+    export_workbook(combined, destination, include_details=False, detail_targets=targets)
+    verify_workbook(destination, combined, include_details=False)
+
+
 def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     """Verifikasi set Excel dan tautan pembetulan, termasuk saat Python memakai -O.
 
@@ -116,11 +153,19 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         raise ValueError('Workbook file set differs from the selected scope')
     if any((folder / name).is_symlink() or not (folder / name).is_file() for name in expected):
         raise ValueError('Invalid source workbook path')
-    verify_workbook(folder / 'resume.xlsx', run, include_details=False)
+    index_run = folder_resume_run(run, folder) if allow_extra else run
+    verify_workbook(folder / 'resume.xlsx', index_run, include_details=False)
     sheet_names = {
         filename: verify_workbook(folder / filename, {**run, 'records': records}, include_administration=False)
         for filename, records in grouped.items()
     }
+    grouped = workbook_groups(index_run)
+    for filename in grouped.keys() - sheet_names.keys():
+        wb = load_workbook(output_path(folder, filename), read_only=True)
+        try:
+            sheet_names[filename] = set(wb.sheetnames)
+        finally:
+            wb.close()
     first_titles = {}
     for filename, records in grouped.items():
         titles = workbook_sheet_titles(records)
@@ -132,7 +177,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
     resume = load_workbook(folder / 'resume.xlsx')
     try:
-        for ordinal, record in enumerate(run['records'], 1):
+        for ordinal, record in enumerate(index_run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
             expected_file = next(name for name, records in grouped.items() if any(r is record for r in records))
             if not link or link.target != expected_file or not isinstance(link.location, str):
@@ -263,6 +308,7 @@ def save_output(run, folder):
             retain_recovery = False
             run['output_files'] = list(files)
             run['output_attachments'] = current['output_attachments']
+            run['template_mapping'] = current.get('template_mapping', [])
     finally:
         if not retain_recovery:
             shutil.rmtree(staging)
