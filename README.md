@@ -22,6 +22,10 @@ Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan adminis
 
 **Stop** meminta pembatalan pekerjaan; checkpoint yang tersedia tetap disimpan sebagai data belum lengkap. Aplikasi menutup proses worker/browser yang dimilikinya; worker yang tidak berhenti diterminasi setelah 15 detik. Menutup jendela utama saat pekerjaan berjalan meminta konfirmasi. Permintaan atau jawaban lama tidak melanjutkan pekerjaan yang sudah dihentikan. File SPT/PDF hasil terdahulu tidak diganti tanpa persetujuan; pembaruan resume otomatis tetap melewati pemeriksaan scope dan race.
 
+### Log diagnostik untuk bugfixing
+
+Buka **Pengaturan → Buka folder log** untuk melihat diagnostik lokal berotasi. Log mencatat tahap, durasi, status, dan lokasi error tanpa menyalin data SPT/kredensial atau raw stdout/stderr. Lihat [cara menggunakan log, level DEBUG, retensi, dan batas privasi](docs/diagnostik.md). Logging bukan bukti COMPLETE dan tidak mengunggah data otomatis.
+
 ### Cek Kredensial
 
 Simpan origin, akun, dan password pada **Pengaturan**, kemudian klik **Cek Kredensial**. Pemeriksaan ini tidak memerlukan NPWP atau tahun, memakai profil browser sementara yang baru, dan mencoba kredensial tersimpan satu kali. Pemeriksaan tidak memulai pengambilan SPT atau ekspor. Tombol dinonaktifkan selama ada perubahan pengaturan yang belum disimpan; **Simpan** mempertahankan dialog agar pemeriksaan bisa segera dijalankan.

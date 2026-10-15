@@ -10,6 +10,7 @@ import tempfile
 import tkinter as tk
 from tkinter import messagebox
 from spt_desktop.app import App
+from spt_desktop import diagnostics
 from spt_desktop.paths import workspace_root,downloads_folder
 from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
 from spt_desktop.windows import InstanceLock
@@ -53,7 +54,7 @@ def self_test(report=None):
             assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels)
             widgets=list(descendants(dialog))
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
-            assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup'}<=labels
+            assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup','Buka folder log'}<=labels
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
             background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
             assert len(background)==1
@@ -77,7 +78,8 @@ def self_test(report=None):
             app.on_event({'job_id':app.controller.job_id,'type':'progress','stage':'details',
                           'percent':42,'message':'Self-test synthetic progress'})
             assert app.percent.get()=='42%'
-            data={'ok':True,'python':sys.version.split()[0],'bits':struct.calcsize('P')*8,
+            diagnostic_report=diagnostics.self_test(Path(folder)/'diagnostic-test')
+            data={'diagnostics':diagnostic_report,'ok':True,'python':sys.version.split()[0],'bits':struct.calcsize('P')*8,
                   'python_implementation':platform.python_implementation(),
                   'free_threaded':bool(sysconfig.get_config_var('Py_GIL_DISABLED')),
                   'tcl':str(root.tk.call('info','patchlevel')),
@@ -107,16 +109,23 @@ def main(argv=None):
     parser.add_argument('--self-test',action='store_true');parser.add_argument('--report',type=Path)
     args=parser.parse_args(argv)
     if args.self_test:return self_test(args.report)
+    with diagnostics.session(diagnostics.default_root(), 'gui'):
+        return _run_gui()
+
+
+def _run_gui():
     root=tk.Tk();root.withdraw();app=None
     try:
         workspace=workspace_root()
         with InstanceLock(workspace):
             app=App(root,workspace);root.deiconify();root.mainloop()
         return 0
-    except RuntimeError:
+    except RuntimeError as error:
+        diagnostics.record('gui.failed', error=error, level='ERROR', phase='startup')
         messagebox.showerror('SPT Downloader','Aplikasi sudah berjalan. Gunakan jendela yang sudah terbuka.',parent=root)
         return 1
-    except Exception:
+    except Exception as error:
+        diagnostics.record('gui.failed', error=error, level='ERROR', phase='startup')
         messagebox.showerror('SPT Downloader','Aplikasi tidak dapat dibuka. Periksa izin LocalAppData dan kelengkapan executable.',parent=root)
         return 1
     finally:

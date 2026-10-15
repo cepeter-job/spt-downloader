@@ -13,6 +13,7 @@ Panduan ini ditujukan bagi kontributor SPT Downloader. Untuk menjalankan aplikas
 | Memperbarui dependensi atau produksi Python 3.14 | [Kebijakan Python dan kompatibilitas](python-314.md) |
 | Menjalankan pemeriksaan Coretax aktual dengan izin yang sesuai | [Penerimaan manual](penerimaan-manual.md) |
 | Menangani kegagalan setup, browser, output, atau CI | [Pemecahan masalah](pemecahan-masalah.md) |
+| Menelusuri bug dari log lokal tanpa membagikan data pajak | [Diagnostik dan pelaporan bug](diagnostik.md) |
 | Menelusuri alasan perbaikan keamanan sebelumnya | [Audit 12 Oktober 2026](audit-2026-10-12.md) |
 
 Urutan yang disarankan untuk kontributor baru: setup dan tes portable, arsitektur area yang akan diubah, tes Windows yang relevan, kemudian aturan PR/CI. Jangan mencoba akun nyata untuk membuat tes otomatis lulus.

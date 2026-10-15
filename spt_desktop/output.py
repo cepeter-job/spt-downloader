@@ -2,6 +2,7 @@
 from contextlib import contextmanager, ExitStack
 from dataclasses import dataclass
 from datetime import datetime
+from spt_desktop import diagnostics
 import hashlib
 import json
 import os
@@ -555,6 +556,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
         coretax.verify_outputs(run, target, allow_extra=True)
         _cancel(check_cancel)
     except BaseException as failure:
+        diagnostics.record('publish.rollback', phase='rollback', level='WARNING', error=failure)
         # Deny-delete PDF readers must close before the native rollback moves.
         pdf_locks.close()
         errors = _rollback(entries, guard, directories)
@@ -575,6 +577,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
     return target
 
 
+@diagnostics.traced('publish')
 def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                       overwrite=False, expected_outputs=None):
     """Publish a new export, or replace only selected files with explicit consent."""
@@ -682,6 +685,7 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                         _cancel(check_cancel)
                 return final
             except BaseException as failure:
+                diagnostics.record('publish.rollback', phase='rollback', level='WARNING', error=failure)
                 if (attachments and final.exists()
                         and _identity(final.lstat()) == staging_identity):
                     retain_staging = True

@@ -1,4 +1,7 @@
 """Count-based progress never certifies a partial export as complete."""
+from . import diagnostics
+
+
 class Progress:
     def __init__(self,job_id,emit):
         self.job_id,self.emit = job_id,emit
@@ -9,6 +12,8 @@ class Progress:
         if self.terminal:
             raise RuntimeError('Job already finished')
         self.percent = max(self.percent,min(99,int(percent)))
+        diagnostics.record('progress', level='DEBUG', job_id=self.job_id, stage=stage,
+                           percent=self.percent, **{k:v for k,v in values.items() if k in diagnostics.COUNTERS})
         self.emit({'job_id':self.job_id,'type':'progress','stage':stage,
                    'percent':self.percent,'message':message,**values})
 
@@ -42,6 +47,7 @@ class Progress:
         if complete and not output: raise ValueError('COMPLETE requires verified output')
         self.terminal = True
         status = status or ('COMPLETE' if complete else 'PARTIAL')
+        diagnostics.record('operation.finished', job_id=self.job_id, status=status, stage='finished')
         self.emit({'job_id':self.job_id,'type':'terminal','stage':'finished',
                    'percent':100 if complete else min(self.percent,99),
                    'status':status,'output':str(output) if output else None,

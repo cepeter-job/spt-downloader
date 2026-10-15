@@ -3,6 +3,7 @@
 Modul ini tidak memasukkan password, mengambil token, atau menjalankan aksi
 penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
 """
+from spt_desktop import diagnostics
 import time
 import re
 import json
@@ -186,6 +187,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     return result
 
 
+@diagnostics.traced('detail')
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
     _check_cancel(check_cancel)
@@ -229,6 +231,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if not captured['complete']:
                     errors.append({'object': name, 'message': captured['warning']})
             except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
                 errors.append({'object': f'{name}/table {i+1}', 'message': str(exc).split('\n')[0]})
         sections.append(section)
         # Another form hides Induk; read its inspected href before traversal advances.
@@ -279,6 +282,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
         else:
             capture_panel(root, 'Halaman SPT')
     except Exception as exc:
+        diagnostics.record('capture.partial', level='WARNING', error=exc)
         errors.append({'object': 'SPT detail', 'message': str(exc).split('\n')[0]})
     if financial_required and not financial_attempted:
         attachments.append({'label': 'Laporan Keuangan', 'relative_path': None,
@@ -376,6 +380,7 @@ class ListObserver:
         self.latest = None
 
 
+@diagnostics.traced('inventory')
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
     """Temukan NPWP persis, simpan batch daftar, lalu rekonsiliasi inventaris."""
     _check_cancel(check_cancel)
@@ -503,6 +508,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 entry['result'] = 'RECONCILED'
                 container.dispose()
             except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
                 errors.append({'object': label, 'message': str(exc).split('\n')[0]})
                 print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
             (folder / ('inventory-' + str(len(audit)) + '.json')).write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -578,6 +584,7 @@ def read_detail_checkpoint(path, record, scope):
     return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments') if field in saved}
 
 
+@diagnostics.traced('details')
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None):
     """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
     _check_cancel(check_cancel)
@@ -600,6 +607,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                 # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
                 needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
                 if saved.get('capture_complete') and (not needs_financial or saved.get('attachments')):
+                    diagnostics.record('checkpoint.reused', phase='details')
                     record.update(saved)
                     print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
                     if on_progress:
@@ -674,6 +682,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     _check_cancel(check_cancel)
                     run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
             except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
                 active_group = None
                 record['capture_complete'] = False
                 run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})

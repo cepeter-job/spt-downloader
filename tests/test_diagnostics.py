@@ -349,7 +349,7 @@ def test_close_returns_while_sink_is_stalled(tmp_path, monkeypatch):
 @pytest.mark.parametrize('mode', ['INFO', 'OFF', 'BROKEN'])
 def test_worker_protocol_stdout_is_identical_with_logs_off_on_or_failed(tmp_path, mode):
     diagnostics()
-    code = """import io,json,sys
+    code = r"""import io,json,sys
 from pathlib import Path
 from spt_desktop import worker,diagnostics
 if sys.argv[2]=='BROKEN':
@@ -388,3 +388,72 @@ def test_source_selftest_really_exercises_private_logging(tmp_path):
     assert self_test(target) == 0
     data = json.loads(target.read_text())
     assert data['diagnostics'] == {'schema': 1, 'safe_logging': True}
+
+
+@pytest.mark.parametrize('level', ['INFO', 'OFF'])
+def test_root_lookup_failure_cannot_prevent_cli_execution(tmp_path, monkeypatch, level):
+    d = diagnostics()
+    import coretax
+    monkeypatch.setenv('SPT_LOG_LEVEL', level)
+    monkeypatch.delenv('SPT_LOG_ROOT', raising=False)
+    monkeypatch.setattr(d.sys, 'platform', 'linux')
+    def unavailable_home(cls):
+        raise RuntimeError('SYNTHETIC USER HOME UNAVAILABLE')
+    monkeypatch.setattr(Path, 'home', classmethod(unavailable_home))
+    monkeypatch.setattr(coretax, '_main', lambda argv: 42)
+    assert coretax.main([]) == 42
+
+
+def test_simultaneous_first_sessions_both_survive_directory_creation_race(tmp_path, monkeypatch):
+    d = diagnostics()
+    barrier = threading.Barrier(2)
+    mkdir = Path.mkdir
+    def concurrent_creation(path, *args, **kwargs):
+        if path == tmp_path / 'logs':
+            barrier.wait(timeout=3)
+        return mkdir(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'mkdir', concurrent_creation)
+    first, second = d.DiagnosticLog(tmp_path, 'gui'), d.DiagnosticLog(tmp_path, 'worker')
+    try:
+        first.record('operation.started'); second.record('operation.started')
+        assert first.flush() and second.flush()
+    finally:
+        first.close(); second.close()
+    assert len({r['session_id'] for r in records(tmp_path)}) == 2
+
+
+def test_crashed_sessions_without_segments_do_not_leave_unbounded_leases(tmp_path):
+    d = diagnostics()
+    folder = tmp_path / 'logs'; folder.mkdir()
+    stale = [folder / ('diag-cli-' + format(i, '032x') + '.active') for i in range(5)]
+    for path in stale:
+        path.touch()
+    note = folder / 'unrelated.active'; note.write_text('PRESERVE')
+    with d.DiagnosticLog(tmp_path, 'gui') as log:
+        log.record('operation.started'); assert log.flush()
+    assert all(not path.exists() for path in stale)
+    assert note.read_text() == 'PRESERVE'
+
+
+@pytest.mark.parametrize('mode', ['INFO', 'OFF', 'BROKEN'])
+def test_cli_offline_output_is_unchanged_and_not_copied_to_logs(tmp_path, monkeypatch, capsys, mode):
+    d = diagnostics()
+    import coretax
+    from test_split_output import fixture_run
+    run = fixture_run()
+    source = tmp_path / 'source.json'; source.write_text(json.dumps(run), encoding='utf-8')
+    destination = tmp_path / 'output'
+    log_root = tmp_path / 'diagnostic'
+    monkeypatch.setenv('SPT_LOG_ROOT', str(log_root))
+    monkeypatch.setenv('SPT_LOG_LEVEL', 'OFF' if mode == 'OFF' else 'INFO')
+    if mode == 'BROKEN':
+        def fail(*args):
+            raise OSError('SYNTHETIC PRIVATE DISK ERROR')
+        monkeypatch.setattr(d.SegmentStore, 'write', fail)
+    code = coretax.main(['--from-json', str(source), '--output', str(destination)])
+    assert code == (0 if run['complete'] else 2)
+    stdout, stderr = capsys.readouterr()
+    assert stdout.startswith('Resume rebuilt and verified: ' + str((destination / 'resume.xlsx').resolve()) + '\n')
+    assert stdout.count('SPT files: ') == 1 and stderr == ''
+    data = json.dumps(records(log_root))
+    assert run['npwp'] not in data and str(source) not in data and 'SYNTHETIC PRIVATE' not in data

@@ -34,7 +34,10 @@ def build_command(root,output,uv_binary):
 
 def validate_report(data, python_profile='production'):
     expected = python_version(python_profile)
-    if not (data.get('ok') is True and data.get('frozen') is True and data.get('uv_bundled') is True
+    diagnostic = data.get('diagnostics')
+    if not (type(diagnostic) is dict and type(diagnostic.get('schema')) is int
+            and diagnostic.get('schema') == 1 and diagnostic.get('safe_logging') is True
+            and data.get('ok') is True and data.get('frozen') is True and data.get('uv_bundled') is True
             and data.get('bits') == 64 and data.get('python') == expected
             and data.get('python_implementation') == 'CPython' and data.get('free_threaded') is False
             and all(re.fullmatch(r'\d+\.\d+\.\d+', str(data.get(name, ''))) for name in ('tcl', 'tk'))
@@ -104,6 +107,7 @@ def build(output, python_profile='production'):
         'Stop mempertahankan checkpoint PARTIAL lokal; hanya proses browser milik aplikasi yang ditutup.\n'
         'Hasil: folder Downloads\\NPWP - NAMA WP\\TAHUN PAJAK\\WAKTU EKSPOR. Simpan semua Excel bersama.\n'
         '100% berarti COMPLETE terverifikasi untuk pilihan yang dikonfirmasi. Pekerjaan parsial, terhalang, atau dibatalkan tidak dinyatakan berhasil.\n'
+        'Diagnostik lokal: Pengaturan > Buka folder log. INFO default; SPT_LOG_LEVEL=DEBUG menambah detail tanpa data pajak.\n'
         'Executable belum bertanda tangan. Verifikasi build/sumber GitHub; jangan nonaktifkan Defender atau TLS.\n',
         encoding='utf-8')
     print('Built and self-tested:',executable)
