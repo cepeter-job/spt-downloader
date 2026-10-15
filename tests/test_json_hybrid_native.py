@@ -359,7 +359,7 @@ def test_approved_native_build_missing_grid_identity_uses_whole_dom(
     fixture = MissingL4Identity(browser, tmp_path, monkeypatch, groups=True)
     try:
         result = fixture.collect()
-        assert result['complete'] is True and result['errors'] == []
+        assert result['complete'] is True and result['errors'] == [], result['errors']
         record = result['records'][0]
         assert record['detail_source']['used'] == 'dom'
         assert any(f.get('value') == '0000777' for s in record['sections'] for f in s.get('fields', []))
