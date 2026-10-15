@@ -1,5 +1,6 @@
 """Public portal layout with synthetic values; executed only on the runner."""
 from test_pph21_template import section
+import pytest
 from playwright.sync_api import sync_playwright
 import coretax_browser as driver
 from test_ppn_unifikasi_templates import export, source_run, source_table
@@ -102,3 +103,35 @@ def test_unifikasi_unknown_footer_spans_remain_raw(tmp_path):
         assert any(cell.value=='53' for cells in wb['INDUK'] for cell in cells)
     finally:
         wb.close()
+
+
+@pytest.mark.parametrize('group,label,column,target', [
+    ('II. PEROLEHAN BARANG DAN JASA','Impor BKP, Pemanfaatan BKP Tidak Berwujud dan/atau JKP dari luar Daerah Pabean di dalam Daerah Pabean yang Pajak Masukannya dapat dikreditkan','Harga Jual/Penggantian/Nilai Impor/DPP (Rupiah)','E28'),
+    ('II. PEROLEHAN BARANG DAN JASA','Kompensasi kelebihan Pajak Masukan','PPN (Rupiah)','G32'),
+    ('V. PEMBAYARAN KEMBALI PAJAK MASUKAN YANG TIDAK DAPAT DIKREDITKAN','PPN yang wajib dibayar kembali','PPN (Rupiah)','E56'),
+    ('VII. PEMUNGUTAN PPN ATAU PPN DAN PPNBM OLEH PEMUNGUT PPN','Jumlah PPN dan PPnBM yang dipungut','HARGA JUAL/PENGGANTIAN/DPP (Rupiah)','E69'),
+    ('VIII. PEMUNGUTAN PPN ATAU PPN DAN PPNBM OLEH PIHAK LAIN','Jumlah PPN dan PPnBM yang dipungut','HARGA JUAL/PENGGANTIAN/DPP (Rupiah)','E75'),
+])
+def test_ppn_observed_labels_bind_reference_slots_without_restating_template(tmp_path,group,label,column,target):
+    fields=[{'label':label,'field':'','group':group,'column_label':column,'value':'17,00'}]
+    wb=export('PPN',source_run('PPN',[section('INDUK',fields=fields)]),tmp_path)
+    try:
+        assert wb['INDUK'][target].value=='17,00'
+        assert wb['INDUK']['B26'].value.strip()=='PENYERAHAN BARANG DAN JASA'
+    finally:
+        wb.close()
+
+
+def test_ppn_grid_does_not_assign_amount_units_to_plain_text_metadata():
+    html='<div class="p-tabview-panel"><div class="p-accordion-content">'
+    html+='<div class="row">'+_grid_cells(PPN_COLUMNS)+'</div>'
+    html+='<div class="row"><div class="col-md-7"><label>Nama Bank</label></div>'
+    html+='<div class="col-md-5"><div class="row"><div class="col-md-3"></div><div class="col-md-3"></div><div class="col-md-3"><input value="SYNTHETIC BANK" disabled></div><div class="col-md-3"></div></div></div></div></div></div>'
+    with sync_playwright() as p:
+        browser=p.chromium.launch(channel='msedge',headless=True)
+        try:
+            page=browser.new_page();page.set_content(html)
+            fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
+            assert len(fields)==1 and 'column_label' not in fields[0]
+        finally:
+            browser.close()
