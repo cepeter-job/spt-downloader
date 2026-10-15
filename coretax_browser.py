@@ -88,6 +88,26 @@ FIELDS_JS = r'''(root) => {
   }
   return e.getAttribute('aria-label')||e.getAttribute('formcontrolname')||e.name||e.id||'Unnamed field';
  };
+ const gridColumn=e=>{
+  const cell=e.closest('.col-md-3');
+  if(!cell || !cell.parentElement.matches('.row'))return '';
+  const grid=cell.parentElement, columns=[...grid.children];
+  if(columns.length!==4 || !columns.every(c=>c.matches('.col-md-3')&&visible(c)))return '';
+  const amount=grid.parentElement, row=amount.parentElement;
+  if(!amount.matches('.col-md-5') || !row.matches('.row') || !row.parentElement.matches('.p-accordion-content'))return '';
+  // Match the explicit, same-container Bootstrap header grid, not the order
+  // of populated inputs: omitted amount cells must retain their column.
+  for(let prior=row.previousElementSibling;prior;prior=prior.previousElementSibling){
+   if(!prior.matches('.row') || !visible(prior))continue;
+   const header=prior.querySelector(':scope > .col-md-5 > .row');
+   if(!header || header.querySelector('input,textarea,select'))continue;
+   const cells=[...header.children];
+   if(cells.length!==4 || !cells.every(c=>c.matches('.col-md-3')&&visible(c)))continue;
+   const labels=cells.map(c=>(c.innerText||'').trim());
+   if(labels.some(Boolean))return labels[columns.indexOf(cell)];
+  }
+  return '';
+ };
  const context=e=>{
   const label=labelFor(e);
   const labels=[...e.parentElement.querySelectorAll(':scope > label')]
@@ -96,6 +116,10 @@ FIELDS_JS = r'''(root) => {
   const heading=group(e);
   if(heading)result.group=heading;
   if(labels.length===1)result.column_label=labels[0].innerText.trim();
+  else if(!labels.length){
+   const column=gridColumn(e);
+   if(column)result.column_label=column;
+  }
   return result;
  };
  const include=e=>e.closest('.p-tabview-panel')===owner && !e.closest('table') && !e.closest('[hidden],[aria-hidden="true"]');

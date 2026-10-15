@@ -76,3 +76,29 @@ def test_ppn_observed_four_column_layout_binds_headers_not_input_order(tmp_path)
         assert [wb['INDUK'].cell(15,c).value for c in range(5,9)] == ['11',None,'17','19']
     finally:
         wb.close()
+
+
+def test_ppn_grid_never_borrows_sibling_accordion_headers():
+    html='<div class="p-tabview-panel"><div class="p-accordion-content">'
+    html+='<div class="row">'+_grid_cells(PPN_COLUMNS)+'</div></div>'
+    html+='<div class="p-accordion-content"><div class="row"><div class="col-md-7"><label>SYNTHETIC LABEL</label></div>'+_grid_cells(['17',None,None,None],True)+'</div></div></div>'
+    with sync_playwright() as p:
+        browser=p.chromium.launch(channel='msedge',headless=True)
+        try:
+            page=browser.new_page();page.set_content(html)
+            fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
+            assert len(fields)==1 and 'column_label' not in fields[0]
+        finally:
+            browser.close()
+
+
+def test_unifikasi_unknown_footer_spans_remain_raw(tmp_path):
+    footer=['TOTAL OF INCOME TAX','31','37','41','43','47','53']
+    data=source_table('Tabel 1',HEADERS,[footer])
+    data.update(body_row_count=0,footer=[footer],footer_spans=[[1,2,1,1,1,1,1]])
+    wb=export('PPh Unifikasi',source_run('PPh Unifikasi',[section('INDUK',tables=[data])]),tmp_path)
+    try:
+        assert all(wb['INDUK'].cell(27,c).value is None for c in range(3,9))
+        assert any(cell.value=='53' for cells in wb['INDUK'] for cell in cells)
+    finally:
+        wb.close()

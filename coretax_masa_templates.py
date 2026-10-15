@@ -1,5 +1,6 @@
 """Fill only observed PPN and Unifikasi forms using approved public layouts."""
 from pathlib import Path
+import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
                                     _grow, _raw_evidence, _body_rows, _header_key, _table_projection)
@@ -155,12 +156,14 @@ def _unifikasi_induk(sheet, sections):
             mapping = _mapping(table, labels, {
                 'PAJAK PENGHASILAN / SETOR SENDIRI': 'SETOR SENDIRI',
                 'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN': 'PEMOTONGAN / PEMUNGUTAN',
+                'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN This row contain the total amount of payment deducted by the refunded amount prior to the amendment.':
+                    'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN',
             })
             if not table.get('complete', True) or mapping is None:
                 pending.append(table)
                 continue
-            rows_left = []
-            for values in table.get('rows', []):
+            body, rows_left = _body_rows(table)
+            for values in body:
                 projected = dict(zip(mapping, values))
                 matches = [row for row in range(12, 28)
                            if _key(projected.get(1)) == _key(sheet.cell(row, 1).value)
@@ -171,6 +174,22 @@ def _unifikasi_induk(sheet, sections):
                 for column, value in projected.items():
                     _write(sheet, matches[0], column, value)
                 used.add(matches[0])
+            # The observed total spans NO/DETIL. Bind its six amounts only
+            # when physical spans, header order and the captured tail agree.
+            footer = table.get('footer', [])
+            spans = table.get('footer_spans', [])
+            count = table.get('body_row_count')
+            if (27 not in used and mapping == list(range(1, 9))
+                    and type(count) is int and count == len(table.get('rows', [])) - 1
+                    and len(footer) == 1 and len(footer[0]) == 7
+                    and spans == [[2, 1, 1, 1, 1, 1, 1]]
+                    and all(type(span) is int for span in spans[0])
+                    and rows_left and rows_left[-1] == footer[0]
+                    and _key(footer[0][0]) == _key(sheet['A27'].value)):
+                for column, value in enumerate(footer[0][1:], 3):
+                    _write(sheet, 27, column, value)
+                used.add(27)
+                rows_left.pop()
             if rows_left:
                 pending.append({**table, 'rows': rows_left})
     return pending
@@ -185,7 +204,10 @@ def _appendix(sheet, blocks, sections, tax):
             if not table.get('complete', True):
                 pending.append(table)
                 continue
-            name = _key(table.get('group') or table.get('name', ''))
+            caption = table.get('group') or table.get('name', '')
+            if tax == 'PPh Unifikasi':
+                caption = re.sub(r'^TABEL\s+(?:II|I)\.\s*', '', caption, flags=re.I)
+            name = _key(caption)
             candidates = [i for i, (caption, _, _, _) in enumerate(blocks)
                           if caption is None or name == _key(sheet[caption].value)]
             if len(candidates) != 1:
