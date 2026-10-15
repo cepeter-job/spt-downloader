@@ -185,9 +185,10 @@ _STLG_SUM_PATHS = (
 
 def _ppn_source_number(form, path, evidence):
     value = form
-    for key in path:
+    for index, key in enumerate(path):
         if value is None:
-            break
+            evidence.append({**_evidence(None, list(path[:index])), 'requested_path': list(path)})
+            return None
         if not isinstance(value, dict):
             raise _UnsupportedMetadata('unsupported_ppn_amount_path_shape')
         if key not in value:
