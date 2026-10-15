@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 import re
 
-from coretax_json import _CorporateNumber, _UnsupportedMetadata
+from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata
 
 _MAX_EXACT_INTEGER = Decimal('9007199254740991')
 _JAKARTA = timezone(timedelta(hours=7))
@@ -230,3 +230,94 @@ def project_ppn_amount(form, control, *, model):
     rendered = ('0' if nullish_zero else '') if value is None else _number(value, 0, locale='id-ID')
     return {'value': rendered, 'rule': 'nullish_zero' if nullish_zero else 'direct_final_path',
             'provenance': evidence}
+
+
+_PPN_DOMESTIC_COLUMNS = (
+    ('Name', 'text'), ('TIN', 'text'), ('DocumentNumber', 'text'), ('DocumentDate', 'date'),
+    ('TaxBase', 'number'), ('OtherTaxBase', 'number'), ('VAT', 'number'),
+    ('STLG', 'number'), ('TaxInvoiceCode', 'text'),
+)
+_PPN_GRID_COLUMNS = {
+    'A-1': (('Name', 'text'), ('DocumentNumber', 'text'), ('DocumentDate', 'date'),
+            ('TaxBase', 'number'), ('Information', 'text')),
+    'A-2': _PPN_DOMESTIC_COLUMNS,
+    'B-1': (('Name', 'text'), ('TIN', 'text'), ('DocumentNumber', 'text'),
+            ('DocumentDate', 'date'), ('TaxBase', 'number'), ('VAT', 'number'),
+            ('STLG', 'number'), ('Information', 'text')),
+    'B-2': _PPN_DOMESTIC_COLUMNS,
+    'B-3': _PPN_DOMESTIC_COLUMNS,
+}
+
+
+def project_ppn_grid(form_name, pages, headers, *, record_id, timezone_name):
+    """Project validated PPN page bodies without deduplication or missing cells.
+
+    Endpoint/build/header-label binding is the observer/adapter's responsibility;
+    this function additionally enforces selected-record identity and page coverage.
+    """
+    columns = _PPN_GRID_COLUMNS.get(form_name)
+    if (columns is None or not isinstance(headers, list) or len(headers) != len(columns) + 1
+            or any(type(h) is not str or not h for h in headers)
+            or not isinstance(pages, list) or not pages):
+        raise _UnsupportedMetadata('unverified_ppn_grid_binding')
+    if type(record_id) is not str or not record_id or record_id != record_id.strip():
+        raise JsonSafetyError('PPN grid selected identity is invalid')
+    # Check every available request identity before incomplete page metadata can
+    # result in fallback. Full byte/frame/attempt custody lives in the adapter.
+    for page in pages:
+        if not isinstance(page, dict) or not isinstance(page.get('request'), dict):
+            raise _UnsupportedMetadata('missing_ppn_grid_request')
+        request = page['request']
+        if 'ReturnSheetRecordId' in request and (
+                type(request['ReturnSheetRecordId']) is not str or request['ReturnSheetRecordId'] != record_id):
+            raise JsonSafetyError('PPN grid request belongs to a different selected return')
+    rows, provenance, sequences = [], [], set()
+    total = None
+    for page in pages:
+        request, payload = page['request'], page.get('payload')
+        if 'ReturnSheetRecordId' not in request:
+            raise _UnsupportedMetadata('missing_ppn_grid_record_binding')
+        first, size = request.get('First'), request.get('Rows')
+        if type(first) is not int or first < 0 or type(size) is not int or not 0 < size <= 1000:
+            raise JsonSafetyError('PPN grid request page bounds are invalid')
+        if first != len(rows):
+            raise JsonSafetyError('PPN grid pages overlap or contain a gap')
+        if not isinstance(payload, dict) or not isinstance(payload.get('Data'), list):
+            raise _UnsupportedMetadata('unsupported_ppn_grid_payload')
+        declared = payload.get('TotalRecords')
+        if type(declared) is not _CorporateNumber or not re.fullmatch(r'[0-9]+', declared):
+            raise _UnsupportedMetadata('missing_ppn_grid_total')
+        declared = int(declared)
+        if declared > 100000:
+            raise _UnsupportedMetadata('ppn_grid_row_budget_exceeded')
+        if total is not None and declared != total:
+            raise JsonSafetyError('PPN grid total changed between pages')
+        total = declared
+        data = payload['Data']
+        if len(data) > size or first + len(data) > total:
+            raise JsonSafetyError('PPN grid page body contradicts declared bounds')
+        sequence = page.get('sequence')
+        if type(sequence) is not int or sequence <= 0 or sequence in sequences:
+            raise JsonSafetyError('PPN grid source sequence is invalid or duplicated')
+        sequences.add(sequence)
+        for index, source in enumerate(data):
+            if not isinstance(source, dict):
+                raise _UnsupportedMetadata('unsupported_ppn_grid_row')
+            # The native component uses Data.indexOf(row)+1 on each page.
+            rendered = [str(index + 1)]
+            for key, kind in columns:
+                if key not in source:
+                    raise _UnsupportedMetadata('missing_ppn_grid_source_column')
+                value = source[key]
+                provenance.append({**_evidence(value, ['Data', index, key]), 'sequence': sequence})
+                if (form_name == 'A-2' and key == 'TIN' and value == '0000000000000000'
+                        and source.get('DocumentNumberByBuyerInfor') is not None):
+                    value = source['DocumentNumberByBuyerInfor']
+                    provenance.append({**_evidence(value, ['Data', index, 'DocumentNumberByBuyerInfor']),
+                                       'sequence': sequence})
+                rendered.append(render_grid_value(value, kind, timezone_name=timezone_name))
+            rows.append(rendered)
+    if len(rows) != total:
+        raise _UnsupportedMetadata('incomplete_ppn_grid_pages')
+    return {'table': {'headers': list(headers), 'rows': rows, 'body_row_count': len(rows),
+                      'source_total': total, 'complete': True}, 'provenance': provenance}
