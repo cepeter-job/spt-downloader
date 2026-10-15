@@ -56,10 +56,10 @@ def test_amendments_keep_all_forms_in_separate_file_namespaces(tmp_path, tax, fi
     captions = ['Induk', 'L-IA']
     if tax == 'PPh Pasal 21/26':
         captions = ['Induk SPT PPh Pasal 21/26',
-            'DAFTAR PEMOTONGAN BULANAN PAJAK PENGHASILAN PASAL 21 BAGI PEGAWAI TETAP DAN '
+            ('DAFTAR PEMOTONGAN BULANAN PAJAK PENGHASILAN PASAL 21 BAGI PEGAWAI TETAP DAN '
             'PENSIUNAN YANG MENERIMA UANG TERKAIT PENSIUN SECARA BERKALA SERTA BAGI PEGAWAI '
             'NEGERI SIPIL, ANGGOTA TENTARA NASIONAL INDONESIA, ANGGOTA KEPOLISIAN REPUBLIK '
-            'INDONESIA, PEJABAT NEGARA, DAN PENSIUNANNYA']
+            'INDONESIA, PEJABAT NEGARA, DAN PENSIUNANNYA')]
     elif tax == 'PPN':
         captions = ['Induk SPT PPN', 'L-IA']
     elif tax == 'PPh Unifikasi':

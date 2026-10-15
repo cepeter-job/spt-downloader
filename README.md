@@ -6,7 +6,7 @@ Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan meng
 
 ## Memakai aplikasi Windows
 
-**Status fitur:** workbook per masa, pemilihan SPT, dan konfirmasi penggantian hasil sudah digabung lewat PR #6. Draft [PR #8](https://github.com/cepeter-job/spt-downloader/pull/8) menambahkan PDF keuangan/auditan Badan dari tautan baca teramati, kesiapan form login yang didukung, serta tiga teks UI yang diminta. Head produk `89a3830d65bae04660f90d75992f06c78003088f` lulus 608 tes Windows dan self-test source/frozen, termasuk regresi href native browser dan konteks dokumen sebelum GET. PR belum digabung dan penerimaan portal live belum terbukti. Lihat [matriks sepuluh persyaratan dan artifact](docs/superpowers/reports/2026-10-13-feature-acceptance.md). Pilot JSON-first sebagai pilihan selain DOM belum diimplementasikan.
+**Status fitur:** kode ini mencakup pemilihan SPT, workbook terpisah untuk setiap masa dan Model SPT literal, PDF keuangan/auditan Badan langsung di folder Excel, template form PPh 21/26/PPN/Unifikasi, sorting jenis pajak, dan logging diagnostik lokal. **DOM** tetap sumber detail bawaan; **JSON-hybrid (pilot)** tersedia sebagai pilihan di Pengaturan atau `--detail-source json-first` pada CLI. JSON primer hanya digunakan untuk format teramati yang dapat diverifikasi; format yang belum didukung memakai fallback DOM yang diaudit, bukan mengabaikan kegagalan identitas atau otorisasi. Hasil integrasi dan artefak commit terbaru dicatat pada [PR #18](https://github.com/cepeter-job/spt-downloader/pull/18), yang menggabungkan [PR logging #19](https://github.com/cepeter-job/spt-downloader/pull/19). Penerimaan manual/live tetap terpisah dari tes sintetis dan build.
 
 Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.14.8` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. GUI dan worker memakai CPython 3.14.8 x64/GIL yang sama. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
@@ -21,6 +21,10 @@ Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan adminis
 7. Tunggu status terminal. **100% berarti COMPLETE untuk pilihan yang dikonfirmasi, setelah verifikasi workbook, publikasi, dan pembersihan proses milik aplikasi.** Klik **Buka Hasil** untuk membuka folder yang telah dipublikasikan.
 
 **Stop** meminta pembatalan pekerjaan; checkpoint yang tersedia tetap disimpan sebagai data belum lengkap. Aplikasi menutup proses worker/browser yang dimilikinya; worker yang tidak berhenti diterminasi setelah 15 detik. Menutup jendela utama saat pekerjaan berjalan meminta konfirmasi. Permintaan atau jawaban lama tidak melanjutkan pekerjaan yang sudah dihentikan. File SPT/PDF hasil terdahulu tidak diganti tanpa persetujuan; pembaruan resume otomatis tetap melewati pemeriksaan scope dan race.
+
+### Log diagnostik untuk bugfixing
+
+Buka **Pengaturan → Buka folder log** untuk melihat diagnostik lokal berotasi. Log mencatat tahap, durasi, status, dan lokasi error tanpa menyalin data SPT/kredensial atau raw stdout/stderr. Lihat [cara menggunakan log, level DEBUG, retensi, dan batas privasi](docs/diagnostik.md). Logging bukan bukti COMPLETE dan tidak mengunggah data otomatis.
 
 ### Cek Kredensial
 

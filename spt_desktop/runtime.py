@@ -11,6 +11,7 @@ import tempfile
 import time
 
 from .windows import ProcessJob
+from . import diagnostics
 
 UV_VERSION = '0.13.0'
 PYTHON_PROFILES = {'production': '3.14.8'}
@@ -26,6 +27,7 @@ WORKER_FILES = (
     'spt_desktop/credentials.py', 'spt_desktop/windows.py',
     'spt_desktop/events.py', 'spt_desktop/auth.py', 'spt_desktop/output.py',
     'spt_desktop/worker.py', 'spt_desktop/interaction.py', 'spt_desktop/output_windows.py',
+    'spt_desktop/diagnostics.py', 'spt_desktop/diagnostic_store.py',
 )
 
 
@@ -51,6 +53,7 @@ def _cancel(cancelled):
         raise SetupCancelled('Persiapan dibatalkan; dapat dicoba lagi.')
 
 
+@diagnostics.traced('runtime')
 def _run(argv, env, cancelled, timeout=900):
     _cancel(cancelled)
     # Simpan diagnostik besar di berkas sementara agar RAM tetap terbatas.
@@ -75,6 +78,7 @@ def _run(argv, env, cancelled, timeout=900):
         stderr.seek(0)
         out = stdout.read(65536).decode('utf-8', errors='replace')
         err = stderr.read(65536).decode('utf-8', errors='replace')
+        diagnostics.record('runtime.command', exit_code=process.returncode)
         if process.returncode:
             # URL indeks dan diagnostik proxy bisa berisi rahasia; jangan teruskan stderr mentah.
             raise RuntimeError(f'Persiapan gagal (kode {process.returncode}). Periksa koneksi/proxy, lalu coba lagi.')
@@ -203,6 +207,7 @@ def _resources(source, root):
     return digest.hexdigest(), expected
 
 
+@diagnostics.traced('runtime')
 def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='production') -> Path:
     _cancel(cancelled)
     version = python_version(python_profile)
@@ -227,8 +232,10 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
     if (_compatible(info, python_profile) and _managed(info, root)
             and info.get('packages') == expected and ready.is_file()
             and ready.read_text(encoding='ascii').strip() == fingerprint):
+        diagnostics.record('runtime.reused')
         on_status('Python dan dependensi siap.')
         return python
+    diagnostics.record('runtime.install')
     ready.unlink(missing_ok=True)
     uv = _uv(root, source, environment, cancelled)
     if not _compatible(info, python_profile) or not _managed(info, root):

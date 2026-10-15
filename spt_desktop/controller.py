@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from .runtime import SetupCancelled,ensure_runtime,worker_source
+from . import diagnostics
 from .windows import ProcessJob
 from .paths import downloads_folder
 from .credentials import ALLOWED_ORIGINS
@@ -116,11 +117,13 @@ class JobController:
         self._pending_request=None
         self._seen_requests.clear()
         job_id=self.job_id
+        diagnostics.record('operation.started', job_id=job_id, operation=operation, browser=browser, headless=headless)
         def status(message):
             self._enqueue({'job_id':job_id,'type':'setup','percent':0,'message':message})
         def prepare():
             try:
-                python=ensure_runtime(self.root,status,self._cancel.is_set)
+                with diagnostics.job_context(job_id):
+                    python=ensure_runtime(self.root,status,self._cancel.is_set)
                 if self._cancel.is_set():raise SetupCancelled('Persiapan dibatalkan.')
                 environment=os.environ.copy()
                 environment.update({'PYTHONUTF8':'1','PYTHONIOENCODING':'utf-8'})
@@ -134,28 +137,39 @@ class JobController:
                     stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                     text=True,encoding='utf-8',errors='replace',bufsize=1)
                 process=self.process
+                diagnostics.record('worker.spawned', job_id=job_id, operation=operation)
                 def read_events():
                     try:
                         while True:
                             line=process.stdout.readline(16385)
                             if not line:return
                             if len(line)>16384:
+                                diagnostics.record('worker.protocol_rejected', job_id=job_id, level='DEBUG')
                                 while line and not line.endswith('\n'):line=process.stdout.readline(16385)
                                 continue
                             event=parse_event(line,job_id,operation=operation)
                             if event:self._enqueue(event)
+                            else:diagnostics.record('worker.protocol_rejected', job_id=job_id, level='DEBUG')
                     except (OSError,ValueError):pass
                 def drain_errors():
+                    discarded=0
                     try:
-                        while process.stderr.read(4096):pass
+                        while True:
+                            chunk=process.stderr.read(4096)
+                            if not chunk:break
+                            discarded+=len(chunk)
                     except (OSError,ValueError):pass
+                    finally:
+                        if discarded:diagnostics.record('worker.stderr_discarded', job_id=job_id, count=discarded, level='DEBUG')
                 for target in (read_events,drain_errors):
                     reader=threading.Thread(target=target,daemon=True)
                     self._readers.append(reader);reader.start()
                 command='stop' if self._cancel.is_set() else 'start'
                 process.stdin.write(json.dumps({'command':command,'job_id':job_id})+'\n')
                 process.stdin.flush()
-            except Exception:
+                diagnostics.record('worker.authorized', job_id=job_id, kind=command)
+            except Exception as error:
+                diagnostics.record('operation.failed', job_id=job_id, phase='runtime', level='ERROR', error=error)
                 cancelled=self._cancel.is_set()
                 self._enqueue({'job_id':job_id,'type':'terminal','status':'CANCELLED' if cancelled else 'ERROR',
                     'percent':0,'output':None,'message':'Persiapan dibatalkan.' if cancelled else 'Persiapan gagal. Periksa koneksi/proxy, izin workspace, dan kelengkapan resource aplikasi; coba lagi.'})
@@ -168,7 +182,9 @@ class JobController:
         if not self.active:return
         self._cancel.set()
         self._pending_request=None
-        if self._stop_at is None:self._stop_at=time.monotonic()+15
+        if self._stop_at is None:
+            diagnostics.record('worker.stop', job_id=self.job_id)
+            self._stop_at=time.monotonic()+15
         process=self.process
         if process and process.poll() is None:
             try:
@@ -210,6 +226,9 @@ class JobController:
         except (OSError,ValueError):
             self.stop()
             return False
+        diagnostics.record('consent.replied', job_id=job_id, kind=kind,
+                           accepted=payload.get('overwrite', True),
+                           count=len(payload['selected_ids']) if kind=='selection' else 0)
         return True
 
     def _drain(self):
@@ -230,6 +249,7 @@ class JobController:
                     if self._pending_request is not None:
                         self.stop()
                         continue
+                    diagnostics.record('consent.requested', job_id=self.job_id, kind=event['type'].removesuffix('_required'))
                     self._seen_requests.add(request_id)
                     self._pending_request=(self.job_id,event['type'].removesuffix('_required'),request_id)
                 self._percent=max(self._percent,min(99,event.get('percent',0)))
@@ -274,6 +294,8 @@ class JobController:
         self._seen_requests.clear()
         self._readers=[]
         self.active=False
+        diagnostics.record('worker.finished', job_id=self.job_id, operation=self.operation,
+                           status=event.get('status'), exit_code=exit_code)
         self.on_event(event)
 
     def poll(self):
@@ -282,6 +304,7 @@ class JobController:
         process=self.process
         if (process and process.poll() is None and self._stop_at is not None
                 and time.monotonic()>=self._stop_at and self._job):
+            diagnostics.record('worker.forced_stop', job_id=self.job_id, level='WARNING')
             self._job.close();self._job=None
         if not self._preparing:
             if process is not None and process.poll() is not None:self._finish(process.returncode)

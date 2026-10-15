@@ -27,3 +27,11 @@ The initial isolated checkout is /tmp/spt-consolidate-18-19-20261015-6HqLdd/repo
 Ruling: Continue through the GitHub connector and an isolated static container rather than retrying unknown remote mutations. Recovered packages11956274814 and11950682479 match their API/previously verified ZIP and payload hashes. Extracted worker source is never executed and must match original Git blob hashes before use. Preserve the interrupted checkout; record exact final evidence and any review limits on the PR.
 
 Standalone baselines (not combined evidence): PR18 run38702560323 passed1296 Windows/375 portable; PR19 run38686816805 passed795 Windows including47 diagnostic cases/369 portable. Final run/tree/artifact coordinates belong in the PR discussion.
+
+## Resume and integration evidence
+
+The remote workspace recovered. Its interrupted untracked plan/tests were moved to a private preserved sibling directory before fast-forwarding to the already-published test commit; no prior work was deleted or recreated. Exact test-only `80773487a16d71413dd5f2a189ddbb3a60335d3b`, run `38707852081`: **7 new feature failures, 1296 existing Windows passes**, without collection/setup failures. The seven committed contracts were independently inspected against actual source and fixtures on resume; no concrete test defect was found.
+
+PR19 was merged locally as a second parent. Conflict resolutions retain PR18's inventory helper and detail-source signatures with PR19's decorators; both imports and Settings rows (mode4/status9/log10); and worker mode forwarding through PR19's post-authorization logging session. Automatic merges preserve the CLI wrapper, JSON rejection branch, literal period/model grouping, flat PDF custody, source/frozen mode+sorting+diagnostic reports, and the resource union. All three approved XLSX resource bytes and AGENTS output instructions remain identical to original PR18. A Code Quality caption note is addressed by parentheses only; AST comparison proves the expected caption/assertions are unchanged.
+
+Full combined source review, exact-head Windows/portable/build/artifact gates and post-merge verification are recorded on PR18. Baseline green runs do not certify this new integration. Manual/live acceptance remains explicitly separate.

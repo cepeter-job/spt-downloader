@@ -6,6 +6,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
 from .controller import JobController,validate_job_scope,validate_detail_source
+from . import diagnostics
 from .credentials import ALLOWED_ORIGINS,save_login,delete_login
 from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
@@ -47,6 +48,8 @@ def save_preferences(root,data):
 class App:
     def __init__(self,root,workspace,controller=None):
         self.root=root;self.workspace=Path(workspace)
+        self._previous_callback = root.report_callback_exception
+        root.report_callback_exception = self._report_callback
         self.preferences=load_preferences(self.workspace)
         self.controller=controller or JobController(self.workspace,self.on_event)
         self._closing=False;self._result=None
@@ -80,6 +83,18 @@ class App:
         root.bind('<Destroy>', self._on_destroy, add='+')
         self.npwp_entry.focus_set()
         self._poll_after = root.after(100, self._poll)
+
+    def _report_callback(self, kind, error, trace):
+        diagnostics.record('gui.callback_failed', error=error, level='ERROR')
+        self._previous_callback(kind, error, trace)
+
+    def open_logs(self):
+        try:
+            os.startfile(str(diagnostics.log_folder(self.workspace)))
+        except (OSError, ValueError):
+            messagebox.showerror('Log tidak tersedia',
+                'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
+                parent=self._settings_dialog or self.root)
 
     def _running(self, active):
         stopping = (active and getattr(self.controller, 'job_id', None) == self._interaction_stopped_job)
@@ -195,7 +210,8 @@ class App:
             return
         try:
             self.controller.poll()
-        except Exception:
+        except Exception as error:
+            diagnostics.record('gui.poll_failed', error=error, level='ERROR')
             # A monitoring error is not proof that the owned process has exited.
             # Request cleanup once, but leave the UI busy until the controller is idle.
             if not self._poll_failed:
@@ -230,6 +246,7 @@ class App:
         if self._disposed:
             return
         self._disposed = True
+        self.root.report_callback_exception = self._previous_callback
         if self._poll_after is not None:
             try:
                 self.root.after_cancel(self._poll_after)
@@ -519,6 +536,7 @@ class App:
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
         check_buttons=ttk.Frame(frame);check_buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         def selected():
             mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
@@ -553,7 +571,9 @@ class App:
                 preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
             except ValueError as error:messagebox.showerror('Pengaturan belum disimpan',str(error),parent=dialog);return
-            except OSError:messagebox.showerror('Pengaturan belum disimpan','Windows menolak penyimpanan kredensial/preferensi. Periksa izin workspace.',parent=dialog);return
+            except OSError as error:
+                diagnostics.record('settings.failed', error=error, level='ERROR')
+                messagebox.showerror('Pengaturan belum disimpan','Windows menolak penyimpanan kredensial/preferensi. Periksa izin workspace.',parent=dialog);return
             password.set('');refresh()
             self._credential_status.set('Pengaturan disimpan. Tekan Cek Kredensial untuk menguji login otomatis.')
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')

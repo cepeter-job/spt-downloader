@@ -3,6 +3,7 @@
 Login CLI diselesaikan pengguna di browser. Validasi data bersama dipakai oleh
 CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
 """
+from spt_desktop import diagnostics
 import argparse
 from datetime import datetime
 import json
@@ -145,6 +146,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         resume.close()
 
 
+@diagnostics.traced('verify')
 def verify_outputs(run, folder, *, allow_extra=False):
     """Verify declared held PDF bytes as well as the existing workbook scope."""
     with pdf_custody(run, folder):
@@ -217,7 +219,8 @@ def _publish_output(staging, folder, names):
             target.parent.mkdir(parents=True, exist_ok=True)
             attempted.append(name)
             (staging / name).replace(target)
-    except BaseException:
+    except BaseException as error:
+        diagnostics.record('publish.rollback', phase='rollback', error=error, level='WARNING')
         try:
             for name in reversed(attempted):
                 if (staging / name).exists():
@@ -233,6 +236,7 @@ def _publish_output(staging, folder, names):
         raise
 
 
+@diagnostics.traced('export')
 def save_output(run, folder):
     """Validasi, tulis ke staging, baca ulang, lalu publikasikan seluruh set."""
     folder = Path(folder)
@@ -320,11 +324,12 @@ def parser():
     return cli
 
 
-def main(argv=None):
+def _main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
     if args.max_pages < 1 or args.detail_limit is not None and args.detail_limit < 1:
         cli.error('Page and detail limits must be positive')
+    diagnostics.record('operation.started', operation='offline' if args.from_json else 'resume' if args.resume else 'export')
     if args.from_json:
         run = json.loads(args.from_json.read_text(encoding='utf-8'))
         validate_scope(run['npwp'], run['year'])
@@ -395,6 +400,7 @@ def main(argv=None):
             print('Interrupted; existing checkpoints retained.', file=sys.stderr)
             return 130
         except Exception as exc:
+            diagnostics.record('operation.failed', error=exc, level='ERROR', status='ERROR')
             if run is not None:
                 run['complete'] = False
                 run['errors'].append({'object': 'Run', 'phase': 'details', 'message': str(exc).split('\n')[0]})
@@ -414,6 +420,19 @@ def main(argv=None):
     print(f'Checkpoints: {folder}')
     print(f"Duration: {run['duration_seconds']} seconds")
     return 0 if run['complete'] else 2
+
+
+def main(argv=None):
+    with diagnostics.session(diagnostics.default_root(), 'cli'):
+        try:
+            code = _main(argv)
+        except BaseException as error:
+            diagnostics.record('operation.cancelled' if isinstance(error, KeyboardInterrupt) else 'operation.failed',
+                               error=error, level='ERROR')
+            raise
+        diagnostics.record('operation.finished', exit_code=code,
+                           status={0:'COMPLETE', 2:'PARTIAL', 130:'CANCELLED'}.get(code, 'ERROR'))
+        return code
 
 
 if __name__ == '__main__':
