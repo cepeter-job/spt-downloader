@@ -53,15 +53,16 @@ def validate_report(data, python_profile='production'):
         raise RuntimeError('Packaged application self-test failed')
     sorting = data.get('selection_sorting_control')
     expected_orders = [
-        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
+        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
          'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
         ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
-         'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
+         'synthetic-unifikasi', 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
     if not (type(sorting) is dict
             and sorting.get('hierarchy') == ['type', 'year', 'month', 'model']
             and sorting.get('directions') == ['Jenis pajak ▲', 'Jenis pajak ▼']
+            and sorting.get('default_ordered_ids') == expected_orders[0]
             and sorting.get('ordered_ids') == expected_orders
             and sorting.get('selection_preserved') is True
             and sorting.get('confirmed_ids') == [

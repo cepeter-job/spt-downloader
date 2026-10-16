@@ -318,11 +318,11 @@ def test_source_selftest_observes_chronology_in_both_type_directions(tmp_path):
     sorting = data['selection_sorting_control']
     assert sorting.get('hierarchy') == ['type', 'year', 'month', 'model']
     assert sorting['ordered_ids'] == [
-        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
+        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
          'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
         ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
-         'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
+         'synthetic-unifikasi', 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
     assert sorting['selection_preserved'] is True
     assert sorting['confirmed_ids'] == ['::synthetic {return}; [literal] / id', 'synthetic-badan-two']

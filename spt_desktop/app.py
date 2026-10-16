@@ -445,7 +445,12 @@ class App:
             row=6,column=0,columnspan=2,sticky='w',pady=(4,12))
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='e')
         ttk.Button(buttons,text='Hentikan unduhan',command=lambda:self._cancel_interaction(interaction)).pack(side='left',padx=(0,8))
-        ordered_iids=list(rows)
+        # Default display priority is independent of manual A–Z/Z–A header sorting.
+        type_priority={'pph badan':0,'pph pasal 21/26':1,'pph unifikasi':2,'ppn':3}
+        ordered_iids=sorted(rows,key=lambda iid:(
+            type_priority.get(rows[iid][1][0].casefold(),len(type_priority)),
+            rows[iid][1][0].casefold(),
+            _selection_detail_key(*rows[iid][1][1:3])))
         descending=None
 
         def selected_ids():
