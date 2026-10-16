@@ -67,9 +67,12 @@ def test_native_ppn_business_dto_reaches_approved_template_slots_and_preserves_g
     workbook = exported(tmp_path, 'PPN', result['sections'])
     reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources' / 'ppn_format.xlsx')
     try:
-        assert workbook['INDUK']['G75'].value == '35'
+        assert workbook['INDUK']['G75'].value == 35
+        assert workbook['INDUK']['G75'].data_type == 'n'
         assert [workbook['A-2'].cell(r,2).value for r in range(5,18)] == ['SYNTHETIC BUYER'] * 13
-        assert workbook['A-2']['H5'].value == '132'
+        assert all(workbook['A-2'].cell(r,2).data_type == 's' for r in range(5,18))
+        assert workbook['A-2']['H5'].value == 132
+        assert workbook['A-2']['H5'].data_type == 'n'
         assert_format(workbook['A-2']['B17'], reference['A2']['B5'])
     finally:
         workbook.close()
