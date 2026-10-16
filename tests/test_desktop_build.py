@@ -58,6 +58,15 @@ def test_frozen_gate_rejects_missing_or_wrong_chronological_evidence(mutation):
         builder().validate_report(data)
 
 
+@pytest.mark.parametrize('value', [None, [], ['synthetic-ppn-feb']])
+def test_frozen_gate_rejects_missing_or_wrong_default_sort(value):
+    data = report()
+    builder().validate_report(data)
+    data['selection_sorting_control']['default_ordered_ids'] = value
+    with pytest.raises(RuntimeError, match='self-test'):
+        builder().validate_report(data)
+
+
 def test_frozen_report_requires_python_314_for_gui_and_worker():
     builder().validate_report(report(), 'production')
     for key in ('python', 'worker_python'):
