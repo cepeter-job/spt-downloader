@@ -8,6 +8,20 @@ from coretax_masa_json import check_masa_request_identities
 
 from coretax_masa_bindings import MAIN_SOURCE, TAX_SOURCES, BUILD_DIGESTS, FORMS
 
+# The reviewed PPN main bundle exceeds 4 MiB. Keep the larger budget isolated
+# from other tax types and chunks; the loaded-source and digest gates still apply.
+_PPN_MAIN_BUILD_HASH = r'''async url => {
+ const loaded=[...document.scripts].some(s=>s.src===url) ||
+   performance.getEntriesByType('resource').some(e=>e.name===url);
+ if(!loaded)return null;
+ const response=await fetch(url,{credentials:'same-origin',redirect:'error',cache:'no-store'});
+ if(!response.ok || !/javascript/i.test(response.headers.get('content-type')||''))return null;
+ const bytes=await response.arrayBuffer();
+ if(bytes.byteLength>5*1024*1024)return null;
+ return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))]
+   .map(x=>x.toString(16).padStart(2,'0')).join('');
+}'''
+
 FIELDS = r"""(root, context={}) => {
  const group=GROUP, visible=e=>!!e.getClientRects().length;
  const owner=root.closest('.p-tabview-panel');
@@ -221,7 +235,8 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
         builds = {}
         for url in (MAIN_SOURCE, TAX_SOURCES[tax]):
             _check_cancel(check_cancel)
-            digest = page.evaluate(_BUILD_HASH, url)
+            build_hash = _PPN_MAIN_BUILD_HASH if tax == 'PPN' and url == MAIN_SOURCE else _BUILD_HASH
+            digest = page.evaluate(build_hash, url)
             if digest != BUILD_DIGESTS[url]:
                 return None
             builds[url] = digest
