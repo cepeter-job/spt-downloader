@@ -57,7 +57,7 @@ def test_ppn_duplicate_scalar_not_arbitrarily_selected(tmp_path):
     wb = exported(tmp_path, 'PPN', [section('Induk', fields=fields)])
     try:
         assert wb['Induk']['E45'].value is None
-        assert {c.value for cells in wb['Induk'] for c in cells} >= {'17,00','19,00'}
+        assert not ({c.value for cells in wb['Induk'] for c in cells} & {'17,00','19,00'})
     finally:
         wb.close()
 
@@ -87,7 +87,7 @@ def test_ppn_appendix_dom_headers_and_extra_source_column(tmp_path):
         assert wb['A-2']['B5'].value == 'SYNTHETIC BUYER'
         assert wb['A-2']['E5'].value == '01-01-2025'
         assert wb['A-2']['H5'].value == '23'
-        assert any(c.value == 'EXTRA SYNTHETIC PROOF' for cells in wb['A-2'] for c in cells)
+        assert not any(c.value == 'EXTRA SYNTHETIC PROOF' for cells in wb['A-2'] for c in cells)
     finally:
         wb.close()
 
@@ -100,5 +100,8 @@ def test_resume_reports_unmapped_template_evidence(tmp_path):
     try:
         assert wb['Ringkasan']['B23'].value == 'PARTIAL'
         assert any(c.value == 'Pemetaan template' for cells in wb['Audit'] for c in cells)
+        hints = [c.value for cells in wb['Audit'] for c in cells
+                 if isinstance(c.value, str) and 'jumlah field/tabel/baris belum dipetakan' in c.value]
+        assert hints and all('checkpoint' in value and 'di bawah form' not in value for value in hints)
     finally:
         wb.close()

@@ -40,6 +40,10 @@ def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
                          'complete': True}]}
             for form in ('Induk', 'L-Z')
         ]
+        if tax == 'PPN':
+            record['sections'][0]['fields'].append({
+                'label': 'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)',
+                'field': '', 'value': str(100 + ordinal)})
         records.append(record)
     run.update(records=records, complete=True)
     return run
@@ -92,8 +96,12 @@ def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, pe
             values = sheet_values(workbook)
             markers = [value for value in values
                        if isinstance(value, str) and value.startswith('SYNTHETIC synthetic-model-return-')]
-            assert markers == [f'SYNTHETIC {identifier} / Induk', f'SYNTHETIC {identifier} / L-Z']
-            assert values.count('00007') == 4 and values.count('1.234,50') == 4
+            expected_forms = ['L-Z'] if tax == 'PPN' else ['Induk', 'L-Z']
+            assert markers == [f'SYNTHETIC {identifier} / {form}' for form in expected_forms]
+            copies = 2 if tax == 'PPN' else 4
+            assert values.count('00007') == copies and values.count('1.234,50') == copies
+            if tax == 'PPN':
+                assert workbook['Induk']['E45'].value == expected[identifier]['sections'][0]['fields'][-1]['value']
             cells = [cell for sheet in workbook for row in sheet for cell in row]
             assert all(cell.data_type == 's' for cell in cells if cell.value in ('00007', '1.234,50'))
             assert all(not any((getattr(sheet, item).center.text,
@@ -126,7 +134,12 @@ def test_resume_links_to_the_correct_model_file_and_first_form(tmp_path, tax, pe
                 proof = exporter.read_workbook_proof(workbook)
                 assert [record['record_id'] for record in proof['records']] == [expected['record_id']]
                 values = [cell.value for row in workbook['Induk'] for cell in row]
-                assert f"SYNTHETIC {expected['record_id']} / Induk" in values
+                marker = f"SYNTHETIC {expected['record_id']} / Induk"
+                if tax == 'PPN':
+                    assert marker not in values
+                    assert workbook['Induk']['E45'].value == expected['sections'][0]['fields'][-1]['value']
+                else:
+                    assert marker in values
             finally:
                 workbook.close()
         assert len(set(targets)) == 3
