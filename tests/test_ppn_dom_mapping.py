@@ -46,8 +46,8 @@ PPN_LABEL = 'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)'
 def test_ppn_scalar_field_maps_to_amount_slot(tmp_path):
     wb = exported(tmp_path, 'PPN', [section('INDUK', fields=[{'label':PPN_LABEL,'field':'','value':'-17,00'}])])
     try:
-        assert wb['INDUK']['E45'].value == '-17,00'
-        assert wb['INDUK']['E45'].data_type == 's'
+        assert wb['INDUK']['E45'].value == -17
+        assert wb['INDUK']['E45'].data_type == 'n'
     finally:
         wb.close()
 
@@ -68,8 +68,8 @@ def test_ppn_repeated_label_uses_group_column_not_order(tmp_path):
               {'label':label,'field':'','value':'17,00','group':'VII. PEMUNGUTAN PPN ATAU PPN DAN PPNBM OLEH PEMUNGUT PPN','column_label':'PPN (Rupiah)'}]
     wb = exported(tmp_path, 'PPN', [section('Induk', fields=fields)])
     try:
-        assert wb['Induk']['G69'].value == '17,00'
-        assert wb['Induk']['G75'].value == '19,00'
+        assert wb['Induk']['G69'].value == 17
+        assert wb['Induk']['G75'].value == 19
         assert wb['Induk']['H69'].value is None
     finally:
         wb.close()
@@ -86,7 +86,7 @@ def test_ppn_appendix_dom_headers_and_extra_source_column(tmp_path):
     try:
         assert wb['A-2']['B5'].value == 'SYNTHETIC BUYER'
         assert wb['A-2']['E5'].value == '01-01-2025'
-        assert wb['A-2']['H5'].value == '23'
+        assert wb['A-2']['H5'].value == 23
         assert not any(c.value == 'EXTRA SYNTHETIC PROOF' for cells in wb['A-2'] for c in cells)
     finally:
         wb.close()

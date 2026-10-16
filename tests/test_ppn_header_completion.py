@@ -49,6 +49,7 @@ def test_amendment_difference_maps_numeric_control_not_same_label_checkbox(tmp_p
     workbook, _, _ = export_ppn(tmp_path, [section('Induk', fields=fields)])
     try:
         expected = next(value for value in values if value not in ('true', 'false'))
+        expected = {'-17,00': -17, '0': 0, '1.234.567,89': 1234567.89}.get(expected, expected)
         assert workbook['Induk']['E47'].value == expected
         assert workbook['Induk']['E46'].value is None
     finally:
@@ -80,7 +81,7 @@ def test_ppn_omits_unknown_fields_context_and_extra_grid_columns_without_mutatin
         values = [cell.value for row in workbook['A1'] for cell in row]
         assert not set(values) & {RAW_MARKER, 'SYNTHETIC OMITTED VALUE',
                                   'SYNTHETIC EXTRA PERIOD', 'SYNTHETIC CONTEXT'}
-        assert workbook['A1']['E7'].value == '0'
+        assert workbook['A1']['E7'].value == 0
         assert reports[0]['unmapped_fields'] == 1
     finally:
         workbook.close()

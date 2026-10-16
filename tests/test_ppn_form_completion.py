@@ -13,10 +13,10 @@ RESOURCE = Path(__file__).resolve().parents[1] / 'resources' / 'ppn_format.xlsx'
 APPENDICES = [
     ('A1', 3, 4, 7, (5,)),
     ('A2', 4, 5, 16, (6, 7, 8, 9)),
-    ('B1', 4, 5, 7, (6, 7, 8)),
+    ('B1', 4, 5, 6, (6, 7, 8)),
     ('B2', 3, 4, 8, (6, 7, 8, 9)),
     ('B3', 3, 4, 8, (6, 7, 8, 9)),
-    ('C', 3, 4, 8, (10, 11, 12, 13)),
+    ('C', 3, 4, 7, (10, 11, 12, 13)),
 ]
 RAW_MARKER = 'Data sumber tambahan / belum dipetakan'
 GROUP_III = 'III. PENGHITUNGAN PPN KURANG BAYAR / LEBIH BAYAR'
@@ -65,10 +65,10 @@ def test_appendix_footer_reaches_the_styled_total_after_row_growth(tmp_path, cas
         sheet = workbook[form]
         target = total + max(0, count - (total - first))
         assert sheet.cell(target, 1).value == 'TOTAL'
-        assert [sheet.cell(target, c).value for c in columns] == amounts
+        assert [sheet.cell(target, c).value for c in columns] == [0, -17, 1234.5, 29][:len(columns)]
         for c in columns:
             assert_format(sheet.cell(target, c), reference[form].cell(total, c))
-            assert sheet.cell(target, c).data_type == 's'
+            assert sheet.cell(target, c).data_type == 'n'
         assert [sheet.cell(first + i, 2).value for i in range(count)] == [
             f'SYNTHETIC-{i}-2' for i in range(count)]
         for row in range(first, first + count):

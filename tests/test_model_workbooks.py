@@ -101,7 +101,7 @@ def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, pe
             copies = 2 if tax == 'PPN' else 4
             assert values.count('00007') == copies and values.count('1.234,50') == copies
             if tax == 'PPN':
-                assert workbook['Induk']['E45'].value == expected[identifier]['sections'][0]['fields'][-1]['value']
+                assert workbook['Induk']['E45'].value == int(expected[identifier]['sections'][0]['fields'][-1]['value'])
             cells = [cell for sheet in workbook for row in sheet for cell in row]
             assert all(cell.data_type == 's' for cell in cells if cell.value in ('00007', '1.234,50'))
             assert all(not any((getattr(sheet, item).center.text,
@@ -137,7 +137,7 @@ def test_resume_links_to_the_correct_model_file_and_first_form(tmp_path, tax, pe
                 marker = f"SYNTHETIC {expected['record_id']} / Induk"
                 if tax == 'PPN':
                     assert marker not in values
-                    assert workbook['Induk']['E45'].value == expected['sections'][0]['fields'][-1]['value']
+                    assert workbook['Induk']['E45'].value == int(expected['sections'][0]['fields'][-1]['value'])
                 else:
                     assert marker in values
             finally:
