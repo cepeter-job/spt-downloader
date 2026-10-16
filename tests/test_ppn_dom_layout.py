@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright
 import coretax_browser as driver
 
 
-from test_ppn_unifikasi_templates import export, source_run, source_table
+from test_ppn_unifikasi_templates import export, source_run
 
 
 PPN_COLUMNS = ['Harga Jual/Penggantian/ Nilai Ekspor/DPP (Rupiah)',
