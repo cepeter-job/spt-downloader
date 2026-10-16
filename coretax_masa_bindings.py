@@ -198,6 +198,8 @@ def project_unifikasi_tree(form, headers, *, locale):
 # reviewed nullish-zero operator; unlisted controls are not supported yet.
 _PPN_AMOUNTS = {
     'ExportOfTangibleGoods': (('A1FormListOfExportTaxableGoodsOrServices', 'Total'), False),
+    'STLGUnderOverOnPreviousVATReturn': (('STLGUnderOrOverPaidOnPrevious', 'SalesTaxLuxuryGoods'), False),
+    'VATIsUnderOrOverpaidAmandment': (('VATUnderOrOverPaidDueToAmendment', 'VAT'), False),
     'CarryForwardOfInputTax': (('CarryForwardOfInputTax', 'VAT'), False),
     'VATNeedRepayVAT': (('VATNeedToRepay', 'VAT'), False),
     'DomesticDeliveriesUsingOtherValueTaxBaseSTLG': (
@@ -305,30 +307,59 @@ def _ppn_source_number(form, path, evidence):
     return value
 
 
+def project_ppn_header(payload, control):
+    """Use source literals with the approved workbook's period/status presentation."""
+    if not isinstance(payload, dict):
+        raise _UnsupportedMetadata('unsupported_ppn_header_source')
+    if control == 'Period':
+        value = payload.get('PeriodCode')
+        if (type(value) is not str or not re.fullmatch(r'(0[1-9]|1[0-2]){2}[1-9][0-9]{3}', value)
+                or value[:2] != value[2:4]):
+            raise _UnsupportedMetadata('unsupported_ppn_header_period')
+        return {'value': value[2:], 'rule': 'period_code_slice_2',
+                'provenance': [_evidence(value, ['PeriodCode'])]}
+    if control == 'Model':
+        value = payload.get('ReturnSheetModel')
+        labels = {'NORMAL': 'Normal', 'AMENDMENT': 'Pembetulan'}
+        if type(value) is not str or value not in labels:
+            raise _UnsupportedMetadata('unsupported_ppn_header_model')
+        return {'value': labels[value], 'rule': 'approved_status_presentation',
+                'provenance': [_evidence(value, ['ReturnSheetModel'])]}
+    raise _UnsupportedMetadata('unsupported_ppn_header_control')
+
+
 def project_ppn_amount(form, control, *, model):
     """Apply reviewed final-value precedence, retaining only real dependencies."""
-    if not isinstance(form, dict) or model != 'NORMAL':
+    if not isinstance(form, dict) or model not in ('NORMAL', 'AMENDMENT'):
         raise _UnsupportedMetadata('unsupported_ppn_amount_model_or_source')
-    if control in _NORMAL_NULL_CONTROLS:
+    if model == 'NORMAL' and control in _NORMAL_NULL_CONTROLS:
         return {'value': '', 'rule': 'normal_model_null', 'provenance': []}
     evidence = []
-    if control in ('STLGSelfCollected', 'STLGUnderOverpaid'):
+    if control in ('STLGSelfCollected', 'STLGUnderOverpaid', 'STLGUnderOverpaidDueAmmendment'):
         total = Decimal(0)
         for path in _STLG_SUM_PATHS:
             value = _ppn_source_number(form, path, evidence)
             total += _decimal(value) if value is not None else Decimal(0)
         total = total.to_integral_value(rounding=ROUND_FLOOR)
         rule = 'floor_sum_submitted_stlg'
-        if control == 'STLGUnderOverpaid':
+        if control != 'STLGSelfCollected':
             value = _ppn_source_number(form, ('STLGCollectedByVATCollector', 'SalesTaxLuxuryGoods'), evidence)
             total = (total - (_decimal(value) if value is not None else Decimal(0))).to_integral_value(rounding=ROUND_FLOOR)
             rule = 'floor_difference_submitted_stlg'
+        if control == 'STLGUnderOverpaidDueAmmendment':
+            value = _ppn_source_number(form, ('STLGUnderOrOverPaidOnPrevious', 'SalesTaxLuxuryGoods'), evidence)
+            total = (total - (_decimal(value) if value is not None else Decimal(0))).to_integral_value(rounding=ROUND_FLOOR)
+            rule = 'floor_difference_submitted_stlg_amendment'
         return {'value': _number(str(total), 0, locale='id-ID'), 'rule': rule, 'provenance': evidence}
     binding = _PPN_AMOUNTS.get(control)
     if binding is None:
         raise _UnsupportedMetadata('unverified_ppn_amount_control')
     path, nullish_zero = binding
     value = _ppn_source_number(form, path, evidence)
+    if control == 'VATIsUnderOrOverpaidAmandment' and value is None:
+        # A submitted callback restores its prior value; it does not calculate
+        # the amount from III.E/III.F. Null requires separate lifecycle proof.
+        raise _UnsupportedMetadata('unverified_ppn_null_amendment_due_lifecycle')
     rendered = ('0' if nullish_zero else '') if value is None else _number(value, 0, locale='id-ID')
     return {'value': rendered, 'rule': 'nullish_zero' if nullish_zero else 'direct_final_path',
             'provenance': evidence}

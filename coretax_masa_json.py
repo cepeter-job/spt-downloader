@@ -202,7 +202,16 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
     # This cross-check reference is not a substitute for the missing listing
     # binding: its missing/unbound reasons still prevent native eligibility.
     checked_period = period if period is not None else outer_period
-    model = 'NORMAL' if record.get('meta', {}).get('Model SPT') == 'Normal' else None
+    literal_model = record.get('meta', {}).get('Model SPT')
+    native_model = selected['native_fields'].get('ReturnSheetModel')
+    if native_model is not None and native_model != literal_model:
+        raise JsonSafetyError('Masa literal listing model contradicts selected return')
+    model = 'NORMAL' if literal_model == 'Normal' else None
+    if (tax == 'PPN' and isinstance(literal_model, str)
+            and re.fullmatch(r'Amendment [0-9]{3}', literal_model)
+            and native_model == literal_model):
+        model = 'AMENDMENT'
+        _identity_field(payload, 'ReturnSheetStatusCode', 'SUBMITTED', reasons)
     _identity_field(payload, 'ReturnSheetModel', model, reasons)
     if model is None:
         reasons.append('unsupported_masa_model_binding')

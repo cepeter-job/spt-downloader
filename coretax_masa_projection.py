@@ -4,7 +4,7 @@ from copy import deepcopy
 from coretax_json import ORIGIN, JsonSafetyError, _UnsupportedMetadata, _corporate_request_key
 from coretax_masa_bindings import (
     BUILD_DIGESTS, FORMS, MAIN_SOURCE, TAX_SOURCES,
-    project_ppn_amount, project_ppn_footer, project_ppn_grid,
+    project_ppn_amount, project_ppn_header, project_ppn_footer, project_ppn_grid,
     project_unifikasi_footer, project_unifikasi_grid, project_unifikasi_text,
     project_unifikasi_tree,
 )
@@ -112,7 +112,10 @@ def project_masa_forms(packets, *, record, observed_forms):
             if tax == 'PPN':
                 if name != 'INDUK':
                     raise _UnsupportedMetadata('unverified_ppn_appendix_control')
-                if control in lc_projection['induk_values']:
+                if control in ('Period', 'Model'):
+                    projected = project_ppn_header(primary['payload'], control)
+                    container = ['Payload']
+                elif control in lc_projection['induk_values']:
                     projected = {'value': lc_projection['induk_values'][control],
                                  'provenance': lc_projection['provenance']}
                     event_source, container = lc_source, ['Payload']
