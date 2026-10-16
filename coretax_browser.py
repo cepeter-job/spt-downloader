@@ -847,8 +847,14 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         request_checker = check_masa_request_identities
     if request_checker is not None:
         request_checker(capture.request_observations(), record, scope)
-    forms = observe_corporate_forms(page, record, scope, capture,
-        max_pages=max_pages, check_cancel=check_cancel) if corporate else None
+    forms = None
+    if corporate:
+        forms = observe_corporate_forms(page, record, scope, capture,
+            max_pages=max_pages, check_cancel=check_cancel)
+    elif masa:
+        from coretax_masa_observer import observe_masa_forms
+        forms = observe_masa_forms(page, record, scope, capture,
+            max_pages=max_pages, check_cancel=check_cancel)
     observations = capture.request_observations()
     if request_checker is not None:
         request_checker(observations, record, scope)
@@ -870,7 +876,7 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     elif masa:
         # Safety checks run even without a verified Masa observer/projection.
         # Missing coverage permits DOM fallback; contradictory source data does not.
-        decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=[])
+        decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=forms or [])
     else:
         for packet in bodies:
             _check_cancel(check_cancel)
