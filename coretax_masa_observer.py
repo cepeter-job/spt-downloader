@@ -37,7 +37,7 @@ FORMS = {
     },
 }
 
-FIELDS = r"""root => {
+FIELDS = r"""(root, context={}) => {
  const group=GROUP, visible=e=>!!e.getClientRects().length;
  const owner=root.closest('.p-tabview-panel');
  const labelFor=e=>{
@@ -70,19 +70,52 @@ FIELDS = r"""root => {
    }
    return '';
  };
- const candidates=[...root.querySelectorAll('[formcontrolname],input,textarea,select')];
+ // Public customFormControl bindings do not appear as DOM formcontrolname.
+ // Match the reviewed host and its own static label, never generated input IDs.
+ const customField=control=>{
+   let binding=null;
+   if(context.tax==='PPh Unifikasi'&&['INDUK','DAFTAR-I','DAFTAR-II','LAMPIRAN-I'].includes(context.form))
+     binding={field:'TaxPeriodCode',label:'Masa Pajak',role:'Tax Period'};
+   else if(context.tax==='PPN'&&context.form==='INDUK')
+     binding={field:'Model',label:'Normal/Pembetulan',role:'Model *'};
+   const row=control.closest('.form-group.row');
+   if(!binding||!row||row.querySelectorAll('ui-dropdown').length!==1)return null;
+   const labels=[...row.querySelectorAll(':scope > label')].filter(visible);
+   if(labels.length!==1||labels[0].textContent.trim()!==binding.label||
+      labels[0].getAttribute('ariaLabel')!==binding.role)return null;
+   return {field:binding.field,label:binding.label,group:group(control),column_label:'',tag:control.tagName};
+ };
+ const candidates=[...root.querySelectorAll('ui-dropdown,p-dropdown,p-multiselect,p-radiobutton,[formcontrolname],input,textarea,select')];
  const seen=new Set(), fields=[];
  for(const child of candidates){
    if(child.closest('table,[hidden],[aria-hidden="true"]')||child.closest('.p-tabview-panel')!==owner)continue;
    if(child.matches('input[type=password],input[type=hidden]'))continue;
-   const control=child.closest('[formcontrolname]')||child;
+   const control=child.closest('ui-dropdown')||child.closest('[formcontrolname]')||
+     child.closest('p-dropdown,p-multiselect,p-radiobutton')||child;
    if(seen.has(control)||!visible(control))continue;
    seen.add(control);
+   if(control.matches('ui-dropdown')){
+     const metadata=customField(control);
+     if(!metadata)return null;
+     fields.push(metadata);
+     continue;
+   }
+   if(control.matches('p-dropdown,p-multiselect'))return null;
    const field=control.getAttribute('formcontrolname')||control.getAttribute('name')||control.id||'';
    const label=labelFor(control);
    const labels=[...control.parentElement.querySelectorAll(':scope > label')]
      .filter(l=>visible(l)&&l.innerText.trim()!==label&&!l.htmlFor);
-   fields.push({field,label,group:group(control),column_label:labels.length===1?labels[0].innerText.trim():columnFor(control),tag:control.tagName});
+   const metadata={field,label,group:group(control),column_label:labels.length===1?labels[0].innerText.trim():columnFor(control),tag:control.tagName};
+   if(control.matches('p-radiobutton,input[type=radio]')){
+     if(field!=='DeclarationBy'||context.form!=='INDUK'||!['PPN','PPh Unifikasi'].includes(context.tax))return null;
+     // Literal option attributes are reviewed UI structure, not selected values.
+     // Never read the nested input's value or checked state.
+     const option=control.getAttribute('value');
+     const choices={'0':context.tax==='PPN'?'PKP':'Wajib Pajak','1':'Kuasa Wajib Pajak'};
+     if(!Object.hasOwn(choices,option)||label!==choices[option])return null;
+     metadata.option=option;
+   }
+   fields.push(metadata);
  }
  return fields;
 }"""
@@ -217,8 +250,8 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             form = panel.locator(selector) if selector else panel
             if form.count() != 1 or not form.is_visible():
                 return None
-            fields = form.evaluate(FIELDS.replace('GROUP', GROUP_JS))
-            if any(not field['field'] or not field['label'] for field in fields):
+            fields = form.evaluate(FIELDS.replace('GROUP', GROUP_JS), {'tax': tax, 'form': name})
+            if fields is None or any(not field['field'] or not field['label'] for field in fields):
                 return None
             binding = {'name': name, 'fields': fields, 'tables': [], 'builds': dict(builds), **environment}
             if tax == 'PPh Unifikasi' and name == 'INDUK':
