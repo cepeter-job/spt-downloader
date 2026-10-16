@@ -31,13 +31,13 @@ def browser():
 
 
 @contextmanager
-def observed(browser, tmp_path, monkeypatch, tax='PPN', *, defect=None):
+def observed(browser, tmp_path, monkeypatch, tax='PPN', *, defect=None, layout='direct'):
     module = observer_module()
     monkeypatch.setattr(module, 'BUILD_DIGESTS', {
         MAIN: hashlib.sha256(BUILD).hexdigest(),
         **{url: hashlib.sha256(BUILD).hexdigest() for url in ASSETS.values()},
     })
-    fixture = Fixture(browser, tax, defect=defect)
+    fixture = Fixture(browser, tax, defect=defect, layout=layout)
     try:
         fixture.page.goto(fixture.record['list_url'])
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, SCOPE, tmp_path) as capture:
@@ -50,8 +50,9 @@ def observed(browser, tmp_path, monkeypatch, tax='PPN', *, defect=None):
 
 
 @pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
-def test_all_masa_tabs_bind_real_requests_without_reading_tax_values(browser, tmp_path, monkeypatch, tax):
-    with observed(browser, tmp_path, monkeypatch, tax) as (module, fixture, capture):
+@pytest.mark.parametrize('layout', ['direct', 'wrapped'])
+def test_all_masa_tabs_bind_real_requests_without_reading_tax_values(browser, tmp_path, monkeypatch, tax, layout):
+    with observed(browser, tmp_path, monkeypatch, tax, layout=layout) as (module, fixture, capture):
         forms = module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5)
         assert forms is not None
         assert [f['name'] for f in forms] == [f[0] for f in FORMS[tax]]
@@ -125,6 +126,15 @@ def test_cancellation_propagates_instead_of_fallback(browser, tmp_path, monkeypa
             raise CaptureCancelled()
         with pytest.raises(CaptureCancelled):
             module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, check_cancel=stop)
+
+
+@pytest.mark.parametrize('defect', ['nested-panel-target', 'duplicate-panel-target'])
+@pytest.mark.parametrize('layout', ['direct', 'wrapped'])
+def test_aria_controls_must_identify_one_panel_owned_by_the_main_view(browser, tmp_path, monkeypatch, defect, layout):
+    with observed(browser, tmp_path, monkeypatch, defect=defect, layout=layout) as (module, fixture, capture):
+        assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
+        assert fixture.page.evaluate('window.forbiddenClicks') == 0
+        assert fixture.page.evaluate('window.valueReads') == 0
 
 
 def test_foreign_footer_request_cannot_hide_behind_final_tab_or_fallback(browser, tmp_path, monkeypatch):

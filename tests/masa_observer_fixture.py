@@ -29,8 +29,8 @@ FORMS = {
 
 
 class Fixture:
-    def __init__(self, browser, tax, *, defect=None):
-        self.tax, self.defect = tax, defect
+    def __init__(self, browser, tax, *, defect=None, layout='direct'):
+        self.tax, self.defect, self.layout = tax, defect, layout
         self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta')
         self.page = self.context.new_page()
         self.record = selected(tax)
@@ -94,7 +94,18 @@ class Fixture:
                 content += '<table><thead><tr><th>UNKNOWN</th></tr></thead><tbody></tbody></table>'
             if selector:
                 content = '<' + selector + '>' + content + '</' + selector + '>'
-            panels.append(f'<div class="p-tabview-panel" id="p{index}" style="display:{"block" if index == 0 else "none"}">{content}</div>')
+            panel_id = f'p{index}'
+            if self.defect == 'nested-panel-target' and index == 0:
+                content = ('<div class="p-tabview"><div class="p-tabview-panels">'
+                           '<div class="p-tabview-panel" id="p0">' + content + '</div></div></div>')
+                panel_id = 'outer0'
+            panel = f'<div data-main-panel class="p-tabview-panel" id="{panel_id}" style="display:{"block" if index == 0 else "none"}">{content}</div>'
+            if self.layout == 'wrapped':
+                panel = '<p-tabpanel>' + panel + '</p-tabpanel>'
+            panels.append(panel)
+            if self.defect == 'duplicate-panel-target' and index == 0:
+                panels.append('<div class="p-tabview"><div class="p-tabview-panels">'
+                              '<div class="p-tabview-panel" id="p0">DUPLICATE TARGET</div></div></div>')
         config = {'record': FOREIGN if self.defect == 'foreign-request' else RECORD,
                   'prefix': ORIGIN + '/returnsheet/api', 'defect': self.defect,
                   'primary': '/prefillreturnsheet/nvat' if self.tax == 'PPN' else '/prefillreturnsheet/withholding-tax'}
@@ -120,7 +131,7 @@ function footer(g){const c=JSON.parse(g.dataset.config);
     return send('/loadndvat/lc-grid/footer',{ReturnSheetRecordId:cfg.defect==='foreign-footer'?'00000000-0000-4000-8000-000000000099':cfg.record,
         IsNormalVAT:cfg.defect==='wrong-footer-kind'?false:cfg.defect==='untyped-footer-kind'?'true':true});}
 
-function show(i){document.querySelectorAll('.p-tabview-panels > .p-tabview-panel').forEach((p,j)=>{
+function show(i){document.querySelectorAll('[data-main-panel]').forEach((p,j)=>{
     p.style.display=i===j?'block':'none';if(i===j)p.querySelectorAll('p-table').forEach(g=>{if(!g.dataset.loaded){g.dataset.loaded='1';load(g);footer(g);}});
 });}
 send(cfg.primary,{RecordId:cfg.record,OnManualClick:false});
