@@ -8,14 +8,14 @@ import tkinter as tk
 from tkinter import ttk,messagebox
 from .controller import JobController,validate_job_scope,validate_detail_source
 from . import diagnostics
-from .credentials import ALLOWED_ORIGINS,save_login,delete_login
+from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,save_login,delete_login
 from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
 from .ui_views import MainView
 
 #punto ami priyono
 
-DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':'','detail_source':'dom'}
+DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'dom'}
 DETAIL_SOURCE_LABELS={'dom':'DOM','json-first':'JSON-hybrid (pilot)'}
 
 
@@ -51,7 +51,8 @@ def load_preferences(root):
     result=dict(DEFAULTS)
     if data.get('browser') in ('msedge','chrome'):result['browser']=data['browser']
     if type(data.get('headless')) is bool:result['headless']=data['headless']
-    if data.get('login_origin') in ALLOWED_ORIGINS:result['login_origin']=data['login_origin']
+    # Legacy origin preferences never migrate or read credentials; Satu owns login.
+    result['login_origin']=LOGIN_ORIGIN
     if isinstance(data.get('identifier'),str) and len(data['identifier'])<=256:result['identifier']=data['identifier']
     if type(data.get('detail_source')) is str and data['detail_source'] in DETAIL_SOURCE_LABELS:
         result['detail_source']=data['detail_source']
@@ -60,6 +61,7 @@ def load_preferences(root):
 
 def save_preferences(root,data):
     allowed={key:data.get(key,default) for key,default in DEFAULTS.items()}
+    allowed['login_origin']=LOGIN_ORIGIN
     validate_detail_source(allowed['detail_source'])
     if allowed['browser'] not in ('msedge','chrome') or allowed['login_origin'] not in ALLOWED_ORIGINS:
         raise ValueError('Preferensi browser/origin tidak valid.')
@@ -139,6 +141,8 @@ class App:
         try:
             npwp, year = validate_job_scope(self.npwp.get(), self.year.get())
             options = {} if self.preferences['detail_source']=='dom' else {'detail_source':self.preferences['detail_source']}
+            if self.preferences['identifier']:
+                options['account']=self.preferences['identifier']
             job_id = self.controller.start(npwp, str(year), self.preferences['browser'], self.preferences['headless'], **options)
             self._ui_state = begin_export(job_id, npwp, str(year))
         except (ValueError, RuntimeError) as error:
@@ -548,13 +552,11 @@ class App:
         self._settings_dialog=dialog;self._settings_closing=False
         dialog.transient(self.root);dialog.grab_set()
         frame=ttk.Frame(dialog,padding=20);frame.pack(fill='both',expand=True);frame.columnconfigure(1,weight=1)
-        origin=tk.StringVar(dialog,value=self.preferences['login_origin'])
         identifier=tk.StringVar(dialog,value=self.preferences['identifier']);password=tk.StringVar(dialog)
         browser=tk.StringVar(dialog,value=self.preferences['browser']);hidden=tk.BooleanVar(dialog,value=self.preferences['headless'])
         detail_source=tk.StringVar(dialog,value=DETAIL_SOURCE_LABELS[self.preferences['detail_source']])
         self._credential_status=tk.StringVar(dialog,value='Kredensial belum dicek. Cek tidak melakukan scraping atau ekspor.')
-        controls=[('Origin login',ttk.Combobox(frame,textvariable=origin,values=ALLOWED_ORIGINS,state='readonly',width=40)),
-                  ('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
+        controls=[('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
                   ('Password baru',ttk.Entry(frame,textvariable=password,show='●',width=40)),
                   ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
                   ('Sumber detail SPT',ttk.Combobox(frame,textvariable=detail_source,
@@ -563,8 +565,8 @@ class App:
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
-        hidden_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Password tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
         check_buttons=ttk.Frame(frame);check_buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
@@ -572,7 +574,7 @@ class App:
         traces=[]
         def selected():
             mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
-            return {'browser':browser.get(),'headless':hidden.get(),'login_origin':origin.get(),
+            return {'browser':browser.get(),'headless':hidden.get(),'login_origin':LOGIN_ORIGIN,
                     'identifier':identifier.get(),'detail_source':mode}
         def refresh(*args,preserve_status=False):
             active=self.controller.active
@@ -597,8 +599,8 @@ class App:
             try:
                 if password.get():
                     if not identifier.get().strip():raise ValueError('Masukkan akun sebelum menyimpan password.')
-                    save_login(origin.get(),identifier.get(),password.get())
-                elif identifier.get()!=self.preferences['identifier']:
+                    save_login(LOGIN_ORIGIN,identifier.get(),password.get())
+                elif identifier.get() and identifier.get()!=self.preferences['identifier']:
                     raise ValueError('Isi password baru ketika mengganti akun; atau pertahankan akun kosong untuk login manual.')
                 preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
@@ -611,18 +613,18 @@ class App:
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
         def remove():
             if self.controller.active:return
-            if not messagebox.askyesno('Hapus kredensial?','Hapus kredensial aplikasi untuk origin terpilih dari Windows Credential Manager?',parent=dialog,default='no'):return
-            try:delete_login(origin.get())
+            if not messagebox.askyesno('Hapus kredensial?','Hapus kredensial login Satu aplikasi dari Windows Credential Manager?',parent=dialog,default='no'):return
+            try:delete_login(LOGIN_ORIGIN)
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
             password.set('');identifier.set('');self.preferences['identifier']=''
             save_preferences(self.workspace,self.preferences)
-            self._credential_status.set('Kredensial origin terpilih dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
+            self._credential_status.set('Kredensial login Satu dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
         def check():
             if self.controller.active:return
             if password.get() or selected()!=self.preferences:
                 self._credential_status.set('Simpan perubahan dahulu sebelum Cek Kredensial.');return
             try:
-                self.controller.start_login_check(origin.get(),identifier.get(),browser.get(),hidden.get())
+                self.controller.start_login_check(LOGIN_ORIGIN,identifier.get(),browser.get(),hidden.get())
             except (ValueError,RuntimeError) as error:
                 self._credential_status.set(str(error));return
             self._poll_failed = False
@@ -638,8 +640,8 @@ class App:
         cancel_button=ttk.Button(check_buttons,text='Batalkan Cek',command=self.stop,state='disabled')
         cancel_button.pack(side='left')
         self._settings_refresh=refresh;self._settings_close=close
-        for variable in (origin,identifier,password,browser,hidden,detail_source):traces.append((variable,variable.trace_add('write',refresh)))
+        for variable in (identifier,password,browser,hidden,detail_source):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         dialog.bind('<Alt-c>',lambda e:check());refresh()
-        controls[1][1].focus_set()
+        controls[0][1].focus_set()
         return dialog

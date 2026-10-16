@@ -60,6 +60,12 @@ Pada build dengan perbaikan redirect, INFO mencatat `auth.state` dan `auth.resul
 
 Untuk kasus Coretax → Satu, origin tersimpan Satu dapat dilanjutkan hanya setelah form Satu dikenali dan identitas/form terikat ulang. Origin tersimpan Coretax tetap ditolak jika form final berada di Satu, **sebelum** membaca kredensial. Pilih origin final yang ditampilkan oleh Pengaturan dan simpan melalui UI; tidak ada fallback lintas-origin, POST langsung, atau pemalsuan Referer.
 
+### Request diblokir saat pengecekan login
+
+`auth.request_blocked` mencatat kategori tujuan (`target_origin`: `satu`, `coretax`, `other`), metode (`GET`, `HEAD`, `POST`, `OTHER`), jenis resource (`document`, `xhr`, `fetch`, `other`), dan alasan tetap (`origin_not_allowed` atau `cross_origin_write`). Kombinasi kategori dicatat sekali per pengecekan; `auth.result.blocked_requests` menghitung seluruh request yang diblokir. Tidak ada URL/path/query, header, cookie, token, atau body request yang dibaca untuk diagnostik ini.
+
+Aturan jaringan tidak dilonggarkan: origin asing dan request non-GET/HEAD ke origin selain origin kredensial tetap ditolak. Counter bukan bukti bahwa request yang diblokir menyebabkan reload loop, dan timeout bukan diagnosis password salah. Gunakan urutan state dan kategori blocking untuk menentukan observasi lanjutan; jangan mengirim HAR mentah atau kredensial.
+
 ## Batas penyimpanan dan kegagalan
 
 Ukuran file maksimal 1 MiB, maksimal tiga segmen per session. Retensi tujuh hari dan anggaran 32 file pada folder log; file regular milik logger yang tidak aktif dibersihkan paling tua dahulu. File asing, hardlink, symlink/reparse dan session aktif tidak dihapus. Jika kapasitas tidak dapat direklamasi dengan aman, logger tidak menambah file.

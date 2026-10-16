@@ -5,6 +5,8 @@ from spt_desktop.runtime import WORKER_FILES, python_version
 def report(profile='production'):
     return {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
         'diagnostics': {'schema': 1, 'safe_logging': True},
+        'automatic_login_controls': {'origin_selector_present': False,
+            'credential_origin': 'satu', 'account_forwarded': True},
         'selection_sorting_control': sorting_report(),
             'python': python_version(profile), 'python_implementation': 'CPython',
             'free_threaded': False, 'tcl': '8.6.15', 'tk': '8.6.15',

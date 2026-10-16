@@ -24,6 +24,8 @@ def artifact(tmp_path):
     (tmp_path / 'build-selftest.json').write_text(json.dumps({
         'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
         'diagnostics': {'schema': 1, 'safe_logging': True},
+        'automatic_login_controls': {'origin_selector_present': False,
+            'credential_origin': 'satu', 'account_forwarded': True},
         'selection_sorting_control': sorting_report(),
         'credentials_accessed': False, 'live_scrape': False,
         'python': '3.14.8', 'python_implementation': 'CPython', 'free_threaded': False,
