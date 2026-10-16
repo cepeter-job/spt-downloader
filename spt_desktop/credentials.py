@@ -4,7 +4,8 @@ from ctypes import wintypes
 from dataclasses import dataclass, field
 import sys
 
-ALLOWED_ORIGINS = ('https://satu.intranet.pajak.go.id',
+LOGIN_ORIGIN = 'https://satu.intranet.pajak.go.id'
+ALLOWED_ORIGINS = (LOGIN_ORIGIN,
                    'https://coretax.intranet.pajak.go.id')
 _PREFIX = 'SPTDownloader:login:'
 _NOT_FOUND = 1168

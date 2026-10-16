@@ -116,3 +116,38 @@ def test_worker_rejects_invalid_export_account_before_authorization(tmp_path, mo
     result = worker.main(['--npwp', '0000000000000001', '--year', '2025',
         '--root', str(tmp_path), '--job-id', 'synthetic-invalid', '--account', account])
     assert result == 1 and entered == []
+
+def test_blocked_post_login_requests_are_counted_without_private_values(browser, tmp_path, monkeypatch):
+    saved(monkeypatch)
+    engine = Engine(browser, mode='blocked', entry=auth.SEARCH_URL)
+    with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        status, message = auth.check_saved_credentials(engine, tmp_path, SATU, ACCOUNT,
+            'msedge', True, lambda: None, timeout=2)
+        assert log.flush()
+    assert status == 'LOGIN_UNVERIFIED' and len(engine.posts) == 1
+    assert not engine.unknown and all(c.closed for c in engine.contexts)
+    text = '\n'.join(p.read_text(encoding='utf-8') for p in (tmp_path / 'diagnostics/logs').glob('*.jsonl'))
+    rows = [json.loads(line) for line in text.splitlines()]
+    blocked = [r for r in rows if r['event'] == 'auth.request_blocked']
+    assert len(blocked) == 1, 'Log categories once, not every repeated failed request'
+    assert (blocked[0]['target_origin'], blocked[0]['method'], blocked[0]['resource_type'], blocked[0]['reason']) == (
+        'coretax', 'POST', 'fetch', 'cross_origin_write')
+    result = next(r for r in rows if r['event'] == 'auth.result')
+    assert result['reason'] == 'verification_timeout' and result['blocked_requests'] == 3
+    for private in [ACCOUNT, SECRET, SATU, auth.CORETAX_ORIGIN, 'SYNTHETIC_PRIVATE_QUERY', 'SYNTHETIC_POST_ONLY']:
+        assert private not in text and private not in message
+
+
+@pytest.mark.parametrize('field', ['target_origin', 'method', 'resource_type'])
+def test_network_diagnostic_categories_reject_arbitrary_values(tmp_path, field):
+    private = 'SYNTHETIC_PRIVATE_VALUE'
+    with diagnostics.session(tmp_path, 'worker') as log:
+        assert diagnostics.record('auth.request_blocked', reason='cross_origin_write',
+            target_origin='coretax', method='POST', resource_type='fetch')
+        assert diagnostics.record('auth.request_blocked', **{field: private}, url=private, body=private)
+        assert log.flush()
+    text = '\n'.join(p.read_text(encoding='utf-8') for p in (tmp_path / 'logs').glob('*.jsonl'))
+    rows = [json.loads(line) for line in text.splitlines()]
+    blocked = [r for r in rows if r['event'] == 'auth.request_blocked']
+    assert len(blocked) == 2 and blocked[0]['method'] == 'POST'
+    assert field not in blocked[1] and private not in text

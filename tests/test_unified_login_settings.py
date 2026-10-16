@@ -95,3 +95,29 @@ def test_start_passes_the_selected_saved_account_without_password(settings):
     app.start(); root.update()
     assert controller.start_options == [{'account': ACCOUNT}]
     assert not writes and not deletes
+
+def test_switch_to_manual_mode_keeps_saved_secret_and_invalidates_check(settings):
+    root, app, controller, writes, deletes = settings
+    app._credential_status.set('Login berhasil; kredensial tersimpan terverifikasi.')
+    account = next(w for w in widgets(app._settings_dialog)
+                   if w.winfo_class() == 'TEntry' and not w.cget('show'))
+    account.delete(0, 'end'); root.update()
+    assert 'Login berhasil' not in app._credential_status.get()
+    button(app._settings_dialog, 'Simpan').invoke(); root.update()
+    assert app.preferences['identifier'] == '' and not writes and not deletes
+    assert button(app._settings_dialog, 'Cek Kredensial').instate(['disabled'])
+
+
+
+def test_visible_settings_keeps_account_password_and_actions_inside_dialog(settings):
+    root, app, controller, writes, deletes = settings
+    root.deiconify(); app._settings_dialog.deiconify(); root.update()
+    dialog = app._settings_dialog
+    for widget in widgets(dialog):
+        if widget.winfo_class() in ('TEntry', 'TCombobox', 'TButton'):
+            assert widget.winfo_viewable()
+            right = widget.winfo_rootx() + widget.winfo_width()
+            bottom = widget.winfo_rooty() + widget.winfo_height()
+            assert right <= dialog.winfo_rootx() + dialog.winfo_width()
+            assert bottom <= dialog.winfo_rooty() + dialog.winfo_height()
+    assert not writes and not deletes

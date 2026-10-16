@@ -72,6 +72,9 @@ class Engine:
             request = r.request
             if request.url == self.entry or request.url == auth.SEARCH_URL:
                 html = '<input id="ObjectPermitNumber">' if self.posts else '<main>SYNTHETIC ENTRY SHELL</main>'
+                if self.posts and self.mode == 'blocked':
+                    target = auth.CORETAX_ORIGIN + '/synthetic-readiness?token=SYNTHETIC_PRIVATE_QUERY'
+                    html = '<script>for(let i=0;i<3;i++)fetch(' + json.dumps(target) + ',{method:"POST",body:"SYNTHETIC_POST_ONLY"}).catch(()=>{});</script>'
                 r.fulfill(body=html, content_type='text/html')
             elif request.url == LOGIN + '?trace=SYNTHETIC_TOKEN_ONLY':
                 r.fulfill(body='<main>SYNTHETIC LOGIN SHELL</main>', content_type='text/html')
