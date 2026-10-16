@@ -20,12 +20,16 @@ def report(profile='production'):
 def sorting_report():
     return {'heading': 'Jenis pajak', 'directions': ['Jenis pajak ▲', 'Jenis pajak ▼'],
             'hierarchy': ['type', 'year', 'month', 'model'],
+            'default_ordered_ids': [
+                'synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
+                'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
+                '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
             'ordered_ids': [
-                ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
+                ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
                  'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
                  '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
                 ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
                  '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
-                 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']],
+                 'synthetic-unifikasi', 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']],
             'selection_preserved': True,
             'confirmed_ids': ['::synthetic {return}; [literal] / id', 'synthetic-badan-two']}

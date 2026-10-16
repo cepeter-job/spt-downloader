@@ -50,6 +50,8 @@ def self_test(report=None):
                     'Jenis Pajak': 'PPN', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Pembetulan 2'}},
                 {'record_id': 'synthetic-ppn-feb', 'meta': {
                     'Jenis Pajak': 'PPN', 'Masa Pajak': 'Februari 2025', 'Model SPT': 'Normal'}},
+                {'record_id': 'synthetic-unifikasi', 'meta': {
+                    'Jenis Pajak': 'PPh Unifikasi', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Normal'}},
             ]}
 
         def respond(self, kind, request_id, payload):
@@ -117,16 +119,26 @@ def self_test(report=None):
             root.update()
             selection=app._interaction['dialog']
             tree=next(w for w in descendants(selection) if w.winfo_class()=='Treeview')
-            original=list(tree.get_children())
+            initial=list(tree.get_children())
+            initial_ids=[tree.item(iid,'values')[3] for iid in initial]
+            assert initial_ids==[
+                'synthetic-badan-two','synthetic-badan-one','synthetic-21','synthetic-unifikasi',
+                'synthetic-ppn-normal','synthetic-ppn-one','synthetic-ppn-two',
+                '::synthetic {return}; [literal] / id','synthetic-ppn-feb']
+            assert not tree.selection()
+            # Header and reply oracles refer to inventory order, not the new display order.
+            by_id={tree.item(iid,'values')[3]:iid for iid in initial}
+            original=[by_id[record['record_id']] for record in app.controller.read_request(None)['records']]
             chosen=(original[0],original[3])
             tree.selection_set(chosen)
             tree.event_generate('<<TreeviewSelect>>')
             root.update()
             sorting={'heading':tree.heading('type','text'), 'directions':[],
-                     'hierarchy':['type','year','month','model'], 'ordered_ids':[]}
+                     'hierarchy':['type','year','month','model'], 'ordered_ids':[],
+                     'default_ordered_ids':initial_ids}
             values={iid:tuple(tree.item(iid,'values')) for iid in original}
             # Independent literal oracles: never compute expectations with the sort key.
-            for expected_order in ((3,1,2,4,5,6,0,7),(4,5,6,0,7,2,3,1)):
+            for expected_order in ((3,1,2,8,4,5,6,0,7),(4,5,6,0,7,8,2,3,1)):
                 root.tk.call(tree.heading('type','command'))
                 root.update()
                 observed=list(tree.get_children())
