@@ -72,7 +72,10 @@ def test_appendix_footer_reaches_the_styled_total_after_row_growth(tmp_path, cas
         assert [sheet.cell(first + i, 2).value for i in range(count)] == [
             f'SYNTHETIC-{i}-2' for i in range(count)]
         for row in range(first, first + count):
-            assert_format(sheet.cell(row, 2), reference[form].cell(first, 2))
+            # Existing body rows retain their distinct bottom borders/fonts;
+            # only inserted rows copy the original first body row.
+            style_row = row if row < total else first
+            assert_format(sheet.cell(row, 2), reference[form].cell(style_row, 2))
         assert sheet.max_row == target
         assert RAW_MARKER not in [cell.value for row in sheet for cell in row]
         assert all(report['complete'] for report in reports)

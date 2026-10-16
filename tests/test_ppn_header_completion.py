@@ -41,7 +41,8 @@ def test_malformed_period_is_not_silently_repaired(tmp_path, period):
         workbook.close()
 
 
-@pytest.mark.parametrize('values', [['true', '-17,00'], ['false', '0'], ['-17,00', 'true']])
+@pytest.mark.parametrize('values', [['true', '-17,00'], ['false', '0'], ['-17,00', 'true'],
+                                    ['false', '1.234.567,89'], ['true', '1,234,567.89']])
 def test_amendment_difference_maps_numeric_control_not_same_label_checkbox(tmp_path, values):
     fields = [{'field': '', 'label': 'Ganti SPT sebelumnya', 'group': GROUP_III, 'value': value}
               for value in values]

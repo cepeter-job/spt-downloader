@@ -100,5 +100,8 @@ def test_resume_reports_unmapped_template_evidence(tmp_path):
     try:
         assert wb['Ringkasan']['B23'].value == 'PARTIAL'
         assert any(c.value == 'Pemetaan template' for cells in wb['Audit'] for c in cells)
+        hints = [c.value for cells in wb['Audit'] for c in cells
+                 if isinstance(c.value, str) and 'jumlah field/tabel/baris belum dipetakan' in c.value]
+        assert hints and all('checkpoint' in value and 'di bawah form' not in value for value in hints)
     finally:
         wb.close()
