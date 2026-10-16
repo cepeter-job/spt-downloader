@@ -84,7 +84,7 @@ def test_ppn_semantic_aliases_do_not_escape_their_verified_sections(tmp_path):
     try:
         assert wb['INDUK']['G32'].value is None
         assert wb['INDUK']['E56'].value is None
-        assert any(c.value=='19,00' for cells in wb['INDUK'] for c in cells)
+        assert not any(c.value=='19,00' for cells in wb['INDUK'] for c in cells)
     finally:
         wb.close()
 

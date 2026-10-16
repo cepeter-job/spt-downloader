@@ -3,6 +3,8 @@ from copy import copy
 from openpyxl import load_workbook
 import coretax
 import coretax_exporter as exporter
+from copy import deepcopy
+from pathlib import Path
 
 
 COMMON_HEADERS = ['NO.', 'NIK/NPWP', 'NAMA', 'NOMOR BUKTI POTONG',
@@ -91,3 +93,54 @@ def export(tax, run, folder):
     coretax.verify_outputs(run, folder)
     assert set(files) == {'resume.xlsx', TYPES[tax]['path']}
     return load_workbook(folder / TYPES[tax]['path'])
+
+
+RESOURCE = Path(__file__).resolve().parents[1] / 'resources' / 'ppn_format.xlsx'
+
+
+APPENDICES = [
+    ('A1', 3, 4, 7, (5,)),
+    ('A2', 4, 5, 16, (6, 7, 8, 9)),
+    ('B1', 4, 5, 7, (6, 7, 8)),
+    ('B2', 3, 4, 8, (6, 7, 8, 9)),
+    ('B3', 3, 4, 8, (6, 7, 8, 9)),
+    ('C', 3, 4, 8, (10, 11, 12, 13)),
+]
+
+
+RAW_MARKER = 'Data sumber tambahan / belum dipetakan'
+
+
+GROUP_III = 'III. PENGHITUNGAN PPN KURANG BAYAR / LEBIH BAYAR'
+
+
+def export_ppn(tmp_path, sections):
+    run = run_for(sections)
+    run['records'][0]['meta']['Jenis Pajak'] = 'PPN'
+    before = deepcopy(run)
+    reports = []
+    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert run == before, 'Display projection must not rewrite captured values or identity'
+    path = next(path for path in paths if path != 'resume.xlsx')
+    return load_workbook(tmp_path / path), reports, before
+
+
+def source_appendix(form, header, first, total, columns, count=0):
+    reference = load_workbook(RESOURCE)
+    try:
+        headers = [reference[form].cell(header, c).value
+                   for c in range(1, reference[form].max_column + 1)]
+        while headers and headers[-1] is None:
+            headers.pop()
+    finally:
+        reference.close()
+    if form == 'B3':
+        headers[1] = 'Nama Penjual BKP/BKP Tidak Berwujud/Pemberi JKP'
+    rows = [[str(i + 1)] + [f'SYNTHETIC-{i}-{c}' for c in range(2, len(headers) + 1)]
+            for i in range(count)]
+    amounts = ['0', '-17,00', '1.234,50', '29,00'][:len(columns)]
+    footer = ['TOTAL'] + amounts + [''] * (len(headers) - columns[-1])
+    spans = [columns[0] - 1] + [1] * (len(footer) - 1)
+    return {'name': 'Tabel 1', 'headers': headers, 'rows': rows + [footer],
+            'body_row_count': count, 'source_total': count, 'complete': True,
+            'footer': [footer], 'footer_spans': [spans]}, amounts

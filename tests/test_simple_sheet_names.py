@@ -72,7 +72,8 @@ def test_amendments_keep_all_forms_in_separate_file_namespaces(tmp_path, tax, fi
             assert all(not re.match(r'[0-9]{3}\.[0-9]{2} ', title) for title in workbook.sheetnames)
             markers = [cell.value for sheet in workbook for row in sheet for cell in row
                        if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')]
-            assert markers == [f'SYNTHETIC {index} / Induk', f'SYNTHETIC {index} / L-IA']
+            marker_forms = ['L-IA'] if tax == 'PPN' else ['Induk', 'L-IA']
+            assert markers == [f'SYNTHETIC {index} / {form}' for form in marker_forms]
             proof = exporter.read_workbook_proof(workbook)
             assert [item['meta']['Model SPT'] for item in proof['records']] == [record['meta']['Model SPT']]
             assert [item['record_id'] for item in proof['records']] == [record['record_id']]

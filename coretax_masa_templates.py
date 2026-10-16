@@ -1,5 +1,6 @@
 """Fill only observed PPN and Unifikasi forms using approved public layouts."""
 from pathlib import Path
+import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
                                     _grow, _raw_evidence, _body_rows, _header_key, _table_projection)
@@ -41,10 +42,66 @@ def template_workbook(tax, reserved_titles):
     return load_template_workbook(resource, names, reserved_titles)
 
 
+PPN_REQUEST_CHOICES = {
+    'CARRY_FORWARD': '1. dikompensasikan',
+    'FAST_REFUND': '2. dikembalikan melalui pengembalian pendahuluan',
+    'FORWARD_REFUND': '3. dikembalikan melalui pemeriksaan',
+}
+
+
+def _ppn_identity_fields(sheet, sections):
+    # This display-only choice does not alter literal period/model proof.
+    fields = [field for section in sections for field in section.get('fields', [])]
+    periods = [field for field in fields if field.get('field') == 'Period'
+               and _key(field.get('group')) == 'header']
+    choices = [field for field in fields if field.get('field') == 'AskedTo']
+    slots = {_key(sheet.cell(row, 1).value): (row, 4) for row in range(4, 7)}
+    slots[_key(sheet['B48'].value)] = (48, 4)
+    sheet['A7'].value = None
+    sheet['D7'].value = None
+    matches, pending = {}, []
+    for field in fields:
+        label = _key(field.get('label') or field.get('field', ''))
+        value = field.get('value', '')
+        if label == _key('Status Penyampaian'):
+            continue
+        if field in periods:
+            valid = (isinstance(value, str)
+                     and re.fullmatch(r'(0[1-9]|1[0-2])(?:0[1-9]|1[0-2])?[1-9][0-9]{3}', value))
+            if valid and len(periods) == 1:
+                matches.setdefault((4, 4), []).append((field, value[:2]))
+                matches.setdefault((5, 4), []).append((field, value[-4:]))
+            else:
+                pending.append(field)
+            continue
+        # Literal Period is authoritative over legacy display-only header text.
+        if periods and label in (_key('Masa Pajak'), _key('Tahun Pajak')):
+            continue
+        position = slots.get(label)
+        if field.get('field') == 'AskedTo':
+            expected = PPN_REQUEST_CHOICES.get(value) if isinstance(value, str) else None
+            if expected and len(choices) == 1 and label in (_key(expected), _key(expected[3:])):
+                position, value = (48, 4), expected[3:]
+            else:
+                position = None
+        if label == _key('Normal/Pembetulan') and _key(field.get('group')) == 'header':
+            position = (6, 4) if value in ('Normal', 'Pembetulan') else None
+        if position is None:
+            pending.append(field)
+        else:
+            matches.setdefault(position, []).append((field, value))
+    for position, values in matches.items():
+        if len(values) == 1:
+            _write(sheet, *position, values[0][1])
+        else:
+            pending.extend(field for field, _ in values)
+    return pending
+
+
 def _identity_fields(sheet, sections, tax):
-    slots = {_key(sheet.cell(row, 1).value): (row, 4) for row in range(4, 8)}
     if tax == 'PPN':
-        slots[_key(sheet['B48'].value)] = (48, 4)
+        return _ppn_identity_fields(sheet, sections)
+    slots = {_key(sheet.cell(row, 1).value): (row, 4) for row in range(4, 8)}
     used, pending = set(), []
     for section in sections:
         for field in section.get('fields', []):
@@ -141,6 +198,13 @@ def _ppn_fields(sheet, fields):
                           if sheet.cell(row, c).value is not None}
                 if row == 56 and group == caption and _key(sheet['A56'].value) == _key('PPN terutang'):
                     labels.add(_key('PPN yang wajib dibayar kembali'))
+                if (row == 47 and group == caption
+                        and label == _key('Ganti SPT sebelumnya')):
+                    value = field.get('value')
+                    # The checkbox shares this label with a disabled amount input.
+                    # Keep its truth value out of money slots, including zero.
+                    if isinstance(value, str) and re.fullmatch(r'-?[0-9]+(?:[.,][0-9]+)*', value):
+                        labels.add(label)
                 if not label or label not in labels:
                     continue
                 if column:
@@ -221,55 +285,92 @@ def _appendix(sheet, blocks, sections):
     return fields, pending
 
 
-def _ppn_appendix(sheet, blocks, sections):
-    grouped = [[] for _ in blocks]
-    fields, pending = [], []
+PPN_TOTAL_COLUMNS = {'a1': (5,), 'a2': (6, 7, 8, 9), 'b1': (6, 7, 8),
+                     'b2': (6, 7, 8, 9), 'b3': (6, 7, 8, 9), 'c': (10, 11, 12, 13)}
+
+
+def _ppn_footer(table, labels, aliases, extras, columns):
+    """Expand physical footer spans before applying semantic column bindings."""
+    count = table.get('body_row_count')
+    rows, footers, spans = table.get('rows', []), table.get('footer', []), table.get('footer_spans', [])
+    if (type(count) is not int or not 0 <= count <= len(rows)
+            or len(footers) != 1 or len(spans) != 1 or rows[count:] != footers
+            or table.get('source_total', count) not in (None, count)):
+        return None
+    footer, widths = footers[0], spans[0]
+    if (not footer or len(footer) != len(widths)
+            or any(type(width) is not int or width < 1 for width in widths)
+            or sum(widths) != len(table.get('headers', []))
+            or _key(footer[0]) not in ('total', 'jumlah')):
+        return None
+    expanded, scalar = [], []
+    for value, width in zip(footer, widths):
+        expanded.extend([value] + [None] * (width - 1))
+        scalar.extend([width == 1] * width)
+    projected, mapping, _ = _table_projection(
+        {**table, 'rows': [expanded]}, labels, aliases, extras)
+    flags, flag_mapping, _ = _table_projection(
+        {**table, 'rows': [scalar]}, labels, aliases, extras)
+    if mapping is None or flag_mapping != mapping:
+        return None
+    values = dict(zip(mapping, projected['rows'][0]))
+    single_cells = dict(zip(mapping, flags['rows'][0]))
+    if any(column not in values or not single_cells[column] for column in columns):
+        return None
+    return {column: values[column] for column in columns}
+
+
+def _ppn_appendix(sheet, blocks, sections, form):
+    # Approved PPN appendices each have one body and one trailing total row.
+    (_, header, first, last), = blocks
+    labels = [sheet.cell(header, c).value for c in range(1, sheet.max_column + 1)]
+    aliases = {}
+    for alternatives in [('DPP', 'Jumlah DPP', 'DPP (Rupiah)'),
+                         ('PPN', 'PPN (Rupiah)'), ('PPnBM', 'PPnBM (Rupiah)'),
+                         ('Tanggal', 'Tanggal Faktur Pajak', 'Tanggal Dokumen'),
+                         ('DASAR PENGENAAN PAJAK', 'DASAR PENGENAAN PAJAK (Rp)')]:
+        targets = [label for label in labels if _header_key(label) in {_header_key(a) for a in alternatives}]
+        if len(targets) == 1:
+            aliases.update({a: targets[0] for a in alternatives})
+    if form in ('b1', 'b3') and _header_key(labels[1]) == _header_key(
+            'Nama Penjual Barang Kena Pajak/Barang Kena Pajak Tidak Berwujud/Jasa Kena Pajak'):
+        aliases['Nama Penjual BKP/BKP Tidak Berwujud/Pemberi JKP'] = labels[1]
+    extras = ['Masa Pajak', 'KODE IP TERKAIT', 'TANGGAL IP TERKAIT', 'Faktur Pajak']
+    columns = PPN_TOTAL_COLUMNS[form]
+    rows, fields, pending, totals = [], [], [], []
     for section in sections:
         fields.extend(section.get('fields', []))
         for table in section.get('tables', []):
             if not table.get('complete', True):
                 pending.append(table)
                 continue
-            caption = table.get('group') or table.get('name', '')
-            name = _key(caption)
-            candidates = [i for i, (caption, _, _, _) in enumerate(blocks)
-                          if caption is None or name == _key(sheet[caption].value)]
-            if len(candidates) != 1:
-                pending.append(table)
-                continue
-            index = candidates[0]
-            labels = [sheet.cell(blocks[index][1], c).value for c in range(1, sheet.max_column + 1)]
-            aliases = {}
-            for alternatives in [('DPP', 'Jumlah DPP', 'DPP (Rupiah)'),
-                                 ('PPN', 'PPN (Rupiah)'), ('PPnBM', 'PPnBM (Rupiah)'),
-                                 ('Tanggal', 'Tanggal Faktur Pajak', 'Tanggal Dokumen'),
-                                 ('DASAR PENGENAAN PAJAK', 'DASAR PENGENAAN PAJAK (Rp)')]:
-                targets = [label for label in labels if _header_key(label) in {_header_key(a) for a in alternatives}]
-                if len(targets) == 1:
-                    aliases.update({a: targets[0] for a in alternatives})
-            extras = ['Masa Pajak', 'KODE IP TERKAIT', 'TANGGAL IP TERKAIT', 'Faktur Pajak']
             body, leftovers = _body_rows(table)
-            projected, mapping, changed = _table_projection(
-                {**table, 'rows': body, 'body_row_count': len(body)}, labels, aliases, extras)
+            projected, mapping, _ = _table_projection(
+                {**table, 'rows': body}, labels, aliases, extras)
             if mapping is None:
                 pending.append(table)
                 continue
-            grouped[index].extend((mapping, values) for values in projected['rows'])
-            if changed:
-                pending.append(table)
+            rows.extend((mapping, values) for values in projected['rows'])
+            if table.get('footer') or table.get('footer_spans'):
+                total = _ppn_footer(table, labels, aliases, extras, columns)
+                if total is None or len(body) != table.get('body_row_count'):
+                    pending.append({**table, 'rows': leftovers, 'complete': False})
+                else:
+                    totals.append((table, total))
             elif leftovers:
                 pending.append({**table, 'rows': leftovers})
-    offset = 0
-    for (_, _, first, last), rows in zip(blocks, grouped):
-        first, last = first + offset, last + offset
-        extra = max(0, len(rows) - (last - first + 1))
-        _grow(sheet, last + 1, extra, first)
-        for row, (mapping, values) in enumerate(rows, first):
-            for column, value in zip(mapping, values):
-                _write(sheet, row, column, value)
-        offset += extra
+    extra = max(0, len(rows) - (last - first + 1))
+    _grow(sheet, last + 1, extra, first)
+    for row, (mapping, values) in enumerate(rows, first):
+        for column, value in zip(mapping, values):
+            _write(sheet, row, column, value)
+    # Different grids/snapshots are not additive, even when their totals agree.
+    if len(totals) == 1 and not pending:
+        for column, value in totals[0][1].items():
+            _write(sheet, last + extra + 1, column, value)
+    elif totals:
+        pending.extend({**table, 'rows': table['footer']} for table, _ in totals)
     return fields, pending
-
 
 def render_template_form(sheet, tax, form, sections):
     form = canonical_form(tax, form)
@@ -281,8 +382,18 @@ def render_template_form(sheet, tax, form, sections):
         style_row = 4
     else:
         blocks = (PPN_BLOCKS if tax == 'PPN' else UNIFIKASI_BLOCKS)[form.casefold()]
-        renderer = _ppn_appendix if tax == 'PPN' else _appendix
-        fields, tables = renderer(sheet, blocks, sections)
+        if tax == 'PPN':
+            fields, tables = _ppn_appendix(sheet, blocks, sections, form)
+        else:
+            fields, tables = _appendix(sheet, blocks, sections)
         style_row = blocks[0][2]
-    report = _raw_evidence(sheet, sections, fields, tables, style_row)
-    return report if tax == 'PPN' else None
+    if tax == 'PPN':
+        # The user requests clean PPN forms, not a second copy of raw capture.
+        # Omission is presentation only: unresolved bindings remain in Audit
+        # and the unchanged private checkpoint, never a fabricated COMPLETE.
+        unresolved = [table for table in tables if table.get('rows') or not table.get('complete', True)]
+        return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
+                'unmapped_tables': len(unresolved),
+                'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
+    _raw_evidence(sheet, sections, fields, tables, style_row)
+    return None
