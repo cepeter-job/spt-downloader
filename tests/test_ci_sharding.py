@@ -129,23 +129,8 @@ def test_sharding_rejects_invalid_or_unguarded_requests(tmp_path, flags):
     assert result.returncode != 0
 
 
-def test_production_gate_and_artifact_validation_stay_in_place():
-    workflow = (ROOT / '.github/workflows/windows-build.yml').read_text(encoding='utf-8')
-    assert 'group: windows-build-' + '$' + '{{ github.event_name }}-' + '$' + '{{ github.event.pull_request.number || github.ref }}' in workflow
-    assert 'name: Windows tests and dependency audit' in workflow
-    assert 'needs: [route, portable, windows, dependency-audit]' in workflow
-    assert 'artifact-ids: ' + '$' + '{{ steps.upload.outputs.artifact-id }}' in workflow
-    assert 'scripts.ci_artifact verify' in workflow
 
 
-def test_benchmark_workflow_is_opt_in_except_for_scoped_pr_validation():
-    path = ROOT / '.github/workflows/windows-shard-benchmark.yml'
-    workflow = path.read_text(encoding='utf-8')
-    assert 'workflow_dispatch:' in workflow
-    assert 'pull_request:' in workflow
-    assert 'paths:' in workflow
-    assert 'runs-on: windows-2022' in workflow
-    assert 'name: Compare serial and 2-shard Windows tests' in workflow
 
 
 @pytest.mark.parametrize('body, expected_status', [
@@ -276,22 +261,6 @@ def test_benchmark_rejects_invalid_setup_measurements(bad_setup):
         ci_shard_benchmark.verify(baseline, shards, VERSION, COMMIT)
 
 
-def test_measurement_workflows_keep_production_serial_and_publish_failed_diagnostics():
-    production = (ROOT / '.github/workflows/windows-build.yml').read_text(encoding='utf-8')
-    benchmark = (ROOT / '.github/workflows/windows-shard-benchmark.yml').read_text(encoding='utf-8')
-    assert '--ci-shard' not in production and '--ci-benchmark' not in production
-    assert 'continue-on-error:' not in production
-    assert 'needs: [route, portable, windows, dependency-audit, package, attest]' in production
-    assert 'scripts.ci_route gate' in production
-    for workflow in (production, benchmark):
-        assert '--junitxml' in workflow
-        assert 'junit_logging=no' in workflow
-        assert 'scripts.ci_report start' in workflow
-        assert 'scripts.ci_report report' in workflow
-        assert "always() && steps.tests.outcome != 'skipped'" in workflow
-    assert "PYTHON_VERSION: '3.14.8'" not in benchmark
-    assert 'needs.profile.outputs.production_python' in benchmark
-    assert 'spt_desktop/runtime.py' in benchmark
 
 
 @pytest.mark.parametrize('invalid', [-1, float('nan'), float('inf'), True, '12'])

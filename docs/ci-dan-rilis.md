@@ -194,3 +194,32 @@ Opsi `--apply` mengaktifkan penghapusan dan memerlukan `GH_TOKEN` dengan `conten
 ## Menutup tindak lanjut audit
 
 Audit bertanggal menyimpan rekomendasi saat baseline masih memiliki dua branch dan satu job Windows. Untuk menutup tindak lanjut pada commit baru, sertakan bukti konkret: aturan branch aktif, hasil lock/hash dan audit, gate Windows profil produksi 3.14.8, artifact yang dibaca kembali, serta penerimaan manual bila dilakukan. Status lulus sintetis, signing, dan penerimaan live harus tetap dicatat terpisah.
+
+
+## Kontrak struktur workflow
+
+`tests/test_workflow_contracts.py` memeriksa struktur YAML melalui parser PyYAML
+terkunci di environment test/build, bukan melalui pencarian teks seluruh file.
+Runtime aplikasi tidak bergantung pada parser tersebut. Pemeriksaan mengikat
+job yang benar, dependency packaging, urutan self-test/checksum/upload/readback,
+artifact ID, izin per job, check gabungan yang selalu berjalan, dan setiap upload
+diagnostik ketika pytest gagal. Komentar tidak dapat menggantikan perintah build.
+
+Kasus mutasi membuktikan dependency hilang, urutan salah, izin berlebih, shard
+produksi yang belum disetujui, dan upload bukti tanpa failure guard tetap ditolak.
+Bentuk flow/block YAML, urutan `needs`, serta pembungkus ekspresi yang ekuivalen
+diterima. Key `on` tetap berupa nama event dan duplicate key ditolak. Helper ini
+bukan interpreter Bash/PowerShell atau evaluator ekspresi Actions; actionlint dan
+hasil runner tetap diperlukan untuk sintaks, eksekusi, dan verifikasi artifact.
+
+
+## Hasil evaluasi optimasi 16 Oktober 2026
+
+Lima perbandingan Windows pada commit yang sama sudah selesai; hasil lengkap,
+identitas artifact, inventaris dan batas pengukuran ada di
+[laporan penyelesaian optimasi](audits/2026-10-16-optimization-completion.md).
+Keputusannya: produksi tetap serial. Percepatan fase pytest tidak membuktikan
+percepatan CI lengkap 20%, kedua shard menambah total runner time, dan permintaan
+restore cache dalam studi ini ternyata semuanya miss. Tidak ada cache-hit atau
+percepatan pipeline penuh yang diasumsikan. Benchmark opsional tetap tersedia,
+tetapi tidak ada perubahan sharding produksi yang menunggu digabungkan.

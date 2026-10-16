@@ -22,14 +22,6 @@ def test_packaging_command_is_thin_windowed_and_explicit(tmp_path):
     assert {'playwright','openpyxl','pytest'}.issubset(exclusions)
 
 
-def test_workflow_tests_builds_and_verifies_before_explicit_artifact_upload():
-    path=Path(__file__).resolve().parents[1]/'.github/workflows/windows-build.yml'
-    assert path.is_file(), 'GitHub Windows workflow is missing'
-    text=path.read_text()
-    assert 'workflow_dispatch:' in text and 'contents: read' in text
-    assert 'pytest tests' in text and 'build_desktop.py' in text
-    assert 'upload-artifact@' in text and 'SPTDownloader.exe' in text
-    assert 'secrets.' not in text and 'coretax.intranet' not in text
 
 
 from support_build_reports import report
