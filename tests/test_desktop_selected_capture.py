@@ -6,53 +6,13 @@ from types import SimpleNamespace
 import pytest
 
 from spt_desktop import worker, output
-from test_split_output import fixture_run
-from test_desktop_orchestration import synthetic_browser
+from support_runs import fixture_run
+from support_selected_capture import synthetic_browser
 
 
-def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on_choice=False, marker=None,
-                 before_capture=None):
-    assert 'requests' in inspect.signature(worker.run_job).parameters, 'Worker selection handshake is missing'
-    state = {'captured': [], 'requests': []}
-    synthetic_browser(worker, monkeypatch, state)
-    run = fixture_run()
-    run['inventory_complete'] = True
-    if marker is not None:
-        run['records'][2]['sections'][0]['fields'][0]['value'] = marker
-    monkeypatch.setattr(worker, 'collect_inventory', lambda *args, **kwargs: run)
-    stopped = False
-
-    def request(kind, payload, percent):
-        nonlocal stopped
-        state['requests'].append(kind)
-        if kind == 'selection':
-            assert [record['record_id'] for record in payload['records']] == [
-                'badan-normal', 'badan-amendment', '21-january', '21-february', 'unifikasi']
-            stopped = stop_on_choice
-            return {'selected_ids': selected_ids}
-        assert kind == 'overwrite' and overwrite is not None
-        assert payload['files']
-        return {'overwrite': overwrite}
-
-    def capture(page, data, folder, on_progress, check_cancel):
-        check_cancel()
-        if before_capture is not None:
-            before_capture(data, events)
-        state['captured'] = [record['record_id'] for record in data['records']]
-        for ordinal, record in enumerate(data['records'], 1):
-            record['capture_complete'] = True
-            on_progress(data, ordinal)
-        data['complete'] = True
-        return data
-
-    monkeypatch.setattr(worker, 'collect_details', capture)
-    monkeypatch.setattr(worker, 'downloads_folder', lambda: tmp_path / 'Downloads')
-    events = []
-    status = worker.run_job('0000000000000001', '2025', tmp_path / 'workspace',
-                            'selected-job', 'msedge', True, events.append, lambda: stopped,
-                            requests=SimpleNamespace(request=request))
-    return status, events, state, run
-
+from support_selected_capture import (
+    selected_job
+)
 
 def test_selected_capture_never_opens_unconfirmed_returns_and_can_complete_subset(tmp_path, monkeypatch):
     status, events, state, inventory = selected_job(tmp_path, monkeypatch, ['21-january'])

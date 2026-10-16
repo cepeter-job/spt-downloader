@@ -6,8 +6,8 @@ from openpyxl import load_workbook
 
 from spt_desktop import output
 from coretax_pdf import attachment_declarations, verified_declarations
-from test_financial_publication import CHANGED_PDF
-from test_model_workbook_publication import legacy_export, physical_bytes
+from support_financial_publication import CHANGED_PDF
+from support_financial_publication import legacy_export, physical_bytes
 
 
 @pytest.mark.parametrize('format_name', ['forms', 'legacy'])

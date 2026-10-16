@@ -2,8 +2,8 @@
 import pytest
 
 import coretax_exporter as exporter
-from test_pph21_template import section
-from test_ppn_form_completion import APPENDICES, GROUP_III, RAW_MARKER, export_ppn, source_appendix
+from support_templates import section
+from support_templates import APPENDICES, GROUP_III, RAW_MARKER, export_ppn, source_appendix
 
 
 @pytest.mark.parametrize('period', ['022031', '02022031'])

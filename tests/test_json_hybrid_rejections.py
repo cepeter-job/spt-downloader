@@ -2,8 +2,8 @@
 import json
 import pytest
 import coretax_json as native
-import test_json_adapter as corpus
-from test_json_hybrid import Scenario, collector
+import support_json_corpus as corpus
+from support_json_hybrid import Scenario, collector
 
 
 @pytest.mark.parametrize('status', [401, 403])

@@ -10,8 +10,7 @@ import tkinter as tk
 import pytest
 
 MODES = ['dom', 'json-first']
-CAPTIONS = ('DOM', 'JSON-hybrid (pilot)')
-
+from support_mode_gui import CAPTIONS, StartInput, button, mode_control, window
 
 def worker_job():
     from spt_desktop import worker
@@ -24,7 +23,7 @@ def worker_job():
 @pytest.mark.parametrize('mode', MODES)
 def test_worker_selected_scope_forwards_literal_mode_to_collector(tmp_path, monkeypatch, mode):
     worker = worker_job()
-    from test_split_output import fixture_run
+    from support_runs import fixture_run
     run = fixture_run()
     run.update(inventory_complete=True)
     for record in run['records']:
@@ -78,20 +77,6 @@ def test_invalid_worker_mode_has_no_workspace_or_browser_side_effect(tmp_path, m
                            detail_source=mode) == 1
     assert called == [] and not folder.exists()
     assert events[-1]['status'] == 'ERROR' and events[-1]['output'] is None
-
-
-class StartInput:
-    def __init__(self, job):
-        self.job = job
-        self.first = True
-        self.release = threading.Event()
-
-    def readline(self, limit):
-        if self.first:
-            self.first = False
-            return json.dumps({'job_id': self.job, 'command': 'start'}) + '\n'
-        self.release.wait(10)
-        return ''
 
 
 @pytest.mark.parametrize('mode', MODES)
@@ -149,7 +134,7 @@ def test_login_check_launch_does_not_acquire_export_mode_or_scope(tmp_path, monk
 @pytest.mark.parametrize('mode', MODES)
 def test_offline_canonical_json_exports_real_workbooks_without_browser_or_native_decode(tmp_path, monkeypatch, mode):
     import coretax
-    from test_split_output import fixture_run
+    from support_runs import fixture_run
     parsed = coretax.parser().parse_args(['--detail-source', mode])
     assert parsed.detail_source == mode
     original = fixture_run()
@@ -170,55 +155,6 @@ def test_offline_canonical_json_exports_real_workbooks_without_browser_or_native
         'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx',
         'SPT Masa 21/SPT_21_Februari 2025_Normal.xlsx', 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx'}
     assert not (output / 'returns').exists()
-
-
-def descendants(widget):
-    for child in widget.winfo_children():
-        yield child
-        yield from descendants(child)
-
-
-def mode_control(dialog):
-    matches = [w for w in descendants(dialog) if w.winfo_class() == 'TCombobox'
-               and tuple(w.cget('values')) == CAPTIONS]
-    assert len(matches) == 1, 'Real DOM / JSON-hybrid mode widget is missing: intentional feature RED'
-    return matches[0]
-
-
-def button(dialog, caption):
-    return next(w for w in descendants(dialog) if w.winfo_class() == 'TButton' and w.cget('text') == caption)
-
-
-@pytest.fixture
-def window(tmp_path, monkeypatch):
-    from spt_desktop import app as gui
-    from test_desktop_login_check_gui import Controller
-    class ModeController(Controller):
-        def start(self, npwp, year, browser, headless, *, detail_source='dom'):
-            self.exports.append((npwp, year, browser, headless, detail_source))
-            self.active = True
-            self.job_id = 'synthetic-mode-window'
-            return self.job_id
-    def forbidden(*args):
-        raise AssertionError('Mode control must not access credentials')
-    monkeypatch.setattr(gui, 'save_login', forbidden)
-    monkeypatch.setattr(gui, 'delete_login', forbidden)
-    root = tk.Tk()
-    controller = ModeController()
-    app = None
-    try:
-        root.withdraw()
-        app = gui.App(root, tmp_path, controller)
-        yield root, app, controller, tmp_path
-    finally:
-        controller.active = False
-        if app is not None:
-            app._dispose()
-        for callback in root.tk.splitlist(root.tk.call('after', 'info')):
-            root.after_cancel(callback)
-        root.destroy()
-        del app
-        gc.collect()
 
 
 @pytest.mark.parametrize('mode,index', [('dom', 0), ('json-first', 1)])

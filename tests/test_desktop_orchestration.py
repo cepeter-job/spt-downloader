@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
-from test_split_output import fixture_run
+from support_runs import fixture_run
 
 
 def worker():
@@ -12,18 +12,9 @@ def worker():
     return importlib.import_module('spt_desktop.worker')
 
 
-def synthetic_browser(module,monkeypatch,state):
-    class Manager:
-        def __enter__(self):state['driver_started']=True;return object()
-        def __exit__(self,*args):state['driver_closed']=True
-    class Context:
-        def close(self):state['browser_closed']=True
-    monkeypatch.setattr(module,'playwright_factory',Manager)
-    def authenticate(*args, **kwargs):
-        state['browser_started'] = True
-        return Context(), object()
-    monkeypatch.setattr(module,'authenticate_owned',authenticate)
-
+from support_selected_capture import (
+    synthetic_browser
+)
 
 def test_complete_event_is_after_browser_cleanup_and_verified_downloads(tmp_path,monkeypatch):
     module=worker()

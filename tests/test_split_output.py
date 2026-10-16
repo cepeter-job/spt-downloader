@@ -7,22 +7,9 @@ import json
 from openpyxl import load_workbook
 
 
-def fixture_run():
-    rows = [('badan-normal', 'PPh Badan', 'Januari - Desember 2025', 'Normal'),
-            ('badan-amendment', 'PPh Badan', 'Januari - Desember 2025', 'Amendment 001'),
-            ('21-january', 'PPh Pasal 21/26', 'Januari 2025', 'Normal'),
-            ('21-february', 'PPh Pasal 21/26', 'Februari 2025', 'Normal'),
-            ('unifikasi', 'PPh Unifikasi', 'Januari 2025', 'Normal')]
-    return {'npwp': '0000000000000001', 'year': 2025, 'year_basis': 'period',
-            'taxpayer_name': 'SYNTHETIC TEST FIXTURE ONLY', 'complete': False,
-            'started_at': 'fixture', 'audit': [], 'errors': [],
-            'records': [{'key': key, 'record_id': key, 'source_status': 'Fixture',
-                         'meta': {'Jenis Pajak': tax, 'Masa Pajak': period, 'Model SPT': model},
-                         'capture_complete': True, 'detail_url': '',
-                         'sections': [{'name': 'Induk', 'text': '', 'tables': [],
-                                       'fields': [{'label': 'Record marker', 'field': 'Marker', 'value': key}]}]}
-                        for key, tax, period, model in rows]}
-
+from support_runs import (
+    fixture_run
+)
 
 def test_save_output_separates_resume_and_period_files(tmp_path):
     run = fixture_run()

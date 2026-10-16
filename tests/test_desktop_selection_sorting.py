@@ -1,7 +1,7 @@
 """Real Tk header sorting contracts. GitHub Windows execution only."""
 from copy import deepcopy
 import pytest
-from test_desktop_selection_gui import window, widgets, button
+from support_gui import window, widgets, button
 
 
 def inventory():

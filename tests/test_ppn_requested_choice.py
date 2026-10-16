@@ -2,8 +2,8 @@
 import pytest
 from playwright.sync_api import sync_playwright
 import coretax_browser as driver
-from test_pph21_template import section
-from test_ppn_form_completion import export_ppn
+from support_templates import section
+from support_templates import export_ppn
 
 CHOICES = [('CARRY_FORWARD', '1. dikompensasikan'),
            ('FAST_REFUND', '2. dikembalikan melalui pengembalian pendahuluan'),

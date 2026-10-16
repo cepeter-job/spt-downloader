@@ -261,7 +261,7 @@ def test_worker_resources_explicitly_include_diagnostics_modules():
 
 
 def test_frozen_report_requires_exercised_diagnostics():
-    from test_desktop_build import report
+    from support_build_reports import report
     from build_desktop import validate_report
     data = report(); data.pop('diagnostics', None)
     with pytest.raises(RuntimeError, match='self-test'):
@@ -388,7 +388,7 @@ raise SystemExit(worker.main(['--root',sys.argv[1],'--job-id','test-job','--npwp
 
 
 def test_frozen_diagnostic_evidence_is_positive_and_fail_closed():
-    from test_desktop_build import report
+    from support_build_reports import report
     from build_desktop import validate_report
     data = report(); data['diagnostics'] = {'schema': 1, 'safe_logging': True}
     validate_report(data)
@@ -463,7 +463,7 @@ def test_crashed_sessions_without_segments_do_not_leave_unbounded_leases(tmp_pat
 def test_cli_offline_output_is_unchanged_and_not_copied_to_logs(tmp_path, monkeypatch, capsys, mode):
     d = diagnostics()
     import coretax
-    from test_split_output import fixture_run
+    from support_runs import fixture_run
     run = fixture_run()
     source = tmp_path / 'source.json'; source.write_text(json.dumps(run), encoding='utf-8')
     destination = tmp_path / 'output'

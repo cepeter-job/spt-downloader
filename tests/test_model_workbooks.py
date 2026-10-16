@@ -8,7 +8,6 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_exporter as exporter
-from test_split_output import fixture_run
 
 
 TAX_SCOPES = [
@@ -18,36 +17,9 @@ TAX_SCOPES = [
     ('PPN', 'Januari 2025', 'SPT Masa PPN'),
     ('PPh Pasal 22', 'Januari 2025', None),
 ]
-MODELS = ('Normal', 'Pembetulan 1', 'Pembetulan 2')
-
-
-def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
-    run = fixture_run()
-    source = run['records'][0]
-    records = []
-    for ordinal, model in enumerate(models, 1):
-        record = deepcopy(source)
-        identifier = f'synthetic-model-return-{ordinal}'
-        record.update(key=identifier, record_id=identifier)
-        record['meta'].update({'Jenis Pajak': tax, 'Masa Pajak': period, 'Model SPT': model})
-        record['sections'] = [
-            {'name': form, 'text': '',
-             'fields': [{'label': 'Synthetic record marker', 'field': 'FixtureMarker',
-                         'value': f'SYNTHETIC {identifier} / {form}'}],
-             'tables': [{'name': 'Synthetic duplicate source rows',
-                         'headers': ['Kode', 'Nilai'],
-                         'rows': [['00007', '1.234,50'], ['00007', '1.234,50']],
-                         'complete': True}]}
-            for form in ('Induk', 'L-Z')
-        ]
-        if tax == 'PPN':
-            record['sections'][0]['fields'].append({
-                'label': 'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)',
-                'field': '', 'value': str(100 + ordinal)})
-        records.append(record)
-    run.update(records=records, complete=True)
-    return run
-
+from support_runs import (
+    MODELS, model_run
+)
 
 def sheet_values(workbook):
     return [cell.value for sheet in workbook for row in sheet for cell in row]

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from spt_desktop.runtime import WORKER_FILES, python_version
-from test_desktop_build import sorting_report
+from support_build_reports import sorting_report
 
 
 def verifier():

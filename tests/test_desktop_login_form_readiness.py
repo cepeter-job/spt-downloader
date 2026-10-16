@@ -4,7 +4,7 @@ import pytest
 
 from spt_desktop import auth
 from spt_desktop.credentials import Login
-import test_desktop_login_home_browser as flow
+import support_login_browser as flow
 
 # Reuse the real routed Edge fixture; every non-fixture request is aborted.
 browser = flow.browser

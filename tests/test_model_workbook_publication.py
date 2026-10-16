@@ -8,14 +8,13 @@ from openpyxl import load_workbook
 import coretax
 import coretax_exporter as exporter
 from spt_desktop import output
-from test_financial_publication import PDF, CHANGED_PDF, declare_pdf
-from test_model_workbooks import model_run
+from support_financial_publication import PDF, CHANGED_PDF, declare_pdf
+from support_runs import model_run
 
 
-def physical_bytes(folder):
-    return {path.relative_to(folder).as_posix(): path.read_bytes()
-            for path in folder.rglob('*') if path.is_file()}
-
+from support_financial_publication import (
+    legacy_export, physical_bytes
+)
 
 def resume_targets(folder):
     workbook = load_workbook(folder / 'resume.xlsx')
@@ -24,20 +23,6 @@ def resume_targets(folder):
                 for row in range(5, workbook['Daftar SPT'].max_row + 1)]
     finally:
         workbook.close()
-
-
-def legacy_export(downloads, *, format_name):
-    run = model_run()
-    target = downloads / (run['npwp'] + ' - ' + run['taxpayer_name']) / '2025' / '20250102-030405-000006-synthetic'
-    target.mkdir(parents=True)
-    for record in run['records']:
-        declare_pdf(record, target)
-    exporter.export_workbook(run, target / 'SPT_Badan.xlsx',
-                             include_administration=format_name == 'legacy')
-    targets = {ordinal: ('SPT_Badan.xlsx', name) for ordinal, name in enumerate(
-        ['Induk', 'Induk (2)', 'Induk (3)'], 1)}
-    exporter.export_workbook(run, target / 'resume.xlsx', include_details=False, detail_targets=targets)
-    return run, target
 
 
 @pytest.mark.parametrize('selected_index', [0, 1, 2])

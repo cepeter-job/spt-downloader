@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-import test_json_hybrid_transport as transport
+import support_mode_gui as transport
 
 window = transport.window
 
@@ -102,7 +102,7 @@ def test_settings_keep_mode_status_and_log_action_separate(window):
 def test_unsafe_hybrid_remains_rejected_and_diagnostics_stay_private(tmp_path, monkeypatch):
     d = diagnostics()
     import coretax_json as native
-    from test_json_hybrid import Scenario
+    from support_json_hybrid import Scenario
     case = Scenario(tmp_path / 'capture', monkeypatch, status=401)
     root = tmp_path / 'diagnostics'
     with d.session(root, 'worker', job_id='synthetic-unsafe', level='DEBUG') as log:

@@ -142,7 +142,7 @@ def test_self_test_reports_actual_requested_widget_text_without_accounts(tmp_pat
 @pytest.mark.parametrize('key', ['title', 'background', 'results'])
 def test_packaging_rejects_missing_or_old_requested_ui_evidence(key):
     import build_desktop
-    from test_desktop_build import report
+    from support_build_reports import report
     valid = {**report(), 'ui_text': dict(EXPECTED_TEXT)}
     build_desktop.validate_report(valid)
     wrong = {**valid, 'ui_text': {**EXPECTED_TEXT, key: 'SYNTHETIC OLD UI TEXT'}}
