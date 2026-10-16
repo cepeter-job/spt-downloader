@@ -56,18 +56,37 @@ def verify(baseline, shards, python_version, commit):
         if not expected_nodes or _nodes(report, 'selected') != expected_nodes:
             raise ValueError('Shard evidence omits or duplicates Windows tests.')
 
-    return {
+    result = {
         'total_tests': len(full_nodes),
         'shard_counts': [len(shard['selected']) for shard in shards],
         'serial_seconds': durations[0],
         'parallel_seconds': max(durations[1:]),
         'saved_seconds': durations[0] - max(durations[1:]),
+        'shard_pytest_runner_seconds': sum(durations[1:]),
     }
+    setups = [report.get('setup_seconds') for report in [baseline, *shards]]
+    if any(value is not None for value in setups):
+        for value in setups:
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value < 0):
+                raise ValueError('Benchmark setup time is missing or invalid.')
+        result['serial_setup_pytest_seconds'] = setups[0] + durations[0]
+        result['parallel_setup_pytest_seconds'] = max(
+            setup + duration for setup, duration in zip(setups[1:], durations[1:]))
+        result['shard_setup_pytest_runner_seconds'] = sum(setups[1:]) + sum(durations[1:])
+    return result
 
 
 def summary_text(result):
     serial = result['serial_seconds']
     parallel = result['parallel_seconds']
+    setup_text = ''
+    if 'serial_setup_pytest_seconds' in result:
+        setup_text = (
+            f"- Serial setup + pytest: **{result['serial_setup_pytest_seconds']:.2f}s**\n"
+            f"- Sharded setup + pytest critical path: **{result['parallel_setup_pytest_seconds']:.2f}s**\n"
+            f"- Shard setup + pytest runner-seconds (sum): **{result['shard_setup_pytest_runner_seconds']:.2f}s**\n"
+        )
     return (
         '## Windows 2-shard benchmark (non-production)\n\n'
         f"- Serial suite: **{serial:.2f}s** ({result['total_tests']} tests)\n"
@@ -75,8 +94,11 @@ def summary_text(result):
         f"({result['shard_counts'][0]} + {result['shard_counts'][1]} tests)\n"
         f"- Observed pytest-phase saving: **{result['saved_seconds']:.2f}s** "
         f"({100 * (serial - parallel) / serial:.1f}%)\n\n"
-        'This compares pytest time on independently provisioned Windows runners; '
-        'it excludes setup/queue, packaging and provenance. Production remains '
+        f"- Shard pytest runner-seconds (sum): **{result['shard_pytest_runner_seconds']:.2f}s**\n"
+        f'{setup_text}\n'
+        'Setup starts after checkout and ends at pytest session start. '
+        'This excludes runner queue, checkout, uploads, packaging and provenance; '
+        'these are not total-CI speedups. Production remains '
         'serial and retains its existing required gate and artifact checks.\n'
     )
 
@@ -89,6 +111,7 @@ def main(argv=None):
     parser.add_argument('--python-version', required=True)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--summary', type=Path)
+    parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
 
     baseline, shard_zero, shard_one = (
@@ -97,6 +120,8 @@ def main(argv=None):
     )
     result = verify(baseline, [shard_zero, shard_one],
                     args.python_version, args.commit)
+    if args.output:
+        args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + '\n', encoding='utf-8')
     text = summary_text(result)
     print(text)
     if args.summary:

@@ -153,7 +153,8 @@ def test_benchmark_workflow_is_opt_in_except_for_scoped_pr_validation():
     ('def test_failed():\n    assert False, "synthetic failure"\n', 1),
     ('import pytest\n@pytest.fixture\ndef broken():\n    raise RuntimeError("synthetic fixture")\ndef test_error(broken):\n    pass\n', 1),
     ('def test_invalid(:\n    pass\n', 2),
-])
+    ('import pytest\ndef test_skip():\n    pytest.skip("synthetic skip")\n', 0),
+], ids=['pass', 'assertion-failure', 'fixture-error', 'collection-error', 'skip'])
 def test_production_inventory_retains_timing_and_failure_exit_status(tmp_path, body, expected_status):
     import os
     import time
@@ -193,7 +194,7 @@ def report_module():
     return module
 
 
-def test_report_summarizes_outcomes_without_copying_failure_values_or_logs():
+def test_report_summarizes_outcomes_without_copying_failure_values_or_logs(tmp_path, monkeypatch):
     report = report_module()
     inventory = dict(workload='windows', python=VERSION, commit=COMMIT,
                      all=['a', 'b', 'c', 'd'], selected=['a', 'b', 'c', 'd'],
@@ -217,6 +218,14 @@ def test_report_summarizes_outcomes_without_copying_failure_values_or_logs():
     assert '12.50' in text and '3.00' in text
     assert 'exit status' in text.lower()
     assert 'DO_NOT_COPY' not in text
+    (tmp_path / 'test-inventory.json').write_text(json.dumps(inventory), encoding='utf-8')
+    (tmp_path / 'test-results.xml').write_text(junit, encoding='utf-8')
+    summary = tmp_path / 'summary.md'
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    report.main(['report', '--directory', str(tmp_path)])
+    saved = json.loads((tmp_path / 'test-measurements.json').read_text(encoding='utf-8'))
+    assert saved == data
+    assert summary.read_text(encoding='utf-8') == text
 
 
 def test_report_marks_missing_execution_evidence_as_unknown_not_success():
@@ -270,6 +279,9 @@ def test_measurement_workflows_keep_production_serial_and_publish_failed_diagnos
     production = (ROOT / '.github/workflows/windows-build.yml').read_text(encoding='utf-8')
     benchmark = (ROOT / '.github/workflows/windows-shard-benchmark.yml').read_text(encoding='utf-8')
     assert '--ci-shard' not in production and '--ci-benchmark' not in production
+    assert 'continue-on-error:' not in production
+    assert 'needs: [route, portable, windows, dependency-audit, package, attest]' in production
+    assert 'scripts.ci_route gate' in production
     for workflow in (production, benchmark):
         assert '--junitxml' in workflow
         assert 'junit_logging=no' in workflow
@@ -279,3 +291,26 @@ def test_measurement_workflows_keep_production_serial_and_publish_failed_diagnos
     assert "PYTHON_VERSION: '3.14.8'" not in benchmark
     assert 'needs.profile.outputs.production_python' in benchmark
     assert 'spt_desktop/runtime.py' in benchmark
+
+
+@pytest.mark.parametrize('invalid', [-1, float('nan'), float('inf'), True, '12'])
+def test_report_rejects_invalid_measurement_numbers(invalid):
+    with pytest.raises(ValueError):
+        report_module().summarize({'elapsed_seconds': invalid}, None)
+
+
+def test_benchmark_comparison_json_is_tied_to_verified_inputs(tmp_path):
+    from scripts import ci_shard_benchmark
+
+    baseline, shards = evidence()
+    paths = [tmp_path / f'report-{index}.json' for index in range(3)]
+    for path, report in zip(paths, [baseline, *shards]):
+        path.write_text(json.dumps(report), encoding='utf-8')
+    output, summary = tmp_path / 'comparison.json', tmp_path / 'summary.md'
+    ci_shard_benchmark.main([
+        *map(str, paths), '--python-version', VERSION, '--commit', COMMIT,
+        '--output', str(output), '--summary', str(summary),
+    ])
+    assert json.loads(output.read_text(encoding='utf-8')) == ci_shard_benchmark.verify(
+        baseline, shards, VERSION, COMMIT)
+    assert 'non-production' in summary.read_text(encoding='utf-8')

@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -75,7 +76,19 @@ def pytest_sessionstart(session):
         if config.getoption('--ci-workload') != 'windows' or not config.getoption('--ci-manifest'):
             from pytest import UsageError
             raise UsageError('Benchmark requires Windows workload and an evidence manifest.')
-        config._ci_benchmark_started = time.monotonic()
+    if config.getoption('--ci-manifest'):
+        config._ci_started = time.monotonic()
+        config._ci_setup_seconds = None
+        marker = os.environ.get('CI_SETUP_STARTED')
+        if marker:
+            from pytest import UsageError
+            try:
+                measured = config._ci_started - float(marker)
+            except ValueError as exc:
+                raise UsageError('CI setup marker is not numeric.') from exc
+            if not math.isfinite(measured) or measured < 0:
+                raise UsageError('CI setup marker is not a valid monotonic timestamp.')
+            config._ci_setup_seconds = measured
 
 
 
@@ -98,9 +111,16 @@ def pytest_collection_modifyitems(config, items):
         config.hook.pytest_deselected(items=excluded)
     manifest = config.getoption('--ci-manifest')
     if manifest:
+        cache_hit = os.environ.get('CI_UV_CACHE_HIT')
+        python_cache_hit = os.environ.get('CI_PYTHON_CACHE_HIT')
         report = {
             'workload': workload, 'python': platform.python_version(),
             'platform': sys.platform, 'commit': os.environ.get('GITHUB_SHA', ''),
+            'run_id': os.environ.get('GITHUB_RUN_ID', ''),
+            'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', ''),
+            'setup_seconds': config._ci_setup_seconds,
+            'cache_hit': cache_hit if cache_hit in {'true', 'false'} else None,
+            'python_cache_hit': python_cache_hit if python_cache_hit in {'true', 'false'} else None,
             'all': all_nodes, 'selected': sorted(item.nodeid for item in items),
         }
         if shard:
@@ -110,14 +130,14 @@ def pytest_collection_modifyitems(config, items):
 
 def pytest_sessionfinish(session, exitstatus):
     config = session.config
-    if not config.getoption('--ci-benchmark'):
+    if not config.getoption('--ci-manifest'):
         return
     path = Path(config.getoption('--ci-manifest'))
     if not path.exists():
         return
     report = json.loads(path.read_text(encoding='utf-8'))
     report['exitstatus'] = int(exitstatus)
-    report['elapsed_seconds'] = time.monotonic() - config._ci_benchmark_started
+    report['elapsed_seconds'] = time.monotonic() - config._ci_started
     path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
