@@ -118,15 +118,15 @@ def _observations(capture, record, scope):
     return events
 
 
-def _requests(events, endpoint, record_id, *, grid=False):
+def _requests(events, endpoint, record_id, *, grid=False, identity=None):
     # Keep every sequence for repeated requests. The adapter must compare their
     # response snapshots, not silently choose whichever reply arrived last.
+    identity = identity or ('ReturnSheetRecordId' if grid else 'RecordId')
     matches = {}
     for event in events:
         if event['url'] != endpoint:
             continue
         request = event.get('request_json')
-        identity = 'ReturnSheetRecordId' if grid else 'RecordId'
         if (event.get('method') != 'POST' or not isinstance(request, dict)
                 or request.get(identity) != record_id
                 or type(event.get('status')) is not int or not 200 <= event['status'] < 300
@@ -239,8 +239,18 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
                 metadata = physical.evaluate(TABLE.replace('GROUP', GROUP_JS))
                 if not metadata['headers'] or not all(metadata['headers']):
                     return None
-                binding['tables'].append({'name': suffix, **metadata, 'endpoint': endpoint,
-                                          'pages': pages, 'source_total': total})
+                table_binding = {'name': suffix, **metadata, 'endpoint': endpoint,
+                                 'pages': pages, 'source_total': total}
+                if tax == 'PPN' and suffix == 'lc':
+                    # C initializes a separate footer request whose callback
+                    # overrides both C and Induk totals. A grid is not its source.
+                    footer_endpoint = endpoint + '/footer'
+                    requests = _requests(_observations(capture, record, scope),
+                        footer_endpoint, record['record_id'], identity='ReturnSheetRecordId')
+                    if any(item['request_json'].get('IsNormalVAT') is not True for item in requests):
+                        return None
+                    table_binding['footer_source'] = {'endpoint': footer_endpoint, 'requests': requests}
+                binding['tables'].append(table_binding)
             if name == 'INDUK':
                 endpoint = ORIGIN + '/returnsheet/api/prefillreturnsheet/' + ('nvat' if tax == 'PPN' else 'withholding-tax')
                 binding['primary'] = {'endpoint': endpoint, 'requests': _requests(
