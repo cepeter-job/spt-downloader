@@ -278,6 +278,7 @@ def validate_benchmark(document):
     assert jobs['benchmark']['runs-on'] == 'windows-2022'
     assert set(jobs['benchmark']['strategy']['matrix']['mode']) == {'serial', 'shard-0', 'shard-1'}
     assert _expression(jobs['benchmark']['env']['PYTHON_VERSION']) == 'needs.profile.outputs.production_python'
+    assert _expression(jobs['benchmark']['env']['BENCHMARK_MODE']) == 'matrix.mode'
     _, profile = _one(jobs['profile']['steps'], lambda s: s.get('id') == 'profile')
     assert _runs(profile, '-m', 'scripts.ci_route', 'route')
     _, tests = _one(jobs['benchmark']['steps'], lambda s: s.get('id') == 'tests')
