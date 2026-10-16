@@ -34,10 +34,22 @@ def self_test(report=None):
 
         def read_request(self, event):
             return {'records': [
-                {'record_id': '::synthetic {return}; [literal] / id', 'meta': {'Jenis Pajak': 'PPN'}},
-                {'record_id': 'synthetic-badan-one', 'meta': {'Jenis Pajak': 'PPh Badan'}},
-                {'record_id': 'synthetic-21', 'meta': {'Jenis Pajak': 'PPh Pasal 21/26'}},
-                {'record_id': 'synthetic-badan-two', 'meta': {'Jenis Pajak': 'pph badan'}},
+                {'record_id': '::synthetic {return}; [literal] / id', 'meta': {
+                    'Jenis Pajak': 'PPN', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Pembetulan 10'}},
+                {'record_id': 'synthetic-badan-one', 'meta': {
+                    'Jenis Pajak': 'PPh Badan', 'Masa Pajak': '2025', 'Model SPT': 'Pembetulan 2'}},
+                {'record_id': 'synthetic-21', 'meta': {
+                    'Jenis Pajak': 'PPh Pasal 21/26', 'Masa Pajak': 'Februari 2025', 'Model SPT': 'Normal'}},
+                {'record_id': 'synthetic-badan-two', 'meta': {
+                    'Jenis Pajak': 'pph badan', 'Masa Pajak': 'Januari - Desember 2025', 'Model SPT': 'Normal'}},
+                {'record_id': 'synthetic-ppn-normal', 'meta': {
+                    'Jenis Pajak': 'PPN', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Normal'}},
+                {'record_id': 'synthetic-ppn-one', 'meta': {
+                    'Jenis Pajak': 'PPN', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Pembetulan 1'}},
+                {'record_id': 'synthetic-ppn-two', 'meta': {
+                    'Jenis Pajak': 'PPN', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Pembetulan 2'}},
+                {'record_id': 'synthetic-ppn-feb', 'meta': {
+                    'Jenis Pajak': 'PPN', 'Masa Pajak': 'Februari 2025', 'Model SPT': 'Normal'}},
             ]}
 
         def respond(self, kind, request_id, payload):
@@ -110,13 +122,16 @@ def self_test(report=None):
             tree.selection_set(chosen)
             tree.event_generate('<<TreeviewSelect>>')
             root.update()
-            sorting={'heading':tree.heading('type','text'), 'directions':[]}
+            sorting={'heading':tree.heading('type','text'), 'directions':[],
+                     'hierarchy':['type','year','month','model'], 'ordered_ids':[]}
             values={iid:tuple(tree.item(iid,'values')) for iid in original}
-            for descending in (False,True):
+            # Independent literal oracles: never compute expectations with the sort key.
+            for expected_order in ((3,1,2,4,5,6,0,7),(4,5,6,0,7,2,3,1)):
                 root.tk.call(tree.heading('type','command'))
                 root.update()
                 observed=list(tree.get_children())
-                assert observed==sorted(original,key=lambda iid:values[iid][0].casefold(),reverse=descending)
+                assert observed==[original[index] for index in expected_order]
+                sorting['ordered_ids'].append([tree.item(iid,'values')[3] for iid in observed])
                 assert set(tree.selection())==set(chosen)
                 assert {iid:tuple(tree.item(iid,'values')) for iid in observed}==values
                 sorting['directions'].append(tree.heading('type','text'))
