@@ -26,10 +26,10 @@ FORMS = [(tax, form) for tax, config in TYPES.items() for form in config['forms'
 BLOCKS = [
     ('PPN', 'A1', 3, 4, 6, ''),
     ('PPN', 'A2', 4, 5, 15, 'B3'),
-    ('PPN', 'B1', 4, 5, 6, ''),
+    ('PPN', 'B1', 4, 5, 5, ''),
     ('PPN', 'B2', 3, 4, 7, ''),
     ('PPN', 'B3', 3, 4, 7, ''),
-    ('PPN', 'C', 3, 4, 7, ''),
+    ('PPN', 'C', 3, 4, 6, ''),
     ('PPh Unifikasi', 'Daftar I', 4, 5, 8, 'B3'),
     ('PPh Unifikasi', 'Daftar I', 10, 11, 14, 'B9'),
     ('PPh Unifikasi', 'Daftar II', 4, 5, 8, 'B3'),
@@ -37,8 +37,8 @@ BLOCKS = [
     ('PPh Unifikasi', 'Lampiran I', 4, 5, 9, 'B3'),
 ]
 BLANK_REGIONS = {
-    'PPN': {'A1': [(4, 6)], 'A2': [(5, 15)], 'B1': [(5, 6)],
-            'B2': [(4, 7)], 'B3': [(4, 7)], 'C': [(4, 7)]},
+    'PPN': {'A1': [(4, 6)], 'A2': [(5, 15)], 'B1': [(5, 5)],
+            'B2': [(4, 7)], 'B3': [(4, 7)], 'C': [(4, 6)]},
     'PPh Unifikasi': {'Daftar I': [(5, 8), (11, 14)],
                      'Daftar II': [(5, 8), (14, 17)], 'Lampiran I': [(5, 9)]},
 }
@@ -167,7 +167,7 @@ def test_ppn_induk_keeps_repeated_row_labels_bound_to_their_visible_section(tmp_
     workbook = export('PPN', source_run('PPN', [section('Induk', tables=tables)]), tmp_path)
     try:
         for caption_row, header_row, value_row, label_cell, marker in groups:
-            assert [workbook['Induk'].cell(value_row, col).value for col in range(5, 9)] == [marker, '20,02', '30,03', '40,04']
+            assert [workbook['Induk'].cell(value_row, col).value for col in range(5, 9)] == [float(marker.replace(',', '.')), 20.02, 30.03, 40.04]
         assert_layout(workbook['Induk'], ref)
     finally:
         workbook.close()
@@ -219,9 +219,20 @@ def test_appendix_columns_reorder_without_losing_ids_dates_or_duplicate_rows(tmp
         for row_number in [first, first + 1]:
             for column, value in enumerate(values, 1):
                 cell = workbook[form].cell(row_number, column)
-                assert cell.value == value and cell.data_type == 's'
-                assert_format(cell, ref.cell(row_number, column))
-        assert_layout(workbook[form], ref)
+                numeric = tax == 'PPN' and value == '1.234,50'
+                assert cell.value == (1234.5 if numeric else value)
+                assert cell.data_type == ('n' if numeric else 's')
+                reference_row = row_number if row_number <= last else first
+                assert_format(cell, ref.cell(reference_row, column))
+        if tax == 'PPN' and form == 'B1':
+            # Two duplicate source rows now grow the single reserved B1 row.
+            assert workbook[form].max_row == ref.max_row + 1
+            for cells in ref:
+                for cell in cells:
+                    target_row = cell.row + 1 if cell.row > last else cell.row
+                    assert_format(workbook[form].cell(target_row, cell.column), cell)
+        else:
+            assert_layout(workbook[form], ref)
     finally:
         workbook.close()
         reference.close()
@@ -245,7 +256,8 @@ def test_row_growth_preserves_new_row_styles_and_every_shifted_header_and_total(
         for index, values in enumerate(rows):
             for column, value in enumerate(values, 1):
                 cell = sheet.cell(first + index, column)
-                assert cell.value == value
+                expected_value = 1234.5 if tax == 'PPN' and value == '1.234,50' else value
+                assert cell.value == expected_value
                 reference_row = first + index if first + index < boundary else first
                 assert_format(cell, ref.cell(reference_row, column))
         for row_number in range(boundary, ref.max_row + 1):
