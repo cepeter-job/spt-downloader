@@ -840,16 +840,28 @@ def _identity_checked_packets(packets, record, scope):
 def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+    ppn = record['meta'].get('Jenis Pajak') == 'PPN'
+    if ppn:
+        from coretax_masa_json import adapt_masa_detail, check_masa_request_identities
+        from coretax_masa_observer import observe_masa_forms
+        check_masa_request_identities(capture.request_observations(), record, scope)
     if corporate:
         _check_corporate_request_identities(capture.request_observations(), record, scope)
     forms = observe_corporate_forms(page, record, scope, capture,
         max_pages=max_pages, check_cancel=check_cancel) if corporate else None
+    if ppn:
+        forms = observe_masa_forms(page, record, scope, capture,
+            max_pages=max_pages, check_cancel=check_cancel)
     observations = capture.request_observations()
+    if ppn:
+        check_masa_request_identities(observations, record, scope)
     if corporate:
         _check_corporate_request_identities(observations, record, scope)
     if any(item.get('status') in (401, 403) for item in observations):
         raise JsonSafetyError('Detail HTTP authorization was rejected')
     manifest = capture.drain(check_cancel=check_cancel)
+    if ppn:
+        check_masa_request_identities(capture.request_observations(), record, scope)
     if corporate:
         _check_corporate_request_identities(capture.request_observations(), record, scope)
     if any(reason in manifest['reasons'] for reason in (
@@ -861,21 +873,27 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         bodies = _identity_checked_packets(bodies, record, scope)
     decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
                                      observed_forms=forms or []) if corporate else None
-    if not corporate:
+    if ppn:
+        decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=forms or [])
+    if not corporate and not ppn:
         for packet in bodies:
             _check_cancel(check_cancel)
             if packet['context']['status'] in (401, 403):
                 raise JsonSafetyError('Detail HTTP authorization was rejected')
     _check_cancel(check_cancel)
-    eligible = corporate and forms is not None and manifest['complete'] and decoded['eligible']
+    eligible = ((corporate or ppn) and forms is not None and manifest['complete']
+                and decoded['eligible'] and decoded['coverage']['complete'])
     audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
              'capture': manifest}
     if decoded is not None:
         audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
     if eligible:
-        result = capture_financial_detail(page, record=record, folder=folder, check_cancel=check_cancel)
+        if corporate:
+            result = capture_financial_detail(page, record=record, folder=folder, check_cancel=check_cancel)
+        else:
+            result = {'detail_url': page.url, 'capture_complete': True, 'errors': [], 'attachments': []}
         result['sections'] = decoded['sections']
-        audit['reason'] = 'verified_native_corporate_source'
+        audit['reason'] = 'verified_native_corporate_source' if corporate else 'verified_native_ppn_source'
     else:
         audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
                            else 'unsupported_observed_forms_or_capture')
@@ -1045,6 +1063,23 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     _check_cancel(check_cancel)
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
+                if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') == 'PPN':
+                    from coretax_masa_json import bind_ppn_listing_identity
+                    identity = bind_ppn_listing_identity(current_response, record=record, scope=scope)
+                    if identity['eligible']:
+                        from coretax_pdf import _directories
+                        from spt_desktop.output_windows import DirectoryGuard
+                        relative = Path('listing-responses') / f'ppn-identity-{ordinal:04d}-{uuid4().hex}.json'
+                        target = folder / relative
+                        with DirectoryGuard() as guard:
+                            guard.include(_directories(target.parent))
+                            with target.open('xb') as handle:
+                                handle.write(current_response['body'])
+                                handle.flush()
+                                os.fsync(handle.fileno())
+                        record['source_fields'] = identity['source_fields']
+                        record['source_identity'] = {**identity['source_identity'],
+                                                     'relative_path': relative.as_posix()}
                 session = nullcontext(None)
                 if detail_source == 'json-first':
                     from coretax_json_capture import DetailJsonCapture

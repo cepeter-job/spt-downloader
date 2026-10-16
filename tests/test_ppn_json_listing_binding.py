@@ -100,6 +100,20 @@ def test_ppn_identity_requires_exact_selected_record_in_verified_response():
         bind(response, record)
 
 
+def test_ppn_identity_failed_source_envelope_cannot_grant_eligibility():
+    response, record = case()
+    envelope = json.loads(response['body'])
+    envelope['IsSuccessful'] = False
+    response['body'] = json.dumps(envelope).encode()
+    assert bind(response, record)['eligible'] is False
+
+
+def test_ppn_identity_unknown_filter_cannot_grant_eligibility():
+    response, record = case()
+    response['binding']['request']['Filters'] = [{'Field': 'UnknownField', 'Value': 'SYNTHETIC'}]
+    assert bind(response, record)['eligible'] is False
+
+
 def test_ppn_identity_missing_aggregate_cannot_grant_eligibility():
     response, record = case()
     del response['rows'][0]['AggregateIdentifier']
