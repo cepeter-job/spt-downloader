@@ -10,20 +10,24 @@ remain independent. No release or live-account acceptance is included.
 
 ## Implementation and proof
 
-- [ ] Merge fixture-owner cleanup after unchanged inventory, native/GUI tests,
+- [x] Merge fixture-owner cleanup after unchanged inventory, native/GUI tests,
   package readback and independent source review.
-- [ ] Replace four whole-YAML substring tests with structured dependency/order,
+- [x] Replace four whole-YAML substring tests with structured dependency/order,
   permissions, diagnostic and opt-in benchmark contracts. A test-only YAML parser
   belongs in the hash-locked test/build environment, never the runtime lock.
-- [ ] Prove invalid workflow mutations fail and equivalent YAML representations
+- [x] Prove invalid workflow mutations fail and equivalent YAML representations
   pass. Keep routing/gate behavioral tests and exact package checks.
-- [ ] Run at least five identical-source Windows benchmark comparisons, distinguish
+- [x] Run at least five identical-source Windows benchmark comparisons, distinguish
   cold/restored cache observations and record total-runner/critical-path costs.
-- [ ] Adopt production sharding only when the full required workflow independently
+- [x] Adopt production sharding only when the full required workflow independently
   demonstrates the approved benefit with identical inventory and no weakened gates.
-  Otherwise complete the evaluation with an explicit retain-serial decision.
-- [ ] Review, merge, and verify final main CI/artifacts; publish evidence without
-  claiming live taxpayer acceptance or extrapolated savings as measurements.
+  Evaluation finished with an explicit retain-serial decision; no production
+  sharding implementation is pending.
+Final integration evidence belongs in PR #28: exact documentation-head CI,
+guarded merge identity and the completed post-merge main artifact checks. This
+plan does not preclaim those execution results.
 
 All product/pytest/GUI/browser/build execution is GitHub-runner-only. Local work
 is source analysis, lock resolution and artifact metadata/hash inspection.
+
+Measured outcome: [optimization completion report](../../audits/2026-10-16-optimization-completion.md).

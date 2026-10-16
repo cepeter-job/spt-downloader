@@ -211,3 +211,15 @@ Bentuk flow/block YAML, urutan `needs`, serta pembungkus ekspresi yang ekuivalen
 diterima. Key `on` tetap berupa nama event dan duplicate key ditolak. Helper ini
 bukan interpreter Bash/PowerShell atau evaluator ekspresi Actions; actionlint dan
 hasil runner tetap diperlukan untuk sintaks, eksekusi, dan verifikasi artifact.
+
+
+## Hasil evaluasi optimasi 16 Oktober 2026
+
+Lima perbandingan Windows pada commit yang sama sudah selesai; hasil lengkap,
+identitas artifact, inventaris dan batas pengukuran ada di
+[laporan penyelesaian optimasi](audits/2026-10-16-optimization-completion.md).
+Keputusannya: produksi tetap serial. Percepatan fase pytest tidak membuktikan
+percepatan CI lengkap 20%, kedua shard menambah total runner time, dan permintaan
+restore cache dalam studi ini ternyata semuanya miss. Tidak ada cache-hit atau
+percepatan pipeline penuh yang diasumsikan. Benchmark opsional tetap tersedia,
+tetapi tidak ada perubahan sharding produksi yang menunggu digabungkan.
