@@ -5,6 +5,7 @@ import re
 from coretax_json import (
     JsonSafetyError,
     _CorporateNumber,
+    _UnsupportedMetadata,
     _corporate_json,
     _corporate_packet,
     _corporate_request_key,
@@ -177,7 +178,16 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         reasons.append('missing_native_masa_identity_binding')
     provenance = {'events': []}
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
-    sequences, snapshots = set(), {}
+    from coretax_masa_bindings import FORMS
+    from coretax_masa_projection import project_masa_forms
+
+    sequences, snapshots, packets = set(), {}, {}
+    primary_seen = False
+    grid_paths = {
+        '/returnsheet/api/' + ('loadndvat/' if kind == 'PPN' else 'loadwtr/') + suffix + '-grid'
+        for kind, forms in FORMS.items() for _, roles in forms.values() for _, suffix in roles
+    }
+    grid_paths.add('/returnsheet/api/loadndvat/lc-grid/footer')
     attempt, total_bytes = None, 0
     for item in bodies:
         envelope, ctx, attempt, event = _corporate_packet(item, selected, scope, attempt, sequences)
@@ -187,27 +197,52 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         provenance['events'].append(event)
         check_masa_request_identities([ctx], record, scope)
         path = urlparse(ctx['url']).path
-        if path in _PREFILL_PATHS:
-            source_tax = 'PPN' if path.endswith('/nvat') else 'PPh Unifikasi'
-            if tax in ('PPN', 'PPh Unifikasi') and source_tax != tax:
-                raise JsonSafetyError('Masa primary source family contradicts selected tax')
+        payload = envelope.get('Payload') if isinstance(envelope, dict) else None
+        successful = (200 <= ctx['status'] < 300 and isinstance(envelope, dict)
+                      and envelope.get('IsSuccessful') is True)
+        form = None
+        # Repeated grid/footer responses are snapshots too. Check every packet,
+        # even if missing/unknown observation metadata will require fallback.
+        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES):
             key = (ctx['url'], _corporate_request_key(ctx.get('request_json')))
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
-                raise JsonSafetyError('Masa primary snapshot changed within one attempt')
+                raise JsonSafetyError('Masa source snapshot changed within one attempt')
             snapshots[key] = ctx['sha256']
-            if (not 200 <= ctx['status'] < 300 or not isinstance(envelope, dict)
-                    or envelope.get('IsSuccessful') is not True):
+            identity_key = 'RecordId' if path in _PREFILL_PATHS else 'ReturnSheetRecordId'
+            request = ctx.get('request_json')
+            if not isinstance(request, dict) or identity_key not in request:
+                reasons.append('missing_masa_request_identity_binding')
+        if path in _PREFILL_PATHS:
+            primary_seen = True
+            source_tax = 'PPN' if path.endswith('/nvat') else 'PPh Unifikasi'
+            if tax in ('PPN', 'PPh Unifikasi') and source_tax != tax:
+                raise JsonSafetyError('Masa primary source family contradicts selected tax')
+            if not successful:
                 reasons.append('failed_masa_primary_response')
-            payload = envelope.get('Payload') if isinstance(envelope, dict) else None
-            _check_primary(payload, record, selected, scope, period, source_tax, reasons)
+            form = _check_primary(payload, record, selected, scope, period, source_tax, reasons)
+        elif path in grid_paths:
+            source_tax = 'PPN' if path.startswith('/returnsheet/api/loadndvat/') else 'PPh Unifikasi'
+            if tax in FORMS and source_tax != tax:
+                raise JsonSafetyError('Masa grid source family contradicts selected tax')
+            if not successful:
+                reasons.append('failed_masa_grid_response')
         else:
             reasons.append('unbound_masa_source_response')
+        packets[ctx['sequence']] = {'event': event, 'payload': payload, 'form': form, 'successful': successful}
         del item
-    if not snapshots:
+    if not primary_seen:
         reasons.append('missing_masa_primary_response')
-    # Request/identity validation alone cannot assert native form coverage.
-    # Projection support is added only with its independent behavior contracts.
-    reasons.append('unverified_masa_form_projection')
+    try:
+        projected = project_masa_forms(packets, record=record, observed_forms=observed_forms)
+    except _UnsupportedMetadata as exc:
+        reasons.append(str(exc))
+    else:
+        if not reasons:
+            provenance['bindings'] = projected['bindings']
+            coverage.update({key: projected[key] for key in ('source_root_count', 'evidence_row_count', 'grids')})
+            coverage['complete'] = True
+            return {'eligible': True, 'reason': '', 'sections': projected['sections'],
+                    'coverage': coverage, 'provenance': provenance}
     return {'eligible': False, 'reason': ','.join(dict.fromkeys(reasons)), 'sections': [],
             'coverage': coverage, 'provenance': provenance}

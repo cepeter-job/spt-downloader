@@ -6,36 +6,7 @@ from coretax_json import ORIGIN, JsonSafetyError
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid
 from coretax_masa_json import check_masa_request_identities
 
-MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
-TAX_SOURCES = {
-    'PPN': ORIGIN + '/returnsheets/id-ID/640.36c042afd2381189.js',
-    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
-}
-BUILD_DIGESTS = {
-    MAIN_SOURCE: '696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd',
-    TAX_SOURCES['PPN']: '4a7e33826b6d0395afb23372fb6b4a9d4be6abaab0ec25fa743c897d0e654aef',
-    TAX_SOURCES['PPh Unifikasi']: '2694fdda5c23b7d5f0eefe0cf0a0c55caa0fe29acc590363f34684ed90188fe0',
-}
-# Component names come from the reviewed public build, not field-name guessing.
-FORMS = {
-    'PPN': {
-        'INDUK': (None, ()),
-        'A-1': ('rshshr-nvat-la1-form', (('rshshr-nvat-la1-grid', 'la1'),)),
-        'A-2': ('rshshr-nvat-la2-form', (('rshshr-nvat-la2-grid', 'la2'),)),
-        'B-1': ('rshshr-nvat-lb1-form', (('rshshr-nvat-lb1-grid', 'lb1'),)),
-        'B-2': ('rshshr-nvat-lb2-form', (('rshshr-nvat-lb2-grid', 'lb2'),)),
-        'B-3': ('rshshr-nvat-lb3-form', (('rshshr-nvat-lb3-grid', 'lb3'),)),
-        'C': ('rshshr-nvat-lc-form', (('rshshr-nvat-lc-grid', 'lc'),)),
-    },
-    'PPh Unifikasi': {
-        'INDUK': ('rshshr-spt-unifikasi', ()),
-        'DAFTAR-I': ('rshshr-list-i', (('rshshr-list-i-grid-a', 'list-i-bpu'),
-                                    ('rshshr-list-i-grid-b', 'list-i-bpnr'))),
-        'DAFTAR-II': ('rshshr-list-ii', (('rshshr-list-ii-grid-a', 'list-ii-sp'),
-                                      ('rshshr-list-ii-grid-b', 'list-ii-cy'))),
-        'LAMPIRAN-I': ('rshshr-attachment-i', (('rshshr-attachment-i-grid', 'attachment-i'),)),
-    },
-}
+from coretax_masa_bindings import MAIN_SOURCE, TAX_SOURCES, BUILD_DIGESTS, FORMS
 
 FIELDS = r"""(root, context={}) => {
  const group=GROUP, visible=e=>!!e.getClientRects().length;

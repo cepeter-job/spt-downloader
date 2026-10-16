@@ -6,7 +6,38 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 import re
 
-from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, _corporate_request_key
+from coretax_json import ORIGIN, JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, _corporate_request_key
+
+MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
+TAX_SOURCES = {
+    'PPN': ORIGIN + '/returnsheets/id-ID/640.36c042afd2381189.js',
+    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
+}
+BUILD_DIGESTS = {
+    MAIN_SOURCE: '696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd',
+    TAX_SOURCES['PPN']: '4a7e33826b6d0395afb23372fb6b4a9d4be6abaab0ec25fa743c897d0e654aef',
+    TAX_SOURCES['PPh Unifikasi']: '2694fdda5c23b7d5f0eefe0cf0a0c55caa0fe29acc590363f34684ed90188fe0',
+}
+# Component names come from the reviewed public build, not field-name guessing.
+FORMS = {
+    'PPN': {
+        'INDUK': (None, ()),
+        'A-1': ('rshshr-nvat-la1-form', (('rshshr-nvat-la1-grid', 'la1'),)),
+        'A-2': ('rshshr-nvat-la2-form', (('rshshr-nvat-la2-grid', 'la2'),)),
+        'B-1': ('rshshr-nvat-lb1-form', (('rshshr-nvat-lb1-grid', 'lb1'),)),
+        'B-2': ('rshshr-nvat-lb2-form', (('rshshr-nvat-lb2-grid', 'lb2'),)),
+        'B-3': ('rshshr-nvat-lb3-form', (('rshshr-nvat-lb3-grid', 'lb3'),)),
+        'C': ('rshshr-nvat-lc-form', (('rshshr-nvat-lc-grid', 'lc'),)),
+    },
+    'PPh Unifikasi': {
+        'INDUK': ('rshshr-spt-unifikasi', ()),
+        'DAFTAR-I': ('rshshr-list-i', (('rshshr-list-i-grid-a', 'list-i-bpu'),
+                                    ('rshshr-list-i-grid-b', 'list-i-bpnr'))),
+        'DAFTAR-II': ('rshshr-list-ii', (('rshshr-list-ii-grid-a', 'list-ii-sp'),
+                                      ('rshshr-list-ii-grid-b', 'list-ii-cy'))),
+        'LAMPIRAN-I': ('rshshr-attachment-i', (('rshshr-attachment-i-grid', 'attachment-i'),)),
+    },
+}
 
 _MAX_EXACT_INTEGER = Decimal('9007199254740991')
 _JAKARTA = timezone(timedelta(hours=7))
