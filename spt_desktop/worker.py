@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import sys
 import threading
+import tempfile
 import coretax
 from coretax_exporter import validate_scope
 from coretax_json import validate_detail_source
@@ -25,7 +26,7 @@ def playwright_factory():
     return sync_playwright()
 
 
-def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None,detail_source='dom'):
+def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None,detail_source='dom',account=None):
     diagnostics.record('operation.started', job_id=job_id, operation='export')
     progress=Progress(job_id,emit)
     run=None
@@ -37,14 +38,22 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
               'percent':progress.percent,'message':message})
     try:
         validate_detail_source(detail_source)
+        if account is not None and (not isinstance(account,str) or (account and (not account.strip() or len(account)>256 or '\0' in account))):
+            raise ValueError('Invalid login account')
         npwp,year=validate_scope(npwp,year)
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',job_id):raise ValueError('Invalid job identifier')
         check_cancel()
         root=Path(root)
         folder=root/'jobs'/job_id
         folder.mkdir(parents=True,exist_ok=False)
-        with playwright_factory() as playwright:
-            context,page=authenticate_owned(playwright,root/'profile',browser,headless,auth_event,check_cancel)
+        with contextlib.ExitStack() as profiles,playwright_factory() as playwright:
+            profile=root/'profile'
+            auth_options={} if account is None else {'account':account}
+            if account:
+                # A check in another profile cannot establish this profile's account identity.
+                cache=root/'cache';cache.mkdir(parents=True,exist_ok=True)
+                profile=Path(profiles.enter_context(tempfile.TemporaryDirectory(prefix='login-run-',dir=cache)))
+            context,page=authenticate_owned(playwright,profile,browser,headless,auth_event,check_cancel,**auth_options)
             try:
                 progress.authenticated()
                 run=collect_inventory(page,npwp,year,'period',folder,
@@ -159,6 +168,8 @@ def main(argv=None):
     parser.add_argument('--visible',action='store_true')
     parser.add_argument('--detail-source',choices=['dom','json-first'],default='dom')
     args=parser.parse_args(argv)
+    if args.account is not None and (len(args.account)>256 or '\0' in args.account or (args.account and not args.account.strip())):
+        return 1
     if args.check_login:
         if not args.origin or not args.account or len(args.account)>256 or not args.account.strip():return 1
     else:
@@ -205,6 +216,7 @@ def _authorized(args):
         if args.check_login:
             return run_login_check(args.root,args.job_id,args.browser,not args.visible,args.origin,args.account,emit,cancelled.is_set)
         source_options = {'detail_source': args.detail_source} if args.detail_source == 'json-first' else {}
+        source_options['account']=args.account or ''
         return run_job(args.npwp,args.year,args.root,args.job_id,args.browser,not args.visible,
                        emit,cancelled.is_set,requests=requests,**source_options)
 

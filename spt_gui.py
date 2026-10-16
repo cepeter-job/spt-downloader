@@ -23,8 +23,9 @@ def self_test(report=None):
         operation = 'export'
         job_id = None
 
-        def start(self, npwp, year, browser, headless, *, detail_source='dom'):
+        def start(self, npwp, year, browser, headless, *, detail_source='dom', account=''):
             self.detail_source = detail_source
+            self.account = account
             self.job_id = 'synthetic-self-test'
             self.active = True
             return self.job_id
@@ -80,6 +81,13 @@ def self_test(report=None):
             assert personal_use_labels==['Coretax → Excel · for personal use only']
             assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels)
             widgets=list(descendants(dialog))
+            from spt_desktop.credentials import LOGIN_ORIGIN,ALLOWED_ORIGINS
+            origin_selector=any(w.winfo_class()=='TCombobox' and
+                any(origin in tuple(w.cget('values')) for origin in ALLOWED_ORIGINS) for w in widgets)
+            automatic_login={'origin_selector_present':origin_selector,
+                'credential_origin':'satu' if app.preferences['login_origin']==LOGIN_ORIGIN else 'other'}
+            assert not origin_selector
+            assert 'Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
             assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup','Buka folder log'}<=labels
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
@@ -110,7 +118,10 @@ def self_test(report=None):
             assert all((resource_root()/name).is_file() for name in WORKER_FILES)
             if getattr(sys,'frozen',False):assert (resource_root()/'tools'/'uv.exe').is_file()
             app.npwp.set('0000000000000001');app.year.set('2025')
+            app.preferences['identifier']='SYNTHETIC_ACCOUNT'
             app.start()
+            automatic_login['account_forwarded']=app.controller.account=='SYNTHETIC_ACCOUNT'
+            assert automatic_login=={'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
             mode_control['started']=app.controller.detail_source
             assert mode_control['started']=='json-first'
             app.on_event({'job_id':app.controller.job_id, 'type':'selection_required',
@@ -169,6 +180,7 @@ def self_test(report=None):
                   'gui_controls':gui_controls,
                   'detail_source_control':mode_control,
                   'selection_sorting_control':sorting,
+                  'automatic_login_controls':automatic_login,
                   'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}

@@ -99,7 +99,8 @@ class Output:
 sys.stdin = Input()
 sys.stdout = Output()
 
-def run(npwp, year, workspace, identifier, browser, headless, emit, cancelled, *, requests=None):
+def run(npwp, year, workspace, identifier, browser, headless, emit, cancelled, *, requests=None, account):
+    assert account == ''
     assert requests is not None, 'Worker main must provide the private consent channel'
     try:
         requests.request('selection', {'records': [{'record_id': 'PRIVATE_SYNTHETIC_RETURN'}]}, 20,
