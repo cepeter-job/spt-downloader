@@ -24,9 +24,7 @@ def test_packaging_command_is_thin_windowed_and_explicit(tmp_path):
 
 
 
-from support_build_reports import (
-    report, sorting_report
-)
+from support_build_reports import report
 
 def test_frozen_gate_accepts_complete_observed_chronological_sorting():
     builder().validate_report(report())
