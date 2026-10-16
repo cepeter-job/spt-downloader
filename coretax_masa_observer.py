@@ -199,7 +199,14 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             panel_id = tab.get_attribute('aria-controls')
             if not panel_id or tab.get_attribute('href') not in (None, '', '#', '#' + panel_id):
                 return None
-            panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel[id=' + json.dumps(panel_id) + ']')
+            target = '[id=' + json.dumps(panel_id) + ']'
+            # aria-controls must identify one element, including when a nested
+            # view contains a duplicate ID. Nested tabs themselves are allowed.
+            if view.locator(target).count() != 1:
+                return None
+            panel = view.locator(
+                ':scope > .p-tabview-panels > .p-tabview-panel' + target + ', '
+                ':scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel' + target)
             if panel.count() != 1:
                 return None
             tab.click()
