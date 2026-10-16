@@ -51,6 +51,22 @@ def validate_report(data, python_profile='production'):
                 'results':'Hasil Sedot berada di folder Downloads Windows'}
             and data.get('credentials_accessed') is False and data.get('live_scrape') is False):
         raise RuntimeError('Packaged application self-test failed')
+    sorting = data.get('selection_sorting_control')
+    expected_orders = [
+        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
+         'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
+         '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
+        ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
+         '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
+         'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
+    if not (type(sorting) is dict
+            and sorting.get('hierarchy') == ['type', 'year', 'month', 'model']
+            and sorting.get('directions') == ['Jenis pajak ▲', 'Jenis pajak ▼']
+            and sorting.get('ordered_ids') == expected_orders
+            and sorting.get('selection_preserved') is True
+            and sorting.get('confirmed_ids') == [
+                '::synthetic {return}; [literal] / id', 'synthetic-badan-two']):
+        raise RuntimeError('Packaged application sorting self-test failed')
 
 
 def build(output, python_profile='production'):
