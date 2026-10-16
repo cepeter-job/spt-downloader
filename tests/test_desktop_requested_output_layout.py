@@ -10,9 +10,9 @@ from openpyxl import load_workbook
 import coretax
 import coretax_exporter as exporter
 from spt_desktop import output
-from test_desktop_selected_capture import selected_job
-from test_financial_publication import PDF, financial_run
-from test_split_output import fixture_run
+from support_selected_capture import selected_job
+from support_financial_publication import PDF, financial_run
+from support_runs import fixture_run
 
 
 ADMIN = {'Ringkasan', 'Daftar SPT', 'Audit'}

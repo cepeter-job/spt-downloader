@@ -15,12 +15,10 @@ from spt_desktop import runtime
 REFERENCE = Path(__file__).parent / 'fixtures' / 'pph21_format.xlsx'
 JANUARY = 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
 FORMS = ['Induk', 'L-IA', 'L-IB', 'L-II', 'L-III']
-COMMON_HEADERS = ['NO.', 'NIK/NPWP', 'NAMA', 'NOMOR BUKTI POTONG',
-                  'TANGGAL BUKTI PEMOTONGAN', 'KODE OBJEK PAJAK',
-                  'PENGHASILAN BRUTO (Rp)', 'PAJAK PENGHASILAN (Rp)',
-                  'FASILITAS PERPAJAKAN', 'Negara', 'ID TEMPAT KEGIATAN USAHA',
-                  'KAP-KJS', 'STATUS']
-IA_HEADERS = COMMON_HEADERS[:7] + ['TARIF PAJAK (%)'] + COMMON_HEADERS[7:]
+from support_templates import (
+    COMMON_HEADERS, IA_HEADERS, assert_format, assert_layout, cells_with, run_for, section, table
+)
+
 INDUK_HEADERS = ['NO.', 'URAIAN', 'KAP-KJS', 'JUMLAH (Rp)']
 
 
@@ -32,59 +30,10 @@ def row(marker='SYNTHETIC EMPLOYEE', *, ia=False):
     return values[:7] + ['10,00'] + values[7:] if ia else values
 
 
-def table(name, values, *, ia=False, headers=None, complete=True):
-    return {'name': name, 'headers': list(headers or (IA_HEADERS if ia else COMMON_HEADERS)),
-            'rows': values, 'complete': complete}
-
-
-def section(name, *, tables=None, fields=None, text=''):
-    return {'name': name, 'fields': fields or [], 'tables': tables or [], 'text': text}
-
-
-def run_for(sections, *, model='Normal', key='synthetic-21-normal'):
-    return {'npwp': '0000000000000001', 'year': 2025, 'year_basis': 'period',
-            'taxpayer_name': 'SYNTHETIC FIXTURE ONLY', 'complete': False,
-            'started_at': 'fixture', 'audit': [], 'errors': [],
-            'records': [{'key': key, 'record_id': key, 'source_status': 'Fixture',
-                         'meta': {'Jenis Pajak': 'PPh Pasal 21/26',
-                                  'Masa Pajak': 'Januari 2025', 'Model SPT': model},
-                         'capture_complete': True, 'detail_url': '', 'sections': sections}]}
-
-
 def export(run, folder, *, expected_file=JANUARY):
     exporter.export_split_workbooks(run, folder)
     coretax.verify_outputs(run, folder)
     return load_workbook(folder / expected_file)
-
-
-def cells_with(workbook, value):
-    return [c for ws in workbook for cells in ws for c in cells if c.value == value]
-
-
-def assert_format(actual, reference):
-    # Style IDs are workbook-local; compare rendered style components instead.
-    for attribute in ('font', 'fill', 'border', 'alignment', 'protection'):
-        assert copy(getattr(actual, attribute)) == copy(getattr(reference, attribute))
-    assert actual.number_format == reference.number_format
-
-
-def assert_layout(actual, reference):
-    assert set(str(r) for r in actual.merged_cells.ranges) == set(str(r) for r in reference.merged_cells.ranges)
-    for key, dimension in reference.column_dimensions.items():
-        got = actual.column_dimensions[key]
-        for attr in ('width', 'hidden', 'min', 'max', 'bestFit', 'outlineLevel', 'collapsed'):
-            assert getattr(got, attr) == getattr(dimension, attr)
-    for key, dimension in reference.row_dimensions.items():
-        got = actual.row_dimensions[key]
-        for attr in ('height', 'hidden', 'outlineLevel', 'collapsed'):
-            assert getattr(got, attr) == getattr(dimension, attr)
-    for attr in ('sheet_format', 'page_margins', 'print_options'):
-        assert copy(getattr(actual, attr)) == copy(getattr(reference, attr))
-    for attr in ('orientation', 'paperSize', 'fitToWidth', 'fitToHeight'):
-        assert getattr(actual.page_setup, attr) == getattr(reference.page_setup, attr)
-    for cells in reference:
-        for c in cells:
-            assert_format(actual[c.coordinate], c)
 
 
 def test_empty_observed_forms_export_clean_template_without_sample_data(tmp_path):

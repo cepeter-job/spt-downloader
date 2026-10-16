@@ -32,36 +32,9 @@ def test_workflow_tests_builds_and_verifies_before_explicit_artifact_upload():
     assert 'secrets.' not in text and 'coretax.intranet' not in text
 
 
-def report(profile='production'):
-    return {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
-        'diagnostics': {'schema': 1, 'safe_logging': True},
-        'selection_sorting_control': sorting_report(),
-            'python': python_version(profile), 'python_implementation': 'CPython',
-            'free_threaded': False, 'tcl': '8.6.15', 'tk': '8.6.15',
-            'worker_python': python_version(), 'worker_resources': list(WORKER_FILES),
-            'credential_check_controls': True, 'gui_controls': ['Cek Kredensial'],
-            'personal_use_labels': ['Coretax → Excel · for personal use only'],
-            'ui_text': {'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
-                        'background': 'jalankan proses sedot di background',
-                        'results': 'Hasil Sedot berada di folder Downloads Windows'},
-            'credentials_accessed': False, 'live_scrape': False}
-
-
-
-
-def sorting_report():
-    return {'heading': 'Jenis pajak', 'directions': ['Jenis pajak ▲', 'Jenis pajak ▼'],
-            'hierarchy': ['type', 'year', 'month', 'model'],
-            'ordered_ids': [
-                ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
-                 'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
-                 '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
-                ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
-                 '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
-                 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']],
-            'selection_preserved': True,
-            'confirmed_ids': ['::synthetic {return}; [literal] / id', 'synthetic-badan-two']}
-
+from support_build_reports import (
+    report, sorting_report
+)
 
 def test_frozen_gate_accepts_complete_observed_chronological_sorting():
     builder().validate_report(report())

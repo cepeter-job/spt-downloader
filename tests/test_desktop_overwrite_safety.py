@@ -11,7 +11,7 @@ import pytest
 import coretax
 from coretax_browser import CaptureCancelled
 from spt_desktop import output
-from test_split_output import fixture_run
+from support_runs import fixture_run
 
 
 def workbook_bytes(folder):
