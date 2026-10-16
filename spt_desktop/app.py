@@ -2,6 +2,7 @@
 from datetime import date
 import json
 import os
+import re
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
@@ -16,6 +17,31 @@ from .ui_views import MainView
 
 DEFAULTS={'browser':'msedge','headless':True,'login_origin':ALLOWED_ORIGINS[1],'identifier':'','detail_source':'dom'}
 DETAIL_SOURCE_LABELS={'dom':'DOM','json-first':'JSON-hybrid (pilot)'}
+
+
+def _selection_detail_key(period, model):
+    months = ('januari', 'februari', 'maret', 'april', 'mei', 'juni',
+              'juli', 'agustus', 'september', 'oktober', 'november', 'desember')
+    monthly = re.fullmatch(r'([a-z]+) ([0-9]{4})', period.casefold())
+    annual = re.fullmatch(r'(?:januari - desember )?([0-9]{4})', period.casefold())
+    if monthly and monthly[1] in months:
+        year, month = int(monthly[2]), months.index(monthly[1]) + 1
+    elif annual:
+        year, month = int(annual[1]), 13
+    else:
+        # Unknown periods are incomparable: even their models keep source order.
+        return (1,)
+    if model.casefold() == 'normal':
+        model_key = (0,)
+    else:
+        amendment = re.fullmatch(r'(?:pembetulan (?:ke-)?|amendment )([0-9]+)', model.casefold())
+        if amendment:
+            # Decimal length/text avoids integer limits without altering source values.
+            number = amendment[1].lstrip('0') or '0'
+            model_key = (1, len(number), number)
+        else:
+            model_key = (2,)
+    return (0, year, month, model_key)
 
 
 def load_preferences(root):
@@ -447,8 +473,9 @@ class App:
             nonlocal ordered_iids,descending
             if not self._interaction_current(interaction):return
             descending=False if descending is None else not descending
-            # Always sort the original inventory so equal captions retain their order.
-            ordered_iids=sorted(rows,key=lambda iid:rows[iid][1][0].casefold(),reverse=descending)
+            # Stable passes reverse only type; chronology and source ties stay ascending.
+            ordered_iids=sorted(rows,key=lambda iid:_selection_detail_key(*rows[iid][1][1:3]))
+            ordered_iids.sort(key=lambda iid:rows[iid][1][0].casefold(),reverse=descending)
             visible=set(tree.get_children())
             visible_order=[iid for iid in ordered_iids if iid in visible]
             # Moving items preserves selection and focus under the active filter.
