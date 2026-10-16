@@ -96,7 +96,8 @@ def summary_text(result):
         f"({100 * (serial - parallel) / serial:.1f}%)\n\n"
         f"- Shard pytest runner-seconds (sum): **{result['shard_pytest_runner_seconds']:.2f}s**\n"
         f'{setup_text}\n'
-        'Setup starts after checkout and ends at pytest session start. '
+        'Setup uses shared wall-clock timestamps after checkout through pytest session start; '
+        'the pytest session itself uses a monotonic clock. '
         'This excludes runner queue, checkout, uploads, packaging and provenance; '
         'these are not total-CI speedups. Production remains '
         'serial and retains its existing required gate and artifact checks.\n'

@@ -315,3 +315,36 @@ def test_benchmark_comparison_json_is_tied_to_verified_inputs(tmp_path):
     assert json.loads(output.read_text(encoding='utf-8')) == ci_shard_benchmark.verify(
         baseline, shards, VERSION, COMMIT)
     assert 'non-production' in summary.read_text(encoding='utf-8')
+
+
+def test_runner_bootstrap_python_and_managed_python_share_setup_epoch(tmp_path):
+    import os
+    import shutil
+    import time
+
+    bootstrap = shutil.which('python')
+    assert bootstrap, 'The same runner Python used before setup-uv must be available.'
+    environment = tmp_path / 'setup.env'
+    env = dict(os.environ, GITHUB_ENV=str(environment))
+    started = time.time()
+    result = subprocess.run([
+        bootstrap, str(ROOT / 'scripts/ci_report.py'), 'start',
+    ], capture_output=True, text=True, env=env, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    key, marker = environment.read_text(encoding='utf-8').strip().split('=', 1)
+    assert key == 'CI_SETUP_STARTED'
+    assert started - 1 <= float(marker) <= time.time() + 1
+    (tmp_path / 'test_sample.py').write_text('def test_ok():\n    assert True\n', encoding='utf-8')
+    (tmp_path / 'conftest.py').write_text(
+        (ROOT / 'scripts/ci_tests.py').read_text(encoding='utf-8'), encoding='utf-8')
+    manifest = tmp_path / 'inventory.json'
+    result = subprocess.run([
+        sys.executable, '-m', 'pytest', 'test_sample.py', '-q',
+        '--ci-workload', 'windows', '--ci-manifest', str(manifest),
+        '--basetemp', str(tmp_path / 'scratch'),
+    ], cwd=tmp_path, capture_output=True, text=True,
+        env=dict(env, CI_SETUP_STARTED=marker), timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    assert 0 <= data['setup_seconds'] < 30
+    assert data['exitstatus'] == 0

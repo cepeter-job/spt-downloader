@@ -24,7 +24,7 @@ def summarize(inventory, junit):
     inventory = inventory or {}
     data = {key: inventory.get(key) for key in (
         'workload', 'python', 'commit', 'run_id', 'run_attempt', 'exitstatus',
-        'cache_hit', 'python_cache_hit',
+        'cache_hit', 'python_cache_hit', 'setup_clock',
     )}
     data.update(
         setup_seconds=_seconds(inventory.get('setup_seconds')),
@@ -62,7 +62,7 @@ def summary_text(data):
     lines = [
         '## Synthetic test measurements', '',
         f"- Pytest exit status: **{exitstatus if exitstatus is not None else 'unavailable'}**",
-        f"- Setup after checkout: **{seconds(data.get('setup_seconds'))}**",
+        f"- Setup wall time after checkout: **{seconds(data.get('setup_seconds'))}**",
         f"- Pytest session: **{seconds(data.get('pytest_seconds'))}**",
         f"- uv cache hit: {data.get('cache_hit') or 'unavailable'}; "
         f"Python cache hit: {data.get('python_cache_hit') or 'unavailable'}",
@@ -90,7 +90,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == 'start':
         with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
-            output.write(f'CI_SETUP_STARTED={time.monotonic()}\n')
+            output.write(f'CI_SETUP_STARTED={time.time()}\n')
         return
     directory = args.directory or Path(os.environ['RUNNER_TEMP'])
     inventory, junit = directory / 'test-inventory.json', directory / 'test-results.xml'

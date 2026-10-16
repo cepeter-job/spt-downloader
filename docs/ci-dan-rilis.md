@@ -51,8 +51,11 @@ tetap membuat job gagal. Artifact distribusi tetap hanya lima berkas yang lama.
 
 Inventory sekarang mencatat exit status dan durasi setiap sesi pytest, bukan
 hanya benchmark. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
-tersimpan. Setup diukur dengan jam monotonik sejak setelah checkout hingga awal
-sesi pytest. Pengukuran ini tidak mencakup antre runner, checkout, upload, worker
+tersimpan. Setup diukur dengan timestamp Unix wall-clock sejak setelah checkout hingga
+awal sesi pytest. Python bawaan runner dan Python managed dapat memakai clock
+monotonik Windows yang berbeda; durasi setup tidak boleh mengurangkan kedua
+clock tersebut. Durasi sesi pytest tetap memakai satu clock monotonik. Perubahan
+jam sistem dapat memengaruhi setup; durasi negatif/tidak valid ditolak. Pengukuran ini tidak mencakup antre runner, checkout, upload, worker
 bootstrap setelah tes, packaging, atau provenance. Tidak ada angka perkiraan yang
 ditambahkan untuk waktu yang tidak terukur. Bukti yang hilang ditampilkan sebagai
 `unavailable`, bukan dianggap sukses atau berdurasi nol.

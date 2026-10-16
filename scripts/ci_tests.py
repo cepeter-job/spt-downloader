@@ -79,15 +79,17 @@ def pytest_sessionstart(session):
     if config.getoption('--ci-manifest'):
         config._ci_started = time.monotonic()
         config._ci_setup_seconds = None
+        # Bootstrap and managed Python can use different Windows monotonic clocks.
+        # Only setup crosses interpreters; the pytest session stays monotonic.
         marker = os.environ.get('CI_SETUP_STARTED')
         if marker:
             from pytest import UsageError
             try:
-                measured = config._ci_started - float(marker)
+                measured = time.time() - float(marker)
             except ValueError as exc:
                 raise UsageError('CI setup marker is not numeric.') from exc
             if not math.isfinite(measured) or measured < 0:
-                raise UsageError('CI setup marker is not a valid monotonic timestamp.')
+                raise UsageError('CI setup timestamp is invalid or the wall clock moved backwards.')
             config._ci_setup_seconds = measured
 
 
@@ -119,6 +121,7 @@ def pytest_collection_modifyitems(config, items):
             'run_id': os.environ.get('GITHUB_RUN_ID', ''),
             'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', ''),
             'setup_seconds': config._ci_setup_seconds,
+            'setup_clock': 'unix-wall' if config._ci_setup_seconds is not None else None,
             'cache_hit': cache_hit if cache_hit in {'true', 'false'} else None,
             'python_cache_hit': python_cache_hit if python_cache_hit in {'true', 'false'} else None,
             'all': all_nodes, 'selected': sorted(item.nodeid for item in items),
