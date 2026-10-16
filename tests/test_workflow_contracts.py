@@ -40,7 +40,8 @@ def test_diagnostics_survive_attempted_test_failure_in_every_test_job():
     'comment-only-build', 'missing-readback', 'wrong-artifact-id', 'unverified-upload',
     'extra-payload-file', 'skipped-aggregate', 'wrong-needs-input',
     'privileged-tests', 'ignored-test-failure', 'production-sharding',
-    'untrusted-attestation', 'disabled-fresh-worker',
+    'untrusted-attestation', 'disabled-fresh-worker', 'unreachable-gate',
+    'masked-gate-exit', 'changed-literal-mode',
 ])
 def test_production_contract_rejects_broken_pipeline(mutation):
     document = deepcopy(production())
@@ -80,8 +81,15 @@ def test_production_contract_rejects_broken_pipeline(mutation):
         tests['run'] += ' --ci-benchmark --ci-shard 0/2'
     elif mutation == 'untrusted-attestation':
         jobs['attest']['if'] = "needs.route.outputs.mode == 'full'"
-    else:
+    elif mutation == 'disabled-fresh-worker':
         next(s for s in jobs['windows']['steps'] if 'scripts.ci_runtime' in s.get('run', ''))['if'] = False
+    elif mutation == 'unreachable-gate':
+        gate = jobs['validate']['steps'][-1]
+        gate['run'] = 'if false; then\n' + gate['run'] + '\nfi'
+    elif mutation == 'masked-gate-exit':
+        jobs['validate']['steps'][-1]['run'] += '\nexit 0'
+    else:
+        jobs['package']['if'] = "needs.route.outputs.mode == 'f ull'"
     with pytest.raises(AssertionError):
         contract().validate_production(document)
 
@@ -99,7 +107,10 @@ def test_each_diagnostic_upload_needs_its_own_failure_guard(job):
             contract().validate_measurements(broken, (job,))
 
 
-@pytest.mark.parametrize('mutation', ['automatic-push', 'missing-shard', 'different-python', 'ignored-comparison'])
+@pytest.mark.parametrize('mutation', [
+    'automatic-push', 'missing-shard', 'different-python', 'ignored-comparison',
+    'comment-only-arguments', 'removed-shard-branch',
+])
 def test_benchmark_contract_rejects_unscoped_or_incomplete_execution(mutation):
     document = deepcopy(benchmark())
     if mutation == 'automatic-push':
@@ -108,8 +119,17 @@ def test_benchmark_contract_rejects_unscoped_or_incomplete_execution(mutation):
         document['jobs']['benchmark']['strategy']['matrix']['mode'].remove('shard-1')
     elif mutation == 'different-python':
         document['jobs']['benchmark']['env']['PYTHON_VERSION'] = '3.11.0'
-    else:
+    elif mutation == 'ignored-comparison':
         document['jobs']['compare']['steps'][0]['continue-on-error'] = True
+    elif mutation == 'comment-only-arguments':
+        step = next(s for s in document['jobs']['benchmark']['steps'] if s.get('id') == 'tests')
+        original = step['run']
+        step['run'] = "$pytestArgs = @('--version')\n& .venv/Scripts/python.exe @pytestArgs\n" + \
+                      '\n'.join('# ' + line for line in original.splitlines())
+    else:
+        step = next(s for s in document['jobs']['benchmark']['steps'] if s.get('id') == 'tests')
+        step['run'] = step['run'].replace("$pytestArgs += @('--ci-shard', \"$shardIndex/2\")",
+                                          "# $pytestArgs += @('--ci-shard', \"$shardIndex/2\")")
     with pytest.raises(AssertionError):
         contract().validate_benchmark(document)
 
@@ -138,5 +158,21 @@ def test_workflow_loader_keeps_on_as_a_key_and_real_boolean_values(tmp_path):
 def test_workflow_loader_rejects_duplicate_keys(tmp_path):
     path = tmp_path / 'duplicate.yml'
     path.write_text('jobs:\n  package: {}\n  package: {needs: []}\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='Duplicate'):
+        contract().load_workflow(path)
+
+
+@pytest.mark.parametrize('job', ['portable', 'windows'])
+def test_echoed_diagnostic_arguments_do_not_replace_pytest_arguments(job):
+    document = deepcopy(production())
+    step = next(s for s in document['jobs'][job]['steps'] if s.get('id') == 'tests')
+    step['run'] = 'echo "--junitxml junit_logging=no junit_log_passing_tests=false"'
+    with pytest.raises(AssertionError):
+        contract().validate_measurements(document, (job,))
+
+
+def test_duplicate_workflow_keys_cannot_hide_behind_merge_overrides(tmp_path):
+    path = tmp_path / 'merge.yml'
+    path.write_text('base: &base {needs: [route]}\njobs:\n  package:\n    <<: *base\n    needs: []\n', encoding='utf-8')
     with pytest.raises(ValueError, match='Duplicate'):
         contract().load_workflow(path)
