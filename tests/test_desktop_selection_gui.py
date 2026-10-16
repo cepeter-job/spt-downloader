@@ -7,9 +7,7 @@ import pytest
 from spt_desktop.app import App
 
 
-from support_gui import (
-    ConsentController, button, consent_event, widgets, window
-)
+from support_gui import button, consent_event, widgets, window
 
 def select_first(root, dialog):
     tree = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'Treeview')

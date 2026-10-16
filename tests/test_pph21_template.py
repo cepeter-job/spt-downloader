@@ -15,9 +15,7 @@ from spt_desktop import runtime
 REFERENCE = Path(__file__).parent / 'fixtures' / 'pph21_format.xlsx'
 JANUARY = 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
 FORMS = ['Induk', 'L-IA', 'L-IB', 'L-II', 'L-III']
-from support_templates import (
-    COMMON_HEADERS, IA_HEADERS, assert_format, assert_layout, cells_with, run_for, section, table
-)
+from support_templates import IA_HEADERS, assert_format, assert_layout, cells_with, run_for, section, table
 
 INDUK_HEADERS = ['NO.', 'URAIAN', 'KAP-KJS', 'JUMLAH (Rp)']
 

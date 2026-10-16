@@ -14,9 +14,7 @@ import coretax_browser as source_browser
 
 # Even an accidentally followed redirect must not target the real portal.
 # Existing browser-safety tests separately cover the production origin pin.
-from support_financial_browser import (
-    DETAIL, LABEL, ORIGIN, PDF, PDF_URL, RECORD, attachments, browser, downloaded, routed
-)
+from support_financial_browser import DETAIL, LABEL, ORIGIN, PDF, PDF_URL, RECORD, attachments, downloaded, routed
 
 def partial(result):
     assert result and all(item['status'] == 'PARTIAL' for item in result)

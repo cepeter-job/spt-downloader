@@ -32,9 +32,7 @@ def test_workflow_tests_builds_and_verifies_before_explicit_artifact_upload():
     assert 'secrets.' not in text and 'coretax.intranet' not in text
 
 
-from support_build_reports import (
-    report, sorting_report
-)
+from support_build_reports import report
 
 def test_frozen_gate_accepts_complete_observed_chronological_sorting():
     builder().validate_report(report())

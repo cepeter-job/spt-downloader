@@ -8,7 +8,6 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_exporter as exporter
-from support_runs import fixture_run
 
 
 TAX_SCOPES = [

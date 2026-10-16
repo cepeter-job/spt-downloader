@@ -6,11 +6,9 @@ import pytest
 from openpyxl import load_workbook
 
 import coretax_exporter as exporter
-from support_templates import assert_format, run_for, section
+from support_templates import assert_format, section
 
-from support_templates import (
-    APPENDICES, GROUP_III, RAW_MARKER, RESOURCE, export_ppn, source_appendix
-)
+from support_templates import APPENDICES, RAW_MARKER, RESOURCE, export_ppn, source_appendix
 
 # form, header, first body row, original total row, monetary columns
 @pytest.mark.parametrize('case', APPENDICES, ids=[x[0] for x in APPENDICES])

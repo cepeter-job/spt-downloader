@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 import coretax
 import coretax_exporter as exporter
 from spt_desktop import runtime
-from support_templates import assert_format, assert_layout, cells_with, run_for, section
+from support_templates import assert_format, assert_layout, cells_with, section
 
 FIXTURES = Path(__file__).parent / 'fixtures'
 from support_templates import (
