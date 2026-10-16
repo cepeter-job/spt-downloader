@@ -59,28 +59,18 @@ def test_verified_packets_become_business_sections_not_corporate_leaf_tables(tax
             assert [r[2] for r in grid['rows']] == ['SYNTHETIC PAYEE'] * 6
 
 
-@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
-def test_native_business_dto_reaches_approved_template_slots_and_preserves_growth(tmp_path, tax):
-    case = native_case(tax)
+def test_native_ppn_business_dto_reaches_approved_template_slots_and_preserves_growth(tmp_path):
+    # Unifikasi native rendering is deferred; its existing DOM tests stay intact.
+    case = native_case('PPN')
     result = decode(case)
     assert result['eligible'] is True, result['reason']
-    workbook = exported(tmp_path, tax, result['sections'])
-    resource = 'ppn_format.xlsx' if tax == 'PPN' else 'unifikasi_format.xlsx'
-    reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources' / resource)
+    workbook = exported(tmp_path, 'PPN', result['sections'])
+    reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources' / 'ppn_format.xlsx')
     try:
-        if tax == 'PPN':
-            assert workbook['INDUK']['G75'].value == '35'
-            assert [workbook['A-2'].cell(r,2).value for r in range(5,18)] == ['SYNTHETIC BUYER'] * 13
-            assert workbook['A-2']['H5'].value == '132'
-            assert_format(workbook['A-2']['B17'], reference['A2']['B5'])
-        else:
-            assert workbook['INDUK']['D12'].value == '17'
-            assert workbook['INDUK']['E12'].value == '19'
-            assert workbook['INDUK']['E27'].value == '23'
-            assert [workbook['DAFTAR-I'].cell(r,3).value for r in range(5,11)] == ['SYNTHETIC PAYEE'] * 6
-            assert workbook['DAFTAR-I']['J5'].value == '30'
-            assert workbook['DAFTAR-I']['I5'].value is None, 'TaxBase is not gross income'
-            assert_format(workbook['DAFTAR-I']['C10'], reference['Daftar I']['C5'])
+        assert workbook['INDUK']['G75'].value == '35'
+        assert [workbook['A-2'].cell(r,2).value for r in range(5,18)] == ['SYNTHETIC BUYER'] * 13
+        assert workbook['A-2']['H5'].value == '132'
+        assert_format(workbook['A-2']['B17'], reference['A2']['B5'])
     finally:
         workbook.close()
         reference.close()

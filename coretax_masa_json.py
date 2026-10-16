@@ -85,7 +85,7 @@ def bind_ppn_listing_identity(response, *, record, scope):
                'year_basis': scope[2]}
     # This performs custody/count/identity checks even when display is ineligible.
     checked = adapt_inventory_page(body, context=context)
-    if checked.get('reason') == 'unsupported_server_filter':
+    if checked.get('reason') == 'unsupported_request_filter':
         return unavailable
     try:
         envelope = json.loads(body.decode('utf-8-sig'), object_pairs_hook=_object_pairs,

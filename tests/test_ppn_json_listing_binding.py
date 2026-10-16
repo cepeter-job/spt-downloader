@@ -105,7 +105,8 @@ def test_ppn_identity_failed_source_envelope_cannot_grant_eligibility():
     envelope = json.loads(response['body'])
     envelope['IsSuccessful'] = False
     response['body'] = json.dumps(envelope).encode()
-    assert bind(response, record)['eligible'] is False
+    with pytest.raises(JsonSafetyError, match='explicit success'):
+        bind(response, record)
 
 
 def test_ppn_identity_unknown_filter_cannot_grant_eligibility():
