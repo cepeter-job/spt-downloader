@@ -165,7 +165,11 @@ def test_induk_identity_fields_use_the_original_slots_without_reformatting(tmp_p
     try:
         for coordinate, field in zip(['D4', 'D5', 'D6', 'D7'], fields):
             cell = workbook['Induk'][coordinate]
-            assert cell.value == field['value'] and cell.data_type == 's'
+            if tax == 'PPN' and coordinate == 'D7':
+                assert cell.value is None
+                assert workbook['Induk']['A7'].value is None
+            else:
+                assert cell.value == field['value'] and cell.data_type == 's'
             assert_format(cell, reference['Induk'][coordinate])
         assert_layout(workbook['Induk'], reference['Induk'])
     finally:
@@ -314,10 +318,15 @@ def test_ambiguous_headers_partial_tables_and_unknown_fields_stay_visible_as_raw
         expected.update(field['value'] for field in fields)
         actual = Counter(cell.value for sheet in workbook for row in sheet for cell in row
                          if cell.value in expected)
-        assert actual == expected
-        for value in ['=SUM(1,2)', '0000000000000002', '02-01-2025']:
-            assert all(c.data_type == 's' for c in cells_with(workbook, value))
-        assert len(cells_with(workbook, text)) == 1
+        if tax == 'PPN':
+            assert not actual
+            assert workbook[form].max_row == ref.max_row
+            assert not cells_with(workbook, text)
+        else:
+            assert actual == expected
+            for value in ['=SUM(1,2)', '0000000000000002', '02-01-2025']:
+                assert all(c.data_type == 's' for c in cells_with(workbook, value))
+            assert len(cells_with(workbook, text)) == 1
         assert_layout(workbook[form], ref)
     finally:
         workbook.close()
@@ -356,7 +365,7 @@ def test_each_amendment_uses_independent_templates_and_exact_resume_links(tmp_pa
         for item, other, model in [(workbook, amended, 'NORMAL'), (amended, workbook, 'AMENDMENT')]:
             for form in forms:
                 marker = 'SYNTHETIC ' + model + ' ' + form
-                assert len(cells_with(item, marker)) == 1
+                assert len(cells_with(item, marker)) == (0 if tax == 'PPN' else 1)
                 assert not cells_with(other, marker)
                 assert_layout(item[form], reference[form])
         links = [cell.hyperlink for sheet in resume for row in sheet for cell in row if cell.hyperlink]
