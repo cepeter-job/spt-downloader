@@ -30,8 +30,25 @@ CELL_JS = r'''(cell) => {
  return [text,...vals.filter(v=>v!=='' && v!==text)].filter(Boolean).join(' | ');
 }'''
 
+GROUP_JS = r'''(element) => {
+ const visible=e=>!!e.getClientRects().length;
+ const headings='h1,h2,h3,h4,h5,h6,[role="heading"],legend,.p-accordion-header-text,.p-panel-title';
+ // Stop at another table: its heading cannot label this table/group.
+ for(let current=element;current && !current.matches('.p-tabview-panel');current=current.parentElement){
+  for(let sibling=current.previousElementSibling;sibling;sibling=sibling.previousElementSibling){
+   if(sibling.matches('table')||sibling.querySelector('table')) break;
+   const found=[...(sibling.matches(headings)?[sibling]:[]),...sibling.querySelectorAll(headings)].filter(visible);
+   if(found.length===1) return (found[0].innerText||'').trim();
+   if(found.length>1) return '';
+  }
+  if(current.matches('section,fieldset')) break;
+ }
+ return '';
+}'''
+
 TABLE_JS = r'''(table) => {
- const value = CELL;
+ const value=CELL;
+ const group=GROUP;
  const hrows=table.tHead ? [...table.tHead.rows].filter(r=>![...r.cells].some(c=>c.querySelector('p-columnfilter,input,select'))) : [];
  const matrix=[];
  hrows.forEach((tr,ri)=>{
@@ -51,10 +68,13 @@ TABLE_JS = r'''(table) => {
  .filter(r=>!(r.cells.length===1 && r.cells[0].colSpan>1 && /tidak ada data|no records|no data/i.test(r.textContent)))
  .map(r=>[...r.cells].map(value));
  const foot=table.tFoot ? [...table.tFoot.rows].map(r=>[...r.cells].map(value)) : [];
- return {headers,rows,footer:foot};
-}'''.replace('CELL', CELL_JS)
+ const footer_spans=table.tFoot ? [...table.tFoot.rows].map(r=>[...r.cells].map(c=>c.colSpan||1)) : [];
+ const caption=table.caption && table.caption.getClientRects().length ? table.caption.innerText.trim() : '';
+ return {headers,rows,footer:foot,footer_spans,group:caption||group(table)};
+}'''.replace('CELL', CELL_JS).replace('GROUP', GROUP_JS)
 
 FIELDS_JS = r'''(root) => {
+ const group=GROUP;
  const owner=root.closest('.p-tabview-panel');
  const visible=e=>!!e.getClientRects().length;
  const fields=[];
@@ -68,6 +88,41 @@ FIELDS_JS = r'''(root) => {
   }
   return e.getAttribute('aria-label')||e.getAttribute('formcontrolname')||e.name||e.id||'Unnamed field';
  };
+ const gridColumn=e=>{
+  if(!e.closest('p-inputnumber'))return '';
+  const cell=e.closest('.col-md-3');
+  if(!cell || !cell.parentElement.matches('.row'))return '';
+  const grid=cell.parentElement, columns=[...grid.children];
+  if(columns.length!==4 || !columns.every(c=>c.matches('.col-md-3')&&visible(c)))return '';
+  const amount=grid.parentElement, row=amount.parentElement;
+  if(!amount.matches('.col-md-5') || !row.matches('.row') || !row.parentElement.matches('.p-accordion-content'))return '';
+  // Match the explicit, same-container Bootstrap header grid, not the order
+  // of populated inputs: omitted amount cells must retain their column.
+  for(let prior=row.previousElementSibling;prior;prior=prior.previousElementSibling){
+   if(!prior.matches('.row') || !visible(prior))continue;
+   const header=prior.querySelector(':scope > .col-md-5 > .row');
+   if(!header || header.querySelector('input,textarea,select'))continue;
+   const cells=[...header.children];
+   if(cells.length!==4 || !cells.every(c=>c.matches('.col-md-3')&&visible(c)))continue;
+   const labels=cells.map(c=>(c.innerText||'').trim());
+   if(labels.some(Boolean))return labels[columns.indexOf(cell)];
+  }
+  return '';
+ };
+ const context=e=>{
+  const label=labelFor(e);
+  const labels=[...e.parentElement.querySelectorAll(':scope > label')]
+   .filter(l=>visible(l)&&l.innerText.trim()!==label&&!l.htmlFor);
+  const result={};
+  const heading=group(e);
+  if(heading)result.group=heading;
+  if(labels.length===1)result.column_label=labels[0].innerText.trim();
+  else if(!labels.length){
+   const column=gridColumn(e);
+   if(column)result.column_label=column;
+  }
+  return result;
+ };
  const include=e=>e.closest('.p-tabview-panel')===owner && !e.closest('table') && !e.closest('[hidden],[aria-hidden="true"]');
  [...root.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')].filter(include).forEach(e=>{
   if(e.getAttribute('role')==='combobox')return;
@@ -75,14 +130,14 @@ FIELDS_JS = r'''(root) => {
    const control=e.closest('p-radiobutton,p-checkbox')||e;
    if(!visible(control))return;
    if(e.type==='radio'&&!e.checked&&e.getAttribute('aria-checked')!=='true')return;
-   fields.push({label:labelFor(e),field:e.name||e.getAttribute('formcontrolname')||e.id,value:e.type==='checkbox'?String(e.checked):e.value});
-  }else if(visible(e))fields.push({label:labelFor(e),field:e.getAttribute('formcontrolname')||e.name||e.id,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.textContent).join(', '):e.value});
+   fields.push({...context(e),label:labelFor(e),field:e.name||e.getAttribute('formcontrolname')||e.id,value:e.type==='checkbox'?String(e.checked):e.value});
+  }else if(visible(e))fields.push({...context(e),label:labelFor(e),field:e.getAttribute('formcontrolname')||e.name||e.id,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.textContent).join(', '):e.value});
  });
  [...root.querySelectorAll('p-dropdown,p-multiselect')].filter(include).filter(visible).forEach(e=>{
-  fields.push({label:labelFor(e),field:e.getAttribute('formcontrolname')||e.id,value:e.querySelector('.p-dropdown-label,.p-multiselect-label')?.textContent.trim()||''});
+  fields.push({...context(e),label:labelFor(e),field:e.getAttribute('formcontrolname')||e.id,value:e.querySelector('.p-dropdown-label,.p-multiselect-label')?.textContent.trim()||''});
  });
  return fields;
-}'''
+}'''.replace('GROUP', GROUP_JS)
 
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.innerText)})"
 
@@ -178,6 +233,8 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
             break
         data = table.evaluate(TABLE_JS)
         result['rows'].extend(data['rows'])
+        result['footer'] = data.get('footer', [])
+        result['footer_spans'] = data.get('footer_spans', [])
         result['pages'] += 1
     # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.
     total_element = container_handle.query_selector('.p-paginator-current')
@@ -189,7 +246,8 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
                 result['complete'] = False
                 result['warning'] = f"Source count {result['source_total']} != captured rows {len(result['rows'])}"
     # Total sumber sering ada di tfoot; masukkan sekali setelah paginasi selesai.
-    result['rows'].extend(result.pop('footer', []))
+    result['body_row_count'] = len(result['rows'])
+    result['rows'].extend(result.get('footer', []))
     container_handle.dispose()
     return result
 

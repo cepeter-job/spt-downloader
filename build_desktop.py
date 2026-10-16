@@ -118,7 +118,7 @@ def build(output, python_profile='production'):
         'Setelah inventaris, pilih SPT lalu klik Sedot SPT terpilih. Tidak ada pilihan otomatis.\n'
         'resume.xlsx diperbarui otomatis setelah verifikasi scope; file SPT/PDF yang sudah ada tetap memerlukan konfirmasi.\n'
         'Periksa folder dan daftar SPT/PDF pada konfirmasi; setiap file disetujui diganti seluruhnya sesuai pilihan saat ini.\n'
-        'Jangan ganti mempertahankan file lama. Workbook masa lain tetap tersimpan; resume.xlsx mengindeks pilihan saat ini.\n'
+        'Jangan ganti mempertahankan file lama. Workbook masa lain tetap tersimpan; resume.xlsx mengindeks seluruh workbook dalam folder yang scope-nya terverifikasi.\n'
         'Selesaikan CAPTCHA/MFA dan halaman login yang belum dikenali secara manual di browser aplikasi.\n'
         'Stop mempertahankan checkpoint PARTIAL lokal; hanya proses browser milik aplikasi yang ditutup.\n'
         'Hasil: folder Downloads\\NPWP - NAMA WP\\TAHUN PAJAK\\WAKTU EKSPOR. Simpan semua Excel bersama.\n'
