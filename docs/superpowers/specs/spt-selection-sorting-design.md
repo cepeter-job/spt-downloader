@@ -19,6 +19,8 @@ Baseline yang diperiksa: `main` pada
 Sort saat ini belum menambahkan kunci masa dan nomor pembetulan.
 Pemeriksaan ini berdasarkan source, bukan pengujian runtime baru.
 
+> Pembaruan kontrak default: ketentuan urutan awal pada butir 1 di bawah adalah desain historis. Permintaan berikutnya menetapkan Badan → 21 → Unifikasi → PPN sejak dialog dibuka; lihat [perilaku UI saat ini](../../ui-ux/pola-dan-status.md). Sorting manual, kronologi, dan kontrak persetujuan tetap dipertahankan.
+
 ## Perilaku yang diusulkan
 
 1. Saat dialog pertama dibuka, pertahankan urutan inventaris dan pilihan kosong.

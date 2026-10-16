@@ -258,7 +258,7 @@ def test_confirmed_selection_updates_progress_before_first_detail_finishes(tmp_p
         select_first(root, dialog)
         button(dialog, 'Sedot SPT terpilih').invoke()
         root.update()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-amendment']})]
         assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
         assert not dialog.winfo_exists() and not controller.stopped
         assert app.percent.get() != '100%'
