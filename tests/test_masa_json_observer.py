@@ -76,6 +76,18 @@ def test_all_masa_tabs_bind_real_requests_without_reading_tax_values(browser, tm
         if tax == 'PPh Unifikasi':
             assert forms[0]['tables'][0]['name'] == 'income-taxes'
             assert forms[0]['tables'][0]['headers'] == ['No.', 'DETAIL']
+        if tax == 'PPN':
+            source = forms[-1]['tables'][0]['footer_source']
+            assert source['endpoint'].endswith('/loadndvat/lc-grid/footer')
+            assert len(source['requests']) == 1
+            footer_request = source['requests'][0]
+            assert footer_request['request_json'] == {
+                'ReturnSheetRecordId': '00000000-0000-4000-8000-000000000001', 'IsNormalVAT': True}
+            assert footer_request['sequences']
+            events = {e['sequence']: e for e in capture.request_observations()}
+            for sequence in footer_request['sequences']:
+                assert events[sequence]['url'] == source['endpoint']
+                assert events[sequence]['request_json'] == footer_request['request_json']
         assert 'TRAP' not in json.dumps(forms)
         assert fixture.page.evaluate('window.valueReads') == 0
         assert fixture.page.evaluate('window.forbiddenClicks') == 0
@@ -84,7 +96,8 @@ def test_all_masa_tabs_bind_real_requests_without_reading_tax_values(browser, tm
 
 
 @pytest.mark.parametrize('defect', ['changed-build', 'changed-main', 'missing-form', 'extra-form',
-                                    'duplicate-form', 'extra-table', 'missing-request', 'filtered'])
+                                    'duplicate-form', 'extra-table', 'missing-request', 'filtered',
+                                    'missing-footer', 'wrong-footer-kind', 'untyped-footer-kind'])
 def test_unknown_or_incomplete_structure_never_claims_observed_coverage(browser, tmp_path, monkeypatch, defect):
     with observed(browser, tmp_path, monkeypatch, defect=defect) as (module, fixture, capture):
         assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
@@ -112,3 +125,9 @@ def test_cancellation_propagates_instead_of_fallback(browser, tmp_path, monkeypa
             raise CaptureCancelled()
         with pytest.raises(CaptureCancelled):
             module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, check_cancel=stop)
+
+
+def test_foreign_footer_request_cannot_hide_behind_final_tab_or_fallback(browser, tmp_path, monkeypatch):
+    with observed(browser, tmp_path, monkeypatch, defect='foreign-footer') as (module, fixture, capture):
+        with pytest.raises(JsonSafetyError):
+            module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5)
