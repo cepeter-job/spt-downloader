@@ -40,7 +40,9 @@ def _expression(value):
     value = value.strip()
     if value.startswith('${{') and value.endswith('}}'):
         value = value[3:-2].strip()
-    return re.sub(r'\s+', '', value)
+    # Whitespace inside a quoted literal is semantically significant.
+    return re.sub(r'''('[^']*(?:''[^']*)*'|"[^"]*")|(\s+)''',
+                  lambda match: match.group(1) or '', value)
 
 
 def _needs(job):
@@ -51,20 +53,79 @@ def _needs(job):
     return set(value)
 
 
-def _commands(step):
-    # Match actual Python command starts, not echo text, comments or another job.
-    # This deliberately does not interpret PowerShell/Bash or Actions expressions.
-    result = []
-    for line in step.get('run', '').splitlines():
-        line = line.strip()
+def _logical_lines(step):
+    lines, pending = [], ''
+    for physical in step.get('run', '').splitlines():
+        line = physical.strip()
         if not line or line.startswith('#'):
             continue
-        words = shlex.split(line)
-        if words and words[0] == '&':
+        if line.endswith(('\\', '`')):
+            pending += line[:-1] + ' '
+            continue
+        lines.append(pending + line)
+        pending = ''
+    assert not pending, 'Unfinished shell continuation'
+    return lines
+
+
+def _words(line):
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True
+    lexer.escape = ''  # Windows separators remain literal; continuations are joined above.
+    return list(lexer)
+
+
+def _commands(step):
+    # Only tokenize real Python starts, not arbitrary Bash/PowerShell statements.
+    result = []
+    for line in _logical_lines(step):
+        prefix = line.split()
+        if prefix and prefix[0] == '&':
+            prefix = prefix[1:]
+        if not prefix or not re.search(r'(?:^|/|\\)python(?:\d+(?:\.\d+)*)?(?:\.exe)?$', prefix[0]):
+            continue
+        words = _words(line)
+        if words[0] == '&':
             words = words[1:]
-        if words and re.search(r'(?:^|/|\\)python(?:\d+(?:\.\d+)*)?(?:\.exe)?$', words[0]):
-            result.append(words[1:])
+        result.append(words[1:])
     return result
+
+
+def _single_command(step):
+    lines = _logical_lines(step)
+    assert len(lines) == 1, 'Critical command must execute directly, without surrounding control flow'
+    unquoted = re.sub(r'''('[^']*'|"[^"]*")''', '', lines[0]).lstrip('&').strip()
+    assert not any(operator in unquoted for operator in (';', '|', '&')), 'Critical failure cannot be masked'
+    commands = _commands(step)
+    assert len(commands) == 1, 'Critical step must execute one Python command'
+    return commands[0]
+
+
+def _benchmark_arguments(step):
+    # This checks one reviewed PowerShell argv-array shape, not a shell language.
+    # Invocation, shard selection and native exit propagation are checked together.
+    lines = _logical_lines(step)
+    assert lines and _expression(lines[0]) == '$pytestArgs=@('
+    end = next((i for i, line in enumerate(lines) if line == ')'), None)
+    assert end is not None
+    source = ' '.join(lines[1:end])
+    arguments, position = [], 0
+    for match in re.finditer(r''' '([^']*)'|"([^"]*)" '''.strip(), source):
+        assert not source[position:match.start()].strip(' ,\t'), 'Unsupported argument-array expression'
+        arguments.append(match.group(1) if match.group(1) is not None else match.group(2))
+        position = match.end()
+    assert not source[position:].strip(' ,\t')
+    expected = """if ($env:BENCHMARK_MODE -ne 'serial') {
+        $shardIndex = $env:BENCHMARK_MODE.Substring(6)
+        $pytestArgs += @('--ci-shard', "$shardIndex/2")
+    }
+    & .venv/Scripts/python.exe @pytestArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
+    assert _expression('\n'.join(lines[end + 1:])) == _expression(expected), 'Benchmark must execute its guarded shard argv'
+    assert arguments[:3] == ['-m', 'pytest', 'tests']
+    assert arguments[arguments.index('--ci-workload') + 1] == 'windows'
+    assert '--ci-benchmark' in arguments and '--ci-shard' not in arguments
+    return arguments
 
 
 def _runs(step, *prefix):
@@ -124,6 +185,7 @@ def validate_production(document):
     _, gate = _one(aggregate['steps'], lambda step: _runs(step, '-m', 'scripts.ci_route', 'gate'))
     assert _expression(gate['env']['CI_NEEDS']) == 'toJSON(needs)'
     _success_only(gate)
+    _single_command(gate)
     assert _needs(jobs['attest']) == {'route', 'package'}
     assert _expression(jobs['attest']['if']) == (
         "github.event_name=='push'&&github.ref=='refs/heads/main'&&needs.route.outputs.mode=='full'")
@@ -156,15 +218,16 @@ def validate_production(document):
     assert _expression(readback['with']['artifact-ids']) == 'steps.upload.outputs.artifact-id'
     assert 'name' not in readback['with']
     verify_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'verify'))
+    for index in (inventory_i, source_i, build_i, checksum_i, verify_i):
+        _single_command(steps[index])
     assert max(i for i, _ in downloads) < inventory_i < source_i < build_i < checksum_i < upload_i < readback_i < verify_i
 
     windows = jobs['windows']
     assert windows['runs-on'] == 'windows-2022' and _needs(windows) == {'route'}
     test_i, test = _one(windows['steps'], lambda s: s.get('id') == 'tests')
     _success_only(test)
-    commands = _commands(test)
-    assert len(commands) == 1 and commands[0][:3] == ['-m', 'pytest', 'tests']
-    args = commands[0]
+    args = _single_command(test)
+    assert args[:3] == ['-m', 'pytest', 'tests']
     assert args[args.index('--ci-workload') + 1] == 'windows'
     assert {'--ci-manifest', '--basetemp'} <= set(args)
     assert 'RUNNER_TEMP' in args[args.index('--basetemp') + 1]
@@ -172,6 +235,7 @@ def validate_production(document):
                    or a.startswith(('--ci-shard=', '--numprocesses=')) for a in args)
     fresh_i, fresh = _one(windows['steps'], lambda s: _runs(s, '-m', 'scripts.ci_runtime'))
     _success_only(fresh)
+    _single_command(fresh)
     assert fresh_i > test_i
 
 
@@ -183,15 +247,17 @@ def validate_measurements(document, job_names):
         uv_i, _ = _one(steps, lambda s: _action(s, 'astral-sh/setup-uv'))
         tests_i, tests = _one(steps, lambda s: s.get('id') == 'tests')
         _success_only(tests)
-        script = '\n'.join(line for line in tests['run'].splitlines() if not line.lstrip().startswith('#'))
-        assert all(option in script for option in ('--junitxml', 'junit_logging=no', 'junit_log_passing_tests=false'))
+        args = _benchmark_arguments(tests) if name == 'benchmark' else _single_command(tests)
+        assert args[:3] == ['-m', 'pytest', 'tests']
+        assert all(option in args for option in ('--junitxml', 'junit_logging=no', 'junit_log_passing_tests=false'))
         report_i, report = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_report', 'report'))
-        assert _expression(report['if']) == expected_guard
+        assert _expression(report.get('if')) == expected_guard
+        _single_command(report)
         uploads = [(i, s) for i, s in enumerate(steps) if _action(s, 'actions/upload-artifact')]
         assert len(uploads) == 2
         paths = []
         for i, step in uploads:
-            assert _expression(step['if']) == expected_guard
+            assert _expression(step.get('if')) == expected_guard
             assert step.get('continue-on-error', False) is False
             assert step['with']['if-no-files-found'] == 'error'
             paths.append({line.rsplit('/', 1)[-1] for line in step['with']['path'].splitlines() if line})
@@ -216,9 +282,7 @@ def validate_benchmark(document):
     assert _runs(profile, '-m', 'scripts.ci_route', 'route')
     _, tests = _one(jobs['benchmark']['steps'], lambda s: s.get('id') == 'tests')
     _success_only(tests)
-    assert _commands(tests) == [['@pytestArgs']]
-    literals = re.findall(r"'([^']*)'", tests['run'])
-    assert {'-m', 'pytest', 'tests', '--ci-workload', 'windows', '--ci-benchmark', '--ci-shard'} <= set(literals)
+    _benchmark_arguments(tests)
     _, uv = _one(jobs['benchmark']['steps'], lambda s: _action(s, 'astral-sh/setup-uv'))
     assert uv['with']['save-cache'] is False
     assert _expression(uv['with']['restore-cache']) == "inputs.cache_mode!='cold'"
@@ -236,4 +300,4 @@ def validate_benchmark(document):
         'windows-benchmark-serial', 'windows-benchmark-shard-0', 'windows-benchmark-shard-1'}
     verify_i, verify = _one(compare['steps'], lambda s: _runs(s, '-m', 'scripts.ci_shard_benchmark'))
     assert max(i for i, _ in downloads) < verify_i
-    assert {'--python-version', '--commit', '--output'} <= set(_commands(verify)[0])
+    assert {'--python-version', '--commit', '--output'} <= set(_single_command(verify))
