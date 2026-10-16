@@ -126,12 +126,6 @@ def test_production_build_rejects_unsupported_interpreter_before_writing(monkeyp
     assert not output.exists()
 
 
-def test_frozen_gate_accepts_removed_punto_footer_with_other_credit_intact():
-    data = report()
-    data['personal_use_labels'] = ['Coretax → Excel · for personal use only']
-    builder().validate_report(data)
-
-
 def test_frozen_gate_rejects_the_obsolete_visible_punto_footer():
     data = report()
     data['personal_use_labels'] = ['Coretax → Excel · for personal use only', 'for personal use : punto ap']

@@ -72,6 +72,12 @@ Untuk perubahan terbatas, mulai dari perilaku yang relevan sebelum menjalankan g
 
 Tes yang dilewati karena platform bukan kegagalan, tetapi juga bukan bukti lulus untuk platform tersebut. Catat lingkungan dan batas verifikasi di PR. Tes baru selalu terjangkau suite Windows penuh; tambahkan ke subset portable setelah dependensi/fixture dan kebutuhan platformnya ditinjau.
 
+### Merawat kontrak tes
+
+Ekspektasi katalog UI disimpan sebagai nilai literal yang ditinjau di `tests/test_desktop_ui_copy.py`, bukan dibaca dari tabel atau nomor bab dokumen desain. Dokumen menjelaskan keputusan; perubahan format Markdown tidak boleh mengubah hasil tes produk. Perubahan kata yang disengaja harus memperbarui implementasi, ekspektasi tes, dan dokumentasi terkait dalam PR yang sama. Jangan menghasilkan ekspektasi saat tes berjalan dari `COPY` milik aplikasi, karena itu tidak mendeteksi regresi.
+
+Konsolidasi hanya kasus yang benar-benar identik: tulis di PR tes yang dihapus, tes penerusnya, serta kesamaan input, setup, dan assertion. Satu pemanggilan source self-test yang berhasil dapat memeriksa beberapa bagian laporan tanpa menjalankan GUI yang sama lagi. Pertahankan kasus negatif, pengujian widget nyata, isolasi kredensial/proses, dan self-test executable frozen secara terpisah. Jumlah tes boleh berkurang; kontrak perilaku dan gate CI tidak boleh melemah.
+
 ### Linux atau container
 
 Linux cukup untuk perubahan logika portable. Instal interpreter produksi dan lock tes ke `.venv`, lalu jalankan workload portable:

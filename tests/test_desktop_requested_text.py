@@ -223,16 +223,3 @@ def test_source_credit_is_an_exact_comment_not_an_extra_visible_label():
     comments = [token.string for token in tokenize.generate_tokens(io.StringIO(source).readline)
                 if token.type == tokenize.COMMENT]
     assert comments.count('#punto ami priyono') == 1
-
-
-def test_source_selftest_attests_only_the_retained_personal_use_label(tmp_path, monkeypatch):
-    from spt_gui import self_test
-    monkeypatch.setattr(app_module, 'JobController', lambda *args, **kwargs: Controller())
-    monkeypatch.setattr(app_module, 'save_login', forbidden_credentials)
-    monkeypatch.setattr(app_module, 'delete_login', forbidden_credentials)
-    report = tmp_path / 'requested-footer-selftest.json'
-    assert self_test(report) == 0
-    data = json.loads(report.read_text(encoding='utf-8'))
-    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only']
-    assert data['credentials_accessed'] is False and data['live_scrape'] is False
-    gc.collect()
