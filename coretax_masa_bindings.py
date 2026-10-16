@@ -198,6 +198,15 @@ def project_unifikasi_tree(form, headers, *, locale):
 # reviewed nullish-zero operator; unlisted controls are not supported yet.
 _PPN_AMOUNTS = {
     'ExportOfTangibleGoods': (('A1FormListOfExportTaxableGoodsOrServices', 'Total'), False),
+    'SumDeliveryOfTaxableGoodsSellingPrice': (('DeliveryOfTaxableGoodsSubjectToVAT', 'SellingPrice'), False),
+    'SumDeliveryOfTaxableGoodsVAT': (('DeliveryOfTaxableGoodsSubjectToVAT', 'VAT'), False),
+    'SumDeliveryOfTaxableGoodsSTLG': (('DeliveryOfTaxableGoodsSubjectToVAT', 'SalesTaxLuxuryGoods'), False),
+    'TotalDeliveryGoodsAndServices': (('TotalDeliveryOfGoodsAndServices', 'SellingPrice'), True),
+    'AmountCalculatedInputTaxSellingPrice': (('AmountOfInputTaxCalculated', 'SellingPrice'), False),
+    'AmountCalculatedInputTaxVAT': (('AmountOfInputTaxCalculated', 'VAT'), False),
+    'TotalAcquisition': (('TotalAcquisition', 'SellingPrice'), False),
+    'SelfCollectedOutputTax': (('OutputTaxMustBeSelfCollected', 'VAT'), False),
+    'CalculatedInputTax': (('InputTaxCanBeCalculated', 'VAT'), False),
     'STLGUnderOverOnPreviousVATReturn': (('STLGUnderOrOverPaidOnPrevious', 'SalesTaxLuxuryGoods'), False),
     'VATIsUnderOrOverpaidAmandment': (('VATUnderOrOverPaidDueToAmendment', 'VAT'), False),
     'CarryForwardOfInputTax': (('CarryForwardOfInputTax', 'VAT'), False),

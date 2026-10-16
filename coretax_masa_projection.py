@@ -4,7 +4,7 @@ from copy import deepcopy
 from coretax_json import ORIGIN, JsonSafetyError, _UnsupportedMetadata, _corporate_request_key
 from coretax_masa_bindings import (
     BUILD_DIGESTS, FORMS, MAIN_SOURCE, TAX_SOURCES,
-    project_ppn_amount, project_ppn_header, project_ppn_footer, project_ppn_grid,
+    project_ppn_amount, project_ppn_header, project_ppn_asked_to, project_ppn_footer, project_ppn_grid,
     project_unifikasi_footer, project_unifikasi_grid, project_unifikasi_text,
     project_unifikasi_tree,
 )
@@ -50,8 +50,8 @@ def _source(binding, endpoint, packets, *, pages=False):
     return sources if pages else sources[0]
 
 
-def _evidence(entries, source, container, destination):
-    return [{**deepcopy(entry), 'sequence': entry.get('sequence', source['event']['sequence']),
+def _evidence(entries, source, container, destination, *, rule=None):
+    return [{**deepcopy(entry), **({'projection_rule': rule} if rule is not None else {}), 'sequence': entry.get('sequence', source['event']['sequence']),
              'container_path': list(container), 'destination': dict(destination)} for entry in entries]
 
 
@@ -99,11 +99,34 @@ def project_masa_forms(packets, *, record, observed_forms):
     for observed in observed_forms:
         name = observed['name']
         section = {'name': name, 'fields': [], 'tables': []}
+        choice = None
+        choice_bound = False
+        if tax == 'PPN' and name == 'INDUK':
+            options = [f for f in observed['fields'] if isinstance(f, dict) and f.get('field') == 'AskedTo']
+            if options:
+                expected = [
+                    ('CARRY_FORWARD', '1. dikompensasikan', 'P-RADIOBUTTON'),
+                    ('FAST_REFUND', '2. dikembalikan melalui pengembalian pendahuluan', 'P-RADIOBUTTON'),
+                    ('FORWARD_REFUND', '3. dikembalikan melalui pemeriksaan', 'P-RADIOBUTTON'),
+                ]
+                if [(f.get('option'), f.get('label'), f.get('tag')) for f in options] != expected:
+                    raise _UnsupportedMetadata('unverified_ppn_requested_options')
+                choice = project_ppn_asked_to(source_form, model=source_form.get('ReturnSheetModel'))
         for field in observed['fields']:
             if (not isinstance(field, dict) or set(field) - {'field', 'label', 'group', 'column_label', 'tag', 'option'}
                     or any(type(field.get(key)) is not str for key in ('field', 'label', 'group', 'column_label', 'tag'))
                     or not field['field'] or not field['label']):
                 raise _UnsupportedMetadata('unverified_masa_field_metadata')
+            if tax == 'PPN' and name == 'INDUK' and field['field'] == 'AskedTo':
+                if choice is None:
+                    raise _UnsupportedMetadata('unverified_ppn_requested_choice')
+                if not choice_bound:
+                    bindings.extend(_evidence(choice['provenance'], primary, ['Payload', 'FormData'],
+                                              {'form': name, 'field': 'AskedTo'}, rule=choice['rule']))
+                    choice_bound = True
+                if choice['value'] is not None and field['option'] == choice['value']:
+                    section['fields'].append({**deepcopy(field), 'value': choice['value']})
+                continue
             # Known option metadata is not itself a verified final selected value.
             if 'option' in field:
                 raise _UnsupportedMetadata('unverified_masa_choice_value')
@@ -125,7 +148,7 @@ def project_masa_forms(packets, *, record, observed_forms):
                 projected = project_unifikasi_text(source_form, control)
             section['fields'].append({**deepcopy(field), 'value': projected['value']})
             bindings.extend(_evidence(projected['provenance'], event_source, container,
-                                      {'form': name, 'field': control}))
+                                      {'form': name, 'field': control}, rule=projected.get('rule')))
         for table in observed['tables']:
             if (not isinstance(table.get('headers'), list) or not isinstance(table.get('footer_spans'), list)
                     or type(table.get('group')) is not str

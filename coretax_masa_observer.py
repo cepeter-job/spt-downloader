@@ -61,7 +61,8 @@ FIELDS = r"""(root, context={}) => {
  for(const child of candidates){
    if(child.closest('table,[hidden],[aria-hidden="true"]')||child.closest('.p-tabview-panel')!==owner)continue;
    if(child.matches('input[type=password],input[type=hidden]'))continue;
-   const control=child.closest('ui-dropdown')||child.closest('[formcontrolname]')||
+   const calendar=context.tax==='PPN'&&context.form==='INDUK'?child.closest('p-calendar'):null;
+   const control=calendar||child.closest('ui-dropdown')||child.closest('[formcontrolname]')||
      child.closest('p-dropdown,p-multiselect,p-radiobutton')||child;
    if(seen.has(control)||!visible(control))continue;
    seen.add(control);
@@ -71,18 +72,42 @@ FIELDS = r"""(root, context={}) => {
      fields.push(metadata);
      continue;
    }
-   if(control.matches('p-dropdown,p-multiselect'))return null;
+   if(calendar){
+     const row=calendar.closest('.form-group.row');
+     const labels=row?[...row.querySelectorAll(':scope > label')].filter(visible):[];
+     if(!row||row.querySelectorAll('p-calendar').length!==1||labels.length!==1)return null;
+     const label=labels[0].textContent.trim(),role=labels[0].getAttribute('ariaLabel')||'';
+     let field='';
+     if(label==='Tanggal Penandatanganan SPT'&&role==='')field='DateOfTaxReturnSigning';
+     if(label==='Batas Waktu Penyampaian SPT'&&role==='Deadline Submission')field='DeadlineSubmission';
+     if(!field)return null;
+     fields.push({field,label,group:group(control),column_label:'',tag:control.tagName});
+     continue;
+   }
+   if(control.matches('p-dropdown,p-multiselect')){
+     const paginator=control.closest('.p-paginator');
+     if(control.matches('p-dropdown')&&context.tax==='PPN'&&
+        ['A-1','A-2','B-1','B-2','B-3','C'].includes(context.form)&&
+        control.closest('p-paginator')&&control.closest('p-table')&&paginator&&
+        paginator.querySelectorAll('.p-paginator-current').length===1)continue;
+     return null;
+   }
    const field=control.getAttribute('formcontrolname')||control.getAttribute('name')||control.id||'';
    const label=labelFor(control);
    const labels=[...control.parentElement.querySelectorAll(':scope > label')]
      .filter(l=>visible(l)&&l.innerText.trim()!==label&&!l.htmlFor);
    const metadata={field,label,group:group(control),column_label:labels.length===1?labels[0].innerText.trim():columnFor(control),tag:control.tagName};
    if(control.matches('p-radiobutton,input[type=radio]')){
-     if(field!=='DeclarationBy'||context.form!=='INDUK'||!['PPN','PPh Unifikasi'].includes(context.tax))return null;
+     if(context.form!=='INDUK'||!['PPN','PPh Unifikasi'].includes(context.tax))return null;
      // Literal option attributes are reviewed UI structure, not selected values.
      // Never read the nested input's value or checked state.
      const option=control.getAttribute('value');
-     const choices={'0':context.tax==='PPN'?'PKP':'Wajib Pajak','1':'Kuasa Wajib Pajak'};
+     let choices=null;
+     if(field==='DeclarationBy')choices={'0':context.tax==='PPN'?'PKP':'Wajib Pajak','1':'Kuasa Wajib Pajak'};
+     if(field==='AskedTo'&&context.tax==='PPN')choices={
+       CARRY_FORWARD:'1. dikompensasikan',FAST_REFUND:'2. dikembalikan melalui pengembalian pendahuluan',
+       FORWARD_REFUND:'3. dikembalikan melalui pemeriksaan'};
+     if(!choices)return null;
      if(!Object.hasOwn(choices,option)||label!==choices[option])return null;
      metadata.option=option;
    }
@@ -90,6 +115,17 @@ FIELDS = r"""(root, context={}) => {
  }
  return fields;
 }"""
+
+PPN_LABEL_TABLE = r"""table => {
+ const column=table.parentElement;
+ if(table.closest('p-table,[role="grid"]')||table.tHead||table.tFoot||table.querySelector('th')||
+    !column.matches('.col-md-3,.col-md-5,.col-md-7,.col-md-9')||
+    !column.parentElement.matches('.row')||table.rows.length!==1)return false;
+ const cells=[...table.rows[0].cells];
+ if(cells.length<1||cells.length>3||cells.some(c=>c.tagName!=='TD'))return false;
+ return !table.querySelector('input:not([type="checkbox"]),textarea,select,p-inputnumber,p-dropdown,p-multiselect,p-radiobutton,table');
+}"""
+
 
 TABLE = r"""table => {
  const group=GROUP;
@@ -230,7 +266,14 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
                 if tree.count() != 1:
                     return None
                 binding['tables'].append({'name': 'income-taxes', **tree.evaluate(TABLE.replace('GROUP', GROUP_JS))})
-            if form.locator('table:visible').count() != len(roles) + len(binding['tables']):
+            visible_tables = form.locator('table:visible')
+            layout_count = 0
+            if tax == 'PPN' and name == 'INDUK':
+                # The pinned Induk uses one-row Bootstrap label tables. These
+                # are not source grids; other table shapes remain unsupported.
+                layout_count = sum(bool(visible_tables.nth(index).evaluate(PPN_LABEL_TABLE))
+                                   for index in range(visible_tables.count()))
+            if visible_tables.count() - layout_count != len(roles) + len(binding['tables']):
                 return None
             for grid_selector, suffix in roles:
                 table = form.locator(grid_selector + ' p-table')
