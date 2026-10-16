@@ -29,8 +29,9 @@ FORMS = {
 
 
 class Fixture:
-    def __init__(self, browser, tax, *, defect=None, layout='direct'):
+    def __init__(self, browser, tax, *, defect=None, layout='direct', induk_fields=None):
         self.tax, self.defect, self.layout = tax, defect, layout
+        self.induk_fields = induk_fields
         self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta')
         self.page = self.context.new_page()
         self.record = selected(tax)
@@ -85,6 +86,8 @@ class Fixture:
                 '<input id="f' + str(index) + '" formcontrolname="FullName" value="DOM-INPUT-TRAP" readonly></div></p-panel>'
                 '<div class="p-tabview"><ul class="p-tabview-nav"><li><a role="tab" onclick="forbidden()">NESTED</a></li></ul></div>'
                 '<button onclick="forbidden()">Submit</button></div></p-accordion>')
+            if name == 'INDUK' and self.induk_fields is not None:
+                control = self.induk_fields
             if name == 'INDUK' and self.tax == 'PPh Unifikasi':
                 control += ('<rshshr-spt-unifikasi-grid><p-treetable><table><thead><tr><th>No.</th><th>DETAIL</th></tr></thead>'
                     '<tbody><tr><td>DOM-TREE-TRAP</td></tr></tbody><tfoot><tr><td colspan="2">TOTAL</td></tr></tfoot>'

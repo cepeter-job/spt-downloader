@@ -31,13 +31,13 @@ def browser():
 
 
 @contextmanager
-def observed(browser, tmp_path, monkeypatch, tax='PPN', *, defect=None, layout='direct'):
+def observed(browser, tmp_path, monkeypatch, tax='PPN', *, defect=None, layout='direct', induk_fields=None):
     module = observer_module()
     monkeypatch.setattr(module, 'BUILD_DIGESTS', {
         MAIN: hashlib.sha256(BUILD).hexdigest(),
         **{url: hashlib.sha256(BUILD).hexdigest() for url in ASSETS.values()},
     })
-    fixture = Fixture(browser, tax, defect=defect, layout=layout)
+    fixture = Fixture(browser, tax, defect=defect, layout=layout, induk_fields=induk_fields)
     try:
         fixture.page.goto(fixture.record['list_url'])
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, SCOPE, tmp_path) as capture:
