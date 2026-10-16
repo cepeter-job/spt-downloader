@@ -41,7 +41,7 @@ def test_ppn_observed_four_column_layout_binds_headers_not_input_order(tmp_path)
             browser.close()
     wb=export('PPN',source_run('PPN',[section('INDUK',fields=fields)]),tmp_path)
     try:
-        assert [wb['INDUK'].cell(15,c).value for c in range(5,9)] == ['11',None,'17','19']
+        assert [wb['INDUK'].cell(15,c).value for c in range(5,9)] == [11,None,17,19]
     finally:
         wb.close()
 
@@ -71,7 +71,7 @@ def test_ppn_observed_labels_bind_reference_slots_without_restating_template(tmp
     fields=[{'label':label,'field':'','group':group,'column_label':column,'value':'17,00'}]
     wb=export('PPN',source_run('PPN',[section('INDUK',fields=fields)]),tmp_path)
     try:
-        assert wb['INDUK'][target].value=='17,00'
+        assert wb['INDUK'][target].value==17
         assert wb['INDUK']['B26'].value.strip()=='PENYERAHAN BARANG DAN JASA'
     finally:
         wb.close()

@@ -47,6 +47,8 @@ def validate_report(data, python_profile='production'):
             and data.get('automatic_login_controls') == {
                 'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
             and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only']
+            and data.get('bugreport_footer') == {
+                'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}
             and data.get('ui_text') == {
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                 'background':'jalankan proses sedot di background',

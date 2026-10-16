@@ -22,10 +22,10 @@ def test_appendix_footer_reaches_the_styled_total_after_row_growth(tmp_path, cas
         sheet = workbook[form]
         target = total + max(0, count - (total - first))
         assert sheet.cell(target, 1).value == 'TOTAL'
-        assert [sheet.cell(target, c).value for c in columns] == amounts
+        assert [sheet.cell(target, c).value for c in columns] == [0, -17, 1234.5, 29][:len(columns)]
         for c in columns:
             assert_format(sheet.cell(target, c), reference[form].cell(total, c))
-            assert sheet.cell(target, c).data_type == 's'
+            assert sheet.cell(target, c).data_type == 'n'
         assert [sheet.cell(first + i, 2).value for i in range(count)] == [
             f'SYNTHETIC-{i}-2' for i in range(count)]
         for row in range(first, first + count):

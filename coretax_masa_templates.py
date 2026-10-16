@@ -1,5 +1,7 @@
 """Fill only observed PPN and Unifikasi forms using approved public layouts."""
 from pathlib import Path
+from decimal import Decimal
+import math
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
@@ -20,10 +22,10 @@ RESOURCES = {
 PPN_BLOCKS = {
     'a1': [(None, 3, 4, 6)],
     'a2': [(None, 4, 5, 15)],
-    'b1': [(None, 4, 5, 6)],
+    'b1': [(None, 4, 5, 5)],
     'b2': [(None, 3, 4, 7)],
     'b3': [(None, 3, 4, 7)],
-    'c': [(None, 3, 4, 7)],
+    'c': [(None, 3, 4, 6)],
 }
 UNIFIKASI_BLOCKS = {
     'daftar i': [('B3', 4, 5, 8), ('B9', 10, 11, 14)],
@@ -114,6 +116,20 @@ def _identity_fields(sheet, sections, tax):
     return pending
 
 
+def _write_ppn_amount(sheet, row, column, value):
+    """Only verified money slots may change from source text to Excel numbers."""
+    numeric = value
+    if isinstance(value, str) and re.fullmatch(
+            r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', value):
+        source = Decimal(value.replace('.', '').replace(',', '.'))
+        # Check the source before float conversion: Excel retains 15 digits.
+        if Decimal(format(source, '.15g')) == source:
+            converted = float(source)
+            if math.isfinite(converted):
+                numeric = converted
+    _write(sheet, row, column, numeric)
+
+
 def _ppn_mapping(table, sheet, header):
     # The reference has an unnamed merged description header (A:D). Treat that
     # one structural column as description, not as an invented source alias.
@@ -156,7 +172,7 @@ def _ppn_induk(sheet, sections):
                     continue
                 for column, value in projected.items():
                     if column:
-                        _write(sheet, rows[0], column, value)
+                        _write_ppn_amount(sheet, rows[0], column, value)
                 used.add(rows[0])
             if rows_left:
                 pending.append({**table, 'rows': rows_left})
@@ -218,7 +234,7 @@ def _ppn_fields(sheet, fields):
             pending.append(field)
     for position, values in matches.items():
         if len(values) == 1 and sheet.cell(*position).value is None:
-            _write(sheet, *position, values[0].get('value', ''))
+            _write_ppn_amount(sheet, *position, values[0].get('value', ''))
         else:
             pending.extend(values)
     return pending
@@ -363,11 +379,12 @@ def _ppn_appendix(sheet, blocks, sections, form):
     _grow(sheet, last + 1, extra, first)
     for row, (mapping, values) in enumerate(rows, first):
         for column, value in zip(mapping, values):
-            _write(sheet, row, column, value)
+            writer = _write_ppn_amount if column in columns else _write
+            writer(sheet, row, column, value)
     # Different grids/snapshots are not additive, even when their totals agree.
     if len(totals) == 1 and not pending:
         for column, value in totals[0][1].items():
-            _write(sheet, last + extra + 1, column, value)
+            _write_ppn_amount(sheet, last + extra + 1, column, value)
     elif totals:
         pending.extend({**table, 'rows': table['footer']} for table, _ in totals)
     return fields, pending

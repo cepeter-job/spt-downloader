@@ -69,6 +69,32 @@ def self_test(report=None):
     try:
         with tempfile.TemporaryDirectory(prefix='spt-desktop-selftest-') as folder:
             app=App(root,Path(folder),controller=SyntheticController());root.update_idletasks()
+            # A mapped window is required: grid options alone do not prove placement.
+            root.deiconify()
+            contact=app.view.bugreport_label
+            positions=[]
+            for width,height in ((540,430),(800,620)):
+                root.geometry(f'{width}x{height}')
+                settled=tk.BooleanVar(root)
+                root.after(250,lambda:settled.set(True))
+                root.wait_variable(settled)
+                root.update_idletasks()
+                left=contact.winfo_rootx()-root.winfo_rootx()
+                top=contact.winfo_rooty()-root.winfo_rooty()
+                right=left+contact.winfo_width()
+                bottom=top+contact.winfo_height()
+                positions.append(bool(root.winfo_width()==max(width,root.minsize()[0])
+                    and root.winfo_height()==max(height,root.minsize()[1])
+                    and contact.winfo_viewable()
+                    and 0<=left<right<=root.winfo_width()
+                    and 0<=top<bottom<=root.winfo_height()
+                    and root.winfo_width()-right<=app.view.px(32)
+                    and root.winfo_height()-bottom<=app.view.px(32)
+                    and contact.winfo_rooty()>=app.results_label.winfo_rooty()+app.results_label.winfo_height()))
+                del settled
+            bugreport_footer={'text':str(contact.cget('text')),'bottom_right':all(positions)}
+            assert bugreport_footer=={'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}
+            root.withdraw()
             assert app.start_button.cget('text')=='Mulai unduh'
             assert app.npwp.get()==''
             assert app.stop_button.instate(['disabled'])
@@ -181,6 +207,7 @@ def self_test(report=None):
                   'detail_source_control':mode_control,
                   'selection_sorting_control':sorting,
                   'automatic_login_controls':automatic_login,
+                  'bugreport_footer':bugreport_footer,
                   'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
