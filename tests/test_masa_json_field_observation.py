@@ -24,7 +24,7 @@ PERIOD = """<div class="p-accordion-header"><span class="p-accordion-header-text
 </div></p-dropdown></ui-dropdown></div></div></div>"""
 
 
-def metadata(browser, body, tax='PPh Unifikasi'):
+def metadata(browser, body, tax='PPh Unifikasi', form_name='INDUK'):
     module = observer_module()
     context = browser.new_context()
     try:
@@ -32,7 +32,7 @@ def metadata(browser, body, tax='PPh Unifikasi'):
         page.set_content('<div class="p-tabview"><div class="p-tabview-panels"><div id="fields" class="p-tabview-panel">' + body + '</div></div></div>')
         page.evaluate(TRAPS)
         result = page.locator('#fields').evaluate(module.FIELDS.replace('GROUP', GROUP_JS),
-                                                   {'tax': tax, 'form': 'INDUK'})
+                                                   {'tax': tax, 'form': form_name})
         assert page.evaluate('window.valueReads') == 0
         assert 'TRAP' not in json.dumps(result)
         return result
@@ -40,8 +40,9 @@ def metadata(browser, body, tax='PPh Unifikasi'):
         context.close()
 
 
-def test_custom_period_dropdown_uses_reviewed_control_binding_not_generated_input_id(browser):
-    assert metadata(browser, PERIOD) == [{
+@pytest.mark.parametrize('form_name', ['INDUK', 'DAFTAR-I', 'DAFTAR-II', 'LAMPIRAN-I'])
+def test_custom_period_dropdown_uses_reviewed_control_binding_not_generated_input_id(browser, form_name):
+    assert metadata(browser, PERIOD, form_name=form_name) == [{
         'field': 'TaxPeriodCode', 'label': 'Masa Pajak', 'group': 'A. IDENTITAS PEMOTONG',
         'column_label': '', 'tag': 'UI-DROPDOWN'}]
 
@@ -62,10 +63,11 @@ def radio(value, label):
             f'<label for="choice-{value}">{label}</label></div></p-radiobutton>')
 
 
-def test_radio_options_are_structure_and_not_the_current_selection(browser):
-    body = '<h3>C. PERNYATAAN DAN TANDA TANGAN</h3>' + radio('0', 'Wajib Pajak') + radio('1', 'Kuasa Wajib Pajak')
-    assert metadata(browser, body) == [
-        {'field': 'DeclarationBy', 'label': 'Wajib Pajak', 'group': 'C. PERNYATAAN DAN TANDA TANGAN',
+@pytest.mark.parametrize('tax,label', [('PPh Unifikasi', 'Wajib Pajak'), ('PPN', 'PKP')])
+def test_radio_options_are_structure_and_not_the_current_selection(browser, tax, label):
+    body = '<h3>C. PERNYATAAN DAN TANDA TANGAN</h3>' + radio('0', label) + radio('1', 'Kuasa Wajib Pajak')
+    assert metadata(browser, body, tax=tax) == [
+        {'field': 'DeclarationBy', 'label': label, 'group': 'C. PERNYATAAN DAN TANDA TANGAN',
          'column_label': '', 'tag': 'P-RADIOBUTTON', 'option': '0'},
         {'field': 'DeclarationBy', 'label': 'Kuasa Wajib Pajak', 'group': 'C. PERNYATAAN DAN TANDA TANGAN',
          'column_label': '', 'tag': 'P-RADIOBUTTON', 'option': '1'},
@@ -76,6 +78,18 @@ def test_radio_options_are_structure_and_not_the_current_selection(browser):
     radio('0', 'Wajib Pajak').replace('DeclarationBy', 'UnknownControl')])
 def test_unknown_radio_contract_does_not_become_verified_metadata(browser, body):
     assert metadata(browser, body) is None
+
+
+def test_ppn_model_dropdown_uses_its_own_reviewed_label_and_control(browser):
+    body = PERIOD.replace('Tax Period', 'Model *').replace('Masa Pajak', 'Normal/Pembetulan')
+    assert metadata(browser, body, tax='PPN') == [{
+        'field': 'Model', 'label': 'Normal/Pembetulan', 'group': 'A. IDENTITAS PEMOTONG',
+        'column_label': '', 'tag': 'UI-DROPDOWN'}]
+
+
+@pytest.mark.parametrize('tax,form_name', [('Unknown', 'INDUK'), ('PPh Unifikasi', 'UNKNOWN')])
+def test_custom_control_is_not_bound_outside_its_reviewed_tax_and_form(browser, tax, form_name):
+    assert metadata(browser, PERIOD, tax=tax, form_name=form_name) is None
 
 
 def test_checkbox_metadata_never_reads_checked_or_value(browser):
