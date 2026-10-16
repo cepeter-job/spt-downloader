@@ -101,7 +101,9 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
             assert [sheet['A1'].value for sheet in workbook] == [induk, names[1]]
             proof = exporter.read_workbook_proof(workbook)
             assert [item['meta']['Model SPT'] for item in proof['records']] == [record['meta']['Model SPT']]
-            expected_values = Counter(field['value'] for section in record['sections'] for field in section['fields'])
+            expected_values = Counter(field['value'] for section in record['sections']
+                                      if tax != 'PPN' or section['name'] != 'Induk'
+                                      for field in section['fields'])
             observed = Counter(cell.value for sheet in workbook for row in sheet for cell in row
                                if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')
                                and 'SOURCE CONTEXT' not in cell.value)

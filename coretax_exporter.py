@@ -666,7 +666,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
             values = ['Pemetaan template', report.get('unmapped_fields', 0),
                       report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),
                       'COMPLETE' if report['complete'] else 'PARTIAL',
-                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat bukti sumber di bawah form."]
+                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat capture sumber pada checkpoint job."]
             for col, value in enumerate(values, 1):
                 put(audit, ar, col, value)
             ar += 1

@@ -130,7 +130,10 @@ FIELDS_JS = r'''(root) => {
    const control=e.closest('p-radiobutton,p-checkbox')||e;
    if(!visible(control))return;
    if(e.type==='radio'&&!e.checked&&e.getAttribute('aria-checked')!=='true')return;
-   fields.push({...context(e),label:labelFor(e),field:e.name||e.getAttribute('formcontrolname')||e.id,value:e.type==='checkbox'?String(e.checked):e.value});
+   // PrimeNG may keep the AskedTo binding on the wrapper, not its input.
+   const askedTo=e.type==='radio'&&control.getAttribute('formcontrolname')==='AskedTo';
+   const field=e.name||e.getAttribute('formcontrolname')||(askedTo?'AskedTo':e.id);
+   fields.push({...context(e),label:labelFor(e),field,value:e.type==='checkbox'?String(e.checked):e.value});
   }else if(visible(e))fields.push({...context(e),label:labelFor(e),field:e.getAttribute('formcontrolname')||e.name||e.id,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.textContent).join(', '):e.value});
  });
  [...root.querySelectorAll('p-dropdown,p-multiselect')].filter(include).filter(visible).forEach(e=>{

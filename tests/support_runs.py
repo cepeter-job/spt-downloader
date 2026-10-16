@@ -41,6 +41,10 @@ def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
                          'complete': True}]}
             for form in ('Induk', 'L-Z')
         ]
+        if tax == 'PPN':
+            record['sections'][0]['fields'].append({
+                'label': 'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)',
+                'field': '', 'value': str(100 + ordinal)})
         records.append(record)
     run.update(records=records, complete=True)
     return run
