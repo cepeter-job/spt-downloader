@@ -10,6 +10,18 @@ from coretax_masa_bindings import (
 )
 
 
+_PPN_OMITTED_CONTROLS = {
+    **dict.fromkeys((
+        'TaxableEnterpreneurName', 'Address', 'PhoneNumber', 'Cellphone', 'TIN',
+        'BussinessFieldClassification', 'BookkeepingPeriod', 'AccountNo', 'BankName',
+        'AccountName', 'MyCheckBox', 'CityOfTaxReturnSigning', 'DeclaratorName', 'Position',
+    ), 'INPUT'),
+    'DateOfTaxReturnSigning': 'P-CALENDAR',
+    'DeadlineSubmission': 'P-CALENDAR',
+    'DeclarationBy': 'P-RADIOBUTTON',
+}
+
+
 def _source(binding, endpoint, packets, *, pages=False):
     if not isinstance(binding, dict) or binding.get('endpoint') != endpoint:
         raise _UnsupportedMetadata('unbound_masa_source_endpoint')
@@ -95,7 +107,7 @@ def project_masa_forms(packets, *, record, observed_forms):
         if request.get('IsNormalVAT') is not True:
             raise _UnsupportedMetadata('unverified_masa_lc_kind')
         lc_projection = project_ppn_footer('C', source_form, lc_footer=lc_source['payload'])
-    sections, bindings, grids = [], [], []
+    sections, bindings, grids, omissions = [], [], [], []
     for observed in observed_forms:
         name = observed['name']
         section = {'name': name, 'fields': [], 'tables': []}
@@ -117,6 +129,17 @@ def project_masa_forms(packets, *, record, observed_forms):
                     or any(type(field.get(key)) is not str for key in ('field', 'label', 'group', 'column_label', 'tag'))
                     or not field['field'] or not field['label']):
                 raise _UnsupportedMetadata('unverified_masa_field_metadata')
+            if tax == 'PPN' and name == 'INDUK' and field['field'] in _PPN_OMITTED_CONTROLS:
+                if field['tag'] != _PPN_OMITTED_CONTROLS[field['field']]:
+                    raise _UnsupportedMetadata('unverified_ppn_omitted_control_shape')
+                if field['field'] == 'DeclarationBy':
+                    if (field.get('option'), field['label']) not in (('0', 'PKP'), ('1', 'Kuasa Wajib Pajak')):
+                        raise _UnsupportedMetadata('unverified_ppn_omitted_option')
+                elif 'option' in field:
+                    raise _UnsupportedMetadata('unverified_ppn_omitted_option')
+                omissions.append({'form': name, 'field': field['field'], 'tag': field['tag'],
+                                  'reason': 'approved_ppn_template_omission'})
+                continue
             if tax == 'PPN' and name == 'INDUK' and field['field'] == 'AskedTo':
                 if choice is None:
                     raise _UnsupportedMetadata('unverified_ppn_requested_choice')
@@ -143,12 +166,23 @@ def project_masa_forms(packets, *, record, observed_forms):
                                  'provenance': lc_projection['provenance']}
                     event_source, container = lc_source, ['Payload']
                 else:
-                    projected = project_ppn_amount(source_form, control, model=source_form.get('ReturnSheetModel'))
+                    if control.startswith('VATandSTLGCollectedByOtherPartiesUnderOverpaidDueAmmendment'):
+                        primary_sequences = [sequence for request in forms['INDUK']['primary']['requests']
+                                             for sequence in request['sequences']]
+                        footer_sequences = [sequence for request in forms['C']['tables'][0]['footer_source']['requests']
+                                            for sequence in request['sequences']]
+                        if min(footer_sequences) <= max(primary_sequences):
+                            raise _UnsupportedMetadata('unverified_ppn_footer_lifecycle')
+                    projected = project_ppn_amount(source_form, control, model=source_form.get('ReturnSheetModel'),
+                                                   lc_footer=lc_source['payload'])
             else:
                 projected = project_unifikasi_text(source_form, control)
             section['fields'].append({**deepcopy(field), 'value': projected['value']})
-            bindings.extend(_evidence(projected['provenance'], event_source, container,
-                                      {'form': name, 'field': control}, rule=projected.get('rule')))
+            for entry in projected['provenance']:
+                source = lc_source if tax == 'PPN' and entry.get('source') == 'lc_footer' else event_source
+                path = ['Payload'] if source is lc_source else container
+                bindings.extend(_evidence([entry], source, path, {'form': name, 'field': control},
+                                          rule=projected.get('rule')))
         for table in observed['tables']:
             if (not isinstance(table.get('headers'), list) or not isinstance(table.get('footer_spans'), list)
                     or type(table.get('group')) is not str
@@ -192,7 +226,7 @@ def project_masa_forms(packets, *, record, observed_forms):
             result['rows'] = result['rows'] + deepcopy(result['footer'])
             section['tables'].append(result)
         sections.append(section)
-    return {'sections': sections, 'bindings': bindings, 'grids': grids,
+    return {'sections': sections, 'bindings': bindings, 'grids': grids, 'omitted_fields': omissions,
             'source_root_count': len(source_form),
             'evidence_row_count': sum(len(section['fields']) + sum(len(table['rows']) for table in section['tables'])
                                       for section in sections)}

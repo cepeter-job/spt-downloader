@@ -19,7 +19,7 @@ def test_reviewed_administrative_fields_are_explicit_omissions_not_missing_bindi
     fields = [field(control, 'Synthetic administrative caption') for control in TEXT_OMISSIONS]
     for control in ('DateOfTaxReturnSigning', 'DeadlineSubmission'):
         fields.append({**field(control, 'Synthetic date caption'), 'tag': 'P-CALENDAR'})
-    for option, label in [('0', 'Pengusaha Kena Pajak'), ('1', 'Kuasa')]:
+    for option, label in [('0', 'PKP'), ('1', 'Kuasa Wajib Pajak')]:
         fields.append({**field('DeclarationBy', label), 'tag': 'P-RADIOBUTTON', 'option': option})
     case['forms'][0]['fields'] += fields
     result = decode(case)

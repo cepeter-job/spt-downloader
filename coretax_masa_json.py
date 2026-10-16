@@ -329,6 +329,8 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         if not reasons:
             provenance['bindings'] = projected['bindings']
             coverage.update({key: projected[key] for key in ('source_root_count', 'evidence_row_count', 'grids')})
+            if tax == 'PPN':
+                coverage['omitted_fields'] = projected['omitted_fields']
             coverage['complete'] = True
             return {'eligible': True, 'reason': '', 'sections': projected['sections'],
                     'coverage': coverage, 'provenance': provenance}

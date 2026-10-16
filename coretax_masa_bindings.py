@@ -361,7 +361,82 @@ def project_ppn_header(payload, control):
     raise _UnsupportedMetadata('unsupported_ppn_header_control')
 
 
-def project_ppn_amount(form, control, *, model):
+_PPN_COLLECTION_COLUMNS = {
+    'SellingPrice': ('SellingPrice', 'TaxBase'),
+    'OtherTaxBase': ('OtherTaxBase', 'OtherTaxBase'),
+    'VAT': ('VAT', 'VAT'),
+    'STLG': ('SalesTaxLuxuryGoods', 'STLG'),
+}
+_PPN_COLLECTION_BINDINGS = {
+    prefix + suffix: (root, leaf, zero, conditional, footer_key)
+    for prefix, root, zero, conditional in (
+        ('VATandSTLGUnderOverpaidOnAmmendedVAT', 'VATAndSTLGUnderOrOverPaidOnAmmended', False, False),
+        ('VATandSTLGUnderOverpaidDueAmmendment', 'VATAndSTLGUnderOfOverPaidDueToAmmendment', True, True),
+        ('VATandSTLGCollectedByOtherPartiesUnderOverpaidOnAmmendedVAT', 'VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended', True, True),
+        ('VATandSTLGCollectedByOtherPartiesUnderOverpaidDueAmmendment', None, True, True),
+    )
+    for suffix, (leaf, footer_key) in _PPN_COLLECTION_COLUMNS.items()
+}
+
+
+def _project_ppn_collection(form, control, model, lc_footer):
+    root, leaf, zero, conditional, footer_key = _PPN_COLLECTION_BINDINGS[control]
+    evidence = []
+    if conditional:
+        nested = _source_scalar(form, ('A1FormListOfExportTaxableGoodsOrServices', 'ReturnSheetModel'), evidence)
+        if model != 'AMENDMENT' or nested != 'AMENDMENT':
+            raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
+    if root is not None:
+        value = _ppn_source_number(form, (root, leaf), evidence)
+        rendered = ('0' if zero else '') if value is None else _number(value, 0, locale='id-ID')
+        return {'value': rendered, 'rule': 'nested_amendment_stored' if conditional else 'direct_final_path',
+                'provenance': evidence}
+    if not isinstance(lc_footer, dict):
+        raise _UnsupportedMetadata('missing_ppn_amendment_lc_footer')
+    prior = _ppn_source_number(form, ('VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended', leaf), evidence)
+    previous = _decimal(prior) if prior is not None else Decimal(0)
+    footer_evidence = []
+    raw = _source_scalar(lc_footer, (footer_key,), footer_evidence)
+    if raw is not None and not (isinstance(raw, _CorporateNumber) or
+            type(raw) is str and _FOOTER_DECIMAL_STRING.fullmatch(raw)):
+        raise _UnsupportedMetadata('unsupported_ppn_amendment_footer_number')
+    current = _decimal(raw) if raw is not None else Decimal(0)
+    evidence.extend({**entry, 'source': 'lc_footer'} for entry in footer_evidence)
+    if current == previous:
+        # The subscription merges total/prior changes BEFORE distinctUntilChanged.
+        # An equal footer can be suppressed. Only an invariant initial difference
+        # proves zero without inventing an unobserved intermediate callback.
+        initial = _ppn_source_number(form, ('TotalVATAndSTLGCollectedByOtherParties', leaf), evidence)
+        initial = _decimal(initial) if initial is not None else Decimal(0)
+        if initial != current:
+            raise _UnsupportedMetadata('unverified_ppn_equal_footer_callback')
+    total = (current - previous).to_integral_value(rounding=ROUND_FLOOR)
+    return {'value': _number(str(total), 0, locale='id-ID'),
+            'rule': 'floor_lc_footer_minus_previous', 'provenance': evidence}
+
+
+def _project_ppn_vat_balance(form):
+    evidence = []
+    basis = _source_scalar(form, ('BasedOnType',), evidence)
+    goods = _ppn_source_number(form, ('InputTaxPercentageGoods',), evidence)
+    services = _ppn_source_number(form, ('InputTaxPercentageServices',), evidence)
+    if basis is not None or (goods is not None and services is not None and
+                             _decimal(goods) == 90 and _decimal(services) == 0):
+        raise _UnsupportedMetadata('unverified_ppn_final_balance_lifecycle')
+    # The final onChangeBasedOnType resets these percentages to 90/0.
+    # A definite change invokes the normal-VAT balance calculation even on a
+    # disabled submitted form; its earlier stored balance is then overwritten.
+    values = []
+    for path in (('OutputTaxMustBeSelfCollected', 'VAT'), ('VATIsDepositedInAdvance', 'VAT'),
+                 ('InputTaxCanBeCalculated', 'VAT'), ('VATCollectedByVATCollector', 'VAT')):
+        value = _ppn_source_number(form, path, evidence)
+        values.append(_decimal(value) if value is not None else Decimal(0))
+    total = (values[0] - values[1] - values[2] - values[3]).to_integral_value(rounding=ROUND_FLOOR)
+    return {'value': _number(str(total), 0, locale='id-ID'),
+            'rule': 'late_percentage_change_normal_vat_balance', 'provenance': evidence}
+
+
+def project_ppn_amount(form, control, *, model, lc_footer=None):
     """Apply reviewed final-value precedence, retaining only real dependencies."""
     if not isinstance(form, dict) or model not in ('NORMAL', 'AMENDMENT'):
         raise _UnsupportedMetadata('unsupported_ppn_amount_model_or_source')
@@ -384,6 +459,10 @@ def project_ppn_amount(form, control, *, model):
             total = (total - (_decimal(value) if value is not None else Decimal(0))).to_integral_value(rounding=ROUND_FLOOR)
             rule = 'floor_difference_submitted_stlg_amendment'
         return {'value': _number(str(total), 0, locale='id-ID'), 'rule': rule, 'provenance': evidence}
+    if control == 'VATIsUnderOrOverPaid':
+        return _project_ppn_vat_balance(form)
+    if control in _PPN_COLLECTION_BINDINGS:
+        return _project_ppn_collection(form, control, model, lc_footer)
     binding = _PPN_AMOUNTS.get(control)
     if binding is None:
         raise _UnsupportedMetadata('unverified_ppn_amount_control')

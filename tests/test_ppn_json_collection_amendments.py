@@ -75,6 +75,20 @@ def test_equal_footer_prior_and_initial_total_prove_zero_despite_distinct_suppre
     assert any(p['path'] == ['TotalVATAndSTLGCollectedByOtherParties', 'VAT'] for p in result['provenance'])
 
 
+def test_footer_before_a_later_primary_patch_cannot_prove_final_viii_difference():
+    case = amend_case()
+    primary = case['packets'].pop(0)
+    sequence = max(p['context']['sequence'] for p in case['packets']) + 1
+    primary['context']['sequence'] = sequence
+    case['packets'].append(primary)
+    case['forms'][0]['primary']['requests'][0]['sequences'] = [sequence]
+    case['forms'][0]['fields'].append(field(
+        'VATandSTLGCollectedByOtherPartiesUnderOverpaidDueAmmendmentVAT', 'Synthetic difference'))
+    result = decode(case)
+    assert result['eligible'] is False
+    assert 'unverified_ppn_footer_lifecycle' in result['reason']
+
+
 def test_nested_amendment_condition_is_not_inferred_from_outer_model():
     data = _corporate_json('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":123}}')
     with pytest.raises(_UnsupportedMetadata):
