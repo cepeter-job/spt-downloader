@@ -40,6 +40,47 @@ Benchmark menjalankan tiga environment Windows 2022 dengan CPython 3.14.8 dan lo
 
 Job perbandingan menolak manifest yang tidak cocok atau tidak lengkap: seluruh node pada dua shard harus disjoint, bergabung tepat menjadi suite serial, dan mengikuti pembagian hash yang ditetapkan. Ringkasan menunjukkan waktu pytest serial versus durasi shard terlama. Itu **bukan** percepatan CI total: waktu antre runner, setup, build dan attestation belum dihitung. Jangan mengganti jalur produksi dengan shard tanpa bukti eksekusi Windows nyata, pengukuran berulang dan peninjauan khusus.
 
+## Bukti waktu dan kegagalan tes
+
+Job portable, Windows produksi, serta setiap varian benchmark menyimpan JUnit
+`test-results.xml` dan ringkasan `test-measurements.json` dalam artifact diagnostik
+terpisah. Inventory tetap memakai nama dan format pokok yang dikonsumsi gate
+packaging. Upload inventory dan diagnostik tetap dicoba ketika langkah pytest
+gagal, termasuk kegagalan assertion, fixture, atau collection; kegagalan tersebut
+tetap membuat job gagal. Artifact distribusi tetap hanya lima berkas yang lama.
+
+Inventory sekarang mencatat exit status dan durasi setiap sesi pytest, bukan
+hanya benchmark. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
+tersimpan. Setup diukur dengan timestamp Unix wall-clock sejak setelah checkout hingga
+awal sesi pytest. Python bawaan runner dan Python managed dapat memakai clock
+monotonik Windows yang berbeda; durasi setup tidak boleh mengurangkan kedua
+clock tersebut. Durasi sesi pytest tetap memakai satu clock monotonik. Perubahan
+jam sistem dapat memengaruhi setup; durasi negatif/tidak valid ditolak. Pengukuran ini tidak mencakup antre runner, checkout, upload, worker
+bootstrap setelah tes, packaging, atau provenance. Tidak ada angka perkiraan yang
+ditambahkan untuk waktu yang tidak terukur. Bukti yang hilang ditampilkan sebagai
+`unavailable`, bukan dianggap sukses atau berdurasi nol.
+
+JUnit berasal dari fixture sintetis di runner GitHub; logging stdout/stderr ke
+JUnit dimatikan. Ringkasan hanya memuat identitas tes, durasi, jumlah outcome dan
+metadata run, tanpa menyalin pesan assertion atau captured log. Traceback sintetis
+masih dapat berada dalam JUnit. Tidak ada folder workspace, profil, cookie, output
+pajak, atau log aplikasi pribadi yang diunggah. Penghentian keras runner dapat
+mencegah penulisan atau upload; tidak ada jaminan laporan untuk proses yang dibunuh.
+
+Benchmark membaca pin Python produksi dari sumber yang sama dengan CI utama,
+bukan konstanta YAML kedua. Dispatch manual menyediakan `cache_mode=restore`
+(default) atau `cold`; restore yang diminta belum tentu menghasilkan cache hit,
+sehingga hit/miss aktual tetap harus dibaca. Benchmark tidak menulis cache. Mode
+cold hanya melewati restore pada runner baru, tanpa menghapus cache milik repo.
+
+Perbandingan menyajikan durasi pytest, setup + pytest, serta jumlah runner-seconds
+kedua shard. Nilai tersebut bukan waktu CI total. Sebelum PR terpisah boleh
+mengaktifkan sharding produksi, kumpulkan sedikitnya lima perbandingan pada commit
+yang sama, pisahkan kondisi cache, ukur antre/setup/build/readback dari metadata
+Actions, pastikan inventory lengkap tanpa duplikasi, dan tinjau flake serta biaya
+runner. Sasaran evaluasi adalah penurunan median waktu CI kandidat sekurangnya
+20%, bukan syarat lulus benchmark ini. Produksi tetap serial dan seluruh gate tetap.
+
 ## Cache dan CPU
 
 Cache menyimpan unduhan/paket `uv` serta interpreter managed. Kunci memisahkan OS, arsitektur, versi Python, peran workload, serta isi lock dan requirements. Cache tidak menjadi bukti bahwa environment sudah terverifikasi: instalasi tetap memakai lock dan hash, dan runtime memeriksa kesiapan aktual.

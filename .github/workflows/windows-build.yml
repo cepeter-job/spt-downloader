@@ -70,7 +70,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Mark setup timing after checkout
+        run: python -m scripts.ci_report start
       - name: Set up pinned uv, wheel cache and managed Python cache
+        id: uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.0'
@@ -95,15 +98,35 @@ jobs:
         if: matrix.profile == 'production'
         run: .venv/bin/python -m scripts.update_locks --check
       - name: Run portable synthetic tests serially
+        id: tests
+        env:
+          CI_UV_CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
+          CI_PYTHON_CACHE_HIT: ${{ steps.uv.outputs.python-cache-hit }}
         run: >-
           .venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q
           --basetemp "$RUNNER_TEMP/spt-pytest-portable"
           --ci-manifest "$RUNNER_TEMP/test-inventory.json" --durations=10
+          --junitxml "$RUNNER_TEMP/test-results.xml"
+          -o junit_logging=no -o junit_log_passing_tests=false
+      - name: Summarize synthetic test timing and outcomes
+        if: always() && steps.tests.outcome != 'skipped'
+        run: python -m scripts.ci_report report
       - name: Publish synthetic collection evidence
+        if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}
           path: ${{ runner.temp }}/test-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain synthetic JUnit and measurements even after test failure
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-portable-python${{ matrix.python }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/test-results.xml
+            ${{ runner.temp }}/test-measurements.json
           if-no-files-found: error
           retention-days: 14
 
@@ -124,7 +147,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Mark setup timing after checkout
+        run: python -m scripts.ci_report start
       - name: Set up pinned uv, wheel cache and managed Python cache
+        id: uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.0'
@@ -151,19 +177,39 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip check --python .venv/Scripts/python.exe
       - name: Run the complete Windows suite including native, Tk and Edge fixtures
+        id: tests
+        env:
+          CI_UV_CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
+          CI_PYTHON_CACHE_HIT: ${{ steps.uv.outputs.python-cache-hit }}
         run: >-
           .venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q
           --basetemp "$env:RUNNER_TEMP/spt-pytest-windows"
           --ci-manifest "$env:RUNNER_TEMP/test-inventory.json" --durations=10
+          --junitxml "$env:RUNNER_TEMP/test-results.xml"
+          -o junit_logging=no -o junit_log_passing_tests=false
       - name: Exercise fresh managed worker setup and verified reuse
         env:
           PYTHON_PROFILE: ${{ matrix.profile }}
         run: .venv/Scripts/python.exe -m scripts.ci_runtime --profile "$env:PYTHON_PROFILE"
+      - name: Summarize synthetic test timing and outcomes
+        if: always() && steps.tests.outcome != 'skipped'
+        run: python -m scripts.ci_report report
       - name: Publish synthetic collection evidence
+        if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-inventory-windows-python${{ matrix.python }}-${{ github.sha }}
           path: ${{ runner.temp }}/test-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain synthetic JUnit and measurements even after test failure
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-windows-python${{ matrix.python }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/test-results.xml
+            ${{ runner.temp }}/test-measurements.json
           if-no-files-found: error
           retention-days: 14
 

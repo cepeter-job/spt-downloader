@@ -2,12 +2,23 @@ name: Benchmark Windows test sharding
 
 on:
   workflow_dispatch:
+    inputs:
+      cache_mode:
+        description: Restore available production caches, or measure a cold setup
+        type: choice
+        default: restore
+        options: [restore, cold]
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/windows-build.yml'
       - '.github/workflows/windows-shard-benchmark.yml'
       - 'scripts/ci_tests.py'
+      - 'scripts/ci_report.py'
+      - 'scripts/ci_python_cache.py'
+      - 'spt_desktop/runtime.py'
+      - 'requirements*.txt'
+      - 'locks/*.txt'
       - 'scripts/ci_shard_benchmark.py'
       - 'tests/test_ci_sharding.py'
 
@@ -24,8 +35,23 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
 
 jobs:
+  profile:
+    name: Resolve the production benchmark profile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      production_python: ${{ steps.profile.outputs.production_python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the same runtime profile as production CI
+        id: profile
+        run: python3 -m scripts.ci_route route
+
   benchmark:
     name: Windows benchmark (${{ matrix.mode }})
+    needs: profile
     runs-on: windows-2022
     timeout-minutes: 20
     strategy:
@@ -37,13 +63,16 @@ jobs:
       run:
         shell: pwsh
     env:
-      PYTHON_VERSION: '3.14.8'
+      PYTHON_VERSION: ${{ needs.profile.outputs.production_python }}
       BENCHMARK_MODE: ${{ matrix.mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Mark setup timing after checkout
+        run: python -m scripts.ci_report start
       - name: Set up pinned uv and read-only production integration cache
+        id: uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.0'
@@ -51,6 +80,7 @@ jobs:
           enable-cache: true
           cache-python: true
           save-cache: false
+          restore-cache: ${{ inputs.cache_mode != 'cold' }}
           cache-dependency-glob: |
             requirements*.txt
             locks/*.txt
@@ -68,10 +98,16 @@ jobs:
           uv pip check --python .venv/Scripts/python.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run the complete synthetic Windows suite serially or as one shard
+        id: tests
+        env:
+          CI_UV_CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
+          CI_PYTHON_CACHE_HIT: ${{ steps.uv.outputs.python-cache-hit }}
         run: |
           $pytestArgs = @(
             '-m', 'pytest', 'tests', '-p', 'scripts.ci_tests', '--ci-workload', 'windows',
             '-q', '--ci-benchmark', '--ci-manifest', "$env:RUNNER_TEMP/test-inventory.json",
+            '--junitxml', "$env:RUNNER_TEMP/test-results.xml",
+            '-o', 'junit_logging=no', '-o', 'junit_log_passing_tests=false',
             '--basetemp', "$env:RUNNER_TEMP/spt-pytest-benchmark", '--durations=10'
           )
           if ($env:BENCHMARK_MODE -ne 'serial') {
@@ -80,23 +116,37 @@ jobs:
           }
           & .venv/Scripts/python.exe @pytestArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Summarize synthetic test timing and outcomes
+        if: always() && steps.tests.outcome != 'skipped'
+        run: python -m scripts.ci_report report
       - name: Publish synthetic benchmark inventory and pytest timing
+        if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-benchmark-${{ matrix.mode }}-${{ github.sha }}
           path: ${{ runner.temp }}/test-inventory.json
           if-no-files-found: error
           retention-days: 7
+      - name: Retain synthetic JUnit and measurements even after test failure
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-benchmark-${{ matrix.mode }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/test-results.xml
+            ${{ runner.temp }}/test-measurements.json
+          if-no-files-found: error
+          retention-days: 7
 
   compare:
     name: Compare serial and 2-shard Windows tests
-    needs: [benchmark]
+    needs: [profile, benchmark]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       BENCHMARK_RESULT: ${{ needs.benchmark.result }}
-      PYTHON_VERSION: '3.14.8'
+      PYTHON_VERSION: ${{ needs.profile.outputs.production_python }}
     steps:
       - name: Require all three Windows benchmark variants to pass
         shell: bash
@@ -128,3 +178,11 @@ jobs:
           "$RUNNER_TEMP/benchmark-shard-1/test-inventory.json"
           --python-version "$PYTHON_VERSION" --commit "$GITHUB_SHA"
           --summary "$GITHUB_STEP_SUMMARY"
+          --output "$RUNNER_TEMP/benchmark-comparison.json"
+      - name: Publish machine-readable benchmark comparison
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-benchmark-comparison-${{ github.sha }}
+          path: ${{ runner.temp }}/benchmark-comparison.json
+          if-no-files-found: error
+          retention-days: 7
