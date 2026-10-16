@@ -164,7 +164,7 @@ def test_production_inventory_retains_timing_and_failure_exit_status(tmp_path, b
     (tmp_path / 'conftest.py').write_text(
         (ROOT / 'scripts/ci_tests.py').read_text(encoding='utf-8'), encoding='utf-8')
     manifest, junit = tmp_path / 'inventory.json', tmp_path / 'junit.xml'
-    env = dict(os.environ, CI_SETUP_STARTED=str(time.monotonic() - 1),
+    env = dict(os.environ, CI_SETUP_STARTED=str(time.time() - 1),
                GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='2')
     result = subprocess.run([
         sys.executable, '-m', 'pytest', 'test_sample.py', '-q',
@@ -244,7 +244,8 @@ def test_setup_measurement_is_written_to_the_environment_file(tmp_path, monkeypa
     report.main(['start'])
     key, value = target.read_text(encoding='utf-8').strip().split('=', 1)
     assert key == 'CI_SETUP_STARTED'
-    assert float(value) > 0
+    import time
+    assert abs(float(value) - time.time()) < 10
 
 
 def test_benchmark_records_setup_and_runner_time_without_claiming_total_ci_savings():
