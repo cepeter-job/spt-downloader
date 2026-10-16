@@ -19,7 +19,13 @@ _PPN_OMITTED_CONTROLS = {
     'DateOfTaxReturnSigning': 'P-CALENDAR',
     'DeadlineSubmission': 'P-CALENDAR',
     'DeclarationBy': 'P-RADIOBUTTON',
+    'ReplacementPrevious': 'P-CHECKBOX',
 }
+# Literal appendix bindings differ from Induk's TaxableEnterpreneurName.
+# These repeated identity controls have no slots in the approved clean layout.
+_PPN_APPENDIX_OMITTED_CONTROLS = frozenset((
+    'TaxableEntrepreneurName', 'TaxPeriodYear', 'TIN', 'ReturnSheetModel',
+))
 
 
 def _source(binding, endpoint, packets, *, pages=False):
@@ -129,9 +135,20 @@ def project_masa_forms(packets, *, record, observed_forms):
                     or any(type(field.get(key)) is not str for key in ('field', 'label', 'group', 'column_label', 'tag'))
                     or not field['field'] or not field['label']):
                 raise _UnsupportedMetadata('unverified_masa_field_metadata')
+            if (tax == 'PPN' and name in ('A-1', 'A-2', 'B-1', 'B-2', 'B-3', 'C')
+                    and field['field'] in _PPN_APPENDIX_OMITTED_CONTROLS):
+                if field['tag'] != 'INPUT' or 'option' in field:
+                    raise _UnsupportedMetadata('unverified_ppn_omitted_control_shape')
+                omissions.append({'form': name, 'field': field['field'], 'tag': field['tag'],
+                                  'reason': 'approved_ppn_template_omission'})
+                continue
             if tax == 'PPN' and name == 'INDUK' and field['field'] in _PPN_OMITTED_CONTROLS:
                 if field['tag'] != _PPN_OMITTED_CONTROLS[field['field']]:
                     raise _UnsupportedMetadata('unverified_ppn_omitted_control_shape')
+                if field['field'] == 'ReplacementPrevious':
+                    if (field['label'] != 'Ganti SPT sebelumnya'
+                            or field['group'] != 'III. PENGHITUNGAN PPN KURANG BAYAR / LEBIH BAYAR'):
+                        raise _UnsupportedMetadata('unverified_ppn_omitted_control_shape')
                 if field['field'] == 'DeclarationBy':
                     if (field.get('option'), field['label']) not in (('0', 'PKP'), ('1', 'Kuasa Wajib Pajak')):
                         raise _UnsupportedMetadata('unverified_ppn_omitted_option')

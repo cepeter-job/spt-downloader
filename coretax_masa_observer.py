@@ -70,13 +70,15 @@ FIELDS = r"""(root, context={}) => {
       labels[0].getAttribute('ariaLabel')!==binding.role)return null;
    return {field:binding.field,label:binding.label,group:group(control),column_label:'',tag:control.tagName};
  };
- const candidates=[...root.querySelectorAll('ui-dropdown,p-dropdown,p-multiselect,p-radiobutton,[formcontrolname],input,textarea,select')];
+ const ppnInduk=context.tax==='PPN'&&context.form==='INDUK';
+ const candidates=[...root.querySelectorAll('ui-dropdown,p-dropdown,p-multiselect,p-radiobutton,[formcontrolname],input,textarea,select'+(ppnInduk?',p-checkbox':''))];
  const seen=new Set(), fields=[];
  for(const child of candidates){
    if(child.closest('table,[hidden],[aria-hidden="true"]')||child.closest('.p-tabview-panel')!==owner)continue;
    if(child.matches('input[type=password],input[type=hidden]'))continue;
-   const calendar=context.tax==='PPN'&&context.form==='INDUK'?child.closest('p-calendar'):null;
-   const control=calendar||child.closest('ui-dropdown')||child.closest('[formcontrolname]')||
+   const calendar=ppnInduk?child.closest('p-calendar'):null;
+   const checkbox=ppnInduk?child.closest('p-checkbox'):null;
+   const control=calendar||checkbox||child.closest('ui-dropdown')||child.closest('[formcontrolname]')||
      child.closest('p-dropdown,p-multiselect,p-radiobutton')||child;
    if(seen.has(control)||!visible(control))continue;
    seen.add(control);
@@ -84,6 +86,22 @@ FIELDS = r"""(root, context={}) => {
      const metadata=customField(control);
      if(!metadata)return null;
      fields.push(metadata);
+     continue;
+   }
+   if(checkbox){
+     // Public Ja/Wa use [formControl], so no DOM formcontrolname exists.
+     // This identifies structure only; the checkbox state stays in source JSON.
+     const row=checkbox.parentElement;
+     const labels=[...row.querySelectorAll(':scope > label')].filter(visible);
+     const inputs=checkbox.querySelectorAll('input');
+     if(row.querySelectorAll('p-checkbox').length!==1||labels.length!==1||
+        labels[0].textContent.trim()!=='Ganti SPT sebelumnya'||
+        labels[0].getAttribute('ariaLabel')!=='Replace Previous Tax Return'||
+        group(checkbox)!=='III. PENGHITUNGAN PPN KURANG BAYAR / LEBIH BAYAR'||
+        checkbox.hasAttribute('formcontrolname')||checkbox.hasAttribute('name')||
+        inputs.length!==1||!inputs[0].matches('input[type=checkbox]'))return null;
+     fields.push({field:'ReplacementPrevious',label:'Ganti SPT sebelumnya',
+       group:group(checkbox),column_label:'',tag:checkbox.tagName});
      continue;
    }
    if(calendar){
