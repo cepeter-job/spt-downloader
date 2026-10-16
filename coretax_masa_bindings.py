@@ -307,6 +307,30 @@ def _ppn_source_number(form, path, evidence):
     return value
 
 
+def project_ppn_asked_to(form, *, model):
+    """Resolve reviewed submitted-choice paths without a DOM checked-state read.
+
+    Potential calendar-dependent carry-forward overrides remain unsupported
+    unless a response-bound short circuit proves they cannot execute.
+    """
+    if not isinstance(form, dict) or model != 'AMENDMENT':
+        raise _UnsupportedMetadata('unverified_ppn_asked_to_model')
+    evidence = []
+    choice = _source_scalar(form, ('AskedTo',), evidence)
+    choices = ('CARRY_FORWARD', 'FAST_REFUND', 'FORWARD_REFUND')
+    if choice is not None and (type(choice) is not str or choice not in choices):
+        raise _UnsupportedMetadata('unsupported_ppn_asked_to_source')
+    balance = _ppn_source_number(form, ('VATUnderOrOverPaidDueToAmendment', 'VAT'), evidence)
+    if balance is None:
+        raise _UnsupportedMetadata('unverified_ppn_asked_to_balance')
+    if _decimal(balance) >= 0:
+        return {'value': None, 'rule': 'not_overpaid_clear', 'provenance': evidence}
+    exported = _ppn_source_number(form, ('A1FormListOfExportTaxableGoodsOrServices', 'Total'), evidence)
+    if exported is not None and _decimal(exported) != 0:
+        return {'value': choice, 'rule': 'export_blocks_calendar_override', 'provenance': evidence}
+    raise _UnsupportedMetadata('unbound_ppn_carry_forward_calendar')
+
+
 def project_ppn_header(payload, control):
     """Use source literals with the approved workbook's period/status presentation."""
     if not isinstance(payload, dict):

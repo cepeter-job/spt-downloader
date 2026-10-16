@@ -113,5 +113,5 @@ def test_amendment_projector_binds_header_evidence_to_outer_payload_not_formdata
     values = {x['field']:x['value'] for x in result['sections'][0]['fields']}
     assert values['Period'] == '012025' and values['Model'] == 'Pembetulan'
     for control, path in [('Period',['PeriodCode']),('Model',['ReturnSheetModel'])]:
-        matches = [p for p in result['provenance']['bindings'] if p.get('field')==control]
+        matches = [p for p in result['provenance']['bindings'] if p.get('destination', {}).get('field')==control]
         assert matches and all(p['container_path']==['Payload'] and p['path']==path for p in matches)
