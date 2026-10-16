@@ -106,6 +106,9 @@ class MainView(ttk.Frame):
         self.footer.columnconfigure(0, weight=1)
         self.results_label = ttk.Label(self.footer, text=copy_text('results.location_hint'), style='SPT.Stage.TLabel', wraplength=self.px(500))
         self.results_label.grid(row=0, column=0, sticky='ew')
+        self.bugreport_label = ttk.Label(self.footer, text=copy_text('app.bugreport'),
+            style='SPT.Stage.TLabel', justify='right', wraplength=self.px(500))
+        self.bugreport_label.grid(row=1, column=0, sticky='e', pady=(self.px(4), 0))
         self.canvas.bind('<Configure>', lambda event: self.request_reflow())
         self.workspace.bind('<Configure>', self._update_scrollregion)
         self.bind('<Configure>', lambda event: self.request_reflow())
@@ -386,6 +389,7 @@ class MainView(ttk.Frame):
         self._wrap(self.heading, outer - self.settings_button.winfo_reqwidth() - self.px(12))
         self._wrap(self.subtitle, outer)
         self._wrap(self.results_label, outer)
+        self._wrap(self.bugreport_label, outer)
         action_width = sum(button.winfo_reqwidth() for button in self._actions) + self.px(16)
         for ordinal, button in enumerate(self._actions):
             wrap = action_width > outer and ordinal == 2

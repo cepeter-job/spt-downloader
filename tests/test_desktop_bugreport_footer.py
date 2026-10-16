@@ -27,6 +27,8 @@ def test_contact_is_visible_bottom_right_without_replacing_existing_copy(tmp_pat
         root.after(250, lambda: settled.set(True))
         root.wait_variable(settled)
         root.update_idletasks()
+        assert root.winfo_width() == max(width, root.minsize()[0])
+        assert root.winfo_height() == max(height, root.minsize()[1])
         labels = [w for w in widgets(root) if w.winfo_class() == 'TLabel']
         contact = [w for w in labels if str(w.cget('text')) == TEXT]
         assert len(contact) == 1
