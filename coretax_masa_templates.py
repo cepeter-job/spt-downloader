@@ -1,8 +1,19 @@
 """Fill only observed PPN and Unifikasi forms using approved public layouts."""
 from pathlib import Path
+import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
-                                    _grow, _raw_evidence)
+                                    _grow, _raw_evidence, _body_rows, _header_key, _table_projection)
+
+
+def canonical_form(tax, form):
+    aliases = {
+        'PPN': {'a-1': 'a1', 'a-2': 'a2', 'b-1': 'b1', 'b-2': 'b2', 'b-3': 'b3'},
+        'PPh Unifikasi': {'daftar-i': 'daftar i', 'daftar-ii': 'daftar ii',
+                         'lampiran-i': 'lampiran i'},
+    }
+    return aliases.get(tax, {}).get(form.casefold(), form.casefold())
+
 
 RESOURCES = {
     'PPN': ('ppn_format.xlsx', ['Induk', 'A1', 'A2', 'B1', 'B2', 'B3', 'C']),
@@ -98,18 +109,77 @@ def _ppn_induk(sheet, sections):
     return pending
 
 
+def _ppn_fields(sheet, fields):
+    # Single-value rows have a fixed amount slot. Multi-column/repeated labels
+    # require observed group/header context; occurrence order is never evidence.
+    single = {12: 5, 22: 5, 23: 5, 32: 7, 33: 7, 36: 5, 37: 5,
+              **{r: 5 for r in range(41, 48)}, 56: 5,
+              **{r: 5 for r in range(60, 65)}}
+    matches, pending = {}, []
+    for field in fields:
+        label = _key(field.get('label') or field.get('field', ''))
+        group = _key(field.get('group', ''))
+        column = _header_key(field.get('column_label', ''))
+        candidates = []
+        for block in PPN_INDUK:
+            caption = _key(str(sheet.cell(block[0], 1).value or '') + ' ' + str(sheet.cell(block[0], 2).value or ''))
+            captions = {caption}
+            # The approved reference repeats outgoing/export wording in some
+            # input/collection slots. Preserve its cells; bind only the observed
+            # section-specific labels, never a global import/export synonym.
+            if block[0] == 26 and caption == _key('II. PENYERAHAN BARANG DAN JASA'):
+                captions.add(_key('II. PEROLEHAN BARANG DAN JASA'))
+            if group and group not in captions:
+                continue
+            bound_column = column
+            observed_dpp = {26: 'Harga Jual/Penggantian/Nilai Impor/DPP (Rupiah)',
+                            67: 'HARGA JUAL/PENGGANTIAN/DPP (Rupiah)',
+                            73: 'HARGA JUAL/PENGGANTIAN/DPP (Rupiah)'}.get(block[0])
+            reference_dpp = _header_key('Harga Jual/Penggantian/ Nilai Ekspor/DPP (Rupiah)')
+            if (observed_dpp and column == _header_key(observed_dpp)
+                    and _header_key(sheet.cell(block[1], 5).value) == reference_dpp):
+                bound_column = reference_dpp
+            for row in range(block[2], block[3] + 1):
+                labels = {_key(sheet.cell(row, c).value) for c in range(1, 5)
+                          if sheet.cell(row, c).value is not None}
+                if row == 56 and group == caption and _key(sheet['A56'].value) == _key('PPN terutang'):
+                    labels.add(_key('PPN yang wajib dibayar kembali'))
+                if not label or label not in labels:
+                    continue
+                if column:
+                    columns = [c for c in range(5, 9) if bound_column == _header_key(sheet.cell(block[1], c).value)]
+                else:
+                    columns = [single[row]] if row in single else []
+                candidates.extend((row, c) for c in columns)
+        if len(candidates) == 1:
+            matches.setdefault(candidates[0], []).append(field)
+        else:
+            pending.append(field)
+    for position, values in matches.items():
+        if len(values) == 1 and sheet.cell(*position).value is None:
+            _write(sheet, *position, values[0].get('value', ''))
+        else:
+            pending.extend(values)
+    return pending
+
+
 def _unifikasi_induk(sheet, sections):
     labels = [sheet['A10'].value, sheet['B10'].value, sheet['C11'].value,
               sheet['D11'].value] + [sheet.cell(10, c).value for c in range(5, 9)]
     used, pending = set(), []
     for section in sections:
         for table in section.get('tables', []):
-            mapping = _mapping(table, labels)
+            mapping = _mapping(table, labels, {
+                'PAJAK PENGHASILAN / SETOR SENDIRI': 'SETOR SENDIRI',
+                'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN': 'PEMOTONGAN / PEMUNGUTAN',
+                'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN This row contain the total amount of payment deducted by the refunded amount prior to the amendment.':
+                    'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN',
+            })
             if not table.get('complete', True) or mapping is None:
                 pending.append(table)
                 continue
-            rows_left = []
-            for values in table.get('rows', []):
+            body, rows_left = _body_rows(table)
+            for values in body:
                 projected = dict(zip(mapping, values))
                 matches = [row for row in range(12, 28)
                            if _key(projected.get(1)) == _key(sheet.cell(row, 1).value)
@@ -120,12 +190,28 @@ def _unifikasi_induk(sheet, sections):
                 for column, value in projected.items():
                     _write(sheet, matches[0], column, value)
                 used.add(matches[0])
+            # The observed total spans NO/DETIL. Bind its six amounts only
+            # when physical spans, header order and the captured tail agree.
+            footer = table.get('footer', [])
+            spans = table.get('footer_spans', [])
+            count = table.get('body_row_count')
+            if (27 not in used and mapping == list(range(1, 9))
+                    and type(count) is int and count == len(table.get('rows', [])) - 1
+                    and len(footer) == 1 and len(footer[0]) == 7
+                    and spans == [[2, 1, 1, 1, 1, 1, 1]]
+                    and all(type(span) is int for span in spans[0])
+                    and rows_left and rows_left[-1] == footer[0]
+                    and _key(footer[0][0]) == _key(sheet['A27'].value)):
+                for column, value in enumerate(footer[0][1:], 3):
+                    _write(sheet, 27, column, value)
+                used.add(27)
+                rows_left.pop()
             if rows_left:
                 pending.append({**table, 'rows': rows_left})
     return pending
 
 
-def _appendix(sheet, blocks, sections):
+def _appendix(sheet, blocks, sections, tax):
     grouped = [[] for _ in blocks]
     fields, pending = [], []
     for section in sections:
@@ -134,7 +220,10 @@ def _appendix(sheet, blocks, sections):
             if not table.get('complete', True):
                 pending.append(table)
                 continue
-            name = _key(table.get('name', ''))
+            caption = table.get('group') or table.get('name', '')
+            if tax == 'PPh Unifikasi':
+                caption = re.sub(r'^TABEL\s+(?:II|I)\.\s*', '', caption, flags=re.I)
+            name = _key(caption)
             candidates = [i for i, (caption, _, _, _) in enumerate(blocks)
                           if caption is None or name == _key(sheet[caption].value)]
             if len(candidates) != 1:
@@ -142,11 +231,33 @@ def _appendix(sheet, blocks, sections):
                 continue
             index = candidates[0]
             labels = [sheet.cell(blocks[index][1], c).value for c in range(1, sheet.max_column + 1)]
-            mapping = _mapping(table, labels)
+            aliases = {}
+            for alternatives in [('DPP', 'Jumlah DPP', 'DPP (Rupiah)'),
+                                 ('PPN', 'PPN (Rupiah)'), ('PPnBM', 'PPnBM (Rupiah)'),
+                                 ('Tanggal', 'Tanggal Faktur Pajak', 'Tanggal Dokumen'),
+                                 ('DASAR PENGENAAN PAJAK', 'DASAR PENGENAAN PAJAK (Rp)')]:
+                targets = [label for label in labels if _header_key(label) in {_header_key(a) for a in alternatives}]
+                if len(targets) == 1:
+                    aliases.update({a: targets[0] for a in alternatives})
+            extras = ['Masa Pajak', 'KODE IP TERKAIT', 'TANGGAL IP TERKAIT', 'Faktur Pajak']
+            if tax == 'PPh Unifikasi':
+                aliases.update({'PAJAK PENGHASILAN': 'PAJAK PENGHASILAN (Rp)',
+                                'NITKU / NOMOR IDENTITAS SUBUNIT ORGANISASI': 'ID TEMPAT KEGIATAN USAHA'})
+                # DPP and gross income are not interchangeable. Retain the DPP,
+                # rate and government-payment columns as raw evidence instead.
+                extras.extend(['DASAR PENGENAAN PAJAK (Rp)', 'TINGKAT (%)',
+                               'UANG PERSEDIAAN / PEMBAYARAN LANGSUNG (UNTUK WP INSTANSI PEMERINTAH DENGAN DANA APBN)'])
+            body, leftovers = _body_rows(table)
+            projected, mapping, changed = _table_projection(
+                {**table, 'rows': body, 'body_row_count': len(body)}, labels, aliases, extras)
             if mapping is None:
                 pending.append(table)
                 continue
-            grouped[index].extend((mapping, values) for values in table.get('rows', []))
+            grouped[index].extend((mapping, values) for values in projected['rows'])
+            if changed:
+                pending.append(table)
+            elif leftovers:
+                pending.append({**table, 'rows': leftovers})
     offset = 0
     for (_, _, first, last), rows in zip(blocks, grouped):
         first, last = first + offset, last + offset
@@ -160,12 +271,15 @@ def _appendix(sheet, blocks, sections):
 
 
 def render_template_form(sheet, tax, form, sections):
-    if form.casefold() == 'induk':
+    form = canonical_form(tax, form)
+    if form == 'induk':
         fields = _identity_fields(sheet, sections, tax)
         tables = _ppn_induk(sheet, sections) if tax == 'PPN' else _unifikasi_induk(sheet, sections)
+        if tax == 'PPN':
+            fields = _ppn_fields(sheet, fields)
         style_row = 4
     else:
         blocks = (PPN_BLOCKS if tax == 'PPN' else UNIFIKASI_BLOCKS)[form.casefold()]
-        fields, tables = _appendix(sheet, blocks, sections)
+        fields, tables = _appendix(sheet, blocks, sections, tax)
         style_row = blocks[0][2]
-    _raw_evidence(sheet, sections, fields, tables, style_row)
+    return _raw_evidence(sheet, sections, fields, tables, style_row)
