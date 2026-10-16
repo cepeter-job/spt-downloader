@@ -109,7 +109,7 @@ def test_each_diagnostic_upload_needs_its_own_failure_guard(job):
 
 @pytest.mark.parametrize('mutation', [
     'automatic-push', 'missing-shard', 'different-python', 'ignored-comparison',
-    'comment-only-arguments', 'removed-shard-branch',
+    'comment-only-arguments', 'removed-shard-branch', 'unbound-shard-mode',
 ])
 def test_benchmark_contract_rejects_unscoped_or_incomplete_execution(mutation):
     document = deepcopy(benchmark())
@@ -121,6 +121,8 @@ def test_benchmark_contract_rejects_unscoped_or_incomplete_execution(mutation):
         document['jobs']['benchmark']['env']['PYTHON_VERSION'] = '3.11.0'
     elif mutation == 'ignored-comparison':
         document['jobs']['compare']['steps'][0]['continue-on-error'] = True
+    elif mutation == 'unbound-shard-mode':
+        document['jobs']['benchmark']['env']['BENCHMARK_MODE'] = 'serial'
     elif mutation == 'comment-only-arguments':
         step = next(s for s in document['jobs']['benchmark']['steps'] if s.get('id') == 'tests')
         original = step['run']
