@@ -44,6 +44,8 @@ def validate_report(data, python_profile='production'):
             and data.get('worker_python') == python_version()
             and data.get('worker_resources') == list(WORKER_FILES)
             and data.get('credential_check_controls') and 'Cek Kredensial' in data.get('gui_controls', [])
+            and data.get('automatic_login_controls') == {
+                'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
             and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only']
             and data.get('ui_text') == {
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
@@ -53,15 +55,16 @@ def validate_report(data, python_profile='production'):
         raise RuntimeError('Packaged application self-test failed')
     sorting = data.get('selection_sorting_control')
     expected_orders = [
-        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
+        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
          'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
         ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
-         'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
+         'synthetic-unifikasi', 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
     if not (type(sorting) is dict
             and sorting.get('hierarchy') == ['type', 'year', 'month', 'model']
             and sorting.get('directions') == ['Jenis pajak ▲', 'Jenis pajak ▼']
+            and sorting.get('default_ordered_ids') == expected_orders[0]
             and sorting.get('ordered_ids') == expected_orders
             and sorting.get('selection_preserved') is True
             and sorting.get('confirmed_ids') == [

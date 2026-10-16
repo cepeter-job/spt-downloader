@@ -261,7 +261,7 @@ def test_worker_resources_explicitly_include_diagnostics_modules():
 
 
 def test_frozen_report_requires_exercised_diagnostics():
-    from test_desktop_build import report
+    from support_build_reports import report
     from build_desktop import validate_report
     data = report(); data.pop('diagnostics', None)
     with pytest.raises(RuntimeError, match='self-test'):
@@ -388,7 +388,7 @@ raise SystemExit(worker.main(['--root',sys.argv[1],'--job-id','test-job','--npwp
 
 
 def test_frozen_diagnostic_evidence_is_positive_and_fail_closed():
-    from test_desktop_build import report
+    from support_build_reports import report
     from build_desktop import validate_report
     data = report(); data['diagnostics'] = {'schema': 1, 'safe_logging': True}
     validate_report(data)
@@ -463,7 +463,7 @@ def test_crashed_sessions_without_segments_do_not_leave_unbounded_leases(tmp_pat
 def test_cli_offline_output_is_unchanged_and_not_copied_to_logs(tmp_path, monkeypatch, capsys, mode):
     d = diagnostics()
     import coretax
-    from test_split_output import fixture_run
+    from support_runs import fixture_run
     run = fixture_run()
     source = tmp_path / 'source.json'; source.write_text(json.dumps(run), encoding='utf-8')
     destination = tmp_path / 'output'
@@ -481,3 +481,51 @@ def test_cli_offline_output_is_unchanged_and_not_copied_to_logs(tmp_path, monkey
     assert stdout.count('SPT files: ') == 1 and stderr == ''
     data = json.dumps(records(log_root))
     assert run['npwp'] not in data and str(source) not in data and 'SYNTHETIC PRIVATE' not in data
+
+@pytest.mark.parametrize('field', ['reason', 'expected_origin', 'observed_origin', 'submitted'])
+@pytest.mark.parametrize('private', ['SYNTHETIC_ACCOUNT_AND_PASSWORD',
+    'https://satu.intranet.pajak.go.id/login?token=SYNTHETIC_TOKEN'])
+def test_auth_diagnostics_only_accept_fixed_categories(tmp_path, field, private):
+    d = diagnostics()
+    with d.session(tmp_path, 'worker') as log:
+        assert d.record('auth.state', operation='login_check', phase='authentication',
+                        reason='waiting_redirect', expected_origin='satu', observed_origin='coretax')
+        assert d.record('auth.result', status='LOGIN_BLOCKED', reason='origin_mismatch',
+                        expected_origin='coretax', observed_origin='satu', submitted=False)
+        assert d.record('auth.result', **{field: private}, password=private, url=private)
+        assert log.flush()
+    rows = records(tmp_path)
+    observed = next(row for row in rows if row['event'] == 'auth.state')
+    assert (observed['reason'], observed['expected_origin'], observed['observed_origin']) == (
+        'waiting_redirect', 'satu', 'coretax')
+    result = next(row for row in rows if row['event'] == 'auth.result')
+    assert result['reason'] == 'origin_mismatch' and result['submitted'] is False
+    contaminated = [row for row in rows if row['event'] == 'auth.result'][-1]
+    assert field not in contaminated and 'password' not in contaminated and 'url' not in contaminated
+    assert private not in json.dumps(rows)
+
+
+def test_auth_categories_do_not_stringify_untrusted_values(tmp_path):
+    d = diagnostics()
+    class Private:
+        def __str__(self):
+            raise AssertionError('Private values must not be stringified')
+    with d.session(tmp_path, 'worker') as log:
+        assert d.record('auth.result', reason=Private(), expected_origin=Private(),
+                        observed_origin=Private(), submitted=Private())
+        assert log.flush()
+    row = next(row for row in records(tmp_path) if row['event'] == 'auth.result')
+    assert not {'reason', 'expected_origin', 'observed_origin', 'submitted'} & row.keys()
+
+
+def test_source_and_frozen_diagnostic_selftest_exercises_auth_categories(tmp_path):
+    d = diagnostics()
+    assert d.self_test(tmp_path) == {'schema': 1, 'safe_logging': True}
+    rows = records(tmp_path)
+    state = next((r for r in rows if r['event'] == 'auth.state'), None)
+    result = next((r for r in rows if r['event'] == 'auth.result'), None)
+    assert state is not None and result is not None
+    assert state['reason'] == 'waiting_redirect' and state['expected_origin'] == 'satu'
+    assert state['observed_origin'] == 'coretax'
+    assert result['reason'] == 'origin_mismatch' and result['status'] == 'LOGIN_BLOCKED'
+    assert result['submitted'] is False

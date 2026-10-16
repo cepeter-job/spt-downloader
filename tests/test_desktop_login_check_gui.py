@@ -9,20 +9,9 @@ ORIGIN='https://satu.intranet.pajak.go.id'
 ACCOUNT='SYNTHETIC_ACCOUNT'
 
 
-class Controller:
-    active=False
-    operation='export'
-    def __init__(self):self.checks=[];self.exports=[];self.stops=0;self.job_id=None
-    def start_login_check(self,*args):
-        self.checks.append(args);self.operation='login_check';self.active=True
-        self.job_id=f'synthetic-login-{len(self.checks)}';return self.job_id
-    def start(self,*args):
-        self.exports.append(args);self.operation='export';self.active=True
-        self.job_id=f'synthetic-export-{len(self.exports)}';return self.job_id
-    def stop(self):self.stops+=1
-    def poll(self):return self.active
-    def close(self):self.active=False
-
+from support_gui import (
+    Controller
+)
 
 def descendants(widget):
     for child in widget.winfo_children():

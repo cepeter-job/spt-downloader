@@ -1,5 +1,5 @@
 """Observed PPN DOM structure, tested only with synthetic values."""
-from test_pph21_template import section
+from support_templates import section
 
 
 import pytest
@@ -11,7 +11,7 @@ from playwright.sync_api import sync_playwright
 import coretax_browser as driver
 
 
-from test_ppn_unifikasi_templates import export, source_run
+from support_templates import export, source_run
 
 
 PPN_COLUMNS = ['Harga Jual/Penggantian/ Nilai Ekspor/DPP (Rupiah)',

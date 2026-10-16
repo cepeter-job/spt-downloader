@@ -1,7 +1,7 @@
 """Real Tk header sorting contracts. GitHub Windows execution only."""
 from copy import deepcopy
 import pytest
-from test_desktop_selection_gui import window, widgets, button
+from support_gui import window, widgets, button
 
 
 def inventory():
@@ -46,7 +46,7 @@ def test_header_toggles_two_directions_and_preserves_source_rows(tmp_path, click
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
         assert tree.heading('type', 'text') == 'Jenis pajak'
-        assert tuple(tree.get_children()) == tuple(rows)
+        assert tuple(tree.get_children()) == ('record-1', 'record-3', 'record-2', 'record-0')
         assert not tree.selection()
         for _ in range(clicks):
             click_type_heading(root, tree)
@@ -181,7 +181,7 @@ def test_each_tax_type_sorts_all_twelve_months_chronologically(tmp_path, clicks)
     original = deepcopy(payload)
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
-        assert visible_ids(tree) == [r['record_id'] for r in payload['records']]
+        assert visible_ids(tree) == [f'{tax}-{month}' for tax in ('PPh Badan', 'PPN') for month in range(1, 13)]
         for _ in range(clicks):
             click_type_heading(root, tree)
         taxes = ('PPN', 'PPh Badan') if clicks == 2 else ('PPh Badan', 'PPN')
@@ -318,11 +318,11 @@ def test_source_selftest_observes_chronology_in_both_type_directions(tmp_path):
     sorting = data['selection_sorting_control']
     assert sorting.get('hierarchy') == ['type', 'year', 'month', 'model']
     assert sorting['ordered_ids'] == [
-        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21',
+        ['synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
          'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb'],
         ['synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
          '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb',
-         'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
+         'synthetic-unifikasi', 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
     assert sorting['selection_preserved'] is True
     assert sorting['confirmed_ids'] == ['::synthetic {return}; [literal] / id', 'synthetic-badan-two']

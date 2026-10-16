@@ -14,23 +14,13 @@ from openpyxl import load_workbook
 import coretax
 import coretax_exporter as exporter
 from spt_desktop import runtime
-from test_pph21_template import assert_format, assert_layout, cells_with, run_for, section
+from support_templates import assert_format, assert_layout, cells_with, section
 
 FIXTURES = Path(__file__).parent / 'fixtures'
-TYPES = {
-    'PPN': {'reference': 'ppn_format.xlsx',
-            'sha256': 'e77d586385c23c455eaba5daff9db3b09f3cda91d6e05e4df96995ab32885fb0',
-            'styles': 'c9bae8ced0551e1993d6d09c16fc304e0bc8bb98c1d2d7f6e06657ff7d5c3cc8',
-            'forms': ['Induk', 'A1', 'A2', 'B1', 'B2', 'B3', 'C'],
-            'path': 'SPT Masa PPN/SPT_PPN_Januari 2025_Normal.xlsx',
-            'resource': 'resources/ppn_format.xlsx'},
-    'PPh Unifikasi': {'reference': 'unifikasi_format.xlsx',
-                     'sha256': '2ad49e997b6404a687c273dc7d895245e6d03593b8d76678b0928f8573efc7a2',
-                     'styles': 'e4fb3f3684fc70914742af99a321fb17d950cc75b44b8b553df49ca071f37f0c',
-                     'forms': ['Induk', 'Daftar I', 'Daftar II', 'Lampiran I'],
-                     'path': 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx',
-                     'resource': 'resources/unifikasi_format.xlsx'},
-}
+from support_templates import (
+    TYPES, export, source_run
+)
+
 FORMS = [(tax, form) for tax, config in TYPES.items() for form in config['forms']]
 # Headers/groups and slots come from visible reference captions, not native API aliases.
 BLOCKS = [
@@ -52,19 +42,6 @@ BLANK_REGIONS = {
     'PPh Unifikasi': {'Daftar I': [(5, 8), (11, 14)],
                      'Daftar II': [(5, 8), (14, 17)], 'Lampiran I': [(5, 9)]},
 }
-
-
-def source_run(tax, sections):
-    run = run_for(sections, key='synthetic-template-normal')
-    run['records'][0]['meta']['Jenis Pajak'] = tax
-    return run
-
-
-def export(tax, run, folder):
-    files = exporter.export_split_workbooks(run, folder)
-    coretax.verify_outputs(run, folder)
-    assert set(files) == {'resume.xlsx', TYPES[tax]['path']}
-    return load_workbook(folder / TYPES[tax]['path'])
 
 
 def source_table(name, headers, rows, *, complete=True):

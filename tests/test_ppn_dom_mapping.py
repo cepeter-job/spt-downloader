@@ -12,7 +12,7 @@ from openpyxl import load_workbook
 import coretax_exporter as exporter
 
 
-from test_pph21_template import run_for, section, table, assert_format
+from support_templates import run_for, section, table, assert_format
 
 
 RESOURCES = Path(__file__).resolve().parents[1] / 'resources'

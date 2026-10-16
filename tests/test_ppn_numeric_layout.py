@@ -2,8 +2,7 @@
 from copy import copy
 from decimal import Decimal
 import pytest
-from test_pph21_template import section
-from test_ppn_form_completion import APPENDICES, export_ppn, source_appendix
+from support_templates import section, APPENDICES, export_ppn, source_appendix
 
 
 @pytest.mark.parametrize('form,case,total', [('B1', APPENDICES[2], 6), ('C', APPENDICES[5], 7)])
@@ -40,6 +39,21 @@ def test_b2_seventh_row_is_normal_bordered_data_not_bold_total(tmp_path):
             assert copy(sheet.cell(7, column).border) == copy(sheet.cell(6, column).border)
         assert sheet['B7'].value == 'SYNTHETIC-3-2'
         assert sheet['F13'].font.bold is True
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize('column', [1, 2, 3, 4, 5, 10])
+def test_b2_body_style_fix_preserves_non_money_formats_and_alignment(tmp_path, column):
+    from openpyxl.styles import Alignment
+    table, _ = source_appendix(*APPENDICES[3], count=9)
+    wb, _, _ = export_ppn(tmp_path, [section('B2', tables=[table])])
+    try:
+        cell = wb['B2'].cell(7, column)
+        assert cell.number_format == 'General'
+        assert cell.alignment == Alignment()
+        assert cell.font.bold is False
+        assert copy(cell.border) == copy(wb['B2'].cell(6, column).border)
     finally:
         wb.close()
 

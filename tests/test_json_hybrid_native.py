@@ -14,8 +14,8 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
-import test_json_adapter as corpus
-import test_financial_attachments as financial
+import support_json_corpus as corpus
+import support_financial_browser as financial
 
 ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
 BUILD = b'/* SYNTHETIC CORPORATE BUILD -- no portal code or taxpayer data */'

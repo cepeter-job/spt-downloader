@@ -40,6 +40,32 @@ Pesan exception, chain, locals, baris kode, path lengkap, URL, NPWP, tahun/nama 
 
 `phase.completed` berarti fungsi keluar normal, **bukan** bukti hasil pajak COMPLETE. Gunakan `worker.finished` yang berasal dari rekonsiliasi controller, beserta Audit hasil untuk lingkup data. Error yang sudah ditangani sebagai PARTIAL tetap mempunyai event diagnostik tanpa mengubah status bisnis.
 
+## Diagnostik Cek Kredensial
+
+Pada build dengan perbaikan redirect, INFO mencatat `auth.state` dan `auth.result` untuk pengecekan yang sudah membuka browser. Log versi sebelumnya hanya mempunyai fase/status terminal; `LOGIN_BLOCKED` atau `LOGIN_MANUAL` saja tidak membuktikan penyebabnya. Perubahan ini tidak menambahkan informasi ke log lama.
+
+`auth.state` membedakan `waiting_redirect`, `waiting_form`, dan `login_form_ready`. Kombinasi state/origin hanya dicatat sekali per pengecekan, bukan setiap polling. Shell Coretax yang belum menampilkan form tidak langsung dibandingkan dengan origin kredensial: aplikasi menunggu form yang dikenali atau sesi yang teramati, dengan polling kesiapan paling lama lima detik setelah navigasi awal. Form tak aman dan CAPTCHA/MFA tidak dilonggarkan atau dicoba ulang.
+
+`auth.result` menambahkan `reason`, `expected_origin`, `observed_origin`, dan `submitted`. Kedua origin **hanya kategori** `coretax`, `satu`, atau `other`, bukan URL. `submitted=true` berarti satu percobaan klik submit telah dimulai; bukan bukti server menerima password atau login berhasil. Tuple hasil, status IPC, dan channel event worker tidak berubah.
+
+| Reason | Makna |
+|---|---|
+| `verified` | Satu pengiriman kredensial diikuti marker sesi yang dikenali |
+| `origin_mismatch`, `origin_blocked` | Form final berbeda dari origin tersimpan, atau origin tidak diizinkan; bukan alasan memindahkan kredensial otomatis |
+| `credential_missing`, `account_mismatch` | Entri origin belum tersimpan, atau identifier berbeda dari Pengaturan |
+| `challenge`, `unsafe_form`, `form_changed` | Perlu login manual; form/challenge tidak boleh dilewati |
+| `readiness_timeout`, `verification_timeout` | Halaman belum siap sebelum pengiriman, atau sesi belum terverifikasi sesudah pengiriman; **bukan** diagnosis password salah |
+| `existing_session`, `existing_home` | Sesi/beranda tersedia sebelum pengiriman; password tersimpan belum diuji |
+| `check_error`, `cancelled` | Pengecekan gagal atau dibatalkan; tanpa pesan exception privat |
+
+Untuk kasus Coretax → Satu, origin tersimpan Satu dapat dilanjutkan hanya setelah form Satu dikenali dan identitas/form terikat ulang. Origin tersimpan Coretax tetap ditolak jika form final berada di Satu, **sebelum** membaca kredensial. Pilih origin final yang ditampilkan oleh Pengaturan dan simpan melalui UI; tidak ada fallback lintas-origin, POST langsung, atau pemalsuan Referer.
+
+### Request diblokir saat pengecekan login
+
+`auth.request_blocked` mencatat kategori tujuan (`target_origin`: `satu`, `coretax`, `other`), metode (`GET`, `HEAD`, `POST`, `OTHER`), jenis resource (`document`, `xhr`, `fetch`, `other`), dan alasan tetap (`origin_not_allowed` atau `cross_origin_write`). Kombinasi kategori dicatat sekali per pengecekan; `auth.result.blocked_requests` menghitung seluruh request yang diblokir. Tidak ada URL/path/query, header, cookie, token, atau body request yang dibaca untuk diagnostik ini.
+
+Aturan jaringan tidak dilonggarkan: origin asing dan request non-GET/HEAD ke origin selain origin kredensial tetap ditolak. Counter bukan bukti bahwa request yang diblokir menyebabkan reload loop, dan timeout bukan diagnosis password salah. Gunakan urutan state dan kategori blocking untuk menentukan observasi lanjutan; jangan mengirim HAR mentah atau kredensial.
+
 ## Batas penyimpanan dan kegagalan
 
 Ukuran file maksimal 1 MiB, maksimal tiga segmen per session. Retensi tujuh hari dan anggaran 32 file pada folder log; file regular milik logger yang tidak aktif dibersihkan paling tua dahulu. File asing, hardlink, symlink/reparse dan session aktif tidak dihapus. Jika kapasitas tidak dapat direklamasi dengan aman, logger tidak menambah file.

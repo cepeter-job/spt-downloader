@@ -89,12 +89,15 @@ class JobController:
             try:self._queue.put_nowait(event)
             except queue.Full:pass
 
-    def start(self,npwp,year,browser='msedge',headless=True,*,detail_source='dom'):
+    def start(self,npwp,year,browser='msedge',headless=True,*,detail_source='dom',account=''):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
         validate_detail_source(detail_source)
         npwp,year=validate_job_scope(npwp,year)
-        return self._start_worker(['--npwp',npwp,'--year',str(year),
-                                   '--detail-source',detail_source],browser,headless,'export')
+        if not isinstance(account,str) or (account and (not account.strip() or len(account)>256 or '\0' in account)):
+            raise ValueError('Akun login tidak valid; simpan ulang Pengaturan.')
+        arguments=['--npwp',npwp,'--year',str(year),'--detail-source',detail_source]
+        if account:arguments.extend(['--account',account])
+        return self._start_worker(arguments,browser,headless,'export')
 
     def start_login_check(self,origin,account,browser='msedge',headless=True):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')

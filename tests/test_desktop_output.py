@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 import pytest
 import coretax
-from test_split_output import fixture_run
+from support_runs import fixture_run
 from openpyxl import load_workbook
 
 

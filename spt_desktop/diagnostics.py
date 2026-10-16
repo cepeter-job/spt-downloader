@@ -25,7 +25,7 @@ EVENTS = frozenset({
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
-    'settings.failed', 'checkpoint.reused',
+    'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
 })
 ENUMS = {
     'phase': frozenset({'startup', 'runtime', 'authentication', 'inventory', 'details',
@@ -37,8 +37,18 @@ ENUMS = {
                         'LOGIN_OK', 'LOGIN_UNVERIFIED', 'LOGIN_MANUAL', 'LOGIN_BLOCKED', 'LOGIN_ERROR'}),
     'kind': frozenset({'selection', 'overwrite', 'start', 'stop'}),
     'browser': frozenset({'msedge', 'chrome'}),
+    'expected_origin': frozenset({'coretax', 'satu', 'other'}),
+    'observed_origin': frozenset({'coretax', 'satu', 'other'}),
+    'target_origin': frozenset({'coretax', 'satu', 'other'}),
+    'method': frozenset({'GET', 'HEAD', 'POST', 'OTHER'}),
+    'resource_type': frozenset({'document', 'xhr', 'fetch', 'other'}),
+    'reason': frozenset({'waiting_redirect', 'waiting_form', 'login_form_ready',
+        'existing_session', 'existing_home', 'origin_blocked', 'origin_mismatch',
+        'challenge', 'unsafe_form', 'form_changed', 'readiness_timeout',
+        'credential_missing', 'account_mismatch', 'verified', 'verification_timeout',
+        'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
@@ -111,7 +121,7 @@ def _safe_fields(fields):
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)
-    for name in ('headless', 'accepted'):
+    for name in ('headless', 'accepted', 'submitted'):
         if type(fields.get(name)) is bool:
             result[name] = fields[name]
     return result
@@ -361,6 +371,11 @@ def self_test(root):
     """Actually emit/read synthetic logs; used by source and frozen GUI gates."""
     with session(root, 'gui', level='INFO') as log:
         record('operation.started')
+        record('auth.state', reason='waiting_redirect', expected_origin='satu', observed_origin='coretax')
+        record('auth.request_blocked',reason='cross_origin_write',target_origin='coretax',method='POST',resource_type='fetch')
+        record('auth.result', status='LOGIN_BLOCKED', reason='origin_mismatch',
+               expected_origin='coretax', observed_origin='satu', submitted=False,
+               password='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
         try:
             raise ValueError('SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
         except ValueError as error:
@@ -372,4 +387,14 @@ def self_test(root):
     if ('SYNTHETIC PRIVATE' in text or not any(row['event'] == 'operation.failed' for row in rows)
             or not any(row['event'] == 'session.closed' for row in rows)):
         raise RuntimeError('Synthetic diagnostics self-test failed')
+    states = [row for row in rows if row['event'] == 'auth.state']
+    results = [row for row in rows if row['event'] == 'auth.result']
+    if (not any(row.get('reason') == 'waiting_redirect' and row.get('expected_origin') == 'satu'
+                and row.get('observed_origin') == 'coretax' for row in states)
+            or not any(row.get('status') == 'LOGIN_BLOCKED' and row.get('reason') == 'origin_mismatch'
+                       and row.get('submitted') is False for row in results)):
+        raise RuntimeError('Synthetic authentication diagnostics self-test failed')
+    if not any(row.get('event')=='auth.request_blocked' and row.get('target_origin')=='coretax'
+               and row.get('method')=='POST' and row.get('resource_type')=='fetch' for row in rows):
+        raise RuntimeError('Synthetic request diagnostics self-test failed')
     return {'schema': SCHEMA, 'safe_logging': True}

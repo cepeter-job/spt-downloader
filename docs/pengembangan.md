@@ -129,3 +129,21 @@ Sebelum mengajukan PR:
 Pisahkan waktu setup/unduhan, navigasi browser, capture, verifikasi Excel, dan publikasi. Gunakan fixture sintetis yang sama, versi toolchain yang sama, serta jumlah SPT/halaman yang sama untuk perbandingan. Catat waktu, beban CPU/memori bila diukur, dan status hasil.
 
 Hindari paralelisasi browser yang berbagi sesi atau menaikkan worker pytest tanpa mengukur dampaknya. Optimasi progres tidak boleh menghapus pemeriksaan akhir atas checkpoint, scope, atau file. Dokumentasikan pengurangan pekerjaan yang benar-benar terjadi; jangan mengklaim persentase percepatan tanpa benchmark sebelum/sesudah yang sebanding.
+
+
+## Fixture pengujian bersama
+
+Helper yang dipakai lintas modul pengujian berada di `tests/support_*.py`, bukan
+`test_*.py`. Gunakan owner yang sesuai: data run sintetis, bukti PDF, template,
+protokol browser, laporan build, atau GUI. Modul support tidak berisi tes yang
+ikut dikoleksi dan tidak membuka browser, koneksi, atau window ketika diimpor.
+Fixture tetap mempertahankan scope dan teardown semula; jangan memindahkan guard
+autouse lokal ke seluruh suite. Modul data tidak boleh menarik dependensi Tk
+atau Playwright hanya karena helper GUI memakai data yang sama.
+
+Pada pemindahan owner, pertahankan identitas kelas dan arah monkeypatch. Contoh:
+`support_browser_protocol.META` dan `View` harus dipakai oleh simulator yang sama;
+menambal modul pengujian lama tidak boleh menjadi mekanisme kompatibilitas.
+Jangan menggabungkan byte PDF atau konstanta template berbeda hanya karena
+nama variabelnya sama. Buktikan bahwa node ID, parameter, assertion, dan fixture
+teardown tetap sama melalui suite Windows lengkap serta inventory CI.

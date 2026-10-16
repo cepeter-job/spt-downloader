@@ -3,7 +3,7 @@ from copy import deepcopy
 from openpyxl import load_workbook
 import coretax
 from spt_desktop import output
-from test_split_output import fixture_run
+from support_runs import fixture_run
 
 
 def test_resume_indexes_retained_workbooks_after_selected_refresh(tmp_path):

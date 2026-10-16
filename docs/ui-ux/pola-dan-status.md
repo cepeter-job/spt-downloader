@@ -4,6 +4,16 @@
 
 **Baseline:** `be67f5153a07ce100048d67191a02ca1d0fca1db`, 13 Oktober 2026. Pedoman ini mempertahankan fitur selection/overwrite/PDF yang sudah ada. Tampilan B, konfirmasi edit Pengaturan, serta penguatan presentasi yang ditetapkan spesifikasi belum diklaim terimplementasi.
 
+## Login tersimpan tanpa pilihan origin
+
+Pengaturan hanya meminta akun/password, browser, dan opsi unduh. Navigasi tetap dimulai dari Coretax, lalu aplikasi menunggu form Satu yang dikenali; origin login tidak dipilih pengguna. Kunci Windows Credential Manager untuk login otomatis selalu origin Satu yang persis diizinkan. Preferensi origin Coretax lama diabaikan tanpa membaca, memindahkan, atau menghapus credential lamanya. Jika entri Satu belum tersedia, isi ulang akun/password melalui Pengaturan lalu Simpan.
+
+**Cek Kredensial** menguji satu submit pada profil sementara. **Mulai Unduh** meneruskan identifier yang dipilih (bukan password) ke worker, menunggu form dengan alur kesiapan yang sama, dan mencocokkan identifier credential sebelum mengisi form. Untuk akun tersimpan, worker memakai profil sementara baru agar tidak mengunduh dengan sesi akun lama yang identitasnya tidak diketahui. Profil dibersihkan setelah browser ditutup; hasil cek bukan file penanda password-valid atau izin mempercayai profil lain. SSO tanpa pengiriman credential belum membuktikan akun yang dipilih; gunakan mode manual bila identitas sesi tidak dapat dikaitkan.
+
+Akun kosong memilih mode manual tanpa membaca credential tersimpan. Mengosongkan akun lalu Simpan tidak menghapus password; penghapusan tetap melalui tombol khusus dengan konfirmasi. Mode manual dapat memakai profil manual yang sudah ada. Perubahan akun/password menghapus status cek dari tampilan. Akun baru yang tidak kosong tetap memerlukan password baru. Password tidak diteruskan lewat argv atau disimpan dalam preferensi/log.
+
+Form/challenge tidak aman tetap manual, CAPTCHA/MFA tidak dilewati, dan tidak ada percobaan submit otomatis berulang. Cek yang sukses diikuti unduh pada sesi baru diuji dengan fixture browser sintetis; ini bukan klaim bahwa reload loop intranet sudah diperbaiki. Diagnostik blocking tersedia untuk membuktikan sebab loop tanpa membuka seluruh request.
+
 ## Form unduhan
 
 Label terlihat terus; placeholder tidak menggantikan label. Pengaturan bukan langkah wajib untuk login manual. NPWP/tahun ditampilkan lagi selama proses. Validasi saat blur/submit, bukan memarahi pengguna ketika baru mengetik satu angka.
@@ -44,6 +54,10 @@ Progress berbobot tahap, bukan waktu tersisa atau persen dokumen lengkap. Label 
 
 Gunakan dialog native dengan pencarian dan Treeview multi-select: Jenis pajak, Masa pajak, Normal/pembetulan, ID SPT. Nilai sumber tetap literal. Source ID bukan IID widget; gunakan IID lokal yang dipetakan kembali ke ID teramati.
 
+Saat dialog dibuka, urutan tampilan default adalah **PPh Badan → PPh Pasal 21/26 → PPh Unifikasi → PPN**, lalu jenis lain. Caption dikenali utuh secara case-insensitive; teks sumber tidak diubah. Dalam setiap jenis, tahun menaik, masa Januari–Desember, lalu Normal → Pembetulan 1 → Pembetulan 2 dan seterusnya mengikuti aturan sorting yang ada. Jenis lain diurutkan berdasarkan caption; kunci yang setara tetap mengikuti urutan inventaris.
+
+Tidak perlu klik header untuk memakai urutan default. Klik header **Jenis pajak** tetap memakai A–Z, kemudian Z–A; filter/clear mempertahankan urutan aktif. Daftar awal tidak memilih SPT otomatis. Perubahan filter tetap mengosongkan pilihan, dan konfirmasi mengirim ID terpilih menurut urutan inventaris asli—bukan urutan visual atau urutan ekspor.
+
 Awal tidak terpilih; **Sedot SPT terpilih** nonaktif sampai pilihan sah ada. Filter memakai query casefold/trim, bukan mengubah NPWP. Mengubah filter mengosongkan pilihan; jangan mengirim hidden selection. Tampilkan jumlah dipilih, terlihat, dan inventaris. Bedakan pencarian tanpa hasil dari inventaris kosong.
 
 Confirm memakai `controller.respond('selection', request_id, {'selected_ids': [...]})`. Payload hanya subset yang terlihat dan dikonfirmasi. X/Escape/Hentikan membatalkan job tanpa memilih semua. Fokus awal pada pencarian; Ctrl/Shift dan keyboard Treeview tetap tersedia.
@@ -74,7 +88,7 @@ Folder hilang: jelaskan mungkin dipindahkan/dihapus. Folder ada tetapi gagal dib
 
 ## Pengaturan dan cek login
 
-Urutan: Situs login, Nama pengguna, Password baru, Browser, checkbox **jalankan proses sedot di background**. Helper menjelaskan browser tetap muncul saat perlu login. Domain berasal dari allowlist, terlihat penuh, bukan URL bebas. Microsoft Edge/Google Chrome dipetakan ke `msedge`/`chrome`.
+Urutan: Nama pengguna, Password baru, Browser, Sumber detail SPT, checkbox **jalankan proses sedot di background**. Origin Satu ditetapkan aplikasi, bukan combobox atau URL bebas. Helper menjelaskan login otomatis dan mode akun kosong/manual. Microsoft Edge/Google Chrome dipetakan ke `msedge`/`chrome`.
 
 Password kosong mempertahankan entri sesuai kontrak; perubahan akun yang perlu password baru dijelaskan dekat field. Hapus login hanya menghapus entri aplikasi untuk situs terpilih, bukan akun portal atau seluruh Credential Manager. Jangan menjanjikan transaksi atomik Credential Manager dan file preferensi.
 

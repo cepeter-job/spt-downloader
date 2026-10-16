@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 import coretax
 from spt_desktop import output
-from test_split_output import fixture_run
+from support_runs import fixture_run
 
 
 def test_decline_overwrite_preserves_all_old_bytes(tmp_path):

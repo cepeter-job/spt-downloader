@@ -4,7 +4,7 @@ import time
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
-from .credentials import ALLOWED_ORIGINS,read_login
+from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,read_login
 
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
 CORETAX_ORIGIN = 'https://coretax.intranet.pajak.go.id'
@@ -117,19 +117,20 @@ def _wait_login_fields(page,expected_origin,check_cancel,timeout=5):
         page.wait_for_timeout(min(200,max(1,int(remaining*1000))))
 
 
-def try_saved_login(page,check_cancel):
+def try_saved_login(page,check_cancel,*,account=None):
     check_cancel()
+    if account=='':return False
     fields=_login_fields(page)
     if fields is None:
-        fields=_wait_login_fields(page,_origin(page.url),check_cancel)
-    if fields is None:return False
+        _,fields=_wait_login_ready(page,LOGIN_ORIGIN,check_cancel,5,lambda reason:None)
+    if fields is None or fields[0]!=LOGIN_ORIGIN:return False
     try:
         fields,current=_bind_login_fields(page,fields)
         origin,identifier,password,button=fields
         if not current():return False
         check_cancel()
         login=read_login(origin)
-        if login is None:return False
+        if login is None or (account is not None and login.identifier!=account):return False
         if not current():return False
         check_cancel()
         identifier.fill(login.identifier,timeout=5000)
@@ -171,7 +172,7 @@ def _wait_ready(page,deadline,check_cancel,emit=None):
 
 
 @diagnostics.traced('authentication')
-def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,manual_timeout=300):
+def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,manual_timeout=300,*,account=None):
     if browser not in ('msedge','chrome'):raise AuthBlocked('Pilih Microsoft Edge atau Chrome.')
     context=None
     def launch(hidden):
@@ -190,12 +191,16 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
             raise
     try:
         context,page=launch(headless)
+        if account and (authenticated(page) or _at_home(page)):
+            raise AuthBlocked('Sesi SSO belum dapat dikaitkan dengan akun tersimpan. Gunakan mode login manual.')
         if authenticated(page):return context,page
         if _at_home(page) and _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):return context,page
         if _origin(page.url) not in ALLOWED_ORIGINS:
             raise AuthBlocked('Login beralih ke origin yang tidak disetujui. Hubungi administrator.')
-        attempted=try_saved_login(page,check_cancel)
-        if attempted and _wait_ready(page,time.monotonic()+10,check_cancel,emit=emit):return context,page
+        attempted=try_saved_login(page,check_cancel,account=account) if account is not None else try_saved_login(page,check_cancel)
+        if attempted and _wait_ready(page,time.monotonic()+20,check_cancel,emit=emit):return context,page
+        if account and not attempted and (authenticated(page) or _at_home(page)):
+            raise AuthBlocked('Sesi SSO belum dapat dikaitkan dengan akun tersimpan. Gunakan mode login manual.')
         if headless:
             context.close(); context=None
             context,page=launch(False)
@@ -218,6 +223,48 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
 
 
 
+def _wait_login_ready(page, expected_origin, check_cancel, timeout, observe):
+    """Wait for an observable login/session, not a momentarily stable entry URL."""
+    deadline = time.monotonic() + timeout
+    while True:
+        check_cancel()
+        initial_origin = _origin(page.url)
+        if initial_origin not in ALLOWED_ORIGINS:
+            return 'origin_blocked', None
+        if authenticated(page):
+            return 'existing_session', None
+        if _at_home(page):
+            return 'existing_home', None
+        if _has_challenge(page):
+            return 'challenge', None
+        fields = _login_fields(page)
+        if fields is None and page.locator('form').count():
+            # A form can appear between observations; unsafe forms are not retried.
+            check_cancel()
+            fields = _login_fields(page)
+            if fields is None:
+                return 'unsafe_form', None
+        if fields is not None:
+            if fields[0] != initial_origin or _origin(page.url) != initial_origin:
+                return 'form_changed', None
+            observe('login_form_ready')
+            return 'login_form_ready', fields
+        current = _origin(page.url)
+        if current not in ALLOWED_ORIGINS:
+            return 'origin_blocked', None
+        path = urlsplit(page.url).path
+        entry_shell = current == CORETAX_ORIGIN and path in (
+            '/returnsheets/id-ID/', '/returnsheets/id-ID/taxpayer-search')
+        satu_shell = current == ALLOWED_ORIGINS[0] and path == '/login'
+        if not (entry_shell or satu_shell or current == expected_origin):
+            return 'unsafe_form', None
+        observe('waiting_redirect' if entry_shell else 'waiting_form')
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return 'readiness_timeout', None
+        page.wait_for_timeout(min(200, max(1, int(remaining * 1000))))
+
+
 @diagnostics.traced('authentication')
 def check_saved_credentials(playwright,root,origin,account,browser,headless,check_cancel,timeout=20):
     """Verify one saved login, never an old session or a manually replaced password."""
@@ -227,6 +274,28 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
     if not isinstance(account,str) or not account.strip() or '\0' in account:
         raise ValueError('Akun tersimpan harus dipilih dari Pengaturan.')
     check_cancel()
+    page = None
+    submitted = False
+    observed_states = set()
+    blocked_categories = set()
+    blocked_requests = 0
+    categories = {CORETAX_ORIGIN: 'coretax', ALLOWED_ORIGINS[0]: 'satu'}
+    def diagnostic(event, reason, **fields):
+        # Only category constants cross into logging, never URLs or form content.
+        try:
+            current = categories.get(_origin(page.url), 'other') if page is not None else 'other'
+        except Exception:
+            current = 'other'
+        if event == 'auth.state':
+            key = reason, current
+            if key in observed_states:
+                return
+            observed_states.add(key)
+        diagnostics.record(event, operation='login_check', phase='authentication',
+            expected_origin=categories[origin], observed_origin=current, reason=reason, **fields)
+    def finish(status, message, reason):
+        diagnostic('auth.result', reason, status=status, submitted=submitted, blocked_requests=blocked_requests)
+        return status, message
     cache=Path(root)/'cache'
     cache.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='login-check-',dir=cache) as fresh:
@@ -234,50 +303,61 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
         try:
             context=playwright.chromium.launch_persistent_context(fresh,channel=browser,headless=headless)
             def guard(route):
+                nonlocal blocked_requests
                 request=route.request
                 target=_origin(request.url)
                 if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
+                    blocked_requests+=1
+                    method=request.method if request.method in ('GET','HEAD','POST') else 'OTHER'
+                    resource=getattr(request,'resource_type','other')
+                    resource=resource if resource in ('document','xhr','fetch') else 'other'
+                    category=categories.get(target,'other')
+                    reason='origin_not_allowed' if target not in ALLOWED_ORIGINS else 'cross_origin_write'
+                    key=(category,method,resource,reason)
+                    if key not in blocked_categories:
+                        blocked_categories.add(key)
+                        diagnostic('auth.request_blocked',reason,target_origin=category,method=method,resource_type=resource)
                     route.abort()
                 else:route.fallback()
             context.route('**/*',guard)
             page=context.pages[0] if context.pages else context.new_page()
             page.goto(SEARCH_URL,wait_until='domcontentloaded',timeout=30000)
-            check_cancel()
-            if authenticated(page):
-                return 'LOGIN_UNVERIFIED','Sesi SSO tersedia, tetapi password tersimpan belum diuji.'
-            if _at_home(page):
+            state, fields = _wait_login_ready(page, origin, check_cancel, min(5, timeout),
+                lambda reason: diagnostic('auth.state', reason))
+            if state == 'existing_session':
+                return finish('LOGIN_UNVERIFIED','Sesi SSO tersedia, tetapi password tersimpan belum diuji.',state)
+            if state == 'existing_home':
                 _wait_ready(page,time.monotonic()+timeout,check_cancel)
-                return 'LOGIN_UNVERIFIED','Beranda Coretax terbuka, tetapi password tersimpan belum diuji.'
-            current=_origin(page.url)
-            if current not in ALLOWED_ORIGINS:
-                return 'LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.'
-            if current!=origin:
-                return 'LOGIN_BLOCKED',f'Origin login berbeda. Pilih {current} di Pengaturan lalu Simpan.'
-            if _has_challenge(page):
-                return 'LOGIN_MANUAL','CAPTCHA/MFA terdeteksi; selesaikan melalui login manual saat Mulai.'
-            fields=_login_fields(page)
+                return finish('LOGIN_UNVERIFIED','Beranda Coretax terbuka, tetapi password tersimpan belum diuji.',state)
+            if state == 'origin_blocked':
+                return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.',state)
+            if state == 'challenge':
+                return finish('LOGIN_MANUAL','CAPTCHA/MFA terdeteksi; selesaikan melalui login manual saat Mulai.',state)
+            if state == 'readiness_timeout':
+                return finish('LOGIN_UNVERIFIED','Halaman login belum siap dalam batas waktu; password belum diuji. Periksa koneksi intranet.',state)
             if fields is None:
-                fields=_wait_login_fields(page,origin,check_cancel,timeout=min(5,timeout))
-            if fields is None or fields[0]!=origin:
-                return 'LOGIN_MANUAL','Form login belum dikenali dengan aman; gunakan login manual saat Mulai.'
+                return finish('LOGIN_MANUAL','Form login belum dikenali dengan aman; gunakan login manual saat Mulai.',state)
+            if fields[0] != origin:
+                return finish('LOGIN_BLOCKED',f'Origin login berbeda. Pilih {fields[0]} di Pengaturan lalu Simpan.','origin_mismatch')
             fields,current_form=_bind_login_fields(page,fields)
             changed_form=('LOGIN_MANUAL','Form login berubah; gunakan login manual saat Mulai.')
-            if not current_form():return changed_form
+            if not current_form():return finish(*changed_form, 'form_changed')
             check_cancel()
             login=read_login(origin)
             if login is None:
-                return 'LOGIN_BLOCKED','Kredensial belum disimpan untuk origin ini; isi Pengaturan lalu Simpan.'
+                return finish('LOGIN_BLOCKED','Kredensial Satu belum disimpan; isi akun/password di Pengaturan lalu Simpan. Entri Coretax lama tidak dipindahkan otomatis.','credential_missing')
             if login.identifier!=account:
-                return 'LOGIN_BLOCKED','Akun tersimpan berbeda dari Pengaturan; masukkan akun/password lalu Simpan.'
+                return finish('LOGIN_BLOCKED','Akun tersimpan berbeda dari Pengaturan; masukkan akun/password lalu Simpan.','account_mismatch')
             _,identifier,password,button=fields
-            if not current_form():return changed_form
+            if not current_form():return finish(*changed_form, 'form_changed')
             check_cancel()
             identifier.fill(login.identifier,timeout=5000)
-            if not current_form():return changed_form
+            if not current_form():return finish(*changed_form, 'form_changed')
             check_cancel()
             password.fill(login.password,timeout=5000)
-            if not current_form():return changed_form
+            if not current_form():return finish(*changed_form, 'form_changed')
             check_cancel()
+            submitted = True
             button.click(timeout=5000)
             del login
             deadline=time.monotonic()+timeout
@@ -285,22 +365,23 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
             while time.monotonic()<deadline:
                 check_cancel()
                 if authenticated(page):
-                    return 'LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.'
+                    return finish('LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.','verified')
                 if not opened_search and _at_home(page):
                     remaining=max(1,int((deadline-time.monotonic())*1000))
                     opened_search=_open_search_from_home(page,check_cancel,timeout=min(30000,remaining))
                     continue
                 if _has_challenge(page):
-                    return 'LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.'
+                    return finish('LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.','challenge')
                 if _origin(page.url) not in ALLOWED_ORIGINS:
-                    return 'LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.'
+                    return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.','origin_blocked')
                 time.sleep(0.1)
-            return 'LOGIN_UNVERIFIED','Login belum terverifikasi dalam batas waktu; periksa akun, password, atau koneksi. Tidak ada percobaan ulang otomatis.'
+            return finish('LOGIN_UNVERIFIED','Login belum terverifikasi dalam batas waktu; periksa akun, password, atau koneksi. Tidak ada percobaan ulang otomatis.','verification_timeout')
         except CaptureCancelled:
+            diagnostic('auth.result', 'cancelled', status='CANCELLED', submitted=submitted)
             raise
         except Exception:
             # Fill/navigation exceptions may contain secrets or token-bearing URLs.
             check_cancel()
-            return 'LOGIN_ERROR','Pengecekan gagal; periksa koneksi intranet, browser, dan akses Windows Credential Manager.'
+            return finish('LOGIN_ERROR','Pengecekan gagal; periksa koneksi intranet, browser, dan akses Windows Credential Manager.','check_error')
         finally:
             if context is not None:context.close()

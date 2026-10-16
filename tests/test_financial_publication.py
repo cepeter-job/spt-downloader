@@ -11,35 +11,11 @@ from openpyxl import load_workbook
 
 import coretax
 from spt_desktop import output
-from test_split_output import fixture_run
+from support_runs import fixture_run
 
-PDF = b'%PDF-1.7\n1 0 obj\n(ORIGINAL SYNTHETIC FIXTURE)\nendobj\n%%EOF\n'
-CHANGED_PDF = PDF.replace(b'ORIGINAL', b'MUTATION')
-
-
-def declare_pdf(record, folder, data=PDF):
-    record['scope'] = ['0000000000000001', 2025, 'period']
-    key = hashlib.sha256(record['record_id'].encode()).hexdigest()[:32]
-    url = 'https://coretax.synthetic.invalid/pdf/' + record['record_id']
-    relative = 'attachments/' + key + '/' + hashlib.sha256(url.encode()).hexdigest() + '.pdf'
-    record['attachments'] = [{'label': 'Laporan Keuangan', 'relative_path': relative,
-                              'status': 'COMPLETE', 'bytes': len(data),
-                              'hash': hashlib.sha256(data).hexdigest()}]
-    path = folder / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return path
-
-
-def financial_run(folder, count=1, data=PDF):
-    run = fixture_run()
-    run['records'] = run['records'][:count]
-    run['inventory_complete'] = True
-    run['complete'] = True
-    for record in run['records']:
-        declare_pdf(record, folder, data)
-    return run
-
+from support_financial_publication import (
+    CHANGED_PDF, PDF, declare_pdf, financial_run
+)
 
 def declarations(run):
     return [{**item, 'record_id': record['record_id'], 'scope': record['scope']}
