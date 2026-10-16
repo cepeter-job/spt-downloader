@@ -61,14 +61,58 @@ def test_detail_template_keeps_counts_separate_from_percentage():
         copy_text('action.start', percent=30)
 
 
-def test_catalog_matches_all_approved_spec_entries():
+def test_catalog_matches_approved_copy():
     from spt_desktop.ui_copy import COPY
-    spec = (Path(__file__).parents[1] / 'docs/superpowers/specs/'
-            '2026-10-13-magicpath-b-tkinter-design.md').read_text(encoding='utf-8')
-    section = spec.split('## 11. Teks final', 1)[1].split('## 12.', 1)[0]
-    rows = [line.split('|') for line in section.splitlines() if line.startswith('| `')]
-    expected = {row[1].strip(' `'): row[2].strip() for row in rows}
-    assert len(expected) == 43
+    # Reviewed expectations are independent of implementation and design-document formatting.
+    # Update these only for an intentional copy change, never by snapshotting runtime COPY.
+    expected = {
+        'app.title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
+        'settings.background.label': 'jalankan proses sedot di background',
+        'results.location_hint': 'Hasil Sedot berada di folder Downloads Windows',
+        'app.subtitle': 'Coretax → Excel · for personal use only',
+        'selection.confirm': 'Sedot SPT terpilih',
+        'form.title': 'Masukkan NPWP dan tahun pajak',
+        'form.help': 'Setelah daftar muncul, pilih SPT yang ingin diunduh.',
+        'form.npwp.label': 'NPWP (16 digit)',
+        'form.npwp.help': 'Ketik 16 angka, tanpa spasi, titik, atau tanda hubung.',
+        'form.npwp.error': 'Isi NPWP dengan 16 angka (0–9), tanpa pemisah.',
+        'form.year.help': 'Gunakan tahun pajak, bukan tahun pelaporan.',
+        'form.year.error': 'Gunakan 4 angka, dari 1900 sampai 2100.',
+        'action.start': 'Mulai unduh',
+        'action.stop': 'Hentikan unduhan',
+        'action.open_result': 'Buka folder hasil',
+        'action.open_partial': 'Buka hasil sementara',
+        'action.new': 'Unduh SPT lain',
+        'action.details': 'Lihat rincian',
+        'selection.title': 'Pilih SPT yang akan diunduh',
+        'selection.summary': '{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.',
+        'selection.no_match': 'Tidak ada SPT yang cocok dengan pencarian.',
+        'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.',
+        'download.details.body': (
+            '{processed} dari {total} SPT sudah diproses. '
+            'Kelengkapan {verified} SPT sudah diperiksa.'
+        ),
+        'download.exported.title': 'File Excel sudah dibuat',
+        'download.publish.title': 'Menyimpan hasil unduhan',
+        'download.complete.title': 'File Excel sudah siap',
+        'download.complete.body': 'Hasil untuk SPT yang dipilih sudah disimpan dan diperiksa.',
+        'download.partial.title': 'Hasil unduhan belum lengkap',
+        'download.stopping.title': 'Menghentikan unduhan…',
+        'download.cancelled.title': 'Unduhan dihentikan',
+        'download.error.title': 'Unduhan belum berhasil',
+        'overwrite.title': 'Ganti hasil sebelumnya?',
+        'overwrite.decline': 'Jangan ganti',
+        'overwrite.confirm': 'Ganti file tersebut',
+        'settings.origin.label': 'Situs login',
+        'settings.account.label': 'Nama pengguna',
+        'settings.password.help': 'Kosongkan jika tidak diganti',
+        'settings.background.help': 'Jika memungkinkan. Browser tetap muncul saat perlu login.',
+        'settings.check': 'Cek login',
+        'settings.cancel_check': 'Batalkan cek',
+        'settings.delete': 'Hapus login',
+        'settings.dirty.title': 'Perubahan belum disimpan',
+        'login.unverified.title': 'Password belum bisa dipastikan',
+    }
     assert dict(COPY) == expected
     assert 'app.credit' not in COPY
 
