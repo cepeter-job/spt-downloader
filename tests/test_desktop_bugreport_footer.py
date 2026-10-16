@@ -18,6 +18,7 @@ TEXT = 'bugreport : sharmila@kemenkeu.go.id'
 def test_contact_is_visible_bottom_right_without_replacing_existing_copy(tmp_path, width, height, scale):
     root = tk.Tk()
     app = None
+    original_scale = root.tk.call('tk', 'scaling')
     try:
         root.tk.call('tk', 'scaling', scale * 96 / 72)
         root.geometry(f'{width}x{height}')
@@ -48,6 +49,7 @@ def test_contact_is_visible_bottom_right_without_replacing_existing_copy(tmp_pat
             app._dispose()
         for callback in root.tk.splitlist(root.tk.call('after', 'info')):
             root.after_cancel(callback)
+        root.tk.call('tk', 'scaling', original_scale)
         root.destroy()
         del app
         gc.collect()
