@@ -219,7 +219,9 @@ def test_pdf_consent_names_selected_replacements_and_preserves_unselected_bytes(
     assert result == final
     assert first_pdf.read_bytes() == CHANGED_PDF
     assert untouched_pdf.read_bytes() == PDF
-    assert_audit_targets(final, 'resume.xlsx', {selected_pdf: CHANGED_PDF})
+    expected_links = {item['relative_path']: PDF for item in declarations(old_run)}
+    expected_links[selected_pdf] = CHANGED_PDF
+    assert_audit_targets(final, 'resume.xlsx', expected_links)
     coretax.verify_outputs(selected, final, allow_extra=True)
 
 

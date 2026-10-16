@@ -19,7 +19,8 @@ from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
 from coretax_exporter import (validate_scope, validate_export_run, export_split_workbooks,
                              workbook_groups, detail_sheet_title, record_sheet_titles,
-                             workbook_proof, read_workbook_proof, workbook_sheet_titles)
+                             workbook_proof, read_workbook_proof, workbook_sheet_titles,
+                             export_workbook)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 
@@ -93,6 +94,77 @@ def workbook_files(folder, exclude=None):
     return found
 
 
+def _legacy_resume_proof(workbook, run):
+    """Read the old administrative layout without inventing form or PDF metadata."""
+    if not {'Ringkasan', 'Daftar SPT', 'Audit'}.issubset(workbook.sheetnames):
+        raise ValueError('Retained workbook has no supported scope proof')
+    summary = workbook['Ringkasan']
+    basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
+    if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
+            or summary['B5'].value != run['year'] or summary['B7'].value != basis
+            or summary['B8'].value not in ('COMPLETE', 'PARTIAL')):
+        raise ValueError('Retained workbook scope/NPWP cannot authorize global index')
+    rows = list(workbook['Daftar SPT'].iter_rows(min_row=5, max_col=11))
+    forms = [s for s in workbook.sheetnames if s not in {'Ringkasan', 'Daftar SPT', 'Audit'}]
+    locations = {"#'" + s.replace("'", "''") + "'!A1": index for index, s in enumerate(forms)}
+    starts = []
+    for row in rows:
+        link = row[0].hyperlink
+        if not link or link.target not in locations or row[8].value not in ('OK', 'PARTIAL'):
+            raise ValueError('Retained legacy first-form link or capture status cannot be verified')
+        starts.append(locations[link.target])
+    if (not starts or starts[0] != 0 or starts != sorted(set(starts))
+            or summary['B9'].value != len(rows)):
+        raise ValueError('Retained legacy index count/order cannot be verified')
+    records = []
+    for row, first, end in zip(rows, starts, starts[1:] + [len(forms)]):
+        records.append({'meta': {'Jenis Pajak': row[1].value, 'Masa Pajak': row[3].value,
+                                 'Model SPT': row[4].value},
+                        'capture_complete': row[8].value == 'OK',
+                        'source_status': row[5].value or '',
+                        'sections': [{'name': name} for name in forms[first:end]]})
+    return {'npwp': run['npwp'], 'year': run['year'], 'year_basis': run['year_basis'],
+            'records': records, 'complete': summary['B8'].value == 'COMPLETE'}
+
+
+def folder_resume_run(run, folder):
+    """Extend the index from verified retained form proofs, never inferred records."""
+    selected = set(workbook_groups(run)) | {'resume.xlsx'}
+    retained = sorted(workbook_files(folder) - selected)
+    if not retained:
+        return run
+    combined = {**run, 'records': list(run['records']), 'complete': run['complete'],
+                'scope_description': 'Indeks seluruh workbook terverifikasi dalam folder; mencakup hasil pengambilan sebelumnya.'}
+    for name in retained:
+        with output_path(folder, name).open('rb') as stream:
+            wb = load_workbook(stream, data_only=False)
+            try:
+                proof = read_workbook_proof(wb)
+                if proof is None:
+                    proof = _legacy_resume_proof(wb, run)
+                if any(proof[k] != run[k] for k in ('npwp', 'year', 'year_basis')):
+                    raise ValueError('Retained workbook scope cannot be verified for global index')
+                if set(workbook_groups(proof)) != {name}:
+                    raise ValueError('Retained workbook filename does not match its scope')
+                combined['records'].extend(proof['records'])
+                combined['complete'] = combined['complete'] and proof['complete']
+            finally:
+                wb.close()
+    validate_export_run(combined)
+    return combined
+
+
+def write_folder_resume(run, existing, destination):
+    combined = folder_resume_run(run, existing)
+    targets = {}
+    ordinals = {id(record): index for index, record in enumerate(combined['records'], 1)}
+    for filename, records in workbook_groups(combined).items():
+        for record, titles in zip(records, workbook_sheet_titles(records)):
+            targets[ordinals[id(record)]] = (filename, titles[0])
+    export_workbook(combined, destination, include_details=False, detail_targets=targets)
+    verify_workbook(destination, combined, include_details=False)
+
+
 def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     """Verifikasi set Excel dan tautan pembetulan, termasuk saat Python memakai -O.
 
@@ -116,11 +188,21 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         raise ValueError('Workbook file set differs from the selected scope')
     if any((folder / name).is_symlink() or not (folder / name).is_file() for name in expected):
         raise ValueError('Invalid source workbook path')
-    verify_workbook(folder / 'resume.xlsx', run, include_details=False)
+    index_run = folder_resume_run(run, folder) if allow_extra else run
+    verify_workbook(folder / 'resume.xlsx', index_run, include_details=False)
     sheet_names = {
         filename: verify_workbook(folder / filename, {**run, 'records': records}, include_administration=False)
         for filename, records in grouped.items()
     }
+    grouped = workbook_groups(index_run)
+    for filename in grouped.keys() - sheet_names.keys():
+        wb = load_workbook(output_path(folder, filename), read_only=True)
+        try:
+            sheet_names[filename] = set(wb.sheetnames)
+            if read_workbook_proof(wb) is None:
+                sheet_names[filename] -= {'Ringkasan', 'Daftar SPT', 'Audit'}
+        finally:
+            wb.close()
     first_titles = {}
     for filename, records in grouped.items():
         titles = workbook_sheet_titles(records)
@@ -132,7 +214,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
     resume = load_workbook(folder / 'resume.xlsx')
     try:
-        for ordinal, record in enumerate(run['records'], 1):
+        for ordinal, record in enumerate(index_run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
             expected_file = next(name for name, records in grouped.items() if any(r is record for r in records))
             if not link or link.target != expected_file or not isinstance(link.location, str):
@@ -252,7 +334,8 @@ def save_output(run, folder):
             # readers held while publishing the new workbooks/checkpoint; do
             # not replace the source PDF names just to regenerate Excel.
             copy_held_pdfs(attachments, streams, staging)
-            files = export_split_workbooks(current, staging)
+            current['template_mapping'] = []
+            files = export_split_workbooks(current, staging, mapping_reports=current['template_mapping'])
             saved_run = {**current, 'output_files': list(files)}
             verify_outputs(saved_run, staging)
             (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -263,6 +346,7 @@ def save_output(run, folder):
             retain_recovery = False
             run['output_files'] = list(files)
             run['output_attachments'] = current['output_attachments']
+            run['template_mapping'] = current.get('template_mapping', [])
     finally:
         if not retain_recovery:
             shutil.rmtree(staging)
