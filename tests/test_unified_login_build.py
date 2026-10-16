@@ -24,3 +24,15 @@ def test_source_selftest_observes_removed_origin_and_forwarded_account(tmp_path)
     assert data.get('automatic_login_controls') == {
         'origin_selector_present': False, 'credential_origin': 'satu', 'account_forwarded': True}
     assert data['credentials_accessed'] is False and data['live_scrape'] is False
+
+
+def test_selftest_rejects_gui_that_drops_selected_account(tmp_path, monkeypatch):
+    from spt_gui import App, self_test
+    original = App.start
+    def drop_account(app):
+        app.preferences['identifier'] = ''
+        return original(app)
+    monkeypatch.setattr(App, 'start', drop_account)
+    with pytest.raises(AssertionError):
+        self_test(tmp_path / 'must-not-pass.json')
+    assert not (tmp_path / 'must-not-pass.json').exists()

@@ -41,7 +41,8 @@ def test_authorized_worker_preserves_mode_protocol_and_logging(tmp_path, monkeyp
         listeners.append(result)
         return result
 
-    def run(npwp, year, root, job_id, browser, headless, emit, cancelled, *, requests, detail_source='dom'):
+    def run(npwp, year, root, job_id, browser, headless, emit, cancelled, *, requests, account, detail_source='dom'):
+        assert account == ''
         assert not cancelled() and requests is not None
         seen.append(detail_source)
         d.record('operation.started', operation='export')
