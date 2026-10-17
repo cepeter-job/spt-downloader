@@ -27,3 +27,11 @@ Publish synthetic RED before product changes; run all product tests/builds on Gi
 Static investigation suggestions to fix total row numbers permanently or assign repeated labels by order are rejected: they would overwrite growing bodies or mix tax/DTP groups. The observed primary group-binding defect is `name` versus `group`, not proven duplicate source rows.
 
 After GREEN: independent review, exact-tree package verification and a separately staged read-only-source workbook correction/audit. Do not rerun live collection without authorization or modify the original Downloads workbook. No CI changes to obtain GREEN.
+
+## Review decisions and RED evidence
+
+- Verified Windows RED at `4cfaedb2ccff69f1ec2e2259372d09874fb6c64f` (run `39039904851`, artifact `12103996716`): 2,653 collected cases, 28 failures in the changed PPh21 tests. Supplemental tests at `f507032833765179c5476b64a4a7ae225cbb6334` (run `39053916655`, artifact `12108813409`) exercise bounded control and BP21 subtotal omissions. The duplicate-row fixture increment of a null paginator total was corrected without changing its duplicate-row assertion; the earlier RED exercised that assertion with a numeric fixture total.
+- Preserve conflicting-identity tests: generic `Tabel 1` is not a semantic group, but recognized `name=BPA1` contradicting `group=BPA2` must be unresolved. Do not replace those tests with mere unknown-group cases.
+- Induk has no paginator total (`source_total=null`); validate the observed body/footer boundary, not an invented zero total.
+- Reported L-IB/L-II totals bind only to the observed terminal BPA2 group. L-III reference totals bind only to BP26. The two exact BP21 subtotal labels and their physical spans are approved presentation omissions, not substitutes for BP26 values. Unobserved footer ownership stays PARTIAL; speculative position-based fallback is intentionally rejected.
+- The core static review found no confirmed regression but is not execution evidence. Only an exact-tree GREEN runner and subsequent artifact/workbook verification establish readiness.
