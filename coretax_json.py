@@ -72,6 +72,24 @@ def _reject_constant(value):
     raise JsonSafetyError('Non-finite JSON number is unsupported source evidence')
 
 
+def _period_union_values(condition):
+    """Recognize the shipped grid's OR-equality form without guessing operators."""
+    if not isinstance(condition, dict) or condition.get('PropertyName') != 'TaxPeriodCode':
+        return None
+    mode = condition.get('MatchMode')
+    if not isinstance(mode, str) or not mode.startswith('any-'):
+        return None
+    operators = mode.split('-')[1:]
+    if not operators or any(operator != 'equals' for operator in operators):
+        return None
+    values = condition.get('Value')
+    if (not isinstance(values, list) or len(values) != len(operators)
+            or any(not isinstance(value, str) or not value or value != value.strip() for value in values)
+            or len(set(values)) != len(values)):
+        raise JsonSafetyError('Invalid period union filter')
+    return values
+
+
 def validate_inventory_binding(context):
     """Validate the observed request/frame/epoch independently of metadata support."""
     taxpayer = context.get('taxpayer_id')
@@ -106,6 +124,9 @@ def validate_inventory_binding(context):
         raise JsonSafetyError('Archive request contradicts submitted source scope')
     if not isinstance(request.get('Filters'), list):
         raise JsonSafetyError('Invalid request filter scope')
+    # Empty responses still require a well-formed declared scope.
+    for condition in request['Filters']:
+        _period_union_values(condition)
     page = context.get('page')
     if type(page) is not int or page < 1 or request['First'] != (page - 1) * request['Rows']:
         raise JsonSafetyError('Request offset contradicts source page')
@@ -213,6 +234,11 @@ def adapt_inventory_page(body: bytes, context: dict) -> dict:
         if 'ReturnSheetStatusCode' in row and row['ReturnSheetStatusCode'] != 'SUBMITTED':
             raise JsonSafetyError('Record status contradicts submitted source')
         for condition in request['Filters']:
+            values = _period_union_values(condition)
+            if values is not None:
+                if row.get('TaxPeriodCode') not in values:
+                    raise JsonSafetyError('Record period/filter contradicts request scope')
+                continue
             if not isinstance(condition, dict) or condition.get('MatchMode') != 'equals':
                 unsupported_filter = True
                 continue
