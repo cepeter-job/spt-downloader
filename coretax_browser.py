@@ -11,7 +11,7 @@ import os
 from contextlib import ExitStack, nullcontext
 from uuid import uuid4
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse
 from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
 from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
                           adapt_inventory_page, validate_inventory_rows)
@@ -424,6 +424,18 @@ class ListObserver:
             main_frame = getattr(self.page, 'main_frame', None)
             if frame is not None and main_frame is not None and frame != main_frame:
                 return
+            posted = getattr(request, 'post_data_json', None)
+            if request.method != 'POST' or not isinstance(posted, dict):
+                return
+            taxpayer = posted.get('TaxpayerAggregateIdentifier')
+            first, size = posted.get('First'), posted.get('Rows')
+            # Identity-only auxiliary reads share the list endpoint and envelope,
+            # but cannot describe the visible grid or satisfy a fresh-page wait.
+            if (not isinstance(taxpayer, str) or not taxpayer
+                    or type(first) is not int or first < 0
+                    or type(size) is not int or size < 1 or first % size
+                    or not isinstance(posted.get('Filters'), list)):
+                return
             body_reader = getattr(response, 'body', None)
             body = body_reader() if callable(body_reader) else None
             data = json.loads(body) if isinstance(body, bytes) else response.json()
@@ -440,7 +452,6 @@ class ListObserver:
                 return
             binding = None
             if isinstance(body, bytes) and urlparse(response.url).path == SUBMITTED_ENDPOINT:
-                posted = getattr(request, 'post_data_json', None)
                 rewrite = None
                 if self.request_filter is not None:
                     posted, rewrite = self.request_filter.effective_binding(request)
@@ -607,11 +618,12 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
         row.get_by_role('button', name='Pilih', exact=True).evaluate('(e)=>e.click()')
         observer.wait(before)
         taxpayer_id = list_taxpayer_id(page.url)
-        sources.append({'url': page.url, 'label': 'SPT Belum Disampaikan'})
+        sources.append({'url': urldefrag(page.url).url, 'label': 'SPT Belum Disampaikan'})
         links = page.locator('a[href]').evaluate_all('(els)=>els.map(e=>({href:e.getAttribute(\"href\"),label:e.innerText.trim()}))')
         for link in links:
             _check_cancel(check_cancel)
-            url = urljoin(page.url, link['href'])
+            # Fragment variants are one document, not independent status grids.
+            url = urldefrag(urljoin(page.url, link['href'])).url
             try:
                 linked_taxpayer = list_taxpayer_id(url)
             except RuntimeError:

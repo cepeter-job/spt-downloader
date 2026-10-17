@@ -178,6 +178,11 @@ class InventoryFilterRoute:
                     or request.frame.url.rstrip('/') != expected):
                 raise ValueError('Unexpected request owner or submitted route')
             original = request.post_data_json
+            if original == {'TaxpayerAggregateIdentifier': self.taxpayer_id}:
+                # The source also reads an identity-only auxiliary list here.
+                # Preserve it unchanged, never as filtered-grid evidence.
+                route.fallback()
+                return
             effective = rewrite_inventory_request(original, self.condition, taxpayer_id=self.taxpayer_id)
             encode = lambda body: json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
             evidence = {'original_sha256': hashlib.sha256(encode(original).encode()).hexdigest(),

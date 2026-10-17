@@ -16,6 +16,14 @@ PR34 merged as `10b0da677c17dec7619bc5ed6ee36f52228bc614`. Its tree `2367081e4c2
 - Retain all main numeric/layout regressions, including 15-digit precision, non-money text/format preservation and body-count contradictions. Native adapter, binding, observer, projection and template-renderer source files remain unchanged from `c96bc35` at this integration.
 - Add combined-interface regressions for PPN identity under year-contains and source-code OR filters, preserving literal amendment values and original-body hash, and rejecting contradictory candidate filters before fallback.
 
+## Shared-inventory follow-up
+
+PR35 merged as `520211237f5f89406a97618d9ee33a8296c3571e` after exact-head `b76fb0555fb9010ceec7cde1e96b6626842a362c` runner RED/GREEN and independent source review. Build run `39022344288` passed with 1696 Windows cases and zero failures; package `12097412791` and JUnit `12097531872` were downloaded and hash-verified. The merge tree equals the tested tree.
+
+The preceding combined native acceptance used JSON with full coverage and verified its selected return, but global status remained PARTIAL: an identity-only auxiliary response replaced the empty Draft grid, and a fragment-only link was misclassified as another status source. PR35 isolates paginated grid observations, passes only the exact owned auxiliary request unchanged and deduplicates fragment variants. Real status coverage, strict PARTIAL handling and expired-catalog fallback remain unchanged.
+
+Merge this follow-up into the already-integrated native branch without changing any native PPN adapter/binding/observer/projection files, monetary rendering or worker allowlists. Re-run the combined CI and native acceptance; do not relabel the previous PARTIAL capture as COMPLETE.
+
 ## Remaining gates
 
 Fresh combined CI and independent integration review; bounded native acceptance of the previously selected January amendment with actual COMPLETE, used=json and complete seven-form mapping; read-only workbook/source comparison and unchanged prior files; final exact-tree checks, resolved review threads and protected merge. Do not infer a completed native export from the earlier PARTIAL run.
