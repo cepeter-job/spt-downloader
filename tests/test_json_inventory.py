@@ -125,6 +125,87 @@ EXPECTED_META = {
 }
 
 
+def _period_union_context():
+    ctx = context()
+    ctx['request']['Filters'] = [{
+        'PropertyName': 'TaxPeriodCode',
+        'Value': ['01122023', '01122024'],
+        'MatchMode': 'any-equals-equals',
+        'CaseSensitive': True,
+        'AsString': False,
+    }]
+    return ctx
+
+
+def test_period_union_filter_preserves_all_matching_records_and_source_values():
+    rows = [api_row('fixture-prior'), api_row('fixture-current')]
+    rows[0]['TaxPeriodCode'] = '01122023'
+    result = adapt(envelope(rows), _period_union_context())
+    assert result['eligible'] is True
+    assert result['total'] == 2
+    assert [r['record_id'] for r in result['rows']] == ['fixture-prior', 'fixture-current']
+    assert [r['source_fields']['TaxPeriodCode'] for r in result['rows']] == ['01122023', '01122024']
+
+
+def test_period_union_filter_rejects_outside_record_before_metadata_fallback():
+    from coretax_json import JsonSafetyError
+    row = api_row()
+    row['TaxPeriodCode'] = '01122026'
+    row.pop('ChannelCode')
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([row]), _period_union_context())
+
+
+def test_period_union_filter_preserves_amendments_with_distinct_identifiers():
+    rows = [api_row('fixture-normal'), api_row('fixture-amendment', 'Amendment 001')]
+    result = adapt(envelope(rows), _period_union_context())
+    assert result['eligible'] is True
+    assert [r['meta']['Model SPT'] for r in result['rows']] == ['Normal', 'Amendment 001']
+    assert [r['record_id'] for r in result['rows']] == ['fixture-normal', 'fixture-amendment']
+
+
+def test_period_union_filter_accepts_verified_empty_response():
+    result = adapt(envelope([], total=0), _period_union_context())
+    assert result['eligible'] is True
+    assert result['total'] == 0 and result['rows'] == []
+
+
+@pytest.mark.parametrize('values', [None, '01122024', [], ['01122024'],
+                                    ['01122023', '01122024', '01122026'],
+                                    ['01122024', '01122024'], ['01122023', 1122024],
+                                    ['01122023', ' 01122024']])
+def test_period_union_filter_rejects_malformed_values_even_for_empty_pages(values):
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['Filters'][0]['Value'] = values
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([], total=0), ctx)
+
+
+def test_period_union_filter_rejects_wrong_request_taxpayer():
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['TaxpayerAggregateIdentifier'] = 'fixture-other-taxpayer'
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope(), ctx)
+
+
+def test_period_union_filter_rejects_foreign_response_identity():
+    from coretax_json import JsonSafetyError
+    row = api_row()
+    row['TaxpayerAggregateIdentifier'] = 'fixture-other-taxpayer'
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([row]), _period_union_context())
+
+
+def test_period_union_filter_preserves_offset_validation():
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['First'] = 50
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope(), ctx)
+
+
 def test_adapter_produces_complete_canonical_metadata_from_verified_fields():
     result = adapt(envelope())
     assert result['eligible'] is True
