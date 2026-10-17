@@ -505,7 +505,8 @@ def test_more_rows_than_declared_total_fails_closed():
 
 def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start=0,
                               changed_total=False, empty=False, stop_state=None,
-                              year_catalog=False, ignore_source_filter=False, expired_catalog=False):
+                              year_catalog=False, ignore_source_filter=False, expired_catalog=False,
+                              auxiliary_request=False, hash_link=False):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -547,7 +548,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
     labels = list(EXPECTED_META)
     metrics = {'submitted_full_grid_reads': 0, 'submitted_api_requests': 0,
                'unregistered_requests': 0, 'detail_actions': 0, 'submitted_requests': [],
-               'viewed_record_ids': []}
+               'viewed_record_ids': [], 'auxiliary_requests': 0}
     original = Locator.evaluate
 
     def observed_evaluate(locator, expression, *args, **kwargs):
@@ -570,7 +571,8 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         import html
         headers = ''.join('<th>' + html.escape(label) + '</th>' for label in labels)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
-                             'headers': labels, 'displays': displays_by_id, 'catalog': cache})
+                             'headers': labels, 'displays': displays_by_id, 'catalog': cache,
+                             'auxiliary': auxiliary_request, 'hashLink': hash_link})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
         return '''<a href="/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer">SPT Dilaporkan</a>
         <div class="main-content"><p-table><table><thead><tr>''' + headers + '''</tr></thead><tbody></tbody></table>
@@ -603,8 +605,12 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
             document.querySelector('.p-highlight').textContent=String(first/2+1);
             document.querySelector('.p-paginator-prev').disabled=first===0;
             document.querySelector('.p-paginator-next').disabled=first+received.length>=body.Payload.TotalRecords;
+            if(config.auxiliary)fetch('/returnsheet/api/returnsheetssubmitted',{
+              method:'POST',body:JSON.stringify({TaxpayerAggregateIdentifier:'fixture-taxpayer'})}).catch(()=>{});
           });
-        }load();</script>'''
+        }
+        if(config.hashLink){const a=document.createElement('a');a.href='#';document.body.prepend(a);}
+        load();</script>'''
 
     @contextmanager
     def opened():
@@ -630,6 +636,10 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
                     data = request.post_data_json
                     assert request.method == 'POST'
                     assert data['TaxpayerAggregateIdentifier'] == TAXPAYER
+                    if url.path.endswith('/returnsheetssubmitted') and set(data) == {'TaxpayerAggregateIdentifier'}:
+                        metrics['auxiliary_requests'] += 1
+                        route.fulfill(json=envelope(rows, total=len(rows)))
+                        return
                     assert data['Rows'] == 2 and type(data['First']) is int
                     submitted = url.path.endswith('/returnsheetssubmitted')
                     candidates = rows if submitted else []
