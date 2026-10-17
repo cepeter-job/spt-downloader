@@ -48,7 +48,6 @@ def test_induk_ambiguity_is_reported_not_guessed_or_shifted(defect):
         tables[0]['rows'].append(deepcopy(tables[0]['rows'][0]))
         tables[0]['rows'][-1][-1] = '999,99'
         tables[0]['body_row_count'] += 1
-        tables[0]['source_total'] += 1
     else:
         tables[0]['rows'][4][1] += ' UNRECOGNIZED NOTE'
     book, report = render('Induk', tables)
