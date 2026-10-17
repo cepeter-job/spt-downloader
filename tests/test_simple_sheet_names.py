@@ -50,6 +50,13 @@ def test_amendments_keep_all_forms_in_separate_file_namespaces(tmp_path, tax, fi
         record['meta']['Jenis Pajak'] = tax
         if tax != 'PPh Badan':
             record['meta']['Masa Pajak'] = 'Januari 2025'
+        if tax == 'PPh Pasal 21/26':
+            record['sections'][0]['fields'][0].update(
+                label='Status Penyampaian', field='SubmitInProgressStatus', group='HEADER')
+            appendix = record['sections'][1]
+            marker = appendix['fields'][0]['value']
+            appendix.update(fields=[], tables=[{'name': 'Tabel 1', 'group': 'LIST-IA',
+                                               'headers': ['NAMA'], 'rows': [[marker]], 'complete': True}])
     files = exporter.export_split_workbooks(run, tmp_path)
     expected = [filename, filename.replace('_Normal.xlsx', '_Pembetulan 2.xlsx')]
     assert set(files) == {'resume.xlsx', *expected}
