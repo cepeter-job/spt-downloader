@@ -25,7 +25,7 @@ def induk_tables():
                 expected[target] = amount
             tables.append({'name': f'Tabel {number}', 'group': book['Induk'].cell(caption, 1).value,
                            'headers': list(INDUK_HEADERS), 'rows': values, 'body_row_count': len(values),
-                           'footer': [], 'footer_spans': [], 'source_total': len(values), 'complete': True})
+                           'footer': [], 'footer_spans': [], 'source_total': None, 'complete': True})
     finally:
         book.close()
     return tables, expected
