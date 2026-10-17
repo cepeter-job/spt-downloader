@@ -17,7 +17,7 @@ UV_VERSION = '0.13.0'
 PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (
-    'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py',
+    'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py', 'coretax_inventory.py',
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
     'coretax_masa_json.py', 'coretax_masa_bindings.py',

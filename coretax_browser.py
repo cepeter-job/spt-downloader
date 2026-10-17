@@ -8,7 +8,7 @@ import time
 import re
 import json
 import os
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -18,6 +18,8 @@ from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from coretax_json import validate_detail_source
 from coretax_corporate import CIT_SOURCE_SHA256
+from coretax_inventory import (InventoryFilterRoute, plan_year_filters, read_period_catalog,
+                               validate_partition_response)
 
 CELL_JS = r'''(cell) => {
  const clone=cell.cloneNode(true);
@@ -407,6 +409,7 @@ class ListObserver:
         self.check_cancel = check_cancel
         self.sequence = 0
         self.latest = None
+        self.request_filter = None
         page.on('response', self.on_response)
 
     def on_response(self, response):
@@ -438,6 +441,9 @@ class ListObserver:
             binding = None
             if isinstance(body, bytes) and urlparse(response.url).path == SUBMITTED_ENDPOINT:
                 posted = getattr(request, 'post_data_json', None)
+                rewrite = None
+                if self.request_filter is not None:
+                    posted, rewrite = self.request_filter.effective_binding(request)
                 keys = ('TaxpayerAggregateIdentifier', 'First', 'Rows', 'Filters',
                         'isArchieved', 'LanguageId', 'SortField', 'SortOrder')
                 binding = {
@@ -445,12 +451,16 @@ class ListObserver:
                     'http_status': response.status, 'frame_url': getattr(frame, 'url', None),
                     'request': {key: posted[key] for key in keys if key in posted} if isinstance(posted, dict) else None,
                 }
+                if rewrite is not None:
+                    binding['filter_rewrite'] = rewrite
             self.sequence += 1
             self.latest = {'total': total, 'rows': rows, 'body': body, 'binding': binding,
                            'sequence': self.sequence,
                            'successful': 200 <= response.status < 300
                            and data.get('IsSuccessful', data.get('isSuccessful')) is True}
-        except Exception:
+        except Exception as exc:
+            if self.request_filter is not None and isinstance(exc, JsonSafetyError):
+                self.request_filter.error = exc
             # An unreadable response cannot replace the last verified event.
             # wait(after) still requires a newer usable event or fails closed.
             pass
@@ -459,11 +469,15 @@ class ListObserver:
         deadline = time.monotonic() + timeout
         while self.sequence <= after:
             _check_cancel(self.check_cancel)
+            if self.request_filter is not None and self.request_filter.error:
+                raise self.request_filter.error
             if time.monotonic() >= deadline:
                 raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
         _check_cancel(self.check_cancel)
         wait_idle(self.page)
+        if self.request_filter is not None and self.request_filter.error:
+            raise self.request_filter.error
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
@@ -607,13 +621,41 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                     sources.append({'url': url, 'label': link['label']})
         if len(sources) == 1:
             errors.append({'object': 'Status navigation', 'message': 'No other SPT status lists discovered; refusing to certify all-SPT completeness'})
+        try:
+            catalog = read_period_catalog(page) if basis == 'period' else None
+            filter_plan = plan_year_filters(catalog, year, basis)
+        except Exception:
+            _check_cancel(check_cancel)
+            filter_plan = {'eligible': False, 'filters': [], 'reason': 'period_catalog_unavailable'}
+        planned_sources = []
+        for source in sources:
+            submitted = (urlparse(source['url']).path.startswith('/returnsheets/id-ID/submitted-returnsheets/')
+                         and source['label'] == 'SPT Dilaporkan')
+            if submitted and filter_plan['eligible']:
+                for condition in filter_plan['filters']:
+                    planned_sources.append({**source, 'list_filter': condition,
+                                            'list_catalog_sha256': filter_plan['catalog_sha256'],
+                                            'filter_mode': 'period-year-candidates'})
+            else:
+                planned_sources.append({**source, 'filter_mode': 'unfiltered',
+                                        'filter_reason': filter_plan.get('reason', 'unobserved_status_filter')
+                                        if submitted else 'unobserved_status_filter'})
+        sources = planned_sources
         for source in sources:
             _check_cancel(check_cancel)
             label = source['label']
             print(f"Inventory: {label}", flush=True)
             entry = {'status': label, 'total': None, 'scanned': 0, 'selected': 0, 'result': 'PARTIAL', 'note': source['url']}
+            for field in ('list_filter', 'list_catalog_sha256', 'filter_mode', 'filter_reason'):
+                if field in source:
+                    entry[field] = source[field]
             audit.append(entry)
+            source_routes = ExitStack()
             try:
+                condition = source.get('list_filter')
+                if condition is not None:
+                    observer.request_filter = source_routes.enter_context(
+                        InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
                 before = observer.sequence
                 page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
                 if list_taxpayer_id(page.url) != taxpayer_id:
@@ -643,6 +685,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                     _check_cancel(check_cancel)
                     if response['total'] != entry['total']:
                         raise RuntimeError('Source list changed during capture; rerun with a new output folder')
+                    if condition is not None:
+                        validate_partition_response(response, condition)
                     adapted = _inventory_metadata(page, table, response, source, taxpayer_id,
                                                    npwp, year, basis, page_index + 1, folder,
                                                    len(audit), check_cancel)
@@ -664,6 +708,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                         'page': page_index + 1, 'used_source': 'json' if adapted['eligible'] else 'dom-fallback',
                         'reason': adapted['reason'], 'sequence': response['sequence'],
                     })
+                    if condition is not None:
+                        entry['metadata_pages'][-1]['filter_rewrite'] = response['binding']['filter_rewrite']
                     entry['scanned'] += len(page_rows)
                     if on_progress:
                         on_progress({'completed': len(audit)-1, 'total': len(sources), 'scanned': entry['scanned']})
@@ -686,6 +732,10 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                                       'list_url': source['url'], 'list_page': page_index + 1, 'row_position': position,
                                       'list_page_size': int(current_size.inner_text().strip()) if current_size and current_size.inner_text().strip().isdigit() else None,
                                       'capture_complete': False, 'sections': []}
+                            if condition is not None:
+                                record['list_filter'] = condition
+                                record['list_catalog_sha256'] = source['list_catalog_sha256']
+                                record['list_page_size'] = response['binding']['request']['Rows']
                             for field in ('source_identity', 'source_fields'):
                                 if field in page_row:
                                     record[field] = page_row[field]
@@ -707,12 +757,21 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                         raise RuntimeError('Source list changed during capture; rerun with a new output folder')
                 if entry['scanned'] != entry['total']:
                     raise RuntimeError(f"Source total {entry['total']} != scanned {entry['scanned']}")
+                if condition is not None:
+                    current_plan = plan_year_filters(read_period_catalog(page), year, basis)
+                    if current_plan.get('catalog_sha256') != source['list_catalog_sha256']:
+                        raise JsonSafetyError('Period catalog changed during filtered inventory')
                 entry['result'] = 'RECONCILED'
                 container.dispose()
+            except CaptureCancelled:
+                raise
             except Exception as exc:
                 diagnostics.record('capture.partial', level='WARNING', error=exc)
                 errors.append({'object': label, 'message': str(exc).split('\n')[0]})
                 print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
+            finally:
+                observer.request_filter = None
+                source_routes.close()
             (folder / ('inventory-' + str(len(audit)) + '.json')).write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
             if on_progress:
                 on_progress({'completed': len(audit), 'total': len(sources), 'scanned': entry['scanned']})
@@ -983,6 +1042,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     observer = None
     active_group, current_response = None, None
+    group_routes = ExitStack()
     run['errors'] = [e for e in run.get('errors', []) if e.get('phase') != 'details']
     scope = [run['npwp'], run['year'], run['year_basis']]
     run['complete'] = False
@@ -1013,8 +1073,15 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
             detail, is_popup, json_capture = None, False, None
             try:
                 taxpayer_id = list_taxpayer_id(record['list_url'])
-                group = (record['list_url'], record['list_page'])
+                condition = record.get('list_filter')
+                group = (record['list_url'], record['list_page'], record.get('list_page_size'),
+                         json.dumps(condition, sort_keys=True, ensure_ascii=False))
                 if group != active_group:
+                    observer.request_filter = None
+                    group_routes.close()
+                    if condition is not None:
+                        observer.request_filter = group_routes.enter_context(
+                            InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
                     before = observer.sequence
                     page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
                     if list_taxpayer_id(page.url) != taxpayer_id:
@@ -1051,6 +1118,10 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         current_response = observer.wait(before)
                     container.dispose()
                     active_group = group
+                if condition is not None:
+                    validate_partition_response(current_response, condition)
+                    if current_response['binding']['request']['Rows'] != record.get('list_page_size'):
+                        raise JsonSafetyError('Filtered inventory page size changed during restoration')
                 identifiers = validate_inventory_rows(current_response['rows'], taxpayer_id)
                 if record['record_id'] not in identifiers:
                     raise RuntimeError('Inventoried SPT is not on the expected source page; rerun inventory')
@@ -1126,7 +1197,9 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     on_progress(run, ordinal)
     finally:
         if observer is not None:
+            observer.request_filter = None
             observer.close()
+        group_routes.close()
     # Baca ulang checkpoint tersimpan dan agregasikan sebelum menetapkan COMPLETE.
     for ordinal, record in enumerate(run['records'], 1):
         _check_cancel(check_cancel)

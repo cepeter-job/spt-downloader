@@ -68,8 +68,8 @@ def assert_layout(actual, reference):
 
 TYPES = {
     'PPN': {'reference': 'ppn_format.xlsx',
-            'sha256': '09c6014a1d4515c1919039c6584a170e1cb10fe6c70c67e300e76ecee4d494a0',
-            'styles': 'c9bae8ced0551e1993d6d09c16fc304e0bc8bb98c1d2d7f6e06657ff7d5c3cc8',
+            'sha256': '99d63e34602b38414e3987ee72c49a8fb770fcd80cc99448266cbf587489d193',
+            'styles': 'c26a67d76129ee20220826fb9070d6e90bdeffd73d35747b1d19b1ce4280ec9d',
             'forms': ['Induk', 'A1', 'A2', 'B1', 'B2', 'B3', 'C'],
             'path': 'SPT Masa PPN/SPT_PPN_Januari 2025_Normal.xlsx',
             'resource': 'resources/ppn_format.xlsx'},

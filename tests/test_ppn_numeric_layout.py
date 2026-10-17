@@ -43,6 +43,41 @@ def test_b2_seventh_row_is_normal_bordered_data_not_bold_total(tmp_path):
         wb.close()
 
 
+@pytest.mark.parametrize('column', [1, 2, 3, 4, 5, 10])
+def test_b2_body_style_fix_preserves_non_money_formats_and_alignment(tmp_path, column):
+    from openpyxl.styles import Alignment
+    table, _ = source_appendix(*APPENDICES[3], count=9)
+    wb, _, _ = export_ppn(tmp_path, [section('B2', tables=[table])])
+    try:
+        cell = wb['B2'].cell(7, column)
+        assert cell.number_format == 'General'
+        assert cell.alignment == Alignment()
+        assert cell.font.bold is False
+        assert copy(cell.border) == copy(wb['B2'].cell(6, column).border)
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize('case,row', [(APPENDICES[1], 15), (APPENDICES[4], 7)])
+def test_reviewed_a2_b3_last_body_rows_have_normal_borders(tmp_path, case, row):
+    from openpyxl.styles import Alignment
+    table, _ = source_appendix(*case, count=17)
+    wb, _, _ = export_ppn(tmp_path, [section(case[0], tables=[table])])
+    try:
+        sheet = wb[case[0]]
+        for column in range(1, 11):
+            cell = sheet.cell(row, column)
+            assert cell.font.bold is False
+            assert copy(cell.border) == copy(sheet.cell(row - 1, column).border)
+            assert cell.alignment == Alignment()
+            if column not in case[4]:
+                assert cell.number_format == 'General'
+        assert sheet.cell(row, 2).value == f'SYNTHETIC-{row - case[2]}-2'
+        assert sheet.cell(case[2] + 17, case[4][0]).font.bold is True
+    finally:
+        wb.close()
+
+
 @pytest.mark.parametrize('case', APPENDICES, ids=[case[0] for case in APPENDICES])
 def test_only_monetary_appendix_columns_become_numeric(tmp_path, case):
     table, amounts = source_appendix(*case, count=1)
@@ -82,6 +117,34 @@ def test_induk_amount_numeric_but_period_and_status_keep_text(tmp_path, raw, exp
         assert wb['Induk']['E45'].value == expected
         for cell, value in [('D4','02'), ('D5','2031'), ('D6','Pembetulan')]:
             assert wb['Induk'][cell].value == value and wb['Induk'][cell].data_type == 's'
+    finally:
+        wb.close()
+
+
+@pytest.mark.parametrize('raw,expected_type', [('123.456.789.012,34', 'n'), ('1.234.567.890.123,45', 'n'),
+                                            ('12.345.678.901.234,56', 's')])
+def test_money_precision_boundary_roundtrips_without_changing_source(tmp_path, raw, expected_type):
+    field = {'field':'', 'label':'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)', 'value':raw}
+    wb, _, source = export_ppn(tmp_path, [section('Induk', fields=[field])])
+    try:
+        cell = wb['Induk']['E45']
+        assert cell.data_type == expected_type
+        if expected_type == 'n':
+            assert Decimal(str(cell.value)) == Decimal(raw.replace('.', '').replace(',', '.'))
+        else:
+            assert cell.value == raw
+        assert source['records'][0]['sections'][0]['fields'][0]['value'] == raw
+    finally:
+        wb.close()
+
+
+def test_inconsistent_body_count_cannot_accept_a_valid_total_as_complete(tmp_path):
+    table, _ = source_appendix(*APPENDICES[3], count=3)
+    table['body_row_count'] = table['source_total'] = 2
+    wb, reports, source = export_ppn(tmp_path, [section('B2', tables=[table])])
+    try:
+        assert not all(report['complete'] for report in reports)
+        assert source['records'][0]['sections'][0]['tables'][0]['rows'][2][1] == 'SYNTHETIC-2-2'
     finally:
         wb.close()
 

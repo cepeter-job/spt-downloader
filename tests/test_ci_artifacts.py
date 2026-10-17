@@ -24,6 +24,7 @@ def artifact(tmp_path):
     (tmp_path / 'build-selftest.json').write_text(json.dumps({
         'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
         'diagnostics': {'schema': 1, 'safe_logging': True},
+        'bugreport_footer': {'text': 'bugreport : sharmila@kemenkeu.go.id', 'bottom_right': True},
         'automatic_login_controls': {'origin_selector_present': False,
             'credential_origin': 'satu', 'account_forwarded': True},
         'selection_sorting_control': sorting_report(),

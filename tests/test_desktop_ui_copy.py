@@ -8,6 +8,7 @@ import pytest
 @pytest.mark.parametrize(('key', 'expected'), [
     ('app.title', 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang'),
     ('app.subtitle', 'Coretax → Excel · for personal use only'),
+    ('app.bugreport', 'bugreport : sharmila@kemenkeu.go.id'),
     ('settings.background.label', 'jalankan proses sedot di background'),
     ('results.location_hint', 'Hasil Sedot berada di folder Downloads Windows'),
     ('selection.confirm', 'Sedot SPT terpilih'),
@@ -70,6 +71,7 @@ def test_catalog_matches_approved_copy():
         'settings.background.label': 'jalankan proses sedot di background',
         'results.location_hint': 'Hasil Sedot berada di folder Downloads Windows',
         'app.subtitle': 'Coretax → Excel · for personal use only',
+        'app.bugreport': 'bugreport : sharmila@kemenkeu.go.id',
         'selection.confirm': 'Sedot SPT terpilih',
         'form.title': 'Masukkan NPWP dan tahun pajak',
         'form.help': 'Setelah daftar muncul, pilih SPT yang ingin diunduh.',

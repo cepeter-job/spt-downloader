@@ -138,3 +138,34 @@ def test_ppn_identity_rejects_changed_previously_bound_aggregate():
                                  'taxpayer_id': TAXPAYER, 'source_url': SOURCE}
     with pytest.raises(JsonSafetyError):
         bind(response, record)
+
+
+@pytest.mark.parametrize('mode,value', [
+    ('contains', '2026'),
+    ('any-equals-equals', ['02022026', '03032026']),
+])
+def test_ppn_identity_accepts_year_candidates_without_changing_literal_amendment(mode, value):
+    response, record = case()
+    response['binding']['request']['Filters'] = [
+        {'PropertyName': 'TaxPeriodCode', 'MatchMode': mode, 'Value': value,
+         'CaseSensitive': True, 'AsString': False}]
+    before = deepcopy((response, record))
+    result = bind(response, record)
+    assert result['eligible'] is True
+    assert result['source_fields']['TaxPeriodCode'] == '02022026'
+    assert result['source_fields']['ReturnSheetModel'] == 'Amendment 002'
+    assert result['source_identity']['body_sha256'] == hashlib.sha256(response['body']).hexdigest()
+    assert (response, record) == before
+
+
+@pytest.mark.parametrize('mode,value', [
+    ('contains', '2025'),
+    ('any-equals-equals', ['01012026', '03032026']),
+])
+def test_ppn_identity_rejects_candidate_filter_contradictions_before_native_fallback(mode, value):
+    response, record = case()
+    response['binding']['request']['Filters'] = [
+        {'PropertyName': 'TaxPeriodCode', 'MatchMode': mode, 'Value': value,
+         'CaseSensitive': True, 'AsString': False}]
+    with pytest.raises(JsonSafetyError):
+        bind(response, record)
