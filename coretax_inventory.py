@@ -111,6 +111,28 @@ PERIOD_CATALOG_JS = r'''async () => {
 }'''
 
 
+def validate_partition_response(response, condition):
+    """Do not let DOM fallback or detail restoration weaken the effective filter."""
+    validate_period_filter(condition)
+    binding = response.get('binding') or {}
+    if (binding.get('request', {}).get('Filters') != [condition]
+            or not binding.get('filter_rewrite')):
+        raise JsonSafetyError('Response is not bound to the declared inventory filter')
+    mode, value = condition['MatchMode'], condition['Value']
+    for row in response['rows']:
+        code = row.get('TaxPeriodCode')
+        if not isinstance(code, str):
+            raise JsonSafetyError('Missing period in filtered response')
+        if mode == 'contains':
+            matches = value in code
+        elif mode == 'equals':
+            matches = code == value
+        else:
+            matches = code in value
+        if not matches:
+            raise JsonSafetyError('Record period/filter contradicts declared partition')
+
+
 def read_period_catalog(page):
     """Read only the source PERIOD cache; never fetch metadata or create a database."""
     from urllib.parse import urlsplit
