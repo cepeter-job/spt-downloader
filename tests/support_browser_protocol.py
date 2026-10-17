@@ -40,7 +40,8 @@ def response(rows=None, *, url=None, total=None, successful=True, status=200):
         'Data': rows, 'TotalRecords': len(rows) if total is None else total}}
     return SimpleNamespace(
         url=url or driver.ORIGIN + '/returnsheet/api/returnsheetsfixture',
-        request=SimpleNamespace(resource_type='xhr'),
+        request=SimpleNamespace(resource_type='xhr', method='POST', post_data_json={
+            'TaxpayerAggregateIdentifier': TAXPAYER, 'First': 0, 'Rows': 50, 'Filters': []}),
         headers={'content-type': 'application/json'}, status=status,
         json=lambda: payload,
     )
