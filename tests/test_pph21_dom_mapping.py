@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 from coretax_pph21 import render_template_form
 from support_templates import assert_format, assert_layout, cells_with, run_for
 from support_pph21_dom import appendix_table, induk_tables, observed
-from test_pph21_template import REFERENCE, export
+from test_pph21_template import REFERENCE
 
 
 def render(form, tables):
