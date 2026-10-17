@@ -407,6 +407,7 @@ class ListObserver:
         self.check_cancel = check_cancel
         self.sequence = 0
         self.latest = None
+        self.request_filter = None
         page.on('response', self.on_response)
 
     def on_response(self, response):
@@ -438,6 +439,9 @@ class ListObserver:
             binding = None
             if isinstance(body, bytes) and urlparse(response.url).path == SUBMITTED_ENDPOINT:
                 posted = getattr(request, 'post_data_json', None)
+                rewrite = None
+                if self.request_filter is not None:
+                    posted, rewrite = self.request_filter.effective_binding(request)
                 keys = ('TaxpayerAggregateIdentifier', 'First', 'Rows', 'Filters',
                         'isArchieved', 'LanguageId', 'SortField', 'SortOrder')
                 binding = {
@@ -445,12 +449,16 @@ class ListObserver:
                     'http_status': response.status, 'frame_url': getattr(frame, 'url', None),
                     'request': {key: posted[key] for key in keys if key in posted} if isinstance(posted, dict) else None,
                 }
+                if rewrite is not None:
+                    binding['filter_rewrite'] = rewrite
             self.sequence += 1
             self.latest = {'total': total, 'rows': rows, 'body': body, 'binding': binding,
                            'sequence': self.sequence,
                            'successful': 200 <= response.status < 300
                            and data.get('IsSuccessful', data.get('isSuccessful')) is True}
-        except Exception:
+        except Exception as exc:
+            if self.request_filter is not None and isinstance(exc, JsonSafetyError):
+                self.request_filter.error = exc
             # An unreadable response cannot replace the last verified event.
             # wait(after) still requires a newer usable event or fails closed.
             pass
@@ -459,11 +467,15 @@ class ListObserver:
         deadline = time.monotonic() + timeout
         while self.sequence <= after:
             _check_cancel(self.check_cancel)
+            if self.request_filter is not None and self.request_filter.error:
+                raise self.request_filter.error
             if time.monotonic() >= deadline:
                 raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
         _check_cancel(self.check_cancel)
         wait_idle(self.page)
+        if self.request_filter is not None and self.request_filter.error:
+            raise self.request_filter.error
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')

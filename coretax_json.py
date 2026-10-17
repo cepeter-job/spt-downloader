@@ -82,12 +82,39 @@ def _period_union_values(condition):
     operators = mode.split('-')[1:]
     if not operators or any(operator != 'equals' for operator in operators):
         return None
+    if condition.get('CaseSensitive') is not True or condition.get('AsString') is not False:
+        raise JsonSafetyError('Unobserved period comparison flags')
     values = condition.get('Value')
     if (not isinstance(values, list) or len(values) != len(operators)
             or any(not isinstance(value, str) or not value or value != value.strip() for value in values)
             or len(set(values)) != len(values)):
         raise JsonSafetyError('Invalid period union filter')
     return values
+
+
+def _period_contains_year(condition):
+    if (not isinstance(condition, dict) or condition.get('PropertyName') != 'TaxPeriodCode'
+            or condition.get('MatchMode') != 'contains'):
+        return None
+    value = condition.get('Value')
+    if (not isinstance(value, str) or not re.fullmatch(r'[0-9]{4}', value)
+            or not 1900 <= int(value) <= 2100
+            or condition.get('CaseSensitive') is not True or condition.get('AsString') is not False):
+        raise JsonSafetyError('Invalid period year candidate filter')
+    return value
+
+
+def validate_period_filter(condition):
+    """Limit owned request rewriting to the independently observed period forms."""
+    if _period_contains_year(condition) is not None or _period_union_values(condition) is not None:
+        return
+    if (isinstance(condition, dict) and condition.get('PropertyName') == 'TaxPeriodCode'
+            and condition.get('MatchMode') == 'equals'
+            and isinstance(condition.get('Value'), str) and condition['Value']
+            and condition['Value'] == condition['Value'].strip()
+            and condition.get('CaseSensitive') is True and condition.get('AsString') is False):
+        return
+    raise JsonSafetyError('Unsupported owned period filter')
 
 
 def validate_inventory_binding(context):
@@ -127,6 +154,7 @@ def validate_inventory_binding(context):
     # Empty responses still require a well-formed declared scope.
     for condition in request['Filters']:
         _period_union_values(condition)
+        _period_contains_year(condition)
     page = context.get('page')
     if type(page) is not int or page < 1 or request['First'] != (page - 1) * request['Rows']:
         raise JsonSafetyError('Request offset contradicts source page')
@@ -234,6 +262,12 @@ def adapt_inventory_page(body: bytes, context: dict) -> dict:
         if 'ReturnSheetStatusCode' in row and row['ReturnSheetStatusCode'] != 'SUBMITTED':
             raise JsonSafetyError('Record status contradicts submitted source')
         for condition in request['Filters']:
+            year = _period_contains_year(condition)
+            if year is not None:
+                period = row.get('TaxPeriodCode')
+                if not isinstance(period, str) or year not in period:
+                    raise JsonSafetyError('Record period/filter contradicts request scope')
+                continue
             values = _period_union_values(condition)
             if values is not None:
                 if row.get('TaxPeriodCode') not in values:
