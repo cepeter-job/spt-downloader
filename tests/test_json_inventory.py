@@ -206,6 +206,46 @@ def test_period_union_filter_preserves_offset_validation():
         adapt(envelope(), ctx)
 
 
+def test_year_contains_filter_accepts_source_bound_candidate_superset():
+    ctx = context()
+    ctx['request']['Filters'] = [{'PropertyName': 'TaxPeriodCode', 'Value': '2024',
+                                 'MatchMode': 'contains', 'CaseSensitive': True, 'AsString': False}]
+    result = adapt(envelope(), ctx)
+    assert result['eligible'] is True
+    assert result['rows'][0]['source_fields']['TaxPeriodCode'] == '01122024'
+
+
+def test_year_contains_contradiction_prevents_metadata_fallback():
+    from coretax_json import JsonSafetyError
+    ctx = context()
+    ctx['request']['Filters'] = [{'PropertyName': 'TaxPeriodCode', 'Value': '2024',
+                                 'MatchMode': 'contains', 'CaseSensitive': True, 'AsString': False}]
+    row = api_row()
+    row['TaxPeriodCode'] = '01122026'
+    row.pop('ChannelCode')
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([row]), ctx)
+
+
+@pytest.mark.parametrize('value', [None, 2024, '', '24', ' 2024', ['2024']])
+def test_year_contains_rejects_invalid_scope_on_empty_pages(value):
+    from coretax_json import JsonSafetyError
+    ctx = context()
+    ctx['request']['Filters'] = [{'PropertyName': 'TaxPeriodCode', 'Value': value,
+                                 'MatchMode': 'contains', 'CaseSensitive': True, 'AsString': False}]
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([], total=0), ctx)
+
+
+@pytest.mark.parametrize('field,value', [('CaseSensitive', False), ('AsString', True)])
+def test_period_union_rejects_unobserved_comparison_flags(field, value):
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['Filters'][0][field] = value
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([], total=0), ctx)
+
+
 def test_adapter_produces_complete_canonical_metadata_from_verified_fields():
     result = adapt(envelope())
     assert result['eligible'] is True

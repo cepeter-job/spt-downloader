@@ -20,6 +20,13 @@ A bounded authorized live experiment established that the submitted endpoint acc
 
 This establishes a request capability, not complete year coverage. Full reference-catalog coverage, migrated/cross-year periods, large constraint sets, pagination and selected-row restoration remain acceptance gates.
 
+## Implementation sequence
+
+1. Validate the shipped OR-equality request shape before metadata fallback, including empty responses. This slice has runner RED evidence and a successful correction run.
+2. Add a pure year planner and owned-request rewriting contract in `coretax_inventory.py`. Plan disjoint candidates: codes containing the requested year, plus source-catalog label matches whose codes do not contain it. Retain ambiguous catalog labels as candidates so local scope validation can report them. A missing/expired/conflicting catalog or unsupported year basis uses explicit unfiltered fallback. Keep the existing local `in_scope` check.
+3. Add browser integration with read-only PERIOD-cache evidence, a narrowly guarded submitted-request route, effective-request provenance, fixed filters across pagination, per-partition totals and cancellation cleanup. Unknown endpoints retain existing collection. Persist and restore the exact filter and page size before selected-row navigation; include filter identity in the active group key.
+4. Exercise synthetic browser contracts on runners: rewritten-body binding, empty partitions, changing totals/filters/catalog, stale offsets, catalog failures, cancellation, amendment/deduplication, and detail restoration. Verify the managed-worker allowlist includes the new module. Close the live acceptance and review gates below before marking ready.
+
 ## Verification and merge gates
 
 - Publish synthetic RED contracts and verify their failures on GitHub runners before implementing the corresponding production changes.
