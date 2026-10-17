@@ -125,6 +125,127 @@ EXPECTED_META = {
 }
 
 
+def _period_union_context():
+    ctx = context()
+    ctx['request']['Filters'] = [{
+        'PropertyName': 'TaxPeriodCode',
+        'Value': ['01122023', '01122024'],
+        'MatchMode': 'any-equals-equals',
+        'CaseSensitive': True,
+        'AsString': False,
+    }]
+    return ctx
+
+
+def test_period_union_filter_preserves_all_matching_records_and_source_values():
+    rows = [api_row('fixture-prior'), api_row('fixture-current')]
+    rows[0]['TaxPeriodCode'] = '01122023'
+    result = adapt(envelope(rows), _period_union_context())
+    assert result['eligible'] is True
+    assert result['total'] == 2
+    assert [r['record_id'] for r in result['rows']] == ['fixture-prior', 'fixture-current']
+    assert [r['source_fields']['TaxPeriodCode'] for r in result['rows']] == ['01122023', '01122024']
+
+
+def test_period_union_filter_rejects_outside_record_before_metadata_fallback():
+    from coretax_json import JsonSafetyError
+    row = api_row()
+    row['TaxPeriodCode'] = '01122026'
+    row.pop('ChannelCode')
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([row]), _period_union_context())
+
+
+def test_period_union_filter_preserves_amendments_with_distinct_identifiers():
+    rows = [api_row('fixture-normal'), api_row('fixture-amendment', 'Amendment 001')]
+    result = adapt(envelope(rows), _period_union_context())
+    assert result['eligible'] is True
+    assert [r['meta']['Model SPT'] for r in result['rows']] == ['Normal', 'Amendment 001']
+    assert [r['record_id'] for r in result['rows']] == ['fixture-normal', 'fixture-amendment']
+
+
+def test_period_union_filter_accepts_verified_empty_response():
+    result = adapt(envelope([], total=0), _period_union_context())
+    assert result['eligible'] is True
+    assert result['total'] == 0 and result['rows'] == []
+
+
+@pytest.mark.parametrize('values', [None, '01122024', [], ['01122024'],
+                                    ['01122023', '01122024', '01122026'],
+                                    ['01122024', '01122024'], ['01122023', 1122024],
+                                    ['01122023', ' 01122024']])
+def test_period_union_filter_rejects_malformed_values_even_for_empty_pages(values):
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['Filters'][0]['Value'] = values
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([], total=0), ctx)
+
+
+def test_period_union_filter_rejects_wrong_request_taxpayer():
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['TaxpayerAggregateIdentifier'] = 'fixture-other-taxpayer'
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope(), ctx)
+
+
+def test_period_union_filter_rejects_foreign_response_identity():
+    from coretax_json import JsonSafetyError
+    row = api_row()
+    row['TaxpayerAggregateIdentifier'] = 'fixture-other-taxpayer'
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([row]), _period_union_context())
+
+
+def test_period_union_filter_preserves_offset_validation():
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['First'] = 50
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope(), ctx)
+
+
+def test_year_contains_filter_accepts_source_bound_candidate_superset():
+    ctx = context()
+    ctx['request']['Filters'] = [{'PropertyName': 'TaxPeriodCode', 'Value': '2024',
+                                 'MatchMode': 'contains', 'CaseSensitive': True, 'AsString': False}]
+    result = adapt(envelope(), ctx)
+    assert result['eligible'] is True
+    assert result['rows'][0]['source_fields']['TaxPeriodCode'] == '01122024'
+
+
+def test_year_contains_contradiction_prevents_metadata_fallback():
+    from coretax_json import JsonSafetyError
+    ctx = context()
+    ctx['request']['Filters'] = [{'PropertyName': 'TaxPeriodCode', 'Value': '2024',
+                                 'MatchMode': 'contains', 'CaseSensitive': True, 'AsString': False}]
+    row = api_row()
+    row['TaxPeriodCode'] = '01122026'
+    row.pop('ChannelCode')
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([row]), ctx)
+
+
+@pytest.mark.parametrize('value', [None, 2024, '', '24', ' 2024', ['2024']])
+def test_year_contains_rejects_invalid_scope_on_empty_pages(value):
+    from coretax_json import JsonSafetyError
+    ctx = context()
+    ctx['request']['Filters'] = [{'PropertyName': 'TaxPeriodCode', 'Value': value,
+                                 'MatchMode': 'contains', 'CaseSensitive': True, 'AsString': False}]
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([], total=0), ctx)
+
+
+@pytest.mark.parametrize('field,value', [('CaseSensitive', False), ('AsString', True)])
+def test_period_union_rejects_unobserved_comparison_flags(field, value):
+    from coretax_json import JsonSafetyError
+    ctx = _period_union_context()
+    ctx['request']['Filters'][0][field] = value
+    with pytest.raises(JsonSafetyError):
+        adapt(envelope([], total=0), ctx)
+
+
 def test_adapter_produces_complete_canonical_metadata_from_verified_fields():
     result = adapt(envelope())
     assert result['eligible'] is True
@@ -383,7 +504,8 @@ def test_more_rows_than_declared_total_fails_closed():
 
 
 def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start=0,
-                              changed_total=False, empty=False, stop_state=None):
+                              changed_total=False, empty=False, stop_state=None,
+                              year_catalog=False, ignore_source_filter=False, expired_catalog=False):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -400,11 +522,32 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         rows[0]['TaxpayerAggregateIdentifier'] = 'fixture-other-taxpayer'
     displays = [dict(EXPECTED_META), {**EXPECTED_META, 'Model SPT': 'Amendment 001'},
                 {**EXPECTED_META, 'Masa Pajak': 'Januari - Desember 2026'}]
+    cache = None
+    if year_catalog:
+        from datetime import datetime, timedelta, timezone
+        cross = api_row('fixture-cross-year')
+        cross['TaxPeriodCode'] = '02012023'
+        monthly = api_row('fixture-monthly')
+        monthly['TaxPeriodCode'] = '06062024'
+        rows.extend([cross, monthly])
+        displays.extend([{**EXPECTED_META, 'Masa Pajak': 'Februari 2023 - Januari 2024'},
+                         {**EXPECTED_META, 'Masa Pajak': 'Juni 2024'}])
+        for number in range(20):
+            later = api_row(f'fixture-outside-{number}')
+            later['TaxPeriodCode'] = '01122026'
+            rows.append(later)
+            displays.append({**EXPECTED_META, 'Masa Pajak': 'Januari - Desember 2026'})
+        labels_by_code = {r['TaxPeriodCode']: d['Masa Pajak'] for r, d in zip(rows, displays)}
+        cache = {'ReferenceDataType': 'PERIOD', 'language': 'id-ID', 'Checksum': 'synthetic-full-catalog',
+                 'ExpiryDate': (datetime.now(timezone.utc) + timedelta(days=-1 if expired_catalog else 1)).isoformat(),
+                 'Details': [{'Code': code, 'CodeDescription': label} for code, label in labels_by_code.items()]}
+    displays_by_id = {r['RecordId']: d for r, d in zip(rows, displays)}
     if empty:
         rows = []
     labels = list(EXPECTED_META)
     metrics = {'submitted_full_grid_reads': 0, 'submitted_api_requests': 0,
-               'unregistered_requests': 0, 'detail_actions': 0}
+               'unregistered_requests': 0, 'detail_actions': 0, 'submitted_requests': [],
+               'viewed_record_ids': []}
     original = Locator.evaluate
 
     def observed_evaluate(locator, expression, *args, **kwargs):
@@ -427,7 +570,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         import html
         headers = ''.join('<th>' + html.escape(label) + '</th>' for label in labels)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
-                             'headers': labels, 'displays': displays})
+                             'headers': labels, 'displays': displays_by_id, 'catalog': cache})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
         return '''<a href="/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer">SPT Dilaporkan</a>
         <div class="main-content"><p-table><table><thead><tr>''' + headers + '''</tr></thead><tbody></tbody></table>
@@ -435,16 +578,24 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         <button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="first+=2;load()">Next</button></div>
         </p-table></div><script>
         const config=''' + config + ''';let first=config.start;
-        function load(){
+        const cacheReady=config.catalog?new Promise((resolve,reject)=>{
+          const r=indexedDB.open('e-tax-database',2);
+          r.onupgradeneeded=()=>{const s=r.result.createObjectStore('referenceDataStore',{keyPath:['ReferenceDataType','language']});s.createIndex('ReferenceDataType','ReferenceDataType');};
+          r.onerror=reject;r.onsuccess=()=>{const db=r.result,t=db.transaction('referenceDataStore','readwrite');
+            t.objectStore('referenceDataStore').put({...config.catalog,ExpiryDate:new Date(config.catalog.ExpiryDate)});
+            t.oncomplete=()=>{db.close();resolve();};t.onerror=reject;};
+        }):Promise.resolve();
+        async function load(){
+          await cacheReady;
           const request={TaxpayerAggregateIdentifier:'fixture-taxpayer',First:first,Rows:2,Filters:[],isArchieved:false,LanguageId:1,SortField:null,SortOrder:null};
           fetch(''' + json.dumps(endpoint) + ''',{method:'POST',body:JSON.stringify(request)}).then(r=>r.json()).then(body=>{
             const received=body.Payload.Data||[];const tbody=document.querySelector('tbody');tbody.replaceChildren();
             received.forEach((record,i)=>{
-              const index=first+i;const row=document.createElement('tr');
+              const row=document.createElement('tr');
               const view=document.createElement('button');view.id='ViewButton';view.textContent='View';
-              view.onclick=()=>fetch('/fixture-disallowed-action');
+              view.onclick=()=>config.catalog?window.open('/returnsheets/id-ID/fixture-taxpayer/details/'+encodeURIComponent(record.RecordId)):fetch('/fixture-disallowed-action');
               config.headers.forEach((label,column)=>{
-                const td=document.createElement('td');td.textContent=config.displays[index][label];
+                const td=document.createElement('td');td.textContent=config.displays[record.RecordId][label];
                 if(column===0)td.appendChild(view);
                 row.appendChild(td);
               });tbody.appendChild(row);
@@ -481,15 +632,31 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
                     assert data['TaxpayerAggregateIdentifier'] == TAXPAYER
                     assert data['Rows'] == 2 and type(data['First']) is int
                     submitted = url.path.endswith('/returnsheetssubmitted')
-                    data_rows = rows[data['First']:data['First'] + 2] if submitted else []
+                    candidates = rows if submitted else []
+                    if submitted and not ignore_source_filter:
+                        for filt in data['Filters']:
+                            assert filt['PropertyName'] == 'TaxPeriodCode'
+                            if filt['MatchMode'] == 'contains':
+                                candidates = [r for r in candidates if filt['Value'] in r['TaxPeriodCode']]
+                            elif filt['MatchMode'] == 'equals':
+                                candidates = [r for r in candidates if r['TaxPeriodCode'] == filt['Value']]
+                            else:
+                                assert filt['MatchMode'] == 'any' + '-equals' * len(filt['Value'])
+                                candidates = [r for r in candidates if r['TaxPeriodCode'] in filt['Value']]
+                    data_rows = candidates[data['First']:data['First'] + 2]
                     if submitted:
                         metrics['submitted_api_requests'] += 1
+                        metrics['submitted_requests'].append(data)
                         if stop_state is not None:
                             stop_state['requested'] = True
-                    total = len(rows) if submitted else 0
+                    total = len(candidates)
                     if submitted and changed_total and data['First'] > 0:
                         total += 1
                     route.fulfill(json=envelope(data_rows, total=total))
+                elif year_catalog and url.path.startswith('/returnsheets/id-ID/fixture-taxpayer/details/'):
+                    metrics['detail_actions'] += 1
+                    metrics['viewed_record_ids'].append(url.path.rsplit('/', 1)[-1])
+                    route.fulfill(body='<div class="main-content"><h1>Fixture detail</h1></div>', content_type='text/html')
                 else:
                     if url.path == '/fixture-disallowed-action':
                         metrics['detail_actions'] += 1
