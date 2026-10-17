@@ -28,8 +28,8 @@ def row(marker='SYNTHETIC EMPLOYEE', *, ia=False):
     return values[:7] + ['10,00'] + values[7:] if ia else values
 
 
-def export(run, folder, *, expected_file=JANUARY):
-    exporter.export_split_workbooks(run, folder)
+def export(run, folder, *, expected_file=JANUARY, reports=None):
+    exporter.export_split_workbooks(run, folder, mapping_reports=reports)
     coretax.verify_outputs(run, folder)
     return load_workbook(folder / expected_file)
 
@@ -193,43 +193,61 @@ def test_multiple_tables_for_same_group_append_rows_in_source_order(tmp_path):
         wb.close()
 
 
-def test_unknown_fields_table_columns_and_page_context_are_not_silently_dropped(tmp_path):
+def test_unknown_fields_are_kept_in_checkpoint_and_reported_without_raw_display(tmp_path):
     value = '=HYPERLINK("https://invalid.example", "SYNTHETIC RAW")'
     data = section('Induk', fields=[{'label': 'SYNTHETIC UNKNOWN FIELD', 'field': 'unknown', 'value': value}],
                    tables=[table('SYNTHETIC UNKNOWN TABLE', [['0000000000000003', '987,65'],
                                                             ['0000000000000003', '987,65']], headers=['SYNTHETIC ID', 'SYNTHETIC VALUE'])],
                    text='SYNTHETIC PAGE CONTEXT')
-    wb = export(run_for([data]), tmp_path)
+    run = run_for([data])
+    original = deepcopy(run)
+    reports = []
+    wb = export(run, tmp_path, reports=reports)
     reference = load_workbook(REFERENCE)
     try:
-        assert len(cells_with(wb, value)) == 1 and cells_with(wb, value)[0].data_type == 's'
-        assert len(cells_with(wb, '0000000000000003')) == 2
-        assert len(cells_with(wb, '987,65')) == 2
-        assert len(cells_with(wb, 'SYNTHETIC PAGE CONTEXT')) == 1
-        assert all(c.row > 35 for c in cells_with(wb, value))
+        assert run == original
+        assert len(reports) == 1 and reports[0]['complete'] is False
+        assert reports[0]['unmapped_fields'] == 1 and reports[0]['unmapped_rows'] == 2
+        assert not cells_with(wb, value)
+        assert not cells_with(wb, '0000000000000003')
+        assert not cells_with(wb, '987,65')
+        assert not cells_with(wb, 'SYNTHETIC PAGE CONTEXT')
+        assert wb['Induk'].max_row == 35
         assert_layout(wb['Induk'], reference['Induk'])
     finally:
         wb.close()
         reference.close()
 
 
-def test_ambiguous_group_is_preserved_as_raw_evidence_not_guessed_as_bpa1(tmp_path):
-    wb = export(run_for([section('L-IB', tables=[table('SYNTHETIC UNCLASSIFIED', [row()])])]), tmp_path)
+def test_ambiguous_group_is_reported_not_guessed_as_bpa1(tmp_path):
+    run = run_for([section('L-IB', tables=[table('SYNTHETIC UNCLASSIFIED', [row()])])])
+    original = deepcopy(run)
+    reports = []
+    wb = export(run, tmp_path, reports=reports)
     try:
         assert wb['L-IB']['B6'].value is None and wb['L-IB']['B12'].value is None
-        assert len(cells_with(wb, 'SYNTHETIC EMPLOYEE')) == 1
-        assert cells_with(wb, 'SYNTHETIC EMPLOYEE')[0].row > 18
+        assert run == original
+        assert len(reports) == 1 and reports[0]['complete'] is False
+        assert reports[0]['unmapped_tables'] == 1
+        assert not cells_with(wb, 'SYNTHETIC EMPLOYEE')
+        assert wb['L-IB'].max_row == 18
     finally:
         wb.close()
 
 
-def test_duplicate_header_fields_preserve_both_raw_values(tmp_path):
+def test_duplicate_header_fields_preserve_both_checkpoint_values_and_report_ambiguity(tmp_path):
     fields = [{'label': 'Status SPT', 'field': 'status', 'value': 'SYNTHETIC FIRST STATUS'},
               {'label': 'Status SPT', 'field': 'status', 'value': 'SYNTHETIC SECOND STATUS'}]
-    wb = export(run_for([section('Induk', fields=fields)]), tmp_path)
+    run = run_for([section('Induk', fields=fields)])
+    original = deepcopy(run)
+    reports = []
+    wb = export(run, tmp_path, reports=reports)
     try:
         assert len(cells_with(wb, 'SYNTHETIC FIRST STATUS')) == 1
-        assert len(cells_with(wb, 'SYNTHETIC SECOND STATUS')) == 1
+        assert run == original
+        assert len(reports) == 1 and reports[0]['complete'] is False
+        assert reports[0]['unmapped_fields'] == 1
+        assert not cells_with(wb, 'SYNTHETIC SECOND STATUS')
     finally:
         wb.close()
 

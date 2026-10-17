@@ -15,7 +15,10 @@ def fixture_run():
                          'meta': {'Jenis Pajak': tax, 'Masa Pajak': period, 'Model SPT': model},
                          'capture_complete': True, 'detail_url': '',
                          'sections': [{'name': 'Induk', 'text': '', 'tables': [],
-                                       'fields': [{'label': 'Record marker', 'field': 'Marker', 'value': key}]}]}
+                                       'fields': [({'label': 'Status Penyampaian', 'field': 'SubmitInProgressStatus',
+                                                    'group': 'HEADER', 'value': key}
+                                                   if tax == 'PPh Pasal 21/26' else
+                                                   {'label': 'Record marker', 'field': 'Marker', 'value': key})]}]}
                         for key, tax, period, model in rows]}
 
 
@@ -41,6 +44,9 @@ def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
                          'complete': True}]}
             for form in ('Induk', 'L-Z')
         ]
+        if tax == 'PPh Pasal 21/26':
+            record['sections'][0]['fields'][0].update(
+                label='Status Penyampaian', field='SubmitInProgressStatus', group='HEADER')
         if tax == 'PPN':
             record['sections'][0]['fields'].append({
                 'label': 'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)',

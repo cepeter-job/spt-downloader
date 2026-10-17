@@ -46,7 +46,9 @@ def test_grouping_never_combines_normal_or_distinct_amendment_numbers(tax, perio
 @pytest.mark.parametrize('tax,period,directory', TAX_SCOPES)
 def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, period, directory):
     run = model_run(tax, period)
+    original = deepcopy(run)
     files = exporter.export_split_workbooks(run, tmp_path)
+    assert run == original, 'Hidden presentation extras must remain intact in source custody'
     assert len(files) == 4 and 'resume.xlsx' in files
     expected = {record['record_id']: record for record in run['records']}
     observed = set()
@@ -70,7 +72,9 @@ def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, pe
                        if isinstance(value, str) and value.startswith('SYNTHETIC synthetic-model-return-')]
             expected_forms = ['L-Z'] if tax == 'PPN' else ['Induk', 'L-Z']
             assert markers == [f'SYNTHETIC {identifier} / {form}' for form in expected_forms]
-            copies = 2 if tax == 'PPN' else 4
+            # Unsupported Induk rows are source-only for clean PPN/PPh21 forms;
+            # the generic L-Z still displays both duplicate rows unchanged.
+            copies = 2 if tax in ('PPN', 'PPh Pasal 21/26') else 4
             assert values.count('00007') == copies and values.count('1.234,50') == copies
             if tax == 'PPN':
                 assert workbook['Induk']['E45'].value == int(expected[identifier]['sections'][0]['fields'][-1]['value'])
