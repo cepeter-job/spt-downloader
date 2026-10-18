@@ -33,6 +33,7 @@ _FIELDS = r'''root => {
  }
  return fields;
 }'''
+# Geometry references the catalog above; it is not another value projection.
 _INDUK_TABLE = r'''table => {
  const rows=[...table.rows];
  return {row_spans:rows.map(row=>[...row.cells].map(cell=>cell.colSpan)),

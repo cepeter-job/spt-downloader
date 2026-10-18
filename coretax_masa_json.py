@@ -6,6 +6,7 @@ import re
 
 from coretax_json import (
     JsonSafetyError,
+    PPH21_REFERENCE_URL,
     adapt_inventory_page,
     _object_pairs,
     _reject_constant,
@@ -332,7 +333,8 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     grid_paths.add('/returnsheet/api/loadndvat/lc-grid/footer')
     attempt, total_bytes = None, 0
     for item in bodies:
-        envelope, ctx, attempt, event = _corporate_packet(item, selected, scope, attempt, sequences)
+        envelope, ctx, attempt, event = _corporate_packet(
+            item, selected, scope, attempt, sequences, allow_pph21_reference=tax == 'PPh Pasal 21/26')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Masa source response budget exceeded')
@@ -343,14 +345,16 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         successful = (200 <= ctx['status'] < 300 and isinstance(envelope, dict)
                       and envelope.get('IsSuccessful') is True)
         form = None
+        reference = ctx['url'] == PPH21_REFERENCE_URL
         # Repeated grid/footer responses are snapshots too. Check every packet,
         # even if missing/unknown observation metadata will require fallback.
-        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES):
+        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES) or reference:
             key = (ctx['url'], _corporate_request_key(ctx.get('request_json')))
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
                 raise JsonSafetyError('Masa source snapshot changed within one attempt')
             snapshots[key] = ctx['sha256']
+        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES):
             identity_key = 'RecordId' if path in _PREFILL_PATHS else 'ReturnSheetRecordId'
             request = ctx.get('request_json')
             if not isinstance(request, dict) or identity_key not in request:
@@ -366,6 +370,9 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
             form = (_check_pph21_primary(payload, record, selected, scope, period, reasons)
                     if source_tax == 'PPh Pasal 21/26' else
                     _check_primary(payload, record, selected, scope, period, source_tax, reasons))
+        elif reference:
+            if not successful:
+                reasons.append('failed_pph21_reference_response')
         elif path in grid_paths:
             source_tax = 'PPN' if path.startswith('/returnsheet/api/loadndvat/') else 'PPh Unifikasi'
             if tax in FORMS and source_tax != tax:
