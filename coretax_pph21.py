@@ -1,5 +1,7 @@
 """Render observed PPh21/26 forms without restyling their reference cells."""
 from pathlib import Path
+from decimal import Decimal
+import math
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
@@ -52,6 +54,23 @@ def _parts(table):
 def _unresolved(table):
     # Even an empty unknown/contradictory table must not silently certify mapping.
     return {**table, 'complete': False}
+
+
+def _write_amount(sheet, row, column, value):
+    """Convert verified monetary slots only; retain unsafe source literals."""
+    numeric, source = value, None
+    valid = value is None or value == ''
+    if isinstance(value, str) and re.fullmatch(
+            r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', value):
+        source = Decimal(value.replace('.', '').replace(',', '.'))
+    # Check the decimal source before float conversion, which could already
+    # have rounded an unsafe value. Blank source cells are not invented zeroes.
+    if source is not None and source.is_finite() and Decimal(format(source, '.15g')) == source:
+        converted = float(source)
+        if math.isfinite(converted) and Decimal(str(converted)) == source:
+            numeric, valid = converted, True
+    _write(sheet, row, column, numeric)
+    return valid
 
 
 def _display_only_field(field, form):
@@ -123,7 +142,11 @@ def _induk(sheet, sections):
                 # Source aliases identify slots without replacing reference labels.
                 for column in (3, 4):
                     if column in projected:
-                        _write(sheet, row, column, projected[column])
+                        if column == 4:
+                            if not _write_amount(sheet, row, column, projected[column]):
+                                pending.append(values)
+                        else:
+                            _write(sheet, row, column, projected[column])
                 used_rows.add(row)
             if pending:
                 tables_left.append({**table, 'rows': pending})
@@ -191,6 +214,8 @@ def _appendix(sheet, form, sections):
     spacers = [False for _ in blocks]
     fields_left, tables_left = [], []
     totals = {}
+    numeric_failures = set()
+    money_columns = (7, 9) if form == 'l-ia' else (7, 8)
     for section in sections:
         fields_left.extend(field for field in section.get('fields', []) if not _display_only_field(field, form))
         for table in section.get('tables', []):
@@ -212,7 +237,7 @@ def _appendix(sheet, form, sections):
                 tables_left.append(_unresolved(table))
                 continue
             footer_values, spacer = mapped_footer
-            grouped[index].extend((mapping, values) for values in projected['rows'])
+            grouped[index].extend((mapping, values, table) for values in projected['rows'])
             spacers[index] = spacers[index] or spacer
             for row, values in footer_values.items():
                 totals.setdefault(row, []).append((values, table))
@@ -225,17 +250,28 @@ def _appendix(sheet, form, sections):
         needed = len(rows) + int(spacers[index])
         extra = max(0, needed - (last - first + 1))
         _grow(sheet, last + 1, extra, first)
-        for row, (mapping, values) in enumerate(rows, first):
+        for row, (mapping, values, table) in enumerate(rows, first):
+            valid = True
             for column, value in zip(mapping, values):
-                _write(sheet, row, column, value)
+                if column in money_columns:
+                    valid = _write_amount(sheet, row, column, value) and valid
+                else:
+                    _write(sheet, row, column, value)
+            if not valid and id(table) not in numeric_failures:
+                numeric_failures.add(id(table))
+                tables_left.append(_unresolved(table))
         offset += extra
     for row, candidates in totals.items():
         if len(candidates) != 1:
             tables_left.extend(_unresolved(table) for _, table in candidates)
             continue
-        values, _ = candidates[0]
-        for column, value in zip((7, 9) if form == 'l-ia' else (7, 8), values):
-            _write(sheet, row + offset, column, value)
+        values, table = candidates[0]
+        valid = True
+        for column, value in zip(money_columns, values):
+            valid = _write_amount(sheet, row + offset, column, value) and valid
+        if not valid and id(table) not in numeric_failures:
+            numeric_failures.add(id(table))
+            tables_left.append(_unresolved(table))
     return fields_left, tables_left
 
 
