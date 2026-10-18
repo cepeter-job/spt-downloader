@@ -911,8 +911,8 @@ def _identity_checked_packets(packets, record, scope):
 def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
-    ppn = record['meta'].get('Jenis Pajak') == 'PPN'
-    if ppn:
+    masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26')
+    if masa:
         from coretax_masa_json import adapt_masa_detail, check_masa_request_identities
         from coretax_masa_observer import observe_masa_forms
         check_masa_request_identities(capture.request_observations(), record, scope)
@@ -920,18 +920,18 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         _check_corporate_request_identities(capture.request_observations(), record, scope)
     forms = observe_corporate_forms(page, record, scope, capture,
         max_pages=max_pages, check_cancel=check_cancel) if corporate else None
-    if ppn:
+    if masa:
         forms = observe_masa_forms(page, record, scope, capture,
             max_pages=max_pages, check_cancel=check_cancel)
     observations = capture.request_observations()
-    if ppn:
+    if masa:
         check_masa_request_identities(observations, record, scope)
     if corporate:
         _check_corporate_request_identities(observations, record, scope)
     if any(item.get('status') in (401, 403) for item in observations):
         raise JsonSafetyError('Detail HTTP authorization was rejected')
     manifest = capture.drain(check_cancel=check_cancel)
-    if ppn:
+    if masa:
         check_masa_request_identities(capture.request_observations(), record, scope)
     if corporate:
         _check_corporate_request_identities(capture.request_observations(), record, scope)
@@ -944,15 +944,15 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         bodies = _identity_checked_packets(bodies, record, scope)
     decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
                                      observed_forms=forms or []) if corporate else None
-    if ppn:
+    if masa:
         decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=forms or [])
-    if not corporate and not ppn:
+    if not corporate and not masa:
         for packet in bodies:
             _check_cancel(check_cancel)
             if packet['context']['status'] in (401, 403):
                 raise JsonSafetyError('Detail HTTP authorization was rejected')
     _check_cancel(check_cancel)
-    eligible = ((corporate or ppn) and forms is not None and manifest['complete']
+    eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
     audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
              'capture': manifest}
@@ -964,7 +964,9 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         else:
             result = {'detail_url': page.url, 'capture_complete': True, 'errors': [], 'attachments': []}
         result['sections'] = decoded['sections']
-        audit['reason'] = 'verified_native_corporate_source' if corporate else 'verified_native_ppn_source'
+        audit['reason'] = ('verified_native_corporate_source' if corporate else
+                           'verified_native_ppn_source' if record['meta'].get('Jenis Pajak') == 'PPN'
+                           else 'verified_native_pph21_source')
     else:
         audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
                            else 'unsupported_observed_forms_or_capture')

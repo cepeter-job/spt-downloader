@@ -23,7 +23,8 @@ _PREFILL_PATHS = frozenset({
     '/returnsheet/api/prefillreturnsheet/nvat',
     '/returnsheet/api/prefillreturnsheet/withholding-tax',
 })
-_GRID_PREFIXES = ('/returnsheet/api/loadndvat/', '/returnsheet/api/loadwtr/')
+_GRID_PREFIXES = ('/returnsheet/api/loadndvat/', '/returnsheet/api/loadwtr/',
+                  '/returnsheet/api/loadarticle2126/')
 
 
 def check_masa_request_identities(observations, record, scope):
