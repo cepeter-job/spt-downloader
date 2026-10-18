@@ -8,6 +8,7 @@ from coretax_pph21 import render_template_form
 from support_templates import cells_with, section
 from support_pph21_dom import appendix_table
 from test_pph21_template import REFERENCE
+from support_pph21_numeric import money
 
 IDENTITY = 'A. IDENTITAS PEMOTONG'
 DECLARATION = 'D. PERNYATAAN DAN TANDA TANGAN'
@@ -81,7 +82,7 @@ def test_bp21_subtotals_are_not_misbound_to_bp26_slots():
         assert report is not None and report['complete'] is True
         assert sections == original
         for row, amounts in totals.items():
-            assert tuple(book['L-III'].cell(row, col).value for col in (7, 8)) == amounts
+            assert tuple(book['L-III'].cell(row, col).value for col in (7, 8)) == tuple(map(money, amounts))
         assert not cells_with(book, '991,00') and not cells_with(book, '887,00')
     finally:
         book.close()

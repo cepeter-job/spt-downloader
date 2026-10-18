@@ -14,7 +14,7 @@ The source uses generic table names with separate `group` captions. Existing PPh
 4. **L-II:** BPA1 begins at 5; optional BPA2 at 11; reported total at 15 in G/H before growth. The observed `MASA PEEROLEHAN PENGHASILAN` column has no reference slot; retain it in source custody, not an unrelated facility column.
 5. **L-III:** BP21 begins at 5, optional BP26 at 11; the reference's Pasal26 totals and overall total occupy 15–17 in G/H before growth. Do not replace Pasal26 subtotals with Pasal21 subtotals. Source-only tax/object columns and BP21 subtotal details remain in the unchanged checkpoint.
 
-Coordinates identify reference slots and the user's reviewed case, not universal source row numbers. Genuine body growth shifts later blocks and totals together. Preserve duplicates, literal identifiers/dates/source amounts, negative totals, styles, dimensions, print settings and workbook scope. Never replace reported totals with sums or fabricate missing optional rows.
+Coordinates identify reference slots and the user's reviewed case, not universal source row numbers. Genuine body growth shifts later blocks and totals together. Preserve duplicates, literal identifiers/dates, exact monetary values, negative totals, styles, dimensions, print settings and workbook scope. Verified Penghasilan Bruto, Pajak Penghasilan and Jumlah slots must now use native Excel numbers; this explicitly supersedes the earlier monetary-text assertions. Keep source captures unchanged. Never replace reported totals with sums or fabricate missing optional rows.
 
 ## Omission and error semantics
 

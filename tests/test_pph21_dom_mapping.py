@@ -8,6 +8,7 @@ from coretax_pph21 import render_template_form
 from support_templates import assert_format, assert_layout, cells_with, run_for
 from support_pph21_dom import appendix_table, induk_tables, observed
 from test_pph21_template import REFERENCE
+from support_pph21_numeric import money
 
 
 def render(form, tables):
@@ -28,8 +29,8 @@ def test_induk_generic_names_use_groups_labels_and_exact_tooltip_alias():
     try:
         assert report['complete'] is True
         for row, value in expected.items():
-            assert book['Induk'].cell(row, 4).value == value
-            assert book['Induk'].cell(row, 4).data_type == 's'
+            assert book['Induk'].cell(row, 4).value == money(value)
+            assert book['Induk'].cell(row, 4).data_type == 'n'
         assert book['Induk'].max_row == 35
         assert_layout(book['Induk'], reference['Induk'])
         for row in expected:
@@ -67,8 +68,8 @@ def test_lia_reported_totals_use_g_and_i_not_condensed_c_and_e(count, first_tota
         assert report['complete'] is True
         for index, (gross, tax) in enumerate(totals.values()):
             target = first_total + index
-            assert sheet.cell(target, 7).value == gross
-            assert sheet.cell(target, 9).value == tax
+            assert sheet.cell(target, 7).value == money(gross)
+            assert sheet.cell(target, 9).value == money(tax)
             assert sheet.cell(target, 3).value is None and sheet.cell(target, 5).value is None
             assert sheet.cell(target, 1).value == reference['L-IA'].cell(16 + index, 1).value
             for column in range(1, 15):
@@ -95,14 +96,14 @@ def test_optional_second_group_and_reported_totals_remain_separate(form, groups,
         sheet = book[form]
         assert report['complete'] is True
         assert sheet.cell(starts[0], 3).value == f'SYNTHETIC {groups[0]} 0'
-        assert sheet.cell(starts[0], 7).value == '1.234,50'
-        assert sheet.cell(starts[0], 8).value == '123,45'
+        assert sheet.cell(starts[0], 7).value == 1234.5
+        assert sheet.cell(starts[0], 8).value == 123.45
         assert sheet.cell(starts[0], 2).value == '0000000000000002'
         assert sheet.cell(starts[0], 2).data_type == 's'
         assert sheet.cell(starts[1], 3).value == (f'SYNTHETIC {groups[1]} 0' if second_count else None)
         for index, (gross, tax) in enumerate(totals.values()):
-            assert sheet.cell(total_start + index, 7).value == gross
-            assert sheet.cell(total_start + index, 8).value == tax
+            assert sheet.cell(total_start + index, 7).value == money(gross)
+            assert sheet.cell(total_start + index, 8).value == money(tax)
         assert sheet.max_row == reference[form].max_row
         assert_layout(sheet, reference[form])
     finally:
@@ -118,7 +119,7 @@ def test_lia_reordered_headers_do_not_reorder_physical_footer_cells():
     try:
         assert report['complete'] is True
         assert book['L-IA']['C5'].value == 'SYNTHETIC LIST-IA 0'
-        assert (book['L-IA']['G16'].value, book['L-IA']['I16'].value) == totals[16]
+        assert (book['L-IA']['G16'].value, book['L-IA']['I16'].value) == tuple(map(money, totals[16]))
     finally:
         book.close()
 
@@ -131,7 +132,7 @@ def test_first_group_growth_preserves_second_group_and_reported_totals():
         assert report['complete'] is True
         assert book['L-IB']['C15'].value == 'SYNTHETIC BPA2 0'
         for row, values in totals.items():
-            assert tuple(book['L-IB'].cell(row + 3, c).value for c in (7, 8)) == values
+            assert tuple(book['L-IB'].cell(row + 3, c).value for c in (7, 8)) == tuple(map(money, values))
     finally:
         book.close()
 
