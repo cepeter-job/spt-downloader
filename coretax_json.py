@@ -11,6 +11,10 @@ from urllib.parse import urlparse
 
 
 ORIGIN = 'https://coretax.intranet.pajak.go.id'
+PPH21_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
+                       'EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS')
+PPH21_MODEL_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/RETURN_SHEET_MODEL'
+PPH21_REFERENCE_URLS = (PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -516,7 +520,7 @@ def _corporate_bindings(observed_forms):
     return sections, paths, requests, grids, responses, dependencies, primary
 
 
-def _corporate_packet(item, selected, scope, attempt, sequences):
+def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_reference=False):
     if not isinstance(item, dict) or not isinstance(item.get('body'), bytes) or not isinstance(item.get('context'), dict):
         raise JsonSafetyError('Original corporate body bytes and captured descriptor are required')
     raw, ctx = item['body'], item['context']
@@ -535,9 +539,16 @@ def _corporate_packet(item, selected, scope, attempt, sequences):
         raise JsonSafetyError('Captured corporate event sequence is invalid or duplicated')
     sequences.add(sequence)
     endpoint, frame = ctx.get('url'), ctx.get('frame_url')
-    if (not _corporate_url(endpoint) or not urlparse(endpoint).path.startswith('/returnsheet/api/')
-            or urlparse(endpoint).path.casefold().startswith('/returnsheet/api/returnsheets')
-            or ctx.get('method') != 'POST'):
+    if not _corporate_url(endpoint):
+        raise JsonSafetyError('Captured corporate endpoint or method is unsafe')
+    reference = (allow_pph21_reference is True and endpoint in PPH21_REFERENCE_URLS
+                 and ctx.get('method') == 'GET' and ctx.get('request_json') is None
+                 and selected['native_fields'].get('TaxTypeCode') == 'ICT_WIT'
+                 and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WITR')
+    ordinary = (urlparse(endpoint).path.startswith('/returnsheet/api/')
+                and not urlparse(endpoint).path.casefold().startswith('/returnsheet/api/returnsheets')
+                and ctx.get('method') == 'POST')
+    if not (ordinary or reference):
         raise JsonSafetyError('Captured corporate endpoint or method is unsafe')
     if not _corporate_url(frame) or not urlparse(frame).path.startswith('/returnsheets/'):
         raise JsonSafetyError('Captured corporate frame is unauthorized')

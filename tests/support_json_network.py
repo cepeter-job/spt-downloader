@@ -93,8 +93,8 @@ class Response:
 
 
 def exchange(context, page, *, raw=RAW, finish=True, url=API_URL, frame=None, status=200,
-             content_type='application/json', declared=None, post=None):
-    request = Request(page, url=url, frame=frame, post=post)
+             content_type='application/json', declared=None, post=None, method='POST'):
+    request = Request(page, url=url, frame=frame, post=post, method=method)
     response = Response(request, raw, status=status, content_type=content_type, declared=declared)
     context.emit('request', request)
     context.emit('response', response)

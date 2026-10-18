@@ -652,7 +652,7 @@ def project_unifikasi_grid(grid_name, pages, headers, *, record_id, timezone_nam
 
 
 def _project_masa_grid(columns, pages, headers, *, record_id, timezone_name,
-                       lookups, ppn_form=None, global_ordinal=False):
+                       lookups, ppn_form=None, global_ordinal=False, date_prefix_fields=()):
     """Share page custody for the observed grids, not their semantic bindings.
 
     Endpoint/build/header/reference binding remains the observer/adapter's job;
@@ -740,6 +740,11 @@ def _project_masa_grid(columns, pages, headers, *, record_id, timezone_name,
                     provenance[-1]['lookup'] = key
                     rendered.append(mapping[value])
                 else:
+                    if key in date_prefix_fields:
+                        if kind != 'date' or type(value) is not str:
+                            raise _UnsupportedMetadata('unsupported_masa_date_prefix')
+                        # Preserve the unmodified value in provenance above.
+                        value = value[:10]
                     rendered.append(render_grid_value(value, 'number' if kind == 'number2' else kind,
                                                       fraction=2 if kind == 'number2' else 0,
                                                       timezone_name=timezone_name))

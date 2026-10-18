@@ -13,7 +13,7 @@ import time
 from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
-from coretax_json import JsonSafetyError, _object_pairs, _reject_constant, _trusted_origin
+from coretax_json import JsonSafetyError, PPH21_REFERENCE_URLS, _object_pairs, _reject_constant, _trusted_origin
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
@@ -106,6 +106,8 @@ class DetailJsonCapture:
         self.folder = root.absolute()
         self.scope = list(scope)
         self.record_id = record['record_id']
+        meta = record.get('meta')
+        self._pph21_references = isinstance(meta, dict) and meta.get('Jenis Pajak') == 'PPh Pasal 21/26'
         self.source_url = source
         self.taxpayer_id = match.group(1)
         self.ordinal = ordinal
@@ -183,8 +185,10 @@ class DetailJsonCapture:
         if not self._active or self._result is not None:
             return
         try:
+            reference = (self._pph21_references and request.url in PPH21_REFERENCE_URLS
+                         and request.method == 'GET' and request.post_data is None)
             if (not _safe_url(request.url) or request.resource_type not in ('xhr', 'fetch')
-                    or not urlparse(request.url).path.startswith('/returnsheet/api/')
+                    or not (urlparse(request.url).path.startswith('/returnsheet/api/') or reference)
                     or urlparse(request.url).path.casefold().startswith('/returnsheet/api/returnsheets')):
                 return
             frame = request.frame

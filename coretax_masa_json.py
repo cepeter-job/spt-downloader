@@ -6,6 +6,7 @@ import re
 
 from coretax_json import (
     JsonSafetyError,
+    PPH21_REFERENCE_URLS,
     adapt_inventory_page,
     _object_pairs,
     _reject_constant,
@@ -22,8 +23,10 @@ from coretax_json import (
 _PREFILL_PATHS = frozenset({
     '/returnsheet/api/prefillreturnsheet/nvat',
     '/returnsheet/api/prefillreturnsheet/withholding-tax',
+    '/returnsheet/api/prefillreturnsheet/article-2126',
 })
-_GRID_PREFIXES = ('/returnsheet/api/loadndvat/', '/returnsheet/api/loadwtr/')
+_GRID_PREFIXES = ('/returnsheet/api/loadndvat/', '/returnsheet/api/loadwtr/',
+                  '/returnsheet/api/loadarticle2126/')
 
 
 def check_masa_request_identities(observations, record, scope):
@@ -62,16 +65,26 @@ _MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
 
 
 def bind_ppn_listing_identity(response, *, record, scope):
-    """Bind PPN identity without requiring unrelated mixed-list display catalogs.
+    """Bind PPN identity without unrelated mixed-list display catalogs."""
+    return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPN')
 
-    Rendering another tax's list row may be unsupported. That must not discard
-    independently verified PPN identity, nor permit labels to fabricate it.
-    """
-    unavailable = {'eligible': False, 'reason': 'missing_native_ppn_listing_identity'}
-    if record.get('meta', {}).get('Jenis Pajak') != 'PPN':
+
+def bind_pph21_listing_identity(response, *, record, scope):
+    """Bind literal PPh21 listing identity from the original response bytes."""
+    return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPh Pasal 21/26')
+
+
+def _bind_masa_listing_identity(response, *, record, scope, tax):
+    # Share custody checks, not display aliases or inferred tax classifications.
+    prefix, tax_code, sheet_code = {
+        'PPN': ('ppn', 'VAT_VAT', 'VAT_VATR'),
+        'PPh Pasal 21/26': ('pph21', 'ICT_WIT', 'ICT_WITR'),
+    }[tax]
+    unavailable = {'eligible': False, 'reason': 'missing_native_' + prefix + '_listing_identity'}
+    if record.get('meta', {}).get('Jenis Pajak') != tax:
         return unavailable
     if record.get('scope') != list(scope):
-        raise JsonSafetyError('PPN listing scope contradicts selected return')
+        raise JsonSafetyError(tax + ' listing scope contradicts selected return')
     if not isinstance(response, dict) or not isinstance(response.get('binding'), dict):
         return unavailable
     body = response.get('body')
@@ -99,18 +112,18 @@ def bind_ppn_listing_identity(response, *, record, scope):
         return unavailable
     rows = payload['Data']
     if rows != response.get('rows') or payload.get('TotalRecords') != response.get('total'):
-        raise JsonSafetyError('PPN listing observations differ from original response bytes')
+        raise JsonSafetyError(tax + ' listing observations differ from original response bytes')
     candidates = [row for row in rows if row.get('RecordId') == record.get('record_id')]
     if len(candidates) != 1:
-        raise JsonSafetyError('Selected PPN identity is absent or repeated in verified list page')
+        raise JsonSafetyError('Selected ' + tax + ' identity is absent or repeated in verified list page')
     row = candidates[0]
     expected = {'TaxpayerAggregateIdentifier': context['taxpayer_id'],
-                'TaxTypeCode': 'VAT_VAT', 'ReturnSheetTypeCode': 'VAT_VATR',
+                'TaxTypeCode': tax_code, 'ReturnSheetTypeCode': sheet_code,
                 'ReturnSheetStatusCode': 'SUBMITTED',
                 'ReturnSheetModel': record.get('meta', {}).get('Model SPT')}
     for key, value in expected.items():
         if key in row and row[key] != value:
-            raise JsonSafetyError('PPN listing identity contradicts selected ' + key)
+            raise JsonSafetyError(tax + ' listing identity contradicts selected ' + key)
     keys = set(expected) | {'RecordId', 'AggregateIdentifier', 'TaxPeriodCode'}
     if any(type(row.get(key)) is not str or not row[key] or row[key] != row[key].strip() for key in keys):
         return unavailable
@@ -128,10 +141,10 @@ def bind_ppn_listing_identity(response, *, record, scope):
                 'sequence': context['sequence'], 'body_sha256': hashlib.sha256(body).hexdigest()}
     for key, value in record.get('source_identity', {}).items():
         if key in ('record_id', 'aggregate_id', 'taxpayer_id', 'source_url') and value != identity[key]:
-            raise JsonSafetyError('Previously bound PPN listing identity changed')
+            raise JsonSafetyError('Previously bound ' + tax + ' listing identity changed')
     for key, value in record.get('source_fields', {}).items():
         if key in fields and value != fields[key]:
-            raise JsonSafetyError('Previously bound PPN listing field changed')
+            raise JsonSafetyError('Previously bound ' + tax + ' listing field changed')
     return {'eligible': True, 'source_fields': fields, 'source_identity': identity}
 
 
@@ -249,6 +262,58 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
     return form
 
 
+def _check_pph21_primary(payload, record, selected, scope, period, reasons):
+    """Check article-2126's actual keys before any presentation fallback."""
+    if not isinstance(payload, dict):
+        reasons.append('unsupported_masa_primary_payload')
+        return None
+    literal_model = record.get('meta', {}).get('Model SPT')
+    native = selected['native_fields']
+    if native.get('ReturnSheetModel') is not None and native['ReturnSheetModel'] != literal_model:
+        raise JsonSafetyError('Masa literal listing model contradicts selected return')
+    model = 'NORMAL' if literal_model == 'Normal' else None
+    if (isinstance(literal_model, str) and re.fullmatch(r'Amendment [0-9]{3}', literal_model)
+            and native.get('ReturnSheetModel') == literal_model):
+        model = 'AMENDMENT'
+    _identity_field(payload, 'TIN', scope[0], reasons)
+    _identity_field(payload, 'ReturnSheetModel', model, reasons)
+    if 'TaxpayerIdentifier' in payload:
+        _identity_field(payload, 'TaxpayerIdentifier', selected['frame_taxpayer'], reasons)
+    if model is None:
+        reasons.append('unsupported_masa_model_binding')
+
+    def check_period(source, month_key, year_key):
+        for key, expected in ((month_key, str(int(period[:2])) if period else None),
+                              (year_key, period[4:] if period else str(scope[1]) if scope[2] == 'period' else None)):
+            if key not in source or expected is None:
+                reasons.append('missing_pph21_period_binding_' + key)
+            elif type(source[key]) not in (str, _CorporateNumber) or source[key] != expected:
+                raise JsonSafetyError('PPh21 period contradicts selected return: ' + key)
+
+    check_period(payload, 'PeriodMonth', 'PeriodYear')
+    _identity_field(payload, 'ReturnSheetStatusCode', native.get('ReturnSheetStatusCode'), reasons)
+    if payload.get('ReturnSheetStatusCode') != 'SUBMITTED':
+        reasons.append('unverified_pph21_non_submitted_lifecycle')
+    if type(payload.get('IsMigrated')) is not bool:
+        reasons.append('unbound_pph21_migration_branch')
+    raw = payload.get('FormData')
+    if type(raw) is not str:
+        reasons.append('missing_masa_form_data')
+        return None
+    form = _corporate_json(raw)
+    _corporate_privacy(form)
+    if not isinstance(form, dict):
+        reasons.append('unsupported_masa_form_shape')
+        return None
+    _identity_field(form, 'RecordId', selected['record_id'], reasons)
+    _identity_field(form, 'ReturnSheetAggregateIdentifier', selected['aggregate_id'], reasons)
+    _identity_field(form, 'TIN', scope[0], reasons)
+    _identity_field(form, 'TaxType', native.get('TaxTypeCode'), reasons)
+    _identity_field(form, 'Status', model, reasons)
+    check_period(form, 'TaxPeriodMonth', 'TaxPeriodYear')
+    return form
+
+
 def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     """Check the whole captured attempt before deciding rendering eligibility.
 
@@ -260,7 +325,7 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     tax = record.get('meta', {}).get('Jenis Pajak')
     reasons = []
     period = _selected_period(record, selected, scope, reasons)
-    if tax not in ('PPN', 'PPh Unifikasi'):
+    if tax not in ('PPN', 'PPh Unifikasi', 'PPh Pasal 21/26'):
         reasons.append('unsupported_masa_tax_kind')
     if not selected['aggregate_id'] or not selected['taxpayer_id']:
         reasons.append('missing_native_masa_identity_binding')
@@ -276,9 +341,12 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         for kind, forms in FORMS.items() for _, roles in forms.values() for _, suffix in roles
     }
     grid_paths.add('/returnsheet/api/loadndvat/lc-grid/footer')
+    from coretax_pph21_json_bindings import GRID_COLUMNS
+    grid_paths.update('/returnsheet/api/loadarticle2126/' + suffix + '-grid' for suffix in GRID_COLUMNS)
     attempt, total_bytes = None, 0
     for item in bodies:
-        envelope, ctx, attempt, event = _corporate_packet(item, selected, scope, attempt, sequences)
+        envelope, ctx, attempt, event = _corporate_packet(
+            item, selected, scope, attempt, sequences, allow_pph21_reference=tax == 'PPh Pasal 21/26')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Masa source response budget exceeded')
@@ -289,29 +357,38 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         successful = (200 <= ctx['status'] < 300 and isinstance(envelope, dict)
                       and envelope.get('IsSuccessful') is True)
         form = None
+        reference = ctx['url'] in PPH21_REFERENCE_URLS
         # Repeated grid/footer responses are snapshots too. Check every packet,
         # even if missing/unknown observation metadata will require fallback.
-        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES):
+        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES) or reference:
             key = (ctx['url'], _corporate_request_key(ctx.get('request_json')))
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
                 raise JsonSafetyError('Masa source snapshot changed within one attempt')
             snapshots[key] = ctx['sha256']
+        if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES):
             identity_key = 'RecordId' if path in _PREFILL_PATHS else 'ReturnSheetRecordId'
             request = ctx.get('request_json')
             if not isinstance(request, dict) or identity_key not in request:
                 reasons.append('missing_masa_request_identity_binding')
         if path in _PREFILL_PATHS:
             primary_seen = True
-            source_tax = 'PPN' if path.endswith('/nvat') else 'PPh Unifikasi'
-            if tax in ('PPN', 'PPh Unifikasi') and source_tax != tax:
+            source_tax = ('PPN' if path.endswith('/nvat') else
+                          'PPh Pasal 21/26' if path.endswith('/article-2126') else 'PPh Unifikasi')
+            if tax in ('PPN', 'PPh Unifikasi', 'PPh Pasal 21/26') and source_tax != tax:
                 raise JsonSafetyError('Masa primary source family contradicts selected tax')
             if not successful:
                 reasons.append('failed_masa_primary_response')
-            form = _check_primary(payload, record, selected, scope, period, source_tax, reasons)
+            form = (_check_pph21_primary(payload, record, selected, scope, period, reasons)
+                    if source_tax == 'PPh Pasal 21/26' else
+                    _check_primary(payload, record, selected, scope, period, source_tax, reasons))
+        elif reference:
+            if not successful:
+                reasons.append('failed_pph21_reference_response')
         elif path in grid_paths:
-            source_tax = 'PPN' if path.startswith('/returnsheet/api/loadndvat/') else 'PPh Unifikasi'
-            if tax in FORMS and source_tax != tax:
+            source_tax = ('PPN' if path.startswith('/returnsheet/api/loadndvat/') else
+                          'PPh Pasal 21/26' if path.startswith('/returnsheet/api/loadarticle2126/') else 'PPh Unifikasi')
+            if tax in ('PPN', 'PPh Unifikasi', 'PPh Pasal 21/26') and source_tax != tax:
                 raise JsonSafetyError('Masa grid source family contradicts selected tax')
             if not successful:
                 reasons.append('failed_masa_grid_response')
@@ -322,14 +399,18 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     if not primary_seen:
         reasons.append('missing_masa_primary_response')
     try:
-        projected = project_masa_forms(packets, record=record, observed_forms=observed_forms)
+        if tax == 'PPh Pasal 21/26':
+            from coretax_pph21_projection import project_pph21_forms
+            projected = project_pph21_forms(packets, record=record, observed_forms=observed_forms)
+        else:
+            projected = project_masa_forms(packets, record=record, observed_forms=observed_forms)
     except _UnsupportedMetadata as exc:
         reasons.append(str(exc))
     else:
         if not reasons:
             provenance['bindings'] = projected['bindings']
             coverage.update({key: projected[key] for key in ('source_root_count', 'evidence_row_count', 'grids')})
-            if tax == 'PPN':
+            if tax in ('PPN', 'PPh Pasal 21/26'):
                 coverage['omitted_fields'] = projected['omitted_fields']
             coverage['complete'] = True
             return {'eligible': True, 'reason': '', 'sections': projected['sections'],
