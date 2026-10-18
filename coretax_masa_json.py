@@ -315,7 +315,7 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     tax = record.get('meta', {}).get('Jenis Pajak')
     reasons = []
     period = _selected_period(record, selected, scope, reasons)
-    if tax not in ('PPN', 'PPh Unifikasi'):
+    if tax not in ('PPN', 'PPh Unifikasi', 'PPh Pasal 21/26'):
         reasons.append('unsupported_masa_tax_kind')
     if not selected['aggregate_id'] or not selected['taxpayer_id']:
         reasons.append('missing_native_masa_identity_binding')
@@ -331,6 +331,8 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         for kind, forms in FORMS.items() for _, roles in forms.values() for _, suffix in roles
     }
     grid_paths.add('/returnsheet/api/loadndvat/lc-grid/footer')
+    from coretax_pph21_json_bindings import GRID_COLUMNS
+    grid_paths.update('/returnsheet/api/loadarticle2126/' + suffix + '-grid' for suffix in GRID_COLUMNS)
     attempt, total_bytes = None, 0
     for item in bodies:
         envelope, ctx, attempt, event = _corporate_packet(
@@ -374,8 +376,9 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
             if not successful:
                 reasons.append('failed_pph21_reference_response')
         elif path in grid_paths:
-            source_tax = 'PPN' if path.startswith('/returnsheet/api/loadndvat/') else 'PPh Unifikasi'
-            if tax in FORMS and source_tax != tax:
+            source_tax = ('PPN' if path.startswith('/returnsheet/api/loadndvat/') else
+                          'PPh Pasal 21/26' if path.startswith('/returnsheet/api/loadarticle2126/') else 'PPh Unifikasi')
+            if tax in ('PPN', 'PPh Unifikasi', 'PPh Pasal 21/26') and source_tax != tax:
                 raise JsonSafetyError('Masa grid source family contradicts selected tax')
             if not successful:
                 reasons.append('failed_masa_grid_response')
@@ -386,14 +389,18 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     if not primary_seen:
         reasons.append('missing_masa_primary_response')
     try:
-        projected = project_masa_forms(packets, record=record, observed_forms=observed_forms)
+        if tax == 'PPh Pasal 21/26':
+            from coretax_pph21_projection import project_pph21_forms
+            projected = project_pph21_forms(packets, record=record, observed_forms=observed_forms)
+        else:
+            projected = project_masa_forms(packets, record=record, observed_forms=observed_forms)
     except _UnsupportedMetadata as exc:
         reasons.append(str(exc))
     else:
         if not reasons:
             provenance['bindings'] = projected['bindings']
             coverage.update({key: projected[key] for key in ('source_root_count', 'evidence_row_count', 'grids')})
-            if tax == 'PPN':
+            if tax in ('PPN', 'PPh Pasal 21/26'):
                 coverage['omitted_fields'] = projected['omitted_fields']
             coverage['complete'] = True
             return {'eligible': True, 'reason': '', 'sections': projected['sections'],
