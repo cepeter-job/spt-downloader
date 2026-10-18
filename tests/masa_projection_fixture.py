@@ -80,8 +80,8 @@ def native_case(tax, *, populated=True):
                         TotalIncomeTaxAttachment=0)
             induk = add_form('INDUK', [field('FullName', 'Nama Lengkap'), field('TaxIdentificationNumber', 'NPWP')])
             sh = reference['Induk']
-            headers = [sh['A10'].value, sh['B10'].value, 'PAJAK PENGHASILAN / SETOR SENDIRI',
-                       'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN'] + [sh.cell(10,c).value for c in range(5,9)]
+            headers = [sh['A8'].value, sh['B8'].value, 'PAJAK PENGHASILAN / SETOR SENDIRI',
+                       'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN'] + [sh.cell(8,c).value for c in range(5,9)]
             induk['tables'].append({'name': 'income-taxes', 'headers': headers, 'group': 'B. PAJAK PENGHASILAN',
                                     'footer_spans': [[2, 1, 1, 1, 1, 1, 1]]})
         outer['FormData'] = json.dumps(data)

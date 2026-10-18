@@ -313,7 +313,7 @@ def _unifikasi_induk(sheet, sections):
     return pending
 
 
-UNIFIKASI_MONEY = {'daftar i': (9, 10), 'daftar ii': (7,), 'lampiran i': (13,)}
+UNIFIKASI_MONEY = {'daftar i': (9, 10), 'daftar ii': (5, 7), 'lampiran i': (11, 13)}
 UNIFIKASI_FOOTER_ROWS = {'daftar i': [(), (15, 16, 17, 18)],
                        'daftar ii': [(9, 10), (18,)], 'lampiran i': [(10,)]}
 UNIFIKASI_SOURCE_EXTRAS = ('TINGKAT (%)',

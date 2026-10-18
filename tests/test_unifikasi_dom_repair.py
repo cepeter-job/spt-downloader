@@ -12,13 +12,14 @@ RESOURCE = Path(__file__).resolve().parents[1] / 'resources/unifikasi_format.xls
 TAX = 'PPh Unifikasi'
 HEADERS = ['NO', 'DETIL', 'PAJAK PENGHASILAN / SETOR SENDIRI',
            'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN', 'PPh DITANGGUNG PEMERINTAH',
-           'JUMLAH PPh DIBAYAR', 'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN '
+           'JUMLAH PPh DIBAYAR', 'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN ' +
            'This row contain the total amount of payment deducted by the refunded amount prior to the amendment.',
            'PPh KURANG BAYAR / LEBIH BAYAR KARENA PEMBETULAN']
 
 
-def export(tmp_path, sections):
+def export(tmp_path, sections, *, captured=True):
     run = source_run(TAX, sections)
+    run['records'][0]['capture_complete'] = captured
     original = deepcopy(run)
     reports = []
     files = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
@@ -158,7 +159,7 @@ def test_empty_source_contradictions_never_claim_complete(tmp_path, defect):
     elif defect == 'count':
         table['source_total'] = 1
     tables = [table, deepcopy(table)] if defect == 'duplicate' else [table]
-    book, reports = export(tmp_path, [section('DAFTAR-I', tables=tables)])
+    book, reports = export(tmp_path, [section('DAFTAR-I', tables=tables)], captured=defect != 'incomplete')
     try:
         assert reports and not reports[0]['complete']
         assert book['DAFTAR-I']['A5'].value is None
