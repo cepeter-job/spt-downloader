@@ -2,7 +2,7 @@
 import json
 import re
 
-from coretax_json import ORIGIN, JsonSafetyError
+from coretax_json import ORIGIN, PPH21_REFERENCE_URLS, JsonSafetyError
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid
 from coretax_masa_bindings import MAIN_SOURCE, BUILD_DIGESTS as MASA_BUILD_DIGESTS
 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests
@@ -49,6 +49,63 @@ _INDUK_TABLE = r'''table => {
  return {row_spans:rows.map(row=>[...row.cells].map(cell=>cell.colSpan)),
    row_fields:rows.map(row=>[...row.querySelectorAll('[formcontrolname]')].map(e=>e.getAttribute('formcontrolname')))};
 }'''
+
+
+# Fetch only reviewed read-only catalogs. Discard streamed bytes here; the
+# capture owns original response bytes, privacy checks and replay custody.
+_REFERENCE_GET = r'''async url => {
+ const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),30000);
+ let status=0;
+ try {
+  if(new URL(url).origin!==location.origin)return {ok:false,status};
+  const response=await fetch(url,{method:'GET',mode:'same-origin',credentials:'same-origin',
+    redirect:'error',cache:'no-store',headers:{'Content-Type':'application/json'},signal:controller.signal});
+  status=response.status;
+  const mime=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+  const limit=32*1024*1024, length=response.headers.get('content-length');
+  if(status!==200||(mime!=='application/json'&&!mime.endsWith('+json'))||
+     (length!==null&&(!/^[0-9]+$/.test(length)||Number(length)>limit))){
+    if(response.body)await response.body.cancel();
+    return {ok:false,status};
+  }
+  if(!response.body)return {ok:false,status};
+  const reader=response.body.getReader();let size=0;
+  while(true){
+   const chunk=await reader.read();
+   if(chunk.done)break;
+   size+=chunk.value.byteLength;
+   if(size>limit){await reader.cancel();return {ok:false,status};}
+  }
+  return {ok:size>0,status};
+ }catch(_){return {ok:false,status};}
+ finally{clearTimeout(timer);}
+}'''
+
+
+def _reference_bindings(page, record, scope, capture, check_cancel):
+    from coretax_browser import _check_cancel, list_taxpayer_id, verify_detail_url
+    taxpayer = list_taxpayer_id(record['list_url'])
+    bindings = []
+    for endpoint in PPH21_REFERENCE_URLS:
+        _check_cancel(check_cancel)
+        verify_detail_url(page.url, taxpayer, record['record_id'])
+        before = {event['sequence'] for event in _observations(capture, record, scope)}
+        result = page.evaluate(_REFERENCE_GET, endpoint)
+        events = _observations(capture, record, scope)
+        _check_cancel(check_cancel)
+        verify_detail_url(page.url, taxpayer, record['record_id'])
+        if isinstance(result, dict) and result.get('status') in (401, 403):
+            raise JsonSafetyError('PPh21 reference authorization was rejected')
+        if not isinstance(result, dict) or result.get('ok') is not True or result.get('status') != 200:
+            return None
+        matches = [event for event in events if event['sequence'] not in before and event['url'] == endpoint]
+        if len(matches) != 1:
+            return None
+        event = matches[0]
+        if event.get('method') != 'GET' or event.get('request_json') is not None:
+            raise JsonSafetyError('PPh21 reference observation contradicts its GET request')
+        bindings.append({'endpoint': endpoint, 'method': 'GET', 'sequences': [event['sequence']]})
+    return bindings
 
 
 def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_cancel=None):
@@ -144,6 +201,10 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
                     binding['tables'].append({'name': suffix, **metadata, 'endpoint': endpoint,
                                                'pages': pages, 'source_total': total})
             forms.append(binding)
+        references = _reference_bindings(page, record, scope, capture, check_cancel)
+        if references is None:
+            return None
+        next(form for form in forms if form['name'] == 'Induk')['references'] = references
         return forms
     except JsonSafetyError:
         raise

@@ -914,7 +914,10 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26')
     if masa:
         from coretax_masa_json import adapt_masa_detail, check_masa_request_identities
-        from coretax_masa_observer import observe_masa_forms
+        if record['meta'].get('Jenis Pajak') == 'PPh Pasal 21/26':
+            from coretax_pph21_observer import observe_pph21_forms as observe_masa_forms
+        else:
+            from coretax_masa_observer import observe_masa_forms
         check_masa_request_identities(capture.request_observations(), record, scope)
     if corporate:
         _check_corporate_request_identities(capture.request_observations(), record, scope)
@@ -1148,13 +1151,16 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     _check_cancel(check_cancel)
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') == 'PPN':
-                    from coretax_masa_json import bind_ppn_listing_identity
-                    identity = bind_ppn_listing_identity(current_response, record=record, scope=scope)
+                if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26'):
+                    from coretax_masa_json import bind_ppn_listing_identity, bind_pph21_listing_identity
+                    pph21 = record['meta']['Jenis Pajak'] == 'PPh Pasal 21/26'
+                    bind_identity = bind_pph21_listing_identity if pph21 else bind_ppn_listing_identity
+                    identity = bind_identity(current_response, record=record, scope=scope)
                     if identity['eligible']:
                         from coretax_pdf import _directories
                         from spt_desktop.output_windows import DirectoryGuard
-                        relative = Path('listing-responses') / f'ppn-identity-{ordinal:04d}-{uuid4().hex}.json'
+                        prefix = 'pph21' if pph21 else 'ppn'
+                        relative = Path('listing-responses') / f'{prefix}-identity-{ordinal:04d}-{uuid4().hex}.json'
                         target = folder / relative
                         with DirectoryGuard() as guard:
                             guard.include(_directories(target.parent))

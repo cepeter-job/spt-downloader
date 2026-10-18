@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 import coretax_browser as browser
-import coretax_masa_observer as observer
+import coretax_pph21_observer as observer
 from coretax_json import JsonSafetyError, ORIGIN
 from coretax_masa_json import check_masa_request_identities
 from masa_json_fixtures import FOREIGN, RECORD, SCOPE, selected
@@ -79,7 +79,7 @@ def test_dispatch_checks_pph21_identity_before_and_after_observation_and_final_d
     def forbidden(*args, **kwargs):
         raise AssertionError('Foreign PPh21 traffic must never become DOM fallback')
 
-    monkeypatch.setattr(observer, 'observe_masa_forms', observe)
+    monkeypatch.setattr(observer, 'observe_pph21_forms', observe)
     monkeypatch.setattr(browser, 'capture_detail', forbidden)
     monkeypatch.setattr(browser, 'capture_financial_detail', forbidden)
     with pytest.raises(JsonSafetyError):
@@ -95,7 +95,7 @@ def test_pph21_unsupported_structure_falls_back_without_claiming_json(monkeypatc
         capture.observed = True
         return None
 
-    monkeypatch.setattr(observer, 'observe_masa_forms', observe)
+    monkeypatch.setattr(observer, 'observe_pph21_forms', observe)
     monkeypatch.setattr(browser, 'capture_detail', lambda *a, **kw: {
         'capture_complete': True, 'sections': [{'name': 'Induk', 'fields': [], 'tables': []}]})
     result = browser._hybrid_detail(SimpleNamespace(url='unused'), selected(TAX), SCOPE,

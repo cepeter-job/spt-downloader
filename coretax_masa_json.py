@@ -65,16 +65,26 @@ _MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
 
 
 def bind_ppn_listing_identity(response, *, record, scope):
-    """Bind PPN identity without requiring unrelated mixed-list display catalogs.
+    """Bind PPN identity without unrelated mixed-list display catalogs."""
+    return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPN')
 
-    Rendering another tax's list row may be unsupported. That must not discard
-    independently verified PPN identity, nor permit labels to fabricate it.
-    """
-    unavailable = {'eligible': False, 'reason': 'missing_native_ppn_listing_identity'}
-    if record.get('meta', {}).get('Jenis Pajak') != 'PPN':
+
+def bind_pph21_listing_identity(response, *, record, scope):
+    """Bind literal PPh21 listing identity from the original response bytes."""
+    return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPh Pasal 21/26')
+
+
+def _bind_masa_listing_identity(response, *, record, scope, tax):
+    # Share custody checks, not display aliases or inferred tax classifications.
+    prefix, tax_code, sheet_code = {
+        'PPN': ('ppn', 'VAT_VAT', 'VAT_VATR'),
+        'PPh Pasal 21/26': ('pph21', 'ICT_WIT', 'ICT_WITR'),
+    }[tax]
+    unavailable = {'eligible': False, 'reason': 'missing_native_' + prefix + '_listing_identity'}
+    if record.get('meta', {}).get('Jenis Pajak') != tax:
         return unavailable
     if record.get('scope') != list(scope):
-        raise JsonSafetyError('PPN listing scope contradicts selected return')
+        raise JsonSafetyError(tax + ' listing scope contradicts selected return')
     if not isinstance(response, dict) or not isinstance(response.get('binding'), dict):
         return unavailable
     body = response.get('body')
@@ -102,18 +112,18 @@ def bind_ppn_listing_identity(response, *, record, scope):
         return unavailable
     rows = payload['Data']
     if rows != response.get('rows') or payload.get('TotalRecords') != response.get('total'):
-        raise JsonSafetyError('PPN listing observations differ from original response bytes')
+        raise JsonSafetyError(tax + ' listing observations differ from original response bytes')
     candidates = [row for row in rows if row.get('RecordId') == record.get('record_id')]
     if len(candidates) != 1:
-        raise JsonSafetyError('Selected PPN identity is absent or repeated in verified list page')
+        raise JsonSafetyError('Selected ' + tax + ' identity is absent or repeated in verified list page')
     row = candidates[0]
     expected = {'TaxpayerAggregateIdentifier': context['taxpayer_id'],
-                'TaxTypeCode': 'VAT_VAT', 'ReturnSheetTypeCode': 'VAT_VATR',
+                'TaxTypeCode': tax_code, 'ReturnSheetTypeCode': sheet_code,
                 'ReturnSheetStatusCode': 'SUBMITTED',
                 'ReturnSheetModel': record.get('meta', {}).get('Model SPT')}
     for key, value in expected.items():
         if key in row and row[key] != value:
-            raise JsonSafetyError('PPN listing identity contradicts selected ' + key)
+            raise JsonSafetyError(tax + ' listing identity contradicts selected ' + key)
     keys = set(expected) | {'RecordId', 'AggregateIdentifier', 'TaxPeriodCode'}
     if any(type(row.get(key)) is not str or not row[key] or row[key] != row[key].strip() for key in keys):
         return unavailable
@@ -131,10 +141,10 @@ def bind_ppn_listing_identity(response, *, record, scope):
                 'sequence': context['sequence'], 'body_sha256': hashlib.sha256(body).hexdigest()}
     for key, value in record.get('source_identity', {}).items():
         if key in ('record_id', 'aggregate_id', 'taxpayer_id', 'source_url') and value != identity[key]:
-            raise JsonSafetyError('Previously bound PPN listing identity changed')
+            raise JsonSafetyError('Previously bound ' + tax + ' listing identity changed')
     for key, value in record.get('source_fields', {}).items():
         if key in fields and value != fields[key]:
-            raise JsonSafetyError('Previously bound PPN listing field changed')
+            raise JsonSafetyError('Previously bound ' + tax + ' listing field changed')
     return {'eligible': True, 'source_fields': fields, 'source_identity': identity}
 
 
