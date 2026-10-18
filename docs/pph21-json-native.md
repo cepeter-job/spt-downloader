@@ -49,6 +49,32 @@ returnsheet API base.
 
 Chunk 693 is the separate Unifikasi family, not the PPh21 component.
 
+### Primary and final Induk lifecycle
+
+The parent `getPrefillData` calls `/prefillreturnsheet/article-2126` with
+`{RecordId, onManualClick}`. Its successful response consumer passes `Payload`
+to `fillForm`, which parses `Payload.FormData` and runs the PPh21 `calculate`
+method. History instead calls `/returnsheethistory/a2126`; it is not the same
+read-only capture contract. Neither update checks nor save/submit methods are
+native data sources or actions to invoke.
+
+The service calculation is NOT the end of the Induk lifecycle. In the same
+pinned chunk, `rshshr-art2126-main-form` applies `Math.round`, then its
+`valueChanges` subscription recomputes balances from the rounded controls.
+`getDataFromBaseForm` overwrites period/model/header fields from the outer
+payload and can trigger that subscription again. Migrated A21 balances retain
+raw FormData values; A26 balances do not have the same migration exemption.
+For example, `round(sum) - round(carry) - round(SP2D)` can differ from rounding
+the service's unrounded balance. Negative halfway values use JavaScript rounding,
+not decimal half-away-from-zero. Tests must pin these later writes explicitly.
+
+The `updatedL1a` method has only one textual occurrence (its definition) in the
+reviewed bundle; the L-IA template wires `isHaveValue` to validation, not to this
+method. Its existence alone does not prove an executing footer callback.
+Claims-dependent declarator fallback exists in the child `setFormData`; it must
+not become guessed JSON identity data. The approved template omits that display
+control. Unknown lifecycle branches remain unsupported, not silently equivalent.
+
 ## Implementation and verification order
 
 1. Publish RED safety contracts for every grid's literal record identity,
