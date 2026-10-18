@@ -68,6 +68,9 @@ def test_complete_observation_five_forms_seven_grids(browser, tmp_path, monkeypa
         assert induk['locale'] == 'id-ID' and induk['timezone'] == 'Asia/Jakarta'
         controls = [c['field'] for c in induk['fields'] if c['field'] in INDUK_CONTROLS]
         assert controls == list(INDUK_CONTROLS)
+        assert all(c['tag'] == 'P-INPUTNUMBER' for c in induk['fields'])
+        assert len(induk['tables']) == 4
+        assert [field for table in induk['tables'] for row in table['row_fields'] for field in row] == list(INDUK_CONTROLS)
         assert all('value' not in c for c in induk['fields'])
         assert_no_values_or_actions(fixture)
         assert capture.drain()['complete']

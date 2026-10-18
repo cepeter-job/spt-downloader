@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 from coretax_json import ORIGIN
 from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import FOREIGN, RECORD, SCOPE, TAXPAYER, selected
-from support_pph21_dom import appendix_table
+from support_pph21_dom import appendix_table, induk_tables
 
 MAIN = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
 ARTICLE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
@@ -90,8 +90,19 @@ class Fixture:
         for index, (name, selector, container, grids) in enumerate(forms):
             tabs.append(f'<li><a role="tab" href="#" aria-controls="p{index}" onclick="show({index});return false">{name}</a></li>')
             if name == 'Induk':
-                content = ''.join('<label for="' + n + '">' + n + '</label><input id="' + n +
-                                  '" formcontrolname="' + n + '" value="DOM-AMOUNT-TRAP" readonly>' for n in INDUK_CONTROLS)
+                content, position = '', 0
+                tables, _ = induk_tables()
+                for table in tables:
+                    content += '<h2>' + html.escape(table['group']) + '</h2><table><thead><tr>'
+                    content += ''.join('<th>' + html.escape(header) + '</th>' for header in table['headers'])
+                    content += '</tr></thead><tbody>'
+                    for _ in table['rows']:
+                        field = INDUK_CONTROLS[position]
+                        position += 1
+                        content += ('<tr><td>DOM-NO-TRAP</td><td>DOM-LABEL-TRAP</td><td>DOM-CODE-TRAP</td>'
+                                    '<td><p-inputnumber formcontrolname="' + field + '"><input id="' + field +
+                                    '" value="DOM-AMOUNT-TRAP" readonly></p-inputnumber></td></tr>')
+                    content += '</tbody></table>'
                 content += '<textarea hidden>DOM-BODY-TRAP</textarea><button onclick="forbidden()">Submit</button>'
             else:
                 content = ''
