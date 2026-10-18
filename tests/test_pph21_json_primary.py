@@ -14,12 +14,12 @@ ENDPOINT = ORIGIN + '/returnsheet/api/prefillreturnsheet/article-2126'
 
 def case():
     record = selected(TAX)
-    # Synthetic code is compared literally to the verified selected listing;
-    # it is not represented as a discovered public enum or production record.
-    record['source_fields'].update(TaxTypeCode='SYNTHETIC_ARTICLE2126',
+    # Public main offsets 2732403/2733134 declare ICT_WIT / ICT_WITR.
+    # Identifiers and all records here remain synthetic.
+    record['source_fields'].update(TaxTypeCode='ICT_WIT', ReturnSheetTypeCode='ICT_WITR',
                                    ReturnSheetStatusCode='SUBMITTED', ReturnSheetModel='Normal')
     form = {'RecordId': RECORD, 'ReturnSheetAggregateIdentifier': AGGREGATE,
-            'TIN': NPWP, 'TaxType': 'SYNTHETIC_ARTICLE2126',
+            'TIN': NPWP, 'TaxType': 'ICT_WIT',
             'TaxPeriodMonth': 1, 'TaxPeriodYear': 2025, 'Status': 'NORMAL',
             'Form1A': {}, 'Form1B': {}, 'Form2': {}, 'Form3': {}}
     outer = {'TIN': NPWP, 'PeriodMonth': 1, 'PeriodYear': 2025,

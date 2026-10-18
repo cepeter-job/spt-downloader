@@ -136,6 +136,17 @@ def test_unverified_lifecycle_branch_is_unsupported(kwargs):
         project(source(), 'A21IncomeTaxWithheld', **kwargs)
 
 
+def test_binary_accumulation_noise_remains_unsupported_without_tolerance_rounding():
+    form = source()
+    for root, amount in [('Form1A', '0.1'), ('Form1B', '0.2')]:
+        form[root]['GrossIncomeAndIncomeTaxWithheld']['IncomeTax'] = _corporate_json(amount)
+    form['Form3']['Article21GrossIncomeAndIncomeTaxWithheld']['IncomeTax'] = _corporate_json('0')
+    # Conservative coverage loss is preferable to silently inventing a tolerance
+    # that might change a later JS rounding boundary. The adapter must use DOM.
+    with pytest.raises(_UnsupportedMetadata, match='unverified_pph21_numeric_precision'):
+        project(form, 'A21IncomeTaxWithheld')
+
+
 def test_unknown_money_control_is_not_guessed_from_similar_name():
     with pytest.raises(_UnsupportedMetadata):
         project(source(), 'A21IncomeTaxWithheldTotal')
