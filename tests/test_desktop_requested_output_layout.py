@@ -80,6 +80,9 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
          'tables': [], 'text': 'SYNTHETIC SOURCE CONTEXT ' + name} for name in names]
     normal['sections'].append({'name': names[1], 'fields': [
         {'label': 'Marker', 'value': 'SYNTHETIC NORMAL DUPLICATE'}], 'tables': [], 'text': ''})
+    if tax == 'PPh Pasal 21/26':
+        normal['sections'][0]['fields'][0].update(
+            label='Status Penyampaian', field='SubmitInProgressStatus', group='HEADER')
     amendment = deepcopy(normal)
     amendment.update(record_id='synthetic-period-amendment', key='synthetic-period-amendment')
     amendment['meta']['Model SPT'] = 'Amendment 002'

@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 import coretax
 import coretax_exporter as exporter
 from spt_desktop import runtime
+from support_pph21_numeric import money_row
 
 REFERENCE = Path(__file__).parent / 'fixtures' / 'pph21_format.xlsx'
 JANUARY = 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
@@ -28,8 +29,8 @@ def row(marker='SYNTHETIC EMPLOYEE', *, ia=False):
     return values[:7] + ['10,00'] + values[7:] if ia else values
 
 
-def export(run, folder, *, expected_file=JANUARY):
-    exporter.export_split_workbooks(run, folder)
+def export(run, folder, *, expected_file=JANUARY, reports=None):
+    exporter.export_split_workbooks(run, folder, mapping_reports=reports)
     coretax.verify_outputs(run, folder)
     return load_workbook(folder / expected_file)
 
@@ -90,8 +91,9 @@ def test_induk_header_fields_and_amounts_fill_only_their_reference_slots(tmp_pat
     try:
         sheet = wb['Induk']
         assert [sheet[f'D{r}'].value for r in [4, 5, 6, 7, 12, 21, 26, 35]] == [
-            'Januari 2025', '2025', 'Pembetulan ke-2', 'Dilaporkan', '1.234,50', '21,00', '26,00', '126,00']
-        assert sheet['D12'].data_type == 's'
+            'Januari 2025', '2025', 'Pembetulan ke-2', 'Dilaporkan', 1234.5, 21, 26, 126]
+        assert sheet['D12'].data_type == 'n'
+        assert sheet['D5'].data_type == 's'
         assert_layout(sheet, reference['Induk'])
         assert sheet['C12'].value == '411121-100'
         assert sheet['C26'].value == '411127-100'
@@ -100,16 +102,17 @@ def test_induk_header_fields_and_amounts_fill_only_their_reference_slots(tmp_pat
         reference.close()
 
 
-def test_lia_rows_keep_column_order_duplicates_identifiers_and_literal_amounts(tmp_path):
+def test_lia_rows_keep_column_order_duplicates_identifiers_and_numeric_amounts(tmp_path):
     source = row(ia=True)
     wb = export(run_for([section('L-IA', tables=[table('L-IA', [source, source], ia=True)])]), tmp_path)
     reference = load_workbook(REFERENCE)
     try:
         sheet = wb['L-IA']
         assert [sheet.cell(4, i).value for i in range(1, 15)] == IA_HEADERS
-        assert [[sheet.cell(r, c).value for c in range(1, 15)] for r in [5, 6]] == [source, source]
+        assert [[sheet.cell(r, c).value for c in range(1, 15)] for r in [5, 6]] == [money_row(source, ia=True)] * 2
         assert sheet['B5'].data_type == 's' and sheet['L5'].data_type == 's'
-        assert sheet['G5'].value == '1.234,50' and sheet['E5'].value == '02-01-2025'
+        assert sheet['G5'].value == 1234.5 and sheet['G5'].data_type == 'n'
+        assert sheet['E5'].value == '02-01-2025'
         assert_layout(sheet, reference['L-IA'])
     finally:
         wb.close()
@@ -121,7 +124,7 @@ def test_reordered_visible_headers_are_mapped_without_changing_template_columns(
     headers = list(reversed(IA_HEADERS))
     wb = export(run_for([section('L-IA', tables=[table('L-IA', [list(reversed(source))], headers=headers)])]), tmp_path)
     try:
-        assert [wb['L-IA'].cell(5, c).value for c in range(1, 15)] == source
+        assert [wb['L-IA'].cell(5, c).value for c in range(1, 15)] == money_row(source, ia=True)
         assert [wb['L-IA'].cell(4, c).value for c in range(1, 15)] == IA_HEADERS
     finally:
         wb.close()
@@ -137,8 +140,8 @@ def test_two_groups_are_bound_to_captions_not_capture_order(tmp_path, form, firs
     reference = load_workbook(REFERENCE)
     try:
         sheet = wb[form]
-        assert [sheet.cell(first_row, c).value for c in range(1, 14)] == first_values
-        assert [sheet.cell(second_row, c).value for c in range(1, 14)] == second_values
+        assert [sheet.cell(first_row, c).value for c in range(1, 14)] == money_row(first_values)
+        assert [sheet.cell(second_row, c).value for c in range(1, 14)] == money_row(second_values)
         assert_layout(sheet, reference[form])
     finally:
         wb.close()
@@ -151,7 +154,7 @@ def test_long_lia_table_grows_with_original_row_styles_without_losing_totals(tmp
     reference = load_workbook(REFERENCE)
     try:
         sheet = wb['L-IA']
-        assert [[sheet.cell(r, c).value for c in range(1, 15)] for r in range(5, 23)] == rows
+        assert [[sheet.cell(r, c).value for c in range(1, 15)] for r in range(5, 23)] == [money_row(v, ia=True) for v in rows]
         assert sheet['A23'].value == 'JUMLAH PENGHASILAN BRUTO DAN PAJAK PENGHASILAN YANG DITANGGUNG OLEH PEMERINTAH'
         for r in range(16, 23):
             for c in range(1, 15):
@@ -171,9 +174,9 @@ def test_first_group_growth_moves_second_group_and_preserves_its_format(tmp_path
     reference = load_workbook(REFERENCE)
     try:
         sheet = wb['L-IB']
-        assert [[sheet.cell(r, c).value for c in range(1, 14)] for r in range(6, 12)] == first
+        assert [[sheet.cell(r, c).value for c in range(1, 14)] for r in range(6, 12)] == [money_row(v) for v in first]
         assert sheet['B13'].value == 'BPA2'
-        assert [sheet.cell(15, c).value for c in range(1, 14)] == second[0]
+        assert [sheet.cell(15, c).value for c in range(1, 14)] == money_row(second[0])
         assert sheet['A19'].value == reference['L-IB']['A16'].value
         for c in range(1, 15):
             assert_format(sheet.cell(15, c), reference['L-IB'].cell(12, c))
@@ -187,49 +190,67 @@ def test_multiple_tables_for_same_group_append_rows_in_source_order(tmp_path):
     one, two = row('SYNTHETIC ONE'), row('SYNTHETIC TWO')
     wb = export(run_for([section('L-IB', tables=[table('BPA1', [one]), table('BPA1', [two])])]), tmp_path)
     try:
-        assert [wb['L-IB'].cell(6, c).value for c in range(1, 14)] == one
-        assert [wb['L-IB'].cell(7, c).value for c in range(1, 14)] == two
+        assert [wb['L-IB'].cell(6, c).value for c in range(1, 14)] == money_row(one)
+        assert [wb['L-IB'].cell(7, c).value for c in range(1, 14)] == money_row(two)
     finally:
         wb.close()
 
 
-def test_unknown_fields_table_columns_and_page_context_are_not_silently_dropped(tmp_path):
+def test_unknown_fields_are_kept_in_checkpoint_and_reported_without_raw_display(tmp_path):
     value = '=HYPERLINK("https://invalid.example", "SYNTHETIC RAW")'
     data = section('Induk', fields=[{'label': 'SYNTHETIC UNKNOWN FIELD', 'field': 'unknown', 'value': value}],
                    tables=[table('SYNTHETIC UNKNOWN TABLE', [['0000000000000003', '987,65'],
                                                             ['0000000000000003', '987,65']], headers=['SYNTHETIC ID', 'SYNTHETIC VALUE'])],
                    text='SYNTHETIC PAGE CONTEXT')
-    wb = export(run_for([data]), tmp_path)
+    run = run_for([data])
+    original = deepcopy(run)
+    reports = []
+    wb = export(run, tmp_path, reports=reports)
     reference = load_workbook(REFERENCE)
     try:
-        assert len(cells_with(wb, value)) == 1 and cells_with(wb, value)[0].data_type == 's'
-        assert len(cells_with(wb, '0000000000000003')) == 2
-        assert len(cells_with(wb, '987,65')) == 2
-        assert len(cells_with(wb, 'SYNTHETIC PAGE CONTEXT')) == 1
-        assert all(c.row > 35 for c in cells_with(wb, value))
+        assert run == original
+        assert len(reports) == 1 and reports[0]['complete'] is False
+        assert reports[0]['unmapped_fields'] == 1 and reports[0]['unmapped_rows'] == 2
+        assert not cells_with(wb, value)
+        assert not cells_with(wb, '0000000000000003')
+        assert not cells_with(wb, '987,65')
+        assert not cells_with(wb, 'SYNTHETIC PAGE CONTEXT')
+        assert wb['Induk'].max_row == 35
         assert_layout(wb['Induk'], reference['Induk'])
     finally:
         wb.close()
         reference.close()
 
 
-def test_ambiguous_group_is_preserved_as_raw_evidence_not_guessed_as_bpa1(tmp_path):
-    wb = export(run_for([section('L-IB', tables=[table('SYNTHETIC UNCLASSIFIED', [row()])])]), tmp_path)
+def test_ambiguous_group_is_reported_not_guessed_as_bpa1(tmp_path):
+    run = run_for([section('L-IB', tables=[table('SYNTHETIC UNCLASSIFIED', [row()])])])
+    original = deepcopy(run)
+    reports = []
+    wb = export(run, tmp_path, reports=reports)
     try:
         assert wb['L-IB']['B6'].value is None and wb['L-IB']['B12'].value is None
-        assert len(cells_with(wb, 'SYNTHETIC EMPLOYEE')) == 1
-        assert cells_with(wb, 'SYNTHETIC EMPLOYEE')[0].row > 18
+        assert run == original
+        assert len(reports) == 1 and reports[0]['complete'] is False
+        assert reports[0]['unmapped_tables'] == 1
+        assert not cells_with(wb, 'SYNTHETIC EMPLOYEE')
+        assert wb['L-IB'].max_row == 18
     finally:
         wb.close()
 
 
-def test_duplicate_header_fields_preserve_both_raw_values(tmp_path):
+def test_duplicate_header_fields_preserve_both_checkpoint_values_and_report_ambiguity(tmp_path):
     fields = [{'label': 'Status SPT', 'field': 'status', 'value': 'SYNTHETIC FIRST STATUS'},
               {'label': 'Status SPT', 'field': 'status', 'value': 'SYNTHETIC SECOND STATUS'}]
-    wb = export(run_for([section('Induk', fields=fields)]), tmp_path)
+    run = run_for([section('Induk', fields=fields)])
+    original = deepcopy(run)
+    reports = []
+    wb = export(run, tmp_path, reports=reports)
     try:
         assert len(cells_with(wb, 'SYNTHETIC FIRST STATUS')) == 1
-        assert len(cells_with(wb, 'SYNTHETIC SECOND STATUS')) == 1
+        assert run == original
+        assert len(reports) == 1 and reports[0]['complete'] is False
+        assert reports[0]['unmapped_fields'] == 1
+        assert not cells_with(wb, 'SYNTHETIC SECOND STATUS')
     finally:
         wb.close()
 
