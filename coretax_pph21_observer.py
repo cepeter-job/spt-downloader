@@ -24,12 +24,22 @@ _FIELDS = r'''root => {
  const visible=e=>!!e.getClientRects().length, group=GROUP, seen=new Set(), fields=[];
  for(const child of root.querySelectorAll('[formcontrolname],input,textarea,select,ui-dropdown,p-dropdown,p-checkbox,p-radiobutton,p-calendar')){
   if(child.closest('ui-grid,[hidden],[aria-hidden="true"]')||child.matches('input[type=hidden],input[type=password]'))continue;
+  const dropdown=child.closest('ui-dropdown');
+  if(dropdown&&seen.has(dropdown))continue;
   const control=child.closest('[formcontrolname]')||child.closest('ui-dropdown,p-dropdown,p-checkbox,p-radiobutton,p-calendar')||child;
   if(seen.has(control)||!visible(control))continue;
   seen.add(control);
-  const field=control.getAttribute('formcontrolname')||control.getAttribute('name')||control.id||'';
+  const groupName=group(control);
+  let field=control.getAttribute('formcontrolname')||control.getAttribute('name')||control.id||'',label=field;
+  if(!field&&control.matches('ui-dropdown')){
+   const row=control.closest('.form-group'),labels=row?[...row.querySelectorAll(':scope > label')]:[];
+   if(root.tagName!=='RSHSHR-ART2126-MAIN-FORM'||groupName!=='HEADER'||labels.length!==1||
+      row.querySelectorAll('ui-dropdown').length!==1||labels[0].innerText.trim()!=='Status SPT'||
+      fields.some(f=>f.field==='Status'))return null;
+   field='Status';label='Status SPT';
+  }
   if(!field)return null;
-  fields.push({field,label:field,group:group(control),column_label:'',tag:control.tagName});
+  fields.push({field,label,group:groupName,column_label:'',tag:control.tagName});
  }
  return fields;
 }'''

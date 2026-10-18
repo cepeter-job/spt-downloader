@@ -6,7 +6,7 @@ import re
 
 from coretax_json import (
     JsonSafetyError,
-    PPH21_REFERENCE_URL,
+    PPH21_REFERENCE_URLS,
     adapt_inventory_page,
     _object_pairs,
     _reject_constant,
@@ -345,7 +345,7 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         successful = (200 <= ctx['status'] < 300 and isinstance(envelope, dict)
                       and envelope.get('IsSuccessful') is True)
         form = None
-        reference = ctx['url'] == PPH21_REFERENCE_URL
+        reference = ctx['url'] in PPH21_REFERENCE_URLS
         # Repeated grid/footer responses are snapshots too. Check every packet,
         # even if missing/unknown observation metadata will require fallback.
         if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES) or reference:

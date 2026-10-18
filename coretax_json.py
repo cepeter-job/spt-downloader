@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 ORIGIN = 'https://coretax.intranet.pajak.go.id'
 PPH21_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
                        'EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS')
+PPH21_MODEL_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/RETURN_SHEET_MODEL'
+PPH21_REFERENCE_URLS = (PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -539,7 +541,7 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     endpoint, frame = ctx.get('url'), ctx.get('frame_url')
     if not _corporate_url(endpoint):
         raise JsonSafetyError('Captured corporate endpoint or method is unsafe')
-    reference = (allow_pph21_reference is True and endpoint == PPH21_REFERENCE_URL
+    reference = (allow_pph21_reference is True and endpoint in PPH21_REFERENCE_URLS
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_WIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WITR')

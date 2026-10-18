@@ -23,6 +23,7 @@ def exchange(context, page, *, url=URL, method='GET', frame=None, status=200):
 def selected(tax='PPh Pasal 21/26'):
     result = record()
     result['meta']['Jenis Pajak'] = tax
+    result['detail_url'] = DETAIL_URL
     return result
 
 

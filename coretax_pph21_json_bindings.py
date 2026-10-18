@@ -234,6 +234,69 @@ def project_pph21_references(payload, *, requested_types, locale):
     return {'lookups': lookups, 'provenance': evidence}
 
 
+def project_pph21_model_references(payload, *, locale):
+    """Model dropdowns retain all versions; ambiguous codes are unsupported."""
+    if locale != 'id-ID' or not isinstance(payload, list) or len(payload) != 1:
+        raise _UnsupportedMetadata('unsupported_pph21_model_reference')
+    catalog = payload[0]
+    if isinstance(catalog, dict) and 'language' in catalog and catalog['language'] != locale:
+        raise JsonSafetyError('PPh21 model reference locale contradicts bound request')
+    if (not isinstance(catalog, dict) or catalog.get('ReferenceDataType') != 'RETURN_SHEET_MODEL'
+            or not isinstance(catalog.get('Details'), list)):
+        raise _UnsupportedMetadata('unsupported_pph21_model_reference')
+    labels, evidence = {}, [_evidence('RETURN_SHEET_MODEL', [0, 'ReferenceDataType'])]
+    if 'language' in catalog:
+        evidence.append(_evidence(catalog['language'], [0, 'language']))
+    for index, item in enumerate(catalog['Details']):
+        if (not isinstance(item, dict) or type(item.get('Code')) is not str or not item['Code']
+                or type(item.get('CodeDescription')) is not str or item['Code'] in labels):
+            raise _UnsupportedMetadata('unsupported_pph21_model_option')
+        labels[item['Code']] = item['CodeDescription']
+        for key in ('Code', 'CodeDescription'):
+            evidence.append(_evidence(item[key], [0, 'Details', index, key]))
+    return {'lookups': {'ReturnSheetModel': labels}, 'provenance': evidence}
+
+
+def project_pph21_header(payload, control, *, model_labels=None):
+    """getDataFromBaseForm runs after the child FormData patch; outer wins."""
+    keys = {'TaxPeriodMonth': 'PeriodMonth', 'TaxPeriodYear': 'PeriodYear',
+            'Status': 'ReturnSheetModel', 'SubmitInProgressStatus': 'ReturnSheetStatusCode'}
+    if not isinstance(payload, dict) or type(control) is not str or control not in keys:
+        raise _UnsupportedMetadata('unsupported_pph21_header_control')
+    evidence = []
+    key = keys[control]
+    value = _source_scalar(payload, (key,), evidence)
+    if evidence[-1]['type'] == 'missing':
+        raise _UnsupportedMetadata('missing_pph21_header_source')
+    result = {'container_path': ['Payload'], 'provenance': evidence,
+              'rule': 'final_outer_base_form_patch'}
+    if control == 'Status':
+        if (type(value) is not str or not isinstance(model_labels, dict)
+                or type(model_labels.get(value)) is not str):
+            raise _UnsupportedMetadata('unbound_pph21_model_label')
+        result.update(value=model_labels[value], reference={'type': 'RETURN_SHEET_MODEL', 'code': value})
+    elif control == 'SubmitInProgressStatus':
+        flag = payload.get('SubmitInProgressStatus')
+        if type(flag) not in (bool, type(None)) or type(value) is not str:
+            raise _UnsupportedMetadata('unsupported_pph21_submission_status')
+        evidence.append({'path': ['SubmitInProgressStatus'], 'value': flag,
+                         'type': 'missing' if 'SubmitInProgressStatus' not in payload else
+                                 'boolean' if type(flag) is bool else 'null'})
+        result['value'] = 'In Progress' if flag else 'Submitted' if value == 'SUBMITTED' else '-'
+    else:
+        if type(value) is _CorporateNumber:
+            number = _decimal(value)
+            if number != number.to_integral_value():
+                raise _UnsupportedMetadata('unsupported_pph21_header_number')
+            value = str(int(number))
+        elif value is None:
+            value = ''
+        elif type(value) is not str:
+            raise _UnsupportedMetadata('unsupported_pph21_header_type')
+        result['value'] = value
+    return result
+
+
 def project_pph21_grid(grid_name, pages, headers, *, record_id, timezone_name, lookups=None):
     """Project complete source pages with explicit column and callback bindings."""
     spec = GRID_COLUMNS.get(grid_name) if type(grid_name) is str else None
