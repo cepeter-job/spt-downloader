@@ -97,7 +97,22 @@ control. Unknown lifecycle branches remain unsupported, not silently equivalent.
 
 ## Current acceptance state
 
-Initial tests-only RED slice. Primary schema, final-state projection and complete
-five-form native eligibility are not yet implemented or verified. No new product
-behavior is claimed. Public-source evidence and synthetic tests must remain
-separate from eventual authorized live acceptance.
+Initial safety contracts are runner-verified after the guard/dispatch change.
+The next Windows RED run verified 60 new amount/footer failures caused by the
+missing projection module, with all existing tests passing. Source-bound amount
+and footer projections are now implemented in `coretax_pph21_json_bindings.py`
+and registered in the worker allowlist; their GREEN run is pending.
+
+Independent review suggested restoring stored withheld/balance scalars. Those
+findings were rejected after tracing the complete chain: `fillForm` calls
+`calculate(JSON.parse(t.FormData))` at offset 93581, `mapFormData` calls
+`mapMainFormData` at 94053, and the child receives these calculated values.
+The child subscription at 55466 explicitly sets the A26 balance as well. Thus
+stored `999`/`888` sentinels must not replace computed 41/36 in the synthetic
+contracts. A separate parent check corrected BP21 footer spans to `[4,4,1,1,4]`
+from the actual grid column declarations; BP26 remains `[5,7,1,1,4]`.
+
+Primary identity/schema integration, grid body/reference projections and the
+complete five-form observer/adapter are not yet implemented or verified. No
+native export behavior is claimed. Public-source evidence and synthetic tests
+remain separate from eventual authorized live acceptance.
