@@ -214,7 +214,19 @@ reports. Missing/extra forms, missing pages, unbound lookups, DOM values and
 repeated monetary geometry must not grant native coverage. These assembly/export
 contracts are RED until the full adapter exists.
 
-The complete five-form export adapter, bounded reference fetch/binding, and
-listing integration remain pending. Native eligibility stays disabled. No native
-export behavior is claimed; synthetic runner evidence remains separate from
-eventual authorized live acceptance.
+Windows run `39103587730`, artifact `12127770901`, verified 2,963 cases on
+`e7f0998`: only the two complete-assembly/export positives and the wrong-reference
+sequence contract failed. Header/model/Status, GET custody and checkpoint replay
+passed. The verified artifact SHA-256 is
+`00ea8679b57a6af01ec089c394cac3c5ca1185c98544f415c180db4a02965f2e`.
+
+The separate five-form projector is now implemented, with original packet
+binding, explicit lookup custody, single emission of monetary geometry and
+independent appendix groups. It awaits runner verification; no native export
+success is claimed. Additional contracts cover an empty first BPA group, literal
+PPh21 listing identity, dedicated observer dispatch, captured reference GETs,
+authorization failure and real synthetic Edge capture-to-workbook output.
+
+Bounded reference fetch/binding and listing/observer integration remain pending.
+The production browser path does not yet select the PPh21 observer. Synthetic
+runner evidence remains separate from eventual authorized live acceptance.

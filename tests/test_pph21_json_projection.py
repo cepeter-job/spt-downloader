@@ -92,6 +92,27 @@ def test_incomplete_or_unreviewed_projection_stays_ineligible(defect):
     assert not result['eligible'] and not result['coverage']['complete']
 
 
+@pytest.mark.parametrize('name', ['L-IB', 'L-II'])
+def test_empty_first_group_remains_separate_from_second_group_and_reported_footer(name):
+    import hashlib
+    import json
+    record, bodies, forms = case()
+    table = next(f for f in forms if f['name'] == name)['tables'][0]
+    removed = table['pages'][1]['sequences'][0]
+    table['pages'] = table['pages'][:1]
+    table['source_total'] = 0
+    bodies = [p for p in bodies if p['context']['sequence'] != removed]
+    item = next(p for p in bodies if p['context']['sequence'] == table['pages'][0]['sequences'][0])
+    item['body'] = json.dumps({'IsSuccessful': True, 'Payload': {'Data': [], 'TotalRecords': 0}}).encode()
+    item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
+    result = adapt(record, bodies, forms)
+    assert result['eligible'], result['reason']
+    projected = next(s for s in result['sections'] if s['name'] == name)['tables']
+    assert projected[0]['body_row_count'] == 0 and projected[0]['group'] == 'BPA1'
+    assert projected[1]['body_row_count'] == 2 and projected[1]['group'] == 'BPA2'
+    assert projected[1]['footer']
+
+
 def test_foreign_grid_packet_remains_fatal_before_missing_form_fallback():
     record, bodies, forms = case()
     bodies[-1]['context']['request_json']['ReturnSheetRecordId'] = '00000000-0000-4000-8000-000000000099'

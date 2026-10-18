@@ -16,6 +16,7 @@ ARTICLE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
 BUILD = b'/* synthetic observer build, not portal code */'
 FRAME = ORIGIN + '/returnsheets/id-ID/article-21-26-tax-return/' + TAXPAYER + '/' + RECORD + '/ICT_WIT/00000000-0000-4000-8000-000000000002'
 REFERENCE = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS'
+MODEL_REFERENCE = REFERENCE.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'
 PRIMARY_URL = ORIGIN + '/returnsheet/api/prefillreturnsheet/article-2126'
 GRID_API_URL = ORIGIN + '/returnsheet/api/loadarticle2126/'
 FIRST, TOTAL = 10, 12
@@ -33,11 +34,17 @@ INDUK_CONTROLS = tuple(article + suffix for article in ('A21', 'A26') for suffix
 
 
 class Fixture:
-    def __init__(self, browser, *, defect=None):
+    def __init__(self, browser, *, defect=None, native=False):
         self.defect = defect
+        self.native = native
         self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta')
         self.page = self.context.new_page()
         self.record = selected('PPh Pasal 21/26')
+        self.source_packets = {}
+        if native:
+            from pph21_projection_fixture import case
+            self.record, packets, _ = case()
+            self.source_packets = {p['context']['url']: p['body'] for p in packets}
         self.unexpected = []
         self.context.route('**/*', self.route)
 
@@ -50,13 +57,27 @@ class Fixture:
         elif request.url in (MAIN, ARTICLE):
             route.fulfill(content_type='application/javascript', body=BUILD +
                           (b'/* changed */' if self.defect == 'changed-build' else b''))
-        elif request.url == REFERENCE and request.method == 'GET':
+        elif request.url in (REFERENCE, MODEL_REFERENCE) and request.method == 'GET':
+            types = (('EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS')
+                     if request.url == REFERENCE else ('RETURN_SHEET_MODEL',))
             catalogs = [{'ReferenceDataType': t, 'language': 'id-ID', 'Details': []}
-                        for t in ('EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS')]
-            route.fulfill(content_type='application/json', body=json.dumps({'IsSuccessful': True, 'Payload': catalogs}))
+                        for t in types]
+            status = {'reference-401': 401, 'reference-403': 403}.get(self.defect, 200)
+            body = self.source_packets.get(request.url, json.dumps({'IsSuccessful': True, 'Payload': catalogs}))
+            route.fulfill(status=status, content_type='application/json', body=body)
         elif request.method == 'POST' and (request.url == PRIMARY_URL or request.url in {
                 GRID_API_URL + name + '-grid' for name in GRIDS}):
             status = {'unauthorized': 401, 'forbidden': 403}.get(self.defect, 200)
+            if self.native:
+                body = self.source_packets[request.url]
+                if request.url != PRIMARY_URL:
+                    row = json.loads(body)['Payload']['Data'][0]
+                    first = request.post_data_json['First']
+                    size = request.post_data_json['Rows']
+                    body = json.dumps({'IsSuccessful': True, 'Payload': {
+                        'Data': [row for _ in range(min(size, TOTAL - first))], 'TotalRecords': TOTAL}})
+                route.fulfill(status=status, content_type='application/json', body=body)
+                return
             route.fulfill(status=status, content_type='application/json',
                           body=json.dumps({'IsSuccessful': True, 'Payload': {'Data': [], 'TotalRecords': TOTAL}}))
         else:
@@ -91,13 +112,17 @@ class Fixture:
             tabs.append(f'<li><a role="tab" href="#" aria-controls="p{index}" onclick="show({index});return false">{name}</a></li>')
             if name == 'Induk':
                 content, position = '', 0
-                if self.defect in ('with-status', 'unknown-status-label', 'ambiguous-status'):
+                if self.native or self.defect in ('with-status', 'unknown-status-label', 'ambiguous-status'):
                     label = 'UNREVIEWED STATUS' if self.defect == 'unknown-status-label' else 'Status SPT'
                     control = ('<div class="form-group row"><label>' + label + '</label><div><ui-dropdown>'
                                '<p-dropdown><span class="p-dropdown-label">DOM-STATUS-TRAP</span>'
                                '</p-dropdown></ui-dropdown></div></div>')
                     content += ('<p-panel><div class="p-panel-header"><span class="p-panel-title">HEADER</span>'
-                                '</div><div class="p-panel-content">' + control +
+                                '</div><div class="p-panel-content">' +
+                                (''.join('<div class="form-group row"><label>' + label + '</label><input formcontrolname="' + field +
+                                         '" value="DOM-HEADER-TRAP" readonly></div>'
+                                         for field, label in [('TaxPeriodMonth', 'Masa Pajak'), ('TaxPeriodYear', 'Tahun Pajak'),
+                                                              ('SubmitInProgressStatus', 'Status Penyampaian')]) if self.native else '') + control +
                                 (control if self.defect == 'ambiguous-status' else '') + '</div></p-panel>')
                 tables, _ = induk_tables()
                 for table in tables:
@@ -167,8 +192,8 @@ def browser():
 
 
 @contextmanager
-def observed(browser, tmp_path, *, defect=None):
-    fixture = Fixture(browser, defect=defect)
+def observed(browser, tmp_path, *, defect=None, native=False):
+    fixture = Fixture(browser, defect=defect, native=native)
     try:
         fixture.page.goto(fixture.record['list_url'])
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, SCOPE, tmp_path) as capture:
