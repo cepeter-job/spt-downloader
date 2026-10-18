@@ -192,6 +192,28 @@ Status control are new RED contracts, not implemented acceptance claims.
 `getDataFromBaseForm` at 59922 overrides period/identity/status after inner form
 mapping; `DeclaratorName` at 59449 uses nullish fallback, not Boolean OR.
 
+Windows run `39102638017`, artifact `12127472419`, verified 2,948 cases on
+`394cea0`: 18 missing-header, three missing-model-projector, one structural
+Status and two new model-GET failures were expected RED. One additional failure
+was a test-fixture defect: checkpoint replay requires the selected `detail_url`,
+which the stub omitted. The fixture now declares its owned detail URL; the
+production checkpoint identity guard was not relaxed. The prior three-catalog
+capture, authorization and packet-admission behavior passed up to that replay
+assertion. Independent source review found no blocker in `670cbda`.
+
+Header/model projection and scoped structural Status observation are now
+implemented, awaiting runner verification. Reference admission now has exactly
+two GET URLs: the three grid catalogs and the separate model catalog. Both retain
+the same family, identity, custody, method and no-body restrictions.
+
+New complete-attempt contracts assemble all five forms, both pages of all seven
+grids, original response-backed reference labels and reported (not body-summed)
+footers. Workbook contracts require five clean sheets, unchanged template styles
+and print layout, numeric money, textual period/identity, and complete mapping
+reports. Missing/extra forms, missing pages, unbound lookups, DOM values and
+repeated monetary geometry must not grant native coverage. These assembly/export
+contracts are RED until the full adapter exists.
+
 The complete five-form export adapter, bounded reference fetch/binding, and
 listing integration remain pending. Native eligibility stays disabled. No native
 export behavior is claimed; synthetic runner evidence remains separate from
