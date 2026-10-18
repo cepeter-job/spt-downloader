@@ -153,7 +153,46 @@ textarea, body and footer value reads. Fixture health and getter traps run
 independently of the missing observer. Missing APIs fail assertions, never skip.
 Failed delegated test files were reviewed and corrected before publication.
 
-The complete five-form observer/adapter and reference response capture are not
-yet implemented or verified. Native eligibility remains disabled. No native
+Windows run `39100071027`, artifact `12126690858`, verified 2,896 cases on
+`1036911`: only the ten missing-observer contracts failed. Reference projection
+and six independent browser-fixture/getter checks passed. The next Windows run
+`39101045530`, artifact `12125814623`, verified 2,921 cases on `75dfa71`: all
+observer contracts passed, including four Induk tables containing Angular
+`p-inputnumber` hosts; only four new reference-capture/admission contracts failed.
+
+The reference GET repair now extends both capture admission and the shared byte
+custody validator. It allows only the exact three-catalog URL, GET with no body,
+and selected PPh21 metadata; the decoder additionally requires native
+`ICT_WIT`/`ICT_WITR`. Other families retain the POST-only rules. Source bytes,
+manifest/checkpoint readback, frame ownership, authorization and repeated-snapshot
+checks are retained. This repair awaits its own runner verification.
+
+Independent review's double-binding finding was rejected: `fields` is the
+control catalog while `row_fields` records table geometry. Neither contains tax
+values, and no value-producing consumer of `row_fields` yet exists. The runner
+asserts exactly one catalog entry per amount host plus matching geometry; losing
+the geometry would prevent source-to-cell binding rather than deduplicate output.
+
+### Remaining header contracts
+
+The public source does **not** hide Status for submitted returns: public803 at
+73000–74200 creates `ui-dropdown` at node 19 unconditionally, while the later
+`ngIf` at node 25 guards a different block. The static label is `Status SPT` in
+`HEADER`; `customFormControl` binds `mainForm.get("Status")` at 76625. A scoped
+structural binding is required because production Angular property bindings need
+not expose `formcontrolname` as an HTML attribute.
+
+Main at 2977022 declares `RETURN_SHEET_MODEL` with codes `NORMAL`/`AMENDMENT`.
+Its `ui-dropdown` component at 3995316 uses `getSingleReferenceData`, defaults
+`excludeExpiredOptions` to false, and uses `CodeDescription`/`Code`; it does not
+invoke the grid's active-version selector. Therefore the additional model-catalog
+contract rejects duplicate versions rather than reusing grid selection rules.
+The exact separate model GET, four final outer-header projections, and structural
+Status control are new RED contracts, not implemented acceptance claims.
+`getDataFromBaseForm` at 59922 overrides period/identity/status after inner form
+mapping; `DeclaratorName` at 59449 uses nullish fallback, not Boolean OR.
+
+The complete five-form export adapter, bounded reference fetch/binding, and
+listing integration remain pending. Native eligibility stays disabled. No native
 export behavior is claimed; synthetic runner evidence remains separate from
 eventual authorized live acceptance.

@@ -91,6 +91,14 @@ class Fixture:
             tabs.append(f'<li><a role="tab" href="#" aria-controls="p{index}" onclick="show({index});return false">{name}</a></li>')
             if name == 'Induk':
                 content, position = '', 0
+                if self.defect in ('with-status', 'unknown-status-label', 'ambiguous-status'):
+                    label = 'UNREVIEWED STATUS' if self.defect == 'unknown-status-label' else 'Status SPT'
+                    control = ('<div class="form-group row"><label>' + label + '</label><div><ui-dropdown>'
+                               '<p-dropdown><span class="p-dropdown-label">DOM-STATUS-TRAP</span>'
+                               '</p-dropdown></ui-dropdown></div></div>')
+                    content += ('<p-panel><div class="p-panel-header"><span class="p-panel-title">HEADER</span>'
+                                '</div><div class="p-panel-content">' + control +
+                                (control if self.defect == 'ambiguous-status' else '') + '</div></p-panel>')
                 tables, _ = induk_tables()
                 for table in tables:
                     content += '<h2>' + html.escape(table['group']) + '</h2><table><thead><tr>'
@@ -142,9 +150,9 @@ for(const property of ['value','checked'])Object.defineProperty(HTMLInputElement
 Object.defineProperty(HTMLTextAreaElement.prototype,'value',{get:valueTrap});
 const text=Object.getOwnPropertyDescriptor(Node.prototype,'textContent');
 Object.defineProperty(Node.prototype,'textContent',{get(){const e=this.nodeType===1?this:this.parentElement;
- if(e&&e.closest('tbody,tfoot'))return valueTrap();return text.get.call(this);},set:text.set});
+ if(e&&e.closest('tbody,tfoot,ui-dropdown .p-dropdown-label'))return valueTrap();return text.get.call(this);},set:text.set});
 const inner=Object.getOwnPropertyDescriptor(HTMLElement.prototype,'innerText');
-Object.defineProperty(HTMLElement.prototype,'innerText',{get(){if(this.closest('tbody,tfoot'))return valueTrap();return inner.get.call(this);},set:inner.set});
+Object.defineProperty(HTMLElement.prototype,'innerText',{get(){if(this.closest('tbody,tfoot,ui-dropdown .p-dropdown-label'))return valueTrap();return inner.get.call(this);},set:inner.set});
 const attr=Element.prototype.getAttribute;Element.prototype.getAttribute=function(name){
  if(this.matches('input,textarea')&&['value','checked'].includes(name.toLowerCase()))return valueTrap();return attr.call(this,name);};
 """

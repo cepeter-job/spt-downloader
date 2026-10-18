@@ -76,8 +76,29 @@ def test_complete_observation_five_forms_seven_grids(browser, tmp_path, monkeypa
         assert capture.drain()['complete']
 
 
+def test_status_selected_text_getter_is_independently_trapped(browser, tmp_path):
+    from playwright.sync_api import Error
+    with observed(browser, tmp_path, defect='with-status') as (fixture, capture):
+        with pytest.raises(Error, match='DOM values forbidden'):
+            fixture.page.evaluate("() => document.querySelector('ui-dropdown .p-dropdown-label').textContent")
+        assert fixture.page.evaluate('window.valueReads') == 1
+
+
+def test_status_custom_control_is_bound_from_static_structure_without_selected_text(browser, tmp_path, monkeypatch):
+    observe = feature(monkeypatch)
+    with observed(browser, tmp_path, defect='with-status') as (fixture, capture):
+        forms = observe(fixture.page, fixture.record, SCOPE, capture, max_pages=5)
+        assert forms is not None
+        controls = [f for f in forms[0]['fields'] if f['field'] == 'Status']
+        assert len(controls) == 1
+        assert controls[0]['label'] == 'Status SPT' and controls[0]['group'] == 'HEADER'
+        assert controls[0]['tag'] == 'UI-DROPDOWN'
+        assert_no_values_or_actions(fixture)
+
+
 @pytest.mark.parametrize('defect', ['missing-form', 'extra-form', 'changed-build',
-                                     'invalid-group', 'extra-ui-grid', 'missing-request'])
+                                     'invalid-group', 'extra-ui-grid', 'missing-request',
+                                     'unknown-status-label', 'ambiguous-status'])
 def test_unsupported_structure_never_becomes_native_coverage(browser, tmp_path, monkeypatch, defect):
     observe = feature(monkeypatch)
     with observed(browser, tmp_path, defect=defect) as (fixture, capture):

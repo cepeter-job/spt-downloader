@@ -26,18 +26,19 @@ def selected(tax='PPh Pasal 21/26'):
     return result
 
 
-def test_reference_get_is_saved_byte_for_byte_and_replayed_through_checkpoint(tmp_path):
+@pytest.mark.parametrize('url', [URL, URL.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'])
+def test_reference_get_is_saved_byte_for_byte_and_replayed_through_checkpoint(tmp_path, url):
     context = Context()
     page = Page(context, DETAIL_URL)
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
-        response = exchange(context, page)
+        response = exchange(context, page, url=url)
         assert response.reads == 0
         capture.bind_detail_page(page)
         result = capture.drain()
         assert result['complete'] and result['counts']['accepted'] == 1
         bodies = list(capture.iter_bodies())
         assert bodies[0]['body'] == RAW and bodies[0]['context']['method'] == 'GET'
-        assert bodies[0]['context']['url'] == URL
+        assert bodies[0]['context']['url'] == url
         assert response.reads == 1
         assert list(checkpoint_bodies(tmp_path, result, selected(), SCOPE)) == bodies
 

@@ -69,6 +69,16 @@ def test_reference_get_does_not_broaden_other_tax_family_packet_rules(tax):
         adapt_masa_detail([reference_packet()], record=record, scope=SCOPE, observed_forms=[])
 
 
+def test_separate_model_catalog_get_preserves_packet_custody():
+    record, outer, _ = case()
+    item = reference_packet()
+    item['context']['url'] = URL.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'
+    item['body'] = b'{"IsSuccessful":true,"Payload":[{"ReferenceDataType":"RETURN_SHEET_MODEL","Details":[]}]}'
+    item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
+    result = adapt_masa_detail([source(outer), item], record=record, scope=SCOPE, observed_forms=[])
+    assert not result['eligible'] and len(result['provenance']['events']) == 2
+
+
 def test_changed_reference_snapshot_within_one_attempt_is_fatal():
     record, outer, _ = case()
     first, changed = reference_packet(), reference_packet(sequence=3)
