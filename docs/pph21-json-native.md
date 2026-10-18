@@ -227,6 +227,29 @@ success is claimed. Additional contracts cover an empty first BPA group, literal
 PPh21 listing identity, dedicated observer dispatch, captured reference GETs,
 authorization failure and real synthetic Edge capture-to-workbook output.
 
-Bounded reference fetch/binding and listing/observer integration remain pending.
-The production browser path does not yet select the PPh21 observer. Synthetic
-runner evidence remains separate from eventual authorized live acceptance.
+Windows benchmark run `39105134964` on `f6394ee` verified 2,985 unique cases
+across artifacts `12128725488` and `12127729793`: all 17 full-projection contracts
+passed, including five-sheet styles/print layout/numeric-money export, empty BPA1
+with independent BPA2, immutable original sources and wrong-reference rejection.
+The remaining 18 failures were exactly the new listing, dispatch and reference
+observer contracts. Independent read-only review found no concrete blocker in
+`d7bfef3`; this was source review, not execution evidence.
+
+The integration implementation now selects the dedicated PPh21 observer, binds
+listing identity with literal ICT_WIT/ICT_WITR codes and saves original listing
+bytes, and fetches only the two reviewed reference URLs in the same capture.
+GETs refuse redirects, stream-discard with a 32 MiB limit and 30-second timeout,
+check cancellation and selected-page ownership around each request, and return
+only transport facts. No tokens, storage credentials or complete headers are
+read. In pinned main source, the interceptor explicitly exempts
+`/referencedata/api/currentreferencedata` at offset 232330 from its authorization
+rewrite; the reference service uses a JSON-content-type GET. Direct reference
+fetching therefore does not require extracting the application's credentials.
+
+These integration changes await runner verification. Existing cross-return
+injection tests now patch the dedicated observer selected by production, with
+all original fatal-before-fallback assertions retained. New full-collector proof
+checks original listing bytes before View and native checkpoint replay; additional
+reference tests cover network failure, redirect refusal, non-JSON, advertised
+size overflow and cancellation between catalogs. Synthetic runner evidence is
+not authorized live acceptance, an installed build, or permission to merge.

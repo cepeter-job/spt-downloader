@@ -58,6 +58,19 @@ class Fixture:
             route.fulfill(content_type='application/javascript', body=BUILD +
                           (b'/* changed */' if self.defect == 'changed-build' else b''))
         elif request.url in (REFERENCE, MODEL_REFERENCE) and request.method == 'GET':
+            if self.defect == 'reference-network-error':
+                route.abort('timedout')
+                return
+            if self.defect == 'reference-redirect':
+                route.fulfill(status=302, headers={'location': ORIGIN + '/unapproved-reference-target'})
+                return
+            if self.defect == 'reference-text':
+                route.fulfill(content_type='text/plain', body='SYNTHETIC UNSUPPORTED')
+                return
+            if self.defect == 'reference-over-budget':
+                route.fulfill(content_type='application/json', headers={'content-length': str(32 * 1024 * 1024 + 1)},
+                              body='{"IsSuccessful":true,"Payload":[]}')
+                return
             types = (('EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS')
                      if request.url == REFERENCE else ('RETURN_SHEET_MODEL',))
             catalogs = [{'ReferenceDataType': t, 'language': 'id-ID', 'Details': []}

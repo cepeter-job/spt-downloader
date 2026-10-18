@@ -63,6 +63,33 @@ def test_real_edge_capture_reaches_native_export_without_dom_business_values(bro
             workbook.close()
 
 
+@pytest.mark.parametrize('defect', ['reference-network-error', 'reference-redirect',
+                                    'reference-text', 'reference-over-budget'])
+def test_reference_transport_failures_do_not_bind_or_follow_other_urls(browser, tmp_path, defect):
+    from coretax_pph21_observer import _reference_bindings
+    with observed(browser, tmp_path, defect=defect) as (fixture, capture):
+        assert _reference_bindings(fixture.page, fixture.record, SCOPE, capture, None) is None
+        assert_no_values_or_actions(fixture)
+        gets = [e for e in capture.request_observations() if e['method'] == 'GET']
+        assert [e['url'] for e in gets] == [REFERENCE]
+
+
+def test_cancellation_between_catalogs_prevents_second_request(browser, tmp_path):
+    from coretax_browser import CaptureCancelled
+    from coretax_pph21_observer import _reference_bindings
+    calls = []
+    def cancel():
+        calls.append(True)
+        if len(calls) == 3:
+            raise CaptureCancelled('SYNTHETIC STOP')
+    with observed(browser, tmp_path) as (fixture, capture):
+        with pytest.raises(CaptureCancelled):
+            _reference_bindings(fixture.page, fixture.record, SCOPE, capture, cancel)
+        assert_no_values_or_actions(fixture)
+        gets = [e for e in capture.request_observations() if e['method'] == 'GET']
+        assert [e['url'] for e in gets] == [REFERENCE]
+
+
 @pytest.mark.parametrize('defect', ['reference-401', 'reference-403'])
 def test_reference_get_authorization_failure_prevents_dom_fallback(browser, tmp_path, monkeypatch, defect):
     observe = feature(monkeypatch)
