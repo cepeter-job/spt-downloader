@@ -5,9 +5,10 @@ The caller must bind primary custody, submitted lifecycle, model and migration.
 """
 from decimal import Decimal
 import math
+import re
 
 from coretax_json import _CorporateNumber, _UnsupportedMetadata
-from coretax_masa_bindings import _decimal, _number, _source_scalar, render_grid_value
+from coretax_masa_bindings import _decimal, _number, _source_scalar, render_grid_value, _project_masa_grid
 
 _AMOUNT_SUFFIXES = (
     'IncomeTaxWithheld', 'CarryForward', 'PaymentWithSP2D',
@@ -150,3 +151,47 @@ def project_pph21_footer(grid_name, form):
                     else ['', label, gross, tax, ''])
     return {'footer': rows, 'footer_spans': [[]] + [list(spans) for _ in totals],
             'provenance': evidence}
+
+
+# Each tuple binds the public component's field, renderer and static heading.
+_COMMON_COLUMNS = (
+    ('TIN', 'text', 'NIK/NPWP'), ('Name', 'text', 'NAMA'),
+    ('WithholdingNumber', 'text', 'NOMOR BUKTI POTONG'),
+    ('WithholdingDate', 'date', 'TANGGAL BUKTI PEMOTONGAN'),
+    ('TaxObjectCode', 'text', 'KODE OBJEK PAJAK'),
+    ('GrossIncome', 'number', 'PENGHASILAN BRUTO (Rp)'),
+    ('IncomeTax', 'number', 'PAJAK PENGHASILAN (Rp)'),
+    ('TaxCertificate', 'reference', 'FASILITAS PERPAJAKAN'),
+    ('CountryCode', 'reference', 'Negara'),
+    ('PlaceOfBusinessID', 'text', 'ID TEMPAT KEGIATAN USAHA'),
+    ('RevenueCode', 'text', 'KAP-KJS'), ('Status', 'reference', 'STATUS'),
+)
+_LIA_COLUMNS = (_COMMON_COLUMNS[:2] + (
+    ('WithholdingSlipsNumber', 'text', 'NOMOR BUKTI POTONG'),
+    ('WithholdingSlipsDate', 'date', 'TANGGAL BUKTI PEMOTONGAN')) + _COMMON_COLUMNS[4:6]
+    + (('TaxRate', 'number2', 'TARIF PAJAK (%)'),) + _COMMON_COLUMNS[6:])
+_LII_COLUMNS = (_COMMON_COLUMNS[:7] + (('IncomePeriod', 'text', 'MASA PEEROLEHAN PENGHASILAN'),)
+                + _COMMON_COLUMNS[8:10] + _COMMON_COLUMNS[11:])
+_LIII_COLUMNS = (_COMMON_COLUMNS[:2] + (('TaxArticle', 'text', 'JENIS PAJAK'),)
+                 + _COMMON_COLUMNS[2:5] + (('TaxObject', 'text', 'OBJEK PAJAK'),)
+                 + _COMMON_COLUMNS[5:8] + _COMMON_COLUMNS[9:])
+GRID_COLUMNS = {'l1a': _LIA_COLUMNS, 'l1b-bpa1': _COMMON_COLUMNS, 'l1b-bpa2': _COMMON_COLUMNS,
+                'l2-bpa1': _LII_COLUMNS, 'l2-bpa2': _LII_COLUMNS,
+                'l3-bp21': _LIII_COLUMNS, 'l3-bp26': _LIII_COLUMNS}
+
+
+def project_pph21_grid(grid_name, pages, headers, *, record_id, timezone_name, lookups=None):
+    """Project complete source pages with explicit column and callback bindings."""
+    spec = GRID_COLUMNS.get(grid_name) if type(grid_name) is str else None
+    if spec is None or not isinstance(headers, list) or any(type(h) is not str for h in headers):
+        raise _UnsupportedMetadata('unsupported_pph21_grid_binding')
+
+    def heading(value):
+        return re.sub(r'\s+', ' ', value.replace('(dd-mm-yyyy)', '')).strip().casefold()
+
+    expected = ['NO.'] + [label for _, _, label in spec]
+    if list(map(heading, headers)) != list(map(heading, expected)):
+        raise _UnsupportedMetadata('unverified_pph21_grid_headers')
+    return _project_masa_grid(tuple((key, kind) for key, kind, _ in spec), pages, headers,
+                              record_id=record_id, timezone_name=timezone_name, lookups=lookups,
+                              date_prefix_fields=('WithholdingDate',) if grid_name.startswith('l3-') else ())

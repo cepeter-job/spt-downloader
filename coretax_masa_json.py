@@ -22,6 +22,7 @@ from coretax_json import (
 _PREFILL_PATHS = frozenset({
     '/returnsheet/api/prefillreturnsheet/nvat',
     '/returnsheet/api/prefillreturnsheet/withholding-tax',
+    '/returnsheet/api/prefillreturnsheet/article-2126',
 })
 _GRID_PREFIXES = ('/returnsheet/api/loadndvat/', '/returnsheet/api/loadwtr/',
                   '/returnsheet/api/loadarticle2126/')
@@ -250,6 +251,58 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
     return form
 
 
+def _check_pph21_primary(payload, record, selected, scope, period, reasons):
+    """Check article-2126's actual keys before any presentation fallback."""
+    if not isinstance(payload, dict):
+        reasons.append('unsupported_masa_primary_payload')
+        return None
+    literal_model = record.get('meta', {}).get('Model SPT')
+    native = selected['native_fields']
+    if native.get('ReturnSheetModel') is not None and native['ReturnSheetModel'] != literal_model:
+        raise JsonSafetyError('Masa literal listing model contradicts selected return')
+    model = 'NORMAL' if literal_model == 'Normal' else None
+    if (isinstance(literal_model, str) and re.fullmatch(r'Amendment [0-9]{3}', literal_model)
+            and native.get('ReturnSheetModel') == literal_model):
+        model = 'AMENDMENT'
+    _identity_field(payload, 'TIN', scope[0], reasons)
+    _identity_field(payload, 'ReturnSheetModel', model, reasons)
+    if 'TaxpayerIdentifier' in payload:
+        _identity_field(payload, 'TaxpayerIdentifier', selected['frame_taxpayer'], reasons)
+    if model is None:
+        reasons.append('unsupported_masa_model_binding')
+
+    def check_period(source, month_key, year_key):
+        for key, expected in ((month_key, str(int(period[:2])) if period else None),
+                              (year_key, period[4:] if period else str(scope[1]) if scope[2] == 'period' else None)):
+            if key not in source or expected is None:
+                reasons.append('missing_pph21_period_binding_' + key)
+            elif type(source[key]) not in (str, _CorporateNumber) or source[key] != expected:
+                raise JsonSafetyError('PPh21 period contradicts selected return: ' + key)
+
+    check_period(payload, 'PeriodMonth', 'PeriodYear')
+    _identity_field(payload, 'ReturnSheetStatusCode', native.get('ReturnSheetStatusCode'), reasons)
+    if payload.get('ReturnSheetStatusCode') != 'SUBMITTED':
+        reasons.append('unverified_pph21_non_submitted_lifecycle')
+    if type(payload.get('IsMigrated')) is not bool:
+        reasons.append('unbound_pph21_migration_branch')
+    raw = payload.get('FormData')
+    if type(raw) is not str:
+        reasons.append('missing_masa_form_data')
+        return None
+    form = _corporate_json(raw)
+    _corporate_privacy(form)
+    if not isinstance(form, dict):
+        reasons.append('unsupported_masa_form_shape')
+        return None
+    _identity_field(form, 'RecordId', selected['record_id'], reasons)
+    _identity_field(form, 'ReturnSheetAggregateIdentifier', selected['aggregate_id'], reasons)
+    _identity_field(form, 'TIN', scope[0], reasons)
+    _identity_field(form, 'TaxType', native.get('TaxTypeCode'), reasons)
+    _identity_field(form, 'Status', model, reasons)
+    check_period(form, 'TaxPeriodMonth', 'TaxPeriodYear')
+    return form
+
+
 def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     """Check the whole captured attempt before deciding rendering eligibility.
 
@@ -304,12 +357,15 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
                 reasons.append('missing_masa_request_identity_binding')
         if path in _PREFILL_PATHS:
             primary_seen = True
-            source_tax = 'PPN' if path.endswith('/nvat') else 'PPh Unifikasi'
-            if tax in ('PPN', 'PPh Unifikasi') and source_tax != tax:
+            source_tax = ('PPN' if path.endswith('/nvat') else
+                          'PPh Pasal 21/26' if path.endswith('/article-2126') else 'PPh Unifikasi')
+            if tax in ('PPN', 'PPh Unifikasi', 'PPh Pasal 21/26') and source_tax != tax:
                 raise JsonSafetyError('Masa primary source family contradicts selected tax')
             if not successful:
                 reasons.append('failed_masa_primary_response')
-            form = _check_primary(payload, record, selected, scope, period, source_tax, reasons)
+            form = (_check_pph21_primary(payload, record, selected, scope, period, reasons)
+                    if source_tax == 'PPh Pasal 21/26' else
+                    _check_primary(payload, record, selected, scope, period, source_tax, reasons))
         elif path in grid_paths:
             source_tax = 'PPN' if path.startswith('/returnsheet/api/loadndvat/') else 'PPh Unifikasi'
             if tax in FORMS and source_tax != tax:
