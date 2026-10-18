@@ -11,6 +11,7 @@ from coretax_template_cells import (load_template_workbook, _key, _write, _mappi
 def canonical_form(tax, form):
     aliases = {
         'PPN': {'a-1': 'a1', 'a-2': 'a2', 'b-1': 'b1', 'b-2': 'b2', 'b-3': 'b3'},
+        'PPh Unifikasi': {'daftar-i': 'daftar i', 'daftar-ii': 'daftar ii', 'lampiran-i': 'lampiran i'},
     }
     return aliases.get(tax, {}).get(form.casefold(), form.casefold())
 
@@ -103,17 +104,7 @@ def _ppn_identity_fields(sheet, sections):
 def _identity_fields(sheet, sections, tax):
     if tax == 'PPN':
         return _ppn_identity_fields(sheet, sections)
-    slots = {_key(sheet.cell(row, 1).value): (row, 4) for row in range(4, 8)}
-    used, pending = set(), []
-    for section in sections:
-        for field in section.get('fields', []):
-            position = slots.get(_key(field.get('label') or field.get('field', '')))
-            if position is None or position in used:
-                pending.append(field)
-            else:
-                _write(sheet, *position, field.get('value', ''))
-                used.add(position)
-    return pending
+    return _unifikasi_identity_fields(sheet, sections)
 
 
 def _write_ppn_amount(sheet, row, column, value):
@@ -240,66 +231,186 @@ def _ppn_fields(sheet, fields):
     return pending
 
 
+def _unifikasi_identity_fields(sheet, sections):
+    fields = [f for s in sections for f in s.get('fields', [])]
+    period = [f for f in fields if _key(f.get('label')) == 'masapajak']
+    years = [f for f in fields if _key(f.get('label')) == 'tahunpajak']
+    pending = [f for f in fields if _key(f.get('label')) not in
+               ('masapajak', 'tahunpajak', 'statusspt', 'statuspenyampaian')]
+    if not period:
+        if len(years) == 1 and re.fullmatch(r'[0-9]{4}', str(years[0].get('value', ''))):
+            _write(sheet, 5, 4, years[0]['value'])
+        else:
+            pending.extend(years)
+        return pending
+    months = 'Januari Februari Maret April Mei Juni Juli Agustus September Oktober November Desember'.split()
+    match = re.fullmatch(r'(' + '|'.join(months) + r') ([0-9]{4})', str(period[0].get('value', '')))
+    if (len(period) != 1 or match is None or len(years) > 1
+            or years and years[0].get('value') != match.group(2)):
+        return pending + period + years
+    _write(sheet, 4, 4, match.group(1))
+    _write(sheet, 5, 4, match.group(2))
+    return pending
+
+
+def _write_unifikasi_amount(sheet, row, column, value):
+    # Same strict locale/precision rules as PPN; identifiers never reach this writer.
+    _write_ppn_amount(sheet, row, column, value)
+    cell = sheet.cell(row, column)
+    return value in ('', None) or cell.data_type == 'n'
+
+
 def _unifikasi_induk(sheet, sections):
-    labels = [sheet['A10'].value, sheet['B10'].value, sheet['C11'].value,
-              sheet['D11'].value] + [sheet.cell(10, c).value for c in range(5, 9)]
-    used, pending = set(), []
+    labels = [sheet['A8'].value, sheet['B8'].value, sheet['C9'].value,
+              sheet['D9'].value] + [sheet.cell(8, c).value for c in range(5, 9)]
+    aliases = {'PAJAK PENGHASILAN / SETOR SENDIRI': labels[2],
+               'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN': labels[3],
+               str(labels[6]) + ' This row contain the total amount of payment deducted by the refunded amount prior to the amendment.': labels[6]}
+    used, pending, totals = set(), [], []
     for section in sections:
         for table in section.get('tables', []):
-            mapping = _mapping(table, labels)
-            if not table.get('complete', True) or mapping is None:
-                pending.append(table)
+            mapping = _mapping(table, labels, aliases)
+            body, leftovers = _body_rows(table)
+            if (not table.get('complete', True) or mapping is None
+                    or len(body) != table.get('body_row_count', len(table.get('rows', [])))
+                    or table.get('source_total', len(body)) not in (None, len(body))):
+                pending.append({**table, 'complete': False})
                 continue
             rows_left = []
-            for values in table.get('rows', []):
+            for values in body:
                 projected = dict(zip(mapping, values))
-                matches = [row for row in range(12, 28)
+                matches = [row for row in range(10, 25)
                            if _key(projected.get(1)) == _key(sheet.cell(row, 1).value)
                            and projected.get(2) == sheet.cell(row, 2).value]
                 if len(matches) != 1 or matches[0] in used:
                     rows_left.append(values)
                     continue
+                safe = True
                 for column, value in projected.items():
-                    _write(sheet, matches[0], column, value)
+                    if column >= 3:
+                        safe = _write_unifikasi_amount(sheet, matches[0], column, value) and safe
                 used.add(matches[0])
+                if not safe:
+                    rows_left.append(values)
             if rows_left:
                 pending.append({**table, 'rows': rows_left})
+            if leftovers:
+                footer, spans = table.get('footer', []), table.get('footer_spans', [])
+                if (leftovers == footer and len(footer) == 1 and len(footer[0]) == 7
+                        and spans == [[2, 1, 1, 1, 1, 1, 1]]
+                        and _key(footer[0][0]) == _key(sheet['A25'].value)):
+                    totals.append((table, footer[0][1:]))
+                else:
+                    pending.append({**table, 'rows': leftovers})
+    if len(totals) == 1:
+        safe = True
+        for col, value in enumerate(totals[0][1], 3):
+            safe = _write_unifikasi_amount(sheet, 25, col, value) and safe
+        if not safe:
+            pending.append({**totals[0][0], 'rows': totals[0][0]['footer']})
+    elif totals:
+        pending.extend({**t, 'rows': t['footer']} for t, _ in totals)
     return pending
 
 
-def _appendix(sheet, blocks, sections):
+UNIFIKASI_MONEY = {'daftar i': (9, 10), 'daftar ii': (7,), 'lampiran i': (13,)}
+UNIFIKASI_FOOTER_ROWS = {'daftar i': [(), (15, 16, 17, 18)],
+                       'daftar ii': [(9, 10), (18,)], 'lampiran i': [(10,)]}
+UNIFIKASI_SOURCE_EXTRAS = ('TINGKAT (%)',
+    'UANG PERSEDIAAN / PEMBAYARAN LANGSUNG (UNTUK WP INSTANSI PEMERINTAH DENGAN DANA APBN)')
+
+
+def _unifikasi_footer(table, labels, aliases, column, allowed):
+    footer, spans = table.get('footer', []), table.get('footer_spans', [])
+    if len(footer) != len(spans):
+        return None
+    result, used = [], set()
+    for values, widths in zip(footer, spans):
+        if values == [] and widths == []:
+            continue
+        if (len(values) != len(widths) or len(values) != 3 or values[2] not in ('', None)
+                or any(type(w) is not int or w < 1 for w in widths)
+                or widths[1] != 1 or sum(widths) != len(table['headers'])):
+            return None
+        targets = [row for row, label in allowed.items() if _key(values[0]) == _key(label)]
+        if len(targets) != 1 or targets[0] in used:
+            return None
+        source_column = table['headers'][widths[0]]
+        mapping = _mapping({'headers': [source_column], 'rows': []}, labels, aliases)
+        if mapping != [column]:
+            return None
+        used.add(targets[0])
+        result.append((targets[0], values[1]))
+    return result
+
+
+def _unifikasi_appendix(sheet, blocks, sections, form):
     grouped = [[] for _ in blocks]
-    fields, pending = [], []
+    fields, pending, evidence = [], [], []
+    money = UNIFIKASI_MONEY[form]
     for section in sections:
         fields.extend(section.get('fields', []))
         for table in section.get('tables', []):
-            if not table.get('complete', True):
-                pending.append(table)
-                continue
-            name = _key(table.get('name', ''))
+            name = re.sub(r'^TABEL\s+[IVX]+\.\s*', '', table.get('group') or table.get('name', ''), flags=re.I)
             candidates = [i for i, (caption, _, _, _) in enumerate(blocks)
-                          if caption is None or name == _key(sheet[caption].value)]
-            if len(candidates) != 1:
-                pending.append(table)
+                          if caption is None or _key(name) == _key(sheet[caption].value)]
+            if not table.get('complete', True) or len(candidates) != 1:
+                pending.append({**table, 'complete': False})
                 continue
             index = candidates[0]
             labels = [sheet.cell(blocks[index][1], c).value for c in range(1, sheet.max_column + 1)]
-            mapping = _mapping(table, labels)
-            if mapping is None:
-                pending.append(table)
+            aliases = {}
+            for source, target in [('NITKU / NOMOR IDENTITAS SUBUNIT ORGANISASI', 'ID TEMPAT KEGIATAN USAHA'),
+                                   ('PAJAK PENGHASILAN', 'PAJAK PENGHASILAN (Rp)'),
+                                   ('FASILITAS PPH', 'FASILITAS PERPAJAKAN')]:
+                if target in labels:
+                    aliases[source] = target
+            extras = UNIFIKASI_SOURCE_EXTRAS if form == 'daftar i' else ()
+            body, leftovers = _body_rows(table)
+            projected, mapping, changed = _table_projection({**table, 'rows': body}, labels, aliases, extras)
+            if (mapping is None or len(body) != table.get('body_row_count', len(table['rows']))
+                    or table.get('source_total', len(body)) not in (None, len(body))):
+                pending.append({**table, 'complete': False})
                 continue
-            grouped[index].extend((mapping, values) for values in table.get('rows', []))
+            allowed = {row: sheet.cell(row, 1).value for row in UNIFIKASI_FOOTER_ROWS[form][index]}
+            totals = _unifikasi_footer(table, labels, aliases, money[-1], allowed)
+            if leftovers != table.get('footer', []) or totals is None:
+                pending.append({**table, 'complete': False})
+                continue
+            grouped[index].append((table, projected['rows'], mapping, totals))
+            if changed and body:
+                keep = [i for i, label in enumerate(table['headers']) if label in extras]
+                evidence.append({'name': table.get('group') or table['name'],
+                                 'headers': [table['headers'][i] for i in keep],
+                                 'rows': [[row[i] for i in keep] for row in body], 'complete': True})
+    # Duplicate snapshots are not additive, including two empty snapshots.
+    for index, items in enumerate(grouped):
+        if len(items) > 1:
+            pending.extend({**t, 'complete': False} for t, _, _, _ in items)
+            grouped[index] = []
     offset = 0
-    for (_, _, first, last), rows in zip(blocks, grouped):
+    for (_, _, first, last), items in zip(blocks, grouped):
+        if not items:
+            continue
+        table, rows, mapping, totals = items[0]
         first, last = first + offset, last + offset
-        extra = max(0, len(rows) - (last - first + 1))
+        spacer = bool(table.get('footer') and table['footer'][0] == [])
+        extra = max(0, len(rows) + int(spacer) - (last - first + 1))
         _grow(sheet, last + 1, extra, first)
-        for row, (mapping, values) in enumerate(rows, first):
+        for row, values in enumerate(rows, first):
+            safe = True
             for column, value in zip(mapping, values):
-                _write(sheet, row, column, value)
+                if column in money:
+                    safe = _write_unifikasi_amount(sheet, row, column, value) and safe
+                else:
+                    _write(sheet, row, column, value)
+            if not safe:
+                pending.append({**table, 'rows': [values]})
         offset += extra
-    return fields, pending
-
+        for row, value in totals:
+            if not _write_unifikasi_amount(sheet, row + offset, money[-1], value):
+                pending.append({**table, 'rows': table['footer']})
+    return fields, pending, evidence
 
 PPN_TOTAL_COLUMNS = {'a1': (5,), 'a2': (6, 7, 8, 9), 'b1': (6, 7, 8),
                      'b2': (6, 7, 8, 9), 'b3': (6, 7, 8, 9), 'c': (10, 11, 12, 13)}
@@ -391,6 +502,7 @@ def _ppn_appendix(sheet, blocks, sections, form):
 
 def render_template_form(sheet, tax, form, sections):
     form = canonical_form(tax, form)
+    evidence = []
     if form == 'induk':
         fields = _identity_fields(sheet, sections, tax)
         tables = _ppn_induk(sheet, sections) if tax == 'PPN' else _unifikasi_induk(sheet, sections)
@@ -402,7 +514,7 @@ def render_template_form(sheet, tax, form, sections):
         if tax == 'PPN':
             fields, tables = _ppn_appendix(sheet, blocks, sections, form)
         else:
-            fields, tables = _appendix(sheet, blocks, sections)
+            fields, tables, evidence = _unifikasi_appendix(sheet, blocks, sections, form)
         style_row = blocks[0][2]
     if tax == 'PPN':
         # The user requests clean PPN forms, not a second copy of raw capture.
@@ -412,5 +524,8 @@ def render_template_form(sheet, tax, form, sections):
         return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
                 'unmapped_tables': len(unresolved),
                 'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
-    _raw_evidence(sheet, sections, fields, tables, style_row)
-    return None
+    _raw_evidence(sheet, sections, fields, tables + evidence, style_row)
+    unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
+    return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
+            'unmapped_tables': len(unresolved),
+            'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved)}

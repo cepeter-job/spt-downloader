@@ -139,3 +139,39 @@ def test_empty_appendix_preserves_reported_zero_without_fake_body(tmp_path, form
         assert reports and reports[0]['complete']
     finally:
         book.close()
+
+
+@pytest.mark.parametrize('defect', ['duplicate', 'unknown-header', 'foreign-group', 'incomplete', 'count'])
+def test_empty_source_contradictions_never_claim_complete(tmp_path, defect):
+    ref = load_workbook(RESOURCE)
+    try:
+        headers = [c.value for c in ref['Daftar I'][4]]
+    finally:
+        ref.close()
+    table = source_table(headers, [], 'TABEL I. BPPU')
+    if defect == 'unknown-header':
+        table['headers'] = ['UNSUPPORTED SOURCE FIELD']
+    elif defect == 'foreign-group':
+        table['group'] = 'SYNTHETIC UNRELATED GROUP'
+    elif defect == 'incomplete':
+        table['complete'] = False
+    elif defect == 'count':
+        table['source_total'] = 1
+    tables = [table, deepcopy(table)] if defect == 'duplicate' else [table]
+    book, reports = export(tmp_path, [section('DAFTAR-I', tables=tables)])
+    try:
+        assert reports and not reports[0]['complete']
+        assert book['DAFTAR-I']['A5'].value is None
+    finally:
+        book.close()
+
+
+def test_conflicting_period_year_preserves_raw_evidence(tmp_path):
+    fields = [{'label': 'Masa Pajak', 'value': 'Januari 2025'}, {'label': 'Tahun Pajak', 'value': '2024'}]
+    book, reports = export(tmp_path, [section('INDUK', fields=fields)])
+    try:
+        assert reports and not reports[0]['complete']
+        assert book['INDUK']['D4'].value is None and book['INDUK']['D5'].value is None
+        assert any(c.value == '2024' for row in book['INDUK'] for c in row)
+    finally:
+        book.close()
