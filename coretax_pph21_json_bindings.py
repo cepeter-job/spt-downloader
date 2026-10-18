@@ -7,8 +7,8 @@ from decimal import Decimal
 import math
 import re
 
-from coretax_json import _CorporateNumber, _UnsupportedMetadata
-from coretax_masa_bindings import _decimal, _number, _source_scalar, render_grid_value, _project_masa_grid
+from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata
+from coretax_masa_bindings import _decimal, _evidence, _number, _source_scalar, render_grid_value, _project_masa_grid
 
 _AMOUNT_SUFFIXES = (
     'IncomeTaxWithheld', 'CarryForward', 'PaymentWithSP2D',
@@ -178,6 +178,60 @@ _LIII_COLUMNS = (_COMMON_COLUMNS[:2] + (('TaxArticle', 'text', 'JENIS PAJAK'),)
 GRID_COLUMNS = {'l1a': _LIA_COLUMNS, 'l1b-bpa1': _COMMON_COLUMNS, 'l1b-bpa2': _COMMON_COLUMNS,
                 'l2-bpa1': _LII_COLUMNS, 'l2-bpa2': _LII_COLUMNS,
                 'l3-bp21': _LIII_COLUMNS, 'l3-bp26': _LIII_COLUMNS}
+
+REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS')
+_REFERENCE_FIELDS = ('TaxCertificate', 'CountryCode', 'Status')
+
+
+def project_pph21_references(payload, *, requested_types, locale):
+    """Project a request-bound catalog, not unverified UI filter choices.
+
+    The caller establishes response custody and request locale. Time-dependent
+    version selection stays unsupported without an observed browser clock.
+    """
+    if (type(requested_types) not in (list, tuple) or tuple(requested_types) != REFERENCE_TYPES
+            or locale != 'id-ID' or not isinstance(payload, list)):
+        raise _UnsupportedMetadata('unsupported_pph21_reference_binding')
+    for catalog in payload:
+        if isinstance(catalog, dict) and 'language' in catalog and catalog['language'] != locale:
+            raise JsonSafetyError('PPh21 reference locale contradicts bound request')
+    if (len(payload) != len(REFERENCE_TYPES) or any(not isinstance(item, dict) for item in payload)
+            or any(type(item.get('ReferenceDataType')) is not str for item in payload)
+            or {item['ReferenceDataType'] for item in payload} != set(REFERENCE_TYPES)):
+        raise _UnsupportedMetadata('unsupported_pph21_reference_catalogs')
+    lookups, evidence = {}, []
+    for index, catalog in enumerate(payload):
+        kind = catalog['ReferenceDataType']
+        details = catalog.get('Details')
+        if not isinstance(details, list):
+            raise _UnsupportedMetadata('unsupported_pph21_reference_details')
+        evidence.append(_evidence(kind, [index, 'ReferenceDataType']))
+        if 'language' in catalog:
+            evidence.append(_evidence(catalog['language'], [index, 'language']))
+        versions = {}
+        for ordinal, item in enumerate(details):
+            if (not isinstance(item, dict) or type(item.get('Code')) is not str or not item['Code']
+                    or type(item.get('CodeDescription')) is not str):
+                raise _UnsupportedMetadata('unsupported_pph21_reference_scalar')
+            versions.setdefault(item['Code'], []).append((ordinal, item))
+            evidence.append(_evidence(item['Code'], [index, 'Details', ordinal, 'Code']))
+        labels = {}
+        for code, candidates in versions.items():
+            # Pinned main getActiveReferenceDataValue selects the FIRST explicit
+            # null/empty ValidTo. A sole version is independent of clock/date.
+            chosen = next(((n, row) for n, row in candidates
+                           if 'ValidTo' in row and row['ValidTo'] in (None, '')), None)
+            if chosen is None:
+                if len(candidates) != 1:
+                    raise _UnsupportedMetadata('unverified_pph21_reference_version')
+                chosen = candidates[0]
+            ordinal, item = chosen
+            labels[code] = item['CodeDescription']
+            evidence.append(_evidence(item['CodeDescription'], [index, 'Details', ordinal, 'CodeDescription']))
+            if 'ValidTo' in item:
+                evidence.append(_evidence(item['ValidTo'], [index, 'Details', ordinal, 'ValidTo']))
+        lookups[_REFERENCE_FIELDS[REFERENCE_TYPES.index(kind)]] = labels
+    return {'lookups': lookups, 'provenance': evidence}
 
 
 def project_pph21_grid(grid_name, pages, headers, *, record_id, timezone_name, lookups=None):
