@@ -62,7 +62,8 @@ class Fixture:
                 route.abort('timedout')
                 return
             if self.defect == 'reference-redirect':
-                route.fulfill(status=302, headers={'location': ORIGIN + '/unapproved-reference-target'})
+                # A redirect-policy regression must not reach a real intranet destination.
+                route.fulfill(status=302, headers={'location': 'https://reference-fixture.invalid/unapproved-target'})
                 return
             if self.defect == 'reference-text':
                 route.fulfill(content_type='text/plain', body='SYNTHETIC UNSUPPORTED')

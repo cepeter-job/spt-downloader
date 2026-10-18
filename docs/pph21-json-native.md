@@ -253,3 +253,17 @@ checks original listing bytes before View and native checkpoint replay; addition
 reference tests cover network failure, redirect refusal, non-JSON, advertised
 size overflow and cancellation between catalogs. Synthetic runner evidence is
 not authorized live acceptance, an installed build, or permission to merge.
+
+On `f642f09`, Windows benchmark `39106484594` artifacts `12129235090` and
+`12128473923` verified 2,991 unique cases: 2,990 passed, including the real Edge
+capture-to-five-sheet workbook, listing/dispatch and reference transport/auth
+contracts. One new whole-collector test exposed a missing-directory prerequisite:
+`listing-responses` was assumed to exist from prior inventory. Job `117613348028`
+reported WinError 2 at that exact directory, before View. The fix pins the job
+folder, creates the direct proof child, pins that child, then uses exclusive-create
+for the original bytes; it does not relax identity or reparse-point checks.
+
+The stronger collector contract checks proof before the actual View action and
+rejects an existing file at the proof-directory path without touching it. An
+isolated allowlisted-worker contract now exercises the real PPh21 projector
+without repository imports. These last changes await runner verification.

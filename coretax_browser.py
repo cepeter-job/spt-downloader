@@ -1161,8 +1161,11 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         from spt_desktop.output_windows import DirectoryGuard
                         prefix = 'pph21' if pph21 else 'ppn'
                         relative = Path('listing-responses') / f'{prefix}-identity-{ordinal:04d}-{uuid4().hex}.json'
-                        target = folder / relative
+                        target = (folder / relative).absolute()
                         with DirectoryGuard() as guard:
+                            # Detail-only/resumed collection need not have saved inventory bodies.
+                            guard.include(_directories(target.parent.parent))
+                            target.parent.mkdir(exist_ok=True)
                             guard.include(_directories(target.parent))
                             with target.open('xb') as handle:
                                 handle.write(current_response['body'])

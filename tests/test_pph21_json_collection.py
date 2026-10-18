@@ -4,6 +4,8 @@ import hashlib
 import json
 from types import SimpleNamespace
 
+import pytest
+
 import coretax_browser as driver
 import coretax_pph21_observer as observer
 import support_browser_protocol as protocol
@@ -13,7 +15,8 @@ from pph21_projection_fixture import case as native_case
 from masa_json_fixtures import SCOPE, TAXPAYER
 
 
-def test_collect_attaches_original_listing_identity_and_replays_native_checkpoint(tmp_path, monkeypatch):
+@pytest.mark.parametrize('occupied', [False, True], ids=['new-directory', 'reject-existing-file'])
+def test_collect_attaches_original_listing_identity_and_replays_native_checkpoint(tmp_path, monkeypatch, occupied):
     case = Scenario(tmp_path, monkeypatch, tax_kind='PPh Pasal 21/26')
     record, packets, forms = native_case()
     case.record.update(deepcopy(record))
@@ -35,17 +38,36 @@ def test_collect_attaches_original_listing_identity_and_replays_native_checkpoin
     case.page.exchanges = [{'raw': p['body'], 'url': p['context']['url'], 'status': 200,
                            'post': p['context']['request_json'], 'method': p['context']['method']}
                           for p in packets]
-    def observe(page, selected, scope, capture, **kwargs):
-        assert page is case.page.popup and selected is case.record and scope == SCOPE
-        # Absence before collection proves this came from the original list response.
-        identity = selected['source_identity']
+    real_view = protocol.View.evaluate
+    view_checked = []
+    def view(control, script):
+        # Require saved proof before the actual View action emits any detail traffic.
+        identity = case.record['source_identity']
         assert identity['body_sha256'] == hashlib.sha256(original).hexdigest()
         assert identity['relative_path'].startswith('listing-responses/pph21-identity-')
         assert (tmp_path / identity['relative_path']).read_bytes() == original
+        view_checked.append(True)
+        return real_view(control, script)
+    monkeypatch.setattr(protocol.View, 'evaluate', view)
+    def observe(page, selected, scope, capture, **kwargs):
+        assert page is case.page.popup and selected is case.record and scope == SCOPE
         return deepcopy(forms)
     monkeypatch.setattr(observer, 'observe_pph21_forms', observe)
+    proof_folder = tmp_path / 'listing-responses'
+    assert not proof_folder.exists()
+    if occupied:
+        proof_folder.write_bytes(b'SYNTHETIC EXISTING FILE')
     result = case.collect()
-    assert result['complete'] and not result['errors']
+    if occupied:
+        assert not result['complete'] and result['errors']
+        assert case.page.view_calls == 0 and view_checked == []
+        assert 'source_identity' not in case.record and 'source_fields' not in case.record
+        assert proof_folder.read_bytes() == b'SYNTHETIC EXISTING FILE'
+        assert not any(case.page.context.listeners.values())
+        assert not case.page.listeners.get('response')
+        return
+    assert result['complete'] and not result['errors'], result['errors']
+    assert view_checked == [True]
     assert case.dom_calls == [] and case.pdf_calls == [] and case.page.view_calls == 1
     captured = result['records'][0]
     assert captured['detail_source']['used'] == 'json'
