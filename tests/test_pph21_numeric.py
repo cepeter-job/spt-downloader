@@ -22,7 +22,8 @@ def assert_number(cell, source):
     assert Decimal(str(cell.value)) == expected
 
 
-@pytest.mark.parametrize('amount', ['1.234,50', '0', '-123,45', '999.999.999.999.999', '0,01'])
+@pytest.mark.parametrize('amount', ['1.234,50', '0', '-123,45', '999.999.999.999.999', '0,01',
+                                    '1.234.567.890.123,45'])
 def test_induk_jumlah_is_native_numeric_and_kap_remains_literal(tmp_path, amount):
     tables, targets = induk_tables()
     for table in tables:
@@ -53,7 +54,7 @@ def test_induk_jumlah_is_native_numeric_and_kap_remains_literal(tmp_path, amount
 
 
 @pytest.mark.parametrize('form,group,first,total,tax_col', GROUPS)
-@pytest.mark.parametrize('amount', ['1.234,50', '0', '-123,45'])
+@pytest.mark.parametrize('amount', ['1.234,50', '0', '-123,45', '1.234.567.890.123,45'])
 def test_appendix_body_and_reported_totals_numeric_not_identifiers(tmp_path, form, group, first, total, tax_col, amount):
     table, _ = appendix_table(form, group, 1, with_totals=total is not None)
     for header in ('PENGHASILAN BRUTO (Rp)', 'PAJAK PENGHASILAN (Rp)'):
@@ -92,7 +93,7 @@ def test_appendix_body_and_reported_totals_numeric_not_identifiers(tmp_path, for
         book.close(); reference.close()
 
 
-@pytest.mark.parametrize('amount', ['1,234.50', '12.34', '00123', '1.234.567.890.123.456', '1.234.567.890.123,45', '=1+2'])
+@pytest.mark.parametrize('amount', ['1,234.50', '12.34', '00123', '1.234.567.890.123.456', '12.345.678.901.234,56', '=1+2'])
 @pytest.mark.parametrize('location', ['induk', 'body', 'footer'])
 def test_unsafe_money_stays_literal_and_mapping_is_partial(amount, location):
     if location == 'induk':
