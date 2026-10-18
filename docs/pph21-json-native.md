@@ -49,6 +49,26 @@ returnsheet API base.
 
 Chunk 693 is the separate Unifikasi family, not the PPh21 component.
 
+### Reference labels: verified cell consumer, not filter dropdowns
+
+The pinned main bundle contains module 75969 at offset 3726035 and module 29844
+(the shared grid) later in the same file. The body-cell default branch at
+4124027 selects `codeDescAsync` when `ReferenceDataType` is present; the pipe at
+4217095 calls `getReferenceDataDescription`. In contrast, the `dropdownValues`
+assignment drives filter choices and the separate custom-dropdown cell type.
+The PPh21 columns do not declare that custom-dropdown cell type. Therefore the
+TaxCertificate filter's `GiU` catalog does not override its body label source.
+
+Reviewed reference types are `EBUPOT_TAX_CERTIFICATE` (`cN`, definition 2876400),
+`COUNTRY_CODE` (`gD1`, 2720543) and `EBUPOT_STATUS` (`SSB`, 2876070). The ordinary
+cache-miss branch of `getSingleReferenceData` invokes `internalLoadBulkReferenceData`
+at 3022028, a read-only bulk GET with locale and type/checksum bindings. The
+`getdescription` POST branch is specific to district/subdistrict; it must not be
+assumed to be the PPh21 reference source. `getActiveReferenceDataValue` uses strict
+code equality and validity precedence; a naked code/label dictionary cannot
+establish its own custody or locale. The adapter must validate reference response
+bytes, requested types, locale and selection before passing lookups to projection.
+
 ### Primary and final Induk lifecycle
 
 The parent `getPrefillData` calls `/prefillreturnsheet/article-2126` with
