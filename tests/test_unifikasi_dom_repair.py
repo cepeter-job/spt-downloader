@@ -10,6 +10,7 @@ from support_templates import section, source_run
 
 RESOURCE = Path(__file__).resolve().parents[1] / 'resources/unifikasi_format.xlsx'
 TAX = 'PPh Unifikasi'
+ACCOUNTING_RP = '_-"Rp"* #,##0_-;\\-"Rp"* #,##0_-;_-"Rp"* "-"??_-;_-@_-'
 HEADERS = ['NO', 'DETIL', 'PAJAK PENGHASILAN / SETOR SENDIRI',
            'PAJAK PENGHASILAN / PEMOTONGAN / PEMUNGUTAN', 'PPh DITANGGUNG PEMERINTAH',
            'JUMLAH PPh DIBAYAR', 'JUMLAH PPh DIBAYAR DARI SPT YANG DIBETULKAN ' +
@@ -77,6 +78,8 @@ def test_induk_rincian_money_and_reported_total(tmp_path, value, expected):
             assert book['INDUK'].cell(10, col).data_type == ('s' if isinstance(expected, str) else 'n')
             assert book['INDUK'].cell(25, col).value == 9876.5
             assert book['INDUK'].cell(25, col).data_type == 'n'
+            assert book['INDUK'].cell(10, col).number_format == ACCOUNTING_RP
+            assert book['INDUK'].cell(25, col).number_format == ACCOUNTING_RP
         if isinstance(expected, str):
             assert reports and not reports[0]['complete']
     finally:
@@ -105,6 +108,7 @@ def test_daftar_i_dpp_numeric_and_body_boundary_style(tmp_path, count):
             assert sheet.cell(row, 2).value == '0000000000000002' and sheet.cell(row, 2).data_type == 's'
             assert sheet.cell(row, 13).value == '0000000000000002000001'
             assert sheet.cell(row, 12).value is None
+            assert sheet.cell(row, 9).number_format == sheet.cell(row, 10).number_format == ACCOUNTING_RP
         if count >= 7:
             for col in range(1, 16):
                 for attr in ('font', 'fill', 'border', 'alignment'):
@@ -136,6 +140,7 @@ def test_empty_appendix_preserves_reported_zero_without_fake_body(tmp_path, form
         sheet = book[form]
         assert sheet.cell(footer_row, amount_col).value == 0
         assert sheet.cell(footer_row, amount_col).data_type == 'n'
+        assert sheet.cell(footer_row, amount_col).number_format == ACCOUNTING_RP
         assert sheet['A5'].value is None and sheet['B5'].value is None
         assert reports and reports[0]['complete']
     finally:
@@ -165,6 +170,35 @@ def test_empty_source_contradictions_never_claim_complete(tmp_path, defect):
         assert book['DAFTAR-I']['A5'].value is None
     finally:
         book.close()
+
+
+def test_monetary_template_formats_match_ppn_and_pph21():
+    resources = RESOURCE.parent
+    for filename, address in [('ppn_format.xlsx', 'E12'), ('pph21_format.xlsx', 'D12')]:
+        reference = load_workbook(resources / filename)
+        try:
+            assert reference['Induk'][address].number_format == ACCOUNTING_RP
+        finally:
+            reference.close()
+    targets = {
+        'Induk': [(range(10, 26), range(3, 9))],
+        'Daftar I': [(range(5, 9), (9, 10)), (range(11, 15), (9, 10)), (range(15, 19), (10,))],
+        'Daftar II': [(range(5, 9), (5, 7)), (range(14, 18), (5, 7)), ((9, 10, 18), (7,))],
+        'Lampiran I': [(range(5, 10), (11, 13)), ((10,), (13,))],
+    }
+    workbook = load_workbook(RESOURCE)
+    try:
+        mismatches = [(name, workbook[name].cell(row, col).coordinate)
+                      for name, regions in targets.items() for rows, columns in regions
+                      for row in rows for col in columns
+                      if workbook[name].cell(row, col).number_format != ACCOUNTING_RP]
+        assert mismatches == []
+        # Periods, identifiers, rates and dates must not inherit the currency format.
+        for name, cells in [('Induk', ('D4', 'D5')), ('Daftar I', ('B5', 'D5', 'E5', 'M5')),
+                            ('Daftar II', ('C5', 'F5', 'I5')), ('Lampiran I', ('B5', 'I5', 'J5', 'L5', 'O5'))]:
+            assert all(workbook[name][cell].number_format != ACCOUNTING_RP for cell in cells)
+    finally:
+        workbook.close()
 
 
 def test_conflicting_period_year_preserves_raw_evidence(tmp_path):
