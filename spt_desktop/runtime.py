@@ -22,7 +22,7 @@ WORKER_FILES = (
     'coretax_pph21_json_bindings.py', 'coretax_pph21_observer.py', 'coretax_pph21_projection.py',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
     'coretax_masa_json.py', 'coretax_masa_bindings.py',
-    'coretax_masa_observer.py', 'coretax_masa_projection.py',
+    'coretax_masa_observer.py', 'coretax_masa_projection.py', 'coretax_unifikasi_json.py',
     'resources/ppn_format.xlsx', 'resources/unifikasi_format.xlsx',
     'coretax_attachments.py', 'coretax_pdf.py', 'requirements.txt',
     RUNTIME_LOCK,

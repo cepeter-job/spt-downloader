@@ -343,6 +343,15 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
                 binding['primary'] = {'endpoint': endpoint, 'requests': _requests(
                     _observations(capture, record, scope), endpoint, record['record_id'])}
             forms.append(binding)
+        if tax == 'PPh Unifikasi':
+            from coretax_json import UNIFIKASI_REFERENCE_URL
+            from coretax_pph21_observer import _reference_bindings
+            references = _reference_bindings(page, record, scope, capture, check_cancel,
+                                             endpoints=(UNIFIKASI_REFERENCE_URL,))
+            if references is None:
+                return None
+            for form in forms:
+                form['references'] = references
         return forms
     except JsonSafetyError:
         raise

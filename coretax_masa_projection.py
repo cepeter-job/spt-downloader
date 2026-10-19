@@ -114,6 +114,13 @@ def project_masa_forms(packets, *, record, observed_forms):
             raise _UnsupportedMetadata('unverified_masa_lc_kind')
         lc_projection = project_ppn_footer('C', source_form, lc_footer=lc_source['payload'])
     sections, bindings, grids, omissions = [], [], [], []
+    unifikasi_lookups = {}
+    if tax == 'PPh Unifikasi':
+        from coretax_unifikasi_json import reference_projection, project_field, grid_lookups
+        unifikasi_lookups, reference_evidence, reference_source = reference_projection(observed_forms, packets)
+        if reference_source is not None:
+            bindings.extend(_evidence(reference_evidence, reference_source, ['Payload'],
+                                      {'form': 'INDUK', 'field': 'reference catalogs'}))
     for observed in observed_forms:
         name = observed['name']
         section = {'name': name, 'fields': [], 'tables': []}
@@ -167,6 +174,17 @@ def project_masa_forms(packets, *, record, observed_forms):
                 if choice['value'] is not None and field['option'] == choice['value']:
                     section['fields'].append({**deepcopy(field), 'value': choice['value']})
                 continue
+            if tax == 'PPh Unifikasi' and field['field'] == 'DeclarationBy':
+                if (name != 'INDUK' or field['tag'] != 'P-RADIOBUTTON'
+                        or (field.get('option'), field['label']) not in
+                        (('0', 'Wajib Pajak'), ('1', 'Kuasa Wajib Pajak'))):
+                    raise _UnsupportedMetadata('unverified_unifikasi_declaration_option')
+                projected = project_field(source_form, primary['payload'], 'DeclarationBy', unifikasi_lookups)
+                if field['option'] == projected['value']:
+                    section['fields'].append({**deepcopy(field), 'value': projected['value']})
+                    bindings.extend(_evidence(projected['provenance'], primary, projected['container_path'],
+                        {'form': name, 'field': 'DeclarationBy'}, rule=projected.get('projection_rule')))
+                continue
             # Known option metadata is not itself a verified final selected value.
             if 'option' in field:
                 raise _UnsupportedMetadata('unverified_masa_choice_value')
@@ -193,13 +211,17 @@ def project_masa_forms(packets, *, record, observed_forms):
                     projected = project_ppn_amount(source_form, control, model=source_form.get('ReturnSheetModel'),
                                                    lc_footer=lc_source['payload'])
             else:
-                projected = project_unifikasi_text(source_form, control)
+                expected_tag = 'UI-DROPDOWN' if control == 'TaxPeriodCode' else 'INPUT'
+                if field['tag'] != expected_tag:
+                    raise _UnsupportedMetadata('unverified_unifikasi_control_tag')
+                projected = project_field(source_form, primary['payload'], control, unifikasi_lookups)
+                container = projected['container_path']
             section['fields'].append({**deepcopy(field), 'value': projected['value']})
             for entry in projected['provenance']:
                 source = lc_source if tax == 'PPN' and entry.get('source') == 'lc_footer' else event_source
                 path = ['Payload'] if source is lc_source else container
                 bindings.extend(_evidence([entry], source, path, {'form': name, 'field': control},
-                                          rule=projected.get('rule')))
+                                          rule=projected.get('rule', projected.get('projection_rule'))))
         for table in observed['tables']:
             if (not isinstance(table.get('headers'), list) or not isinstance(table.get('footer_spans'), list)
                     or type(table.get('group')) is not str
@@ -223,7 +245,8 @@ def project_masa_forms(packets, *, record, observed_forms):
                     footer = lc_projection if name == 'C' else project_ppn_footer(name, source_form)
                 else:
                     projected = project_unifikasi_grid(grid_name, pages, table['headers'],
-                        record_id=record['record_id'], timezone_name=observed['timezone'], lookups=None)
+                        record_id=record['record_id'], timezone_name=observed['timezone'],
+                        lookups=grid_lookups(grid_name, unifikasi_lookups))
                     footer = project_unifikasi_footer(grid_name, source_form)
                 result = projected['table']
                 if type(table.get('source_total')) is not int or table['source_total'] != result['source_total']:

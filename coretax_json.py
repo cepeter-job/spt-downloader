@@ -15,6 +15,8 @@ PPH21_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
                        'EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS')
 PPH21_MODEL_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/RETURN_SHEET_MODEL'
 PPH21_REFERENCE_URLS = (PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL)
+UNIFIKASI_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
+    'EBUPOT_TAX_CERTIFICATE,EBUPOT_PAYMENT_METHOD,EBUPOTSP_TAX_OBJECT,EBUPOTCY_TAX_OBJECT,PERIOD')
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -520,7 +522,8 @@ def _corporate_bindings(observed_forms):
     return sections, paths, requests, grids, responses, dependencies, primary
 
 
-def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_reference=False):
+def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_reference=False,
+                      allow_unifikasi_reference=False):
     if not isinstance(item, dict) or not isinstance(item.get('body'), bytes) or not isinstance(item.get('context'), dict):
         raise JsonSafetyError('Original corporate body bytes and captured descriptor are required')
     raw, ctx = item['body'], item['context']
@@ -545,6 +548,10 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_WIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WITR')
+    reference = reference or (allow_unifikasi_reference is True and endpoint == UNIFIKASI_REFERENCE_URL
+                 and ctx.get('method') == 'GET' and ctx.get('request_json') is None
+                 and selected['native_fields'].get('TaxTypeCode') == 'ICT_WT'
+                 and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WTR')
     ordinary = (urlparse(endpoint).path.startswith('/returnsheet/api/')
                 and not urlparse(endpoint).path.casefold().startswith('/returnsheet/api/returnsheets')
                 and ctx.get('method') == 'POST')

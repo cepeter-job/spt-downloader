@@ -6,7 +6,7 @@ import re
 
 from coretax_json import (
     JsonSafetyError,
-    PPH21_REFERENCE_URLS,
+    PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
     adapt_inventory_page,
     _object_pairs,
     _reject_constant,
@@ -355,7 +355,8 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     attempt, total_bytes = None, 0
     for item in bodies:
         envelope, ctx, attempt, event = _corporate_packet(
-            item, selected, scope, attempt, sequences, allow_pph21_reference=tax == 'PPh Pasal 21/26')
+            item, selected, scope, attempt, sequences, allow_pph21_reference=tax == 'PPh Pasal 21/26',
+            allow_unifikasi_reference=tax == 'PPh Unifikasi')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Masa source response budget exceeded')
@@ -366,7 +367,7 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         successful = (200 <= ctx['status'] < 300 and isinstance(envelope, dict)
                       and envelope.get('IsSuccessful') is True)
         form = None
-        reference = ctx['url'] in PPH21_REFERENCE_URLS
+        reference = (ctx['url'] in PPH21_REFERENCE_URLS or ctx['url'] == UNIFIKASI_REFERENCE_URL)
         # Repeated grid/footer responses are snapshots too. Check every packet,
         # even if missing/unknown observation metadata will require fallback.
         if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES) or reference:
@@ -393,7 +394,8 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
                     _check_primary(payload, record, selected, scope, period, source_tax, reasons))
         elif reference:
             if not successful:
-                reasons.append('failed_pph21_reference_response')
+                reasons.append('failed_unifikasi_reference_response' if tax == 'PPh Unifikasi'
+                               else 'failed_pph21_reference_response')
         elif path in grid_paths:
             source_tax = ('PPN' if path.startswith('/returnsheet/api/loadndvat/') else
                           'PPh Pasal 21/26' if path.startswith('/returnsheet/api/loadarticle2126/') else 'PPh Unifikasi')

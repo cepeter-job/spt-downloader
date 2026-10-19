@@ -52,5 +52,5 @@ def case(*, populated=True, model='Normal'):
     reference['context'].update(url=URL, method='GET', request_json=None)
     result['packets'].append(reference)
     for form in result['forms']:
-        form['references'] = [{'endpoint': URL, 'sequences': [sequence]}]
+        form['references'] = [{'endpoint': URL, 'method': 'GET', 'sequences': [sequence]}]
     return deepcopy(result)
