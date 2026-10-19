@@ -144,7 +144,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         if name == 'L4':
                             if 'PeriodYear' not in request:
                                 return None
-                            if request['PeriodYear'] != record.get('source_fields',{}).get('TaxPeriodCode','')[-4:]:
+                            period = record.get('source_fields', {}).get('TaxPeriodCode')
+                            # DOM listing fallback has no native period binding.
+                            # Caller request/response checks still reject conflicts
+                            # before allowing whole-DOM fallback; do not invent one.
+                            if period is None:
+                                return None
+                            if request['PeriodYear'] != period[-4:]:
                                 raise JsonSafetyError('Observed grid year contradicts selected period')
                         first, rows = request.get('First'), request.get('Rows')
                         if type(first) is not int or first < 0 or type(rows) is not int or rows <= 0:
