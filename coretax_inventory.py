@@ -54,7 +54,16 @@ def plan_year_filters(catalog, year, basis, *, now=None):
         extra.sort()
         filters.append({**common, 'MatchMode': 'equals' if len(extra) == 1 else 'any' + '-equals' * len(extra),
                         'Value': extra[0] if len(extra) == 1 else extra})
+    # Retain the raw snapshot hash for custody. Renewal/order is not a change
+    # to period semantics; catalog freshness is independently validated above.
+    binding = {key: catalog[key] for key in ('ReferenceDataType', 'language', 'Checksum')}
+    binding['Details'] = sorted(
+        ({key: row[key] for key in ('Code', 'CodeDescription')} for row in catalog['Details']),
+        key=lambda row: row['Code'])
+    binding_fingerprint = hashlib.sha256(json.dumps(binding, ensure_ascii=False, sort_keys=True,
+        separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
     return {'eligible': True, 'filters': filters, 'catalog_sha256': fingerprint,
+            'catalog_binding_sha256': binding_fingerprint,
             'catalog_checksum': catalog['Checksum'], 'catalog_expires': catalog['ExpiryDate']}
 
 
