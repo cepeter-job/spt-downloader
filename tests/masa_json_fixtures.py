@@ -40,7 +40,8 @@ def payload(tax):
         outer.update(PeriodYear=2025, PeriodMonth=1, ReturnSheetType='VAT_VATR')
     else:
         form.update(TaxIdentificationNumber=NPWP)
-        outer.update(PeriodYear='2025', PeriodStartMonth='1', PeriodEndMonth='1')
+        outer.update(PeriodYear='2025', PeriodStartMonth='1', PeriodEndMonth='1',
+                     ReturnSheetType='ICT_WTR', ReturnSheetStatusCode='SUBMITTED')
     outer['FormData'] = json.dumps(form)
     return outer
 

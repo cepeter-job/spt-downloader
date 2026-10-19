@@ -911,7 +911,7 @@ def _identity_checked_packets(packets, record, scope):
 def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
-    masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26')
+    masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi')
     if masa:
         from coretax_masa_json import adapt_masa_detail, check_masa_request_identities
         if record['meta'].get('Jenis Pajak') == 'PPh Pasal 21/26':
@@ -969,6 +969,7 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         result['sections'] = decoded['sections']
         audit['reason'] = ('verified_native_corporate_source' if corporate else
                            'verified_native_ppn_source' if record['meta'].get('Jenis Pajak') == 'PPN'
+                           else 'verified_native_unifikasi_source' if record['meta'].get('Jenis Pajak') == 'PPh Unifikasi'
                            else 'verified_native_pph21_source')
     else:
         audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
@@ -1151,15 +1152,18 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                     _check_cancel(check_cancel)
                     if record['meta'].get(field, '') != current_meta.get(field, ''):
                         raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26'):
-                    from coretax_masa_json import bind_ppn_listing_identity, bind_pph21_listing_identity
-                    pph21 = record['meta']['Jenis Pajak'] == 'PPh Pasal 21/26'
-                    bind_identity = bind_pph21_listing_identity if pph21 else bind_ppn_listing_identity
+                if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi'):
+                    from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
+                                                   bind_unifikasi_listing_identity)
+                    prefix, bind_identity = {
+                        'PPN': ('ppn', bind_ppn_listing_identity),
+                        'PPh Pasal 21/26': ('pph21', bind_pph21_listing_identity),
+                        'PPh Unifikasi': ('unifikasi', bind_unifikasi_listing_identity),
+                    }[record['meta']['Jenis Pajak']]
                     identity = bind_identity(current_response, record=record, scope=scope)
                     if identity['eligible']:
                         from coretax_pdf import _directories
                         from spt_desktop.output_windows import DirectoryGuard
-                        prefix = 'pph21' if pph21 else 'ppn'
                         relative = Path('listing-responses') / f'{prefix}-identity-{ordinal:04d}-{uuid4().hex}.json'
                         target = (folder / relative).absolute()
                         with DirectoryGuard() as guard:

@@ -74,11 +74,16 @@ def bind_pph21_listing_identity(response, *, record, scope):
     return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPh Pasal 21/26')
 
 
+def bind_unifikasi_listing_identity(response, *, record, scope):
+    return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPh Unifikasi')
+
+
 def _bind_masa_listing_identity(response, *, record, scope, tax):
     # Share custody checks, not display aliases or inferred tax classifications.
     prefix, tax_code, sheet_code = {
         'PPN': ('ppn', 'VAT_VAT', 'VAT_VATR'),
         'PPh Pasal 21/26': ('pph21', 'ICT_WIT', 'ICT_WITR'),
+        'PPh Unifikasi': ('unifikasi', 'ICT_WT', 'ICT_WTR'),
     }[tax]
     unavailable = {'eligible': False, 'reason': 'missing_native_' + prefix + '_listing_identity'}
     if record.get('meta', {}).get('Jenis Pajak') != tax:
@@ -220,7 +225,7 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
     if native_model is not None and native_model != literal_model:
         raise JsonSafetyError('Masa literal listing model contradicts selected return')
     model = 'NORMAL' if literal_model == 'Normal' else None
-    if (tax == 'PPN' and isinstance(literal_model, str)
+    if (tax in ('PPN', 'PPh Unifikasi') and isinstance(literal_model, str)
             and re.fullmatch(r'Amendment [0-9]{3}', literal_model)
             and native_model == literal_model):
         model = 'AMENDMENT'
@@ -239,6 +244,10 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
             _identity_field(payload, 'PeriodEndMonth', last, reasons)
     if tax == 'PPN':
         _identity_field(payload, 'ReturnSheetType', 'VAT_VATR', reasons)
+    elif tax == 'PPh Unifikasi':
+        _identity_field(payload, 'ReturnSheetType', 'ICT_WTR', reasons)
+        # Submitted is the reviewed lifecycle: draft can depend on login claims.
+        _identity_field(payload, 'ReturnSheetStatusCode', 'SUBMITTED', reasons)
     if payload.get('IsFound') is not True:
         reasons.append('masa_primary_not_found')
     raw_form = payload.get('FormData')
