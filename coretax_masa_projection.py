@@ -126,6 +126,13 @@ def project_masa_forms(packets, *, record, observed_forms):
         section = {'name': name, 'fields': [], 'tables': []}
         choice = None
         choice_bound = False
+        if tax == 'PPh Unifikasi':
+            declarations = [f for f in observed['fields'] if isinstance(f, dict)
+                            and f.get('field') == 'DeclarationBy']
+            expected = [('0', 'Wajib Pajak', 'P-RADIOBUTTON'), ('1', 'Kuasa Wajib Pajak', 'P-RADIOBUTTON')]
+            if declarations and (name != 'INDUK' or
+                    [(f.get('option'), f.get('label'), f.get('tag')) for f in declarations] != expected):
+                raise _UnsupportedMetadata('incomplete_unifikasi_declaration_options')
         if tax == 'PPN' and name == 'INDUK':
             options = [f for f in observed['fields'] if isinstance(f, dict) and f.get('field') == 'AskedTo']
             if options:

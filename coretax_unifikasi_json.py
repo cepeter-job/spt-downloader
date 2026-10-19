@@ -65,10 +65,13 @@ def project_field(form, outer, control, lookups):
             raise _UnsupportedMetadata('unbound_unifikasi_period_description')
         value = choices[code]
     elif control == 'SubmitInProgressStatus':
-        flag = _source_scalar(form, ('SubmitInProgressStatus',), evidence)
-        status = _source_scalar(form, ('ReturnSheetStatusCode',), evidence)
+        flag = form.get('SubmitInProgressStatus')
         if flag is not None and type(flag) is not bool:
             raise _UnsupportedMetadata('unsupported_unifikasi_progress_flag')
+        evidence.append({'path': ['SubmitInProgressStatus'], 'value': flag,
+                         'type': 'missing' if 'SubmitInProgressStatus' not in form else
+                                 'null' if flag is None else 'boolean'})
+        status = _source_scalar(form, ('ReturnSheetStatusCode',), evidence)
         value = 'In Progress' if flag else 'Submitted' if status == 'SUBMITTED' else '-'
     elif control in ('MyCheckBox', 'DeclarationBy'):
         status = _source_scalar(outer, ('ReturnSheetStatusCode',), evidence)

@@ -7,9 +7,9 @@ import pytest
 
 from coretax_json import JsonSafetyError
 from coretax_masa_json import adapt_masa_detail
-from masa_json_fixtures import SCOPE, packet
+from masa_json_fixtures import packet
 from masa_projection_fixture import native_case
-from test_ppn_json_listing_binding import case as listing_case, seal
+from test_ppn_json_listing_binding import case as listing_case, seal, SCOPE
 
 
 def listing():

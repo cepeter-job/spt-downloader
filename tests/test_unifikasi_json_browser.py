@@ -18,6 +18,8 @@ def test_connected_native_unifikasi_never_reads_dom_business_values(browser, tmp
     def forbidden(*args, **kwargs):
         raise AssertionError('Connected native Unifikasi must not fall back to DOM')
     monkeypatch.setattr(coretax_browser, 'capture_detail', forbidden)
+    (tmp_path / 'capture').mkdir()
+    (tmp_path / 'export').mkdir()
     with observed(browser, tmp_path / 'capture', monkeypatch, 'PPh Unifikasi') as (_, fixture, capture):
         result = coretax_browser._hybrid_detail(fixture.page, fixture.record, SCOPE,
                                                 tmp_path, capture, 5, None)

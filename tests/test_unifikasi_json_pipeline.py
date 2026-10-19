@@ -25,6 +25,8 @@ def test_full_native_projection_includes_source_labels_and_all_forms(populated, 
     assert values['Masa Pajak'] == 'Januari 2025'
     assert values['NPWP Penandatangan'] == '0000000000000001'
     assert values['Wajib Pajak'] == '0' and 'Kuasa Wajib Pajak' not in values
+    declarations = [f for f in result['sections'][0]['fields'] if f['field'] == 'DeclarationBy']
+    assert len(declarations) == 1 and declarations[0]['value'] == '0'
     assert values['Pernyataan'] == 'true'
     assert values['Status Penyampaian'] == 'Submitted'
     for section in result['sections'][1:]:
@@ -35,6 +37,22 @@ def test_full_native_projection_includes_source_labels_and_all_forms(populated, 
     assert any(b['sequence'] == fixture['packets'][-1]['context']['sequence']
                and b['container_path'] == ['Payload'] for b in result['provenance']['bindings'])
     assert fixture == before
+
+
+@pytest.mark.parametrize('defect', ['missing-selected', 'duplicate-selected', 'wrong-option-label'])
+def test_incomplete_declaration_options_cannot_claim_native_coverage(defect):
+    fixture = case()
+    fields = fixture['forms'][0]['fields']
+    selected = next(f for f in fields if f['field'] == 'DeclarationBy' and f['option'] == '0')
+    if defect == 'missing-selected':
+        fields.remove(selected)
+    elif defect == 'duplicate-selected':
+        fields.append(deepcopy(selected))
+    else:
+        selected['label'] = 'UNREVIEWED OPTION'
+    result = adapt_masa_detail(fixture['packets'], record=fixture['record'], scope=fixture['scope'],
+                              observed_forms=fixture['forms'])
+    assert not result['eligible'] and not result['coverage']['complete']
 
 
 @pytest.mark.parametrize('defect', ['missing', 'wrong-endpoint', 'wrong-sequence'])
