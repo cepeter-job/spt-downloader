@@ -64,6 +64,11 @@ def project_field(form, outer, control, lookups):
         if type(code) is not str or code not in choices:
             raise _UnsupportedMetadata('unbound_unifikasi_period_description')
         value = choices[code]
+    elif control == 'StatementSignature':
+        signature = _source_scalar(form, ('StatementSignature',), evidence)
+        if signature is not None and type(signature) is not str:
+            raise _UnsupportedMetadata('unsupported_unifikasi_signature_type')
+        value = '' if signature is None else signature
     elif control == 'SubmitInProgressStatus':
         flag = form.get('SubmitInProgressStatus')
         if flag is not None and type(flag) is not bool:

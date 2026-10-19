@@ -131,6 +131,13 @@ def test_final_submitted_controls_never_read_claims(control, value):
 def test_text_and_explicit_signer_values_preserve_strings():
     module = feature()
     assert module.project_field({'Name': 'SYNTHETIC NAME'}, {}, 'FullName', {})['value'] == 'SYNTHETIC NAME'
+    for value, expected in [('SYNTHETIC SIGNATURE', 'SYNTHETIC SIGNATURE'), ('', ''), (None, '')]:
+        result = module.project_field({'StatementSignature': value}, {}, 'StatementSignature', {})
+        assert result['value'] == expected
+        assert result['provenance'][0]['path'] == ['StatementSignature']
+        assert result['provenance'][0]['value'] == value
+    with pytest.raises(_UnsupportedMetadata):
+        module.project_field({'StatementSignature': {'unknown': 'shape'}}, {}, 'StatementSignature', {})
     for value in ('', '0000000000000001'):
         result = module.project_field({'Signer': {'StatementTIN': value}}, {}, 'StatementTIN', {})
         assert result['value'] == value
