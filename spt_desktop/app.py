@@ -15,7 +15,7 @@ from .ui_views import MainView
 
 #punto ami priyono
 
-DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'dom'}
+DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'json-first'}
 DETAIL_SOURCE_LABELS={'dom':'DOM','json-first':'JSON-hybrid (pilot)'}
 
 

@@ -42,7 +42,7 @@ def test_simple_window_controls_and_partial_progress_are_real_tkinter(tmp_path):
             active=False
             operation='export'
             job_id=None
-            def start(self,*args):
+            def start(self,*args, detail_source='dom'):
                 self.active=True;self.job_id='synthetic-view-job';return self.job_id
             def poll(self):return self.active
             def close(self):self.active=False

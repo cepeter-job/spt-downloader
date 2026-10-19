@@ -164,7 +164,7 @@ def test_real_mode_widget_saves_reloads_and_launches_selected_mode(window, mode,
     app.settings()
     root.update_idletasks()
     widget = mode_control(app._settings_dialog)
-    assert widget.get() == 'DOM' and widget.instate(['readonly'])
+    assert widget.get() == 'JSON-hybrid (pilot)' and widget.instate(['readonly'])
     widget.current(index)
     widget.event_generate('<<ComboboxSelected>>')
     root.update_idletasks()
@@ -205,5 +205,5 @@ def test_source_selftest_observes_real_mode_control_save_and_start(tmp_path):
     assert spt_gui.self_test(report) == 0
     data = json.loads(report.read_text())
     assert data.get('detail_source_control') == {
-        'labels': list(CAPTIONS), 'default': 'dom', 'saved': 'json-first', 'started': 'json-first'}
+        'labels': list(CAPTIONS), 'default': 'json-first', 'saved': 'json-first', 'started': 'json-first'}
     assert not data['credentials_accessed'] and not data['live_scrape']

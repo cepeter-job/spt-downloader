@@ -142,3 +142,45 @@ def test_unknown_benchmark_phase_cannot_leak_private_phase_text(tmp_path):
             pass
         assert log.flush()
     assert 'SYNTHETIC-SECRET' not in json.dumps(logs(tmp_path))
+
+
+
+def test_checkpoint_reuse_is_attributed_without_second_navigation(tmp_path, monkeypatch):
+    folder=tmp_path/'capture';folder.mkdir()
+    case=Scenario(folder,monkeypatch)
+    assert case.collect()['complete']
+    def forbidden(*args,**kwargs):
+        raise AssertionError('Valid checkpoint must not navigate')
+    monkeypatch.setattr(case.page,'goto',forbidden)
+    with d.session(tmp_path/'diag','worker') as log:
+        assert case.collect()['complete']
+        assert log.flush()
+    rows=logs(tmp_path/'diag')
+    wall=next(r for r in rows if r['event']=='phase.completed' and r.get('phase')=='return_detail')
+    assert wall['cached'] is True and wall['source_used']=='json' and wall['status']=='COMPLETE'
+    assert not any(r.get('phase') in ('list_restore','open_detail','json_observe') for r in rows)
+    assert any(r['event']=='detail.source' and r.get('source_reason')=='checkpoint_reuse' for r in rows)
+
+
+def test_fatal_source_error_keeps_error_outcome_and_clears_context(tmp_path,monkeypatch):
+    folder=tmp_path/'capture';folder.mkdir()
+    case=Scenario(folder,monkeypatch)
+    from coretax_json import JsonSafetyError
+    def blocked(*args,**kwargs):raise JsonSafetyError('SYNTHETIC-SECRET-CONTEXT')
+    monkeypatch.setattr(browser,'_hybrid_detail',blocked)
+    with d.session(tmp_path/'diag','worker') as log:
+        with pytest.raises(JsonSafetyError):case.collect()
+        d.record('operation.finished',status='ERROR')
+        assert log.flush()
+    rows=logs(tmp_path/'diag')
+    wall=[r for r in rows if r.get('phase')=='return_detail' and r['event']=='phase.failed']
+    assert len(wall)==1 and wall[0]['status']=='ERROR' and wall[0]['source_used']=='none'
+    assert 'ordinal' not in next(r for r in rows if r['event']=='operation.finished')
+    assert 'SYNTHETIC-SECRET' not in json.dumps(rows)
+
+
+def test_unknown_table_counts_are_omitted_not_inferred_from_value_rows():
+    assert browser._benchmark_result({'capture_complete':True,'sections':[{'tables':[
+        {'rows':[['PRIVATE VALUE']]}]}]}) == {'status':'COMPLETE','forms':1,'grids':1}
+    assert browser._benchmark_result({'capture_complete':False,'sections':[{'tables':[
+        {'body_row_count':3,'pages':2}]}]}) == {'status':'PARTIAL','forms':1,'grids':1,'body_rows':3,'pages':2}

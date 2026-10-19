@@ -133,7 +133,7 @@ def test_source_selftest_exercises_hybrid_sorting_and_diagnostics_together(tmp_p
         data = json.loads(report.read_text(encoding='utf-8'))
         assert data['diagnostics'] == {'schema': 1, 'safe_logging': True}
         assert data['detail_source_control'] == {
-            'labels': ['DOM', 'JSON-hybrid (pilot)'], 'default': 'dom',
+            'labels': ['DOM', 'JSON-hybrid (pilot)'], 'default': 'json-first',
             'saved': 'json-first', 'started': 'json-first'}
         assert data['selection_sorting_control']['selection_preserved'] is True
         assert len(data['selection_sorting_control']['directions']) == 2

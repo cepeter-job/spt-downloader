@@ -31,7 +31,7 @@ class Controller:
     def close(self):
         self.active = False
 
-    def start(self, npwp, year, browser, headless):
+    def start(self, npwp, year, browser, headless, *, detail_source='dom'):
         self.starts.append((npwp, year, browser, headless))
         self.active = True
         self.job_id = f'synthetic-ui-{len(self.starts)}'

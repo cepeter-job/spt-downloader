@@ -34,7 +34,7 @@ def fixture(page, start=0):
       document.querySelector('.p-paginator-current').textContent='Showing '+(at+1)+' of 2 entries';};
     document.querySelector('.p-paginator-prev').onclick=()=>{moves++;if(!noAdvance){at--;draw();}};
     document.querySelector('.p-paginator-next').onclick=()=>{moves++;if(!noAdvance){at++;draw();}};
-    draw();</script>""")
+    draw();</script>""", timeout=10000, wait_until="domcontentloaded")
     page.evaluate('(start)=>{at=start;draw();}', start)
     return page.locator('table')
 
@@ -79,3 +79,27 @@ def test_page_limit_and_stop_never_click_an_extra_page(page):
     with pytest.raises(driver.CaptureCancelled):
         driver.capture_table(page,table,1,max_pages=3,check_cancel=stop)
     assert page.evaluate('moves')==0
+
+
+
+def test_nested_foreign_paginator_is_not_clicked_for_parent_table(page):
+    table=fixture(page)
+    page.evaluate("""() => {
+        const foreign=document.createElement('p-table');
+        foreign.innerHTML='<button class="p-paginator-next" type="button" onclick="moves++">Foreign</button>';
+        document.querySelector('p-table').prepend(foreign);
+    }""")
+    with pytest.raises(RuntimeError,match='pagination control'):
+        driver.capture_table(page,table,1,max_pages=3)
+    assert page.evaluate('moves')==0
+
+
+def test_stop_during_state_wait_is_not_converted_to_partial_return(page):
+    table=fixture(page)
+    page.evaluate('noAdvance=true')
+    def stop_after_click():
+        if page.evaluate('moves'):
+            raise driver.CaptureCancelled('synthetic stop')
+    with pytest.raises(driver.CaptureCancelled):
+        driver.capture_table(page,table,1,max_pages=3,check_cancel=stop_after_click)
+    assert page.evaluate('moves')==1

@@ -31,10 +31,10 @@ def test_invalid_cli_mode_is_rejected_as_a_choice(mode, capsys):
 @pytest.mark.parametrize('saved', [{}, {'detail_source': 'JSON-FIRST'},
     {'detail_source': 'json-hybrid'}, {'detail_source': True},
     {'detail_source': 1}, {'detail_source': None}, {'detail_source': {}}])
-def test_legacy_or_invalid_saved_mode_defaults_to_dom(tmp_path, saved):
+def test_legacy_or_invalid_saved_mode_defaults_to_json_hybrid(tmp_path, saved):
     from spt_desktop.app import load_preferences
     (tmp_path / 'preferences.json').write_text(json.dumps(saved), encoding='utf-8')
-    assert load_preferences(tmp_path).get('detail_source') == 'dom'
+    assert load_preferences(tmp_path).get('detail_source') == 'json-first'
 
 
 @pytest.mark.parametrize('mode', ['dom', 'json-first'])

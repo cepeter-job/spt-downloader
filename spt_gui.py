@@ -133,7 +133,7 @@ def self_test(report=None):
                                  if w.winfo_class()=='TButton'})
             modes=[w for w in widgets if w.winfo_class()=='TCombobox'
                    and tuple(w.cget('values'))==('DOM','JSON-hybrid (pilot)')]
-            assert len(modes)==1 and modes[0].get()=='DOM' and modes[0].instate(['readonly'])
+            assert len(modes)==1 and modes[0].get()=='JSON-hybrid (pilot)' and modes[0].instate(['readonly'])
             mode_control={'labels':list(modes[0].cget('values')),'default':app.preferences['detail_source']}
             modes[0].current(1)
             next(w for w in widgets if w.winfo_class()=='TButton' and w.cget('text')=='Simpan').invoke()

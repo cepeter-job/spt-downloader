@@ -66,6 +66,18 @@ Untuk kasus Coretax → Satu, origin tersimpan Satu dapat dilanjutkan hanya sete
 
 Aturan jaringan tidak dilonggarkan: origin asing dan request non-GET/HEAD ke origin selain origin kredensial tetap ditolak. Counter bukan bukti bahwa request yang diblokir menyebabkan reload loop, dan timeout bukan diagnosis password salah. Gunakan urutan state dan kategori blocking untuk menentukan observasi lanjutan; jangan mengirim HAR mentah atau kredensial.
 
+## Benchmark DOM versus JSON (lokal, tanpa payload)
+
+`detail.source` mencatat `source_requested` (`dom`/`json-first`), `source_used` (`dom`/`json`), dan `source_reason` dari kategori tetap: `dom_requested`, `native_verified`, `capture_incomplete`, `adapter_ineligible`, `coverage_incomplete`, `forms_unavailable`, `unsupported_tax`, atau `checkpoint_reuse`. Ini tidak mencatat string alasan adapter mentah. `tax_kind` hanya `ppn`, `pph21`, `unifikasi`, `corporate`, atau `other`; `ordinal` adalah posisi anonim dalam pilihan job, bukan ID SPT.
+
+Fase `return_detail` adalah waktu inklusif per record (termasuk restore list, buka View, observer/projection, DOM/PDF dan checkpoint). `list_restore`, `open_detail`, `json_observe`, dan `json_project` memisahkan pekerjaan tersebut; fase `detail` yang lama tetap khusus capture DOM. Fase anak berada di dalam waktu induk: jangan menjumlahkannya lagi. Context ordinal direset sebelum berpindah record/keluar karena error atau Stop.
+
+Completion `return_detail` menyertakan mode hasil, `status` COMPLETE/PARTIAL dan `cached`; `source_used=none` berarti belum ada hasil sumber yang dapat ditetapkan. Source decision dapat tercatat sebelum pekerjaan berikutnya gagal; itu bukan bukti ekspor berhasil. Error/Stop menghasilkan phase.failed/phase.cancelled, bukan completion. `forms`/`grids` menghitung section/table container hasil proyeksi, bukan endpoint unik. `body_rows`/`pages` hanya dicatat bila seluruh tabel menyediakan count eksplisit; field hilang bukan nol. Scalar/tree/grid antara mode dapat memiliki representasi berbeda: samakan scope dan makna counter sebelum membandingkan.
+
+Untuk benchmark, gunakan SPT/model/opsi PDF dan versi build yang sama, pisahkan login/seleksi dan cache reuse, verifikasi status serta mode aktual, kemudian ukur berulang dengan urutan mode bergantian. Jangan membandingkan satu job timeout/PARTIAL dengan job COMPLETE sebagai kecepatan normal. Logging ini tidak menghapus navigasi ulang atau melonggarkan binding identitas dan tidak memberikan klaim peningkatan kecepatan sebelum pengukuran.
+
+Default Pengaturan desktop baru adalah JSON-hybrid; pilihan DOM yang sudah disimpan tetap berlaku. CLI/collector tetap DOM tanpa opsi eksplisit. Log lama tidak memperoleh field benchmark ini secara retroaktif.
+
 ## Batas penyimpanan dan kegagalan
 
 Ukuran file maksimal 1 MiB, maksimal tiga segmen per session. Retensi tujuh hari dan anggaran 32 file pada folder log; file regular milik logger yang tidak aktif dibersihkan paling tua dahulu. File asing, hardlink, symlink/reparse dan session aktif tidak dihapus. Jika kapasitas tidak dapat direklamasi dengan aman, logger tidak menambah file.
