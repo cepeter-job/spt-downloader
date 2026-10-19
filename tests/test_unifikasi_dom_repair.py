@@ -101,16 +101,16 @@ def test_daftar_i_dpp_numeric_and_body_boundary_style(tmp_path, count):
     try:
         sheet = book['DAFTAR-I']
         assert sheet['I4'].value == 'DASAR PENGENAAN PAJAK (Rp)'
-        assert 'A1:O1' in {str(m) for m in sheet.merged_cells.ranges}
+        assert 'A1:P1' in {str(m) for m in sheet.merged_cells.ranges}
         for row in range(5, 5 + count):
             assert sheet.cell(row, 9).value == 1234.5 and sheet.cell(row, 9).data_type == 'n'
-            assert sheet.cell(row, 10).value == 24.69 and sheet.cell(row, 10).data_type == 'n'
+            assert sheet.cell(row, 11).value == 24.69 and sheet.cell(row, 11).data_type == 'n'
             assert sheet.cell(row, 2).value == '0000000000000002' and sheet.cell(row, 2).data_type == 's'
-            assert sheet.cell(row, 13).value == '0000000000000002000001'
-            assert sheet.cell(row, 12).value is None
-            assert sheet.cell(row, 9).number_format == sheet.cell(row, 10).number_format == ACCOUNTING_RP
+            assert sheet.cell(row, 14).value == '0000000000000002000001'
+            assert sheet.cell(row, 13).value is None
+            assert sheet.cell(row, 9).number_format == sheet.cell(row, 11).number_format == ACCOUNTING_RP
         if count >= 7:
-            for col in range(1, 16):
+            for col in range(1, 17):
                 for attr in ('font', 'fill', 'border', 'alignment'):
                     assert copy(getattr(sheet.cell(8, col), attr)) == copy(getattr(sheet.cell(7, col), attr))
                     assert copy(getattr(sheet.cell(8, col), attr)) == copy(getattr(sheet.cell(9, col), attr))
@@ -182,7 +182,7 @@ def test_monetary_template_formats_match_ppn_and_pph21():
             reference.close()
     targets = {
         'Induk': [(range(10, 26), range(3, 9))],
-        'Daftar I': [(range(5, 9), (9, 10)), (range(11, 15), (9, 10)), (range(15, 19), (10,))],
+        'Daftar I': [(range(5, 9), (9, 11)), (range(11, 15), (9, 11)), (range(15, 19), (11,))],
         'Daftar II': [(range(5, 9), (5, 7)), (range(14, 18), (5, 7)), ((9, 10, 18), (7,))],
         'Lampiran I': [(range(5, 10), (11, 13)), ((10,), (13,))],
     }
@@ -194,7 +194,7 @@ def test_monetary_template_formats_match_ppn_and_pph21():
                       if workbook[name].cell(row, col).number_format != ACCOUNTING_RP]
         assert mismatches == []
         # Periods, identifiers, rates and dates must not inherit the currency format.
-        for name, cells in [('Induk', ('D4', 'D5')), ('Daftar I', ('B5', 'D5', 'E5', 'M5')),
+        for name, cells in [('Induk', ('D4', 'D5')), ('Daftar I', ('B5', 'D5', 'E5', 'J5', 'N5')),
                             ('Daftar II', ('C5', 'F5', 'I5')), ('Lampiran I', ('B5', 'I5', 'J5', 'L5', 'O5'))]:
             assert all(workbook[name][cell].number_format != ACCOUNTING_RP for cell in cells)
     finally:

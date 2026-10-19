@@ -258,6 +258,10 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             if digest != BUILD_DIGESTS[url]:
                 return None
             builds[url] = digest
+        if tax == 'PPN':
+            from coretax_browser import _ppn_catalog_ready
+            if not _ppn_catalog_ready(page, check_cancel):
+                return None
         view, tabs = _tabs(page)
         names = [tabs.nth(i).inner_text().strip() for i in range(tabs.count())]
         if len(names) != len(set(names)) or set(names) != set(FORMS[tax]):

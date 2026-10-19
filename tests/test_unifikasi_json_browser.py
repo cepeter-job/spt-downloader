@@ -63,6 +63,6 @@ def test_connected_native_unifikasi_never_reads_dom_business_values(browser, tmp
             for row in range(5, 17):
                 assert book['DAFTAR-I'].cell(row, 9).value == 1200
                 assert book['DAFTAR-I'].cell(row, 9).data_type == 'n'
-                assert book['DAFTAR-I'].cell(row, 10).value == 30
+                assert book['DAFTAR-I'].cell(row, 11).value == 30
         finally:
             book.close()
