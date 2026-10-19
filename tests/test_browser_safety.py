@@ -418,7 +418,9 @@ def test_detail_list_reset_obeys_page_limit(tmp_path, monkeypatch):
     class StuckPrevious:
         clicks = 0
 
-        def evaluate(self, script):
+        def evaluate(self, script, owner=None):
+            if owner is not None:
+                return True
             self.clicks += 1
             if self.clicks > 2:
                 raise RuntimeError('Synthetic watchdog: unbounded Previous loop')

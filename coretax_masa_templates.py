@@ -313,11 +313,11 @@ def _unifikasi_induk(sheet, sections):
     return pending
 
 
-UNIFIKASI_MONEY = {'daftar i': (9, 10), 'daftar ii': (5, 7), 'lampiran i': (11, 13)}
+UNIFIKASI_MONEY = {'daftar i': (9, 11), 'daftar ii': (5, 7), 'lampiran i': (11, 13)}
 UNIFIKASI_FOOTER_ROWS = {'daftar i': [(), (15, 16, 17, 18)],
                        'daftar ii': [(9, 10), (18,)], 'lampiran i': [(10,)]}
-UNIFIKASI_SOURCE_EXTRAS = ('TINGKAT (%)',
-    'UANG PERSEDIAAN / PEMBAYARAN LANGSUNG (UNTUK WP INSTANSI PEMERINTAH DENGAN DANA APBN)')
+UNIFIKASI_SOURCE_EXTRAS = (
+    'UANG PERSEDIAAN / PEMBAYARAN LANGSUNG (UNTUK WP INSTANSI PEMERINTAH DENGAN DANA APBN)',)
 
 
 def _unifikasi_footer(table, labels, aliases, column, allowed):
@@ -500,6 +500,26 @@ def _ppn_appendix(sheet, blocks, sections, form):
         pending.extend({**table, 'rows': table['footer']} for table, _ in totals)
     return fields, pending
 
+def _redundant_unifikasi_identity(field):
+    # Presentation only: these controls stay in checkpoint and mapping counts.
+    groups = {
+        'A. IDENTITAS PEMOTONG': {
+            'TaxIdentificationNumber': 'NPWP', 'FullName': 'Nama Lengkap',
+            'Address': 'Alamat', 'PhoneNumber': 'Nomor Telepon',
+            'SubmitInProgressStatus': 'Status Penyampaian',
+        },
+        'C. PERNYATAAN DAN TANDA TANGAN': {
+            'StatementTIN': 'NPWP', 'StatementFullName': 'Nama Tanda Tangan',
+            'MyCheckBox': 'Penandatangan / Wajib Pajak / Kuasa Wajib Pajak / NPWP / Nama Tanda Tangan / Tanda Tangan',
+        },
+    }
+    expected = groups.get(field.get('group'), {}).get(field.get('field'))
+    return (expected is not None and field.get('label') == expected
+            and not field.get('column_label')
+            and (field.get('field') != 'MyCheckBox'
+                 or field.get('value') in ('true', 'false', True, False)))
+
+
 def render_template_form(sheet, tax, form, sections):
     form = canonical_form(tax, form)
     evidence = []
@@ -524,7 +544,11 @@ def render_template_form(sheet, tax, form, sections):
         return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
                 'unmapped_tables': len(unresolved),
                 'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
-    _raw_evidence(sheet, sections, fields, tables + evidence, style_row)
+    display_fields = ([field for field in fields if not _redundant_unifikasi_identity(field)]
+                      if form == 'induk' else fields)
+    display_sections = ([{**section, 'text': ''} for section in sections]
+                        if form == 'induk' else sections)
+    _raw_evidence(sheet, display_sections, display_fields, tables + evidence, style_row)
     unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
     return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
             'unmapped_tables': len(unresolved),

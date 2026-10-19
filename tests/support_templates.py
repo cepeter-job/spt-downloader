@@ -74,7 +74,7 @@ TYPES = {
             'path': 'SPT Masa PPN/SPT_PPN_Januari 2025_Normal.xlsx',
             'resource': 'resources/ppn_format.xlsx'},
     'PPh Unifikasi': {'reference': 'unifikasi_format.xlsx',
-                     'sha256': 'bd485e6d3100cd3eeac35f87994a250c8429efb688e46fddc22fc151e5394685',
+                     'sha256': '9ae94dd5e264d2d7db18f84196dd5143f9d77f5d362187e7910332da99b48248',
                      'styles': '63842298a5c5e29f6ee7074f53da19a8c847796777f7810bbc257a218bfdfe98',
                      'forms': ['Induk', 'Daftar I', 'Daftar II', 'Lampiran I'],
                      'path': 'SPT Masa Unifikasi/SPT_Unifikasi_Januari 2025_Normal.xlsx',

@@ -42,7 +42,7 @@ def test_native_unifikasi_packets_export_four_approved_numeric_forms(tmp_path, p
                 assert daftar.cell(row, 2).data_type == 's'
                 assert daftar.cell(row, 4).value == '0000123'
                 assert daftar.cell(row, 4).data_type == 's'
-                for column, amount in [(9, 1200), (10, 30)]:
+                for column, amount in [(9, 1200), (11, 30)]:
                     cell = daftar.cell(row, column)
                     assert cell.value == amount and cell.data_type == 'n'
                     assert cell.number_format == ACCOUNTING_RP

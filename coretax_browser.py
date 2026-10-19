@@ -276,6 +276,46 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     return result
 
 
+def _list_paginator(container, selector):
+    button = container.query_selector(selector)
+    if button is None:
+        return None
+    enabled = button.evaluate("""(e, owner) => {
+        const actual=e.closest('p-table')||e.closest('.p-datatable')||e.parentElement;
+        return e.isConnected && actual===owner && !!e.getClientRects().length &&
+            !e.closest(':disabled,[disabled],.p-disabled,[aria-disabled="true"],[hidden],[aria-hidden="true"]') &&
+            !['hidden','collapse'].includes(getComputedStyle(e).visibility);
+    }""", container)
+    if enabled is not True:
+        button.dispose()
+        return None
+    return button
+
+
+DETAIL_READY_TIMEOUT = 30
+DETAIL_PANEL_TIMEOUT = 30
+_PPN_FORMS = {'INDUK', 'A1', 'A2', 'B1', 'B2', 'B3', 'C'}
+
+
+def _ppn_catalog_ready(page, check_cancel=None):
+    # Tab visibility is value-free readiness evidence. Initial Angular shells
+    # can expose default zero fields before the return's appendices appear.
+    deadline = time.monotonic() + DETAIL_READY_TIMEOUT
+    while True:
+        _check_cancel(check_cancel)
+        view = page.locator('.main-content .p-tabview').first
+        if view.count():
+            names = view.evaluate(r"""view => [...view.querySelectorAll('.p-tabview-nav a[role=tab]')]
+                .filter(e=>e.closest('.p-tabview')===view && e.getClientRects().length &&
+                    !e.closest('[disabled],.p-disabled,[aria-disabled="true"],[hidden],[aria-hidden="true"]'))
+                .map(e=>(e.textContent||'').trim().toUpperCase().replace(/[-\s]/g,''))""")
+            if len(names) == len(_PPN_FORMS) and set(names) == _PPN_FORMS:
+                return True
+        if time.monotonic() >= deadline:
+            return False
+        page.wait_for_timeout(100)
+
+
 @diagnostics.traced('detail')
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
@@ -288,6 +328,9 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
     attachments = []
     financial_required = record is not None and record['meta'].get('Jenis Pajak') == 'PPh Badan'
     financial_attempted = False
+    ppn = record is not None and record['meta'].get('Jenis Pajak') == 'PPN'
+    if ppn and not _ppn_catalog_ready(page, check_cancel):
+        errors.append({'object': 'SPT detail', 'message': 'PPN form catalog is not ready or incomplete'})
 
     def capture_panel(panel, name):
         nonlocal financial_attempted
@@ -350,19 +393,33 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
             raise RuntimeError('No supported tab controls found')
         for i in range(count):
             _check_cancel(check_cancel)
-            tab = tabs.nth(i)
-            if tab.evaluate('(e)=>e.closest(\"li\").classList.contains(\"p-disabled\")||e.getAttribute(\"aria-disabled\")===\"true\"'):
-                continue
-            name = prefix + tab.inner_text().strip()
-            tab.evaluate('(e)=>e.click()')
-            wait_idle(page)
-            panel_id = tab.get_attribute('aria-controls')
-            if panel_id:
-                panel = view.locator('[id=' + repr(panel_id) + ']')
-            else:
-                panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])').first
-            panel.wait_for(state='visible', timeout=30000)
-            capture_panel(panel, name)
+            name = prefix + 'Tab ' + str(i + 1)
+            try:
+                tab = tabs.nth(i)
+                if tab.evaluate('(e)=>e.closest(\"li\").classList.contains(\"p-disabled\")||e.getAttribute(\"aria-disabled\")===\"true\"'):
+                    continue
+                name = prefix + tab.inner_text().strip()
+                tab.evaluate('(e)=>e.click()')
+                wait_idle(page)
+                panel_id = tab.get_attribute('aria-controls')
+                if panel_id:
+                    panel = view.locator('[id=' + repr(panel_id) + ']')
+                else:
+                    panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])').first
+                deadline = time.monotonic() + DETAIL_PANEL_TIMEOUT
+                while True:
+                    _check_cancel(check_cancel)
+                    try:
+                        panel.wait_for(state='visible', timeout=100)
+                        break
+                    except PlaywrightTimeoutError:
+                        if time.monotonic() >= deadline:
+                            raise
+                _check_cancel(check_cancel)
+                capture_panel(panel, name)
+            except Exception as exc:
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
+                errors.append({'object': name, 'message': str(exc).split('\n')[0]})
 
     view = root.locator('.p-tabview').first
     try:
@@ -378,6 +435,10 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                             'status': 'PARTIAL', 'bytes': 0, 'hash': None})
         errors.append({'object': 'Induk/Laporan Keuangan',
                        'message': 'No inspected corporate Induk found; financial PDF capture unsupported'})
+    if ppn:
+        captured_forms = [re.sub(r'[-\s]', '', s['name'].upper()) for s in sections]
+        if len(captured_forms) != len(_PPN_FORMS) or set(captured_forms) != _PPN_FORMS:
+            errors.append({'object': 'SPT detail', 'message': 'PPN form traversal is incomplete'})
     meaningful = any(s['fields'] or s['tables'] for s in sections)
     if not meaningful:
         errors.append({'object': 'SPT detail', 'message': 'No structured fields or tables captured; unsupported detail layout'})
@@ -485,7 +546,7 @@ class ListObserver:
                     binding['filter_rewrite'] = rewrite
             self.sequence += 1
             self.latest = {'total': total, 'rows': rows, 'body': body, 'binding': binding,
-                           'sequence': self.sequence,
+                           'sequence': self.sequence, 'first': posted['First'], 'page_size': posted['Rows'],
                            'successful': 200 <= response.status < 300
                            and data.get('IsSuccessful', data.get('isSuccessful')) is True}
         except Exception as exc:
@@ -1179,22 +1240,26 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
                                     for _ in range(max_pages):
                                         _check_cancel(check_cancel)
-                                        previous = container.query_selector(previous_selector)
+                                        previous = _list_paginator(container, previous_selector)
                                         if not previous:
                                             break
                                         before = observer.sequence
                                         previous.evaluate('(e)=>e.click()')
                                         current_response = observer.wait(before)
-                                    if container.query_selector(previous_selector):
+                                    if _list_paginator(container, previous_selector):
                                         raise RuntimeError(f'List reset page limit {max_pages} reached')
+                                    if current_response['first'] != 0:
+                                        raise RuntimeError('List reset did not verify the first page')
                                     for _ in range(record['list_page'] - 1):
                                         _check_cancel(check_cancel)
-                                        next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
+                                        next_button = _list_paginator(container, '.p-paginator-next:not([disabled]):not(.p-disabled)')
                                         if not next_button:
                                             raise RuntimeError('Inventory page is no longer available; source changed')
                                         before = observer.sequence
                                         next_button.evaluate('(e)=>e.click()')
                                         current_response = observer.wait(before)
+                                    if current_response['first'] != (record['list_page'] - 1) * current_response['page_size']:
+                                        raise RuntimeError('Restored list response has an unexpected page offset')
                                     container.dispose()
                                     active_group = group
                             if condition is not None:
