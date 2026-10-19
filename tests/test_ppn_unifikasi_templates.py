@@ -94,7 +94,7 @@ def test_empty_observed_templates_contain_no_reference_taxpayer_or_amount_data(t
         for sheet in reference:
             assert workbook[sheet.title]['A1'].value == sheet['A1'].value
             assert_layout(workbook[sheet.title], sheet)
-        for coordinate in ['D4', 'D5', 'D6', 'D7']:
+        for coordinate in (['D4', 'D5', 'D6', 'D7'] if tax == 'PPN' else ['D4', 'D5']):
             assert reference['Induk'][coordinate].value is None
             assert workbook['Induk'][coordinate].value is None
         if tax == 'PPN':
@@ -104,7 +104,7 @@ def test_empty_observed_templates_contain_no_reference_taxpayer_or_amount_data(t
                               (52, 52, 5, 6), (56, 56, 5, 5), (60, 65, 5, 5),
                               (69, 71, 5, 8), (75, 78, 5, 8)]
         else:
-            amount_regions = [(12, 27, 3, 8)]
+            amount_regions = [(10, 25, 3, 8)]
         for first, last, column, end in amount_regions:
             for sheet in [reference['Induk'], workbook['Induk']]:
                 assert all(c.value is None for row in sheet.iter_rows(min_row=first, max_row=last,
@@ -140,7 +140,9 @@ def test_induk_identity_fields_use_the_original_slots_without_reformatting(tmp_p
     workbook = export(tax, source_run(tax, [section('Induk', fields=fields)]), tmp_path)
     reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
     try:
-        for coordinate, field in zip(['D4', 'D5', 'D6', 'D7'], fields):
+        coordinates = ['D4', 'D5', 'D6', 'D7'] if tax == 'PPN' else ['D4', 'D5']
+        expected_fields = fields if tax == 'PPN' else [{'value': 'Januari'}, {'value': '2025'}]
+        for coordinate, field in zip(coordinates, expected_fields):
             cell = workbook['Induk'][coordinate]
             if tax == 'PPN' and coordinate == 'D7':
                 assert cell.value is None
@@ -191,15 +193,15 @@ def test_ppn_compensation_choice_is_captured_data_not_a_reference_default(tmp_pa
 def test_unifikasi_induk_leaf_headers_fill_both_merged_income_tax_columns(tmp_path):
     reference = load_workbook(FIXTURES / TYPES['PPh Unifikasi']['reference'])
     ref = reference['Induk']
-    headers = ['NO', 'DETIL', 'SETOR SENDIRI', 'PEMOTONGAN / PEMUNGUTAN'] + [ref.cell(10, col).value for col in range(5, 9)]
+    headers = ['NO', 'DETIL', 'SETOR SENDIRI', 'PEMOTONGAN / PEMUNGUTAN'] + [ref.cell(8, col).value for col in range(5, 9)]
     values = ['1', 'Pasal 4 Ayat 2', '101,01', '102,02', '103,03', '104,04', '105,05', '106,06']
     run = source_run('PPh Unifikasi', [section('Induk', tables=[source_table('PAJAK PENGHASILAN', headers, [values])])])
     workbook = export('PPh Unifikasi', run, tmp_path)
     try:
-        assert [workbook['Induk'].cell(12, col).value for col in range(3, 9)] == values[2:]
-        assert workbook['Induk']['C10'].value == 'PAJAK PENGHASILAN'
-        assert workbook['Induk']['C11'].value == 'SETOR SENDIRI'
-        assert workbook['Induk']['D11'].value == 'PEMOTONGAN / PEMUNGUTAN'
+        assert [workbook['Induk'].cell(10, col).value for col in range(3, 9)] == [101.01, 102.02, 103.03, 104.04, 105.05, 106.06]
+        assert workbook['Induk']['C8'].value == 'PAJAK PENGHASILAN'
+        assert workbook['Induk']['C9'].value == 'SETOR SENDIRI'
+        assert workbook['Induk']['D9'].value == 'PEMOTONGAN / PEMUNGUTAN'
         assert_layout(workbook['Induk'], ref)
     finally:
         workbook.close()
@@ -219,7 +221,7 @@ def test_appendix_columns_reorder_without_losing_ids_dates_or_duplicate_rows(tmp
         for row_number in [first, first + 1]:
             for column, value in enumerate(values, 1):
                 cell = workbook[form].cell(row_number, column)
-                numeric = tax == 'PPN' and value == '1.234,50'
+                numeric = value == '1.234,50'
                 assert cell.value == (1234.5 if numeric else value)
                 assert cell.data_type == ('n' if numeric else 's')
                 reference_row = row_number if row_number <= last else first
@@ -256,7 +258,7 @@ def test_row_growth_preserves_new_row_styles_and_every_shifted_header_and_total(
         for index, values in enumerate(rows):
             for column, value in enumerate(values, 1):
                 cell = sheet.cell(first + index, column)
-                expected_value = 1234.5 if tax == 'PPN' and value == '1.234,50' else value
+                expected_value = 1234.5 if value == '1.234,50' else value
                 assert cell.value == expected_value
                 reference_row = first + index if first + index < boundary else first
                 assert_format(cell, ref.cell(reference_row, column))
