@@ -117,7 +117,7 @@ def test_missing_status_flag_and_wrong_flag_type():
         module.project_field({'SubmitInProgressStatus': 'false'}, {}, 'SubmitInProgressStatus', {})
 
 
-@pytest.mark.parametrize('control,value', [('MyCheckBox', 'true'), ('DeclarationBy', '0')])
+@pytest.mark.parametrize('control,value', [('MyCheckBox', 'false'), ('DeclarationBy', '0')])
 def test_final_submitted_controls_never_read_claims(control, value):
     module = feature()
     result = module.project_field({}, {'ReturnSheetStatusCode': 'SUBMITTED'}, control, {})

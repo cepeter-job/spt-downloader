@@ -82,7 +82,9 @@ def project_field(form, outer, control, lookups):
         status = _source_scalar(outer, ('ReturnSheetStatusCode',), evidence)
         if status != 'SUBMITTED':
             raise _UnsupportedMetadata('unverified_unifikasi_control_lifecycle')
-        value = 'true' if control == 'MyCheckBox' else '0'
+        # The pinned child getter returns undefined: null != undefined is false,
+        # so its guarded MyCheckBox=true patch never runs. ngModel starts false.
+        value = 'false' if control == 'MyCheckBox' else '0'
         container = ['Payload']
     else:
         result = project_unifikasi_text(form, control)

@@ -10,6 +10,28 @@ from support_masa_native import browser, observed, exported
 from unifikasi_observer_fixture import NativeFixture
 
 
+@pytest.mark.parametrize('submitted', [False, True])
+def test_reviewed_returnless_getter_cannot_patch_checkbox_true(browser, submitted):
+    # Same guard and initial ngModel as pinned chunk 693; no portal/claims access.
+    page = browser.new_page()
+    try:
+        result = page.evaluate("""submitted => {
+            let truePatches=0;
+            const component={isStatusSubmitted:submitted,isChecked:false,
+                form:{get:()=>({value:'Submitted'}),disable:()=>{},
+                      patchValue:()=>{truePatches++;}},
+                getDataFromMainForm(){const parsed={TaxPeriodCode:'01012025'};},
+                ngOnChanges(){null!=this.getDataFromMainForm()&&
+                    (this.isStatusSubmitted||this.form?.get('SubmitInProgressStatus')?.value)&&
+                    (this.form.disable(),this.form.patchValue({MyCheckBox:true}));}};
+            component.ngOnChanges();
+            return {checked:component.isChecked,truePatches};
+        }""", submitted)
+        assert result == {'checked': False, 'truePatches': 0}
+    finally:
+        page.close()
+
+
 def test_connected_native_unifikasi_never_reads_dom_business_values(browser, tmp_path, monkeypatch):
     monkeypatch.setattr(support_masa_native, 'Fixture', NativeFixture)
     digest = hashlib.sha256(BUILD).hexdigest()

@@ -31,9 +31,15 @@ no browser profile, login state, credential or live endpoint was accessed.
   `StatementSignature`, and nested `Signer.StatementTIN/StatementFullName`.
   Null/missing signer values depend on claims and remain unsupported; empty
   strings are explicit source values, not missing values.
-- Chunk 693 around 5750: submitted child `ngOnChanges` disables the form and
-  patches `MyCheckBox=true`. Its paired ngModel/initial value must be considered
-  in connected synthetic observation tests before native completeness is claimed.
+- Chunk 693 around 5750: child `ngOnChanges` guards its disable/checkbox-true
+  patch with `null != this.getDataFromMainForm()`. The getter has no return, so
+  JavaScript loose inequality yields false and the patch is unreachable. The
+  initial `MyCheckBox=false` / `isChecked=false` ngModel remains false on fresh
+  read-only observation; only the ngModelChange handler can later assign it.
+  Never infer a checked declaration from SUBMITTED alone. Runner tests exercise
+  this returnless-getter guard; MDN inequality documents `null != undefined` as
+  false: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Inequality
+
 - Submission status is taken from INNER `FormData.SubmitInProgressStatus` and
   `FormData.ReturnSheetStatusCode`, not blindly from the outer prefill object.
 

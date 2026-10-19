@@ -27,7 +27,7 @@ def test_full_native_projection_includes_source_labels_and_all_forms(populated, 
     assert values['Wajib Pajak'] == '0' and 'Kuasa Wajib Pajak' not in values
     declarations = [f for f in result['sections'][0]['fields'] if f['field'] == 'DeclarationBy']
     assert len(declarations) == 1 and declarations[0]['value'] == '0'
-    assert values['Pernyataan'] == 'true'
+    assert values['Pernyataan'] == 'false'
     assert values['Status Penyampaian'] == 'Submitted'
     for section in result['sections'][1:]:
         for table in section['tables']:
