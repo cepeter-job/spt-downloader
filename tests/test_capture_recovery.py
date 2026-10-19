@@ -13,7 +13,6 @@ def test_real_disabled_previous_is_never_clicked(page, monkeypatch, tmp_path, ki
     else: button='<p-table>'+button+'</p-table>'
     page.set_content('<p-table id="owner"><table></table><div class="p-paginator">'+button+'</div></p-table><script>window.clicks=0</script>')
     source=SourcePage()
-    original=Table.evaluate_handle
     monkeypatch.setattr(Table,'evaluate_handle',lambda self,script: page.query_selector('#owner'))
     monkeypatch.setattr(driver,'wait_idle',lambda page:None)
     monkeypatch.setattr(driver,'capture_detail',lambda *a,**k:{'sections':[{'name':'Fixture','fields':[],'tables':[]}],'capture_complete':True,'errors':[]})
