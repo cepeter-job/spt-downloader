@@ -18,7 +18,7 @@ from .diagnostic_store import SegmentStore
 SCHEMA = 1
 LEVELS = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'OFF': 100}
 EVENTS = frozenset({
-    'session.started', 'session.closed', 'operation.started', 'operation.finished',
+    'session.started', 'session.closed', 'operation.started', 'operation.finished', 'detail.source',
     'operation.failed', 'operation.cancelled', 'phase.started', 'phase.completed',
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
@@ -28,8 +28,14 @@ EVENTS = frozenset({
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
 })
 ENUMS = {
+    'source_requested': frozenset({'dom', 'json-first'}),
+    'source_used': frozenset({'dom', 'json', 'none'}),
+    'source_reason': frozenset({'dom_requested', 'native_verified', 'capture_incomplete',
+        'adapter_ineligible', 'coverage_incomplete', 'forms_unavailable', 'unsupported_tax', 'checkpoint_reuse'}),
+    'tax_kind': frozenset({'ppn', 'pph21', 'unifikasi', 'corporate', 'other'}),
     'phase': frozenset({'startup', 'runtime', 'authentication', 'inventory', 'details',
-                       'detail', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli'}),
+                       'detail', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
+                       'return_detail', 'list_restore', 'open_detail', 'json_observe', 'json_project'}),
     'stage': frozenset({'setup', 'authentication', 'inventory', 'details', 'export',
                        'publish', 'finished', 'login_check', 'selection', 'overwrite'}),
     'operation': frozenset({'export', 'login_check', 'offline', 'resume'}),
@@ -48,7 +54,7 @@ ENUMS = {
         'credential_missing', 'account_mismatch', 'verified', 'verification_timeout',
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'body_rows', 'pages', 'grids', 'forms'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
@@ -72,6 +78,7 @@ FUNCTIONS = frozenset({'main', '_main', 'run_job', 'run_login_check', 'prepare',
     'pdf_custody', '_verify_stream', 'locked_file', 'include', 'self_test'})
 _active = None
 _job = ContextVar('diagnostic_job_ref', default=None)
+_detail = ContextVar('diagnostic_detail_fields', default=None)
 
 
 def job_reference(value):
@@ -121,7 +128,7 @@ def _safe_fields(fields):
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)
-    for name in ('headless', 'accepted', 'submitted'):
+    for name in ('headless', 'accepted', 'submitted', 'cached'):
         if type(fields.get(name)) is bool:
             result[name] = fields[name]
     return result
@@ -325,31 +332,50 @@ def job_context(job_id):
 def record(event, **fields):
     try:
         if _active is not None:
-            return _active.record(event, **fields)
+            return _active.record(event, **{**(_detail.get() or {}), **fields})
     except Exception:
         # Optional instrumentation cannot replace an operation's error or Stop.
         pass
     return False
 
 
+@contextmanager
+def detail_context(**fields):
+    # Only anonymous benchmark categories enter the inherited context.
+    safe = _safe_fields(fields)
+    token = _detail.set({k: safe[k] for k in ('ordinal', 'tax_kind', 'source_requested') if k in safe})
+    try:
+        yield
+    finally:
+        _detail.reset(token)
+
+
+@contextmanager
+def measure(phase, **fields):
+    if _active is None:
+        yield fields
+        return
+    start = time.monotonic()
+    record('phase.started', phase=phase, **fields)
+    try:
+        yield fields
+    except BaseException as error:
+        cancelled = isinstance(error, KeyboardInterrupt) or type(error).__name__ == 'SetupCancelled'
+        record('phase.cancelled' if cancelled else 'phase.failed', phase=phase,
+               level='INFO' if cancelled else 'ERROR', error=error,
+               **{**fields, 'status': 'CANCELLED' if cancelled else 'ERROR',
+                  'duration_ms': (time.monotonic() - start) * 1000})
+        raise
+    record('phase.completed', phase=phase,
+           **{**fields, 'duration_ms': (time.monotonic() - start) * 1000})
+
+
 def traced(phase):
     def decorate(function):
         @wraps(function)
         def call(*args, **kwargs):
-            if _active is None:
+            with measure(phase):
                 return function(*args, **kwargs)
-            start = time.monotonic()
-            record('phase.started', phase=phase)
-            try:
-                value = function(*args, **kwargs)
-            except BaseException as error:
-                cancelled = isinstance(error, KeyboardInterrupt) or type(error).__name__ == 'SetupCancelled'
-                record('phase.cancelled' if cancelled else 'phase.failed', phase=phase,
-                       level='INFO' if cancelled else 'ERROR', error=error,
-                       duration_ms=(time.monotonic() - start) * 1000)
-                raise
-            record('phase.completed', phase=phase, duration_ms=(time.monotonic() - start) * 1000)
-            return value
         return call
     return decorate
 
@@ -371,6 +397,11 @@ def self_test(root):
     """Actually emit/read synthetic logs; used by source and frozen GUI gates."""
     with session(root, 'gui', level='INFO') as log:
         record('operation.started')
+        with detail_context(ordinal=1, tax_kind='ppn', source_requested='json-first'):
+            with measure('return_detail') as benchmark:
+                record('detail.source', source_used='json', source_reason='native_verified',
+                       token='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
+                benchmark.update(source_used='json', status='COMPLETE', body_rows=2, cached=False)
         record('auth.state', reason='waiting_redirect', expected_origin='satu', observed_origin='coretax')
         record('auth.request_blocked',reason='cross_origin_write',target_origin='coretax',method='POST',resource_type='fetch')
         record('auth.result', status='LOGIN_BLOCKED', reason='origin_mismatch',
@@ -397,4 +428,9 @@ def self_test(root):
     if not any(row.get('event')=='auth.request_blocked' and row.get('target_origin')=='coretax'
                and row.get('method')=='POST' and row.get('resource_type')=='fetch' for row in rows):
         raise RuntimeError('Synthetic request diagnostics self-test failed')
+    benchmark = [row for row in rows if row.get('phase') == 'return_detail' and row['event'] == 'phase.completed']
+    if not (len(benchmark) == 1 and benchmark[0].get('ordinal') == 1
+            and benchmark[0].get('source_requested') == 'json-first'
+            and benchmark[0].get('source_used') == 'json' and benchmark[0].get('body_rows') == 2):
+        raise RuntimeError('Synthetic benchmark diagnostics self-test failed')
     return {'schema': SCHEMA, 'safe_logging': True}

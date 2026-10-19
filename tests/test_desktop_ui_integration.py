@@ -16,7 +16,7 @@ class Controller:
         self.stops = 0
         self.closes = 0
 
-    def start(self, *args):
+    def start(self, *args, detail_source='dom'):
         assert not self.active
         self.starts.append(args)
         self.job_id = f'synthetic-{len(self.starts)}'

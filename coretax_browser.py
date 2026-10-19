@@ -180,6 +180,25 @@ def maximize_page_size(page, container):
         page.keyboard.press('Escape')
 
 
+def _click_table_paginator(control, container, check_cancel):
+    _check_cancel(check_cancel)
+    # Only inspected read-only pagination may bypass pointer interception by
+    # sticky headers. Hidden/disabled/detached or foreign controls still fail closed.
+    clicked = control.evaluate("""(e, owner) => {
+        const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
+        const style = getComputedStyle(e);
+        if (!e.isConnected || actual !== owner || !e.matches(
+            '.p-paginator-first,.p-paginator-prev,.p-paginator-next') ||
+            e.matches(':disabled,[disabled],.p-disabled') ||
+            e.closest('[aria-disabled="true"]') || !e.getClientRects().length ||
+            style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+        e.click();
+        return true;
+    }""", container)
+    if clicked is not True:
+        raise RuntimeError('Unavailable or unsupported pagination control')
+
+
 def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     """Baca seluruh halaman tabel dan rekonsiliasi jumlah baris sebelum footer."""
     _check_cancel(check_cancel)
@@ -188,7 +207,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
     maximize_page_size(page, container_handle)
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
-        first.evaluate('(e)=>e.click()')
+        _click_table_paginator(first, container_handle, check_cancel)
         wait_idle(page)
     # Sebagian tabel menyimpan halaman terakhir dan hanya menyediakan Prev.
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
@@ -198,7 +217,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
         if not previous:
             break
         state = container_handle.evaluate(STATE_JS)
-        previous.click()
+        _click_table_paginator(previous, container_handle, check_cancel)
         wait_idle(page)
         if container_handle.evaluate(STATE_JS) == state:
             raise RuntimeError('Table pagination did not return to the first page')
@@ -220,7 +239,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
             result['warning'] = 'Repeated table pagination state'
             break
         seen.add(state)
-        container_handle.query_selector(next_selector).click()
+        _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
         deadline = time.monotonic() + 30
         while container_handle.evaluate(STATE_JS) == state:
             _check_cancel(check_cancel)
@@ -921,11 +940,12 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         check_masa_request_identities(capture.request_observations(), record, scope)
     if corporate:
         _check_corporate_request_identities(capture.request_observations(), record, scope)
-    forms = observe_corporate_forms(page, record, scope, capture,
-        max_pages=max_pages, check_cancel=check_cancel) if corporate else None
-    if masa:
-        forms = observe_masa_forms(page, record, scope, capture,
-            max_pages=max_pages, check_cancel=check_cancel)
+    with diagnostics.measure('json_observe'):
+        forms = observe_corporate_forms(page, record, scope, capture,
+            max_pages=max_pages, check_cancel=check_cancel) if corporate else None
+        if masa:
+            forms = observe_masa_forms(page, record, scope, capture,
+                max_pages=max_pages, check_cancel=check_cancel)
     observations = capture.request_observations()
     if masa:
         check_masa_request_identities(observations, record, scope)
@@ -945,10 +965,11 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     bodies = capture.iter_bodies(check_cancel=check_cancel)
     if corporate:
         bodies = _identity_checked_packets(bodies, record, scope)
-    decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
-                                     observed_forms=forms or []) if corporate else None
-    if masa:
-        decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=forms or [])
+    with diagnostics.measure('json_project'):
+        decoded = adapt_corporate_detail(bodies, record=record, scope=scope,
+                                         observed_forms=forms or []) if corporate else None
+        if masa:
+            decoded = adapt_masa_detail(bodies, record=record, scope=scope, observed_forms=forms or [])
     if not corporate and not masa:
         for packet in bodies:
             _check_cancel(check_cancel)
@@ -957,6 +978,13 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     _check_cancel(check_cancel)
     eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
+    source_reason = ('native_verified' if eligible else
+                     'unsupported_tax' if not corporate and not masa else
+                     'forms_unavailable' if forms is None else
+                     'capture_incomplete' if not manifest['complete'] else
+                     'adapter_ineligible' if not decoded['eligible'] else 'coverage_incomplete')
+    diagnostics.record('detail.source', source_requested='json-first',
+                       source_used='json' if eligible else 'dom', source_reason=source_reason)
     audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
              'capture': manifest}
     if decoded is not None:
@@ -1050,6 +1078,33 @@ def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
     return {field: saved[field] for field in ('detail_url', 'sections', 'capture_complete', 'scope', 'attachments', 'detail_source') if field in saved}
 
 
+def _benchmark_tax_kind(record):
+    value = record.get('meta', {}).get('Jenis Pajak')
+    if type(value) is not str:
+        return 'other'
+    return {'PPN': 'ppn', 'PPh Pasal 21/26': 'pph21', 'PPh Unifikasi': 'unifikasi',
+            'PPh Badan': 'corporate'}.get(value, 'other')
+
+
+def _benchmark_result(record):
+    try:
+        result = {'status': 'COMPLETE' if record.get('capture_complete') is True else 'PARTIAL'}
+        sections = record.get('sections')
+        if type(sections) is not list:
+            return result
+        tables = [table for section in sections for table in section.get('tables', [])]
+        result.update(forms=len(sections), grids=len(tables))
+        # Unknown counts are absent, not fabricated zeroes. Footer/layout rows
+        # must not be inferred to be business rows when no body count is supplied.
+        for output, key in (('body_rows', 'body_row_count'), ('pages', 'pages')):
+            if all(type(t.get(key)) is int and t[key] >= 0 for t in tables):
+                result[output] = sum(t[key] for t in tables)
+        return result
+    except Exception:
+        # Optional diagnostics must never replace capture/Stop outcomes.
+        return {}
+
+
 @diagnostics.traced('details')
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None, *, detail_source='dom'):
     """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
@@ -1068,160 +1123,172 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     try:
         observer = ListObserver(page, check_cancel=check_cancel)
         for ordinal, record in enumerate(run['records'], 1):
-            _check_cancel(check_cancel)
-            checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
-            if checkpoint.exists():
-                saved = read_detail_checkpoint(checkpoint, record, scope, detail_source=detail_source)
-                # COMPLETE lama belum membuktikan inspeksi lampiran Badan.
-                # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
-                needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
-                if saved.get('capture_complete') and (not needs_financial or saved.get('attachments')):
-                    diagnostics.record('checkpoint.reused', phase='details')
-                    record.update(saved)
-                    print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
-                    if on_progress:
-                        on_progress(run, ordinal)
-                    continue
-            if detail_limit is not None and attempted >= detail_limit:
-                run['errors'].append({'object': 'Scope', 'phase': 'details', 'message': f'Test detail limit {detail_limit} reached; full export not complete'})
-                break
-            attempted += 1
-            record['scope'] = [run['npwp'], run['year'], run['year_basis']]
-            print(f"Detail {ordinal}/{len(run['records'])}: {record['meta'].get('Jenis Pajak', '')} | {record['meta'].get('Masa Pajak', '')}", flush=True)
-            detail, is_popup, json_capture = None, False, None
-            try:
-                taxpayer_id = list_taxpayer_id(record['list_url'])
-                condition = record.get('list_filter')
-                group = (record['list_url'], record['list_page'], record.get('list_page_size'),
-                         json.dumps(condition, sort_keys=True, ensure_ascii=False))
-                if group != active_group:
-                    observer.request_filter = None
-                    group_routes.close()
-                    if condition is not None:
-                        observer.request_filter = group_routes.enter_context(
-                            InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
-                    before = observer.sequence
-                    page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
-                    if list_taxpayer_id(page.url) != taxpayer_id:
-                        raise RuntimeError('Return-list navigation changed the selected taxpayer; refusing capture')
-                    current_response = observer.wait(before)
-                    table = page.locator('.main-content table').first
-                    container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
-                    current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
-                    desired = record.get('list_page_size')
-                    if desired and current_size and current_size.inner_text().strip() != str(desired):
-                        before = observer.sequence
-                        maximize_page_size(page, container)
-                        current_response = observer.wait(before)
-                        if current_size.inner_text().strip() != str(desired):
-                            raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
-                    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
-                    for _ in range(max_pages):
+            with diagnostics.detail_context(ordinal=ordinal, tax_kind=_benchmark_tax_kind(record), source_requested=detail_source):
+                with diagnostics.measure('return_detail', source_used='none', cached=False) as timing:
+                    try:
                         _check_cancel(check_cancel)
-                        previous = container.query_selector(previous_selector)
-                        if not previous:
+                        checkpoint = checkpoint_dir / f'{ordinal:04d}.json'
+                        if checkpoint.exists():
+                            saved = read_detail_checkpoint(checkpoint, record, scope, detail_source=detail_source)
+                            # COMPLETE lama belum membuktikan inspeksi lampiran Badan.
+                            # Hanya resume live yang mengambil ulang; ekspor offline tetap kompatibel.
+                            needs_financial = record['meta'].get('Jenis Pajak') == 'PPh Badan'
+                            if saved.get('capture_complete') and (not needs_financial or saved.get('attachments')):
+                                diagnostics.record('checkpoint.reused', phase='details')
+                                record.update(saved)
+                                timing.update(cached=True, source_used=saved.get('detail_source', {}).get('used', 'dom'))
+                                diagnostics.record('detail.source', source_used=timing['source_used'], source_reason='checkpoint_reuse')
+                                print(f"Resume {ordinal}/{len(run['records'])}: verified checkpoint", flush=True)
+                                if on_progress:
+                                    on_progress(run, ordinal)
+                                continue
+                        if detail_limit is not None and attempted >= detail_limit:
+                            run['errors'].append({'object': 'Scope', 'phase': 'details', 'message': f'Test detail limit {detail_limit} reached; full export not complete'})
                             break
-                        before = observer.sequence
-                        previous.evaluate('(e)=>e.click()')
-                        current_response = observer.wait(before)
-                    if container.query_selector(previous_selector):
-                        raise RuntimeError(f'List reset page limit {max_pages} reached')
-                    for _ in range(record['list_page'] - 1):
-                        _check_cancel(check_cancel)
-                        next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
-                        if not next_button:
-                            raise RuntimeError('Inventory page is no longer available; source changed')
-                        before = observer.sequence
-                        next_button.evaluate('(e)=>e.click()')
-                        current_response = observer.wait(before)
-                    container.dispose()
-                    active_group = group
-                if condition is not None:
-                    validate_partition_response(current_response, condition)
-                    if current_response['binding']['request']['Rows'] != record.get('list_page_size'):
-                        raise JsonSafetyError('Filtered inventory page size changed during restoration')
-                identifiers = validate_inventory_rows(current_response['rows'], taxpayer_id)
-                if record['record_id'] not in identifiers:
-                    raise RuntimeError('Inventoried SPT is not on the expected source page; rerun inventory')
-                position = identifiers.index(record['record_id'])
-                table = page.locator('.main-content table').first
-                source_row = table.locator('tbody tr').nth(position)
-                data = table.evaluate(TABLE_JS)
-                current_meta = dict(zip(data['headers'], data['rows'][position]))
-                for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
-                    _check_cancel(check_cancel)
-                    if record['meta'].get(field, '') != current_meta.get(field, ''):
-                        raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi'):
-                    from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
-                                                   bind_unifikasi_listing_identity)
-                    prefix, bind_identity = {
-                        'PPN': ('ppn', bind_ppn_listing_identity),
-                        'PPh Pasal 21/26': ('pph21', bind_pph21_listing_identity),
-                        'PPh Unifikasi': ('unifikasi', bind_unifikasi_listing_identity),
-                    }[record['meta']['Jenis Pajak']]
-                    identity = bind_identity(current_response, record=record, scope=scope)
-                    if identity['eligible']:
-                        from coretax_pdf import _directories
-                        from spt_desktop.output_windows import DirectoryGuard
-                        relative = Path('listing-responses') / f'{prefix}-identity-{ordinal:04d}-{uuid4().hex}.json'
-                        target = (folder / relative).absolute()
-                        with DirectoryGuard() as guard:
-                            # Detail-only/resumed collection need not have saved inventory bodies.
-                            guard.include(_directories(target.parent.parent))
-                            target.parent.mkdir(exist_ok=True)
-                            guard.include(_directories(target.parent))
-                            with target.open('xb') as handle:
-                                handle.write(current_response['body'])
-                                handle.flush()
-                                os.fsync(handle.fileno())
-                        record['source_fields'] = identity['source_fields']
-                        record['source_identity'] = {**identity['source_identity'],
-                                                     'relative_path': relative.as_posix()}
-                session = nullcontext(None)
-                if detail_source == 'json-first':
-                    from coretax_json_capture import DetailJsonCapture
-                    session = DetailJsonCapture(page.context, page, record, scope, folder,
-                                                ordinal=ordinal, check_cancel=check_cancel)
-                with session as json_capture:
-                    detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'],
-                                                            json_capture=json_capture)
-                    detail.set_viewport_size({'width': 1600, 'height': 1000})
-                    if json_capture is None:
-                        capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
-                                                 record=record, folder=folder)
-                    else:
-                        capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
-                if 'detail_source' in capture:
-                    record['detail_source'] = capture['detail_source']
-                record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
-                record['attachments'] = capture.get('attachments', [])
-                for error in capture['errors']:
-                    _check_cancel(check_cancel)
-                    run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
-            except CaptureCancelled:
-                record.update(capture_complete=False, sections=[], attachments=[])
-                record.pop('detail_source', None)
-                raise
-            except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error=exc)
-                active_group = None
-                record['capture_complete'] = False
-                if isinstance(exc, JsonSafetyError) and json_capture is not None:
-                    record.update(sections=[], attachments=[])
-                    record.pop('detail_source', None)
-                    raise
-                run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
-                print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
-            finally:
-                if detail is not None and is_popup:
-                    detail.close()
-                elif detail is not None:
-                    active_group = None
-                _atomic_checkpoint(checkpoint, record)
-                _atomic_checkpoint(folder / 'run.json', run)
-                if on_progress:
-                    on_progress(run, ordinal)
+                        attempted += 1
+                        record['scope'] = [run['npwp'], run['year'], run['year_basis']]
+                        print(f"Detail {ordinal}/{len(run['records'])}: {record['meta'].get('Jenis Pajak', '')} | {record['meta'].get('Masa Pajak', '')}", flush=True)
+                        detail, is_popup, json_capture = None, False, None
+                        try:
+                            taxpayer_id = list_taxpayer_id(record['list_url'])
+                            condition = record.get('list_filter')
+                            group = (record['list_url'], record['list_page'], record.get('list_page_size'),
+                                     json.dumps(condition, sort_keys=True, ensure_ascii=False))
+                            if group != active_group:
+                                with diagnostics.measure('list_restore'):
+                                    observer.request_filter = None
+                                    group_routes.close()
+                                    if condition is not None:
+                                        observer.request_filter = group_routes.enter_context(
+                                            InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
+                                    before = observer.sequence
+                                    page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
+                                    if list_taxpayer_id(page.url) != taxpayer_id:
+                                        raise RuntimeError('Return-list navigation changed the selected taxpayer; refusing capture')
+                                    current_response = observer.wait(before)
+                                    table = page.locator('.main-content table').first
+                                    container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
+                                    current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+                                    desired = record.get('list_page_size')
+                                    if desired and current_size and current_size.inner_text().strip() != str(desired):
+                                        before = observer.sequence
+                                        maximize_page_size(page, container)
+                                        current_response = observer.wait(before)
+                                        if current_size.inner_text().strip() != str(desired):
+                                            raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
+                                    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+                                    for _ in range(max_pages):
+                                        _check_cancel(check_cancel)
+                                        previous = container.query_selector(previous_selector)
+                                        if not previous:
+                                            break
+                                        before = observer.sequence
+                                        previous.evaluate('(e)=>e.click()')
+                                        current_response = observer.wait(before)
+                                    if container.query_selector(previous_selector):
+                                        raise RuntimeError(f'List reset page limit {max_pages} reached')
+                                    for _ in range(record['list_page'] - 1):
+                                        _check_cancel(check_cancel)
+                                        next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
+                                        if not next_button:
+                                            raise RuntimeError('Inventory page is no longer available; source changed')
+                                        before = observer.sequence
+                                        next_button.evaluate('(e)=>e.click()')
+                                        current_response = observer.wait(before)
+                                    container.dispose()
+                                    active_group = group
+                            if condition is not None:
+                                validate_partition_response(current_response, condition)
+                                if current_response['binding']['request']['Rows'] != record.get('list_page_size'):
+                                    raise JsonSafetyError('Filtered inventory page size changed during restoration')
+                            identifiers = validate_inventory_rows(current_response['rows'], taxpayer_id)
+                            if record['record_id'] not in identifiers:
+                                raise RuntimeError('Inventoried SPT is not on the expected source page; rerun inventory')
+                            position = identifiers.index(record['record_id'])
+                            table = page.locator('.main-content table').first
+                            source_row = table.locator('tbody tr').nth(position)
+                            data = table.evaluate(TABLE_JS)
+                            current_meta = dict(zip(data['headers'], data['rows'][position]))
+                            for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
+                                _check_cancel(check_cancel)
+                                if record['meta'].get(field, '') != current_meta.get(field, ''):
+                                    raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
+                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi'):
+                                from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
+                                                               bind_unifikasi_listing_identity)
+                                prefix, bind_identity = {
+                                    'PPN': ('ppn', bind_ppn_listing_identity),
+                                    'PPh Pasal 21/26': ('pph21', bind_pph21_listing_identity),
+                                    'PPh Unifikasi': ('unifikasi', bind_unifikasi_listing_identity),
+                                }[record['meta']['Jenis Pajak']]
+                                identity = bind_identity(current_response, record=record, scope=scope)
+                                if identity['eligible']:
+                                    from coretax_pdf import _directories
+                                    from spt_desktop.output_windows import DirectoryGuard
+                                    relative = Path('listing-responses') / f'{prefix}-identity-{ordinal:04d}-{uuid4().hex}.json'
+                                    target = (folder / relative).absolute()
+                                    with DirectoryGuard() as guard:
+                                        # Detail-only/resumed collection need not have saved inventory bodies.
+                                        guard.include(_directories(target.parent.parent))
+                                        target.parent.mkdir(exist_ok=True)
+                                        guard.include(_directories(target.parent))
+                                        with target.open('xb') as handle:
+                                            handle.write(current_response['body'])
+                                            handle.flush()
+                                            os.fsync(handle.fileno())
+                                    record['source_fields'] = identity['source_fields']
+                                    record['source_identity'] = {**identity['source_identity'],
+                                                                 'relative_path': relative.as_posix()}
+                            session = nullcontext(None)
+                            if detail_source == 'json-first':
+                                from coretax_json_capture import DetailJsonCapture
+                                session = DetailJsonCapture(page.context, page, record, scope, folder,
+                                                            ordinal=ordinal, check_cancel=check_cancel)
+                            with session as json_capture:
+                                with diagnostics.measure('open_detail'):
+                                    detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'],
+                                                                            json_capture=json_capture)
+                                    detail.set_viewport_size({'width': 1600, 'height': 1000})
+                                if json_capture is None:
+                                    timing['source_used'] = 'dom'
+                                    diagnostics.record('detail.source', source_used='dom', source_reason='dom_requested')
+                                    capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
+                                                             record=record, folder=folder)
+                                else:
+                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
+                            timing['source_used'] = capture.get('detail_source', {}).get('used', 'dom')
+                            if 'detail_source' in capture:
+                                record['detail_source'] = capture['detail_source']
+                            record.update({'detail_url': detail.url, 'sections': capture['sections'], 'capture_complete': capture['capture_complete'], 'scope': [run['npwp'], run['year'], run['year_basis']]})
+                            record['attachments'] = capture.get('attachments', [])
+                            for error in capture['errors']:
+                                _check_cancel(check_cancel)
+                                run['errors'].append({'object': record['record_id'] + '/' + error['object'], 'phase': 'details', 'message': error['message']})
+                        except CaptureCancelled:
+                            record.update(capture_complete=False, sections=[], attachments=[])
+                            record.pop('detail_source', None)
+                            raise
+                        except Exception as exc:
+                            diagnostics.record('capture.partial', level='WARNING', error=exc)
+                            active_group = None
+                            record['capture_complete'] = False
+                            if isinstance(exc, JsonSafetyError) and json_capture is not None:
+                                record.update(sections=[], attachments=[])
+                                record.pop('detail_source', None)
+                                raise
+                            run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
+                            print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
+                        finally:
+                            if detail is not None and is_popup:
+                                detail.close()
+                            elif detail is not None:
+                                active_group = None
+                            _atomic_checkpoint(checkpoint, record)
+                            _atomic_checkpoint(folder / 'run.json', run)
+                            if on_progress:
+                                on_progress(run, ordinal)
+                    finally:
+                        timing.update(_benchmark_result(record))
     finally:
         if observer is not None:
             observer.request_filter = None

@@ -288,8 +288,10 @@ class PagerButton:
     def click(self):
         self.container.index += self.delta
 
-    def evaluate(self, script):
+    def evaluate(self, script, owner):
+        assert owner is self.container
         self.click()
+        return True
 
 
 class PagedTable:

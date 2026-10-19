@@ -17,7 +17,7 @@ class ConsentController:
         self.stopped = False
         self.starts = 0
 
-    def start(self, *args):
+    def start(self, *args, detail_source='dom'):
         assert not self.active
         self.starts += 1
         self.job_id = 'synthetic-job' if self.starts == 1 else 'next-synthetic-job'
@@ -95,7 +95,7 @@ class Controller:
     def start_login_check(self,*args):
         self.checks.append(args);self.operation='login_check';self.active=True
         self.job_id=f'synthetic-login-{len(self.checks)}';return self.job_id
-    def start(self,*args):
+    def start(self,*args, detail_source='dom'):
         self.exports.append(args);self.operation='export';self.active=True
         self.job_id=f'synthetic-export-{len(self.exports)}';return self.job_id
     def stop(self):self.stops+=1
