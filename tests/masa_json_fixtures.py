@@ -41,6 +41,8 @@ def payload(tax):
     else:
         form.update(TaxIdentificationNumber=NPWP)
         outer.update(PeriodYear='2025', PeriodStartMonth='1', PeriodEndMonth='1')
+        if tax == 'PPh Unifikasi':
+            outer.update(ReturnSheetType='ICT_WTR', ReturnSheetStatusCode='SUBMITTED')
     outer['FormData'] = json.dumps(form)
     return outer
 

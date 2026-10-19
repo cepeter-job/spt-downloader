@@ -47,6 +47,9 @@ class Fixture:
         elif request.url in (MAIN, ASSETS[self.tax]):
             changed = self.defect == ('changed-main' if request.url == MAIN else 'changed-build')
             route.fulfill(content_type='application/javascript', body=BUILD + (b'/* changed */' if changed else b''))
+        elif request.url == (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
+                'EBUPOT_TAX_CERTIFICATE,EBUPOT_PAYMENT_METHOD,EBUPOTSP_TAX_OBJECT,EBUPOTCY_TAX_OBJECT,PERIOD'):
+            route.fulfill(content_type='application/json', body='{"IsSuccessful":true,"Payload":[]}')
         elif request.url.startswith(ORIGIN + '/returnsheet/api/'):
             assert request.method == 'POST'
             route.fulfill(status=403 if self.defect == 'unauthorized' else 200,

@@ -82,11 +82,11 @@ _REFERENCE_GET = r'''async url => {
 }'''
 
 
-def _reference_bindings(page, record, scope, capture, check_cancel):
+def _reference_bindings(page, record, scope, capture, check_cancel, *, endpoints=PPH21_REFERENCE_URLS):
     from coretax_browser import _check_cancel, list_taxpayer_id, verify_detail_url
     taxpayer = list_taxpayer_id(record['list_url'])
     bindings = []
-    for endpoint in PPH21_REFERENCE_URLS:
+    for endpoint in endpoints:
         _check_cancel(check_cancel)
         verify_detail_url(page.url, taxpayer, record['record_id'])
         before = {event['sequence'] for event in _observations(capture, record, scope)}
