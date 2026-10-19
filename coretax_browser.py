@@ -727,6 +727,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 for condition in filter_plan['filters']:
                     planned_sources.append({**source, 'list_filter': condition,
                                             'list_catalog_sha256': filter_plan['catalog_sha256'],
+                                            'list_catalog_binding_sha256': filter_plan['catalog_binding_sha256'],
                                             'filter_mode': 'period-year-candidates'})
             else:
                 planned_sources.append({**source, 'filter_mode': 'unfiltered',
@@ -738,7 +739,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
             label = source['label']
             print(f"Inventory: {label}", flush=True)
             entry = {'status': label, 'total': None, 'scanned': 0, 'selected': 0, 'result': 'PARTIAL', 'note': source['url']}
-            for field in ('list_filter', 'list_catalog_sha256', 'filter_mode', 'filter_reason'):
+            for field in ('list_filter', 'list_catalog_sha256', 'list_catalog_binding_sha256',
+                          'filter_mode', 'filter_reason'):
                 if field in source:
                     entry[field] = source[field]
             audit.append(entry)
@@ -764,14 +766,19 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                     maximize_page_size(page, container)
                     response = observer.wait(before)
                 # Daftar tetap menyediakan Prev walaupun First tersembunyi.
+                previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
                 for _ in range(max_pages):
                     _check_cancel(check_cancel)
-                    previous = container.query_selector('.p-paginator-prev:not([disabled]):not(.p-disabled)')
+                    previous = _list_paginator(container, previous_selector)
                     if not previous:
                         break
                     before = observer.sequence
-                    previous.evaluate('(e)=>e.click()')
+                    _click_table_paginator(previous, container, check_cancel)
                     response = observer.wait(before)
+                if _list_paginator(container, previous_selector):
+                    raise RuntimeError(f'List reset page limit {max_pages} reached')
+                if response['first'] != 0:
+                    raise RuntimeError('List reset did not verify the first page')
                 seen_ids = set()
                 for page_index in range(max_pages):
                     _check_cancel(check_cancel)
@@ -827,6 +834,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                             if condition is not None:
                                 record['list_filter'] = condition
                                 record['list_catalog_sha256'] = source['list_catalog_sha256']
+                                record['list_catalog_binding_sha256'] = source['list_catalog_binding_sha256']
                                 record['list_page_size'] = response['binding']['request']['Rows']
                             for field in ('source_identity', 'source_fields'):
                                 if field in page_row:
@@ -837,13 +845,13 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                         for record in batch:
                             _check_cancel(check_cancel)
                             handle.write(json.dumps(record, ensure_ascii=False) + '\n')
-                    next_button = container.query_selector('.p-paginator-next:not([disabled]):not(.p-disabled)')
+                    next_button = _list_paginator(container, '.p-paginator-next:not([disabled]):not(.p-disabled)')
                     if not next_button:
                         break
                     if page_index + 1 == max_pages:
                         raise RuntimeError(f'List page limit {max_pages} reached')
                     before = observer.sequence
-                    next_button.evaluate('(e)=>e.click()')
+                    _click_table_paginator(next_button, container, check_cancel)
                     response = observer.wait(before)
                     if response['total'] != entry['total']:
                         raise RuntimeError('Source list changed during capture; rerun with a new output folder')
@@ -851,7 +859,8 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                     raise RuntimeError(f"Source total {entry['total']} != scanned {entry['scanned']}")
                 if condition is not None:
                     current_plan = plan_year_filters(read_period_catalog(page), year, basis)
-                    if current_plan.get('catalog_sha256') != source['list_catalog_sha256']:
+                    if (not current_plan['eligible'] or
+                            current_plan.get('catalog_binding_sha256') != source['list_catalog_binding_sha256']):
                         raise JsonSafetyError('Period catalog changed during filtered inventory')
                 entry['result'] = 'RECONCILED'
                 container.dispose()
