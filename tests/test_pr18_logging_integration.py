@@ -89,7 +89,7 @@ def test_settings_keep_mode_status_and_log_action_separate(window):
                   and str(w.cget('textvariable')) == str(app._credential_status))
     log_button = controls[0]
     mode = transport.mode_control(dialog)
-    assert mode.get() == 'DOM' and mode.instate(['readonly'])
+    assert mode.get() == 'JSON-hybrid (pilot)' and mode.instate(['readonly'])
     assert mode.master == status.master == log_button.master
     assert int(mode.grid_info()['row']) < int(status.grid_info()['row']) < int(log_button.grid_info()['row'])
     assert log_button.winfo_y() >= status.winfo_y() + status.winfo_height()
