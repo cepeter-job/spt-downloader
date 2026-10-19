@@ -41,7 +41,7 @@ def collect(monkeypatch, tax, capture, calls, record=None):
                                   SCOPE, None, capture, 10, None)
 
 
-@pytest.mark.parametrize('tax', ['PPN'])
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
 @pytest.mark.parametrize('conflict', ['outer_tin', 'inner_record', 'inner_period',
                                      'request_record', 'custody', 'privacy', 'snapshot', 'family'])
 def test_masa_dispatch_cannot_hide_response_contradictions_behind_missing_observer(monkeypatch, tax, conflict):
@@ -72,7 +72,7 @@ def test_masa_dispatch_cannot_hide_response_contradictions_behind_missing_observ
     assert calls == []
 
 
-@pytest.mark.parametrize('tax', ['PPN'])
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
 @pytest.mark.parametrize('late', [False, True])
 def test_masa_request_only_conflict_is_checked_before_and_after_drain(monkeypatch, tax, late):
     endpoint = '/loadndvat/la2-grid' if tax == 'PPN' else '/loadwtr/list-i-bpu-grid'
@@ -86,7 +86,7 @@ def test_masa_request_only_conflict_is_checked_before_and_after_drain(monkeypatc
     assert capture.drained is late
 
 
-@pytest.mark.parametrize('tax', ['PPN'])
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
 def test_masa_missing_period_binding_does_not_hide_source_period_conflict(monkeypatch, tax):
     record = selected(tax)
     record['source_fields'].pop('TaxPeriodCode')
@@ -98,7 +98,7 @@ def test_masa_missing_period_binding_does_not_hide_source_period_conflict(monkey
     assert calls == []
 
 
-@pytest.mark.parametrize('tax', ['PPN'])
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
 def test_safe_masa_without_projection_still_uses_dom_and_reports_native_ineligibility(monkeypatch, tax):
     calls = []
     result = collect(monkeypatch, tax, Capture([packet(tax)]), calls)
@@ -111,7 +111,7 @@ def test_safe_masa_without_projection_still_uses_dom_and_reports_native_ineligib
     assert len(audit['json']['events']) == 1
 
 
-@pytest.mark.parametrize('tax', ['PPN'])
+@pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])
 @pytest.mark.parametrize('status', [200, 500])
 def test_failed_non_authorization_response_with_consistent_identity_can_fall_back(monkeypatch, tax, status):
     calls = []
