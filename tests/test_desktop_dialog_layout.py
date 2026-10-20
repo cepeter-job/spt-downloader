@@ -566,3 +566,66 @@ def test_dialog_close_cancels_only_owned_callbacks(active_app, monkeypatch):
     assert not any(isinstance(child, tk.Toplevel) for child in root.winfo_children())
     assert not controller.replies and not controller.stopped
     root.after_cancel(sentinel)
+
+
+def _tab_to_widget(root, start, target):
+    start.focus_force()
+    root.update()
+    for _ in range(12):
+        if root.focus_get() is target:
+            return
+        root.focus_get().event_generate('<Tab>')
+        root.update()
+    pytest.fail(f'Keyboard traversal did not reach {target.winfo_name()}')
+
+
+@pytest.mark.parametrize('filtered', [False, True])
+def test_fresh_selection_keyboard_navigation_can_authorize_only_at_button(active_app, filtered):
+    root, app, controller = active_app
+    dialog = open_selection(active_app)
+    entry, tree = named_widget(dialog, 'search'), named_widget(dialog, 'records')
+    if filtered:
+        entry.insert(0, 'januari')
+        settle(root)
+    assert not tree.selection() and named_widget(dialog, 'confirm').instate(['disabled'])
+    _tab_to_widget(root, entry, tree)
+    first = tree.get_children()[0]
+    tree.event_generate('<KeyPress-Down>')
+    tree.event_generate('<KeyRelease-Down>')
+    settle(root)
+    assert tree.focus() == first and tree.selection() == (first,)
+    assert named_widget(dialog, 'focused_id').get() == tree.set(first, 'identifier')
+    assert not controller.replies and not controller.stopped
+    expected = tree.set(first, 'identifier')
+    confirm = named_widget(dialog, 'confirm')
+    _tab_to_widget(root, tree, confirm)
+    confirm.event_generate('<Return>')
+    root.update()
+    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [expected]})]
+
+
+@pytest.mark.parametrize('size', [(640, 560), (540, 390)])
+def test_overwrite_path_suffix_is_reachable_by_keyboard_without_consent(active_app, size):
+    root, app, controller = active_app
+    files = ['SPT Masa PPN/' + 'synthetic-long-part-' * 80 + 'UNIQUE_SUFFIX.xlsx'] * 2
+    dialog = open_overwrite(active_app, {'files': files, 'folder': OVERWRITE_FOLDER})
+    dialog.geometry(f'{size[0]}x{size[1]}')
+    settle(root)
+    field, tree = named_widget(dialog, 'folder'), named_widget(dialog, 'files')
+    _tab_to_widget(root, field, tree)
+    before = tree.xview()
+    tree.event_generate('<Control-End>')
+    settle(root)
+    assert tree.xview()[0] > before[0] and tree.xview()[1] == 1.0
+    tree.event_generate('<Control-Home>')
+    settle(root)
+    assert tree.xview()[0] == 0.0
+    assert [tree.set(iid, 'file') for iid in tree.get_children()] == files
+    assert field.get() == OVERWRITE_FOLDER
+    assert label_text(named_widget(dialog, 'file_count')) == '2 file akan diganti.'
+    assert not tree.selection() and not controller.replies and not controller.stopped
+    decline = named_widget(dialog, 'decline')
+    _tab_to_widget(root, tree, decline)
+    decline.event_generate('<Return>')
+    root.update()
+    assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
