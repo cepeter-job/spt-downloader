@@ -1,9 +1,23 @@
 """Synthetic clean-form, percentage scale and shifted spacer contracts."""
-from copy import copy
+from copy import copy, deepcopy
 from decimal import Decimal
 import pytest
-from support_templates import section
-from test_unifikasi_rate_layout import HEADERS, export
+from openpyxl import load_workbook
+import coretax_exporter as exporter
+from support_templates import section, source_run
+from test_unifikasi_rate_layout import HEADERS
+
+
+def export(tmp_path, sections):
+    run = source_run('PPh Unifikasi', sections)
+    run['records'][0]['capture_complete'] = all(
+        table.get('complete', True) for item in sections for table in item.get('tables', []))
+    before = deepcopy(run)
+    reports = []
+    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert run == before
+    path, = [name for name in paths if name != 'resume.xlsx']
+    return load_workbook(tmp_path / path), reports
 
 
 def table(group='BPPU', rate='2,50', count=1):
