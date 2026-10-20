@@ -20,7 +20,7 @@ import zlib
 
 
 BASELINE = '977b06846554ca1f2e5af512a69fb201f2cbe8d1'
-CANDIDATE = '7475d89c85db4730270fefcd41f18291b9ba75b9'
+CANDIDATE = '6440e03df821db2882446d729c62257666286d0a'
 
 
 class Rect(C.Structure):
@@ -119,14 +119,17 @@ def capture_desktop(args):
     u.SetProcessDpiAwarenessContext.restype = W.BOOL
     if not u.SetProcessDpiAwarenessContext(C.c_void_p(-4)):
         raise C.WinError(C.get_last_error())
-    u, g, _ = api()
+    u, g, s = api()
     awareness = u.GetAwarenessFromDpiAwarenessContext(u.GetThreadDpiAwarenessContext())
     assert awareness == 2, ('capture helper is not per-monitor aware', awareness)
     hwnd, path = args.capture_desktop, Path(args.out)
     outer, frame, monitor = Rect(), Rect(), MonitorInfo()
     monitor.size = C.sizeof(monitor)
     assert u.GetWindowRect(hwnd, C.byref(outer))
-    assert u.GetMonitorInfoW(u.MonitorFromWindow(hwnd, 2), C.byref(monitor))
+    hmon = u.MonitorFromWindow(hwnd, 2)
+    assert u.GetMonitorInfoW(hmon, C.byref(monitor))
+    monitor_scale_value = C.c_int()
+    scale_hr = s.GetScaleFactorForMonitor(hmon, C.byref(monitor_scale_value))
     dwm = C.WinDLL('dwmapi')
     dwm.DwmGetWindowAttribute.argtypes = [W.HWND, W.DWORD, C.c_void_p, W.DWORD]
     dwm.DwmGetWindowAttribute.restype = C.c_long
@@ -171,6 +174,9 @@ def capture_desktop(args):
                   'colors_sampled': colors, 'method': 'DPI-aware helper desktop BitBlt',
                   'capture_helper_awareness': awareness, 'target_awareness':
                   u.GetAwarenessFromDpiAwarenessContext(u.GetWindowDpiAwarenessContext(hwnd)),
+                  'target_window_dpi': u.GetDpiForWindow(hwnd),
+                  'capture_monitor_scale_percent': monitor_scale_value.value if scale_hr == 0 else None,
+                  'capture_monitor_scale_hresult': scale_hr,
                   'physical_outer_rect': rect_values(outer),
                   'physical_frame_rect': rect_values(frame) if frame_hr == 0 else None,
                   'physical_monitor_rect': rect_values(monitor.monitor),
@@ -619,11 +625,12 @@ def close_checks(checks, checkpoint):
                 deadline = time.perf_counter() + 2
                 flags = _tkinter.WINDOW_EVENTS | _tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT
                 while not app._interaction.get('layout_after') and time.perf_counter() < deadline:
+                    dispatch_started_ns = time.perf_counter_ns()
                     if not root.tk.dooneevent(flags):
                         time.sleep(.001)
                 pending = app._interaction.get('layout_after')
                 assert pending, 'Native Configure did not schedule an owned reflow timer'
-                pending_info = tuple(root.tk.call('after', 'info', pending))
+                pending_info = [str(part) for part in root.tk.call('after', 'info', pending)]
                 pending_observed_ns = time.perf_counter_ns()
                 close_focus = focus_identity(root)
                 if action == 'window-close':
@@ -635,6 +642,7 @@ def close_checks(checks, checkpoint):
                     app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
                                   'percent': 20, 'message': 'Synthetic cancellation complete'})
                 close_delay_ms = (time.perf_counter_ns() - pending_observed_ns) / 1e6
+                pending_age_upper_bound_ms = (time.perf_counter_ns() - dispatch_started_ns) / 1e6
                 pending_cancelled = pending not in root.tk.splitlist(root.tk.call('after', 'info'))
                 settle(root, app)
                 focus_before = focus_identity(root)
@@ -650,6 +658,8 @@ def close_checks(checks, checkpoint):
                                'pending_timer_id': pending, 'pending_timer_info': pending_info,
                                'timer_events_excluded_until_close': True,
                                'close_after_pending_observed_ms': close_delay_ms,
+                               'pending_age_at_close_upper_bound_ms': pending_age_upper_bound_ms,
+                               'closed_before_75ms_reflow_deadline': pending_age_upper_bound_ms < 75,
                                'pending_timer_cancelled': pending_cancelled,
                                'focus_before_close': close_focus, 'focus_after_close': focus_before,
                                'focus_after_expiry': focus_identity(root), 'late_expiry_wait_ms': 200,
@@ -689,10 +699,29 @@ def fresh_keyboard_checks(checks, checkpoint):
                 for sequence in ('<Right>', '<Shift-Right>', '<Control-Right>', '<End>'):
                     for _ in range(3):
                         key(root, app, sequence)
-                row['xview_before_keys'], row['xview_after_keys'] = initial_x, list(tree.xview())
+                key(root, app, '<Control-End>')
+                end_x = list(tree.xview())
+                key(root, app, '<Control-Home>')
+                home_x = list(tree.xview())
+                row['xview_before_keys'], row['xview_after_keys'] = initial_x, end_x
+                row['xview_after_ctrl_end'], row['xview_after_ctrl_home'] = end_x, home_x
+                row['horizontal_suffix_reached_by_keyboard'] = end_x[1] >= .999
+                row['horizontal_start_restored_by_keyboard'] = home_x[0] <= .001
                 scrollbars = [w for w in children(dialog) if w.winfo_class() == 'TScrollbar']
                 row['scrollbar_takefocus'] = [str(w.cget('takefocus')) for w in scrollbars]
-                row['horizontal_keyboard_route_observed'] = list(tree.xview()) != initial_x
+                row['horizontal_keyboard_route_observed'] = end_x != initial_x and home_x[0] <= .001
+                items = list(tree.get_children())
+                row['native_down_moves_to_next'] = bool(before) and after == tree.next(before)
+                for _ in range(len(items) + 1):
+                    tree.event_generate('<KeyPress-Down>')
+                    tree.event_generate('<KeyRelease-Down>')
+                settle(root, app)
+                row['item_focus_after_repeated_down'] = tree.focus()
+                row['last_file_reached_by_down'] = bool(items) and tree.focus() == items[-1]
+                row['yview_after_repeated_down'] = list(tree.yview())
+                row['selection_after_repeated_down'] = list(tree.selection())
+                row['selectmode_none_preserved'] = str(tree.cget('selectmode')) == 'none' and not tree.selection()
+                row['no_consent_sent'] = not controller.replies and not controller.stops and app._interaction is not None
             checks.append(row)
             checkpoint()
 
@@ -783,44 +812,118 @@ def set_dpi(packet, relative):
 
 
 def enlarge_display():
-    """Use only an enumerated OS display mode, without changing DPI awareness."""
+    """Bounded OS-validated modes; fresh native DPI capability decides when to stop."""
     u, _, _ = api()
     u.EnumDisplaySettingsW.argtypes = [W.LPCWSTR, W.DWORD, C.c_void_p]
+    u.EnumDisplaySettingsW.restype = W.BOOL
     u.ChangeDisplaySettingsW.argtypes = [C.c_void_p, W.DWORD]
+    u.ChangeDisplaySettingsW.restype = C.c_long
     def mode(index):
         value = C.create_string_buffer(220)
         struct.pack_into('<H', value, 68, 220)
         return value if u.EnumDisplaySettingsW(None, index, value) else None
+    def details(value):
+        bits, width, height, flags, frequency = struct.unpack_from('<5I', value, 168)
+        return {'physical_px': [width, height], 'bits_per_pixel': bits,
+                'frequency_hz': frequency, 'display_flags': flags}
+    def capability():
+        packet = dpi_source()
+        relative_200 = 4 + packet.minimum
+        return {'minimum': packet.minimum, 'current': packet.current, 'maximum': packet.maximum,
+                'relative_200': relative_200,
+                'supports_200': packet.minimum <= relative_200 <= packet.maximum}
     original = mode(0xffffffff)
-    choices = []
+    report = {'status': 'unavailable', 'enumerated_modes': [], 'attempts': [],
+              'mode_coordinates': 'EnumDisplaySettingsW physical pixels'}
+    if original is None:
+        report['error'] = 'ENUM_CURRENT_SETTINGS unavailable; no mode changes attempted'
+        return None, report
+    report['initial_mode'] = details(original)
+    enumerated, seen = {}, set()
     for i in range(1000):
         item = mode(i)
         if item is None:
             break
-        width, height = struct.unpack_from('<II', item, 172)
-        if 1920 <= width <= 3840 and 1440 <= height <= 2160:
-            choices.append((width * height, item, width, height))
-    if not choices:
-        attempts = []
-        # Virtual displays may enumerate only their current mode. Let Windows
-        # validate larger modes with CDS_TEST before applying any of them.
-        for width, height in ((2560, 1600), (1920, 1440), (1440, 900)):
+        info = details(item)
+        width, height = info['physical_px']
+        identity = (width, height, info['bits_per_pixel'], info['frequency_hz'], info['display_flags'])
+        if identity in seen:
+            continue
+        seen.add(identity)
+        report['enumerated_modes'].append({'enumeration_index': i, **info})
+        if 1280 <= width <= 3840 and 900 <= height <= 2160 and info['bits_per_pixel'] == 32:
+            enumerated.setdefault((width, height), (item, 'enumerated'))
+    # Merge before ordering so a valid large fallback precedes a smaller enumerated mode.
+    candidates = dict(sorted(enumerated.items(), key=lambda pair: (pair[0][1], pair[0][0]), reverse=True)[:18])
+    for width, height in ((2560, 1440), (1920, 1200), (1600, 1200),
+                          (1920, 1080), (1600, 900), (1440, 900)):
+        if (width, height) not in candidates:
             selected = C.create_string_buffer(original.raw, 220)
             struct.pack_into('<I', selected, 72, 0x00180000)
             struct.pack_into('<II', selected, 172, width, height)
-            test_rc = u.ChangeDisplaySettingsW(selected, 2)
-            attempt = {'requested_px': [width, height], 'test_return_code': test_rc}
-            attempts.append(attempt)
-            if test_rc == 0:
-                attempt['apply_return_code'] = u.ChangeDisplaySettingsW(selected, 0)
-                attempt['observed'] = monitor_scale()
-                if attempt['apply_return_code'] == 0:
-                    return original, {'status': 'changed_after_CDS_TEST', 'attempts': attempts}
-        return original, {'status': 'unavailable', 'initial': monitor_scale(), 'attempts': attempts}
-    _, selected, width, height = min(choices, key=lambda entry: entry[0])
-    rc = u.ChangeDisplaySettingsW(selected, 0)
-    return original, {'status': 'changed' if rc == 0 else 'failed', 'return_code': rc,
-                      'selected_px': [width, height], 'observed': monitor_scale()}
+            candidates[(width, height)] = (selected, 'CDS_TEST fallback')
+    initial_width, initial_height = report['initial_mode']['physical_px']
+    best, best_score = original, (-1, initial_height, initial_width)
+    try:
+        report['initial_source_dpi'] = capability()
+        info = report['initial_source_dpi']
+        best_score = (info['maximum'] - info['minimum'], initial_height, initial_width)
+    except Exception as error:
+        report['initial_source_dpi_error'] = str(error)
+    for (width, height), (selected, source) in sorted(candidates.items(),
+            key=lambda pair: (pair[0][1], pair[0][0]), reverse=True):
+        attempt = {'requested_px': [width, height], 'source': source}
+        report['attempts'].append(attempt)
+        try:
+            attempt['test_return_code'] = u.ChangeDisplaySettingsW(selected, 2)
+            if attempt['test_return_code'] != 0:
+                continue
+            attempt['apply_return_code'] = u.ChangeDisplaySettingsW(selected, 0)
+            if attempt['apply_return_code'] != 0:
+                continue
+            actual = mode(0xffffffff)
+            if actual is None:
+                raise RuntimeError('Applied mode has no ENUM_CURRENT_SETTINGS readback')
+            attempt['observed_mode'] = details(actual)
+            attempt['requested_mode_observed'] = attempt['observed_mode']['physical_px'] == [width, height]
+            attempt['observed_monitor'] = monitor_scale()
+            # Display changes can deliver their capability update asynchronously.
+            deadline = time.perf_counter() + .5
+            while True:
+                try:
+                    attempt['source_dpi'] = capability()
+                    attempt.pop('source_dpi_error', None)
+                except Exception as error:
+                    attempt['source_dpi_error'] = str(error)
+                if attempt.get('source_dpi', {}).get('supports_200') or time.perf_counter() >= deadline:
+                    break
+                time.sleep(.05)
+            info = attempt.get('source_dpi', {})
+            aw, ah = attempt['observed_mode']['physical_px']
+            score = (info.get('maximum', -1) - info.get('minimum', 0), ah, aw)
+            if score > best_score:
+                best, best_score = actual, score
+            if attempt['requested_mode_observed'] and info.get('supports_200'):
+                best = actual
+                report['status'] = 'native_200_range_available'
+                break
+        except Exception as error:
+            attempt['error'] = str(error)
+    current = mode(0xffffffff)
+    if current is None or details(current) != details(best):
+        report['retain_best_test_return_code'] = u.ChangeDisplaySettingsW(best, 2)
+        if report['retain_best_test_return_code'] == 0:
+            report['retain_best_apply_return_code'] = u.ChangeDisplaySettingsW(best, 0)
+    current = mode(0xffffffff)
+    if current is not None:
+        report['retained_mode'] = details(current)
+        if report['status'] == 'unavailable':
+            report['status'] = 'best_observed_mode_retained'
+    try:
+        report['retained_source_dpi'] = capability()
+    except Exception as error:
+        report['retained_source_dpi_error'] = str(error)
+    return original, report
 
 
 def orchestrate(args):
@@ -829,9 +932,15 @@ def orchestrate(args):
     report = {'synthetic': True, 'portal_accessed': False, 'runs': [], 'scales': [],
               'scale_method': 'undocumented DisplayConfig source DPI packets; observed native monitor scale required',
               'no_product_awareness_changes': True}
-    original_mode, packet = None, None
+    original_mode, packet, original_dpi = None, None, None
     paired_benchmark_done = False
     try:
+        try:
+            original_dpi = dpi_source()
+            report['initial_source_dpi_relative'] = {'minimum': original_dpi.minimum,
+                'current': original_dpi.current, 'maximum': original_dpi.maximum}
+        except Exception as error:
+            report['initial_source_dpi_error'] = str(error)
         try:
             original_mode, report['display'] = enlarge_display()
         except Exception as error:
@@ -884,16 +993,21 @@ def orchestrate(args):
             paired_benchmark_done = True
         report['paired_benchmark_attempted'] = paired_benchmark_done
     finally:
-        if packet is not None:
-            try:
-                report['restore_dpi_return_code'] = set_dpi(packet, packet.current)
-            except Exception as error:
-                report['restore_dpi_error'] = str(error)
         if original_mode is not None:
             try:
                 report['restore_resolution_return_code'] = api()[0].ChangeDisplaySettingsW(original_mode, 0)
             except Exception as error:
                 report['restore_resolution_error'] = str(error)
+        if original_dpi is not None:
+            try:
+                fresh = dpi_source()
+                relative = original_dpi.current - original_dpi.minimum + fresh.minimum
+                if fresh.minimum <= relative <= fresh.maximum:
+                    report['restore_dpi_return_code'] = set_dpi(fresh, relative)
+                else:
+                    report['restore_dpi_error'] = 'Original scale is outside the restored source range'
+            except Exception as error:
+                report['restore_dpi_error'] = str(error)
         write_json(out/'runner.json', report)
     assert report['runs'], 'No supported native scaling mode could be exercised'
     assert all(run['return_code'] == 0 for run in report['runs']), 'At least one evidence process failed; inspect JSON'
