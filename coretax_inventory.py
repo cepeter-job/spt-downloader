@@ -83,6 +83,29 @@ def plan_year_filters(catalog, year, basis, *, now=None):
             'catalog_checksum': catalog['Checksum'], 'catalog_expires': catalog['ExpiryDate']}
 
 
+def prove_period_equivalence(left, right, catalog, year):
+    """Return private source evidence for one unique code/label pair, never a guess."""
+    if not isinstance(left, str) or not isinstance(right, str) or left == right:
+        return None
+    plan = plan_year_filters(catalog, year, 'period')
+    if not plan['eligible']:
+        return None
+    pairs = [row for row in catalog['Details']
+             if (row['Code'] == left and row['CodeDescription'] == right)
+             or (row['Code'] == right and row['CodeDescription'] == left)]
+    if len(pairs) != 1:
+        return None
+    code, label = pairs[0]['Code'], pairs[0]['CodeDescription']
+    # A caption shared by codes, or a caption that is another code, cannot
+    # identify a unique source period. Literal equality elsewhere is unchanged.
+    if sum(row['CodeDescription'] == label for row in catalog['Details']) != 1:
+        return None
+    if any(row['Code'] == label or row['CodeDescription'] == code for row in catalog['Details']):
+        return None
+    return {'code': code, 'label': label, 'catalog_sha256': plan['catalog_sha256'],
+            'catalog_binding_sha256': plan['catalog_binding_sha256']}
+
+
 def rewrite_inventory_request(request, condition, *, taxpayer_id):
     """Only alter filters on an owned, unfiltered submitted-list request."""
     if (not isinstance(request, dict) or not isinstance(taxpayer_id, str) or not taxpayer_id

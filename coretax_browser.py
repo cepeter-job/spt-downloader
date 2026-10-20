@@ -19,7 +19,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from coretax_json import validate_detail_source
 from coretax_corporate import CIT_SOURCE_SHA256
 from coretax_inventory import (InventoryFilterRoute, plan_year_filters, read_period_catalog,
-                               validate_partition_response)
+                               validate_partition_response, prove_period_equivalence)
 
 CELL_JS = r'''(cell) => {
  const clone=cell.cloneNode(true);
@@ -920,7 +920,31 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     keys = [r['key'] for r in records]
     if len(keys) != len(set(keys)) or len(records) != sum(e['selected'] for e in audit):
         raise RuntimeError('Checkpoint reconciliation failed: duplicate identifiers or selected-count mismatch')
-    unique = deduplicate_inventory(records)
+    period_catalog = None
+    periods_by_id = {}
+    period_conflict = False
+    for record in records:
+        value = record['meta'].get('Masa Pajak', '')
+        previous = periods_by_id.setdefault(record['record_id'], value)
+        if previous != value:
+            period_conflict = True
+    if period_conflict:
+        # Observe only the already loaded cache; do not refresh source pages or
+        # reinterpret literal metadata when independent evidence is unavailable.
+        _check_cancel(check_cancel)
+        diagnostics.record('catalog.checkpoint', catalog_stage='reconciliation')
+        try:
+            period_catalog = read_period_catalog(page)
+        except Exception:
+            diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
+        _check_cancel(check_cancel)
+    unique = deduplicate_inventory(records, period_catalog=period_catalog, year=year)
+    _check_cancel(check_cancel)
+    if any('period_equivalence' in record for record in unique):
+        # Private job evidence is exclusive: never overwrite an earlier snapshot.
+        with (folder / 'period-catalog-reconciliation.json').open('x', encoding='utf-8') as handle:
+            json.dump(period_catalog, handle, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
+        _check_cancel(check_cancel)
     if len(unique) != len(records):
         audit.append({'status': 'Deduplicatie / Deduplikasi', 'total': len(records), 'scanned': len(unique), 'selected': len(unique),
                       'result': 'RECONCILED', 'note': 'Same RecordId appears in multiple status lists. Retained once; all source occurrences preserved. Distinct amendments retain distinct identifiers.'})
@@ -1335,6 +1359,24 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
                                 _check_cancel(check_cancel)
                                 if record['meta'].get(field, '') != current_meta.get(field, ''):
+                                    saved_proof = record.get('period_equivalence')
+                                    if field == 'Masa Pajak' and isinstance(saved_proof, dict):
+                                        # A display alias is allowed only with the same source
+                                        # semantics as inventory, freshly checked before View.
+                                        diagnostics.record('catalog.checkpoint', catalog_stage='restoration')
+                                        proof = None
+                                        try:
+                                            catalog = read_period_catalog(page)
+                                            _check_cancel(check_cancel)
+                                            proof = prove_period_equivalence(record['meta'].get(field),
+                                                current_meta.get(field), catalog, run['year'])
+                                        except Exception:
+                                            diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
+                                        _check_cancel(check_cancel)
+                                        if proof is not None and all(
+                                                proof[key] == saved_proof.get(key)
+                                                for key in ('code', 'label', 'catalog_binding_sha256')):
+                                            continue
                                     raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
                             if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,

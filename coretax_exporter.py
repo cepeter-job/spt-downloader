@@ -6,6 +6,7 @@ verifikasi, dan publikasi set workbook yang dihasilkan di sini.
 from pathlib import Path
 
 from collections import Counter, defaultdict
+from copy import deepcopy
 from decimal import Decimal
 import hashlib
 import json
@@ -54,18 +55,26 @@ def in_scope(meta, year, basis):
     return str(year) in years
 
 
-def deduplicate_inventory(records):
+def deduplicate_inventory(records, *, period_catalog=None, year=None):
     """Gabungkan kemunculan ID yang sama tanpa melebur pembetulan berbeda."""
     unique = {}
     for record in records:
         identifier = record['record_id']
         occurrence = {k: record[k] for k in ('key', 'source_status', 'list_url', 'list_page', 'row_position') if k in record}
+        occurrence['meta'] = deepcopy(record['meta'])
         if identifier not in unique:
-            unique[identifier] = {**record, 'source_occurrences': [occurrence]}
+            unique[identifier] = {**record, 'meta': deepcopy(record['meta']), 'source_occurrences': [occurrence]}
         else:
             original = unique[identifier]
             for field in ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan', 'Tanggal Submit SPT'):
                 if original['meta'].get(field, '') != record['meta'].get(field, ''):
+                    if field == 'Masa Pajak':
+                        from coretax_inventory import prove_period_equivalence
+                        proof = prove_period_equivalence(original['meta'].get(field), record['meta'].get(field),
+                                                         period_catalog, year)
+                        if proof is not None:
+                            original['period_equivalence'] = proof
+                            continue
                     raise ValueError(f'Conflicting source metadata for SPT identifier {identifier}; no amendment is silently merged')
             original['source_occurrences'].append(occurrence)
     return list(unique.values())
