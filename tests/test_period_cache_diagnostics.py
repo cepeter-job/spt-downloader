@@ -93,6 +93,22 @@ def test_existing_cache_is_readonly_and_reports_exact_state(tmp_path, mode, reas
     assert 'PRIVATE-CACHE' not in json.dumps(records(tmp_path))
 
 
+@pytest.mark.parametrize('mode,reason', [('race','upgrade_refused'), ('hung','read_timeout')])
+def test_cache_enumeration_race_cannot_create_database_or_wait_forever(tmp_path, mode, reason):
+    with synthetic_browser() as (page, metrics):
+        page.evaluate("""mode=>{
+          window.actualDatabases=indexedDB.databases.bind(indexedDB);
+          indexedDB.databases=mode==='race'?async()=>[{name:'e-tax-database'}]:()=>new Promise(()=>{});
+        }""", mode)
+        with d.session(tmp_path,'worker') as log:
+            assert inventory.read_period_catalog(page) is None
+            assert log.flush()
+        assert page.evaluate('async()=>await window.actualDatabases()')==[]
+        assert metrics=={'requests':[],'unknown':0}
+    events=[e for e in records(tmp_path) if e['event']=='catalog.read']
+    assert len(events)==1 and events[0]['catalog_reason']==reason
+
+
 def test_sink_drops_untrusted_catalog_values(tmp_path):
     class Private:
         def __str__(self): raise AssertionError('Do not stringify')
@@ -133,7 +149,7 @@ def test_post_inventory_snapshot_does_not_change_selection_or_filters(tmp_path, 
                 result = driver.collect_inventory(page,'0000000000000001',2024,'period',tmp_path/'job',max_pages=5)
                 assert result['inventory_complete'], result['errors']
                 assert [r['record_id'] for r in result['records']]==['fixture-normal','fixture-amend-001']
-                assert all(p['Filters']==[] for p in metrics['requests'])
+                assert all(p['Filters']==[] for p in metrics['submitted_requests'])
             assert log.flush()
         assert len(calls)==2, 'Missing post-inventory cache snapshot'
         assert metrics['unregistered_requests']==metrics['detail_actions']==0

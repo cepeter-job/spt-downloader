@@ -714,6 +714,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
         if len(sources) == 1:
             errors.append({'object': 'Status navigation', 'message': 'No other SPT status lists discovered; refusing to certify all-SPT completeness'})
         try:
+            diagnostics.record('catalog.checkpoint', catalog_stage='planning')
             catalog = read_period_catalog(page) if basis == 'period' else None
             filter_plan = plan_year_filters(catalog, year, basis)
         except Exception:
@@ -858,6 +859,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 if entry['scanned'] != entry['total']:
                     raise RuntimeError(f"Source total {entry['total']} != scanned {entry['scanned']}")
                 if condition is not None:
+                    diagnostics.record('catalog.checkpoint', catalog_stage='recheck')
                     current_plan = plan_year_filters(read_period_catalog(page), year, basis)
                     if (not current_plan['eligible'] or
                             current_plan.get('catalog_binding_sha256') != source['list_catalog_binding_sha256']):
@@ -891,6 +893,18 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
               'records': unique, 'audit': audit, 'errors': errors, 'sources': sources,
               'inventory_complete': bool(sources) and not errors and all(e['result'] == 'RECONCILED' for e in audit)}
     (folder / 'inventory.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    # Observe late cache availability before the selection deadline starts.
+    # This never replans filters or changes the already reconciled inventory.
+    if basis == 'period':
+        _check_cancel(check_cancel)
+        diagnostics.record('catalog.checkpoint', catalog_stage='after_inventory')
+        try:
+            plan_year_filters(read_period_catalog(page), year, basis)
+        except CaptureCancelled:
+            raise
+        except Exception:
+            diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
+        _check_cancel(check_cancel)
     return result
 
 

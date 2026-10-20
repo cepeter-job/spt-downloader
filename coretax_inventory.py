@@ -5,27 +5,39 @@ import hashlib
 import json
 
 from coretax_json import JsonSafetyError, validate_period_filter
+from spt_desktop import diagnostics
 
 
 def plan_year_filters(catalog, year, basis, *, now=None):
     """Return disjoint candidate filters; local literal-period checks remain mandatory."""
-    fallback = {'eligible': False, 'filters': [], 'reason': 'unverified_period_catalog'}
+    def unavailable(reason, legacy_reason='unverified_period_catalog'):
+        diagnostics.record('catalog.validation', catalog_reason=reason)
+        return {'eligible': False, 'filters': [], 'reason': legacy_reason}
+
     if basis != 'period' or type(year) is not int or not 1900 <= year <= 2100:
-        return {**fallback, 'reason': 'unsupported_year_scope'}
-    if (not isinstance(catalog, dict) or catalog.get('ReferenceDataType') != 'PERIOD'
-            or catalog.get('language') != 'id-ID'
-            or not isinstance(catalog.get('Checksum'), str) or not catalog['Checksum']
-            or not isinstance(catalog.get('Details'), list) or not catalog['Details']):
-        return fallback
+        return unavailable('scope_unsupported', 'unsupported_year_scope')
+    if not isinstance(catalog, dict):
+        return unavailable('catalog_missing')
+    if catalog.get('ReferenceDataType') != 'PERIOD':
+        return unavailable('catalog_type')
+    if catalog.get('language') != 'id-ID':
+        return unavailable('catalog_language')
+    if not isinstance(catalog.get('Checksum'), str) or not catalog['Checksum']:
+        return unavailable('catalog_checksum')
+    if not isinstance(catalog.get('Details'), list) or not catalog['Details']:
+        return unavailable('catalog_details')
     now = datetime.now(timezone.utc) if now is None else now
     try:
         expires = datetime.fromisoformat(catalog['ExpiryDate'].replace('Z', '+00:00'))
         if now.tzinfo is None or expires.tzinfo is None or expires <= now:
-            return {**fallback, 'reason': 'expired_or_unbound_period_catalog'}
+            return unavailable('catalog_expired_or_unbound', 'expired_or_unbound_period_catalog')
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return unavailable('catalog_expiry_invalid')
+    try:
         fingerprint = hashlib.sha256(json.dumps(catalog, ensure_ascii=False, sort_keys=True,
                                                 separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
     except (KeyError, TypeError, ValueError, AttributeError):
-        return fallback
+        return unavailable('catalog_serialization')
 
     from coretax_exporter import in_scope
 
@@ -33,11 +45,14 @@ def plan_year_filters(catalog, year, basis, *, now=None):
     token = str(year)
     for row in catalog['Details']:
         if not isinstance(row, dict):
-            return fallback
+            return unavailable('catalog_row')
         code, label = row.get('Code'), row.get('CodeDescription')
-        if (not isinstance(code, str) or not code or code != code.strip()
-                or not isinstance(label, str) or not label.strip() or code in seen):
-            return fallback
+        if not isinstance(code, str) or not code or code != code.strip():
+            return unavailable('catalog_code')
+        if not isinstance(label, str) or not label.strip():
+            return unavailable('catalog_label')
+        if code in seen:
+            return unavailable('catalog_duplicate')
         seen.add(code)
         if token in code:
             continue
@@ -62,6 +77,7 @@ def plan_year_filters(catalog, year, basis, *, now=None):
         key=lambda row: row['Code'])
     binding_fingerprint = hashlib.sha256(json.dumps(binding, ensure_ascii=False, sort_keys=True,
         separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
+    diagnostics.record('catalog.validation', catalog_reason='available', count=len(catalog['Details']))
     return {'eligible': True, 'filters': filters, 'catalog_sha256': fingerprint,
             'catalog_binding_sha256': binding_fingerprint,
             'catalog_checksum': catalog['Checksum'], 'catalog_expires': catalog['ExpiryDate']}
@@ -85,39 +101,62 @@ def rewrite_inventory_request(request, condition, *, taxpayer_id):
     return result
 
 
-PERIOD_CATALOG_JS = r'''async () => {
- if(typeof indexedDB.databases !== 'function')return null;
- if(!(await indexedDB.databases()).some(d=>d.name==='e-tax-database'))return null;
- return await new Promise(resolve=>{
-  let settled=false;
-  const done=value=>{if(!settled){settled=true;clearTimeout(timer);resolve(value);}};
-  const timer=setTimeout(()=>done(null),5000);
-  const open=indexedDB.open('e-tax-database');
-  open.onupgradeneeded=()=>{open.transaction.abort();done(null);};
-  open.onerror=open.onblocked=()=>done(null);
+PERIOD_CATALOG_JS = r'''() => new Promise(resolve=>{
+ let settled=false, db=null, tx=null;
+ const done=(reason,catalog=null)=>{
+  if(settled)return;
+  settled=true;clearTimeout(timer);
+  if(tx&&reason!=='available'){try{tx.abort();}catch{}}
+  if(db){try{db.close();}catch{}}
+  resolve({reason,catalog});
+ };
+ const timer=setTimeout(()=>done('read_timeout'),5000);
+ (async()=>{
+  if(typeof indexedDB==='undefined'||typeof indexedDB.databases!=='function'){
+   done('enumeration_unavailable');return;
+  }
+  let databases;
+  try{databases=await indexedDB.databases();}
+  catch{done('enumeration_error');return;}
+  if(settled)return;
+  if(!databases.some(d=>d.name==='e-tax-database')){done('database_missing');return;}
+  let open;
+  try{open=indexedDB.open('e-tax-database');}
+  catch{done('open_error');return;}
+  open.onupgradeneeded=()=>{
+   try{open.transaction.abort();}finally{
+    try{open.result.close();}catch{}
+    done('upgrade_refused');
+   }
+  };
+  open.onerror=()=>done('open_error');
+  open.onblocked=()=>done('open_blocked');
   open.onsuccess=()=>{
-   const db=open.result;
-   if(settled||!db.objectStoreNames.contains('referenceDataStore')){db.close();done(null);return;}
+   db=open.result;
+   if(settled){db.close();return;}
+   db.onversionchange=()=>done('version_changed');
+   if(!db.objectStoreNames.contains('referenceDataStore')){done('store_missing');return;}
    try{
-    const tx=db.transaction('referenceDataStore','readonly');
+    tx=db.transaction('referenceDataStore','readonly');
     const request=tx.objectStore('referenceDataStore').get(['PERIOD','id-ID']);
-    tx.onerror=()=>{db.close();done(null);};
-    request.onerror=()=>{db.close();done(null);};
+    tx.onerror=tx.onabort=()=>done('read_error');
+    request.onerror=()=>done('read_error');
     request.onsuccess=()=>{
+     if(settled)return;
      try{
       const x=request.result;
-      const value=x&&x.ReferenceDataType==='PERIOD'&&x.language==='id-ID'?{
-       ReferenceDataType:x.ReferenceDataType,language:x.language,Checksum:x.Checksum,
+      if(x===undefined||x===null){done('record_missing');return;}
+      if(x.ReferenceDataType!=='PERIOD'||x.language!=='id-ID'){done('record_identity');return;}
+      const catalog={ReferenceDataType:x.ReferenceDataType,language:x.language,Checksum:x.Checksum,
        ExpiryDate:x.ExpiryDate instanceof Date?x.ExpiryDate.toISOString():x.ExpiryDate,
-       Details:Array.isArray(x.Details)?x.Details.map(d=>({Code:d.Code,CodeDescription:d.CodeDescription})):null
-      }:null;
-      db.close();done(value);
-     }catch{db.close();done(null);}
+       Details:Array.isArray(x.Details)?x.Details.map(d=>({Code:d.Code,CodeDescription:d.CodeDescription})):null};
+      done('available',catalog);
+     }catch{done('projection_error');}
     };
-   }catch{db.close();done(null);}
+   }catch{done('read_error');}
   };
- });
-}'''
+ })().catch(()=>done('read_error'));
+})'''
 
 
 def validate_partition_response(response, condition):
@@ -148,8 +187,22 @@ def read_period_catalog(page):
     url = urlsplit(page.url)
     if (url.scheme != 'https' or url.netloc != 'coretax.intranet.pajak.go.id'
             or not url.path.startswith('/returnsheets/')):
+        diagnostics.record('catalog.read', catalog_reason='origin_blocked')
         return None
-    return page.evaluate(PERIOD_CATALOG_JS)
+    try:
+        result = page.evaluate(PERIOD_CATALOG_JS)
+    except Exception:
+        diagnostics.record('catalog.read', catalog_reason='evaluation_error')
+        raise
+    if not isinstance(result, dict):
+        diagnostics.record('catalog.read', catalog_reason='evaluation_error')
+        return None
+    catalog = result.get('catalog')
+    fields = {'catalog_reason': result.get('reason')}
+    if isinstance(catalog, dict) and isinstance(catalog.get('Details'), list):
+        fields['count'] = len(catalog['Details'])
+    diagnostics.record('catalog.read', **fields)
+    return catalog if isinstance(catalog, dict) else None
 
 
 class InventoryFilterRoute:
