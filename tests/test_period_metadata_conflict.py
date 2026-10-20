@@ -99,3 +99,16 @@ def test_stop_after_reconciliation_read_prevents_inventory_publication(tmp_path,
         assert reads == [False, False, True]
         assert not (tmp_path/'inventory.json').exists()
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
+
+
+def test_existing_catalog_snapshot_is_preserved_and_inventory_not_published(tmp_path, monkeypatch):
+    snapshot = tmp_path/'period-catalog-reconciliation.json'
+    original = b'{"synthetic_previous_evidence":true}'
+    snapshot.write_bytes(original)
+    with synthetic_listing_browser(monkeypatch, year_catalog=True, archive_period_conflict=True) as (page, metrics):
+        with pytest.raises(FileExistsError):
+            driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
+        assert snapshot.read_bytes() == original
+        assert not (tmp_path/'inventory.json').exists()
+        assert (tmp_path/'inventory-batches.jsonl').exists()
+        assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
