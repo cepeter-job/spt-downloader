@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
+from test_diagnostics import records as diagnostic_records
 
 ORIGIN = 'https://coretax.synthetic.invalid'
 RECORD = {
@@ -89,6 +90,81 @@ def routed(browser, monkeypatch):
     finally:
         for context in contexts:
             context.close()
+
+
+@pytest.mark.parametrize('failure,want_state,want_owned,want_document,want_views', [
+    ('hidden', 'hidden', 1, 1, 1),
+    ('ancestor', 'hidden', 1, 1, 1),
+    ('css-hidden', 'hidden', 1, 1, 1),
+    ('missing', 'missing', 0, 0, 1),
+    ('outside-view', 'outside_view', 0, 1, 2),
+])
+def test_induk_timeout_records_structure_without_private_dom_or_repairing_capture(
+        routed, tmp_path, monkeypatch, failure, want_state, want_owned, want_document, want_views):
+    page, requests = routed()
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 0.05)
+    page.evaluate("""failure => {
+        const tab = document.querySelector('a[aria-controls="induk"]');
+        const panel = document.getElementById('induk');
+        panel.id = 'SYNTHETIC_PANEL_SECRET';
+        panel.querySelector('input').value = 'SYNTHETIC_FIELD_SECRET';
+        tab.setAttribute('aria-controls', panel.id);
+        tab.setAttribute('aria-selected', 'true');
+        window.indukClicks = 0;
+        tab.onclick = () => window.indukClicks++;
+        if (failure === 'missing') panel.remove();
+        if (failure === 'ancestor') {
+            panel.hidden = false;
+            panel.parentElement.hidden = true;
+        }
+        if (failure === 'css-hidden') {
+            panel.hidden = false;
+            panel.style.visibility = 'hidden';
+        }
+        if (failure === 'outside-view') {
+            const other = document.createElement('div');
+            other.className = 'p-tabview';
+            document.querySelector('.main-content').append(other);
+            other.append(panel);
+            panel.hidden = false;
+        }
+    }""", failure)
+    with driver.diagnostics.session(tmp_path, 'worker', level='INFO') as log:
+        with driver.diagnostics.detail_context(ordinal=1, tax_kind='corporate', source_requested='dom'):
+            result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+        assert log.flush()
+    assert [section['name'] for section in result['sections']] == ['L1D']
+    assert result['capture_complete'] is False
+    assert len(result['attachments']) == 1
+    assert result['attachments'][0]['status'] == 'PARTIAL'
+    assert result['attachments'][0]['relative_path'] is None
+    assert len(result['errors']) == 2 and 'Timeout' in result['errors'][0]['message']
+    assert 'No inspected corporate Induk' in result['errors'][1]['message']
+    assert requests == [('GET', DETAIL)] and page.evaluate('window.indukClicks') == 1
+    events = [row for row in diagnostic_records(tmp_path) if row['event'] == 'capture.panel_timeout']
+    assert len(events) == 1, 'Panel timeout must retain one value-free structural snapshot'
+    event = events[0]
+    assert event['panel_state'] == want_state
+    assert event['panel_matches'] == want_owned
+    assert event['document_panel_matches'] == want_document
+    assert event['tab_views'] == want_views
+    assert event['panel_controlled'] is True and event['tab_state'] == 'selected'
+    assert event['ordinal'] == 1 and event['tax_kind'] == 'corporate'
+    assert event['source_requested'] == 'dom' and event['duration_ms'] >= 50
+    text = json.dumps(diagnostic_records(tmp_path))
+    for secret in ('SYNTHETIC_PANEL_SECRET', 'SYNTHETIC_FIELD_SECRET', '0000123',
+                   '1.234,56', ORIGIN, RECORD['record_id'], 'aria-controls', 'outerHTML'):
+        assert secret not in text
+
+
+def test_successful_induk_does_not_emit_panel_timeout(routed, tmp_path):
+    page, requests = routed()
+    with driver.diagnostics.session(tmp_path, 'worker', level='INFO') as log:
+        result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+        assert log.flush()
+    assert result['capture_complete'] is True
+    assert not any(row['event'] == 'capture.panel_timeout' for row in diagnostic_records(tmp_path))
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
 
 
 def test_financial_pdf_is_captured_while_induk_is_visible_without_changing_raw_data(routed, tmp_path):
