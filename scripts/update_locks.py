@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 
-from spt_desktop.runtime import UV_VERSION
+from spt_desktop.runtime import UV_VERSION, python_version
 
 
 LOCK_INPUTS = (
@@ -31,7 +31,7 @@ def update_locks(root, uv, *, check=False, upgrade=False, offline=False):
                 shutil.copy2(existing, temporary / f'{name}.txt')
         for name, source, constraint in LOCK_INPUTS:
             output = temporary / f'{name}.txt'
-            command = [str(uv), 'pip', 'compile', source, '--python-version', '3.11',
+            command = [str(uv), 'pip', 'compile', source, '--python-version', python_version(),
                        '--universal', '--generate-hashes', '--only-binary', ':all:',
                        '--no-annotate', '--custom-compile-command', 'python -m scripts.update_locks',
                        '--output-file', str(output), '--quiet']
