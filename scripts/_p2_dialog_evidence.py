@@ -20,7 +20,7 @@ import zlib
 
 
 BASELINE = '977b06846554ca1f2e5af512a69fb201f2cbe8d1'
-CANDIDATE = 'a37111b05060f10eb9af694dcd1fd1692f538b84'
+CANDIDATE = '7475d89c85db4730270fefcd41f18291b9ba75b9'
 
 
 class Rect(C.Structure):
@@ -49,6 +49,7 @@ def api():
         'GetWindowRect': ([W.HWND, C.POINTER(Rect)], W.BOOL),
         'GetClientRect': ([W.HWND, C.POINTER(Rect)], W.BOOL),
         'GetWindowDC': ([W.HWND], W.HDC),
+        'GetDC': ([W.HWND], W.HDC),
         'ReleaseDC': ([W.HWND, W.HDC], C.c_int),
         'PrintWindow': ([W.HWND, W.HDC, W.UINT], W.BOOL),
         'MonitorFromWindow': ([W.HWND, W.DWORD], W.HANDLE),
@@ -57,6 +58,9 @@ def api():
         'GetWindowDpiAwarenessContext': ([W.HWND], W.HANDLE),
         'GetAwarenessFromDpiAwarenessContext': ([W.HANDLE], C.c_int),
         'SetForegroundWindow': ([W.HWND], W.BOOL),
+        'GetForegroundWindow': ([], W.HWND),
+        'GetThreadDpiAwarenessContext': ([], W.HANDLE),
+        'SetWindowPos': ([W.HWND, W.HWND, C.c_int, C.c_int, C.c_int, C.c_int, W.UINT], W.BOOL),
     }
     for name, (args, result) in signatures.items():
         getattr(u, name).argtypes, getattr(u, name).restype = args, result
@@ -66,6 +70,7 @@ def api():
         ('SelectObject', [W.HDC, W.HGDIOBJ], W.HGDIOBJ),
         ('DeleteObject', [W.HGDIOBJ], W.BOOL), ('DeleteDC', [W.HDC], W.BOOL),
         ('GetDIBits', [W.HDC, W.HBITMAP, W.UINT, W.UINT, C.c_void_p, C.POINTER(BitmapInfo), W.UINT], C.c_int),
+        ('BitBlt', [W.HDC, C.c_int, C.c_int, C.c_int, C.c_int, W.HDC, C.c_int, C.c_int, W.DWORD], W.BOOL),
     ):
         getattr(g, name).argtypes, getattr(g, name).restype = args, result
     s.GetScaleFactorForMonitor.argtypes = [W.HANDLE, C.POINTER(C.c_int)]
@@ -107,20 +112,37 @@ def native(window):
     }
 
 
-def capture(window, path):
+def capture_desktop(args):
+    """Only this standalone helper opts into DPI awareness; it never imports Tk/product code."""
+    u = C.WinDLL('user32', use_last_error=True)
+    u.SetProcessDpiAwarenessContext.argtypes = [W.HANDLE]
+    u.SetProcessDpiAwarenessContext.restype = W.BOOL
+    if not u.SetProcessDpiAwarenessContext(C.c_void_p(-4)):
+        raise C.WinError(C.get_last_error())
     u, g, _ = api()
-    hwnd = u.GetAncestor(window.winfo_id(), 2)
-    rect = Rect()
-    assert u.GetWindowRect(hwnd, C.byref(rect))
+    awareness = u.GetAwarenessFromDpiAwarenessContext(u.GetThreadDpiAwarenessContext())
+    assert awareness == 2, ('capture helper is not per-monitor aware', awareness)
+    hwnd, path = args.capture_desktop, Path(args.out)
+    outer, frame, monitor = Rect(), Rect(), MonitorInfo()
+    monitor.size = C.sizeof(monitor)
+    assert u.GetWindowRect(hwnd, C.byref(outer))
+    assert u.GetMonitorInfoW(u.MonitorFromWindow(hwnd, 2), C.byref(monitor))
+    dwm = C.WinDLL('dwmapi')
+    dwm.DwmGetWindowAttribute.argtypes = [W.HWND, W.DWORD, C.c_void_p, W.DWORD]
+    dwm.DwmGetWindowAttribute.restype = C.c_long
+    frame_hr = dwm.DwmGetWindowAttribute(hwnd, 9, C.byref(frame), C.sizeof(frame))
+    dwm.DwmFlush.restype = C.c_long
+    flush_hr = dwm.DwmFlush()
+    rect = monitor.monitor
     width, height = rect.right - rect.left, rect.bottom - rect.top
-    assert 100 < width < 6000 and 100 < height < 4000, (width, height)
-    src = u.GetWindowDC(hwnd)
+    assert 100 < width <= 8192 and 100 < height <= 4320, (width, height)
+    src = u.GetDC(None)
     dc = g.CreateCompatibleDC(src)
     bitmap = g.CreateCompatibleBitmap(src, width, height)
     assert src and dc and bitmap
     old = g.SelectObject(dc, bitmap)
     try:
-        assert u.PrintWindow(hwnd, dc, 2), C.get_last_error()
+        assert g.BitBlt(dc, 0, 0, width, height, src, rect.left, rect.top, 0x40CC0020), C.get_last_error()
         # GetDIBits requires the bitmap to be deselected from its DC.
         g.SelectObject(dc, old)
         info = BitmapInfo()
@@ -140,13 +162,63 @@ def capture(window, path):
         data = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>2I5B', width, height, 8, 6, 0, 0, 0))
                 + chunk(b'IDAT', zlib.compress(rows, 6)) + chunk(b'IEND', b''))
         path.write_bytes(data)
-        return {'filename': path.name, 'sha256': hashlib.sha256(data).hexdigest(),
-                'image_px': [width, height], 'colors_sampled': colors, 'method': 'PrintWindow'}
+        visible = frame if frame_hr == 0 else outer
+        def contained(inner, bounds):
+            return (inner.left >= bounds.left and inner.top >= bounds.top and
+                    inner.right <= bounds.right and inner.bottom <= bounds.bottom)
+        result = {'filename': path.name, 'sha256': hashlib.sha256(data).hexdigest(),
+                  'image_px': [width, height], 'image_origin_px': [rect.left, rect.top],
+                  'colors_sampled': colors, 'method': 'DPI-aware helper desktop BitBlt',
+                  'capture_helper_awareness': awareness, 'target_awareness':
+                  u.GetAwarenessFromDpiAwarenessContext(u.GetWindowDpiAwarenessContext(hwnd)),
+                  'physical_outer_rect': rect_values(outer),
+                  'physical_frame_rect': rect_values(frame) if frame_hr == 0 else None,
+                  'physical_monitor_rect': rect_values(monitor.monitor),
+                  'physical_work_area': rect_values(monitor.work),
+                  'window_outside_monitor': not contained(visible, monitor.monitor),
+                  'window_outside_work_area': not contained(visible, monitor.work),
+                  'target_is_foreground': u.GetForegroundWindow() == hwnd,
+                  'dwm_frame_hresult': frame_hr, 'dwm_flush_hresult': flush_hr}
+        print(json.dumps(result), flush=True)
     finally:
         g.SelectObject(dc, old)
         g.DeleteObject(bitmap)
         g.DeleteDC(dc)
-        u.ReleaseDC(hwnd, src)
+        u.ReleaseDC(None, src)
+
+
+def capture(window, path):
+    u, _, _ = api()
+    hwnd = u.GetAncestor(window.winfo_id(), 2)
+    window.lift()
+    u.SetForegroundWindow(hwnd)
+    window.update_idletasks()
+    window.update()
+    command = [sys.executable, str(Path(__file__).resolve()), '--capture-desktop', str(hwnd),
+               '--out', str(path.resolve())]
+    completed = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
+                               errors='replace', timeout=30, check=False)
+    if completed.returncode:
+        raise RuntimeError(f'Physical capture helper failed: {completed.stderr[-3000:]}')
+    return json.loads(completed.stdout)
+
+
+def fit_to_work_area(window, requested_px):
+    """Clamp in the unchanged product process's logical coordinate space."""
+    metrics = native(window)
+    outer, work, client = metrics['outer_rect'], metrics['work_area'], metrics['native_client_px']
+    borders = [outer[2] - outer[0] - client[0], outer[3] - outer[1] - client[1]]
+    available = [max(1, work[2] - work[0] - borders[0]), max(1, work[3] - work[1] - borders[1])]
+    target = [min(requested_px[i], available[i]) for i in range(2)]
+    window.geometry(f'{target[0]}x{target[1]}')
+    window.update_idletasks()
+    actual = native(window)['outer_rect']
+    x = min(max(work[0], actual[0]), work[2] - (actual[2] - actual[0]))
+    y = min(max(work[1], actual[1]), work[3] - (actual[3] - actual[1]))
+    u, _, _ = api()
+    assert u.SetWindowPos(u.GetAncestor(window.winfo_id(), 2), None, x, y, 0, 0, 0x0015)
+    return {'requested_client_px': list(requested_px), 'maximum_client_px': available,
+            'clamped_client_px': target, 'logical_work_area': work, 'measured_border_px': borders}
 
 
 def children(widget):
@@ -271,7 +343,7 @@ def session(payload):
         controller = Controller(payload)
         app = App(root, Path(td), controller=controller)
         try:
-            root.geometry('1000x740+20+20')
+            fit_to_work_area(root, (1000, 740))
             root.deiconify()
             app.npwp.set('0000000000000001')
             app.year.set('2025')
@@ -389,27 +461,63 @@ def inside(widget, container):
     return x >= cx and y >= cy and x + width <= cx + cw and y + height <= cy + ch
 
 
+def focus_identity(root):
+    widget = root.focus_get()
+    if widget is None:
+        return None
+    return {'path': str(widget), 'name': widget.winfo_name(), 'class': widget.winfo_class(),
+            'exists': bool(widget.winfo_exists()),
+            'disabled': bool(widget.instate(['disabled'])) if hasattr(widget, 'instate') else False}
+
+
 def visuals(out, revision, frames, checks, checkpoint):
     for kind in ('selection', 'overwrite'):
         sizes = [(920, 600) if kind == 'selection' else (800, 520), (640, 560), (540, 390)]
-        for size in sizes:
+        for case_index, size in enumerate(sizes):
             with session(payload_for(kind, 100)) as (root, app, controller):
                 app.on_event(event(controller, kind))
                 settle(root, app)
                 dialog = app._interaction['dialog']
                 root_before = root.geometry()
                 scale = dialog.winfo_fpixels('1i') / 96
-                dialog.geometry(f'{round(size[0]*scale)}x{round(size[1]*scale)}')
+                requested = [round(value * scale) for value in size]
+                geometry_plan = {'geometry_policy': 'product-default', 'requested_client_px': requested}
+                if case_index:
+                    geometry_plan = {'geometry_policy': 'requested-size-clamped-to-work-area',
+                                     **fit_to_work_area(dialog, requested)}
                 settle(root, app)
                 def snap(state):
                     name = f'{kind}-{size[0]}x{size[1]}-{state}.png'
+                    shot = capture(dialog, out/name)
+                    viewport = named(dialog, 'body_viewport')
+                    messages = {}
+                    for widget in children(dialog):
+                        if widget.winfo_name() in ('summary', 'notice'):
+                            variable = str(widget.cget('textvariable'))
+                            messages[widget.winfo_name()] = {
+                                'text': str(widget.getvar(variable)) if variable else str(widget.cget('text')),
+                                'bounds': bounds(widget), 'inside_body_viewport': inside(widget, viewport)}
                     frames.append({'state': state, 'dialog': kind, 'requested_dip': size,
-                                   **environment(root, dialog, revision), **capture(dialog, out/name),
+                                   **geometry_plan, 'actual_client_px': [dialog.winfo_width(), dialog.winfo_height()],
+                                   **environment(root, dialog, revision), **shot,
+                                   'body_yview': list(viewport.yview()), 'messages': messages,
+                                   'focus': focus_identity(root),
                                    'widgets': {w.winfo_name(): bounds(w) for w in children(dialog)
                                                if w.winfo_name() in ('actions', 'body_viewport', 'search', 'records',
-                                                                    'focused_id', 'folder', 'files', 'confirm', 'stop', 'decline')}})
+                                                                    'focused_id', 'folder', 'files', 'confirm', 'stop',
+                                                                    'decline', 'summary', 'notice')}})
                     checkpoint()
-                row = {'dialog': kind, 'requested_dip': size, 'root_unchanged': root.geometry() == root_before}
+                def snap_bottom(state):
+                    viewport = named(dialog, 'body_viewport')
+                    previous = viewport.yview()[0]
+                    viewport.yview_moveto(1)
+                    settle(root, app)
+                    snap(state + '-body-bottom')
+                    viewport.yview_moveto(previous)
+                    settle(root, app)
+                row = {'dialog': kind, 'requested_dip': size, **geometry_plan,
+                       'actual_client_px': [dialog.winfo_width(), dialog.winfo_height()],
+                       'root_unchanged': root.geometry() == root_before}
                 row['actions_inside_client'] = all(inside(named(dialog, name), dialog)
                                                   for name in (('confirm', 'stop') if kind == 'selection' else ('confirm', 'decline')))
                 if kind == 'selection':
@@ -447,9 +555,11 @@ def visuals(out, revision, frames, checks, checkpoint):
                     settle(root, app)
                     row['search_clears_selection'] = not tree.selection() and named(dialog, 'confirm').instate(['disabled'])
                     snap('search-reset')
+                    snap_bottom('search-reset')
                     root.setvar(str(entry.cget('textvariable')), 'no-synthetic-match-zzzz')
                     settle(root, app)
                     snap('no-match')
+                    snap_bottom('no-match')
                     root.setvar(str(entry.cget('textvariable')), '')
                     settle(root, app)
                     tree.focus('record-0')
@@ -493,6 +603,7 @@ def visuals(out, revision, frames, checks, checkpoint):
 
 
 def close_checks(checks, checkpoint):
+    import _tkinter
     for kind in ('selection', 'overwrite'):
         for action in ('window-close', 'alt-s', 'terminal-pending-reflow'):
             with session(payload_for(kind, 20)) as (root, app, controller):
@@ -500,9 +611,21 @@ def close_checks(checks, checkpoint):
                 settle(root, app)
                 dialog = app._interaction['dialog']
                 focus(root, app, dialog)
-                dialog.geometry('640x560')
-                root.update_idletasks()
+                width, height = dialog.winfo_width(), dialog.winfo_height()
+                minimum = dialog.minsize()[0]
+                dialog.geometry(f'{width - 1 if width > minimum else width + 1}x{height}')
+                # Process real Configure/geometry work, excluding all timer events.
+                # Close as soon as the product schedules its own reflow callback.
+                deadline = time.perf_counter() + 2
+                flags = _tkinter.WINDOW_EVENTS | _tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT
+                while not app._interaction.get('layout_after') and time.perf_counter() < deadline:
+                    if not root.tk.dooneevent(flags):
+                        time.sleep(.001)
                 pending = app._interaction.get('layout_after')
+                assert pending, 'Native Configure did not schedule an owned reflow timer'
+                pending_info = tuple(root.tk.call('after', 'info', pending))
+                pending_observed_ns = time.perf_counter_ns()
+                close_focus = focus_identity(root)
                 if action == 'window-close':
                     root.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
                 elif action == 'alt-s':
@@ -511,8 +634,10 @@ def close_checks(checks, checkpoint):
                     controller.active = False
                     app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
                                   'percent': 20, 'message': 'Synthetic cancellation complete'})
+                close_delay_ms = (time.perf_counter_ns() - pending_observed_ns) / 1e6
+                pending_cancelled = pending not in root.tk.splitlist(root.tk.call('after', 'info'))
                 settle(root, app)
-                focus_before = str(root.focus_get())
+                focus_before = focus_identity(root)
                 expired = []
                 root.after(200, lambda: expired.append(True))
                 while not expired:
@@ -522,9 +647,15 @@ def close_checks(checks, checkpoint):
                 correct = (len(controller.replies) == 1 and controller.replies[0][2] == {'overwrite': False}) if (
                     kind == 'overwrite' and action == 'window-close') else not controller.replies
                 checks.append({'dialog': kind, 'action': action, 'pending_timer_before': bool(pending),
+                               'pending_timer_id': pending, 'pending_timer_info': pending_info,
+                               'timer_events_excluded_until_close': True,
+                               'close_after_pending_observed_ms': close_delay_ms,
+                               'pending_timer_cancelled': pending_cancelled,
+                               'focus_before_close': close_focus, 'focus_after_close': focus_before,
+                               'focus_after_expiry': focus_identity(root), 'late_expiry_wait_ms': 200,
                                'closed': closed, 'correct_reply': correct,
                                'stop_called': bool(controller.stops), 'no_grab': root.grab_current() is None,
-                               'focus_unchanged_after_expiry': str(root.focus_get()) == focus_before})
+                               'focus_unchanged_after_expiry': focus_identity(root) == focus_before})
                 checkpoint()
     return checks
 
@@ -809,6 +940,7 @@ def keyboard_regressions(args):
     command = [sys.executable, '-m', 'pytest', '-q',
                'tests/test_desktop_dialog_layout.py::test_fresh_selection_keyboard_navigation_can_authorize_only_at_button',
                'tests/test_desktop_dialog_layout.py::test_overwrite_path_suffix_is_reachable_by_keyboard_without_consent',
+               'tests/test_desktop_dialog_layout.py::test_overwrite_keyboard_navigation_reaches_last_file_without_consent',
                '--basetemp', str(out.parent / 'p2-keyboard-pytest')]
     completed = subprocess.run(command, cwd=source, text=True, encoding='utf-8',
                                errors='replace', capture_output=True, timeout=180)
@@ -831,8 +963,12 @@ def main():
     parser.add_argument('--baseline')
     parser.add_argument('--candidate')
     parser.add_argument('--regression-only', action='store_true')
+    parser.add_argument('--capture-desktop', type=int, metavar='HWND')
     args = parser.parse_args()
     assert sys.platform == 'win32', 'Execution is authorized on the GitHub Windows runner only'
+    if args.capture_desktop is not None:
+        capture_desktop(args)
+        return
     if args.regression_only:
         raise SystemExit(keyboard_regressions(args))
     if args.baseline and args.candidate:
