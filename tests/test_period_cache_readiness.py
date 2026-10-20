@@ -136,11 +136,15 @@ def test_stop_during_readiness_prevents_submitted_navigation(tmp_path, monkeypat
             stopped = True
         return original(page)
 
+    def check_cancel():
+        if stopped:
+            raise driver.CaptureCancelled()
+
     monkeypatch.setattr(driver, 'read_period_catalog', read)
     with synthetic_listing_browser(monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
         with pytest.raises(driver.CaptureCancelled):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path,
-                                     max_pages=20, check_cancel=lambda: stopped)
+                                     max_pages=20, check_cancel=check_cancel)
         assert metrics['submitted_requests'] == []
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
         assert len(metrics['list_navigations']) == 2
