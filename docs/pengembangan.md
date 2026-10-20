@@ -6,7 +6,7 @@
 
 Gunakan Windows x64 untuk memverifikasi GUI Tk, Edge, Credential Manager, Known Folders, Job Objects, dan executable frozen. Tes portable dapat dijalankan di Linux. Akses intranet atau akun Coretax tidak diperlukan untuk development sintetis.
 
-Toolchain produksi memakai CPython **3.14.8 x64 dengan GIL** untuk GUI, worker dan CLI, serta `uv` **0.13.0**. Satu-satunya profil adalah `production`. Versi harus mengikuti [kebijakan Python](python-314.md) pada commit yang dikerjakan; jangan mengganti pin dengan `latest` atau sekadar `3.14`.
+Toolchain produksi memakai CPython **3.14.8 x64 dengan GIL** untuk GUI, worker dan CLI, serta `uv` **0.13.1**. Satu-satunya profil adalah `production`. Versi harus mengikuti [kebijakan Python](python-314.md) pada commit yang dikerjakan; jangan mengganti pin dengan `latest` atau sekadar `3.14`.
 
 Clone repositori dan buat branch perubahan dari `main` yang sudah diperbarui. Nama seperti `fix/checkpoint-scope` atau `feat/export-layout` cukup menjelaskan maksudnya. Jangan memindahkan profil browser, capture JSON, workbook nyata, atau kredensial ke checkout. Simpan data dan ruang tes di direktori terpisah.
 
