@@ -95,6 +95,49 @@ def _l1d_role(table):
     return index if structure.get('groups') == groups else -1
 
 
+def _l9_role(table):
+    structure = table.get('source_structure')
+    if structure is None:
+        return None
+    if not isinstance(structure, dict) or structure.get('form') != 'L9':
+        return -1
+    groups = ['KELOMPOK 1', 'KELOMPOK 2', 'KELOMPOK 3', 'KELOMPOK 4', 'LAINNYA']
+    roles = [('grid1', 'HARTA BERWUJUD', group) for group in groups]
+    roles += [('grid2', 'BANGUNAN', 'PERMANEN'), ('grid2', 'BANGUNAN', 'TIDAK PERMANEN')]
+    roles += [('grid3', 'HARTA TIDAK BERWUJUD', group) for group in groups]
+    for index, (component, outer, inner) in enumerate(roles):
+        if (structure.get('component') == 'rshshr-citr-l9-form-' + component
+                and structure.get('groups') == [outer, inner]):
+            return index
+    return -1
+
+
+def _scalar_fields(sheet, form, fields):
+    anchors = {
+        'l6': [(row, 2) for row in range(2, 9)],
+        'l11-b': [(row, 2) for row in range(2, 8)],
+        'l9': [(row, 8) for row in (226, 227, 228, 259, 260, 261)],
+    }
+    slots = {}
+    for row, column in anchors.get(form, []):
+        label = _label(sheet.cell(row, 1).value)
+        if label:
+            slots.setdefault(label, []).append((row, column))
+    grouped = {}
+    for field in fields:
+        grouped.setdefault(_label(field.get('label')), []).append(field)
+    pending = []
+    for label, items in grouped.items():
+        matches = slots.get(label, [])
+        if len(items) != 1 or len(matches) != 1 or type(items[0].get('value')) is bool:
+            pending.extend(items)
+            continue
+        row, column = matches[0]
+        if not _write_amount(sheet, row, column, items[0].get('value')):
+            pending.extend(items)
+    return pending
+
+
 def _money_columns(sheet, form, header, columns):
     if form == 'l1-d':
         return {3, 4, 5, 6, 7, 8, 10} if sheet.cell(header, 4).value else {3}
@@ -160,6 +203,7 @@ def render_template_form(sheet, form, sections):
     blocks = BLOCKS[form]
     grouped = [[] for _ in blocks]
     fields = [field for section in sections for field in section.get('fields', [])]
+    fields = _scalar_fields(sheet, form, fields)
     pending = []
     for section in sections:
         for table in section.get('tables', []):
@@ -169,7 +213,8 @@ def render_template_form(sheet, form, sections):
             candidates = [(index, _columns(table, sheet, header))
                           for index, (header, _, _) in enumerate(blocks)]
             candidates = [(index, columns) for index, columns in candidates if columns]
-            role = _l1d_role(table) if form == 'l1-d' else None
+            role = (_l1d_role(table) if form == 'l1-d' else
+                    _l9_role(table) if form == 'l9' else None)
             if role is not None:
                 candidates = [(index, columns) for index, columns in candidates if index == role]
             if (not table.get('complete', True) or len(candidates) != 1

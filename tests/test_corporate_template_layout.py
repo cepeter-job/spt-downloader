@@ -1,6 +1,7 @@
 """Approved corporate layout contract, using synthetic captures only."""
 from copy import deepcopy
 from pathlib import Path
+import hashlib
 
 import pytest
 from openpyxl import load_workbook
@@ -13,9 +14,10 @@ FORMS = ['L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9', 'L10-A', 'L10-C',
          'L11-A', 'L11-B', 'L11-C']
 
 
-def export(tmp_path, sections):
+def export(tmp_path, sections, *, year=2025):
     run = source_run('PPh Badan', sections)
-    run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
+    run['year'] = year
+    run['records'][0]['meta']['Masa Pajak'] = f'Januari - Desember {year}'
     before = deepcopy(run)
     reports = []
     paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
@@ -42,6 +44,8 @@ def test_all_observed_reference_forms_preserve_approved_layout(tmp_path):
 
 
 def test_resource_has_accounting_blanks_without_taxpayer_values():
+    assert hashlib.sha256(RESOURCE.read_bytes()).hexdigest() == (
+        '47770d95a613ed496c8f121cbe39f41ea17947855e709ab0f931adbe9ca58ab0')
     reference = load_workbook(RESOURCE)
     try:
         assert reference.sheetnames == FORMS
@@ -210,5 +214,48 @@ def test_l9_reordered_roles_bind_each_group_and_reject_duplicate_snapshots(tmp_p
             assert book['L9'].cell(total, 8).value == 99
         assert reports[0]['complete'] is (not duplicate)
         assert reports[0]['unmapped_tables'] == (2 if duplicate else 0)
+    finally:
+        book.close()
+
+
+def test_l1d_year_and_identifier_remain_literal_in_reference_identity_slots(tmp_path):
+    fields = [{'label': 'Tahun Pajak', 'value': '2025'},
+              {'label': 'Nomor Identitas WP', 'value': '0000000000000001'}]
+    book, reports = export(tmp_path, [section('L1-D', fields=fields)])
+    try:
+        assert book['L1-D']['B2'].value == '2025'
+        assert book['L1-D']['B3'].value == '0000000000000001'
+        assert book['L1-D']['B3'].data_type == 's'
+        assert reports[0]['complete']
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize('year,header_year', [(2024, 2024), (2025, 2025), (2025, 2024)])
+def test_l7_uses_only_current_captured_year_header_bound_to_record_period(tmp_path, year, header_year):
+    reference = load_workbook(RESOURCE)
+    try:
+        headers = [cell.value for cell in reference['L7'][2]]
+    finally:
+        reference.close()
+    caption = f'KOMPENSASI KERUGIAN FISKAL / {header_year} / TAHUN PAJAK INI - NILAI (Rp)'
+    headers[7] = caption
+    table = {'name': 'Synthetic L7', 'headers': headers,
+             'rows': [['0001', str(year - 1), '1.234,50', '0', '0', '0', '0', '5.000,00', '0']],
+             'complete': True, 'body_row_count': 1, 'source_total': 1,
+             'footer': [], 'footer_spans': []}
+    book, reports = export(tmp_path, [section('L7', tables=[table])], year=year)
+    try:
+        sheet = book['L7']
+        if year == header_year:
+            assert sheet['H2'].value == caption
+            assert sheet['A3'].value == '0001'
+            assert sheet['B3'].value == str(year - 1)
+            assert sheet['H3'].value == 5000
+            assert reports[0]['complete']
+        else:
+            assert sheet['H2'].value is None and sheet['H3'].value is None
+            assert reports[0]['unmapped_tables'] == 1
+            assert not reports[0]['complete']
     finally:
         book.close()
