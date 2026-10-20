@@ -488,7 +488,8 @@ class App:
         for column, label, width in zip(('type', 'period', 'model', 'identifier'),
                 ('Jenis pajak', 'Masa pajak', 'Normal / pembetulan', 'ID SPT'), (160, 180, 160, 220)):
             tree.heading(column, text=label)
-            tree.column(column, width=px(width), minwidth=px(100), stretch=True)
+            heading_width = int(dialog.tk.call('font', 'measure', 'SPTLabel', label)) + px(24)
+            tree.column(column, width=px(width), minwidth=max(px(100), heading_width), stretch=True)
         tree.grid(row=0, column=0, sticky='nsew')
         vertical = ttk.Scrollbar(table, orient='vertical', command=tree.yview, takefocus=False)
         vertical.grid(row=0, column=1, sticky='ns')
@@ -737,7 +738,7 @@ class App:
         table.rowconfigure(0, weight=1)
         tree = ttk.Treeview(table, name='files', columns=('file',), show='headings',
                             selectmode='none', height=min(8, len(files)), style='SPT.Dialog.Treeview')
-        tree.heading('file', text='File yang akan diganti')
+        tree.heading('file', text='File yang akan diganti', anchor='w')
         path_width = max(int(dialog.tk.call('font', 'measure', 'SPTBody', path)) for path in files) + px(24)
         tree.column('file', width=max(px(300), path_width), minwidth=px(100), stretch=False)
         tree.grid(row=0, column=0, sticky='nsew')
