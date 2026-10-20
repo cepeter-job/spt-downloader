@@ -26,9 +26,11 @@ EVENTS = frozenset({
     'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
-    'catalog.checkpoint', 'catalog.read', 'catalog.validation',
+    'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout',
 })
 ENUMS = {
+    'panel_state': frozenset({'missing', 'hidden', 'outside_view', 'visible', 'ambiguous', 'unavailable'}),
+    'tab_state': frozenset({'selected', 'unselected', 'unknown'}),
     'catalog_stage': frozenset({'planning', 'readiness', 'recheck', 'reconciliation', 'restoration', 'after_inventory'}),
     'catalog_reason': frozenset({'available', 'catalog_missing', 'catalog_type',
         'catalog_language', 'catalog_checksum', 'catalog_details', 'catalog_expiry_invalid',
@@ -63,7 +65,7 @@ ENUMS = {
         'credential_missing', 'account_mismatch', 'verified', 'verification_timeout',
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'body_rows', 'pages', 'grids', 'forms'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
@@ -137,7 +139,7 @@ def _safe_fields(fields):
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)
-    for name in ('headless', 'accepted', 'submitted', 'cached'):
+    for name in ('headless', 'accepted', 'submitted', 'cached', 'panel_controlled'):
         if type(fields.get(name)) is bool:
             result[name] = fields[name]
     return result

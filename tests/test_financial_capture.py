@@ -157,6 +157,56 @@ def test_induk_timeout_records_structure_without_private_dom_or_repairing_captur
         assert secret not in text
 
 
+def test_induk_timeout_probe_failure_keeps_original_timeout_and_later_appendix(routed, tmp_path, monkeypatch):
+    page, requests = routed()
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 0.05)
+    page.locator('a[aria-controls="induk"]').evaluate('(tab) => { tab.onclick = () => {}; }')
+    locator_type = type(page.locator('body'))
+    original_evaluate = locator_type.evaluate
+
+    def fail_snapshot(locator, expression, arg=None, **kwargs):
+        # Inject a failed browser read at the diagnostic boundary, not the
+        # capture itself: the original timeout must remain the primary error.
+        if expression == getattr(driver, 'PANEL_TIMEOUT_JS', None):
+            raise RuntimeError('SYNTHETIC_SNAPSHOT_PRIVATE')
+        return original_evaluate(locator, expression, arg, **kwargs)
+
+    monkeypatch.setattr(locator_type, 'evaluate', fail_snapshot)
+    with driver.diagnostics.session(tmp_path, 'worker') as log:
+        result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+        assert log.flush()
+    assert [section['name'] for section in result['sections']] == ['L1D']
+    assert result['capture_complete'] is False
+    assert result['errors'][0]['message'].startswith('Locator.wait_for: Timeout')
+    assert requests == [('GET', DETAIL)]
+    events = [row for row in diagnostic_records(tmp_path) if row['event'] == 'capture.panel_timeout']
+    assert len(events) == 1 and events[0]['panel_state'] == 'unavailable'
+    assert not {'panel_matches', 'document_panel_matches', 'tab_views', 'tab_state'} & events[0].keys()
+    assert 'SYNTHETIC_SNAPSHOT_PRIVATE' not in json.dumps(diagnostic_records(tmp_path))
+
+
+def test_stop_during_induk_panel_wait_does_not_become_timeout_evidence(routed, tmp_path, monkeypatch):
+    page, requests = routed()
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 1)
+    page.locator('a[aria-controls="induk"]').evaluate(
+        '(tab) => { tab.onclick = () => window.indukWaiting = true; }')
+    checks = 0
+
+    def cancel():
+        nonlocal checks
+        if page.evaluate('Boolean(window.indukWaiting)'):
+            checks += 1
+            if checks == 2:
+                raise driver.CaptureCancelled('SYNTHETIC STOP')
+
+    with driver.diagnostics.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled):
+            driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path, check_cancel=cancel)
+        assert log.flush()
+    assert not any(row['event'] == 'capture.panel_timeout' for row in diagnostic_records(tmp_path))
+    assert requests == [('GET', DETAIL)]
+
+
 def test_successful_induk_does_not_emit_panel_timeout(routed, tmp_path):
     page, requests = routed()
     with driver.diagnostics.session(tmp_path, 'worker', level='INFO') as log:

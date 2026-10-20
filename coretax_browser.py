@@ -335,6 +335,55 @@ DETAIL_PANEL_TIMEOUT = 30
 _PPN_FORMS = {'INDUK', 'A1', 'A2', 'B1', 'B2', 'B3', 'C'}
 
 
+PANEL_TIMEOUT_JS = r"""(view, panelId) => {
+    const doc = view.ownerDocument;
+    const controlled = Boolean(panelId);
+    const result = {panel_controlled: controlled,
+        tab_views: doc.querySelectorAll('.main-content .p-tabview').length};
+    let matches;
+    if (controlled) {
+        const selector = '#' + CSS.escape(panelId);
+        matches = view.querySelectorAll(selector);
+        result.document_panel_matches = doc.querySelectorAll(selector).length;
+    } else {
+        matches = view.querySelectorAll(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])');
+    }
+    result.panel_matches = matches.length;
+    const tabs = [...view.querySelectorAll('.p-tabview-nav a')].filter(tab =>
+        tab.closest('.p-tabview') === view && (controlled ?
+            tab.getAttribute('aria-controls') === panelId : tab.getAttribute('aria-selected') === 'true'));
+    const selected = tabs.length === 1 ? tabs[0].getAttribute('aria-selected') : null;
+    result.tab_state = selected === 'true' ? 'selected' : selected === 'false' ? 'unselected' : 'unknown';
+    if (!matches.length) {
+        result.panel_state = controlled && result.document_panel_matches ? 'outside_view' : 'missing';
+    } else if (matches.length > 1) {
+        result.panel_state = 'ambiguous';
+    } else {
+        const style = getComputedStyle(matches[0]);
+        const box = matches[0].getBoundingClientRect();
+        result.panel_state = !['hidden', 'collapse'].includes(style.visibility) &&
+            box.width > 0 && box.height > 0 ? 'visible' : 'hidden';
+    }
+    return result;
+}"""
+
+
+def _record_panel_timeout(view, panel_id, duration_ms):
+    # A snapshot is evidence after exhaustion, never permission to capture a
+    # hidden/foreign panel. Keep the original timeout even if this read fails.
+    fields = {'panel_state': 'unavailable', 'panel_controlled': bool(panel_id)}
+    try:
+        snapshot = view.evaluate(PANEL_TIMEOUT_JS, panel_id, timeout=100)
+        if type(snapshot) is dict:
+            fields.update({key: snapshot[key] for key in (
+                'panel_state', 'tab_state', 'panel_matches', 'document_panel_matches', 'tab_views'
+            ) if key in snapshot})
+    except Exception:
+        pass
+    diagnostics.record('capture.panel_timeout', level='WARNING',
+                       duration_ms=duration_ms, **fields)
+
+
 def _ppn_catalog_ready(page, check_cancel=None):
     # Tab visibility is value-free readiness evidence. Initial Angular shells
     # can expose default zero fields before the return's appendices appear.
@@ -448,7 +497,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                     panel = view.locator('[id=' + repr(panel_id) + ']')
                 else:
                     panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])').first
-                deadline = time.monotonic() + DETAIL_PANEL_TIMEOUT
+                wait_started = time.monotonic()
+                deadline = wait_started + DETAIL_PANEL_TIMEOUT
                 while True:
                     _check_cancel(check_cancel)
                     try:
@@ -456,6 +506,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                         break
                     except PlaywrightTimeoutError:
                         if time.monotonic() >= deadline:
+                            _record_panel_timeout(view, panel_id, (time.monotonic() - wait_started) * 1000)
                             raise
                 _check_cancel(check_cancel)
                 capture_panel(panel, name)
