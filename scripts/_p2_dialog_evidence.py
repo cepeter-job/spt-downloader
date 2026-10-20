@@ -492,8 +492,7 @@ def visuals(out, revision, frames, checks, checkpoint):
     return frames, checks
 
 
-def close_checks():
-    checks = []
+def close_checks(checks, checkpoint):
     for kind in ('selection', 'overwrite'):
         for action in ('window-close', 'alt-s', 'terminal-pending-reflow'):
             with session(payload_for(kind, 20)) as (root, app, controller):
@@ -526,7 +525,45 @@ def close_checks():
                                'closed': closed, 'correct_reply': correct,
                                'stop_called': bool(controller.stops), 'no_grab': root.grab_current() is None,
                                'focus_unchanged_after_expiry': str(root.focus_get()) == focus_before})
+                checkpoint()
     return checks
+
+
+def fresh_keyboard_checks(checks, checkpoint):
+    for kind in ('selection', 'overwrite'):
+        with session(payload_for(kind, 20)) as (root, app, controller):
+            app.on_event(event(controller, kind))
+            settle(root, app)
+            dialog = app._interaction['dialog']
+            tree = table(dialog)
+            first = named(dialog, 'search' if kind == 'selection' else 'folder')
+            focus(root, app, first)
+            traversed = []
+            for _ in range(20):
+                if root.focus_get() == tree:
+                    break
+                traversed.append(str(root.focus_get()))
+                key(root, app, '<Tab>')
+            before = tree.focus()
+            key(root, app, '<KeyPress-Down>')
+            key(root, app, '<KeyRelease-Down>')
+            after = tree.focus()
+            row = {'dialog': kind, 'probe': 'fresh-keyboard-entry', 'tree_focused': root.focus_get() == tree,
+                   'item_focus_before_down': before, 'item_focus_after_down': after,
+                   'row_navigation_available': bool(after), 'replies': controller.replies}
+            if kind == 'selection':
+                row['id_matches_focus'] = bool(after) and named(dialog, 'focused_id').get() == tree.set(after, 'identifier')
+            else:
+                initial_x = list(tree.xview())
+                for sequence in ('<Right>', '<Shift-Right>', '<Control-Right>', '<End>'):
+                    for _ in range(3):
+                        key(root, app, sequence)
+                row['xview_before_keys'], row['xview_after_keys'] = initial_x, list(tree.xview())
+                scrollbars = [w for w in children(dialog) if w.winfo_class() == 'TScrollbar']
+                row['scrollbar_takefocus'] = [str(w.cget('takefocus')) for w in scrollbars]
+                row['horizontal_keyboard_route_observed'] = list(tree.xview()) != initial_x
+            checks.append(row)
+            checkpoint()
 
 
 class Luid(C.Structure):
@@ -633,7 +670,22 @@ def enlarge_display():
         if 1920 <= width <= 3840 and 1440 <= height <= 2160:
             choices.append((width * height, item, width, height))
     if not choices:
-        return original, {'status': 'unavailable', 'initial': monitor_scale()}
+        attempts = []
+        # Virtual displays may enumerate only their current mode. Let Windows
+        # validate larger modes with CDS_TEST before applying any of them.
+        for width, height in ((2560, 1600), (1920, 1440), (1440, 900)):
+            selected = C.create_string_buffer(original.raw, 220)
+            struct.pack_into('<I', selected, 72, 0x00180000)
+            struct.pack_into('<II', selected, 172, width, height)
+            test_rc = u.ChangeDisplaySettingsW(selected, 2)
+            attempt = {'requested_px': [width, height], 'test_return_code': test_rc}
+            attempts.append(attempt)
+            if test_rc == 0:
+                attempt['apply_return_code'] = u.ChangeDisplaySettingsW(selected, 0)
+                attempt['observed'] = monitor_scale()
+                if attempt['apply_return_code'] == 0:
+                    return original, {'status': 'changed_after_CDS_TEST', 'attempts': attempts}
+        return original, {'status': 'unavailable', 'initial': monitor_scale(), 'attempts': attempts}
     _, selected, width, height = min(choices, key=lambda entry: entry[0])
     rc = u.ChangeDisplaySettingsW(selected, 0)
     return original, {'status': 'changed' if rc == 0 else 'failed', 'return_code': rc,
@@ -647,6 +699,7 @@ def orchestrate(args):
               'scale_method': 'undocumented DisplayConfig source DPI packets; observed native monitor scale required',
               'no_product_awareness_changes': True}
     original_mode, packet = None, None
+    paired_benchmark_done = False
     try:
         try:
             original_mode, report['display'] = enlarge_display()
@@ -679,14 +732,14 @@ def orchestrate(args):
                 print(f'SCALE {requested}: NOT VERIFIED {attempt}', flush=True)
                 continue
             for label, source, revision in [('baseline', args.baseline, BASELINE), ('candidate', args.candidate, CANDIDATE)]:
-                if requested != 100 and label == 'baseline':
+                if paired_benchmark_done and label == 'baseline':
                     continue
                 destination = out / f'{label}-{requested}'
                 command = [sys.executable, str(Path(__file__).resolve()), '--source', str(Path(source).resolve()),
                            '--revision', revision, '--out', str(destination)]
                 if label == 'candidate':
                     command.append('--visual')
-                if requested != 100:
+                if paired_benchmark_done:
                     command.append('--skip-benchmark')
                 # Separate processes preserve independent module/Tk state for both exact checkouts.
                 record = {'label': label, 'requested_percent': requested, 'revision': revision, 'directory': destination.name}
@@ -697,6 +750,8 @@ def orchestrate(args):
                     record.update(return_code=-1, process_error=str(error))
                 report['runs'].append(record)
                 write_json(out/'runner.json', report)
+            paired_benchmark_done = True
+        report['paired_benchmark_attempted'] = paired_benchmark_done
     finally:
         if packet is not None:
             try:
@@ -729,7 +784,10 @@ def child(args):
     if args.visual:
         try:
             visuals(out, revision, result['frames'], result['checks'], checkpoint)
-            result['close_checks'] = close_checks()
+            result['close_checks'] = []
+            close_checks(result['close_checks'], checkpoint)
+            result['fresh_keyboard_checks'] = []
+            fresh_keyboard_checks(result['fresh_keyboard_checks'], checkpoint)
         except Exception:
             result['visual_error'] = traceback.format_exc()
             checkpoint()
