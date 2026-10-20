@@ -267,7 +267,7 @@ def test_selection_layout_keeps_actions_visible_and_body_reachable(active_app, w
     assert root.focus_get() is tree and not controller.replies
 
 
-def test_selection_reflow_preserves_data_and_owned_resources(active_app):
+def test_selection_reflow_preserves_data_and_owned_resources(active_app, monkeypatch):
     root, app, controller = active_app
     dialog = open_selection(active_app)
     tree = named_widget(dialog, 'records')
@@ -290,7 +290,19 @@ def test_selection_reflow_preserves_data_and_owned_resources(active_app):
     app._close_interaction()
     settle(root)
     baseline_count = len(root.tk.splitlist(root.tk.call('after', 'info')))
+    original_start = controller.start
+    def start_unique(*args, **kwargs):
+        original_start(*args, **kwargs)
+        controller.job_id = f'synthetic-cycle-{controller.starts}'
+        return controller.job_id
+    monkeypatch.setattr(controller, 'start', start_unique)
     for ordinal in range(25):
+        # Dismissing a modal does not clear outstanding consent. Complete the
+        # prior synthetic job before starting another; keep the real guard intact.
+        controller.active = False
+        app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
+                      'percent': 20, 'output': None, 'message': 'Synthetic lifecycle complete'})
+        app.start()
         app.on_event(consent_event(controller, request_id=f'{ordinal:032x}'))
         root.update_idletasks()
         interaction = app._interaction
@@ -307,6 +319,9 @@ def test_selection_reflow_preserves_data_and_owned_resources(active_app):
         assert sentinel in after and (pending is None or pending not in after)
         for variable, token in traces:
             assert all(token not in str(entry) for entry in variable.trace_info())
+    controller.active = False
+    app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
+                  'percent': 20, 'output': None, 'message': 'Synthetic lifecycle complete'})
     settle(root)
     assert len(root.tk.splitlist(root.tk.call('after', 'info'))) == baseline_count
     assert not any(isinstance(w, tk.Toplevel) for w in root.winfo_children())
