@@ -516,6 +516,9 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
 
     rows = [api_row(), api_row('fixture-amend-001', 'Amendment 001'), api_row('fixture-later-year', 'Normal')]
     rows[2]['TaxPeriodCode'] = '01122026'
+    if archive_period_conflict:
+        # Reproduce the observed DOM fallback, not the native corporate caption guard.
+        rows[0]['TaxTypeCode'] = 'SYNTHETIC-UNOBSERVED-TAX'
     if unknown:
         for row in rows:
             del row['ReturnSheetModel']
