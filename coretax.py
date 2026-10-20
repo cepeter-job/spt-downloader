@@ -158,8 +158,24 @@ def write_folder_resume(run, existing, destination):
     combined = folder_resume_run(run, existing)
     targets = {}
     ordinals = {id(record): index for index, record in enumerate(combined['records'], 1)}
+    selected_files = set(workbook_groups(run))
     for filename, records in workbook_groups(combined).items():
-        for record, titles in zip(records, workbook_sheet_titles(records)):
+        selected = filename in selected_files
+        title_plan = workbook_sheet_titles(records, presentation=selected)
+        if not selected:
+            # Retained records describe an existing physical proof, not a new layout.
+            retained = load_workbook(output_path(existing, filename), read_only=True)
+            try:
+                actual = set(retained.sheetnames)
+                if read_workbook_proof(retained) is None:
+                    actual -= {'Ringkasan', 'Daftar SPT', 'Audit'}
+            finally:
+                retained.close()
+            if {title for titles in title_plan for title in titles} != actual:
+                title_plan = workbook_sheet_titles(records, legacy=True, presentation=False)
+            if {title for titles in title_plan for title in titles} != actual:
+                raise ValueError('Retained workbook names differ from its physical proof')
+        for record, titles in zip(records, title_plan):
             targets[ordinals[id(record)]] = (filename, titles[0])
     export_workbook(combined, destination, include_details=False, detail_targets=targets)
     verify_workbook(destination, combined, include_details=False)
@@ -174,6 +190,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     folder = Path(folder)
     validate_export_run(run)
     grouped = workbook_groups(run)
+    selected_files = set(grouped)
     expected = {'resume.xlsx', *grouped}
     declared = run.get('output_files', list(expected))
     if (not isinstance(declared, list) or
@@ -205,9 +222,10 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
             wb.close()
     first_titles = {}
     for filename, records in grouped.items():
-        titles = workbook_sheet_titles(records)
+        selected = filename in selected_files
+        titles = workbook_sheet_titles(records, presentation=selected)
         if {title for group in titles for title in group} != sheet_names[filename]:
-            titles = workbook_sheet_titles(records, legacy=True)
+            titles = workbook_sheet_titles(records, legacy=True, presentation=selected)
         if {title for group in titles for title in group} != sheet_names[filename]:
             raise ValueError('Workbook names do not match a supported physical form layout')
         first_titles.update({id(record): group[0] for record, group in zip(records, titles)})

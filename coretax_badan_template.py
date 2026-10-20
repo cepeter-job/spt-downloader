@@ -80,6 +80,81 @@ def _write_amount(sheet, row, column, value):
     return True
 
 
+def _l1d_role(table):
+    structure = table.get('source_structure')
+    if structure is None:
+        return None
+    if not isinstance(structure, dict) or structure.get('form') != 'L1-D':
+        return -1
+    roles = {
+        'rsh-citr-l1d-grid1': (0, ['A. LAPORAN LABA RUGI']),
+        'rsh-citr-l1d-grid2': (1, ['B. LAPORAN POSISI KEUANGAN']),
+        'rsh-citr-l1d-grid3': (2, ['B. LAPORAN POSISI KEUANGAN']),
+    }
+    index, groups = roles.get(structure.get('component'), (-1, None))
+    return index if structure.get('groups') == groups else -1
+
+
+def _money_columns(sheet, form, header, columns):
+    if form == 'l1-d':
+        return {3, 4, 5, 6, 7, 8, 10} if sheet.cell(header, 4).value else {3}
+    return {column for column in columns
+            if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
+
+
+def _footer_plan(sheet, table, target, money, columns):
+    footer = table.get('footer', [])
+    if not footer:
+        return []
+    # Colspans describe physical source columns; do not reorder them by guess.
+    if columns != list(range(1, len(table['headers']) + 1)):
+        return None
+    spans = table.get('footer_spans', [])
+    if len(footer) != 1 or len(spans) != 1 or len(footer[0]) != len(spans[0]):
+        return None
+    if any(type(span) is not int or span < 1 for span in spans[0]):
+        return None
+    if not any(value not in ('', None) for value in footer[0]):
+        return []
+    if sum(spans[0]) != len(table['headers']):
+        return None
+    result, column = [], 1
+    for value, span in zip(footer[0], spans[0]):
+        if value not in ('', None):
+            if span == 1 and column in money:
+                result.append((column, value))
+            else:
+                labels = [c for c in range(column, column + span)
+                          if sheet.cell(target, c).value is not None
+                          and _label(sheet.cell(target, c).value) == _label(value)]
+                if len(labels) != 1:
+                    return None
+        column += span
+    return result
+
+
+def _body_plan(sheet, form, first, last, columns, rows):
+    merges = list(sheet.merged_cells.ranges)
+    style_row = next((row for row in range(first, last + 1)
+                      if not any(region.min_row <= row <= region.max_row for region in merges)), first)
+    result = []
+    for index, values in enumerate(rows):
+        row = first + index if first + index <= last else style_row
+        cells = dict(zip(columns, values))
+        for region in merges:
+            if not region.min_row <= row <= region.max_row:
+                continue
+            # The inspected account heading is blank code + one description.
+            # Do not collapse two nonempty account values into a merged cell.
+            if (form != 'l1-d' or region.min_row != region.max_row
+                    or (region.min_col, region.max_col) != (1, 2)
+                    or cells.get(1) not in ('', None) or 2 not in cells):
+                return None, style_row
+            cells[1] = cells.pop(2)
+        result.append(cells)
+    return result, style_row
+
+
 def render_template_form(sheet, form, sections):
     form = form.casefold()
     blocks = BLOCKS[form]
@@ -89,41 +164,49 @@ def render_template_form(sheet, form, sections):
     for section in sections:
         for table in section.get('tables', []):
             rows = table.get('rows', [])
+            count = table.get('body_row_count', len(rows))
+            footer = table.get('footer', [])
             candidates = [(index, _columns(table, sheet, header))
                           for index, (header, _, _) in enumerate(blocks)]
             candidates = [(index, columns) for index, columns in candidates if columns]
+            role = _l1d_role(table) if form == 'l1-d' else None
+            if role is not None:
+                candidates = [(index, columns) for index, columns in candidates if index == role]
             if (not table.get('complete', True) or len(candidates) != 1
-                    or table.get('footer') or table.get('body_row_count', len(rows)) != len(rows)
-                    or table.get('source_total', len(rows)) not in (None, len(rows))
-                    or any(len(row) != len(table.get('headers', [])) for row in rows)):
+                    or type(count) is not int or count < 0 or count > len(rows)
+                    or rows[count:] != footer or len(rows) != count + len(footer)
+                    or table.get('source_total', count) not in (None, count)
+                    or any(len(row) != len(table.get('headers', [])) for row in rows[:count])):
                 pending.append({**table, 'complete': False})
                 continue
             index, columns = candidates[0]
-            grouped[index].append((table, columns))
+            grouped[index].append((table, columns, rows[:count]))
     offset = 0
     for (header, first, last), items in zip(blocks, grouped):
         if len(items) != 1:
-            pending.extend({**table, 'complete': False} for table, _ in items)
+            pending.extend({**table, 'complete': False} for table, _, _ in items)
             continue
-        table, columns = items[0]
+        table, columns, rows = items[0]
         header, first, last = header + offset, first + offset, last + offset
-        # Never infer collapsed source cells from the template's merged geometry.
-        if any(region.min_row <= last and region.max_row >= first
-               for region in sheet.merged_cells.ranges):
+        money = _money_columns(sheet, form, header, columns)
+        foot = _footer_plan(sheet, table, last + 1, money, columns)
+        body, style_row = _body_plan(sheet, form, first, last, columns, rows)
+        if foot is None or body is None:
             pending.append({**table, 'complete': False})
             continue
-        money = {column for column in columns
-                 if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
-        extra = max(0, len(table['rows']) - (last - first + 1))
-        _grow(sheet, last + 1, extra, first)
-        for row, values in enumerate(table['rows'], first):
-            safe = True
-            for column, value in zip(columns, values):
+        extra = max(0, len(rows) - (last - first + 1))
+        _grow(sheet, last + 1, extra, style_row)
+        for index, cells in enumerate(body):
+            row, safe = first + index, True
+            for column, value in cells.items():
                 if column in money:
                     safe = _write_amount(sheet, row, column, value) and safe
                 else:
                     _write(sheet, row, column, value)
             if not safe:
-                pending.append({**table, 'rows': [values], 'complete': False})
+                pending.append({**table, 'rows': [rows[index]], 'complete': False})
+        for column, value in foot:
+            if not _write_amount(sheet, last + extra + 1, column, value):
+                pending.append({**table, 'rows': table['footer'], 'complete': False})
         offset += extra
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)

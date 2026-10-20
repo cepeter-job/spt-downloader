@@ -133,3 +133,82 @@ def test_balance_roles_map_accounting_and_captured_total_without_recalculation(t
         assert reports[0]['complete']
     finally:
         book.close()
+
+
+@pytest.mark.parametrize('form,slots', [
+    ('L6', [(f'A{row}', f'B{row}') for row in range(2, 9)]),
+    ('L11-B', [(f'A{row}', f'B{row}') for row in range(2, 8)]),
+    ('L9', [(f'A{row}', f'H{row}') for row in (226, 227, 228, 259, 260, 261)]),
+])
+def test_unique_scalar_labels_fill_their_numeric_slots(tmp_path, form, slots):
+    reference = load_workbook(RESOURCE)
+    try:
+        fields = [{'label': reference[form][label].value, 'field': 'synthetic_scalar',
+                   'value': 'Rp. | 1.234,50'} for label, _ in slots]
+    finally:
+        reference.close()
+    book, reports = export(tmp_path, [section(form, fields=fields)])
+    try:
+        for _, destination in slots:
+            assert book[form][destination].value == 1234.5
+            assert book[form][destination].data_type == 'n'
+        assert reports[0]['complete']
+    finally:
+        book.close()
+
+
+def test_conflicting_scalar_duplicates_remain_unresolved_without_last_write_wins(tmp_path):
+    label = '1. PENGHASILAN YANG MENJADI DASAR PENGHITUNGAN ANGSURAN'
+    fields = [{'label': label, 'value': value} for value in ('1.234,50', '2.345,60')]
+    book, reports = export(tmp_path, [section('L6', fields=fields)])
+    try:
+        assert book['L6']['B2'].value is None
+        assert reports[0]['unmapped_fields'] == 2
+        assert not reports[0]['complete']
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize('duplicate', [False, True])
+def test_l9_reordered_roles_bind_each_group_and_reject_duplicate_snapshots(tmp_path, duplicate):
+    specs = [
+        ('grid1', 'HARTA BERWUJUD', group, header, total)
+        for group, header, total in [('KELOMPOK 1', 4, 188), ('KELOMPOK 2', 192, 194),
+                                     ('KELOMPOK 3', 198, 200), ('KELOMPOK 4', 204, 206),
+                                     ('LAINNYA', 210, 212)]]
+    specs += [('grid2', 'BANGUNAN', 'PERMANEN', 216, 218),
+              ('grid2', 'BANGUNAN', 'TIDAK PERMANEN', 222, 224)]
+    specs += [('grid3', 'HARTA TIDAK BERWUJUD', group, header, total)
+              for group, header, total in [('KELOMPOK 1', 231, 233), ('KELOMPOK 2', 237, 239),
+                                           ('KELOMPOK 3', 243, 245), ('KELOMPOK 4', 249, 251),
+                                           ('LAINNYA', 255, 257)]]
+    reference = load_workbook(RESOURCE)
+    tables = []
+    try:
+        headers = [cell.value for cell in reference['L9'][4]]
+    finally:
+        reference.close()
+    for index, (grid, outer, inner, _, _) in enumerate(specs):
+        footer = [['TOTAL', '99,00', '']]
+        tables.append({'name': 'Same literal table name', 'headers': headers,
+                       'rows': [['0001', f'SYNTHETIC ASSET {index}', '01/2025',
+                                 '1.234,50', '1.000,00', 'GL', 'GL', '34,50', '']] + footer,
+                       'complete': True, 'body_row_count': 1, 'source_total': 1,
+                       'footer': footer, 'footer_spans': [[7, 1, 1]],
+                       'source_structure': {'form': 'L9', 'component': 'rshshr-citr-l9-form-' + grid,
+                                            'groups': [outer, inner]}})
+    if duplicate:
+        tables.append(deepcopy(tables[0]))
+    book, reports = export(tmp_path, [section('L9', tables=list(reversed(tables)))])
+    try:
+        for index, (_, _, _, header, total) in enumerate(specs):
+            if duplicate and index == 0:
+                assert book['L9'].cell(header + 1, 2).value is None
+                continue
+            assert book['L9'].cell(header + 1, 2).value == f'SYNTHETIC ASSET {index}'
+            assert book['L9'].cell(header + 1, 4).value == 1234.5
+            assert book['L9'].cell(total, 8).value == 99
+        assert reports[0]['complete'] is (not duplicate)
+        assert reports[0]['unmapped_tables'] == (2 if duplicate else 0)
+    finally:
+        book.close()
