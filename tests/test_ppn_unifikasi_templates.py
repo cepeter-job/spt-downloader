@@ -1,6 +1,6 @@
 """Approved PPN/Unifikasi layout contracts; synthetic, GitHub-runner-only."""
 from collections import Counter
-from copy import deepcopy
+from copy import copy, deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -42,6 +42,17 @@ BLANK_REGIONS = {
     'PPh Unifikasi': {'Daftar I': [(5, 8), (11, 14)],
                      'Daftar II': [(5, 8), (14, 17)], 'Lampiran I': [(5, 9)]},
 }
+
+
+def approved_reference(tax):
+    book = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    if tax == 'PPh Unifikasi':
+        # Only the user-approved rate/spacer deltas change the legacy layout.
+        sheet = book['Daftar I']
+        for coordinate in ('J5', 'J6', 'J7', 'J8', 'J11', 'J12', 'J13'):
+            sheet[coordinate].number_format = '0.00%'
+        sheet['J14'].border = copy(sheet['I14'].border)
+    return book
 
 
 def source_table(name, headers, rows, *, complete=True):
@@ -87,7 +98,7 @@ def test_empty_observed_templates_contain_no_reference_taxpayer_or_amount_data(t
         assert archive.testzip() is None
         assert hashlib.sha256(archive.read('xl/styles.xml')).hexdigest() == config['styles']
         assert not any(name.startswith(('docProps/', 'xl/printerSettings/')) for name in archive.namelist())
-    reference = load_workbook(reference_path)
+    reference = approved_reference(tax)
     workbook = export(tax, source_run(tax, [section(form) for form in config['forms']]), tmp_path)
     try:
         assert workbook.sheetnames == reference.sheetnames == config['forms']
@@ -120,7 +131,7 @@ def test_empty_observed_templates_contain_no_reference_taxpayer_or_amount_data(t
 
 @pytest.mark.parametrize('tax,form', FORMS)
 def test_each_observed_form_retains_every_cell_style_and_reference_layout(tmp_path, tax, form):
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     workbook = export(tax, source_run(tax, [section(form)]), tmp_path)
     try:
         assert workbook.sheetnames == [form], 'Absent source forms must not be invented'
@@ -138,7 +149,7 @@ def test_induk_identity_fields_use_the_original_slots_without_reformatting(tmp_p
               [('Masa Pajak', 'Januari 2025'), ('Tahun Pajak', '2025'),
                ('Status SPT', 'Pembetulan ke-2'), ('Status Penyampaian', 'Dilaporkan')]]
     workbook = export(tax, source_run(tax, [section('Induk', fields=fields)]), tmp_path)
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     try:
         coordinates = ['D4', 'D5', 'D6', 'D7'] if tax == 'PPN' else ['D4', 'D5']
         expected_fields = fields if tax == 'PPN' else [{'value': 'Januari'}, {'value': '2025'}]
@@ -210,7 +221,7 @@ def test_unifikasi_induk_leaf_headers_fill_both_merged_income_tax_columns(tmp_pa
 
 @pytest.mark.parametrize('tax,form,header_row,first,last,caption_cell', BLOCKS)
 def test_appendix_columns_reorder_without_losing_ids_dates_or_duplicate_rows(tmp_path, tax, form, header_row, first, last, caption_cell):
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     ref = reference[form]
     headers = headers_for(ref, header_row)
     values = synthetic_row(headers, 'SYNTHETIC MATCHED')
@@ -221,9 +232,10 @@ def test_appendix_columns_reorder_without_losing_ids_dates_or_duplicate_rows(tmp
         for row_number in [first, first + 1]:
             for column, value in enumerate(values, 1):
                 cell = workbook[form].cell(row_number, column)
+                rate = tax == 'PPh Unifikasi' and form == 'Daftar I' and column == 10
                 numeric = value == '1.234,50'
-                assert cell.value == (1234.5 if numeric else value)
-                assert cell.data_type == ('n' if numeric else 's')
+                assert cell.value == (0.02 if rate else 1234.5 if numeric else value)
+                assert cell.data_type == ('n' if numeric or rate else 's')
                 reference_row = row_number if row_number <= last else first
                 assert_format(cell, ref.cell(reference_row, column))
         if tax == 'PPN' and form == 'B1':
@@ -245,7 +257,7 @@ def test_appendix_columns_reorder_without_losing_ids_dates_or_duplicate_rows(tmp
     ('PPh Unifikasi', 'Daftar I', 4, 5, 9, 'B3'),
 ])
 def test_row_growth_preserves_new_row_styles_and_every_shifted_header_and_total(tmp_path, tax, form, header_row, first, boundary, caption_cell):
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     ref = reference[form]
     headers = headers_for(ref, header_row)
     rows = [synthetic_row(headers, f'SYNTHETIC ROW {i:03d}') for i in range(11)]
@@ -258,7 +270,8 @@ def test_row_growth_preserves_new_row_styles_and_every_shifted_header_and_total(
         for index, values in enumerate(rows):
             for column, value in enumerate(values, 1):
                 cell = sheet.cell(first + index, column)
-                expected_value = 1234.5 if value == '1.234,50' else value
+                rate = tax == 'PPh Unifikasi' and form == 'Daftar I' and column == 10
+                expected_value = 0.02 if rate else 1234.5 if value == '1.234,50' else value
                 assert cell.value == expected_value
                 reference_row = first + index if first + index < boundary else first
                 assert_format(cell, ref.cell(reference_row, column))
@@ -281,9 +294,9 @@ def test_row_growth_preserves_new_row_styles_and_every_shifted_header_and_total(
 
 
 @pytest.mark.parametrize('tax', list(TYPES))
-def test_ambiguous_headers_partial_tables_and_unknown_fields_stay_visible_as_raw_source(tmp_path, tax):
+def test_clean_appendices_keep_partial_proof_without_duplicate_raw_block(tmp_path, tax):
     form, first = ('A1', 4) if tax == 'PPN' else ('Daftar I', 5)
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     ref = reference[form]
     headers = headers_for(ref, 3 if tax == 'PPN' else 4)
     values = synthetic_row(headers, 'SYNTHETIC PARTIAL')
@@ -309,15 +322,9 @@ def test_ambiguous_headers_partial_tables_and_unknown_fields_stay_visible_as_raw
         expected.update(field['value'] for field in fields)
         actual = Counter(cell.value for sheet in workbook for row in sheet for cell in row
                          if cell.value in expected)
-        if tax == 'PPN':
-            assert not actual
-            assert workbook[form].max_row == ref.max_row
-            assert not cells_with(workbook, text)
-        else:
-            assert actual == expected
-            for value in ['=SUM(1,2)', '0000000000000002', '02-01-2025']:
-                assert all(c.data_type == 's' for c in cells_with(workbook, value))
-            assert len(cells_with(workbook, text)) == 1
+        assert not actual
+        assert workbook[form].max_row == ref.max_row
+        assert not cells_with(workbook, text)
         assert_layout(workbook[form], ref)
     finally:
         workbook.close()
@@ -342,7 +349,7 @@ def test_each_amendment_uses_independent_templates_and_exact_resume_links(tmp_pa
     workbook = load_workbook(tmp_path / normal_file)
     amended = load_workbook(tmp_path / amendment_file)
     resume = load_workbook(tmp_path / 'resume.xlsx')
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     try:
         forms = TYPES[tax]['forms']
         assert workbook.sheetnames == amended.sheetnames == forms
@@ -356,7 +363,7 @@ def test_each_amendment_uses_independent_templates_and_exact_resume_links(tmp_pa
         for item, other, model in [(workbook, amended, 'NORMAL'), (amended, workbook, 'AMENDMENT')]:
             for form in forms:
                 marker = 'SYNTHETIC ' + model + ' ' + form
-                assert len(cells_with(item, marker)) == (0 if tax == 'PPN' else 1)
+                assert len(cells_with(item, marker)) == (1 if tax == 'PPh Unifikasi' and form == 'Induk' else 0)
                 assert not cells_with(other, marker)
                 assert_layout(item[form], reference[form])
         links = [cell.hyperlink for sheet in resume for row in sheet for cell in row if cell.hyperlink]
@@ -387,7 +394,7 @@ def test_copied_worker_exports_using_only_explicit_packaged_template_resources(t
     (app / 'synthetic-run.json').write_text(json.dumps(run), encoding='utf-8')
     subprocess.run([sys.executable, '-c', script], cwd=app, check=True, capture_output=True, timeout=60)
     workbook = load_workbook(app / 'output' / TYPES[tax]['path'])
-    reference = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    reference = approved_reference(tax)
     try:
         assert workbook.sheetnames == ['Induk']
         assert_layout(workbook['Induk'], reference['Induk'])

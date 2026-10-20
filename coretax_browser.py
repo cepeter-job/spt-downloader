@@ -1378,13 +1378,14 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                                 for key in ('code', 'label', 'catalog_binding_sha256')):
                                             continue
                                     raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi'):
+                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
-                                                               bind_unifikasi_listing_identity)
+                                                               bind_unifikasi_listing_identity, bind_corporate_listing_identity)
                                 prefix, bind_identity = {
                                     'PPN': ('ppn', bind_ppn_listing_identity),
                                     'PPh Pasal 21/26': ('pph21', bind_pph21_listing_identity),
                                     'PPh Unifikasi': ('unifikasi', bind_unifikasi_listing_identity),
+                                    'PPh Badan': ('corporate', bind_corporate_listing_identity),
                                 }[record['meta']['Jenis Pajak']]
                                 identity = bind_identity(current_response, record=record, scope=scope)
                                 if identity['eligible']:

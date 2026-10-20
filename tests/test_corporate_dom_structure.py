@@ -114,10 +114,10 @@ def l1d_html(l1d_blocks, l9_blocks=(), control=CONTROL):
 {control}
 </div></p-tabpanel>
 <p-tabpanel><div class="p-tabview-panel" id="l1d" hidden>
-<rshshr-citr-l1d-form><div><form><div><p-accordion>{''.join(l1d_blocks)}</p-accordion></div></form></div></rshshr-citr-l1d-form>
+<h2>SYNTHETIC L1-D</h2><rshshr-citr-l1d-form><div><form><div><p-accordion>{''.join(l1d_blocks)}</p-accordion></div></form></div></rshshr-citr-l1d-form>
 </div></p-tabpanel>
 <p-tabpanel><div class="p-tabview-panel" id="l9" hidden>
-<rshshr-citr-l9-form><div><form><div><p-accordion>{''.join(l9_blocks)}</p-accordion></div></form></div></rshshr-citr-l9-form>
+<h2>SYNTHETIC L9</h2><rshshr-citr-l9-form><div><form><div><p-accordion>{''.join(l9_blocks)}</p-accordion></div></form></div></rshshr-citr-l9-form>
 </div></p-tabpanel>
 </div></div></main>
 <script>function show(id){{document.querySelectorAll('.p-tabview-panel').forEach(p=>p.hidden=p.id!==id)}}</script>
@@ -175,7 +175,7 @@ def test_l1d_corporate_tables_carry_exact_source_structure(routed, tmp_path):
                     table_html(['KODE AKUN', 'NAMA AKUN', 'NILAI'], [['3333', 'Piutang', '400']]))
     page = routed(l1d_html([g1, g2, g3]))
     result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
-    assert result['capture_complete'] is True and result['errors'] == []
+    assert result['capture_complete'] is True and result['errors'] == [], result['errors']
     assert [section['name'] for section in result['sections']] == ['Induk', 'L1-D', 'L9']
     tables = result['sections'][1]['tables']
     assert len(tables) == 3
@@ -197,7 +197,7 @@ def test_l1d_corporate_tables_carry_exact_source_structure(routed, tmp_path):
 def test_l9_corporate_tables_carry_exact_source_structure(routed, tmp_path):
     page = routed(l1d_html([], [l9_body()]))
     result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
-    assert result['capture_complete'] is True and result['errors'] == []
+    assert result['capture_complete'] is True and result['errors'] == [], result['errors']
     tables = result['sections'][2]['tables']
     assert len(tables) == 12
     for table, expected in zip(tables, L9):
@@ -220,7 +220,7 @@ def test_unknown_component_and_unowned_form_emit_no_identity(routed, tmp_path):
 </body></html>'''
     page = routed(html)
     result = driver.capture_detail(page)
-    assert result['capture_complete'] is True and result['errors'] == []
+    assert result['capture_complete'] is True and result['errors'] == [], result['errors']
     assert not result['sections'][0]['tables'][0].get('source_structure')
     assert result.get('attachments', []) == []
 
@@ -236,7 +236,7 @@ def test_reordered_components_and_duplicate_headers_keep_per_table_identity(rout
                     table_html(['KODE AKUN', 'NAMA AKUN', 'NILAI'], [['2222', 'Bank', '300']]))
     page = routed(l1d_html([g3, g1, g2], l9_blocks=()))
     result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
-    assert result['capture_complete'] is True and result['errors'] == []
+    assert result['capture_complete'] is True and result['errors'] == [], result['errors']
     tables = result['sections'][1]['tables']
     assert [table['source_structure'] for table in tables] == [L1D[2], L1D[0], L1D[1]]
     assert tables[1]['headers'] == ['KODE AKUN', 'NAMA AKUN', 'NILAI', 'NILAI']
