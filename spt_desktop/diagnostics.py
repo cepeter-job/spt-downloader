@@ -26,8 +26,17 @@ EVENTS = frozenset({
     'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
+    'catalog.checkpoint', 'catalog.read', 'catalog.validation',
 })
 ENUMS = {
+    'catalog_stage': frozenset({'planning', 'recheck', 'after_inventory'}),
+    'catalog_reason': frozenset({'available', 'catalog_missing', 'catalog_type',
+        'catalog_language', 'catalog_checksum', 'catalog_details', 'catalog_expiry_invalid',
+        'catalog_expired_or_unbound', 'catalog_serialization', 'catalog_row', 'catalog_code',
+        'catalog_label', 'catalog_duplicate', 'scope_unsupported', 'origin_blocked',
+        'enumeration_unavailable', 'enumeration_error', 'database_missing', 'store_missing',
+        'record_missing', 'record_identity', 'open_blocked', 'open_error', 'upgrade_refused',
+        'version_changed', 'read_error', 'projection_error', 'read_timeout', 'evaluation_error'}),
     'source_requested': frozenset({'dom', 'json-first'}),
     'source_used': frozenset({'dom', 'json', 'none'}),
     'source_reason': frozenset({'dom_requested', 'native_verified', 'capture_incomplete',
@@ -397,6 +406,10 @@ def self_test(root):
     """Actually emit/read synthetic logs; used by source and frozen GUI gates."""
     with session(root, 'gui', level='INFO') as log:
         record('operation.started')
+        record('catalog.checkpoint', catalog_stage='planning')
+        record('catalog.read', catalog_reason='available', count=2,
+               payload='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
+        record('catalog.validation', catalog_reason='available', count=2)
         with detail_context(ordinal=1, tax_kind='ppn', source_requested='json-first'):
             with measure('return_detail') as benchmark:
                 record('detail.source', source_used='json', source_reason='native_verified',
@@ -418,6 +431,11 @@ def self_test(root):
     if ('SYNTHETIC PRIVATE' in text or not any(row['event'] == 'operation.failed' for row in rows)
             or not any(row['event'] == 'session.closed' for row in rows)):
         raise RuntimeError('Synthetic diagnostics self-test failed')
+    if not (any(row.get('event') == 'catalog.checkpoint' and row.get('catalog_stage') == 'planning' for row in rows)
+            and any(row.get('event') == 'catalog.read' and row.get('catalog_reason') == 'available'
+                    and row.get('count') == 2 and 'payload' not in row for row in rows)
+            and any(row.get('event') == 'catalog.validation' and row.get('catalog_reason') == 'available' for row in rows)):
+        raise RuntimeError('Synthetic catalog diagnostics self-test failed')
     states = [row for row in rows if row['event'] == 'auth.state']
     results = [row for row in rows if row['event'] == 'auth.result']
     if (not any(row.get('reason') == 'waiting_redirect' and row.get('expected_origin') == 'satu'
