@@ -47,7 +47,8 @@ def test_numeric_percent_scale_and_unchanged_adjacent_values(tmp_path,group,firs
     finally:book.close()
 
 
-@pytest.mark.parametrize('literal',['abc','2.5','2,50%','-1','101','0,1234567890123456'])
+@pytest.mark.parametrize('literal',['abc','2.5','2,50%','-1','101','0,1234567890123456',
+                                            '99,999999999999999999999999999999'])
 def test_unsupported_rate_preserves_literal_and_partial(tmp_path,literal):
     book,reports=export(tmp_path,[section('DAFTAR-I',tables=[table(rate=literal)])])
     try:

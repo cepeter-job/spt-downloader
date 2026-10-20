@@ -47,14 +47,14 @@ def test_rate_column_precedes_tax_without_overwriting_money(tmp_path, count):
         assert 'A1:P1' in {str(merge) for merge in sheet.merged_cells.ranges}
         for row in range(5, count + 5):
             assert sheet.cell(row, 9).value == 1234.5
-            assert sheet.cell(row, 10).value == '2,00'
-            assert sheet.cell(row, 10).data_type == 's'
-            assert 'Rp' not in sheet.cell(row, 10).number_format
+            assert sheet.cell(row, 10).value == 0.02
+            assert sheet.cell(row, 10).data_type == 'n'
+            assert sheet.cell(row, 10).number_format == '0.00%'
             assert sheet.cell(row, 11).value == 24.69
             assert sheet.cell(row, 11).data_type == 'n'
             assert sheet.cell(row, 14).value == '0000000000000002000001'
-        # Supplemental payment-method evidence remains; rate is now on the form.
-        assert sum(c.value == '2,00' for cells in sheet for c in cells) == count
+        # Supplemental payment-method evidence stays in checkpoint, not the clean form.
+        assert sum(c.value == 0.02 for cells in sheet for c in cells) == count
         assert reports and reports[0]['complete']
     finally:
         book.close()
@@ -107,7 +107,9 @@ def test_bpnr_rate_and_reported_footer_shift_with_body_growth(tmp_path, count):
         assert sheet['J10'].value == 'TINGKAT (%)'
         assert sheet['K10'].value == 'PAJAK PENGHASILAN (Rp)'
         for row in range(11, 11 + count):
-            assert sheet.cell(row, 10).value == '2,00'
+            assert sheet.cell(row, 10).value == 0.02
+            assert sheet.cell(row, 10).data_type == 'n'
+            assert sheet.cell(row, 10).number_format == '0.00%'
             assert sheet.cell(row, 11).value == 24.69
             assert sheet.cell(row, 14).value == '0000000000000002000001'
         total_row = 15 + max(0, count - 4)
@@ -136,11 +138,11 @@ def test_native_rate_is_on_form_once_and_tax_remains_numeric(tmp_path):
         grid = next(s for s in result['sections'] if s['name'] == 'DAFTAR-I')['tables'][0]
         rate_index = grid['headers'].index('TINGKAT (%)')
         for index in range(grid['body_row_count']):
-            assert sheet.cell(index + 5, 10).value == grid['rows'][index][rate_index]
-            assert sheet.cell(index + 5, 10).data_type == 's'
+            assert sheet.cell(index + 5, 10).value == 0.025
+            assert sheet.cell(index + 5, 10).data_type == 'n'
+            assert sheet.cell(index + 5, 10).number_format == '0.00%'
             assert sheet.cell(index + 5, 11).value == 30
             assert sheet.cell(index + 5, 11).data_type == 'n'
-            assert 'Rp' not in sheet.cell(index + 5, 10).number_format
     finally:
         book.close()
 
