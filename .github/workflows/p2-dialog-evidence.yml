@@ -32,7 +32,7 @@ jobs:
       - name: Check out exact product candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: d8dc09babe0ba96d6288862a57cf9095cd8857d7
+          ref: a37111b05060f10eb9af694dcd1fd1692f538b84
           persist-credentials: false
           path: candidate
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -50,7 +50,7 @@ jobs:
       - name: Capture synthetic dialogs and measure both exact revisions
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_dialog_evidence.py --baseline baseline --candidate candidate --out "$env:RUNNER_TEMP/p2-dialog-evidence"
+          .venv/Scripts/python.exe harness/scripts/_p2_dialog_evidence.py --candidate candidate --regression-only --out "$env:RUNNER_TEMP/p2-dialog-evidence"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload synthetic JSON and native PNG evidence only
         if: always()

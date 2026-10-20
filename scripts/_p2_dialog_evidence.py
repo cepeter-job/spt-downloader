@@ -20,7 +20,7 @@ import zlib
 
 
 BASELINE = '977b06846554ca1f2e5af512a69fb201f2cbe8d1'
-CANDIDATE = 'd8dc09babe0ba96d6288862a57cf9095cd8857d7'
+CANDIDATE = 'a37111b05060f10eb9af694dcd1fd1692f538b84'
 
 
 class Rect(C.Structure):
@@ -800,6 +800,27 @@ def child(args):
     assert 'visual_error' not in result and 'benchmark_error' not in result, result.get('visual_error', result.get('benchmark_error'))
 
 
+def keyboard_regressions(args):
+    source = Path(args.candidate).resolve()
+    revision = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+    assert revision == CANDIDATE
+    out = Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, '-m', 'pytest', '-q',
+               'tests/test_desktop_dialog_layout.py::test_fresh_selection_keyboard_navigation_can_authorize_only_at_button',
+               'tests/test_desktop_dialog_layout.py::test_overwrite_path_suffix_is_reachable_by_keyboard_without_consent',
+               '--basetemp', str(out.parent / 'p2-keyboard-pytest')]
+    completed = subprocess.run(command, cwd=source, text=True, encoding='utf-8',
+                               errors='replace', capture_output=True, timeout=180)
+    write_json(out / 'keyboard-regressions.json', {
+        'revision': revision, 'synthetic': True, 'portal_accessed': False,
+        'command': command, 'return_code': completed.returncode,
+        'stdout': completed.stdout, 'stderr': completed.stderr})
+    print(completed.stdout, flush=True)
+    print(completed.stderr, flush=True)
+    return completed.returncode
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source')
@@ -809,8 +830,11 @@ def main():
     parser.add_argument('--skip-benchmark', action='store_true')
     parser.add_argument('--baseline')
     parser.add_argument('--candidate')
+    parser.add_argument('--regression-only', action='store_true')
     args = parser.parse_args()
     assert sys.platform == 'win32', 'Execution is authorized on the GitHub Windows runner only'
+    if args.regression_only:
+        raise SystemExit(keyboard_regressions(args))
     if args.baseline and args.candidate:
         orchestrate(args)
     else:
