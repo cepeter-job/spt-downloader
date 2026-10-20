@@ -585,6 +585,12 @@ def test_fresh_selection_keyboard_navigation_can_authorize_only_at_button(active
     dialog = open_selection(active_app)
     entry, tree = named_widget(dialog, 'search'), named_widget(dialog, 'records')
     if filtered:
+        _tab_to_widget(root, entry, tree)
+        tree.event_generate('<KeyPress-Down>')
+        tree.event_generate('<KeyRelease-Down>')
+        settle(root)
+        assert tree.selection()
+        _tab_to_widget(root, tree, entry)
         entry.insert(0, 'januari')
         settle(root)
     assert not tree.selection() and named_widget(dialog, 'confirm').instate(['disabled'])
@@ -614,6 +620,12 @@ def test_overwrite_path_suffix_is_reachable_by_keyboard_without_consent(active_a
     field, tree = named_widget(dialog, 'folder'), named_widget(dialog, 'files')
     _tab_to_widget(root, field, tree)
     before = tree.xview()
+    tree.event_generate('<Control-Right>')
+    settle(root)
+    assert tree.xview()[0] > before[0]
+    tree.event_generate('<Control-Left>')
+    settle(root)
+    assert tree.xview()[0] == before[0]
     tree.event_generate('<Control-End>')
     settle(root)
     assert tree.xview()[0] > before[0] and tree.xview()[1] == 1.0
@@ -629,3 +641,28 @@ def test_overwrite_path_suffix_is_reachable_by_keyboard_without_consent(active_a
     decline.event_generate('<Return>')
     root.update()
     assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
+
+
+def test_overwrite_keyboard_navigation_reaches_last_file_without_consent(active_app):
+    root, app, controller = active_app
+    files = [f'SPT Masa PPN/SYNTHETIC_{index:03}_Normal.xlsx' for index in range(101)]
+    controller.payload = {'files': files, 'folder': OVERWRITE_FOLDER}
+    app.on_event(consent_event(controller, 'overwrite'))
+    settle(root)
+    dialog = app._interaction['dialog']
+    safe_button, tree = named_widget(dialog, 'decline'), named_widget(dialog, 'files')
+    assert root.focus_get() is safe_button
+    _tab_to_widget(root, safe_button, tree)
+    tree.event_generate('<KeyPress-Down>')
+    tree.event_generate('<KeyRelease-Down>')
+    root.update()
+    assert tree.focus() == 'file-1'
+    for _ in range(99):
+        tree.event_generate('<KeyPress-Down>')
+        tree.event_generate('<KeyRelease-Down>')
+        root.update()
+    assert tree.focus() == 'file-100' and tree.bbox('file-100')
+    assert [tree.set(iid, 'file') for iid in tree.get_children()] == files
+    assert label_text(named_widget(dialog, 'file_count')) == '101 file akan diganti.'
+    assert named_widget(dialog, 'folder').get() == OVERWRITE_FOLDER
+    assert not tree.selection() and not controller.replies and not controller.stopped
