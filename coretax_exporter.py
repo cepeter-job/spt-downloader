@@ -298,8 +298,16 @@ def amendment_label(record):
     return re.sub(r'[\[\]:*?/\\]', '-', value)[:14] or 'Status belum ada'
 
 
-def record_forms(record):
+def _display_sections(record, *, presentation=True):
     sections = record.get('sections', [])
+    if presentation and record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan':
+        # Exclusion affects the new workbook only, never checkpoint custody.
+        return [section for section in sections if section['name'] not in ('L10-B', 'L10-D')]
+    return sections
+
+
+def record_forms(record, *, presentation=True):
+    sections = _display_sections(record, presentation=presentation)
     if not sections:
         return [('SPT', sections)]
     groups = {}
@@ -310,10 +318,10 @@ def record_forms(record):
     return list(groups.items())
 
 
-def record_sheet_titles(ordinal, record, *, used=None, legacy=False):
+def record_sheet_titles(ordinal, record, *, used=None, legacy=False, presentation=True):
     used = set() if used is None else used
     result = []
-    for index, (form, _) in enumerate(record_forms(record), 1):
+    for index, (form, _) in enumerate(record_forms(record, presentation=presentation), 1):
         form = re.sub(r'[\[\]:*?/\\]', '-', form)
         if legacy:
             # Exact historical names remain a valid physical proof, not a rename wildcard.
@@ -332,10 +340,10 @@ def record_sheet_titles(ordinal, record, *, used=None, legacy=False):
     return result
 
 
-def workbook_sheet_titles(records, *, reserved=(), legacy=False):
+def workbook_sheet_titles(records, *, reserved=(), legacy=False, presentation=True):
     """One source-ordered namespace shared by writers, links and physical proof."""
     used = {title.casefold() for title in reserved}
-    return [record_sheet_titles(ordinal, record, used=used, legacy=legacy)
+    return [record_sheet_titles(ordinal, record, used=used, legacy=legacy, presentation=presentation)
             for ordinal, record in enumerate(records, 1)]
 
 
@@ -485,7 +493,7 @@ def tax_type_filename(tax_type):
     return f'SPT_{title}.xlsx'
 
 
-def workbook_proof(run):
+def workbook_proof(run, *, presentation=True):
     """Keep scope and PDF custody declarations outside visible form cells."""
     meta_keys = ('Jenis Pajak', 'Jenis Surat Pemberitahuan Pajak', 'Masa Pajak',
                  'Model SPT', 'Nomor Bukti Penerimaan', 'Tanggal Submit SPT')
@@ -494,7 +502,7 @@ def workbook_proof(run):
         proof = {
             'meta': {key: record['meta'][key] for key in meta_keys if key in record['meta']},
             'capture_complete': record.get('capture_complete', False),
-            'sections': [{'name': section['name']} for section in record.get('sections', [])],
+            'sections': [{'name': section['name']} for section in _display_sections(record, presentation=presentation)],
         }
         for key in ('record_id', 'scope', 'attachments', 'source_status'):
             if key in record:
@@ -542,10 +550,10 @@ def read_workbook_proof(workbook):
                            or not isinstance(section['name'], str) for section in record['sections'])):
                 raise ValueError('Invalid workbook record proof')
         validate_export_run(proof)
-        if workbook_proof(proof) != proof:
+        if workbook_proof(proof, presentation=False) != proof:
             raise ValueError('Workbook proof contains unsupported source metadata')
-        expected = [title for titles in workbook_sheet_titles(proof['records']) for title in titles]
-        historical = [title for titles in workbook_sheet_titles(proof['records'], legacy=True)
+        expected = [title for titles in workbook_sheet_titles(proof['records'], presentation=False) for title in titles]
+        historical = [title for titles in workbook_sheet_titles(proof['records'], legacy=True, presentation=False)
                       for title in titles]
         if (workbook.sheetnames not in (expected, historical)
                 or any(sheet.sheet_state != 'visible' for sheet in workbook)):
@@ -565,6 +573,10 @@ def _export_form_workbook(run, path):
         wb, templates = template_workbook([title for titles in title_plan for title in titles])
     elif tax in MASA_RESOURCES:
         wb, templates = masa_template_workbook(tax, [title for titles in title_plan for title in titles])
+    elif tax == 'PPh Badan':
+        from coretax_badan_template import template_workbook as corporate_template_workbook
+        from coretax_badan_template import render_template_form as render_corporate_template
+        wb, templates = corporate_template_workbook([title for titles in title_plan for title in titles])
     else:
         wb = Workbook()
         wb.remove(wb.active)
@@ -580,6 +592,9 @@ def _export_form_workbook(run, path):
                 detail.title = title
                 if tax == 'PPh Pasal 21/26':
                     report = render_template_form(detail, form, sections)
+                elif tax == 'PPh Badan':
+                    report = render_corporate_template(
+                        detail, form, sections, period=record['meta'].get('Masa Pajak'))
                 else:
                     report = render_masa_template(detail, tax, form, sections)
                 if report is not None:

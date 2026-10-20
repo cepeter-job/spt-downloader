@@ -1,5 +1,6 @@
 """Kontrak tata letak keluaran dengan data sintetis, bukan catatan wajib pajak."""
 from copy import deepcopy
+from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 import coretax
@@ -58,8 +59,14 @@ def test_corporate_models_have_separate_files_with_all_observed_forms(tmp_path):
             assert len({name.casefold() for name in workbook.sheetnames}) == 2
             proof = exporter.read_workbook_proof(workbook)
             assert [item['meta']['Model SPT'] for item in proof['records']] == [model]
-            for sheet in workbook:
-                assert not any(merged.min_row >= 6 for merged in sheet.merged_cells.ranges)
+            assert not any(merged.min_row >= 6 for merged in workbook['Induk'].merged_cells.ranges)
+            reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources/corporate_format.xlsx')
+            try:
+                assert set(map(str, workbook['L1-D'].merged_cells.ranges)) == set(
+                    map(str, reference['L1-D'].merged_cells.ranges))
+            finally:
+                reference.close()
+            assert any(cell.value == '1.234,50' for cells in workbook['L1-D'] for cell in cells)
         finally:
             workbook.close()
 
