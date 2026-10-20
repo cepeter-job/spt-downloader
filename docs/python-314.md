@@ -9,7 +9,7 @@
 | GUI dan executable Windows | **CPython 3.14.8**, Windows x64, GIL aktif | Satu profil: `production`. |
 | Worker di mesin pengguna | **Managed CPython 3.14.8**, Windows x64, GIL aktif | Dibuat oleh `uv` di LocalAppData, bukan Python sistem. |
 | CLI `setup.cmd` | **Managed CPython 3.14.8**, Windows x64, GIL aktif | Versi sama dengan GUI/worker. |
-| `uv` | **0.13.0** | Exact pin untuk katalog managed Python, build, dan instalasi lock. |
+| `uv` | **0.13.1** | Exact pin untuk katalog managed Python, build, dan instalasi lock. |
 
 Sumber kebenaran adalah `PYTHON_PROFILES`, `UV_VERSION`, `RUNTIME_LOCK`, dan `WORKER_FILES` di [spt_desktop/runtime.py](../spt_desktop/runtime.py). Profil evaluasi `candidate` telah dipensiunkan: tidak boleh menjadi jalur distribusi atau cara diam-diam memilih 3.11. `build_desktop.py`, pemilih matrix `scripts/ci_route.py`, uji worker `scripts/ci_runtime.py`, serta `setup.cmd` memakai satu versi produksi.
 
@@ -37,7 +37,7 @@ Pekerjaan yang sudah berjalan sebaiknya diselesaikan atau dihentikan secara norm
 | `requirements-build.txt` | `locks/build.txt` | PyInstaller, uv dan seluruh persyaratan build. |
 | `requirements-audit.txt` | `locks/audit.txt` | Tool audit terisolasi. |
 
-Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.13.0`:
+Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.13.1`:
 
 ```powershell
 .venv/Scripts/python.exe -m scripts.update_locks --check
@@ -46,7 +46,7 @@ uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :al
 
 Untuk pembaruan lock yang memang disetujui, jalankan `python -m scripts.update_locks` lalu `--check`; gunakan `--upgrade` hanya ketika versi transitif perlu dinaikkan dengan sengaja. Hash memastikan kesesuaian paket, bukan ketiadaan advisory; pemeriksaan keamanan tetap wajib.
 
-`playwright==1.63.0` [mensyaratkan `pyee>=13,<14`](https://github.com/microsoft/playwright-python/blob/v1.63.0/pyproject.toml), sehingga ketiga lock runtime/test/build tetap memakai `pyee==13.0.1`. Pembaruan ke pyee 14 harus menunggu versi Playwright yang mengizinkannya, lalu melewati resolusi lock dan seluruh gate CI; jangan melonggarkan constraint hanya agar pembaruan transitif dapat dipasang.
+`playwright==1.64.0` memakai `pyee==14.0.0` pada profil produksi CPython 3.14.8. Regenerasi lock menggunakan versi produksi yang tepat supaya tidak menyertakan cabang Python 3.11 yang sudah tidak didukung, tetapi tetap memakai resolusi universal, wheel saja, dan hash SHA-256.
 
 ## Verifikasi produksi
 
