@@ -133,7 +133,7 @@ def test_post_inventory_snapshot_does_not_change_selection_or_filters(tmp_path, 
     calls = []
     def read(page):
         calls.append(True)
-        if len(calls)==1: return None
+        if len(calls)<=2: return None
         if late=='failure': raise RuntimeError('PRIVATE-EXCEPTION-SENTINEL')
         if late=='cancel': raise driver.CaptureCancelled()
         value = catalog()
@@ -151,8 +151,8 @@ def test_post_inventory_snapshot_does_not_change_selection_or_filters(tmp_path, 
                 assert [r['record_id'] for r in result['records']]==['fixture-normal','fixture-amend-001']
                 assert all(p['Filters']==[] for p in metrics['submitted_requests'])
             assert log.flush()
-        assert len(calls)==2, 'Missing post-inventory cache snapshot'
+        assert len(calls)==3, 'Missing readiness read or post-inventory snapshot'
         assert metrics['unregistered_requests']==metrics['detail_actions']==0
     events = records(tmp_path/'telemetry')
-    assert [e['catalog_stage'] for e in events if e['event']=='catalog.checkpoint']==['planning','after_inventory']
+    assert [e['catalog_stage'] for e in events if e['event']=='catalog.checkpoint']==['planning','readiness','after_inventory']
     assert 'PRIVATE-EXCEPTION-SENTINEL' not in json.dumps(events)
