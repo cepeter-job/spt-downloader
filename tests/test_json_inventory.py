@@ -506,7 +506,7 @@ def test_more_rows_than_declared_total_fails_closed():
 def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start=0,
                               changed_total=False, empty=False, stop_state=None,
                               year_catalog=False, ignore_source_filter=False, expired_catalog=False,
-                              auxiliary_request=False, hash_link=False):
+                              auxiliary_request=False, hash_link=False, deferred_catalog=False):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -548,7 +548,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
     labels = list(EXPECTED_META)
     metrics = {'submitted_full_grid_reads': 0, 'submitted_api_requests': 0,
                'unregistered_requests': 0, 'detail_actions': 0, 'submitted_requests': [],
-               'viewed_record_ids': [], 'auxiliary_requests': 0}
+               'viewed_record_ids': [], 'auxiliary_requests': 0, 'list_navigations': []}
     original = Locator.evaluate
 
     def observed_evaluate(locator, expression, *args, **kwargs):
@@ -571,7 +571,8 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         import html
         headers = ''.join('<th>' + html.escape(label) + '</th>' for label in labels)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
-                             'headers': labels, 'displays': displays_by_id, 'catalog': cache,
+                             'headers': labels, 'displays': displays_by_id,
+                             'catalog': cache if not deferred_catalog or len(metrics['list_navigations']) > 1 else None,
                              'auxiliary': auxiliary_request, 'hashLink': hash_link})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
         return '''<a href="/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer">SPT Dilaporkan</a>
@@ -629,8 +630,10 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
                 elif url.path == '/returnsheets/id-ID/taxpayer-search':
                     route.fulfill(body=search, content_type='text/html')
                 elif url.path == '/returnsheets/id-ID/not-submitted-returnsheets/fixture-taxpayer':
+                    metrics['list_navigations'].append(url.path)
                     route.fulfill(body=listing(False), content_type='text/html')
                 elif url.path == '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer':
+                    metrics['list_navigations'].append(url.path)
                     route.fulfill(body=listing(True), content_type='text/html')
                 elif url.path in ('/returnsheet/api/returnsheetsfixture', '/returnsheet/api/returnsheetssubmitted'):
                     data = request.post_data_json
