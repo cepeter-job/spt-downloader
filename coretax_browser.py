@@ -713,10 +713,13 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                     sources.append({'url': url, 'label': link['label']})
         if len(sources) == 1:
             errors.append({'object': 'Status navigation', 'message': 'No other SPT status lists discovered; refusing to certify all-SPT completeness'})
+        retry_missing_catalog = False
         try:
             diagnostics.record('catalog.checkpoint', catalog_stage='planning')
             catalog = read_period_catalog(page) if basis == 'period' else None
+            _check_cancel(check_cancel)
             filter_plan = plan_year_filters(catalog, year, basis)
+            retry_missing_catalog = basis == 'period' and catalog is None
         except Exception:
             _check_cancel(check_cancel)
             filter_plan = {'eligible': False, 'filters': [], 'reason': 'period_catalog_unavailable'}
@@ -735,8 +738,40 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                                         'filter_reason': filter_plan.get('reason', 'unobserved_status_filter')
                                         if submitted else 'unobserved_status_filter'})
         sources = planned_sources
-        for source in sources:
+        for source_index, source in enumerate(sources):
             _check_cancel(check_cancel)
+            submitted = (urlparse(source['url']).path.startswith('/returnsheets/id-ID/submitted-returnsheets/')
+                         and source['label'] == 'SPT Dilaporkan')
+            if retry_missing_catalog and submitted:
+                # Earlier status navigation may populate the cache. Retry once,
+                # before this source starts; never rewrite completed evidence.
+                retry_missing_catalog = False
+                diagnostics.record('catalog.checkpoint', catalog_stage='readiness')
+                try:
+                    catalog = read_period_catalog(page)
+                    _check_cancel(check_cancel)
+                    filter_plan = plan_year_filters(catalog, year, basis)
+                except Exception:
+                    _check_cancel(check_cancel)
+                    diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
+                    filter_plan = {'eligible': False, 'filters': [], 'reason': 'period_catalog_unavailable'}
+                _check_cancel(check_cancel)
+                if filter_plan['eligible']:
+                    source = dict(source)
+                    source.pop('filter_reason', None)
+                    partitions = [
+                        {**source, 'list_filter': condition,
+                         'list_catalog_sha256': filter_plan['catalog_sha256'],
+                         'list_catalog_binding_sha256': filter_plan['catalog_binding_sha256'],
+                         'filter_mode': 'period-year-candidates'}
+                        for condition in filter_plan['filters']
+                    ]
+                    # Replace only the pending item. enumerate visits subsequent
+                    # partitions normally; progress and saved sources stay exact.
+                    sources[source_index:source_index + 1] = partitions
+                    source = sources[source_index]
+                else:
+                    source['filter_reason'] = filter_plan['reason']
             label = source['label']
             print(f"Inventory: {label}", flush=True)
             entry = {'status': label, 'total': None, 'scanned': 0, 'selected': 0, 'result': 'PARTIAL', 'note': source['url']}

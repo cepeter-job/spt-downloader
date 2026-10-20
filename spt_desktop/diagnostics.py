@@ -29,7 +29,7 @@ EVENTS = frozenset({
     'catalog.checkpoint', 'catalog.read', 'catalog.validation',
 })
 ENUMS = {
-    'catalog_stage': frozenset({'planning', 'recheck', 'after_inventory'}),
+    'catalog_stage': frozenset({'planning', 'readiness', 'recheck', 'after_inventory'}),
     'catalog_reason': frozenset({'available', 'catalog_missing', 'catalog_type',
         'catalog_language', 'catalog_checksum', 'catalog_details', 'catalog_expiry_invalid',
         'catalog_expired_or_unbound', 'catalog_serialization', 'catalog_row', 'catalog_code',
