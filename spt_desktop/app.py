@@ -709,9 +709,11 @@ class App:
                                  style='SPT.Label.TLabel', wraplength=px(700))
         folder_label.grid(row=1, column=0, sticky='ew', pady=(0, px(4)))
         # Validation tests nonblank context; the actual path remains untouched.
-        folder_value = tk.StringVar(dialog, value=folder)
-        folder_field = ttk.Entry(body, name='folder', textvariable=folder_value,
-                                  state='readonly', style='SPT.TEntry')
+        folder_field = ttk.Entry(body, name='folder', style='SPT.TEntry')
+        # This immutable value needs no StringVar whose lifetime could end
+        # before the modal; retain it in the native entry until destruction.
+        folder_field.insert(0, folder)
+        folder_field.state(['readonly'])
         folder_field.grid(row=2, column=0, sticky='ew', pady=(0, px(10)))
         table = ttk.Frame(body, style='SPT.Card.TFrame')
         table.grid(row=3, column=0, sticky='nsew')
