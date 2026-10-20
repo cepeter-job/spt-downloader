@@ -57,6 +57,42 @@ def test_missing_database_is_not_created_and_no_network_is_sent(tmp_path):
     assert events[0]['catalog_reason']=='database_missing'
 
 
+@pytest.mark.parametrize('mode,reason', [('store_missing','store_missing'),
+    ('record_missing','record_missing'), ('projection_error','projection_error'), ('valid','available')])
+def test_existing_cache_is_readonly_and_reports_exact_state(tmp_path, mode, reason):
+    with synthetic_browser() as (page, metrics):
+        page.evaluate('''async mode=>new Promise((resolve,reject)=>{
+          const q=indexedDB.open('e-tax-database',1);
+          q.onupgradeneeded=()=>q.result.createObjectStore(mode==='store_missing'?'otherStore':'referenceDataStore',
+            {keyPath:['ReferenceDataType','language']});
+          q.onerror=reject;
+          q.onsuccess=()=>{const db=q.result;
+            if(mode==='store_missing'||mode==='record_missing'){db.close();resolve();return;}
+            const tx=db.transaction('referenceDataStore','readwrite');
+            tx.objectStore('referenceDataStore').put({ReferenceDataType:'PERIOD',language:'id-ID',
+              Checksum:'PRIVATE-CACHE',ExpiryDate:new Date('2099-01-01'),
+              Details:mode==='projection_error'?[null]:[{Code:'01122024',CodeDescription:'Synthetic period 2024'}]});
+            tx.oncomplete=()=>{db.close();resolve();};tx.onerror=reject;
+          };
+        })''', mode)
+        before=page.evaluate('async()=>await indexedDB.databases()')
+        page.evaluate('''()=>{window.writes=0;
+          for(const k of ['put','add','delete','clear'])IDBObjectStore.prototype[k]=function(){
+            window.writes++;throw Error('Forbidden cache mutation');};}''')
+        with d.session(tmp_path,'worker') as log:
+            value=inventory.read_period_catalog(page)
+            assert log.flush()
+        assert (value is not None) is (mode=='valid')
+        if mode=='valid': assert value['Checksum']=='PRIVATE-CACHE'
+        assert page.evaluate('window.writes')==0
+        assert page.evaluate('async()=>await indexedDB.databases()')==before
+        assert metrics=={'requests':[],'unknown':0}
+    events=[e for e in records(tmp_path) if e['event']=='catalog.read']
+    assert len(events)==1, 'Missing reader diagnostic'
+    assert events[0]['catalog_reason']==reason
+    assert 'PRIVATE-CACHE' not in json.dumps(records(tmp_path))
+
+
 def test_sink_drops_untrusted_catalog_values(tmp_path):
     class Private:
         def __str__(self): raise AssertionError('Do not stringify')
