@@ -573,6 +573,10 @@ def _export_form_workbook(run, path):
         wb, templates = template_workbook([title for titles in title_plan for title in titles])
     elif tax in MASA_RESOURCES:
         wb, templates = masa_template_workbook(tax, [title for titles in title_plan for title in titles])
+    elif tax == 'PPh Badan':
+        from coretax_badan_template import template_workbook as corporate_template_workbook
+        from coretax_badan_template import render_template_form as render_corporate_template
+        wb, templates = corporate_template_workbook([title for titles in title_plan for title in titles])
     else:
         wb = Workbook()
         wb.remove(wb.active)
@@ -588,6 +592,8 @@ def _export_form_workbook(run, path):
                 detail.title = title
                 if tax == 'PPh Pasal 21/26':
                     report = render_template_form(detail, form, sections)
+                elif tax == 'PPh Badan':
+                    report = render_corporate_template(detail, form, sections)
                 else:
                     report = render_masa_template(detail, tax, form, sections)
                 if report is not None:

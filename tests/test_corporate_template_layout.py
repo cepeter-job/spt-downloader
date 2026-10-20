@@ -47,6 +47,9 @@ def test_resource_has_accounting_blanks_without_taxpayer_values():
         assert reference.sheetnames == FORMS
         sheet = reference['L1-D']
         for row in range(44, 102):
+            if row == 70:  # Empty separator between the two balance-sheet tables.
+                assert sheet.cell(row, 3).value is None
+                continue
             if row == 71:  # The repeated NILAI header is not an amount slot.
                 assert sheet.cell(row, 3).value == 'NILAI'
                 continue
@@ -99,5 +102,34 @@ def test_ambiguous_balance_table_stays_visible_and_unresolved(tmp_path):
         assert any(cell.value == 'Rp. | 1.234,50' for cells in sheet for cell in cells)
         assert reports and reports[0]['complete'] is False
         assert reports[0]['unmapped_rows'] == 1
+    finally:
+        book.close()
+
+
+def test_balance_roles_map_accounting_and_captured_total_without_recalculation(tmp_path):
+    tables = []
+    for component, marker, amount, total in (
+            ('rsh-citr-l1d-grid3', 'SYNTHETIC LIABILITY', 'Rp. | 2.000,00', 'Rp. | 9.000,00'),
+            ('rsh-citr-l1d-grid2', 'SYNTHETIC ASSET', 'Rp. | 1.234,50', 'Rp. | 8.000,00')):
+        label = 'Jumlah Aset' if component.endswith('grid2') else 'Jumlah Liabilitas dan Ekuitas'
+        footer = [['', label, total]]
+        tables.append({'name': 'Same literal table name',
+                       'headers': ['KODE AKUN', 'NAMA AKUN', 'NILAI'],
+                       'rows': [['', marker, ''], ['0001', 'SYNTHETIC DETAIL', amount]] + footer,
+                       'body_row_count': 2, 'source_total': 2, 'complete': True,
+                       'footer': footer, 'footer_spans': [[1, 1, 1]],
+                       'source_structure': {'form': 'L1-D', 'component': component,
+                                            'groups': ['B. LAPORAN POSISI KEUANGAN']}})
+    book, reports = export(tmp_path, [section('L1-D', tables=tables)])
+    try:
+        sheet = book['L1-D']
+        assert sheet['A43'].value == 'SYNTHETIC ASSET'
+        assert sheet['A72'].value == 'SYNTHETIC LIABILITY'
+        assert sheet['A44'].value == sheet['A73'].value == '0001'
+        for coordinate, value in [('C44', 1234.5), ('C73', 2000), ('C69', 8000), ('C101', 9000)]:
+            assert sheet[coordinate].value == value
+            assert sheet[coordinate].data_type == 'n'
+            assert 'Rp' in sheet[coordinate].number_format and '*' in sheet[coordinate].number_format
+        assert reports[0]['complete']
     finally:
         book.close()
