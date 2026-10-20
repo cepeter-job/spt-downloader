@@ -12,11 +12,12 @@ def locks(tmp_path, monkeypatch):
     (tmp_path / 'locks').mkdir()
     for name in ('runtime', 'test', 'build', 'audit'):
         (tmp_path / 'locks' / f'{name}.txt').write_text('pin semula\n', encoding='utf-8')
-    state = {'payload': 'pin semula\n', 'fail': None}
+    state = {'payload': 'pin semula\n', 'fail': None, 'commands': []}
 
     def resolve(command, **kwargs):
         if '--version' in command:
             return subprocess.CompletedProcess(command, 0, f'uv {updater.UV_VERSION} (synthetic)\n')
+        state['commands'].append(command)
         output = Path(command[command.index('--output-file') + 1])
         if output.stem == state['fail']:
             raise subprocess.CalledProcessError(1, command)
@@ -56,3 +57,13 @@ def test_successful_regeneration_updates_all_changed_locks(locks):
     assert len(updater.update_locks(root, 'uv')) == 4
     assert all(path.read_text(encoding='utf-8') == 'pin baru\n'
                for path in (root / 'locks').iterdir())
+
+def test_lock_resolver_uses_exact_production_python_with_universal_hashes(locks):
+    updater, root, state = locks
+    updater.update_locks(root, 'uv', check=True)
+    assert len(state['commands']) == len(updater.LOCK_INPUTS)
+    for command in state['commands']:
+        assert command[command.index('--python-version') + 1] == updater.python_version()
+        assert '--universal' in command
+        assert '--generate-hashes' in command
+        assert '--only-binary' in command
