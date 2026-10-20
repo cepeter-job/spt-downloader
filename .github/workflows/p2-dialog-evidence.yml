@@ -1,0 +1,65 @@
+name: Phase 2 synthetic Windows dialog evidence (temporary)
+on:
+  pull_request:
+    branches: [feat/ui-b-phase2-dialogs]
+    paths:
+      - '.github/workflows/p2-dialog-evidence.yml'
+      - 'scripts/_p2_dialog_evidence.py'
+permissions:
+  contents: read
+concurrency:
+  group: p2-dialog-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  evidence:
+    name: Native dialogs, verified OS scaling, paired latency
+    runs-on: windows-2022
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Check out isolated evidence harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: harness
+      - name: Check out exact product baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 977b06846554ca1f2e5af512a69fb201f2cbe8d1
+          persist-credentials: false
+          path: baseline
+      - name: Check out exact product candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: d8dc09babe0ba96d6288862a57cf9095cd8857d7
+          persist-credentials: false
+          path: candidate
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install pinned production interpreter and locked test environment
+        shell: pwsh
+        run: |
+          uv python install 'cpython-3.14.8-windows-x86_64-none' --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python '3.14.8+gil' .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: candidate/locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Capture synthetic dialogs and measure both exact revisions
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe harness/scripts/_p2_dialog_evidence.py --baseline baseline --candidate candidate --out "$env:RUNNER_TEMP/p2-dialog-evidence"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload synthetic JSON and native PNG evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: p2-dialog-evidence-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 4
+          path: |
+            ${{ runner.temp }}/p2-dialog-evidence/**/*.json
+            ${{ runner.temp }}/p2-dialog-evidence/**/*.png
