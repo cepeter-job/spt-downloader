@@ -1,10 +1,10 @@
 # Menulis bahasa antarmuka
 
-**Penyesuaian konsolidasi, 13 Oktober 2026:** permintaan PR #14 menghapus footer nama pribadi dan ID `app.credit`; subtitle umum serta lima teks terkunci lainnya tetap. Katalog aktif berisi 43 ID. SPT kini hanya berisi worksheet form; Ringkasan/Daftar SPT/Audit berada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF tetap meminta persetujuan.
+**Baseline aktif, 20 Oktober 2026:** `977b06846554ca1f2e5af512a69fb201f2cbe8d1`. Permintaan PR #14 sudah terintegrasi: footer nama pribadi dan ID `app.credit` dihapus. Katalog kini berisi **44 ID**, termasuk `app.bugreport`; lima teks pemilik lainnya tetap. Setiap workbook masa/model berisi form model itu saja; Ringkasan/Daftar SPT/Audit ada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF yang akan tertimpa tetap membutuhkan persetujuan. Lihat [kontrak baseline](baseline-2026-10-20.md).
 
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
-**Baseline 13 Oktober 2026:** `be67f5153a07ce100048d67191a02ca1d0fca1db`. Naskah di bawah mengikuti pemilihan SPT, struktur hasil, serta teks khusus pemilik yang terbaru. ID katalog adalah rancangan presentasi, belum klaim bahwa kode telah menggunakannya.
+Katalog `spt_desktop/ui_copy.py` sudah diimplementasikan, tetapi keberadaan sebuah ID tidak berarti semua widget memakai teks itu. Misalnya, Pengaturan masih menampilkan **Cek Kredensial**, **Batalkan Cek**, dan **Hapus kredensial**, sedangkan katalog memuat padanan **Cek login**, **Batalkan cek**, dan **Hapus login**. `settings.origin.label` masih ada dalam katalog, tetapi bukan alasan mengembalikan pemilih origin. Penyelarasan caption widget adalah perubahan terpisah dengan tesnya.
 
 ## Nada yang digunakan
 
@@ -42,17 +42,18 @@ Istilah pajak dan nama berkas yang membantu pencarian tetap dipertahankan: NPWP,
 | `settings.background.label` | jalankan proses sedot di background |
 | `results.location_hint` | Hasil Sedot berada di folder Downloads Windows |
 | `app.subtitle` | Coretax → Excel · for personal use only |
+| `app.bugreport` | bugreport : sharmila@kemenkeu.go.id |
 | `selection.confirm` | Sedot SPT terpilih |
 
-Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/tests/test_desktop_selection_gui.py).
+Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/tests/test_desktop_selection_gui.py).
 
 ## Kosakata yang konsisten
 
 | Istilah teknis | Teks pengguna | Catatan |
 | --- | --- | --- |
 | Cakupan ekspor | Data yang akan diunduh | Sesudah inventaris, pengguna memilih SPT. |
-| Origin login | Situs login | Domain sebenarnya tetap terlihat penuh. |
-| Kredensial | Akun dan password; login tersimpan | Tombol **Cek login**, **Hapus login**. |
+| Origin login | Login melalui Coretax → Satu | Origin tetap milik aplikasi; tidak ada URL bebas atau pilihan situs pada Pengaturan saat ini. |
+| Kredensial | Akun dan password; login tersimpan | Target katalog **Cek login** / **Hapus login**; caption widget existing berbeda seperti dicatat di atas. |
 | Headless | Gunakan checkbox pemilik yang dikunci | Tambahkan: “Jika memungkinkan. Browser tetap muncul saat perlu login.” |
 | Workbook | File Excel | Nama dan subfolder asli tidak diubah. |
 | Checkpoint | Data sementara | Tidak menjanjikan otomatis dilanjutkan atau selalu sudah dibuat. |
@@ -63,6 +64,8 @@ Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya dis
 | Ringkasan pekerjaan | Ringkasan unduhan | NPWP/tahun, jumlah pilihan hanya bila diketahui. |
 
 ## Katalog teks inti
+
+Tabel ini menyalin nilai ID yang ada, bukan inventaris widget yang semuanya sudah digunakan. Teks pada source di luar katalog dan penggantian labelnya harus direview bersama self-test.
 
 | ID | Teks |
 | --- | --- |
@@ -96,6 +99,12 @@ Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya dis
 
 Template pemilihan, dialog penggantian, dan delta ID lain ada pada bagian 11 [spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md). Perubahan copy ID yang sama harus selaras; jangan membuat ID baru hanya karena susunan kata diperbaiki.
 
+## Sumber detail, browser, dan bantuan yang sudah tersedia
+
+Caption Pengaturan saat ini: **Sumber detail SPT**, nilai **DOM** / **JSON-hybrid (pilot)**, serta **Buka folder log**. Nilai internal mode adalah `dom` / `json-first`, bukan `json-hybrid`. Default desktop baru JSON-hybrid tidak mengubah default CLI/library tanpa opsi (DOM) dan tidak menimpa pilihan sah yang tersimpan. Jangan menampilkan “semua data berasal dari JSON”, menyebut fallback sebagai sukses JSON, atau menjanjikan kecepatan tanpa bukti. Mode capture bukan izin melewati login/CAPTCHA/MFA.
+
+Browser ditampilkan sebagai nilai `msedge` / `chrome` pada widget existing; nama manusiawi Microsoft Edge / Google Chrome adalah kandidat penyelarasan, bukan perilaku yang sudah diterapkan. `app.bugreport` hanya teks bantuan yang sudah dikontrak, bukan tombol yang otomatis mengirim email atau log.
+
 ## Pesan bersyarat, bukan dugaan
 
 Jika counter detail valid: “{processed} dari {total} SPT sudah diproses. Kelengkapan {verified} SPT sudah diperiksa.” Jangan memasukkan nilai kosong sebagai `0` atau memakai jumlah unit inventaris sebagai total SPT. Terminal tidak membawa manifest file/PDF: jangan membuat counter PDF dari perkiraan.
@@ -104,7 +113,7 @@ Untuk hasil parsial, **Buka hasil sementara** hanya tampil bersama judul **Hasil
 
 Petunjuk hasil: “Simpan seluruh folder hasil beserta subfoldernya. Jangan mengganti nama file agar tautannya tetap berfungsi.” PDF keuangan/auditan Badan ikut hanya jika tersedia melalui tautan yang didukung dan lolos pemeriksaan. BPE/lampiran lain tidak dijanjikan. Hapus kalimat lama yang mengecualikan seluruh PDF; jangan menggantinya dengan janji semua PDF tersedia.
 
-Penggantian: “File di bawah akan diganti seluruhnya dengan hasil pilihan kali ini. SPT lain yang sebelumnya berada dalam file yang sama tidak ikut dipertahankan. File lain yang tidak tercantum tetap ada.” Jangan menyebut merge data atau semua hasil lama pasti tetap ada. `resume.xlsx` baru merangkum pilihan kali ini.
+Penggantian: “File di bawah akan diganti seluruhnya dengan hasil pilihan kali ini. SPT lain yang sebelumnya berada dalam file yang sama tidak ikut dipertahankan. File lain yang tidak tercantum tetap ada.” Jangan menyebut merge data atau semua hasil lama pasti tetap ada. Pada folder yang sudah ada dan lolos verifikasi, `resume.xlsx` baru mengindeks hasil baru bersama workbook sah yang dipertahankan. Status unduhan saat ini tetap hanya menyatakan pilihan job ini; jangan menyebut isi seluruh indeks sebagai data yang baru diunduh.
 
 `LOGIN_UNVERIFIED` tidak membuktikan password salah. Gunakan alasan SSO/timeout hanya bila ada reason code yang aman dan terstruktur. Jika belum ada, gunakan “Pemeriksaan belum memastikan password. Ini tidak berarti password salah.” Jangan menebak dari URL, substring pesan, atau exception.
 
