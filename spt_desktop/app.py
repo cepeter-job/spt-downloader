@@ -549,6 +549,21 @@ class App:
             notice.set('\n'.join(messages))
             sync_focused_id()
 
+        def begin_keyboard_navigation(event):
+            if not self._interaction_current(interaction):
+                return 'break'
+            # Preserve native Ctrl-navigation, which moves focus without selecting.
+            if tree.focus() or event.state & 0x0004:
+                return None
+            visible = tree.get_children()
+            if visible:
+                first = visible[0]
+                tree.focus(first)
+                tree.selection_set(first)
+                tree.see(first)
+                update_selection()
+            return 'break'
+
         def filter_records(*args):
             nonlocal reset_pending
             if not self._interaction_current(interaction):
@@ -653,6 +668,7 @@ class App:
             return None
 
         for widget, sequence, handler in (
+                (tree, '<Down>', begin_keyboard_navigation),
                 (tree, '<<TreeviewSelect>>', update_selection), (tree, '<KeyRelease>', sync_focused_id),
                 (tree, '<ButtonRelease-1>', sync_focused_id), (tree, '<FocusIn>', sync_focused_id),
                 (dialog, '<Alt-j>', sort_key), (submit, '<Return>', confirm_key), (submit, '<space>', confirm_key),
@@ -732,6 +748,9 @@ class App:
         tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
         for ordinal, path in enumerate(files):
             tree.insert('', 'end', iid=f'file-{ordinal}', values=(path,))
+        # Item focus enables native arrow navigation without selecting a file
+        # or taking keyboard focus away from the safe decision button.
+        tree.focus('file-0')
         file_count = ttk.Label(body, name='file_count', text=copy_text('overwrite.files_count', count=len(files)),
                                style='SPT.Label.TLabel', wraplength=px(700))
         file_count.grid(row=4, column=0, sticky='ew', pady=(px(10), px(6)))
@@ -760,6 +779,19 @@ class App:
 
         def confirm_key(event):
             confirm()
+            return 'break'
+
+        def scroll_paths_key(event):
+            if not self._interaction_current(interaction):
+                return 'break'
+            if event.keysym == 'Home':
+                tree.xview_moveto(0)
+            elif event.keysym == 'End':
+                tree.xview_moveto(1)
+            elif event.keysym == 'Left':
+                tree.xview_scroll(-1, 'units')
+            elif event.keysym == 'Right':
+                tree.xview_scroll(1, 'units')
             return 'break'
 
         def update_scrollregion(event=None):
@@ -812,6 +844,8 @@ class App:
         for widget, sequence, handler in (
                 (safe_button, '<Return>', decline_key), (safe_button, '<space>', decline_key),
                 (approve_button, '<Return>', confirm_key), (approve_button, '<space>', confirm_key),
+                (tree, '<Control-Left>', scroll_paths_key), (tree, '<Control-Right>', scroll_paths_key),
+                (tree, '<Control-Home>', scroll_paths_key), (tree, '<Control-End>', scroll_paths_key),
                 (canvas, '<Configure>', request_reflow), (dialog, '<Configure>', request_reflow),
                 (body, '<Configure>', update_scrollregion), (dialog, '<FocusIn>', reveal_focus),
                 (dialog, '<MouseWheel>', wheel)):
