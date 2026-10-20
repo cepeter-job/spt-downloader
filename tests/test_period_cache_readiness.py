@@ -17,6 +17,39 @@ def stages(root):
 @pytest.mark.parametrize('deferred', [False, True])
 def test_ready_cache_filters_before_first_submitted_request_without_extra_navigation(tmp_path, monkeypatch, deferred):
     # Removing the late read must make the deferred fixture scan unfiltered.
+    original = driver.read_period_catalog
+    write_attempts = []
+
+    def readonly_catalog(page):
+        # Trap writes only during the reader; the fixture may seed its own cache
+        # during normal navigation outside this observation window.
+        page.evaluate('''() => {
+            window.catalogWriteAttempts = 0;
+            window.catalogOriginalMethods = [];
+            for (const [prototype, names] of [
+                [IDBObjectStore.prototype, ['put', 'add', 'delete', 'clear', 'createIndex', 'deleteIndex']],
+                [IDBDatabase.prototype, ['createObjectStore', 'deleteObjectStore']],
+                [IDBFactory.prototype, ['deleteDatabase']]]) {
+                for (const name of names) {
+                    window.catalogOriginalMethods.push([prototype, name, prototype[name]]);
+                    prototype[name] = function() {
+                        window.catalogWriteAttempts++;
+                        throw new Error('Synthetic readonly cache trap');
+                    };
+                }
+            }
+        }''')
+        try:
+            return original(page)
+        finally:
+            attempts = page.evaluate('''() => {
+                for (const [prototype, name, method] of window.catalogOriginalMethods)
+                    prototype[name] = method;
+                return window.catalogWriteAttempts;
+            }''')
+            write_attempts.append(attempts)
+
+    monkeypatch.setattr(driver, 'read_period_catalog', readonly_catalog)
     with synthetic_listing_browser(monkeypatch, year_catalog=True, deferred_catalog=deferred) as (page, metrics):
         with d.session(tmp_path/'logs', 'worker') as log:
             result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path/'job', max_pages=20)
@@ -31,12 +64,13 @@ def test_ready_cache_filters_before_first_submitted_request_without_extra_naviga
         submitted_entries = [e for e in result['audit'] if e['status'] == 'SPT Dilaporkan']
         assert sum('/submitted-' in p for p in metrics['list_navigations']) == len(submitted_entries)
         assert all(e['filter_mode'] == 'period-year-candidates' for e in submitted_entries)
+    assert write_attempts and not any(write_attempts)
     observed = stages(tmp_path/'logs')
     assert observed.count('readiness') == int(deferred)
     assert observed[0] == 'planning' and observed[-1] == 'after_inventory'
 
 
-@pytest.mark.parametrize('mode', ['absent', 'expired', 'retry_error'])
+@pytest.mark.parametrize('mode', ['absent', 'expired', 'expired_deferred', 'retry_error'])
 def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(tmp_path, monkeypatch, mode):
     original = driver.read_period_catalog
     calls = []
@@ -48,7 +82,8 @@ def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(tmp_path,
         return original(page)
 
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(monkeypatch, year_catalog=mode == 'expired', expired_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(monkeypatch, year_catalog=mode in ('expired', 'expired_deferred'),
+                                   expired_catalog=True, deferred_catalog=mode == 'expired_deferred') as (page, metrics):
         with d.session(tmp_path/'logs', 'worker') as log:
             result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path/'job', max_pages=20)
             assert log.flush()
@@ -80,6 +115,7 @@ def test_recovered_cache_still_requires_partition_recheck(tmp_path, monkeypatch,
     monkeypatch.setattr(driver, 'read_period_catalog', read)
     with synthetic_listing_browser(monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=20)
+        assert metrics['submitted_requests'] and all(p['Filters'] for p in metrics['submitted_requests'])
         assert not result['inventory_complete']
         assert any('Period catalog changed' in e['message'] for e in result['errors'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
