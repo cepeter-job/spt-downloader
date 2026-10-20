@@ -506,7 +506,7 @@ def test_more_rows_than_declared_total_fails_closed():
 def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start=0,
                               changed_total=False, empty=False, stop_state=None,
                               year_catalog=False, ignore_source_filter=False, expired_catalog=False,
-                              auxiliary_request=False, hash_link=False, deferred_catalog=False):
+                              auxiliary_request=False, hash_link=False, deferred_catalog=False, archive_period_conflict=False):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -567,15 +567,22 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
       }
     };</script>'''
 
-    def listing(submitted):
+    def listing(submitted, archived=False):
         import html
+        archive_seen = any("/archived-returnsheets/" in url for url in metrics["list_navigations"])
+        available_cache = cache if not deferred_catalog or len(metrics["list_navigations"]) > 1 else None
+        if archive_period_conflict and not archive_seen:
+            available_cache = None
         headers = ''.join('<th>' + html.escape(label) + '</th>' for label in labels)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
                              'headers': labels, 'displays': displays_by_id,
-                             'catalog': cache if not deferred_catalog or len(metrics['list_navigations']) > 1 else None,
+                             'catalog': available_cache, 'archived': archived,
+                             'codePeriod': archive_period_conflict and submitted and not archive_seen,
                              'auxiliary': auxiliary_request, 'hashLink': hash_link})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
-        return '''<a href="/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer">SPT Dilaporkan</a>
+        archive_link = ('<a href="/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer">Archieved Return Sheets</a>'
+                        if archive_period_conflict else '')
+        return '''<a href="/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer">SPT Dilaporkan</a>''' + archive_link + '''
         <div class="main-content"><p-table><table><thead><tr>''' + headers + '''</tr></thead><tbody></tbody></table>
         <div class="p-paginator"><button class="p-paginator-prev" onclick="first=0;load()">Previous</button>
         <button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="first+=2;load()">Next</button></div>
@@ -590,7 +597,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         }):Promise.resolve();
         async function load(){
           await cacheReady;
-          const request={TaxpayerAggregateIdentifier:'fixture-taxpayer',First:first,Rows:2,Filters:[],isArchieved:false,LanguageId:1,SortField:null,SortOrder:null};
+          const request={TaxpayerAggregateIdentifier:'fixture-taxpayer',First:first,Rows:2,Filters:[],isArchieved:config.archived,LanguageId:1,SortField:null,SortOrder:null};
           fetch(''' + json.dumps(endpoint) + ''',{method:'POST',body:JSON.stringify(request)}).then(r=>r.json()).then(body=>{
             const received=body.Payload.Data||[];const tbody=document.querySelector('tbody');tbody.replaceChildren();
             received.forEach((record,i)=>{
@@ -599,6 +606,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
               view.onclick=()=>config.catalog?window.open('/returnsheets/id-ID/fixture-taxpayer/details/'+encodeURIComponent(record.RecordId)):fetch('/fixture-disallowed-action');
               config.headers.forEach((label,column)=>{
                 const td=document.createElement('td');td.textContent=config.displays[record.RecordId][label];
+                if(config.codePeriod && record.RecordId==='fixture-normal' && label==='Masa Pajak')td.textContent=record.TaxPeriodCode;
                 if(column===0)td.appendChild(view);
                 row.appendChild(td);
               });tbody.appendChild(row);
@@ -635,6 +643,9 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
                 elif url.path == '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer':
                     metrics['list_navigations'].append(url.path)
                     route.fulfill(body=listing(True), content_type='text/html')
+                elif archive_period_conflict and url.path == '/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer':
+                    metrics['list_navigations'].append(url.path)
+                    route.fulfill(body=listing(True, archived=True), content_type='text/html')
                 elif url.path in ('/returnsheet/api/returnsheetsfixture', '/returnsheet/api/returnsheetssubmitted'):
                     data = request.post_data_json
                     assert request.method == 'POST'
