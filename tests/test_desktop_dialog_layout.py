@@ -6,7 +6,7 @@ from tkinter import ttk
 
 import pytest
 
-from support_gui import ConsentController, consent_event, named_widget, widgets
+from support_gui import ConsentController, consent_event, named_widget
 
 
 NPWP = '0000000000000001'

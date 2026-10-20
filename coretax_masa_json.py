@@ -78,12 +78,18 @@ def bind_unifikasi_listing_identity(response, *, record, scope):
     return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPh Unifikasi')
 
 
+def bind_corporate_listing_identity(response, *, record, scope):
+    """Bind the verified Rupiah annual listing, without granting form eligibility."""
+    return _bind_masa_listing_identity(response, record=record, scope=scope, tax='PPh Badan')
+
+
 def _bind_masa_listing_identity(response, *, record, scope, tax):
     # Share custody checks, not display aliases or inferred tax classifications.
     prefix, tax_code, sheet_code = {
         'PPN': ('ppn', 'VAT_VAT', 'VAT_VATR'),
         'PPh Pasal 21/26': ('pph21', 'ICT_WIT', 'ICT_WITR'),
         'PPh Unifikasi': ('unifikasi', 'ICT_WT', 'ICT_WTR'),
+        'PPh Badan': ('corporate', 'ICT_RCIT', 'ICT_RCITR'),
     }[tax]
     unavailable = {'eligible': False, 'reason': 'missing_native_' + prefix + '_listing_identity'}
     if record.get('meta', {}).get('Jenis Pajak') != tax:
@@ -134,7 +140,17 @@ def _bind_masa_listing_identity(response, *, record, scope, tax):
         return unavailable
     fields = {key: row[key] for key in keys}
     reasons = []
-    _selected_period(record, {'native_fields': fields}, scope, reasons)
+    if tax == 'PPh Badan':
+        period = fields['TaxPeriodCode']
+        if not re.fullmatch(r'0112[0-9]{4}', period):
+            return unavailable
+        year = int(period[4:])
+        if scope[2] == 'period' and year != scope[1]:
+            raise JsonSafetyError('Corporate listing period contradicts selected scope')
+        if record['meta'].get('Masa Pajak') != f'Januari - Desember {year}':
+            raise JsonSafetyError('Corporate listing period contradicts selected display')
+    else:
+        _selected_period(record, {'native_fields': fields}, scope, reasons)
     if reasons:
         return unavailable
     model = fields['ReturnSheetModel']

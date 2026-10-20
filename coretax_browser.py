@@ -48,6 +48,44 @@ GROUP_JS = r'''(element) => {
  return '';
 }'''
 
+CORPORATE_STRUCTURE_JS = r'''(table, name) => {
+ const panel=table.closest('.p-tabview-panel');
+ const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form');
+ if(!panel || !form || form.closest('.p-tabview-panel')!==panel) return null;
+ const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':'';
+ if(form.localName!==expectedForm) return null;
+ const roles={
+  'rsh-citr-l1d-grid1':['L1-D','A. LAPORAN LABA RUGI'],
+  'rsh-citr-l1d-grid2':['L1-D','B. LAPORAN POSISI KEUANGAN'],
+  'rsh-citr-l1d-grid3':['L1-D','B. LAPORAN POSISI KEUANGAN'],
+  'rshshr-citr-l9-form-grid1':['L9','HARTA BERWUJUD'],
+  'rshshr-citr-l9-form-grid2':['L9','BANGUNAN'],
+  'rshshr-citr-l9-form-grid3':['L9','HARTA TIDAK BERWUJUD']
+ };
+ const components=[],groups=[];
+ for(let node=table.parentElement;node && node!==form;node=node.parentElement){
+  if(roles[node.localName]) components.push(node.localName);
+  if(!['p-panel','p-accordiontab'].includes(node.localName)) continue;
+  let selector=node.localName==='p-panel'?'.p-panel-title':'.p-accordion-header-text';
+  let headings=[...node.querySelectorAll(selector)].filter(e=>e.closest(node.localName)===node);
+  if(!headings.length && node.localName==='p-accordiontab')
+   headings=[...node.querySelectorAll('.p-accordion-header a')].filter(e=>e.closest('p-accordiontab')===node);
+  if(headings.length!==1) return null;
+  groups.unshift((headings[0].textContent||'').replace(/\s+/g,' ').trim());
+ }
+ if(components.length!==1) return null;
+ const component=components[0], role=roles[component];
+ if(role[0]!==name || groups[0]!==role[1]) return null;
+ if(name==='L1-D' && groups.length!==1) return null;
+ if(name==='L9'){
+  const inner=component.endsWith('grid2')?['PERMANEN','TIDAK PERMANEN']:
+   ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA'];
+  if(groups.length!==2 || !inner.includes(groups[1])) return null;
+ }
+ return {form:name,component,groups};
+}'''
+
+
 TABLE_JS = r'''(table) => {
  const value=CELL;
  const group=GROUP;
@@ -359,6 +397,10 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 continue
             try:
                 captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel)
+                if financial_required and name in ('L1-D', 'L9'):
+                    structure = table.evaluate(CORPORATE_STRUCTURE_JS, name)
+                    if structure:
+                        captured['source_structure'] = structure
                 section['tables'].append(captured)
                 if not captured['complete']:
                     errors.append({'object': name, 'message': captured['warning']})
@@ -1378,13 +1420,14 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                                 for key in ('code', 'label', 'catalog_binding_sha256')):
                                             continue
                                     raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
-                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi'):
+                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
-                                                               bind_unifikasi_listing_identity)
+                                                               bind_unifikasi_listing_identity, bind_corporate_listing_identity)
                                 prefix, bind_identity = {
                                     'PPN': ('ppn', bind_ppn_listing_identity),
                                     'PPh Pasal 21/26': ('pph21', bind_pph21_listing_identity),
                                     'PPh Unifikasi': ('unifikasi', bind_unifikasi_listing_identity),
+                                    'PPh Badan': ('corporate', bind_corporate_listing_identity),
                                 }[record['meta']['Jenis Pajak']]
                                 identity = bind_identity(current_response, record=record, scope=scope)
                                 if identity['eligible']:

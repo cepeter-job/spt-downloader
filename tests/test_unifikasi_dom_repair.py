@@ -115,7 +115,8 @@ def test_daftar_i_dpp_numeric_and_body_boundary_style(tmp_path, count):
                     assert copy(getattr(sheet.cell(8, col), attr)) == copy(getattr(sheet.cell(7, col), attr))
                     assert copy(getattr(sheet.cell(8, col), attr)) == copy(getattr(sheet.cell(9, col), attr))
         if count:
-            assert any(c.value == 'SYNTHETIC PAYMENT METHOD' for row in sheet for c in row)
+            assert not any(c.value == 'SYNTHETIC PAYMENT METHOD' for row in sheet for c in row)
+            assert table['rows'][0][12] == 'SYNTHETIC PAYMENT METHOD'
     finally:
         book.close()
 
