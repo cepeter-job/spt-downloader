@@ -344,3 +344,225 @@ def test_old_reflow_cannot_steal_terminal_focus(active_app):
     assert root.focus_get() is app.start_button
     assert root.bind('<Alt-j>') == root_binding
     assert not controller.replies and not controller.stopped
+
+
+OVERWRITE_FOLDER = r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'
+
+
+def open_overwrite(active_app, payload=None):
+    root, app, controller = active_app
+    controller.payload = ({'files': ['SPT_Badan_2025_Normal.xlsx'], 'folder': OVERWRITE_FOLDER}
+                          if payload is None else payload)
+    app.on_event(consent_event(controller, 'overwrite'))
+    settle(root)
+    return app._interaction['dialog']
+
+
+@pytest.mark.parametrize('folder', [None, '', ' \t\n', 7, False, [], {}])
+def test_blank_or_nonstring_folder_never_opens_confirmation(active_app, folder):
+    root, app, controller = active_app
+    controller.payload = {'files': ['SPT_Badan_2025_Normal.xlsx'], 'folder': folder}
+    app.on_event(consent_event(controller, 'overwrite'))
+    settle(root)
+    assert controller.stopped and controller.replies == []
+    assert app._interaction is None
+    assert not any(isinstance(child, tk.Toplevel) for child in root.winfo_children())
+    assert app._ui_state.terminal_status is None
+    assert 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.' in app.status.get()
+
+
+def test_missing_folder_is_not_defaulted(active_app):
+    root, app, controller = active_app
+    payload = {'files': ['SPT_Badan_2025_Normal.xlsx']}
+    controller.payload = payload
+    app.on_event(consent_event(controller, 'overwrite'))
+    settle(root)
+    assert app._interaction is None and controller.replies == [] and controller.stopped
+    assert payload == {'files': ['SPT_Badan_2025_Normal.xlsx']}
+    assert not any(isinstance(child, tk.Toplevel) for child in root.winfo_children())
+    assert app._ui_state.terminal_status is None
+
+
+@pytest.mark.parametrize('folder', [None, ' ', OVERWRITE_FOLDER])
+def test_stale_malformed_folder_cannot_stop_new_job(active_app, monkeypatch, folder):
+    root, app, controller = active_app
+    event = consent_event(controller, 'overwrite')
+    def stale_read(request):
+        controller.reads.append(request)
+        controller.job_id = 'new-synthetic-job'
+        return {'files': ['SPT_Badan_2025_Normal.xlsx'], 'folder': folder}
+    monkeypatch.setattr(controller, 'read_request', stale_read)
+    app.on_event(event)
+    settle(root)
+    assert controller.job_id == 'new-synthetic-job' and controller.active
+    assert not controller.stopped and not controller.replies and app._interaction is None
+    assert not any(isinstance(child, tk.Toplevel) for child in root.winfo_children())
+    read_count = len(controller.reads)
+    app.on_event(event)
+    assert len(controller.reads) == read_count, 'Foreign events are rejected before private payload reads'
+
+
+@pytest.mark.parametrize('folder', [OVERWRITE_FOLDER, '  ' + OVERWRITE_FOLDER + '  '])
+def test_long_readonly_values_remain_literal_and_reachable(active_app, folder):
+    root, app, controller = active_app
+    files = ['SPT Masa 21/' + 'bagian-' * 90 + 'Januari_Normal.xlsx',
+             '::synthetic {file}; [literal] / Ω.xlsx', 'resume.xlsx', 'resume.xlsx']
+    dialog = open_overwrite(active_app, {'files': files, 'folder': folder})
+    field = named_widget(dialog, 'folder')
+    tree = named_widget(dialog, 'files')
+    assert field.instate(['readonly']) and field.get() == folder
+    field.delete(0, 'end')
+    field.insert(0, 'must-not-replace-folder')
+    field.selection_range(0, 'end')
+    assert field.get() == folder and not controller.replies
+    assert str(tree.cget('selectmode')) == 'none'
+    assert [tree.item(iid, 'values')[0] for iid in tree.get_children()] == files
+    assert label_text(named_widget(dialog, 'file_count')) == '4 file akan diganti.'
+    assert len(tree.get_children()) == len(files)
+
+
+@pytest.mark.parametrize('action,expected', [
+    ('escape', False), ('x', False), ('alt-s', None), ('approve-click', True),
+    ('approve-Return', True), ('approve-space', True), ('decline-Return', False), ('decline-space', False),
+])
+def test_overwrite_keyboard_decisions_preserve_protocol(active_app, action, expected):
+    root, app, controller = active_app
+    dialog = open_overwrite(active_app)
+    safe = named_widget(dialog, 'decline')
+    approve = named_widget(dialog, 'confirm')
+    assert root.focus_get() is safe, 'Opening the dialog must not focus approval'
+    assert not controller.replies
+    if action == 'escape':
+        safe.event_generate('<Escape>')
+    elif action == 'x':
+        dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
+    elif action == 'alt-s':
+        named_widget(dialog, 'folder').focus_set()
+        root.update()
+        named_widget(dialog, 'folder').event_generate('<Alt-s>')
+    elif action == 'approve-click':
+        approve.invoke()
+    else:
+        control, key = action.split('-', 1)
+        target = approve if control == 'approve' else safe
+        target.focus_set()
+        root.update()
+        target.event_generate(f'<KeyPress-{key}>')
+    settle(root)
+    assert not dialog.winfo_exists() and app._interaction is None
+    if expected is None:
+        assert controller.stopped and controller.replies == []
+        assert app._ui_state.view_state == 'stopping'
+    else:
+        assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': expected})]
+        assert not controller.stopped
+        assert app._ui_state.view_state == ('publishing' if expected else 'cancellation_pending')
+    assert app._ui_state.terminal_status is None
+    app.on_event(consent_event(controller, 'overwrite'))
+    assert app._interaction is None
+    assert len(controller.replies) == (0 if expected is None else 1)
+
+
+@pytest.mark.parametrize('response', ['false', 'io', 'switched-io'])
+def test_overwrite_response_false_and_exception_do_not_fabricate_results(active_app, monkeypatch, response):
+    root, app, controller = active_app
+    dialog = open_overwrite(active_app)
+    before, status = app._ui_state, app.status.get()
+    def respond(*args):
+        if response == 'false':
+            return False
+        if response == 'switched-io':
+            controller.job_id = 'replacement-synthetic-job'
+        raise OSError('Synthetic reply failure')
+    monkeypatch.setattr(controller, 'respond', respond)
+    named_widget(dialog, 'confirm').invoke()
+    settle(root)
+    assert app._interaction is None and not dialog.winfo_exists()
+    assert not controller.replies and app._ui_state.terminal_status is None
+    assert app._ui_state.output is None and app._ui_state.selected_count == before.selected_count
+    if response == 'io':
+        assert controller.stopped and app._ui_state.view_state == 'stopping'
+    else:
+        assert not controller.stopped and app._ui_state == before and app.status.get() == status
+
+
+@pytest.mark.parametrize('width,height', [(800, 520), (640, 560), (540, 390)])
+def test_overwrite_layout_keeps_actions_visible_and_paths_reachable(active_app, width, height):
+    root, app, controller = active_app
+    folder = OVERWRITE_FOLDER + '\\' + 'synthetic-segment-' * 30
+    files = [f'synthetic/{index:03}-' + 'long-part-' * 40 + '.xlsx' for index in range(45)]
+    dialog = open_overwrite(active_app, {'files': files, 'folder': folder})
+    dialog.geometry(f'{width}x{height}')
+    settle(root)
+    actions = named_widget(dialog, 'actions')
+    viewport = named_widget(dialog, 'body_viewport')
+    field = named_widget(dialog, 'folder')
+    tree = named_widget(dialog, 'files')
+    assert visible_in(dialog, actions)
+    assert visible_in(dialog, named_widget(dialog, 'decline'))
+    assert visible_in(dialog, named_widget(dialog, 'confirm'))
+    assert viewport.winfo_rooty() + viewport.winfo_height() <= actions.winfo_rooty()
+    field.focus_set()
+    settle(root)
+    assert visible_in(viewport, field)
+    field.xview_moveto(1)
+    assert field.xview()[1] == 1 and field.get() == folder
+    for control in (field, tree):
+        control.focus_set()
+        root.update()
+        control.event_generate('<Return>')
+        root.update()
+    assert not controller.replies
+    tree.xview_moveto(1)
+    tree.yview_moveto(1)
+    root.update()
+    assert tree.xview()[0] > 0 and tree.xview()[1] == 1
+    assert tree.yview()[0] > 0 and tree.yview()[1] == 1
+    assert tree.bbox('file-44'), 'The last entry must remain reachable'
+    assert [tree.item(iid, 'values')[0] for iid in tree.get_children()] == files
+    assert label_text(named_widget(dialog, 'file_count')) == '45 file akan diganti.'
+
+
+def test_dialog_close_cancels_only_owned_callbacks(active_app, monkeypatch):
+    root, app, controller = active_app
+    dialog = open_overwrite(active_app)
+    sentinel = root.after(60000, lambda: None)
+    before = set(root.tk.splitlist(root.tk.call('after', 'info')))
+    for _ in range(20):
+        dialog.event_generate('<Configure>')
+    token = app._interaction['layout_after']
+    assert token and set(root.tk.splitlist(root.tk.call('after', 'info'))) - before == {token}
+    app._close_interaction()
+    settle(root)
+    baseline_count = len(root.tk.splitlist(root.tk.call('after', 'info')))
+    original_start = controller.start
+    def start_unique(*args, **kwargs):
+        original_start(*args, **kwargs)
+        controller.job_id = f'synthetic-overwrite-cycle-{controller.starts}'
+        return controller.job_id
+    monkeypatch.setattr(controller, 'start', start_unique)
+    for ordinal in range(25):
+        controller.active = False
+        app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
+                      'percent': 90, 'output': None, 'message': 'Synthetic lifecycle complete'})
+        app.start()
+        app.on_event(consent_event(controller, 'overwrite', request_id=f'{ordinal:032x}'))
+        root.update_idletasks()
+        interaction = app._interaction
+        assert interaction is not None
+        modal = interaction['dialog']
+        modal.event_generate('<Configure>')
+        pending = interaction['layout_after']
+        app._close_interaction()
+        assert interaction['layout_after'] is None and interaction['bindings'] == [] and interaction['traces'] == []
+        after = set(root.tk.splitlist(root.tk.call('after', 'info')))
+        assert sentinel in after and (pending is None or pending not in after)
+        assert not modal.winfo_exists() and root.grab_current() is None
+    controller.active = False
+    app.on_event({'job_id': controller.job_id, 'type': 'terminal', 'status': 'CANCELLED',
+                  'percent': 90, 'output': None, 'message': 'Synthetic lifecycle complete'})
+    settle(root)
+    assert len(root.tk.splitlist(root.tk.call('after', 'info'))) == baseline_count
+    assert not any(isinstance(child, tk.Toplevel) for child in root.winfo_children())
+    assert not controller.replies and not controller.stopped
+    root.after_cancel(sentinel)

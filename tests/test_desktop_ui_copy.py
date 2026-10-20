@@ -108,6 +108,11 @@ def test_catalog_matches_approved_copy():
         'download.cancelled.title': 'Unduhan dihentikan',
         'download.error.title': 'Unduhan belum berhasil',
         'overwrite.title': 'Ganti hasil sebelumnya?',
+        'overwrite.folder.label': 'Folder hasil sebelumnya',
+        'overwrite.help': 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.',
+        'overwrite.files_count': '{count} file akan diganti.',
+        'overwrite.keep_hint': 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.',
+        'overwrite.context_missing': 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.',
         'overwrite.decline': 'Jangan ganti',
         'overwrite.confirm': 'Ganti file tersebut',
         'settings.origin.label': 'Situs login',
@@ -147,3 +152,32 @@ def test_copy_module_has_only_standard_library_imports():
 def test_phase2_selection_copy_is_exact(key, expected):
     from spt_desktop.ui_copy import copy_text
     assert copy_text(key) == expected
+
+
+@pytest.mark.parametrize('key,expected', [
+    ('overwrite.folder.label', 'Folder hasil sebelumnya'),
+    ('overwrite.help', 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.'),
+    ('overwrite.keep_hint', 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.'),
+    ('overwrite.context_missing', 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.'),
+])
+def test_phase2_overwrite_copy_is_exact(key, expected):
+    from spt_desktop.ui_copy import copy_text
+    assert copy_text(key) == expected
+
+
+@pytest.mark.parametrize('count,expected', [(0, '0 file akan diganti.'), (2, '2 file akan diganti.')])
+def test_overwrite_count_template_is_strict(count, expected):
+    from spt_desktop.ui_copy import copy_text
+    assert copy_text('overwrite.files_count', count=count) == expected
+
+
+@pytest.mark.parametrize('values,error', [
+    ({'count': True}, TypeError), ({'count': False}, TypeError),
+    ({'count': '2'}, TypeError), ({'count': 2.0}, TypeError),
+    ({'count': -1}, ValueError), ({}, ValueError),
+    ({'count': 1, 'extra': 0}, ValueError),
+])
+def test_overwrite_count_rejects_wrong_types_and_keys(values, error):
+    from spt_desktop.ui_copy import copy_text
+    with pytest.raises(error):
+        copy_text('overwrite.files_count', **values)
