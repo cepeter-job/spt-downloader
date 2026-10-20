@@ -669,41 +669,156 @@ class App:
         filter_records()
         entry.focus_set()
 
-    def overwrite_dialog(self,event):
-        request=self._read_interaction(event,'overwrite')
-        if request is None:return
-        key,payload=request;files=payload.get('files');folder=payload.get('folder')
-        if (not isinstance(files,list) or not files or any(not isinstance(path,str) or not path for path in files)
-                or ('folder' in payload and (not isinstance(folder,str) or not folder))):
-            self._interaction_error(key[0],'Daftar file yang akan diganti belum bisa ditampilkan.');return
-        interaction=self._new_interaction(key,'Ganti hasil sebelumnya?')
-        dialog=interaction['dialog'];dialog.minsize(540,320)
-        frame=ttk.Frame(dialog,padding=20);frame.pack(fill='both',expand=True)
-        frame.columnconfigure(0,weight=1)
-        ttk.Label(frame,text='File berikut sudah ada. Setiap file diganti seluruhnya dengan SPT yang dipilih pada proses ini.',
-                  wraplength=540).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12))
-        tree_row=1
-        if folder is not None:
-            ttk.Label(frame,text='Folder hasil sebelumnya').grid(row=1,column=0,columnspan=2,sticky='w',pady=(0,4))
-            ttk.Label(frame,text=folder,wraplength=540).grid(row=2,column=0,columnspan=2,sticky='w',pady=(0,12))
-            tree_row=3
-        frame.rowconfigure(tree_row,weight=1)
-        tree=ttk.Treeview(frame,columns=('file',),show='headings',selectmode='none',height=min(8,len(files)))
-        tree.heading('file',text='File yang akan diganti');tree.column('file',width=540,minwidth=300)
-        tree.grid(row=tree_row,column=0,sticky='nsew')
-        vertical=ttk.Scrollbar(frame,orient='vertical',command=tree.yview);vertical.grid(row=tree_row,column=1,sticky='ns')
-        horizontal=ttk.Scrollbar(frame,orient='horizontal',command=tree.xview);horizontal.grid(row=tree_row+1,column=0,sticky='ew')
-        tree.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set)
-        for ordinal,path in enumerate(files):tree.insert('','end',iid=f'file-{ordinal}',values=(path,))
-        ttk.Label(frame,text='Pilih Jangan ganti untuk mempertahankan file yang sudah ada.',wraplength=540).grid(
-            row=tree_row+2,column=0,columnspan=2,sticky='w',pady=12)
-        buttons=ttk.Frame(frame);buttons.grid(row=tree_row+3,column=0,columnspan=2,sticky='e')
-        decline=lambda:self._reply_interaction(interaction,{'overwrite':False})
-        safe_button=ttk.Button(buttons,text='Jangan ganti',command=decline)
-        safe_button.pack(side='left',padx=(0,8))
-        ttk.Button(buttons,text='Ganti file tersebut',command=lambda:self._reply_interaction(interaction,{'overwrite':True})).pack(side='left')
-        dialog.protocol('WM_DELETE_WINDOW',decline)
-        dialog.bind('<Escape>',lambda event:decline())
+    def overwrite_dialog(self, event):
+        request = self._read_interaction(event, 'overwrite')
+        if request is None:
+            return
+        key, payload = request
+        files, folder = payload.get('files'), payload.get('folder')
+        if (not isinstance(files, list) or not files
+                or any(not isinstance(path, str) or not path for path in files)):
+            self._interaction_error(key[0], 'Daftar file yang akan diganti belum bisa ditampilkan.')
+            return
+        if not isinstance(folder, str) or not folder.strip():
+            self._interaction_error(key[0], copy_text('overwrite.context_missing'))
+            return
+        # The active job can change while the private request is being read.
+        if not self._export_job_active(key[0]):
+            return
+        interaction = self._new_interaction(key, copy_text('overwrite.title'))
+        dialog = interaction['dialog']
+        scale = effective_scale(self.root)
+        px = lambda value: dip_to_px(value, scale)
+        frame = ttk.Frame(dialog, padding=px(12))
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(frame, name='body_viewport', borderwidth=0, highlightthickness=0,
+                           background='SystemWindow', takefocus=False)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        body_scroll = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview, takefocus=False)
+        body_scroll.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=body_scroll.set)
+        body = ttk.Frame(canvas, padding=px(4), style='SPT.Card.TFrame')
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(3, weight=1)
+        body_window = canvas.create_window(0, 0, window=body, anchor='nw')
+        intro = ttk.Label(body, text=copy_text('overwrite.help'), style='SPT.TLabel', wraplength=px(700))
+        intro.grid(row=0, column=0, sticky='ew', pady=(0, px(10)))
+        folder_label = ttk.Label(body, text=copy_text('overwrite.folder.label'),
+                                 style='SPT.Label.TLabel', wraplength=px(700))
+        folder_label.grid(row=1, column=0, sticky='ew', pady=(0, px(4)))
+        # Validation tests nonblank context; the actual path remains untouched.
+        folder_value = tk.StringVar(dialog, value=folder)
+        folder_field = ttk.Entry(body, name='folder', textvariable=folder_value,
+                                  state='readonly', style='SPT.TEntry')
+        folder_field.grid(row=2, column=0, sticky='ew', pady=(0, px(10)))
+        table = ttk.Frame(body, style='SPT.Card.TFrame')
+        table.grid(row=3, column=0, sticky='nsew')
+        table.columnconfigure(0, weight=1)
+        table.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(table, name='files', columns=('file',), show='headings',
+                            selectmode='none', height=min(8, len(files)), style='SPT.Dialog.Treeview')
+        tree.heading('file', text='File yang akan diganti')
+        path_width = max(int(dialog.tk.call('font', 'measure', 'SPTBody', path)) for path in files) + px(24)
+        tree.column('file', width=max(px(300), path_width), minwidth=px(100), stretch=False)
+        tree.grid(row=0, column=0, sticky='nsew')
+        vertical = ttk.Scrollbar(table, orient='vertical', command=tree.yview, takefocus=False)
+        vertical.grid(row=0, column=1, sticky='ns')
+        horizontal = ttk.Scrollbar(table, orient='horizontal', command=tree.xview, takefocus=False)
+        horizontal.grid(row=1, column=0, sticky='ew')
+        tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        for ordinal, path in enumerate(files):
+            tree.insert('', 'end', iid=f'file-{ordinal}', values=(path,))
+        file_count = ttk.Label(body, name='file_count', text=copy_text('overwrite.files_count', count=len(files)),
+                               style='SPT.Label.TLabel', wraplength=px(700))
+        file_count.grid(row=4, column=0, sticky='ew', pady=(px(10), px(6)))
+        keep_hint = ttk.Label(body, text=copy_text('overwrite.keep_hint'), style='SPT.TLabel', wraplength=px(700))
+        keep_hint.grid(row=5, column=0, sticky='ew')
+        actions = ttk.Frame(frame, name='actions')
+        actions.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(px(10), 0))
+        actions.columnconfigure(0, weight=1)
+
+        def decline():
+            return self._reply_interaction(interaction, {'overwrite': False})
+
+        def confirm():
+            return self._reply_interaction(interaction, {'overwrite': True})
+
+        safe_button = ttk.Button(actions, name='decline', text=copy_text('overwrite.decline'),
+                                  style='SPT.TButton', command=decline)
+        safe_button.grid(row=0, column=1, padx=(0, px(8)), sticky='e')
+        approve_button = ttk.Button(actions, name='confirm', text=copy_text('overwrite.confirm'),
+                                     style='SPT.Primary.TButton', command=confirm)
+        approve_button.grid(row=0, column=2, sticky='e')
+
+        def decline_key(event):
+            decline()
+            return 'break'
+
+        def confirm_key(event):
+            confirm()
+            return 'break'
+
+        def update_scrollregion(event=None):
+            if self._interaction_current(interaction):
+                canvas.configure(scrollregion=canvas.bbox('all'))
+
+        def reflow():
+            interaction['layout_after'] = None
+            if not self._interaction_current(interaction):
+                return
+            width = max(1, canvas.winfo_width())
+            canvas.itemconfigure(body_window, width=width)
+            text_width = max(px(80), width - px(8))
+            for label in (intro, folder_label, file_count, keep_hint):
+                if int(label.cget('wraplength') or 0) != text_width:
+                    label.configure(wraplength=text_width)
+            canvas.itemconfigure(body_window, height=max(body.winfo_reqheight(), canvas.winfo_height()))
+            update_scrollregion()
+
+        def request_reflow(event=None):
+            if (not self._interaction_current(interaction)
+                    or (event is not None and event.widget not in (dialog, canvas))):
+                return
+            if interaction['layout_after'] is None:
+                interaction['layout_after'] = dialog.after(75, reflow)
+
+        def reveal_focus(event):
+            if not self._interaction_current(interaction) or not str(event.widget).startswith(str(body) + '.'):
+                return
+            top = event.widget.winfo_rooty() - canvas.winfo_rooty()
+            height = canvas.winfo_height()
+            if top < 0 or top + event.widget.winfo_height() > height:
+                extent = max(1, body.winfo_height())
+                if event.widget.winfo_height() > height:
+                    target = canvas.canvasy(0) + top
+                elif top < 0:
+                    target = canvas.canvasy(0) + top - px(4)
+                else:
+                    target = canvas.canvasy(0) + top + event.widget.winfo_height() - height + px(4)
+                canvas.yview_moveto(max(0, target) / extent)
+
+        def wheel(event):
+            if not self._interaction_current(interaction) or event.widget is tree:
+                return None
+            if event.widget is canvas or str(event.widget).startswith(str(body) + '.'):
+                canvas.yview_scroll(-int(event.delta / 120), 'units')
+                return 'break'
+            return None
+
+        for widget, sequence, handler in (
+                (safe_button, '<Return>', decline_key), (safe_button, '<space>', decline_key),
+                (approve_button, '<Return>', confirm_key), (approve_button, '<space>', confirm_key),
+                (canvas, '<Configure>', request_reflow), (dialog, '<Configure>', request_reflow),
+                (body, '<Configure>', update_scrollregion), (dialog, '<FocusIn>', reveal_focus),
+                (dialog, '<MouseWheel>', wheel)):
+            token = widget.bind(sequence, handler, add='+')
+            interaction['bindings'].append((widget, sequence, token))
+        dialog.protocol('WM_DELETE_WINDOW', decline)
+        dialog.bind('<Escape>', decline_key)
+        configure_dialog(dialog, self.root, size_dip=(800, 520))
+        request_reflow()
         safe_button.focus_set()
 
     def settings(self):
