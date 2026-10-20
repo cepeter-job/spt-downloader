@@ -7,7 +7,7 @@ import pytest
 from spt_desktop.app import App
 
 
-from support_gui import button, consent_event, widgets, window
+from support_gui import named_widget, button, consent_event, widgets, window
 
 def select_first(root, dialog):
     tree = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'Treeview')
@@ -31,7 +31,7 @@ def test_selection_starts_empty_and_search_sends_only_the_clicked_return(tmp_pat
         button = next(widget for widget in widgets(dialog)
                       if widget.winfo_class() == 'TButton' and widget.cget('text') == 'Sedot SPT terpilih')
         assert not tree.selection() and button.instate(['disabled']) and not controller.replies
-        entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+        entry = named_widget(dialog, 'search')
         entry.insert(0, 'Februari')
         root.update()
         assert len(tree.get_children()) == 1
@@ -79,7 +79,7 @@ def test_selection_uses_local_row_ids_and_preserves_the_observed_identifier(tmp_
 def test_filtering_clears_hidden_selections_before_consent(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
         tree = select_first(root, dialog)
-        entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+        entry = named_widget(dialog, 'search')
         entry.insert(0, 'februari')
         root.update()
         assert len(tree.get_children()) == 1 and not tree.selection()
@@ -169,7 +169,7 @@ def test_foreign_request_does_not_replace_the_pending_dialog(tmp_path):
 
 def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
-        entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+        entry = named_widget(dialog, 'search')
         entry.insert(0, 'Februari')
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         assert root.grab_current() is None
