@@ -10,7 +10,7 @@ Mulai dari [baseline aktif 20 Oktober 2026](baseline-2026-10-20.md), lalu periks
 
 Mulai dari masalah pengguna, bukan dari komponen yang ingin ditambahkan. Baca kode dan state yang terdampak. Perubahan bahasa cukup ditangani sebagai revisi copy jika tidak mengubah aksi atau kondisi. Perubahan layar perlu menunjukkan alur lengkap termasuk gagal dan batal. Perubahan status, penyimpanan, atau akses adalah perubahan perilaku dan harus memiliki rencana serta tes kontrak.
 
-Sebelum implementasi, minta review desain tertulis. Sesudah disetujui, buat PR kecil: fondasi presentasi, proses/hasil, Pengaturan, lalu polish Windows. Jangan menggabungkan migrasi toolkit, runtime, fitur pajak, dan redesign dalam satu PR. Tidak perlu menambah dependensi visual jika ttk sudah mencukupi.
+Sebelum implementasi, minta review desain tertulis. Sesudah disetujui, buat PR kecil hanya untuk delta yang belum selesai pada baseline: misalnya perbaikan dialog pemilihan/penggantian, Pengaturan, atau polish Windows. Fondasi presentasi tahap 1 tidak dibangun ulang. Jangan menggabungkan migrasi toolkit, runtime, fitur pajak, dan redesign dalam satu PR. Tidak perlu menambah dependensi visual jika ttk sudah mencukupi.
 
 ## Template usulan fitur
 
