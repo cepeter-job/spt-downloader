@@ -114,6 +114,7 @@ def _l9_role(table):
 
 def _scalar_fields(sheet, form, fields):
     anchors = {
+        'l1-d': [(2, 2), (3, 2)],
         'l6': [(row, 2) for row in range(2, 9)],
         'l11-b': [(row, 2) for row in range(2, 8)],
         'l9': [(row, 8) for row in (226, 227, 228, 259, 260, 261)],
@@ -133,7 +134,9 @@ def _scalar_fields(sheet, form, fields):
             pending.extend(items)
             continue
         row, column = matches[0]
-        if not _write_amount(sheet, row, column, items[0].get('value')):
+        if form == 'l1-d':
+            _write(sheet, row, column, items[0].get('value'))
+        elif not _write_amount(sheet, row, column, items[0].get('value')):
             pending.extend(items)
     return pending
 
@@ -198,8 +201,31 @@ def _body_plan(sheet, form, first, last, columns, rows):
     return result, style_row
 
 
-def render_template_form(sheet, form, sections):
+def _current_l7_header(sheet, sections, period):
+    match = re.fullmatch(r'Januari - Desember ([0-9]{4})', period or '')
+    if not match:
+        return
+    caption = f'KOMPENSASI KERUGIAN FISKAL / {match[1]} / TAHUN PAJAK INI - NILAI (Rp)'
+    tables = [table for section in sections for table in section.get('tables', [])]
+    # The reference's year-bearing slot is blank deliberately. Populate it only
+    # from the single captured table whose other headers and literal year agree.
+    if len(tables) != 1 or not tables[0].get('complete', True):
+        return
+    headers = tables[0].get('headers', [])
+    reference = [sheet.cell(2, column).value for column in range(1, 10)]
+    if reference[7] is not None:
+        return
+    reference[7] = caption
+    if (len(headers) == 9 and len(set(map(_label, headers))) == 9
+            and set(map(_label, headers)) == set(map(_label, reference))):
+        captured_caption = next(header for header in headers if _label(header) == _label(caption))
+        _write(sheet, 2, 8, captured_caption)
+
+
+def render_template_form(sheet, form, sections, *, period=None):
     form = form.casefold()
+    if form == 'l7':
+        _current_l7_header(sheet, sections, period)
     blocks = BLOCKS[form]
     grouped = [[] for _ in blocks]
     fields = [field for section in sections for field in section.get('fields', [])]

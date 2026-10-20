@@ -218,6 +218,49 @@ def test_l9_reordered_roles_bind_each_group_and_reject_duplicate_snapshots(tmp_p
         book.close()
 
 
+def test_l9_scalars_follow_labels_through_multiple_table_growths(tmp_path):
+    specs = [('grid1', 'HARTA BERWUJUD', 'KELOMPOK 1', 184, 189),
+             ('grid2', 'BANGUNAN', 'PERMANEN', 3, 221),
+             ('grid2', 'BANGUNAN', 'TIDAK PERMANEN', 3, 229)]
+    scalar_rows = (226, 227, 228, 259, 260, 261)
+    reference = load_workbook(RESOURCE)
+    try:
+        headers = [cell.value for cell in reference['L9'][4]]
+        fields = [{'label': reference['L9'].cell(row, 1).value,
+                   'value': '1.234,50'} for row in scalar_rows]
+    finally:
+        reference.close()
+    tables = []
+    for grid, outer, inner, count, _ in specs:
+        footer = [['TOTAL', '99,00', '']]
+        rows = [['0001', f'SYNTHETIC ASSET {index}', '01/2025',
+                 '1.234,50', '1.000,00', 'GL', 'GL', '34,50', '']
+                for index in range(count)]
+        tables.append({'name': 'Synthetic growth table', 'headers': headers,
+                       'rows': rows + footer, 'body_row_count': count,
+                       'source_total': count, 'complete': True,
+                       'footer': footer, 'footer_spans': [[7, 1, 1]],
+                       'source_structure': {'form': 'L9',
+                                            'component': 'rshshr-citr-l9-form-' + grid,
+                                            'groups': [outer, inner]}})
+    book, reports = export(tmp_path, [section('L9', fields=fields, tables=list(reversed(tables)))])
+    try:
+        sheet = book['L9']
+        for _, _, _, _, total_row in specs:
+            assert sheet.cell(total_row, 8).value == 99
+        # One added row in group 1 and two in each building block shift both
+        # captions and values; fixed pre-growth coordinates are not the contract.
+        for original, field in zip(scalar_rows, fields):
+            shifted = original + 5
+            assert sheet.cell(shifted, 1).value == field['label']
+            assert sheet.cell(shifted, 8).value == 1234.5
+            assert sheet.cell(shifted, 8).data_type == 'n'
+            assert f'A{shifted}:G{shifted}' in sheet.merged_cells
+        assert reports[0]['complete']
+    finally:
+        book.close()
+
+
 def test_l1d_year_and_identifier_remain_literal_in_reference_identity_slots(tmp_path):
     fields = [{'label': 'Tahun Pajak', 'value': '2025'},
               {'label': 'Nomor Identitas WP', 'value': '0000000000000001'}]

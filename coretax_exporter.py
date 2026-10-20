@@ -593,7 +593,8 @@ def _export_form_workbook(run, path):
                 if tax == 'PPh Pasal 21/26':
                     report = render_template_form(detail, form, sections)
                 elif tax == 'PPh Badan':
-                    report = render_corporate_template(detail, form, sections)
+                    report = render_corporate_template(
+                        detail, form, sections, period=record['meta'].get('Masa Pajak'))
                 else:
                     report = render_masa_template(detail, tax, form, sections)
                 if report is not None:
