@@ -2,6 +2,8 @@
 
 [Kembali ke dokumentasi](README.md)
 
+Panduan ini memiliki tabel pin, aturan lock, migrasi dan rollback. Untuk perintah setup/test/build gunakan [pengembangan](pengembangan.md); untuk hasil pipeline dan byte distribusi gunakan [verifikasi artifact](ci-dan-rilis.md#memverifikasi-artifact).
+
 ## Versi yang didukung
 
 | Komponen | Pin produksi | Kontrak |
@@ -37,6 +39,8 @@ Pekerjaan yang sudah berjalan sebaiknya diselesaikan atau dihentikan secara norm
 | `requirements-build.txt` | `locks/build.txt` | PyInstaller, uv dan seluruh persyaratan build. |
 | `requirements-audit.txt` | `locks/audit.txt` | Tool audit terisolasi. |
 
+### Memperbarui dependensi dan lock
+
 Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.13.4`:
 
 ```powershell
@@ -50,36 +54,26 @@ Untuk pembaruan lock yang memang disetujui, jalankan `python -m scripts.update_l
 
 ## Verifikasi produksi
 
-Pada Windows x64, instal `uv` sesuai pin, lalu dari checkout:
+Ikuti [setup Windows](pengembangan.md#setup-windows-dengan-powershell),
+[workload tes](pengembangan.md#pengujian-lokal), dan [build source/frozen](pengembangan.md#membuat-executable-windows).
+Untuk portable saja gunakan [setup Linux](pengembangan.md#linux-atau-container).
+Contoh-contoh itu tetap tunduk pada batas eksekusi [AGENTS.md](../AGENTS.md#verification).
+Jangan menyalin daftar perintah kedua ke sini ketika memperbarui pin.
 
-```powershell
-uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
-uv venv --managed-python --python 3.14.8+gil .venv
-uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
-.venv/Scripts/python.exe -m scripts.update_locks --check
-.venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q --basetemp "$env:TEMP/spt314-tests"
-.venv/Scripts/python.exe -m scripts.ci_runtime --profile production
-.venv/Scripts/python.exe spt_gui.py --self-test --report "$env:TEMP/spt314-source.json"
-.venv/Scripts/python.exe build_desktop.py --python-profile production --output dist
-```
+Perubahan toolchain juga memerlukan `scripts.ci_runtime --profile production`
+melalui interpreter environment build. Pemeriksaan ini menguji fresh managed
+install dan ready-state reuse tanpa akun, memakai direktori scratch `RUNNER_TEMP`
+milik job Windows. Penanda readiness saja bukan bukti interpreter/paket masih benar.
 
-`scripts.ci_runtime` membutuhkan `RUNNER_TEMP` pada CI Windows untuk menjalankan bootstrap terisolasi, uji **fresh managed install** dan **ready-state reuse** tanpa akun. Untuk mesin lokal, atur `RUNNER_TEMP` pada direktori scratch yang aman atau gunakan hasil smoke resmi CI. `--basetemp` dapat dibersihkan pytest: jangan arahkan ke folder pengguna yang berisi data.
-
-Di Linux untuk pengujian portable saja:
-
-```bash
-uv python install cpython-3.14.8-linux-x86_64-gnu --no-bin --no-registry
-uv venv --managed-python --python 3.14.8+gil .venv
-uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
-.venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q --basetemp /tmp/spt314-portable-tests
-```
-
-CI memakai **satu** entri matrix production 3.14.8 untuk Linux portable, Windows keseluruhan suite, fresh/reused worker, audit terkunci, source/frozen GUI, packaging, pemeriksaan checksum, dan pembacaan kembali artifact berdasarkan ID. Setiap gate harus lulus pada commit yang sama. Runtime Windows/Tk/Edge dan rollback sistem berkas tidak dapat disertifikasi oleh Linux saja. Lihat [CI dan rilis](ci-dan-rilis.md).
+CI mengikat suite Windows lengkap, subset portable, lock/audit, bootstrap worker,
+source/frozen dan artifact readback pada commit yang sama. Linux tidak membuktikan
+Tk/Edge, API Windows atau rollback native. Kriteria artifact lengkap dijelaskan
+sekali pada [CI dan rilis](ci-dan-rilis.md#memverifikasi-artifact).
 
 ## Batas dan langkah kembali
 
 Migrasi teknis tidak sama dengan penerimaan pada portal Coretax aktual. Fixture Edge, self-test GUI, dan workbook sintetis tidak membuktikan akses, login, atau hasil SPT nyata. Penerimaan Windows dan Coretax berizin tetap mengikuti [checklist manual](penerimaan-manual.md), dan boleh dilakukan setelah fitur/UI lain digabung.
 
-Jika build 3.14 bermasalah pada mesin pengguna, gunakan **artifact produksi 3.11.17 yang sebelumnya telah diverifikasi** sebagai jalur pemulihan sementara—misalnya [hasil PR #6, commit c036135](https://github.com/cepeter-job/spt-downloader/actions/runs/38240317586/artifacts/11741888300). Cocokkan SHA, artifact ID, dan checksum sebelum menjalankannya. GUI lama akan meminta worker managed 3.11.17 dan membentuk ulang environment runtime jika perlu; jangan menyalin ulang environment siap, menghapus profil/hasil/checkpoint, atau mengganti file pajak sebagai cara downgrade. Hentikan semua job sebelum beralih versi.
+Rollback hanya memakai artifact yang telah dipilih dan diverifikasi secara eksplisit untuk scope pemulihan; periksa commit, checksum, kompatibilitas output dan batas fiturnya. Artifact 3.11.17 pada [PR #6](https://github.com/cepeter-job/spt-downloader/pull/6) adalah bukti historis migrasi, bukan rekomendasi otomatis untuk instalasi sekarang atau jaminan unduhannya masih tersedia. Tidak ada profil 3.11 pada build aktif. Hentikan semua job sebelum beralih executable; jangan menyalin environment siap, menghapus profil/hasil/checkpoint, atau mengganti berkas pajak untuk memaksa downgrade.
 
 Executable tidak otomatis memiliki tanda tangan Authenticode. Provenance/checksum tidak menggantikan sertifikat penerbit. Aturan branch, tanda tangan code, dan penerimaan data nyata adalah gate yang berbeda dari keberhasilan unit/CI.

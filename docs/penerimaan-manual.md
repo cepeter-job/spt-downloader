@@ -8,7 +8,7 @@ Checklist ini digunakan setelah build dan tes sintetis lulus. Ia **belum merupak
 
 Catat build/commit, run ID dan artifact ID bila dari GitHub, profil Python, tanggal, versi Windows/browser/Excel, serta nama operator pada catatan privat yang sesuai. Scope NPWP/tahun dan referensi SPT nyata tetap berada pada catatan privat, bukan issue atau PR publik. Laporan publik cukup merujuk nomor laporan internal dan hasil tanpa identitas wajib pajak.
 
-- [ ] Artifact produksi atau kandidat telah dipilih dengan sengaja dan hash-nya cocok.
+- [ ] Artifact dipilih dengan sengaja dan lolos [verifikasi distribusi](ci-dan-rilis.md#memverifikasi-artifact); versi pada [kebijakan Python](python-314.md) cocok dengan build yang diperiksa.
 - [ ] Operator memang berwenang mengakses NPWP/tahun yang akan diperiksa.
 - [ ] NPWP dimasukkan tepat 16 digit, termasuk nol awal; dasar tahun telah dipahami.
 - [ ] Browser aplikasi khusus, koneksi intranet, origin login, dan Downloads tersedia.
@@ -49,13 +49,13 @@ Kegagalan file terkunci atau listrik padam tidak perlu dibuat pada data nyata. G
 
 ## Pemeriksaan Excel dan publikasi
 
-- [ ] **Buka Hasil** membuka Downloads aktual, termasuk bila diarahkan ke OneDrive/lokasi non-ASCII yang digunakan operator.
+- [ ] **Buka folder hasil** (atau **Buka hasil sementara** pada PARTIAL yang sah) membuka folder hasil yang disahkan controller di Downloads aktual, termasuk lokasi OneDrive/non-ASCII yang digunakan operator.
 - [ ] Folder memakai NPWP, nama wajib pajak yang benar, tahun, serta identitas run baru.
 - [ ] Folder distribusi hasil berisi set workbook yang diharapkan; JSON pemulihan dan profil tidak ikut disalin.
 - [ ] `resume.xlsx` memiliki Ringkasan, Daftar SPT, Audit, status, dan jumlah yang sesuai.
-- [ ] SPT Badan memiliki workbook tersendiri; SPT Masa memiliki satu workbook per masa literal dalam folder jenis. Setiap form/tab teramati dan pembetulan memiliki sheet sendiri. Workbook jenis/masa yang tidak ada tidak dibuat.
+- [ ] Setiap jenis memakai workbook per **masa/tahun dan Model SPT literal**: Normal dan pembetulan berbeda tidak berbagi workbook. Semua form dalam satu workbook milik model itu; folder jenis serta tautan relatif sesuai [kontrak output](arsitektur.md#kontrak-excel-dan-transaksi-publikasi). Jenis/masa yang tidak ada tidak dibuat.
 - [ ] Workbook SPT hanya berisi form, tanpa Ringkasan/Daftar SPT/Audit/banner/header/footer cetak tambahan; field sumber dan header kolom tetap ada.
-- [ ] Sampel NPWP/identifier dengan nol awal, teks angka Indonesia, dan nilai sumber tetap persis ketika diperiksa di Excel.
+- [ ] NPWP/ID dan nol awal tetap literal. Slot moneter terverifikasi mengikuti nilai/format numerik yang didukung; nilai malformed atau presisi tidak aman tidak ditebak. Cocokkan kembali dengan sumber, bukan hanya tampilan sel.
 - [ ] Tautan indeks resume menuju workbook, lembar, dan pembetulan yang tepat; SPT tidak diberi backlink generik ke resume.
 - [ ] Pada scope yang sama, hanya resume yang sudah ada diperbarui tanpa dialog; SPT/PDF terpilih yang sudah ada tetap meminta consent. Penolakan membatalkan publikasi tanpa mengubah resume atau file lama.
 - [ ] Salinan seluruh folder ke lokasi uji lain tetap memiliki tautan relatif yang berfungsi tanpa mengganti nama berkas.
@@ -65,4 +65,4 @@ Kegagalan file terkunci atau listrik padam tidak perlu dibuat pada data nyata. G
 
 Gunakan salah satu hasil per skenario: **lulus**, **gagal**, **terblokir**, atau **tidak diuji**. Catat perbedaan yang terlihat, tahap, versi build, dan referensi catatan privat yang dapat diperiksa. Jangan menyalin identitas, isi halaman, cookie, atau password ke ringkasan publik.
 
-Penerimaan produksi Python 3.14.8 perlu mencatat commit, artifact ID, versi GUI, serta versi managed worker. Lulus pada satu mesin/scope tidak membuktikan seluruh portal atau semua jenis SPT. Migrasi konfigurasi produksi dapat digabung setelah gate otomatis lengkap; status **penerimaan manual** tetap belum diuji sampai operator melakukannya pada seluruh fitur/UI terkonsolidasi.
+Penerimaan produksi perlu mencatat commit, artifact ID, versi GUI dan managed worker yang benar-benar dipakai. Lulus pada satu mesin/scope tidak membuktikan seluruh portal atau semua jenis SPT. Migrasi konfigurasi produksi dapat digabung setelah gate otomatis lengkap; status **penerimaan manual** tetap belum diuji sampai operator melakukannya pada seluruh fitur/UI terkonsolidasi.

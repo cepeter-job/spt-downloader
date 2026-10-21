@@ -1,5 +1,7 @@
 # Log diagnostik untuk bugfixing
 
+[Kembali ke dokumentasi](README.md) · [Gejala dan tindakan awal](pemecahan-masalah.md)
+
 Log ini menjelaskan urutan pekerjaan dan lokasi error aplikasi. Log **bukan** salinan capture, audit pajak, bukti kelengkapan SPT, atau telemetry. Data tetap lokal; aplikasi tidak mengirim log ke layanan eksternal.
 
 ## Mengambil log yang relevan
@@ -58,7 +60,7 @@ Pada build dengan perbaikan redirect, INFO mencatat `auth.state` dan `auth.resul
 | `existing_session`, `existing_home` | Sesi/beranda tersedia sebelum pengiriman; password tersimpan belum diuji |
 | `check_error`, `cancelled` | Pengecekan gagal atau dibatalkan; tanpa pesan exception privat |
 
-Untuk kasus Coretax → Satu, origin tersimpan Satu dapat dilanjutkan hanya setelah form Satu dikenali dan identitas/form terikat ulang. Origin tersimpan Coretax tetap ditolak jika form final berada di Satu, **sebelum** membaca kredensial. Pilih origin final yang ditampilkan oleh Pengaturan dan simpan melalui UI; tidak ada fallback lintas-origin, POST langsung, atau pemalsuan Referer.
+Aplikasi desktop memakai `LOGIN_ORIGIN` Satu yang tetap: tidak ada pilihan origin pada Pengaturan. Kredensial baru dibaca setelah form Satu dan identifier akun terikat dengan benar. Preferensi origin Coretax lama tidak menjadi alasan memindahkan atau membaca credential lintas-origin; isi akun/password pada Pengaturan lalu Simpan bila entri Satu belum tersedia. Catatan log lama hanya menggambarkan build pembuatnya. Tidak ada fallback lintas-origin, POST langsung, atau pemalsuan Referer.
 
 ### Request diblokir saat pengecekan login
 

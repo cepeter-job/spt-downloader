@@ -10,7 +10,7 @@ Mulai dari tahap dan status yang terlihat. Pertahankan checkpoint serta hasil la
 | --- | --- |
 | `uv` tidak ditemukan atau versinya ditolak | Jalankan `uv --version`, cocokkan dengan [kebijakan Python](python-314.md), lalu pasang/update dari distribusi resmi yang diverifikasi. Jangan memakai executable acak dari PATH. |
 | Python terpasang tetapi aplikasi tetap menyiapkan runtime | Worker memakai interpreter managed di workspace aplikasi. Periksa patch version, x64, CPython, GIL, dan lokasi base; Python sistem tidak menggantikan runtime ini. |
-| Hanya Python 3.11.9 dari installer Windows yang tersedia | Gunakan managed Python versi produksi melalui `uv`; jangan menurunkan pin agar installer lama diterima. |
+| Hanya Python sistem/versi lama yang tersedia | Gunakan managed Python pada [pin produksi](python-314.md#versi-yang-didukung); jangan menurunkan pin agar interpreter lama diterima. |
 | Unduhan runtime/paket gagal | Periksa koneksi, proxy, sertifikat tepercaya, ruang disk, dan izin LocalAppData. Coba ulang setelah penyebab terselesaikan. Jangan menonaktifkan TLS atau meneruskan stderr mentah yang dapat memuat kredensial proxy. |
 | Hash lock tidak cocok | Pastikan checkout/lock/toolchain benar. Hentikan instalasi dan periksa asal paket; jangan menghapus hash atau menambahkan pengecualian untuk meloloskan setup. |
 | Tk tidak tersedia saat build | Jalankan `python -m tkinter` pada interpreter yang benar di Windows. Perbaiki distribusi runtime/Tk; jangan melewati self-test packaging. |
@@ -61,6 +61,8 @@ Untuk produksi Python 3.14.8, catat versi GUI dan worker yang benar-benar dipaka
 
 ## Melaporkan bug tanpa data rahasia
 
-Sertakan commit/profil Python, Windows/browser, tahap, hasil yang diharapkan, hasil aktual, exit/status yang aman, dan reproduksi sintetis bila tersedia. Ringkas error tanpa credential, URL berisi rahasia, identifier wajib pajak nyata, atau isi capture. Jangan melampirkan seluruh folder LocalAppData, checkpoint, workbook, tangkapan layar portal, atau browser profile pada issue publik.
-
-Jika inspeksi data nyata diperlukan, lakukan melalui prosedur privat dan izin yang sesuai. Hasil review publik cukup menyatakan invariant yang gagal serta test case sintetis yang memverifikasi perbaikannya.
+Ikuti satu prosedur [mengambil log yang relevan](diagnostik.md#mengambil-log-yang-relevan):
+catat build, tahap, tindakan dan reproduksi sintetis; pilih hanya log yang perlu dan
+tinjau isinya sebelum dibagikan. Jangan mengirim folder LocalAppData, checkpoint,
+workbook, profil atau screenshot portal nyata ke laporan publik. Inspeksi data
+nyata memerlukan izin dan jalur privat tersendiri.
