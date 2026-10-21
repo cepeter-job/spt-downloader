@@ -1,0 +1,121 @@
+name: Profile synthetic browser fixtures
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-fixture-profile.yml'
+      - 'scripts/ci_browser_profile.py'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-fixture-profile-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PYTHON_VERSION: '3.14.8'
+
+jobs:
+  profile:
+    name: Frozen baseline and readiness regression
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out the candidate merge tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: candidate
+          persist-credentials: false
+      - name: Check out the immutable baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 766dd3e79b4077fa1ae86a7c32161dc77248cb6c
+          path: baseline
+          persist-credentials: false
+      - name: Set up the pinned production toolchain and read-only cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.13.4'
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-python: true
+          save-cache: false
+          cache-dependency-glob: |
+            candidate/requirements*.txt
+            candidate/locks/*.txt
+          cache-suffix: ${{ runner.os }}-${{ runner.arch }}-python${{ env.PYTHON_VERSION }}-integration
+      - name: Install one identical hash-locked environment for both observations
+        run: |
+          $baselineLock = (Get-FileHash baseline/locks/test.txt -Algorithm SHA256).Hash
+          $candidateLock = (Get-FileHash candidate/locks/test.txt -Algorithm SHA256).Hash
+          if ($baselineLock -ne $candidateLock) { throw 'Profile variants have different test locks.' }
+          python -I -S candidate/scripts/ci_python_cache.py --python-version "$env:PYTHON_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv python install "cpython-${env:PYTHON_VERSION}-windows-x86_64-none" --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" "$env:RUNNER_TEMP/browser-profile-venv"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python "$env:RUNNER_TEMP/browser-profile-venv/Scripts/python.exe" --require-hashes --only-binary :all: candidate/locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python "$env:RUNNER_TEMP/browser-profile-venv/Scripts/python.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Measure the baseline and retain the independent readiness result
+        id: observations
+        run: |
+          # Both independent observations must survive a nonzero native exit.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $control = "$env:RUNNER_TEMP/browser-profile-control"
+          New-Item -ItemType Directory -Force -Path $control | Out-Null
+          Copy-Item candidate/scripts/ci_browser_profile.py "$control/ci_browser_profile.py"
+          $env:PYTHONPATH = $control
+          $python = "$env:RUNNER_TEMP/browser-profile-venv/Scripts/python.exe"
+          $workload = @(
+            'tests/test_browser.py', 'tests/test_pagination_actionability.py',
+            'tests/test_masa_json_observer.py', 'tests/test_masa_json_field_observation.py',
+            'tests/test_ppn_json_build_budget.py', 'tests/test_ppn_json_surface.py',
+            'tests/test_ppn_json_replacement_control.py', 'tests/test_unifikasi_json_browser.py'
+          )
+          $failed = $false
+          foreach ($variant in @('baseline', 'candidate-readiness')) {
+            $repository = if ($variant -eq 'baseline') { 'baseline' } else { 'candidate' }
+            $tests = if ($variant -eq 'baseline') { $workload } else { @('tests/test_masa_fixture_readiness.py') }
+            $evidence = "$env:RUNNER_TEMP/browser-profile-evidence/$variant"
+            New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+            Push-Location "$env:GITHUB_WORKSPACE/$repository"
+            try {
+              $pytestArgs = @('-m', 'pytest') + $tests + @(
+                '-p', 'ci_browser_profile', '-q',
+                '--browser-profile-label', $variant,
+                '--browser-profile-output', "$evidence/profile.json",
+                '--basetemp', "$env:RUNNER_TEMP/browser-profile-pytest-$variant",
+                '--junitxml', "$evidence/results.xml",
+                '-o', 'junit_logging=no', '-o', 'junit_log_passing_tests=false'
+              )
+              & $python @pytestArgs
+              if ($LASTEXITCODE -ne 0) { $failed = $true }
+            } finally {
+              Pop-Location
+            }
+          }
+          if ($failed) { exit 1 }
+      - name: Preserve explicit timing and regression evidence, including RED
+        if: always() && steps.observations.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-fixture-profile-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/browser-profile-evidence/baseline/profile.json
+            ${{ runner.temp }}/browser-profile-evidence/baseline/results.xml
+            ${{ runner.temp }}/browser-profile-evidence/candidate-readiness/profile.json
+            ${{ runner.temp }}/browser-profile-evidence/candidate-readiness/results.xml
+          if-no-files-found: error
+          retention-days: 14
