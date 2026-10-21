@@ -135,7 +135,9 @@ jobs:
     needs: route
     if: needs.route.outputs.mode == 'full'
     runs-on: windows-2022
-    timeout-minutes: 20
+    # Tests alone took 19m32s; budget for setup, uploads, and cleanup too.
+    # Keep bounded headroom without skipping tests or weakening package gates.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 2

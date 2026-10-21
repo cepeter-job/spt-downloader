@@ -23,6 +23,11 @@ COPY: Mapping[str, str] = MappingProxyType({'app.title': 'Coretax SPT downloader
  'action.new': 'Unduh SPT lain',
  'action.details': 'Lihat rincian',
  'selection.title': 'Pilih SPT yang akan diunduh',
+ 'selection.help': 'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.',
+ 'selection.search.label': 'Cari jenis pajak, masa, pembetulan, atau ID SPT',
+ 'selection.empty': 'Daftar ini tidak memuat SPT yang bisa dipilih.',
+ 'selection.focused_id': 'ID SPT yang disorot',
+ 'selection.keyboard_hint': 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.',
  'selection.summary': '{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.',
  'selection.no_match': 'Tidak ada SPT yang cocok dengan pencarian.',
  'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.',
@@ -37,6 +42,11 @@ COPY: Mapping[str, str] = MappingProxyType({'app.title': 'Coretax SPT downloader
  'download.cancelled.title': 'Unduhan dihentikan',
  'download.error.title': 'Unduhan belum berhasil',
  'overwrite.title': 'Ganti hasil sebelumnya?',
+ 'overwrite.folder.label': 'Folder hasil sebelumnya',
+ 'overwrite.help': 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.',
+ 'overwrite.files_count': '{count} file akan diganti.',
+ 'overwrite.keep_hint': 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.',
+ 'overwrite.context_missing': 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.',
  'overwrite.decline': 'Jangan ganti',
  'overwrite.confirm': 'Ganti file tersebut',
  'settings.origin.label': 'Situs login',
@@ -54,6 +64,7 @@ STAGE_LABELS = ('Masuk ke Coretax', 'Daftar SPT',
 
 _COUNT_PARAMETERS = {
     'selection.summary': frozenset({'selected', 'visible', 'inventory'}),
+    'overwrite.files_count': frozenset({'count'}),
     'download.details.body': frozenset({'processed', 'total', 'verified'}),
 }
 

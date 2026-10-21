@@ -12,6 +12,7 @@ from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,save_login,delete_login
 from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
 from .ui_views import MainView
+from .ui_theme import configure_dialog, dip_to_px, effective_scale
 
 #punto ami priyono
 
@@ -332,7 +333,8 @@ class App:
         previous_focus=self.root.focus_get()
         dialog=tk.Toplevel(self.root);dialog.title(title)
         dialog.transient(self.root)
-        interaction={'key':key,'dialog':dialog,'focus':previous_focus,'traces':[]}
+        interaction={'key':key,'dialog':dialog,'focus':previous_focus,'traces':[],
+                     'layout_after':None,'bindings':[]}
         self._interaction=interaction
         dialog.grab_set()
         dialog.bind('<Alt-s>',lambda event:self._cancel_interaction(interaction))
@@ -347,6 +349,19 @@ class App:
         if current is None or (interaction is not None and current is not interaction):return
         # Invalidate callbacks before destroying their widgets or releasing the grab.
         self._interaction=None
+        dialog=current['dialog']
+        if current['layout_after'] is not None:
+            try:dialog.after_cancel(current['layout_after'])
+            except tk.TclError:
+                # Parent teardown may already have retired this modal's timer.
+                pass
+            current['layout_after']=None
+        for widget,sequence,token in current['bindings']:
+            try:widget.unbind(sequence,token)
+            except tk.TclError:
+                # The binding belongs to the modal or its already-destroyed children.
+                pass
+        current['bindings'].clear()
         for variable,token in current['traces']:
             try:variable.trace_remove('write',token)
             except tk.TclError:
@@ -403,145 +418,444 @@ class App:
             self._interaction_error(job_id,'Keputusan belum bisa diproses.')
         return 'break'
 
-    def selection_dialog(self,event):
-        request=self._read_interaction(event,'selection')
-        if request is None:return
-        key,payload=request
-        rows={};identifiers=set()
+    def selection_dialog(self, event):
+        request = self._read_interaction(event, 'selection')
+        if request is None:
+            return
+        key, payload = request
+        rows, identifiers = {}, set()
         try:
-            records=payload.get('records')
-            if not isinstance(records,list):raise ValueError('Invalid inventory')
-            for ordinal,record in enumerate(records):
-                if not isinstance(record,dict):raise ValueError('Invalid inventory record')
-                identifier=record.get('record_id');meta=record.get('meta',{})
-                if (not isinstance(identifier,str) or not identifier or len(identifier)>512
-                        or identifier in identifiers or not isinstance(meta,dict)):
+            records = payload.get('records')
+            if not isinstance(records, list):
+                raise ValueError('Invalid inventory')
+            for ordinal, record in enumerate(records):
+                if not isinstance(record, dict):
+                    raise ValueError('Invalid inventory record')
+                identifier, meta = record.get('record_id'), record.get('meta', {})
+                if (not isinstance(identifier, str) or not identifier or len(identifier) > 512
+                        or identifier in identifiers or not isinstance(meta, dict)):
                     raise ValueError('Invalid inventory identifier or metadata')
                 identifiers.add(identifier)
-                values=tuple(str(meta.get(field,'')) for field in ('Jenis Pajak','Masa Pajak','Model SPT'))+(identifier,)
-                # Source IDs are data, never widget paths or Tcl item identifiers.
-                rows[f'record-{ordinal}']=(identifier,values,' '.join(values).casefold())
-        except (TypeError,ValueError):
-            self._interaction_error(key[0],'Daftar SPT belum bisa ditampilkan.');return
-        interaction=self._new_interaction(key,'Pilih SPT yang akan diunduh')
-        dialog=interaction['dialog'];dialog.minsize(620,360)
-        frame=ttk.Frame(dialog,padding=20);frame.pack(fill='both',expand=True)
-        frame.columnconfigure(0,weight=1);frame.rowconfigure(3,weight=1)
-        ttk.Label(frame,text='Pilih satu atau beberapa SPT. Rincian hanya diambil untuk pilihan yang dikonfirmasi.',
-                  wraplength=620).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12))
-        ttk.Label(frame,text='Cari jenis pajak, masa, pembetulan, atau ID SPT').grid(row=1,column=0,columnspan=2,sticky='w')
-        search=tk.StringVar(dialog)
-        entry=ttk.Entry(frame,textvariable=search)
-        entry.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(4,12))
-        columns=('type','period','model','identifier')
-        tree=ttk.Treeview(frame,columns=columns,show='headings',selectmode='extended',height=10)
-        for column,label,width in zip(columns,('Jenis pajak','Masa pajak','Normal / pembetulan','ID SPT'),(160,180,160,180)):
-            tree.heading(column,text=label);tree.column(column,width=width,minwidth=100)
-        tree.grid(row=3,column=0,sticky='nsew')
-        vertical=ttk.Scrollbar(frame,orient='vertical',command=tree.yview)
-        vertical.grid(row=3,column=1,sticky='ns')
-        horizontal=ttk.Scrollbar(frame,orient='horizontal',command=tree.xview)
-        horizontal.grid(row=4,column=0,sticky='ew')
-        tree.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set)
-        summary=tk.StringVar(dialog)
-        ttk.Label(frame,textvariable=summary,wraplength=620).grid(row=5,column=0,columnspan=2,sticky='w',pady=(10,0))
-        ttk.Label(frame,text='Gunakan Ctrl atau Shift untuk memilih lebih dari satu SPT.',wraplength=620).grid(
-            row=6,column=0,columnspan=2,sticky='w',pady=(4,12))
-        buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='e')
-        ttk.Button(buttons,text='Hentikan unduhan',command=lambda:self._cancel_interaction(interaction)).pack(side='left',padx=(0,8))
-        # Default display priority is independent of manual A–Z/Z–A header sorting.
-        type_priority={'pph badan':0,'pph pasal 21/26':1,'pph unifikasi':2,'ppn':3}
-        ordered_iids=sorted(rows,key=lambda iid:(
-            type_priority.get(rows[iid][1][0].casefold(),len(type_priority)),
-            rows[iid][1][0].casefold(),
+                values = tuple(str(meta.get(field, '')) for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT')) + (identifier,)
+                # Source identifiers remain data, never Tcl widget paths or item names.
+                rows[f'record-{ordinal}'] = (identifier, values, ' '.join(values).casefold())
+        except (TypeError, ValueError):
+            self._interaction_error(key[0], 'Daftar SPT belum bisa ditampilkan.')
+            return
+        if not self._export_job_active(key[0]):
+            return
+        interaction = self._new_interaction(key, copy_text('selection.title'))
+        dialog = interaction['dialog']
+        scale = effective_scale(self.root)
+        px = lambda value: dip_to_px(value, scale)
+        frame = ttk.Frame(dialog, padding=px(12))
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(frame, name='body_viewport', borderwidth=0, highlightthickness=0,
+                           background='SystemWindow', takefocus=False)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        body_scroll = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview, takefocus=False)
+        body_scroll.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=body_scroll.set)
+        body = ttk.Frame(canvas, padding=px(4), style='SPT.Card.TFrame')
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(3, weight=1)
+        body_window = canvas.create_window(0, 0, window=body, anchor='nw')
+        intro = ttk.Label(body, text=copy_text('selection.help'), style='SPT.TLabel', wraplength=px(700))
+        intro.grid(row=0, column=0, sticky='ew', pady=(0, px(8)))
+        snapshot = self._ui_state
+        context = 'Konteks permintaan tidak tersedia'
+        if snapshot is not None and snapshot.job_id == key[0]:
+            context = f'NPWP permintaan: {snapshot.npwp}\nTahun pajak permintaan: {snapshot.year}'
+        scope = ttk.Label(body, name='scope', text=context, style='SPT.Caption.TLabel', wraplength=px(700))
+        scope.grid(row=1, column=0, sticky='ew', pady=(0, px(8)))
+        search_group = ttk.Frame(body, style='SPT.Card.TFrame')
+        search_group.columnconfigure(0, weight=1)
+        search_group.grid(row=2, column=0, sticky='ew', pady=(0, px(8)))
+        search_label = ttk.Label(search_group, text=copy_text('selection.search.label'),
+                                 style='SPT.Label.TLabel', wraplength=px(700))
+        search_label.grid(row=0, column=0, sticky='ew')
+        search = tk.StringVar(dialog)
+        entry = ttk.Entry(search_group, name='search', textvariable=search, style='SPT.TEntry')
+        entry.grid(row=1, column=0, sticky='ew', pady=(px(4), 0))
+        table = ttk.Frame(body, style='SPT.Card.TFrame')
+        table.grid(row=3, column=0, sticky='nsew')
+        table.columnconfigure(0, weight=1)
+        table.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(table, name='records', columns=('type', 'period', 'model', 'identifier'),
+                            show='headings', selectmode='extended', height=8, style='SPT.Dialog.Treeview')
+        for column, label, width in zip(('type', 'period', 'model', 'identifier'),
+                ('Jenis pajak', 'Masa pajak', 'Normal / pembetulan', 'ID SPT'), (160, 180, 160, 220)):
+            tree.heading(column, text=label)
+            heading_width = int(dialog.tk.call('font', 'measure', 'SPTLabel', label)) + px(24)
+            tree.column(column, width=px(width), minwidth=max(px(100), heading_width), stretch=True)
+        tree.grid(row=0, column=0, sticky='nsew')
+        vertical = ttk.Scrollbar(table, orient='vertical', command=tree.yview, takefocus=False)
+        vertical.grid(row=0, column=1, sticky='ns')
+        horizontal = ttk.Scrollbar(table, orient='horizontal', command=tree.xview, takefocus=False)
+        horizontal.grid(row=1, column=0, sticky='ew')
+        tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        focused = tk.StringVar(dialog)
+        id_label = ttk.Label(body, text=copy_text('selection.focused_id'), style='SPT.Label.TLabel')
+        id_label.grid(row=4, column=0, sticky='ew', pady=(px(8), px(4)))
+        focused_field = ttk.Entry(body, name='focused_id', textvariable=focused, state='readonly', style='SPT.TEntry')
+        focused_field.grid(row=5, column=0, sticky='ew')
+        summary, notice = tk.StringVar(dialog), tk.StringVar(dialog)
+        summary_label = ttk.Label(body, name='summary', textvariable=summary, style='SPT.TLabel', wraplength=px(700))
+        summary_label.grid(row=6, column=0, sticky='ew', pady=(px(8), 0))
+        notice_label = ttk.Label(body, name='notice', textvariable=notice, style='SPT.TLabel', wraplength=px(700))
+        notice_label.grid(row=7, column=0, sticky='ew', pady=(px(4), 0))
+        keyboard_hint = ttk.Label(body, text=copy_text('selection.keyboard_hint'),
+                                   style='SPT.Caption.TLabel', wraplength=px(700))
+        keyboard_hint.grid(row=8, column=0, sticky='ew', pady=(px(4), 0))
+        actions = ttk.Frame(frame, name='actions')
+        actions.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(px(10), 0))
+        actions.columnconfigure(0, weight=1)
+        stop = ttk.Button(actions, name='stop', text=copy_text('action.stop'), style='SPT.TButton',
+                          command=lambda: self._cancel_interaction(interaction))
+        stop.grid(row=0, column=1, padx=(0, px(8)), sticky='e')
+        type_priority = {'pph badan': 0, 'pph pasal 21/26': 1, 'pph unifikasi': 2, 'ppn': 3}
+        ordered_iids = sorted(rows, key=lambda iid: (
+            type_priority.get(rows[iid][1][0].casefold(), len(type_priority)), rows[iid][1][0].casefold(),
             _selection_detail_key(*rows[iid][1][1:3])))
-        descending=None
+        descending, reset_pending = None, False
 
         def selected_ids():
-            chosen=set(tree.selection()) & set(tree.get_children())
-            return [row[0] for iid,row in rows.items() if iid in chosen]
+            chosen = set(tree.selection()) & set(tree.get_children())
+            return [row[0] for iid, row in rows.items() if iid in chosen]
+
+        def sync_focused_id(event=None):
+            if not self._interaction_current(interaction):
+                return
+            iid = tree.focus()
+            focused.set(rows[iid][0] if iid in rows and iid in tree.get_children() else '')
 
         def update_selection(event=None):
-            if not self._interaction_current(interaction):return
-            count=len(selected_ids());visible=len(tree.get_children())
+            nonlocal reset_pending
+            if not self._interaction_current(interaction):
+                return
+            count, visible = len(selected_ids()), len(tree.get_children())
             submit.state(['!disabled' if count else 'disabled'])
-            summary.set(f'{count} SPT dipilih · {visible} dari {len(rows)} SPT ditampilkan.' if visible else
-                        'Tidak ada SPT yang cocok dengan pencarian.' if rows else 'Daftar ini tidak memuat SPT yang bisa dipilih.')
+            summary.set(copy_text('selection.summary', selected=count, visible=visible, inventory=len(rows)))
+            if count:
+                reset_pending = False
+            messages = []
+            if not rows:
+                messages.append(copy_text('selection.empty'))
+            elif not visible:
+                messages.append(copy_text('selection.no_match'))
+            if reset_pending:
+                messages.append(copy_text('selection.filter_reset'))
+            notice.set('\n'.join(messages))
+            sync_focused_id()
+
+        def begin_keyboard_navigation(event):
+            if not self._interaction_current(interaction):
+                return 'break'
+            # Preserve native Ctrl-navigation, which moves focus without selecting.
+            if tree.focus() or event.state & 0x0004:
+                return None
+            visible = tree.get_children()
+            if visible:
+                first = visible[0]
+                tree.focus(first)
+                tree.selection_set(first)
+                tree.see(first)
+                update_selection()
+            return 'break'
 
         def filter_records(*args):
-            if not self._interaction_current(interaction):return
-            children=tree.get_children()
-            if children:tree.delete(*children)
-            query=search.get().strip().casefold()
+            nonlocal reset_pending
+            if not self._interaction_current(interaction):
+                return
+            # Latch before deleting: Tk may deliver the empty selection event later.
+            if selected_ids():
+                reset_pending = True
+            children = tree.get_children()
+            if children:
+                tree.delete(*children)
+            query = search.get().strip().casefold()
             for iid in ordered_iids:
-                _,values,text=rows[iid]
-                if query in text:tree.insert('', 'end',iid=iid,values=values)
+                _, values, text = rows[iid]
+                if query in text:
+                    tree.insert('', 'end', iid=iid, values=values)
             update_selection()
+            request_reflow()
 
         def sort_type():
-            nonlocal ordered_iids,descending
-            if not self._interaction_current(interaction):return
-            descending=False if descending is None else not descending
-            # Stable passes reverse only type; chronology and source ties stay ascending.
-            ordered_iids=sorted(rows,key=lambda iid:_selection_detail_key(*rows[iid][1][1:3]))
-            ordered_iids.sort(key=lambda iid:rows[iid][1][0].casefold(),reverse=descending)
-            visible=set(tree.get_children())
-            visible_order=[iid for iid in ordered_iids if iid in visible]
-            # Moving items preserves selection and focus under the active filter.
-            for position,iid in enumerate(visible_order):tree.move(iid,'',position)
-            tree.heading('type',text='Jenis pajak '+('▼' if descending else '▲'))
+            nonlocal ordered_iids, descending
+            if not self._interaction_current(interaction):
+                return
+            descending = False if descending is None else not descending
+            # Reverse only the type grouping; chronology and source ties stay ascending.
+            ordered_iids = sorted(rows, key=lambda iid: _selection_detail_key(*rows[iid][1][1:3]))
+            ordered_iids.sort(key=lambda iid: rows[iid][1][0].casefold(), reverse=descending)
+            visible = set(tree.get_children())
+            for position, iid in enumerate(iid for iid in ordered_iids if iid in visible):
+                tree.move(iid, '', position)
+            tree.heading('type', text='Jenis pajak ' + ('▼' if descending else '▲'))
+            if tree.focus() in visible:
+                tree.see(tree.focus())
             update_selection()
+
+        def sort_key(event):
+            sort_type()
+            return 'break'
 
         def confirm():
             if not self._interaction_current(interaction):
-                self._close_interaction(interaction);return
-            chosen=selected_ids()
-            if chosen:self._reply_interaction(interaction,{'selected_ids':chosen})
+                self._close_interaction(interaction)
+                return
+            chosen = selected_ids()
+            if chosen:
+                self._reply_interaction(interaction, {'selected_ids': chosen})
 
-        submit=ttk.Button(buttons,text='Sedot SPT terpilih',state='disabled',command=confirm)
-        submit.pack(side='left')
-        tree.heading('type',command=sort_type)
-        tree.bind('<<TreeviewSelect>>',update_selection)
-        interaction['traces'].append((search,search.trace_add('write',filter_records)))
-        dialog.protocol('WM_DELETE_WINDOW',lambda:self._cancel_interaction(interaction))
-        dialog.bind('<Escape>',lambda event:self._cancel_interaction(interaction))
-        filter_records();entry.focus_set()
+        def confirm_key(event):
+            if self._interaction_current(interaction) and submit.instate(['!disabled']):
+                confirm()
+            return 'break'
 
-    def overwrite_dialog(self,event):
-        request=self._read_interaction(event,'overwrite')
-        if request is None:return
-        key,payload=request;files=payload.get('files');folder=payload.get('folder')
-        if (not isinstance(files,list) or not files or any(not isinstance(path,str) or not path for path in files)
-                or ('folder' in payload and (not isinstance(folder,str) or not folder))):
-            self._interaction_error(key[0],'Daftar file yang akan diganti belum bisa ditampilkan.');return
-        interaction=self._new_interaction(key,'Ganti hasil sebelumnya?')
-        dialog=interaction['dialog'];dialog.minsize(540,320)
-        frame=ttk.Frame(dialog,padding=20);frame.pack(fill='both',expand=True)
-        frame.columnconfigure(0,weight=1)
-        ttk.Label(frame,text='File berikut sudah ada. Setiap file diganti seluruhnya dengan SPT yang dipilih pada proses ini.',
-                  wraplength=540).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12))
-        tree_row=1
-        if folder is not None:
-            ttk.Label(frame,text='Folder hasil sebelumnya').grid(row=1,column=0,columnspan=2,sticky='w',pady=(0,4))
-            ttk.Label(frame,text=folder,wraplength=540).grid(row=2,column=0,columnspan=2,sticky='w',pady=(0,12))
-            tree_row=3
-        frame.rowconfigure(tree_row,weight=1)
-        tree=ttk.Treeview(frame,columns=('file',),show='headings',selectmode='none',height=min(8,len(files)))
-        tree.heading('file',text='File yang akan diganti');tree.column('file',width=540,minwidth=300)
-        tree.grid(row=tree_row,column=0,sticky='nsew')
-        vertical=ttk.Scrollbar(frame,orient='vertical',command=tree.yview);vertical.grid(row=tree_row,column=1,sticky='ns')
-        horizontal=ttk.Scrollbar(frame,orient='horizontal',command=tree.xview);horizontal.grid(row=tree_row+1,column=0,sticky='ew')
-        tree.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set)
-        for ordinal,path in enumerate(files):tree.insert('','end',iid=f'file-{ordinal}',values=(path,))
-        ttk.Label(frame,text='Pilih Jangan ganti untuk mempertahankan file yang sudah ada.',wraplength=540).grid(
-            row=tree_row+2,column=0,columnspan=2,sticky='w',pady=12)
-        buttons=ttk.Frame(frame);buttons.grid(row=tree_row+3,column=0,columnspan=2,sticky='e')
-        decline=lambda:self._reply_interaction(interaction,{'overwrite':False})
-        safe_button=ttk.Button(buttons,text='Jangan ganti',command=decline)
-        safe_button.pack(side='left',padx=(0,8))
-        ttk.Button(buttons,text='Ganti file tersebut',command=lambda:self._reply_interaction(interaction,{'overwrite':True})).pack(side='left')
-        dialog.protocol('WM_DELETE_WINDOW',decline)
-        dialog.bind('<Escape>',lambda event:decline())
+        submit = ttk.Button(actions, name='confirm', text=copy_text('selection.confirm'),
+                             style='SPT.Primary.TButton', state='disabled', command=confirm)
+        submit.grid(row=0, column=2, sticky='e')
+
+        def update_scrollregion(event=None):
+            if self._interaction_current(interaction):
+                canvas.configure(scrollregion=canvas.bbox('all'))
+
+        def reflow():
+            interaction['layout_after'] = None
+            if not self._interaction_current(interaction):
+                return
+            width = max(1, canvas.winfo_width())
+            canvas.itemconfigure(body_window, width=width)
+            text_width = max(px(80), width - px(8))
+            for label in (intro, scope, search_label, id_label, summary_label, notice_label, keyboard_hint):
+                if int(label.cget('wraplength') or 0) != text_width:
+                    label.configure(wraplength=text_width)
+            # The body can scroll on short displays; the fixed actions remain outside it.
+            canvas.itemconfigure(body_window, height=max(body.winfo_reqheight(), canvas.winfo_height()))
+            update_scrollregion()
+
+        def request_reflow(event=None):
+            if (not self._interaction_current(interaction)
+                    or (event is not None and event.widget not in (dialog, canvas))):
+                return
+            if interaction['layout_after'] is None:
+                interaction['layout_after'] = dialog.after(75, reflow)
+
+        def reveal_focus(event):
+            if not self._interaction_current(interaction) or not str(event.widget).startswith(str(body) + '.'):
+                return
+            top = event.widget.winfo_rooty() - canvas.winfo_rooty()
+            height = canvas.winfo_height()
+            if top < 0 or top + event.widget.winfo_height() > height:
+                extent = max(1, body.winfo_height())
+                if event.widget.winfo_height() > height:
+                    target = canvas.canvasy(0) + top
+                elif top < 0:
+                    target = canvas.canvasy(0) + top - px(4)
+                else:
+                    target = canvas.canvasy(0) + top + event.widget.winfo_height() - height + px(4)
+                canvas.yview_moveto(max(0, target) / extent)
+
+        def wheel(event):
+            if not self._interaction_current(interaction) or event.widget is tree:
+                return None
+            if event.widget is canvas or str(event.widget).startswith(str(body) + '.'):
+                canvas.yview_scroll(-int(event.delta / 120), 'units')
+                return 'break'
+            return None
+
+        for widget, sequence, handler in (
+                (tree, '<Down>', begin_keyboard_navigation),
+                (tree, '<<TreeviewSelect>>', update_selection), (tree, '<KeyRelease>', sync_focused_id),
+                (tree, '<ButtonRelease-1>', sync_focused_id), (tree, '<FocusIn>', sync_focused_id),
+                (dialog, '<Alt-j>', sort_key), (submit, '<Return>', confirm_key), (submit, '<space>', confirm_key),
+                (canvas, '<Configure>', request_reflow), (dialog, '<Configure>', request_reflow),
+                (body, '<Configure>', update_scrollregion), (dialog, '<FocusIn>', reveal_focus),
+                (dialog, '<MouseWheel>', wheel)):
+            token = widget.bind(sequence, handler, add='+')
+            interaction['bindings'].append((widget, sequence, token))
+        tree.heading('type', command=sort_type)
+        interaction['traces'].append((search, search.trace_add('write', filter_records)))
+        dialog.protocol('WM_DELETE_WINDOW', lambda: self._cancel_interaction(interaction))
+        dialog.bind('<Escape>', lambda event: self._cancel_interaction(interaction))
+        configure_dialog(dialog, self.root, size_dip=(920, 600))
+        filter_records()
+        entry.focus_set()
+
+    def overwrite_dialog(self, event):
+        request = self._read_interaction(event, 'overwrite')
+        if request is None:
+            return
+        key, payload = request
+        files, folder = payload.get('files'), payload.get('folder')
+        if (not isinstance(files, list) or not files
+                or any(not isinstance(path, str) or not path for path in files)):
+            self._interaction_error(key[0], 'Daftar file yang akan diganti belum bisa ditampilkan.')
+            return
+        if not isinstance(folder, str) or not folder.strip():
+            self._interaction_error(key[0], copy_text('overwrite.context_missing'))
+            return
+        # The active job can change while the private request is being read.
+        if not self._export_job_active(key[0]):
+            return
+        interaction = self._new_interaction(key, copy_text('overwrite.title'))
+        dialog = interaction['dialog']
+        scale = effective_scale(self.root)
+        px = lambda value: dip_to_px(value, scale)
+        frame = ttk.Frame(dialog, padding=px(12))
+        frame.pack(fill='both', expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(frame, name='body_viewport', borderwidth=0, highlightthickness=0,
+                           background='SystemWindow', takefocus=False)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        body_scroll = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview, takefocus=False)
+        body_scroll.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=body_scroll.set)
+        body = ttk.Frame(canvas, padding=px(4), style='SPT.Card.TFrame')
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(3, weight=1)
+        body_window = canvas.create_window(0, 0, window=body, anchor='nw')
+        intro = ttk.Label(body, text=copy_text('overwrite.help'), style='SPT.TLabel', wraplength=px(700))
+        intro.grid(row=0, column=0, sticky='ew', pady=(0, px(10)))
+        folder_label = ttk.Label(body, text=copy_text('overwrite.folder.label'),
+                                 style='SPT.Label.TLabel', wraplength=px(700))
+        folder_label.grid(row=1, column=0, sticky='ew', pady=(0, px(4)))
+        # Validation tests nonblank context; the actual path remains untouched.
+        folder_field = ttk.Entry(body, name='folder', style='SPT.TEntry')
+        # This immutable value needs no StringVar whose lifetime could end
+        # before the modal; retain it in the native entry until destruction.
+        folder_field.insert(0, folder)
+        folder_field.state(['readonly'])
+        folder_field.grid(row=2, column=0, sticky='ew', pady=(0, px(10)))
+        table = ttk.Frame(body, style='SPT.Card.TFrame')
+        table.grid(row=3, column=0, sticky='nsew')
+        table.columnconfigure(0, weight=1)
+        table.rowconfigure(0, weight=1)
+        tree = ttk.Treeview(table, name='files', columns=('file',), show='headings',
+                            selectmode='none', height=min(8, len(files)), style='SPT.Dialog.Treeview')
+        tree.heading('file', text='File yang akan diganti', anchor='w')
+        path_width = max(int(dialog.tk.call('font', 'measure', 'SPTBody', path)) for path in files) + px(24)
+        tree.column('file', width=max(px(300), path_width), minwidth=px(100), stretch=False)
+        tree.grid(row=0, column=0, sticky='nsew')
+        vertical = ttk.Scrollbar(table, orient='vertical', command=tree.yview, takefocus=False)
+        vertical.grid(row=0, column=1, sticky='ns')
+        horizontal = ttk.Scrollbar(table, orient='horizontal', command=tree.xview, takefocus=False)
+        horizontal.grid(row=1, column=0, sticky='ew')
+        tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        for ordinal, path in enumerate(files):
+            tree.insert('', 'end', iid=f'file-{ordinal}', values=(path,))
+        # Item focus enables native arrow navigation without selecting a file
+        # or taking keyboard focus away from the safe decision button.
+        tree.focus('file-0')
+        file_count = ttk.Label(body, name='file_count', text=copy_text('overwrite.files_count', count=len(files)),
+                               style='SPT.Label.TLabel', wraplength=px(700))
+        file_count.grid(row=4, column=0, sticky='ew', pady=(px(10), px(6)))
+        keep_hint = ttk.Label(body, text=copy_text('overwrite.keep_hint'), style='SPT.TLabel', wraplength=px(700))
+        keep_hint.grid(row=5, column=0, sticky='ew')
+        actions = ttk.Frame(frame, name='actions')
+        actions.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(px(10), 0))
+        actions.columnconfigure(0, weight=1)
+
+        def decline():
+            return self._reply_interaction(interaction, {'overwrite': False})
+
+        def confirm():
+            return self._reply_interaction(interaction, {'overwrite': True})
+
+        safe_button = ttk.Button(actions, name='decline', text=copy_text('overwrite.decline'),
+                                  style='SPT.TButton', command=decline)
+        safe_button.grid(row=0, column=1, padx=(0, px(8)), sticky='e')
+        approve_button = ttk.Button(actions, name='confirm', text=copy_text('overwrite.confirm'),
+                                     style='SPT.Primary.TButton', command=confirm)
+        approve_button.grid(row=0, column=2, sticky='e')
+
+        def decline_key(event):
+            decline()
+            return 'break'
+
+        def confirm_key(event):
+            confirm()
+            return 'break'
+
+        def scroll_paths_key(event):
+            if not self._interaction_current(interaction):
+                return 'break'
+            if event.keysym == 'Home':
+                tree.xview_moveto(0)
+            elif event.keysym == 'End':
+                tree.xview_moveto(1)
+            elif event.keysym == 'Left':
+                tree.xview_scroll(-1, 'units')
+            elif event.keysym == 'Right':
+                tree.xview_scroll(1, 'units')
+            return 'break'
+
+        def update_scrollregion(event=None):
+            if self._interaction_current(interaction):
+                canvas.configure(scrollregion=canvas.bbox('all'))
+
+        def reflow():
+            interaction['layout_after'] = None
+            if not self._interaction_current(interaction):
+                return
+            width = max(1, canvas.winfo_width())
+            canvas.itemconfigure(body_window, width=width)
+            text_width = max(px(80), width - px(8))
+            for label in (intro, folder_label, file_count, keep_hint):
+                if int(label.cget('wraplength') or 0) != text_width:
+                    label.configure(wraplength=text_width)
+            canvas.itemconfigure(body_window, height=max(body.winfo_reqheight(), canvas.winfo_height()))
+            update_scrollregion()
+
+        def request_reflow(event=None):
+            if (not self._interaction_current(interaction)
+                    or (event is not None and event.widget not in (dialog, canvas))):
+                return
+            if interaction['layout_after'] is None:
+                interaction['layout_after'] = dialog.after(75, reflow)
+
+        def reveal_focus(event):
+            if not self._interaction_current(interaction) or not str(event.widget).startswith(str(body) + '.'):
+                return
+            top = event.widget.winfo_rooty() - canvas.winfo_rooty()
+            height = canvas.winfo_height()
+            if top < 0 or top + event.widget.winfo_height() > height:
+                extent = max(1, body.winfo_height())
+                if event.widget.winfo_height() > height:
+                    target = canvas.canvasy(0) + top
+                elif top < 0:
+                    target = canvas.canvasy(0) + top - px(4)
+                else:
+                    target = canvas.canvasy(0) + top + event.widget.winfo_height() - height + px(4)
+                canvas.yview_moveto(max(0, target) / extent)
+
+        def wheel(event):
+            if not self._interaction_current(interaction) or event.widget is tree:
+                return None
+            if event.widget is canvas or str(event.widget).startswith(str(body) + '.'):
+                canvas.yview_scroll(-int(event.delta / 120), 'units')
+                return 'break'
+            return None
+
+        for widget, sequence, handler in (
+                (safe_button, '<Return>', decline_key), (safe_button, '<space>', decline_key),
+                (approve_button, '<Return>', confirm_key), (approve_button, '<space>', confirm_key),
+                (tree, '<Control-Left>', scroll_paths_key), (tree, '<Control-Right>', scroll_paths_key),
+                (tree, '<Control-Home>', scroll_paths_key), (tree, '<Control-End>', scroll_paths_key),
+                (canvas, '<Configure>', request_reflow), (dialog, '<Configure>', request_reflow),
+                (body, '<Configure>', update_scrollregion), (dialog, '<FocusIn>', reveal_focus),
+                (dialog, '<MouseWheel>', wheel)):
+            token = widget.bind(sequence, handler, add='+')
+            interaction['bindings'].append((widget, sequence, token))
+        dialog.protocol('WM_DELETE_WINDOW', decline)
+        dialog.bind('<Escape>', decline_key)
+        configure_dialog(dialog, self.root, size_dip=(800, 520))
+        request_reflow()
         safe_button.focus_set()
 
     def settings(self):
