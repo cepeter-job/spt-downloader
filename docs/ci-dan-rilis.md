@@ -12,7 +12,7 @@ Nama check gabungan tetap **Windows tests and dependency audit** agar aturan bra
 
 Pemilihan perubahan memakai [scripts/ci_route.py](../scripts/ci_route.py). Hanya perubahan dokumentasi yang cocok dengan allowlist aman yang dapat melewati pekerjaan runtime. Perubahan tak dikenal, basis diff yang tidak dapat ditetapkan, atau ketidakpastian klasifikasi menjalankan pemeriksaan lengkap. Perubahan script, lock, requirements, workflow, resource, atau aturan pemilih tes tetap memerlukan gate kode.
 
-Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer perlu memastikan check gabungan dan PR benar-benar diwajibkan pada `main`. Jangan menyimpulkan perlindungan aktif hanya karena workflow tersedia atau berwarna hijau. [Aturan repo](#aktivasi-aturan-repository) telah dibaca kembali dan diverifikasi aktif; periksa ulang metadata remote bila konfigurasi berubah.
+Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer perlu memastikan check gabungan dan PR benar-benar diwajibkan pada `main`. Jangan menyimpulkan perlindungan aktif hanya karena workflow tersedia atau berwarna hijau. Bagian [aturan repo](#aktivasi-aturan-repository) menyimpan verifikasi bertanggal; periksa ulang metadata remote sebelum mengandalkannya untuk perubahan sekarang.
 
 ## Pembagian pekerjaan
 
@@ -52,11 +52,26 @@ untuk mencari penyebabnya; jangan menaikkan batas terus-menerus tanpa bukti.
 
 ## Benchmark opsional pembagian tes Windows
 
-Workflow [windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml) hanya aktif lewat `workflow_dispatch` atau PR yang mengubah konfigurasi benchmark/CI terkait. Benchmark ini **tidak mengganti** job `windows`, check wajib `Windows tests and dependency audit`, urutan packaging, maupun verifikasi artifact produksi.
+[windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml)
+berjalan lewat dispatch atau perubahan PR yang cocok dengan trigger-nya. Produksi
+tetap serial; benchmark tidak mengganti job `windows`, check gabungan, packaging
+atau artifact readback. Profil Python dibaca dari sumber yang sama dengan CI utama.
 
-Benchmark menjalankan tiga environment Windows 2022 dengan CPython 3.14.8 dan lock yang sama: satu suite penuh secara serial, dua job lain masing-masing mengeksekusi satu shard. Semua job memakai **satu proses pytest berurutan per runner**, tanpa `xdist`, data wajib pajak, atau akun Coretax. Hash stabil atas node ID mendistribusikan test secara deterministik; manifest menyimpan semua node ID, subset aktual, SHA, platform, status akhir dan durasi pytest.
+Satu runner mengerjakan suite serial, dua runner lain masing-masing satu shard,
+tetap satu proses pytest per runner. Partisi hash node ID harus deterministik,
+disjoint dan bergabung tepat menjadi koleksi serial; identitas commit, versi,
+jumlah, hasil dan payload inventory wajib cocok. Tidak ada `xdist` atau akun nyata.
 
-Job perbandingan menolak manifest yang tidak cocok atau tidak lengkap: seluruh node pada dua shard harus disjoint, bergabung tepat menjadi suite serial, dan mengikuti pembagian hash yang ditetapkan. Ringkasan menunjukkan waktu pytest serial versus durasi shard terlama. Itu **bukan** percepatan CI total: waktu antre runner, setup, build dan attestation belum dihitung. Jangan mengganti jalur produksi dengan shard tanpa bukti eksekusi Windows nyata, pengukuran berulang dan peninjauan khusus.
+Laporan membandingkan pytest, setup + pytest, serta jumlah runner-seconds shard.
+Itu bukan waktu CI total. Dispatch `cache_mode=restore` tidak menjamin hit; mode
+`cold` melewati restore tanpa menghapus cache repo, dan benchmark tidak menulis cache.
+
+Sebelum mengusulkan sharding produksi, kumpulkan sedikitnya lima perbandingan pada
+commit yang sama, pisahkan kondisi cache, ukur antre/setup/build/readback melalui
+metadata Actions, lalu tinjau flake, kelengkapan inventory dan biaya runner.
+Sasaran median CI kandidat turun setidaknya 20% adalah target evaluasi, bukan gate
+benchmark. [Evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md)
+memutuskan tetap serial; percepatan pytest saja belum membuktikan target CI total.
 
 ## Bukti waktu dan kegagalan tes
 
@@ -85,20 +100,6 @@ masih dapat berada dalam JUnit. Tidak ada folder workspace, profil, cookie, outp
 pajak, atau log aplikasi pribadi yang diunggah. Penghentian keras runner dapat
 mencegah penulisan atau upload; tidak ada jaminan laporan untuk proses yang dibunuh.
 
-Benchmark membaca pin Python produksi dari sumber yang sama dengan CI utama,
-bukan konstanta YAML kedua. Dispatch manual menyediakan `cache_mode=restore`
-(default) atau `cold`; restore yang diminta belum tentu menghasilkan cache hit,
-sehingga hit/miss aktual tetap harus dibaca. Benchmark tidak menulis cache. Mode
-cold hanya melewati restore pada runner baru, tanpa menghapus cache milik repo.
-
-Perbandingan menyajikan durasi pytest, setup + pytest, serta jumlah runner-seconds
-kedua shard. Nilai tersebut bukan waktu CI total. Sebelum PR terpisah boleh
-mengaktifkan sharding produksi, kumpulkan sedikitnya lima perbandingan pada commit
-yang sama, pisahkan kondisi cache, ukur antre/setup/build/readback dari metadata
-Actions, pastikan inventory lengkap tanpa duplikasi, dan tinjau flake serta biaya
-runner. Sasaran evaluasi adalah penurunan median waktu CI kandidat sekurangnya
-20%, bukan syarat lulus benchmark ini. Produksi tetap serial dan seluruh gate tetap.
-
 ## Cache dan CPU
 
 Cache menyimpan unduhan/paket `uv` serta interpreter managed. Kunci memisahkan OS, arsitektur, versi Python, peran workload, serta isi lock dan requirements. Cache tidak menjadi bukti bahwa environment sudah terverifikasi: instalasi tetap memakai lock dan hash, dan runtime memeriksa kesiapan aktual.
@@ -107,7 +108,7 @@ Cache menyimpan unduhan/paket `uv` serta interpreter managed. Kunci memisahkan O
 
 PR dapat memulihkan cache, tetapi penulisan cache dibatasi pada push tepercaya ke `main`. `.venv`, profil/cookie browser, data pajak, checkpoint, output tes, Downloads, dan executable browser tidak disimpan dalam cache. Jangan menambahkan seluruh workspace ke cache demi mempercepat setup.
 
-Pada Windows, [scripts/ci_python_cache.py](../scripts/ci_python_cache.py) memeriksa alias minor Python setelah restore cache dan sebelum `uv python install`. Penanganan ini berasal dari kegagalan yang diamati pada uv 0.12.22: alias seperti `cpython-3.14-windows-x86_64-none` dipulihkan sebagai file atau symlink, sementara uv mengharapkan direktori/junction dan gagal dengan `os error 267`. Helper tetap dipakai saat memverifikasi instalasi dan penggunaan ulang cache dengan uv 0.13.1. Helper stdlib dijalankan terisolasi sebelum `.venv` tersedia. Root harus tepat `RUNNER_TEMP/uv-python-dir` tanpa pengalihan; hanya alias minor untuk versi yang dipin boleh dilepas sebagai entry file/symlink. Direktori interpreter patch, direktori nyata, target link, dan cache paket tidak dihapus. uv tetap memasang/memilih interpreter exact dan instalasi paket tetap memverifikasi hash.
+Pada Windows, [scripts/ci_python_cache.py](../scripts/ci_python_cache.py) memeriksa alias minor Python setelah restore cache dan sebelum `uv python install`. Penanganan ini berasal dari kegagalan yang diamati pada uv 0.12.22: alias seperti `cpython-3.14-windows-x86_64-none` dipulihkan sebagai file atau symlink, sementara uv mengharapkan direktori/junction dan gagal dengan `os error 267`. Helper tetap menjadi bagian jalur bootstrap pada [pin uv produksi](python-314.md#versi-yang-didukung); nomor versi lama pada catatan insiden bukan pin aktif. Helper stdlib dijalankan terisolasi sebelum `.venv` tersedia. Root harus tepat `RUNNER_TEMP/uv-python-dir` tanpa pengalihan; hanya alias minor untuk versi yang dipin boleh dilepas sebagai entry file/symlink. Direktori interpreter patch, direktori nyata, target link, dan cache paket tidak dihapus. uv tetap memasang/memilih interpreter exact dan instalasi paket tetap memverifikasi hash.
 
 Tes regresi membuktikan file/tautan alias dapat dibersihkan tanpa menyentuh interpreter atau target di luar cache. Job Windows produksi 3.14.8 juga menguji instalasi baru, arsip/pemulihan dengan GNU tar milik Git for Windows, lalu penggunaan ulang interpreter yang dipulihkan secara offline. Job audit dan build memakai restore serta helper yang sama; pengujian arsip besar tidak diulang pada semua job. Diagnostik hanya mencatat nama alias dan tipe/atribut entry, bukan isi data pengguna atau target tautan.
 
@@ -211,8 +212,11 @@ Opsi `--apply` mengaktifkan penghapusan dan memerlukan `GH_TOKEN` dengan `conten
 
 ## Menutup tindak lanjut audit
 
-Audit bertanggal menyimpan rekomendasi saat baseline masih memiliki dua branch dan satu job Windows. Untuk menutup tindak lanjut pada commit baru, sertakan bukti konkret: aturan branch aktif, hasil lock/hash dan audit, gate Windows profil produksi 3.14.8, artifact yang dibaca kembali, serta penerimaan manual bila dilakukan. Status lulus sintetis, signing, dan penerimaan live harus tetap dicatat terpisah.
-
+Tindak lanjut audit harus mengacu ke commit, run, artifact dan scope pemeriksaan
+baru. [Indeks catatan historis](README.md#catatan-teknis-dan-bukti-historis) menyimpan
+asal keputusan; hasil lama tidak menggantikan verifikasi ulang. Ikuti
+[verifikasi artifact](#memverifikasi-artifact) dan pisahkan bukti sintetis, signing
+serta penerimaan live.
 
 ## Kontrak struktur workflow
 
@@ -233,11 +237,8 @@ hasil runner tetap diperlukan untuk sintaks, eksekusi, dan verifikasi artifact.
 
 ## Hasil evaluasi optimasi 16 Oktober 2026
 
-Lima perbandingan Windows pada commit yang sama sudah selesai; hasil lengkap,
-identitas artifact, inventaris dan batas pengukuran ada di
-[laporan penyelesaian optimasi](audits/2026-10-16-optimization-completion.md).
-Keputusannya: produksi tetap serial. Percepatan fase pytest tidak membuktikan
-percepatan CI lengkap 20%, kedua shard menambah total runner time, dan permintaan
-restore cache dalam studi ini ternyata semuanya miss. Tidak ada cache-hit atau
-percepatan pipeline penuh yang diasumsikan. Benchmark opsional tetap tersedia,
-tetapi tidak ada perubahan sharding produksi yang menunggu digabungkan.
+Hasil lengkap dan batas pengukuran tetap berada pada
+[laporan optimasi](audits/2026-10-16-optimization-completion.md).
+Kebijakan eksperimen yang masih berlaku dijelaskan pada
+[benchmark opsional](#benchmark-opsional-pembagian-tes-windows), bukan disalin
+menjadi hasil baru setiap kali panduan CI diperbarui.

@@ -2,11 +2,13 @@
 
 [Kembali ke dokumentasi](README.md)
 
+Ini panduan perintah setup, tes dan build. Kebijakan versi/lock ada pada [kebijakan Python](python-314.md); verifikasi distribusi ada pada [CI dan rilis](ci-dan-rilis.md#memverifikasi-artifact). **Batas kerja pada [AGENTS.md](../AGENTS.md#verification) mengalahkan contoh lokal di bawah:** untuk pekerjaan berotorisasi yang disebut di sana, pytest, import produk, Tk/browser, build dan EXE hanya dijalankan pada GitHub runner. Lokal terbatas pada source/dokumen/AST dan hash/metadata.
+
 ## Prasyarat dan checkout
 
 Gunakan Windows x64 untuk memverifikasi GUI Tk, Edge, Credential Manager, Known Folders, Job Objects, dan executable frozen. Tes portable dapat dijalankan di Linux. Akses intranet atau akun Coretax tidak diperlukan untuk development sintetis.
 
-Toolchain produksi memakai CPython **3.14.8 x64 dengan GIL** untuk GUI, worker dan CLI, serta `uv` **0.13.4**. Satu-satunya profil adalah `production`. Versi harus mengikuti [kebijakan Python](python-314.md) pada commit yang dikerjakan; jangan mengganti pin dengan `latest` atau sekadar `3.14`.
+Gunakan profil `production` CPython x64/GIL dan pin uv pada [tabel versi](python-314.md#versi-yang-didukung). Contoh perintah berikut mengikuti pin tersebut; saat memutakhirkan toolchain, cocokkan contoh dengan `runtime.py`. Jangan memakai `latest`, minor saja, atau Python sistem sebagai pengganti pin.
 
 Clone repositori dan buat branch perubahan dari `main` yang sudah diperbarui. Nama seperti `fix/checkpoint-scope` atau `feat/export-layout` cukup menjelaskan maksudnya. Jangan memindahkan profil browser, capture JSON, workbook nyata, atau kredensial ke checkout. Simpan data dan ruang tes di direktori terpisah.
 
@@ -33,7 +35,7 @@ Periksa Tk dan jalankan GUI source di Windows:
 .venv/Scripts/python.exe spt_gui.py
 ```
 
-Tutup jendela demo Tk setelah terlihat. Membuka GUI tidak memulai scraping; tombol **Mulai** memulai operasi nyata sesuai pengaturan pengguna. Untuk pemeriksaan otomatis tanpa akun, gunakan self-test di bagian build.
+Tutup jendela demo Tk setelah terlihat. Membuka GUI tidak memulai scraping; tombol **Mulai unduh** memulai operasi nyata sesuai pengaturan pengguna. Untuk pemeriksaan otomatis tanpa akun, gunakan self-test di bagian build.
 
 ## Pengujian lokal
 
@@ -47,11 +49,7 @@ $SptTestTemp = Join-Path $env:TEMP ("spt-downloader-tests-" + [guid]::NewGuid().
 
 Gunakan portable untuk feedback awal. Workload Windows menjalankan seluruh suite, termasuk logika portable, lalu browser/Tk/native yang nyata bila tesnya memerlukan hal tersebut; fixture dan payload tetap sintetis. Pada mesin Windows yang siap, perintah Windows saja cukup untuk gate suite lengkap. Jangan menjalankan beberapa tes GUI/Job Object sekaligus pada workspace atau profil yang sama.
 
-Untuk seluruh suite pada Windows yang telah memiliki Edge:
-
-```powershell
-.venv/Scripts/python.exe -m pytest tests -q --basetemp "$SptTestTemp/full"
-```
+Perintah workload `windows` di atas sudah menjadi gate suite lengkap; tidak perlu menjalankan ulang suite tanpa selector hanya untuk menduplikasi hasil.
 
 Untuk perubahan terbatas, mulai dari perilaku yang relevan sebelum menjalankan gate lengkap:
 
@@ -105,7 +103,7 @@ uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :al
 
 Build lokal bukan artifact rilis terverifikasi dari GitHub. Workflow menambahkan manifest checksum dan publikasi artifact dengan identitas commit; ikuti [CI dan rilis](ci-dan-rilis.md) untuk pemeriksaannya. Jangan mengemas seluruh `dist`, workspace, atau folder hasil capture secara rekursif.
 
-Executable produksi dan worker wajib sama-sama memakai Python 3.14.8. Lihat [verifikasi produksi](python-314.md#verifikasi-produksi) dan [langkah pemulihan](python-314.md#batas-dan-langkah-kembali).
+Executable produksi dan worker wajib memenuhi pin produksi yang sama. Lihat [verifikasi produksi](python-314.md#verifikasi-produksi) dan [langkah pemulihan](python-314.md#batas-dan-langkah-kembali).
 
 ## Kontribusi dan review
 

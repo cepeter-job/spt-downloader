@@ -6,9 +6,7 @@ Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan meng
 
 ## Memakai aplikasi Windows
 
-**Rilis bertahap PPN:** gunakan sumber detail **DOM**. Lihat [cakupan perbaikan PPN dan batas verifikasi](docs/ppn-dom-release.md). Native JSON Masa dikerjakan terpisah.
-
-**Status fitur:** kode ini mencakup pemilihan SPT, workbook terpisah untuk setiap masa dan Model SPT literal, PDF keuangan/auditan Badan langsung di folder Excel, template form PPh 21/26/PPN/Unifikasi, sorting jenis pajak, dan logging diagnostik lokal. **JSON-hybrid (pilot)** menjadi bawaan Pengaturan desktop baru; pilihan **DOM** yang sudah disimpan tetap dihormati. CLI/library tetap memakai DOM bila mode tidak diberikan; gunakan `--detail-source json-first` untuk memilih JSON-hybrid secara eksplisit. JSON primer hanya digunakan untuk format teramati yang dapat diverifikasi; format yang belum didukung memakai fallback DOM yang diaudit, bukan mengabaikan kegagalan identitas atau otorisasi. Hasil integrasi dan artefak commit terbaru dicatat pada [PR #18](https://github.com/cepeter-job/spt-downloader/pull/18), yang menggabungkan [PR logging #19](https://github.com/cepeter-job/spt-downloader/pull/19). Penerimaan manual/live tetap terpisah dari tes sintetis dan build.
+**Status fitur:** kode ini mencakup pemilihan SPT, workbook terpisah untuk setiap masa dan Model SPT literal, PDF keuangan/auditan Badan langsung di folder Excel, template form PPh 21/26/PPN/Unifikasi, sorting jenis pajak, dan logging diagnostik lokal. **JSON-hybrid (pilot)** menjadi bawaan Pengaturan desktop baru; pilihan **DOM** yang sudah disimpan tetap dihormati. CLI/library tetap memakai DOM bila mode tidak diberikan; gunakan `--detail-source json-first` untuk memilih JSON-hybrid secara eksplisit. JSON primer hanya digunakan untuk format teramati yang dapat diverifikasi; format yang belum didukung memakai fallback DOM yang diaudit, bukan mengabaikan kegagalan identitas atau otorisasi. Cocokkan hasil dan artifact dengan commit/run yang akan dipakai; [catatan integrasi lama](docs/README.md#catatan-teknis-dan-bukti-historis) bukan penunjuk build terbaru. Penerimaan manual/live tetap terpisah dari tes sintetis dan build.
 
 Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.14.8` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. GUI dan worker memakai CPython 3.14.8 x64/GIL yang sama. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
@@ -84,9 +82,9 @@ Setiap detail dibuka hanya melalui kontrol **View** yang dikenali. URL detail ha
 
 **Normal dan setiap nomor pembetulan memiliki file sendiri.** Masa/model berasal dari sumber, disanitasi hanya untuk keamanan nama file; nilai literal dan nol awal tetap disimpan dalam proof. Contoh: `SPT Masa PPN/SPT_PPN_Januari 2025_Normal.xlsx` dan `SPT Masa PPN/SPT_PPN_Januari 2025_Pembetulan 1.xlsx`. Aturan ini menggantikan penggabungan model pada spesifikasi lama.
 
-Workbook SPT jenis/masa/model **hanya berisi lembar form**; Ringkasan, Daftar SPT, dan Audit hanya berada di `resume.xlsx`. Banner judul/NPWP/tahun/tautan umum serta header/footer cetak tidak ditambahkan pada lembar form. Field sumber, teks konteks, path bagian, dan header kolom tabel tetap disimpan. Tidak ada workbook masa/jenis yang dibuat bila datanya tidak terambil. **Pertahankan seluruh hierarki folder dan jangan mengganti nama workbook** agar tautan relatif tetap berfungsi. Folder hasil dapat dipindahkan bersama. Sheet menggunakan tabel berfilter/freeze panes; field dan nilai sumber tidak digabung dalam sel data. Kolom numerik opsional membantu pengolahan angka format Indonesia tanpa mengganti nilai sumber atau mengubah NPWP/ID menjadi angka.
+Workbook SPT jenis/masa/model **hanya berisi lembar form**; Ringkasan, Daftar SPT, dan Audit hanya berada di `resume.xlsx`. Banner judul/NPWP/tahun/tautan umum serta header/footer cetak tidak ditambahkan pada lembar form. Field sumber, teks konteks, path bagian, dan header kolom tabel tetap disimpan. Tidak ada workbook masa/jenis yang dibuat bila datanya tidak terambil. **Pertahankan seluruh hierarki folder dan jangan mengganti nama workbook** agar tautan relatif tetap berfungsi. Folder hasil dapat dipindahkan bersama. Form yang memakai template mempertahankan layout, style dan merge bawaan yang disetujui. Renderer generik memakai tabel berfilter/freeze panes. NPWP/ID tetap teks; slot moneter terverifikasi dapat memakai angka Excel sesuai aturan di bawah.
 
-Identitas dan angka sumber berbentuk teks dipertahankan sebagai teks literal, termasuk nol awal, format angka Indonesia, dan teks yang diawali `=`. Hitungan ringkasan tetap numerik. Sel yang melebihi 32.767 karakter, karakter XML yang tidak didukung, atau angka numerik yang akan kehilangan presisi menghentikan ekspor secara eksplisit. Teks konteks halaman yang panjang dipecah antar-sel tanpa pemotongan. Hanya URL HTTP/HTTPS menjadi tautan aktif.
+Checkpoint mempertahankan nilai sumber. Di Excel, NPWP/ID, nol awal dan teks yang menyerupai formula tetap literal. Slot moneter pada template yang didukung dapat dikonversi menjadi angka Excel hanya dengan format id-ID dan batas presisi yang terverifikasi; teks malformed atau berpresisi tidak aman tidak ditebak atau dibulatkan. Hitungan ringkasan tetap numerik. Rincian renderer dan pengecualian tampilan ada pada [kontrak Excel](docs/arsitektur.md#kontrak-excel-dan-transaksi-publikasi). Sel yang melebihi 32.767 karakter, karakter XML yang tidak didukung, atau angka numerik yang akan kehilangan presisi menghentikan ekspor secara eksplisit. Teks konteks halaman yang panjang dipecah antar-sel tanpa pemotongan. Hanya URL HTTP/HTTPS menjadi tautan aktif.
 
 Seluruh set ditulis ke staging dan diperiksa sebelum publikasi. Workbook SPT baru menyimpan deklarasi scope/identitas/form/PDF dalam properti dokumen XLSX nonvisual `identifier`; workbook lama masih diperiksa melalui header/index/Audit fisiknya, secara independen dari `run.json`. Resume tetap membuktikan scope melalui sheet administratif. Proof pada output baru wajib cocok dengan capture terpilih dan sheet fisiknya; proof yang hilang, berubah, atau tidak sah ditolak. Pemeriksaan hasil lama mendukung format legacy tetapi tetap menolak scope lain. Metadata bukan tanda tangan digital maupun pengganti verifikasi byte/hash PDF. Benturan nama berkas tanpa membedakan kapital dan berkas tak dikenal ditolak. Kegagalan penggantian mencoba rollback serta mempertahankan data pemulihan. Proses mati atau listrik padam di tengah penggantian beberapa berkas tidak memiliki jaminan transaksi atomik. Gunakan folder baru saat mengubah scope atau memulihkan publikasi yang terblokir.
 
@@ -143,17 +141,12 @@ Kode protokol worker desktop berbeda untuk beberapa status; rujuk [arsitektur](d
 
 ## Development dan verifikasi
 
-Repositori [cepeter-job/spt-downloader](https://github.com/cepeter-job/spt-downloader) menyatukan CLI dan aplikasi desktop. `main` menjadi branch integrasi; perubahan dilakukan lewat branch berumur pendek dan PR yang dapat ditinjau.
+Mulai dari [indeks kontributor](docs/README.md) untuk setup, pengujian, arsitektur,
+UI/UX, CI dan toolchain. Panduan itu membedakan instruksi aktif dari arsip keputusan.
+Perubahan CLI dan desktop ditinjau melalui PR menuju `main`.
 
-- [Setup, pengujian lokal, dan kontribusi](docs/pengembangan.md).
-- [Arsitektur serta kontrak keamanan dan data](docs/arsitektur.md).
-- [Pembagian CI, cache, dan verifikasi artifact](docs/ci-dan-rilis.md).
-- [Kebijakan Python produksi dan persiapan 3.14](docs/python-314.md).
-- [Checklist penerimaan manual Coretax dan Excel](docs/penerimaan-manual.md).
-- [Pemecahan masalah](docs/pemecahan-masalah.md).
-- [Audit 12 Oktober 2026](docs/audit-2026-10-12.md), sebagai catatan historis baseline dan temuan.
-
-Pengujian otomatis memakai data sintetis. Tes browser memakai fixture HTML lokal, tanpa akun atau data wajib pajak. Self-test GUI source/frozen tidak mengakses kredensial nyata dan tidak mengambil SPT. Bukti tersebut tidak menggantikan penerimaan manual berizin pada Coretax aktual.
+Tes otomatis dan self-test memakai data sintetis, tanpa akun atau data wajib pajak.
+Hasilnya tidak menggantikan [penerimaan manual berizin](docs/penerimaan-manual.md).
 
 ## Lisensi
 

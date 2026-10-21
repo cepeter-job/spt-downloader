@@ -2,11 +2,11 @@
 
 **Keputusan pemilik, 12 Oktober 2026:** gunakan desain **B**, pertahankan **Tkinter/ttk**, dan utamakan proses serta hasil yang mudah dipahami sebelum menambah fitur. Bahasa antarmuka harus terasa seperti petunjuk dari rekan kerja, bukan log mesin atau dokumen teknis.
 
-**Baseline aktif, 21 Oktober 2026:** perilaku produk dipin pada `main@ecbd9878aa732a379ba94ef848764f9815445003`, setelah PR #53 dan #58 merged. Mulai dari [baseline UI/UX 21 Oktober](baseline-2026-10-21.md). Shell B, dialog pemilihan/penggantian, konteks folder wajib, ID lengkap yang disorot, Alt+J, serta perbaikan waktu filter sudah diimplementasikan. Default desktop JSON-hybrid, saved DOM, login Satu, logging, pemisahan workbook masa/model dan PDF yang didukung tetap dipertahankan.
-
-[Bukti Phase 2](../superpowers/reports/2026-10-20-ui-b-phase2-evidence.md) dan [bukti performa PR #58](../superpowers/reports/2026-10-21-phase2-performance-evidence.md) tetap dipin ke commit yang benar-benar diuji. Filter membaik, tetapi target opening 100 ms belum tercapai; P2-14 untuk ukuran normal/compact penuh pada 200% masih PARTIAL. Jangan menyamakan merge dengan sertifikasi aksesibilitas, penerimaan semua akun Coretax, atau deployment.
-
-[Snapshot 20 Oktober sebelum Phase 2](baseline-2026-10-20.md), [spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md), rencana tahap 1, dan [bukti T5](../superpowers/reports/2026-10-13-ui-b-phase1-evidence.md) adalah arsip keputusan/hasil. PR #12 sudah merged pada 13 Oktober. Angka 719 tes dan screenshot lama tidak mengesahkan perubahan berikutnya. Jangan memulihkan footer nama pribadi atau membangun ulang tahap yang sudah selesai.
+Untuk fitur yang sudah ada, batas yang masih terbuka dan bukti per commit, gunakan
+[baseline UI/UX 21 Oktober](baseline-2026-10-21.md). Halaman ini memegang arah desain
+dan pemetaan Tkinter; pola interaksi, copy, dan checklist dipelihara di halaman
+masing-masing. Snapshot dan laporan lama tetap menjadi sejarah, bukan persetujuan
+untuk membangun ulang fitur atau memulihkan footer yang telah dihapus.
 
 ## Mulai dari sini
 
@@ -39,23 +39,22 @@ Tampilan yang menarik tidak cukup untuk menyebut pekerjaan selesai. Ukuran keber
 
 ## 3. Batas teknis yang harus tetap
 
-GUI tetap tipis. Browser, pembuatan Excel, PDF, dan pembacaan data besar berada di worker, bukan callback Tk. Semua perubahan widget melalui thread GUI. Controller yang memutuskan apakah hasil sudah layak dinyatakan selesai; view hanya menyajikan hasil keputusan tersebut.
+GUI tetap tipis dan hanya memperbarui widget pada thread utama. Browser, Excel
+serta PDF berada di worker; controller mengesahkan status dan lokasi hasil.
+Tata letak atau kata yang lebih ramah tidak boleh melemahkan validasi scope,
+consent, tenggat, Stop, atau kepemilikan proses.
 
-Jangan menukar status internal dengan terjemahan. `COMPLETE`, `PARTIAL`, `CANCELLED`, dan status login tetap kontrak kode. Teks seperti **Selesai** dan **Belum lengkap** hanya lapisan presentasi. Mengganti teks tidak boleh mengubah exit code, validasi `job_id`, `request_id`, cakupan, output path, atau aturan pembatalan.
+Rujukan rinci dipelihara pada satu pemilik topik:
 
-NPWP tetap string 16 digit ASCII, termasuk nol awal. Tidak boleh di-trim, dibuang pemisahnya, atau diubah menjadi angka secara diam-diam. Tahun tetap empat digit dalam rentang 1900–2100. Inventaris mencakup SPT teramati; rincian hanya untuk ID yang dikonfirmasi. Pilihan awal kosong; perubahan pencarian mengosongkan pilihan. Klik header Jenis pajak hanya mengubah urutan tampilan dan mempertahankan pilihan/fokus; ID konfirmasi tetap menurut urutan inventaris asli. Nilai dan pembetulan dalam subset tetap literal dan terpisah sesuai sumber.
+- [Pola layar/status](pola-dan-status.md): input literal, search vs sort, fokus,
+  keputusan dialog, COMPLETE/PARTIAL, dan Pengaturan dengan origin Satu tetap.
+- [Kontrak backend](../arsitektur.md): identitas/provenance, exit code, sumber
+  angka, workbook masa/model, PDF terverifikasi, resume dan rollback.
+- [AGENTS.md](../../AGENTS.md): batas akses, privasi dan lingkungan eksekusi.
 
-Penggantian membutuhkan keputusan untuk folder dan file yang ditampilkan. **Jangan ganti**, Escape, atau X pada dialog penggantian menolak penggantian; menutup dialog pemilihan membatalkan job. Jangan menyamakan kedua jalur atau menganggap timeout sebagai persetujuan. COMPLETE berlaku untuk pilihan saat ini dan cakupan yang didukung, bukan seluruh tahun.
-
-Password hanya disimpan melalui Windows Credential Manager pada `LOGIN_ORIGIN` Satu yang tetap. Pengguna tidak memilih origin; jangan mengembalikan combobox URL dari rancangan lama. Hapus login tidak berarti menghapus akun Coretax. Cek login tidak mengunduh SPT. Sesi SSO atau pemeriksaan yang habis waktu tidak membuktikan password benar atau salah.
-
-Syarat sukses tetap: terminal yang sah, exit code cocok, folder dan workbook valid, serta proses milik aplikasi selesai dibersihkan. Angka 99% bukan sukses. Pembatalan tidak berubah menjadi sukses karena event lama datang belakangan. PDF yang dinyatakan tersimpan harus memiliki byte/deklarasi/verifikasi yang sah, bukan metadata saja.
-
-Setiap jenis pajak memakai workbook per masa/tahun sumber dan **Model SPT literal**. Normal, Pembetulan 1, Pembetulan 2, dan model berikutnya tidak berbagi workbook; lembar di dalamnya hanya form/tab model tersebut. Jenis Masa tetap memakai subfoldernya; Badan memakai `SPT_Badan_<period>_<model>.xlsx`. Pertahankan nilai sumber, seluruh hierarki, dan tautan relatif. Jangan menggabungkan model melalui label sorting yang dinormalisasi, atau menulis ulang/menghapus export gabungan lama secara diam-diam.
-
-`resume.xlsx` tetap memuat Ringkasan/Daftar SPT/Audit. Pada publikasi ke folder yang sudah ada, backend memverifikasi workbook lama dan membuat indeks folder gabungan untuk hasil sah yang dipertahankan serta hasil baru. Ini berbeda dari cakupan COMPLETE job saat ini yang tetap subset terpilih; indeks bukan bukti semua file lama diunduh ulang. Penolakan overwrite mempertahankan hasil lama termasuk resume. PDF keuangan/auditan Badan tertentu dapat ikut disimpan melalui tautan baca yang didukung; jangan mengatakan semua PDF dikecualikan atau semua lampiran tersedia.
-
-Sumber kontrak: [arsitektur pada baseline](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/docs/arsitektur.md), [App](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/app.py), dan [AGENTS.md](../../AGENTS.md).
+Selalu perbaiki mockup yang melanggar kontrak tersebut, bukan mengubah guard
+agar cocok dengan mockup. Angka 99%, event sukses lama, metadata PDF atau
+penutupan dialog tidak boleh ditafsirkan sebagai keberhasilan/consent baru.
 
 ## 4. Cara memetakan desain ke Tkinter/ttk
 
@@ -89,14 +88,17 @@ Target visual: teks biasa minimal 4,5:1, teks besar serta komponen/fokus relevan
 
 Figma/Penpot opsional, tidak menjadi syarat melanjutkan pekerjaan. Paket B-copy-2 dan 36 mockup adalah referensi historis yang perlu diselaraskan untuk layar terbaru. SVG bukan pengganti component instances atau binding; keberhasilan build prototipe bukan bukti aplikasi Tkinter sudah diuji.
 
-Lima teks pemilik lama yang masih berlaku serta `app.bugreport` dipertahankan sesuai [katalog](bahasa-antarmuka.md). Footer nama pribadi `app.credit` sudah dihapus, bukan diminta kembali. Aturan gaya umum tidak boleh menghapus humor atau kata yang secara eksplisit diminta dan sudah dikontrak tes.
+Teks yang dikunci pemilik, `app.bugreport` dan larangan memulihkan `app.credit` mengikuti [panduan bahasa](bahasa-antarmuka.md#teks-khusus-yang-tidak-diganti). Aturan gaya umum tidak menghapus kata yang telah diminta dan dikontrak tes.
 
 Setiap perubahan mencatat alasan, copy ID/layar terdampak, kondisi pemicu, sumber data, tindakan tombol, pemeriksaan yang dijalankan, dan bukti yang belum tersedia. Perbarui docs/aset bersama implementasi. Saat codebase berubah, pin commit dan periksa kembali App/controller/interaction/worker/output/runtime serta tes consent/teks.
 
 ## 7. Syarat sebelum implementasi
 
-Arah B dan fondasi tahap 1 sudah diselesaikan melalui PR #12; dialog Phase 2 dan perbaikan filter sudah merged melalui PR #53/#58. Untuk tahap berikutnya, tulis delta terhadap [baseline aktif](baseline-2026-10-21.md), bedakan fitur existing dari usulan, lalu minta review desain dan susun rencana kecil. Jangan meminta implementasi ulang tahap 1 atau menyatakan seluruh tahap selanjutnya selesai karena fitur sejenis sudah ada. Perubahan dokumen bukan izin merge atau deployment otomatis.
+Mulai dari delta terhadap [baseline aktif](baseline-2026-10-21.md), lalu gunakan
+[checklist fitur dan PR](checklist-fitur.md). Bedakan perubahan perilaku, copy,
+layout dan bukti yang dibutuhkan; jangan meminta implementasi ulang tahap yang
+sudah selesai. Perubahan dokumentasi tidak mengotorisasi merge atau deployment.
 
-Sesuai [AGENTS.md](../../AGENTS.md), pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE dijalankan hanya pada GitHub runner. Lokal hanya pemeriksaan dokumen/source/AST dan hash/metadata. Jangan mengubah CI/ruleset untuk mendapatkan GREEN. Bukti baseline Windows, aksesibilitas, performa, dan penerimaan manual tetap dibedakan dari pemeriksaan dokumentasi.
-
-Permintaan PR #14 menghapus footer nama pribadi, bukan subtitle umum atau petunjuk Downloads. Katalog aktif pada commit yang dipin memuat 54 ID termasuk `app.bugreport`; jumlah ID adalah metadata baseline, bukan jumlah kontrol yang dirender. Jangan mengembalikan `app.credit` dari rancangan historis.
+Batas eksekusi mengikuti [AGENTS.md](../../AGENTS.md#verification), prosedur setup
+dan tes mengikuti [pengembangan](../pengembangan.md). Pemeriksaan dokumen/source
+bukan bukti baru atas screenshot, aksesibilitas, performa atau akun nyata.
