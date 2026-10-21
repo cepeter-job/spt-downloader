@@ -12,26 +12,16 @@ concurrency:
   cancel-in-progress: false
 jobs:
   evidence:
-    name: Observe exact readiness RED and layout profile
+    name: Native-mapped readiness RED before implementation
     runs-on: windows-2022
-    timeout-minutes: 12
+    timeout-minutes: 10
     env:
       PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          path: harness
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          path: source
-          ref: 0fa42b4bb9f0829fe64e6f655f59c0941ec7a2e8
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          path: historical-probe
-          ref: 67396564dd12b8a3d9eb8cd08920316cf83ae2d3
+          ref: d9336e382541d30f1fa837e5735b9b748e4c3657
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           version: '0.13.4'
@@ -43,27 +33,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python '3.14.8+gil' .venv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: source/locks/test.txt
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv pip check --python .venv/Scripts/python.exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/p2-readiness-red" | Out-Null
-      - name: Profile modal construction and deferred layout separately
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/p2-readiness-red-mapped" | Out-Null
+          git rev-parse HEAD | Out-File -Encoding utf8 "$env:RUNNER_TEMP/p2-readiness-red-mapped/head.txt"
+      - name: Observe readiness failures without processing timers
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py --source source --revision 0fa42b4bb9f0829fe64e6f655f59c0941ec7a2e8 --historical historical-probe/scripts/_p2_dialog_evidence.py --out "$env:RUNNER_TEMP/p2-readiness-red/profile.json"
+          .venv/Scripts/python.exe -m pytest -q tests/test_desktop_dialog_readiness.py --basetemp "$env:RUNNER_TEMP/p2-readiness-red-tests" --junitxml "$env:RUNNER_TEMP/p2-readiness-red-mapped/results.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Observe test-only readiness failures before implementation
-        shell: pwsh
-        working-directory: source
-        run: |
-          ../.venv/Scripts/python.exe -m pytest -q tests/test_desktop_dialog_readiness.py --basetemp "$env:RUNNER_TEMP/p2-readiness-red-tests" --junitxml "$env:RUNNER_TEMP/p2-readiness-red/results.xml"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve exact synthetic RED and profile evidence
+      - name: Preserve exact synthetic RED evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: p2-readiness-red-${{ github.sha }}
+          name: p2-readiness-red-mapped-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7
-          path: ${{ runner.temp }}/p2-readiness-red/
+          path: ${{ runner.temp }}/p2-readiness-red-mapped/
