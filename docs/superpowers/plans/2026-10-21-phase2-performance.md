@@ -24,6 +24,20 @@ Create `tests/test_desktop_dialog_readiness.py`: after only idle processing, ini
 
 Run this file on the exact test-only commit on a Windows runner. Expected RED is incomplete geometry or a still-pending resize timer, not collection/setup failure. No product implementation is written until that failure is observed. Existing native resize/ownership/keyboard tests remain mandatory.
 
+### Native mapping clarification from observed failures
+
+Windows Map/Configure work is not entirely in the idle queue. The readiness
+fixture processes native WINDOW_EVENTS and IDLE_EVENTS while excluding
+TIMER_EVENTS; it still proves no dependency on the fixed resize delay.
+Diagnostic trace39533874431 shows obsolete Toplevel Configure notifications
+arriving after the measured viewport is already arranged. Deduplicate using
+actual viewport width/height, not the event's possibly obsolete payload.
+Explicit content invalidation must still run at unchanged viewport size.
+Ownership/terminal fixtures now create a real native resize before demanding a
+pending resize token; their original assertion ASTs remain unchanged. Added
+no-op Configure tests reject redundant delayed work. These are narrow fixture
+corrections, not removal of lifecycle or safety coverage.
+
 ## Task 2 — Minimal measured correction
 
 Modify only the selection/overwrite layout closures in `spt_desktop/app.py`. Initial and content requests may replace queued resize work with one owned idle callback; real Configure events retain coalesced75ms scheduling. Use measured requested body height after wrapping, updating only when it differs, so idle completion does not leave stale scroll extents. Preserve guards and cancellation. No forced `update()` loop or arbitrary shorter global timer.
