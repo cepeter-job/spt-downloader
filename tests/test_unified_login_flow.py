@@ -7,7 +7,7 @@ import pytest
 from coretax_browser import CaptureCancelled
 from spt_desktop import auth, controller, diagnostics, worker
 from spt_desktop.credentials import Login
-from support_login_browser import browser
+from support_login_browser import ASYNC_LOGIN_TIMEOUT, browser
 from support_login_redirect import Engine, SATU, ACCOUNT, SECRET
 
 
@@ -117,9 +117,10 @@ def test_worker_rejects_invalid_export_account_before_authorization(tmp_path, mo
         '--root', str(tmp_path), '--job-id', 'synthetic-invalid', '--account', account])
     assert result == 1 and entered == []
 
-def test_blocked_post_login_requests_are_counted_without_private_values(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize('mode,count', [('blocked', 3), ('blocked_both', 6)])
+def test_blocked_post_login_requests_are_counted_without_private_values(browser, tmp_path, monkeypatch, mode, count):
     saved(monkeypatch)
-    engine = Engine(browser, mode='blocked', entry=auth.SEARCH_URL)
+    engine = Engine(browser, mode=mode, entry=auth.SEARCH_URL)
     with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
         status, message = auth.check_saved_credentials(engine, tmp_path, SATU, ACCOUNT,
             'msedge', True, lambda: None, timeout=2)
@@ -136,9 +137,29 @@ def test_blocked_post_login_requests_are_counted_without_private_values(browser,
     assert (blocked[0]['target_origin'], blocked[0]['method'], blocked[0]['resource_type'], blocked[0]['reason']) == (
         'coretax', 'POST', 'fetch', 'cross_origin_write')
     result = next(r for r in rows if r['event'] == 'auth.result')
-    assert result['reason'] == 'cross_origin_write' and result['blocked_requests'] == 3
+    assert result['reason'] == 'cross_origin_write' and result['blocked_requests'] == count
     for private in [ACCOUNT, SECRET, SATU, auth.CORETAX_ORIGIN, 'SYNTHETIC_PRIVATE_QUERY', 'SYNTHETIC_POST_ONLY']:
         assert private not in text and private not in message
+
+
+@pytest.mark.parametrize('mode,status,reason', [
+    ('blocked_before', 'LOGIN_UNVERIFIED', 'verification_timeout'),
+    ('blocked_optional', 'LOGIN_OK', 'verified'),
+])
+def test_unrelated_blocks_do_not_override_observed_login_outcome(browser, tmp_path, monkeypatch, mode, status, reason):
+    saved(monkeypatch)
+    engine = Engine(browser, mode=mode, entry=auth.SEARCH_URL)
+    with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        actual, message = auth.check_saved_credentials(engine, tmp_path, SATU, ACCOUNT,
+            'msedge', True, lambda: None, timeout=ASYNC_LOGIN_TIMEOUT if mode == 'blocked_optional' else 2)
+        assert log.flush()
+    assert actual == status and len(engine.posts) == 1
+    assert 'memblokir permintaan lanjutan' not in message
+    assert not engine.unknown and all(c.closed for c in engine.contexts)
+    rows = [json.loads(line) for path in (tmp_path / 'diagnostics/logs').glob('*.jsonl')
+            for line in path.read_text(encoding='utf-8').splitlines()]
+    result = next(row for row in rows if row['event'] == 'auth.result')
+    assert result['reason'] == reason and result['blocked_requests'] == 3
 
 
 @pytest.mark.parametrize('field', ['target_origin', 'method', 'resource_type'])
