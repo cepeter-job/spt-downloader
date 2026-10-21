@@ -11,6 +11,7 @@ class Progress:
     def _send(self,stage,percent,message,**values):
         if self.terminal:
             raise RuntimeError('Job already finished')
+        # Progres hanya mengukur tahap pekerjaan; 100% dicadangkan untuk terminal COMPLETE.
         self.percent = max(self.percent,min(99,int(percent)))
         diagnostics.record('progress', level='DEBUG', job_id=self.job_id, stage=stage,
                            percent=self.percent, **{k:v for k,v in values.items() if k in diagnostics.COUNTERS})

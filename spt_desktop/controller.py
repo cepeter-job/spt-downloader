@@ -28,6 +28,8 @@ def validate_job_scope(npwp,year):
 
 
 def parse_event(line,job_id,operation='export'):
+    # Stdout worker adalah kanal protokol; hanya event terbatas milik job
+    # dan operasi aktif yang boleh diteruskan ke state GUI.
     if len(line)>16384:return None
     try:event=json.loads(line)
     except (ValueError,TypeError):return None
@@ -167,6 +169,8 @@ class JobController:
                 for target in (read_events,drain_errors):
                     reader=threading.Thread(target=target,daemon=True)
                     self._readers.append(reader);reader.start()
+                # Stop dapat tiba selama persiapan runtime; izin mulai yang
+                # terlambat tidak boleh menghidupkan kembali pekerjaan itu.
                 command='stop' if self._cancel.is_set() else 'start'
                 process.stdin.write(json.dumps({'command':command,'job_id':job_id})+'\n')
                 process.stdin.flush()
@@ -240,6 +244,8 @@ class JobController:
             except queue.Empty:break
             if event.get('job_id')!=self.job_id:continue
             if event['type']=='terminal':
+                # Tahan hasil terminal sampai exit dan pembersihan proses
+                # dikonfirmasi oleh _finish, meskipun pesan sudah diterima.
                 self._terminal=event
                 self._pending_request=None
             else:
@@ -262,8 +268,9 @@ class JobController:
     def _finish(self,exit_code):
         if self._job:
             self._job.close();self._job=None
-        # Descendants may inherit stdout/stderr. Release them before waiting for EOF,
-        # and let the GUI poll again instead of closing a pipe its reader still owns.
+        # Anak proses dapat mewarisi stdout/stderr. Tutup pohon milik aplikasi
+        # sebelum menunggu EOF melalui poll; jangan tutup pipe yang masih
+        # dimiliki thread pembaca.
         if any(reader.is_alive() for reader in self._readers):return
         self._drain()
         if self.process:
@@ -272,6 +279,8 @@ class JobController:
                     try:stream.close()
                     except OSError:pass
         event=self._terminal
+        # Status harus cocok dengan kontrak operasi dan exit code;
+        # exit 0 sendiri belum membuktikan keberhasilan.
         expected={'COMPLETE':0,'PARTIAL':2,'BLOCKED':3,'CANCELLED':4,'ERROR':1}
         if self.operation=='login_check':
             expected={'LOGIN_OK':0,'LOGIN_UNVERIFIED':5,'LOGIN_MANUAL':6,'LOGIN_BLOCKED':3,

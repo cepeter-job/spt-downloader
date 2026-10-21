@@ -52,7 +52,8 @@ def workload_for(nodeid):
 
 
 def shard_for(nodeid, count):
-    # Assignment is stable across separately provisioned CI runners.
+    # SHA-256 memberi partisi yang sama di setiap runner; hash() bawaan Python
+    # dapat berbeda antarproses dan membuat tes terlewat atau dijalankan ganda.
     digest = hashlib.sha256(nodeid.encode('utf-8')).digest()
     return int.from_bytes(digest[:8], 'big') % count
 
@@ -77,8 +78,8 @@ def pytest_sessionstart(session):
     if config.getoption('--ci-manifest'):
         config._ci_started = time.monotonic()
         config._ci_setup_seconds = None
-        # Bootstrap and managed Python can use different Windows monotonic clocks.
-        # Only setup crosses interpreters; the pytest session stays monotonic.
+        # Setup melintasi interpreter dengan clock monotonik Windows yang bisa
+        # berbeda; hanya durasi sesi pytest memakai satu clock monotonik.
         marker = os.environ.get('CI_SETUP_STARTED')
         if marker:
             from pytest import UsageError
@@ -94,6 +95,8 @@ def pytest_sessionstart(session):
 
 def pytest_collection_modifyitems(config, items):
     workload = config.getoption('--ci-workload')
+    # Simpan koleksi penuh sebelum filter agar agregator dapat mendeteksi tes
+    # yang hilang, bukan sekadar membandingkan jumlah tes yang kebetulan lulus.
     all_nodes = sorted(item.nodeid for item in items)
     if workload == 'portable':
         selected, excluded = [], []
@@ -147,6 +150,8 @@ def _checked_inventory(report, workload, target, python_version, commit, run_id,
         raise ValueError('Test evidence is not an object.')
     if any(not isinstance(value, str) or not value.strip() for value in (run_id, run_attempt)):
         raise ValueError('Expected workflow run and attempt are required.')
+    # Bukti dari rerun/attempt lain tidak boleh dipakai untuk melengkapi shard
+    # yang gagal atau belum selesai pada eksekusi workflow ini.
     expected = {'workload': workload, 'platform': target,
                 'python': python_version, 'commit': commit,
                 'run_id': run_id, 'run_attempt': run_attempt}
@@ -188,6 +193,8 @@ def check_windows_inventories(windows, python_version, commit, *, run_id, run_at
                 or type(shard.get('index')) is not int or type(shard.get('count')) is not int
                 or shard != {'index': index, 'count': 2}):
             raise ValueError('Expected ordered Windows shard identities 0/2 and 1/2.')
+        # Dua shard harus cocok dengan partisi identitas masing-masing; jumlah
+        # total yang sama saja masih dapat menyembunyikan duplikasi dan celah.
         expected = {node for node in full if shard_for(node, 2) == index}
         if not expected or selected != expected:
             raise ValueError('Shard evidence does not match its exact Windows test partition.')

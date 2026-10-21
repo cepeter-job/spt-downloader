@@ -139,7 +139,8 @@ class ProcessJob:
         flags = kwargs.pop('creationflags', 0) | 0x4 | 0x08000000
         process = subprocess.Popen(argv, creationflags=flags, **kwargs)
         try:
-            # uv venv launchers spawn interpreters before Python-level handshakes can run.
+            # Launcher venv dapat membuat interpreter anak sebelum kode Python berjalan.
+            # Masukkan proses yang masih suspended ke Job Object sebelum dilanjutkan.
             self.assign(process.pid)
             _resume_primary(self._kernel, process.pid)
         except BaseException:

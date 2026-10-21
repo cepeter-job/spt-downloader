@@ -1202,6 +1202,8 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         check_masa_request_identities(capture.request_observations(), record, scope)
     if corporate:
         _check_corporate_request_identities(capture.request_observations(), record, scope)
+    # Kegagalan privasi atau identitas menghentikan jalur hybrid; hasil DOM
+    # tidak boleh menutupi bukti sumber yang sudah dinyatakan tidak aman.
     if any(reason in manifest['reasons'] for reason in (
             'secret-body', 'secret-request', 'invalid-json', 'response-source-mismatch',
             'request-context-unavailable', 'authorization-rejected')):
@@ -1220,6 +1222,8 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
             if packet['context']['status'] in (401, 403):
                 raise JsonSafetyError('Detail HTTP authorization was rejected')
     _check_cancel(check_cancel)
+    # Pilihan sumber berlaku untuk seluruh SPT agar form JSON yang belum lengkap
+    # tidak dicampur dengan sebagian nilai DOM dan dianggap satu capture utuh.
     eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
     source_reason = ('native_verified' if eligible else
@@ -1269,6 +1273,8 @@ def _atomic_checkpoint(path, value):
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
         finally:
+            # Hanya inode sementara milik penulisan ini yang boleh dibersihkan;
+            # penggantian nama oleh proses lain tidak memberi hak menghapusnya.
             if created is not None and temporary.exists():
                 current = temporary.lstat()
                 if (current.st_dev, current.st_ino) == created:
@@ -1396,6 +1402,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                         try:
                             taxpayer_id = list_taxpayer_id(record['list_url'])
                             condition = record.get('list_filter')
+                            # Pemulihan daftar harus memakai halaman, ukuran, dan filter asal;
+                            # RecordId tetap dicocokkan sebelum View meski posisi baris berubah.
                             group = (record['list_url'], record['list_page'], record.get('list_page_size'),
                                      json.dumps(condition, sort_keys=True, ensure_ascii=False))
                             if group != active_group:

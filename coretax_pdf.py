@@ -33,7 +33,7 @@ def verified_declarations(run):
 
 def _directories(path):
     result = {}
-    # Reject a redirected ancestor even when its descendant does not exist.
+    # Tolak pengalihan pada leluhur path meski direktori turunannya belum ada.
     for parent in reversed((path, *path.parents)):
         info = parent.lstat()
         if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
@@ -86,6 +86,8 @@ def pdf_custody(run, folder):
             _verify_stream(stream, item)
             streams[item['relative_path']] = stream
         yield items, streams
+        # Pemakai dapat membaca/menyalin stream selama context aktif; pemeriksaan
+        # akhir mendeteksi perubahan byte yang terjadi selama pemakaian itu.
         for item in items:
             _verify_stream(streams[item['relative_path']], item)
 

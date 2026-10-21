@@ -384,8 +384,8 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
                       and envelope.get('IsSuccessful') is True)
         form = None
         reference = (ctx['url'] in PPH21_REFERENCE_URLS or ctx['url'] == UNIFIKASI_REFERENCE_URL)
-        # Repeated grid/footer responses are snapshots too. Check every packet,
-        # even if missing/unknown observation metadata will require fallback.
+        # Respons grid/footer berulang juga harus memakai snapshot yang sama.
+        # Periksa semua paket meski metadata observasi belum mendukung ekspor JSON.
         if path in _PREFILL_PATHS or path.startswith(_GRID_PREFIXES) or reference:
             key = (ctx['url'], _corporate_request_key(ctx.get('request_json')))
             old_hash = snapshots.get(key)

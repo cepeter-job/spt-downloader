@@ -394,6 +394,8 @@ def existing_outputs(run, downloads):
 
 
 def _revalidate(run, downloads, snapshot):
+    # Snapshot mengikat target dan versi file yang telah diperiksa. Perubahan
+    # sesudahnya tidak ikut diizinkan oleh persetujuan sebelumnya.
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get('target'), str):
         raise ValueError('Invalid output consent snapshot')
     try:
@@ -622,6 +624,8 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
                 _displaced(destination, coretax.output_path(recovery / 'displaced', name))
                     if name in states else None,
                 _displaced(destination, coretax.output_path(recovery / 'removed', name)), new_states[name])
+            # Catat entri sebelum pemindahan pertama agar rollback mengetahui
+            # file yang mungkin sudah berpindah ketika interupsi terjadi.
             entries.append(entry)
             if entry.original is not None:
                 entry.original.capture(destination)
@@ -702,6 +706,8 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
             for item in attachments:
                 staged = coretax.output_path(staging, item['relative_path'])
                 _prepare_directory(staged.parent, guard, directories)
+            # Salin PDF dari stream terverifikasi yang masih dipegang; membuka
+            # ulang path saja dapat kehilangan identitas/byte yang diperiksa.
             with pdf_custody(run, source) as (items, streams):
                 copy_held_pdfs(items, streams, staging)
             for name in names:
@@ -789,6 +795,8 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                     raise _RecoveryRequired(staging, []) from failure
                 raise
         finally:
+            # Staging/backup yang diperlukan untuk pemulihan harus tetap ada;
+            # cleanup hanya menghapus pohon sementara yang terverifikasi milik kita.
             if not retain_staging:
                 _remove_owned(staging, staging_identity, guard, directories)
             if recovery is not None and not retain_recovery:

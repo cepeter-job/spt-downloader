@@ -41,21 +41,34 @@ Pekerjaan yang sudah berjalan sebaiknya diselesaikan atau dihentikan secara norm
 
 ### Memperbarui dependensi dan lock
 
-Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.13.4`:
+Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi
+universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika
+memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py)
+dan review perubahan secara terpisah. Gunakan `uv==0.13.4`. Modul regenerasi lock
+mengimpor runtime produk; contoh berikut adalah referensi runner sesuai
+[batas eksekusi AGENTS](../AGENTS.md#verification), bukan perintah lokal untuk
+pekerjaan yang dibatasi tersebut:
 
 ```powershell
 .venv/Scripts/python.exe -m scripts.update_locks --check
 uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
 ```
 
-Untuk pembaruan lock yang memang disetujui, jalankan `python -m scripts.update_locks` lalu `--check`; gunakan `--upgrade` hanya ketika versi transitif perlu dinaikkan dengan sengaja. Hash memastikan kesesuaian paket, bukan ketiadaan advisory; pemeriksaan keamanan tetap wajib.
+Untuk pembaruan lock yang memang disetujui, jalankan
+`.venv/Scripts/python.exe -m scripts.update_locks` pada runner Windows yang
+disiapkan, lalu ulangi dengan `--check`; pada Linux gunakan `.venv/bin/python`.
+CI utama hanya memeriksa `--check`, sehingga tidak menulis ulang lock untuk
+kontributor. Gunakan `--upgrade` hanya ketika versi transitif perlu dinaikkan
+dengan sengaja. Hash memastikan kesesuaian paket, bukan ketiadaan advisory;
+pemeriksaan keamanan tetap wajib.
 
 `playwright==1.64.0` memakai `pyee==14.0.0` pada profil produksi CPython 3.14.8. Regenerasi lock menggunakan versi produksi yang tepat supaya tidak menyertakan cabang Python 3.11 yang sudah tidak didukung, tetapi tetap memakai resolusi universal, wheel saja, dan hash SHA-256.
 
 ## Verifikasi produksi
 
-Ikuti [setup Windows](pengembangan.md#setup-windows-dengan-powershell),
-[workload tes](pengembangan.md#pengujian-lokal), dan [build source/frozen](pengembangan.md#membuat-executable-windows).
+Mulai dari [alur verifikasi GitHub Actions](pengembangan.md#alur-verifikasi-melalui-github-actions).
+Referensi perintah runner mencakup [setup Windows](pengembangan.md#setup-windows-dengan-powershell),
+[workload tes](pengembangan.md#pengujian-pada-runner), dan [build source/frozen](pengembangan.md#membuat-executable-windows).
 Untuk portable saja gunakan [setup Linux](pengembangan.md#linux-atau-container).
 Contoh-contoh itu tetap tunduk pada batas eksekusi [AGENTS.md](../AGENTS.md#verification).
 Jangan menyalin daftar perintah kedua ke sini ketika memperbarui pin.

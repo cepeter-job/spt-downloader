@@ -148,6 +148,8 @@ class DirectoryGuard:
             if path in identities and identities[path] != identity:
                 raise ValueError('Output directory identity changed')
             identities[path] = identity
+        # Di Windows, handle seluruh leluhur mencegah rename/hapus pada rantai path;
+        # memegang folder tujuan saja tidak menjaga kestabilan induknya.
         if any(parent not in identities for path in identities for parent in path.parents):
             raise ValueError('Output directory guard requires every ancestor')
         for path in sorted(identities, key=lambda item: len(item.parts)):
