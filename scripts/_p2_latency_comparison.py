@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import tkinter as tk
 
 BASELINE = 'df8e7589fe6550d639142971483c65beef4b37d9'
 CANDIDATE = 'd59a019c9c7cfc24af617ace824c69d7ede58d53'
@@ -59,7 +60,14 @@ def profile(args):
                     if canvas is not None and dialog is not None:
                         incoming = values.get('event')
                         token = interaction.get('layout_after')
-                        token_kind = str(root.tk.call('after', 'info', token)[-1]) if token else None
+                        token_kind = None
+                        if token:
+                            try:
+                                token_kind = str(root.tk.call('after', 'info', token)[-1])
+                            except tk.TclError:
+                                # Tcl removes a fired timer before entering its Python
+                                # callback; observing it must not abort the callback.
+                                token_kind = 'already-dispatched'
                         layout_events.append({'function':code.co_name,'phase':event,
                             'ms':(time.perf_counter_ns()-started)/1e6,
                             'canvas':[canvas.winfo_width(),canvas.winfo_height()],
@@ -85,6 +93,10 @@ def profile(args):
             finally:
                 sys.setprofile(None)
                 app._new_interaction = original
+                # Preserve partial traces even when the diagnostic itself fails.
+                checkpoint = Path(args.out).with_suffix('.trace.json')
+                checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                checkpoint.write_text(json.dumps({'kind':kind,'events':layout_events}, indent=2), encoding='utf-8')
             rows.append({'revision': args.revision, 'dialog': kind, 'inventory_size': count,
                 'instrumented': True, 'not_primary_benchmark': True,
                 'map_and_expose_are_observed_events_not_photon_latency': True,
