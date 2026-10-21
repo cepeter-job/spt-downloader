@@ -2,11 +2,15 @@
 
 [Kembali ke panduan](README.md)
 
+## Periksa baseline sebelum membuka pekerjaan
+
+Mulai dari [baseline aktif 21 Oktober 2026](baseline-2026-10-21.md), lalu periksa kembali `main` dan PR yang sudah merged. Catat commit sumber dan bukti yang berlaku; tanggal file desain bukan bukti bahwa fiturnya belum dibuat. Pisahkan **existing**, **diusulkan**, **diimplementasikan**, dan **diverifikasi untuk commit tertentu**. PR #53 dan #58 sudah merged: jangan merencanakan ulang dialog, konteks folder wajib, Alt+J atau perbaikan filter sebagai fitur yang belum ada. Settings dirty, target opening 100 ms dan full-size 200% tetap dipisahkan dari pekerjaan yang selesai.
+
 ## Alur kerja
 
 Mulai dari masalah pengguna, bukan dari komponen yang ingin ditambahkan. Baca kode dan state yang terdampak. Perubahan bahasa cukup ditangani sebagai revisi copy jika tidak mengubah aksi atau kondisi. Perubahan layar perlu menunjukkan alur lengkap termasuk gagal dan batal. Perubahan status, penyimpanan, atau akses adalah perubahan perilaku dan harus memiliki rencana serta tes kontrak.
 
-Sebelum implementasi, minta review desain tertulis. Sesudah disetujui, buat PR kecil: fondasi presentasi, proses/hasil, Pengaturan, lalu polish Windows. Jangan menggabungkan migrasi toolkit, runtime, fitur pajak, dan redesign dalam satu PR. Tidak perlu menambah dependensi visual jika ttk sudah mencukupi.
+Sebelum implementasi, minta review desain tertulis. Sesudah disetujui, buat PR kecil hanya untuk delta yang belum selesai pada baseline: misalnya perbaikan dialog pemilihan/penggantian, Pengaturan, atau polish Windows. Fondasi presentasi tahap 1 tidak dibangun ulang. Jangan menggabungkan migrasi toolkit, runtime, fitur pajak, dan redesign dalam satu PR. Tidak perlu menambah dependensi visual jika ttk sudah mencukupi.
 
 ## Template usulan fitur
 
@@ -21,6 +25,10 @@ Pengguna dan situasi penggunaan: [siapa yang berwenang, kapan tugas dilakukan].
 Hasil yang ingin dicapai: [tindakan atau pemahaman yang bisa diuji].
 
 Bukti kebutuhan: [laporan pengguna atau pengamatan; bedakan asumsi].
+
+Baseline: [SHA `main` yang dibaca, PR terkait yang sudah merged, source/test yang membuktikan perilaku].
+
+Delta: [perilaku existing → usulan; jangan mencampur target desain dengan status implementasi].
 
 ### Batas perubahan
 
@@ -83,7 +91,11 @@ Keputusan pemilik: [disetujui/perlu revisi, tanggal, catatan]. Persetujuan desai
 - [ ] Seluruh keadaan relevan, termasuk gagal, sebagian lengkap, dan batal, memiliki rancangan.
 - [ ] Judul, pesan, dan tombol mudah dipahami tanpa membaca dokumentasi teknis.
 - [ ] Tidak ada kode status, arahan untuk developer, slogan, atau janji yang tidak terbukti di pesan utama.
-- [ ] Domain login, arti tahun pajak, NPWP, dan nama workbook tetap akurat.
+- [ ] Origin Satu tetap (tanpa URL bebas), arti tahun pajak, NPWP, serta pemisahan workbook masa/model tetap akurat.
+- [ ] Default desktop JSON-hybrid dan preferensi tersimpan tidak disamakan dengan default CLI/library DOM; fallback tidak dilabeli sukses JSON.
+- [ ] Search yang menghapus pilihan dibedakan dari sorting yang mempertahankannya; indeks resume gabungan tidak disamakan dengan cakupan COMPLETE job.
+- [ ] Katalog 54 ID dan konteks folder wajib mengikuti source, bukan snapshot 44 ID sebelum Phase 2.
+- [ ] Bukti PR #53/#58 dipin ke commit dan batasnya; filtering yang lebih cepat tidak diklaim memenuhi target opening atau DPI penuh.
 - [ ] Semua tombol memiliki aksi yang benar-benar didukung; tidak ada resume/antrean semu.
 - [ ] Kriteria keyboard, DPI, pembaca layar, privasi, dan performa dapat diuji.
 
@@ -96,7 +108,8 @@ Keputusan pemilik: [disetujui/perlu revisi, tanggal, catatan]. Persetujuan desai
 - [ ] PARTIAL selalu tampak belum lengkap, meskipun folder boleh dibuka.
 - [ ] Cek login tidak memicu ekspor; simpan tidak otomatis berarti login berhasil.
 - [ ] SSO/timeout tidak dianggap password valid/salah; tidak ada retry kredensial otomatis.
-- [ ] Hapus login hanya pada situs terpilih; kegagalan simpan kedua sumber tidak diberi status sukses.
+- [ ] Hapus login hanya pada origin Satu aplikasi; kegagalan simpan kedua sumber tidak diberi status sukses.
+- [ ] Footer nama pribadi tidak dipulihkan; kontak bugreport, subtitle, dan teks pemilik yang berlaku tetap sesuai katalog/test commit baseline.
 - [ ] NPWP tidak dinormalisasi atau kehilangan nol awal; nilai sumber dan tautan Excel tidak berubah.
 - [ ] Callback Tk tidak mengerjakan browser/Excel/I/O besar; detail status dan queue tetap terbatas.
 - [ ] Keyboard, fokus balik dialog, layar kecil, DPI, High Contrast, dan pembaca layar diperiksa di Windows.

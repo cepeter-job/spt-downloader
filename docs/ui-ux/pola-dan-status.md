@@ -2,7 +2,7 @@
 
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
-**Baseline:** `be67f5153a07ce100048d67191a02ca1d0fca1db`, 13 Oktober 2026. Pedoman ini mempertahankan fitur selection/overwrite/PDF yang sudah ada. Tampilan B, konfirmasi edit Pengaturan, serta penguatan presentasi yang ditetapkan spesifikasi belum diklaim terimplementasi.
+**Baseline aktif:** `ecbd9878aa732a379ba94ef848764f9815445003`, 21 Oktober 2026; [matriks existing vs pekerjaan terbuka](baseline-2026-10-21.md). PR #12, #53 dan #58 sudah merged. Shell, dialog Phase 2, konteks folder wajib dan pengurangan delay filter sudah tersedia. Konfirmasi Pengaturan dirty dan batching daftar besar tetap usulan. Tabel judul/status adalah pola presentasi; caption aktual tetap diperiksa di App/view sebelum direvisi.
 
 ## Login tersimpan tanpa pilihan origin
 
@@ -16,7 +16,7 @@ Form/challenge tidak aman tetap manual, CAPTCHA/MFA tidak dilewati, dan tidak ad
 
 ## Form unduhan
 
-Label terlihat terus; placeholder tidak menggantikan label. Pengaturan bukan langkah wajib untuk login manual. NPWP/tahun ditampilkan lagi selama proses. Validasi saat blur/submit, bukan memarahi pengguna ketika baru mengetik satu angka.
+Label terlihat terus; placeholder tidak menggantikan label. Pengaturan bukan langkah wajib untuk login manual. NPWP/tahun ditampilkan lagi selama proses. Validasi existing berjalan pada submit/start dan menaruh error dekat field; jangan mengklaim validasi saat blur sudah ada. Validasi tambahan tidak boleh memarahi pengguna ketika baru mengetik satu angka.
 
 Error berada di field; fokus ke kesalahan pertama dan teks tetap dipertahankan. Tidak menghapus titik/spasi, memperbaiki tahun dua digit, atau menghilangkan nol awal secara otomatis. Klik/Enter/shortcut melewati guard start yang sama; satu pekerjaan aktif.
 
@@ -44,11 +44,11 @@ Empat penanda B-TK-1: **Masuk ke Coretax · Daftar SPT · Mengambil rincian · H
 | `CANCELLED` | Unduhan dihentikan | Data sementara yang sudah dibuat tetap ada; mulai lagi bukan resume. |
 | `BLOCKED` / `ERROR` | Unduhan belum bisa dilanjutkan / Unduhan belum berhasil | Pesan aman; sebab spesifik hanya bila tersedia, bukan tebakan. |
 
-Sumber: [controller](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/spt_desktop/controller.py), [events](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/spt_desktop/events.py), dan [worker](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/spt_desktop/worker.py). View tidak membuat event sukses sendiri.
+Sumber: [controller](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/controller.py), [events](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/events.py), dan [worker](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/worker.py). View tidak membuat event sukses sendiri.
 
 `verified` pada detail menyatakan capture lengkap di kelompok yang diproses, bukan kebenaran pajak. `processed - verified` bukan jumlah seluruh kegagalan. Counter tidak tersedia bukan nol; saat stage berganti, jangan memakai denominator inventaris sebagai denominator detail.
 
-Progress berbobot tahap, bukan waktu tersisa atau persen dokumen lengkap. Label **Proses keseluruhan**; rincian menjelaskan maknanya. Jangan membuat angka naik saat menunggu consent atau mengubah persen demi animasi. Terminal tidak membawa seluruh counter/manifest: simpan bukti terakhir job yang sama dan sembunyikan metrik yang tidak tersedia.
+Progress berbobot tahap tetap berbeda dari jumlah SPT terpilih, waktu tersisa, atau persen dokumen lengkap. Sesudah reply pemilihan diterima controller, hitungan detail sudah dimulai dari `0/N` dengan `verified=0` untuk N yang disetujui; jangan memulainya dari ukuran inventaris atau menjadikan 0/N sebagai bukti kegagalan. Label **Proses keseluruhan**; rincian menjelaskan maknanya. Jangan membuat angka naik saat menunggu consent atau mengubah persen demi animasi. Terminal tidak membawa seluruh counter/manifest: simpan bukti terakhir job yang sama dan sembunyikan metrik yang tidak tersedia.
 
 ## Pemilihan SPT
 
@@ -60,25 +60,27 @@ Tidak perlu klik header untuk memakai urutan default. Klik header **Jenis pajak*
 
 Awal tidak terpilih; **Sedot SPT terpilih** nonaktif sampai pilihan sah ada. Filter memakai query casefold/trim, bukan mengubah NPWP. Mengubah filter mengosongkan pilihan; jangan mengirim hidden selection. Tampilkan jumlah dipilih, terlihat, dan inventaris. Bedakan pencarian tanpa hasil dari inventaris kosong.
 
+ID baris yang disorot ditampilkan lengkap dalam field readonly; fokus baris bukan persetujuan memilih. Alt+J memakai aksi sorting jenis yang sama dengan header dan mempertahankan pilihan/fokus. Enter di pencarian/tabel atau double-click baris tidak boleh menyetujui; konfirmasi memerlukan aksi pada tombol yang sah.
+
 Confirm memakai `controller.respond('selection', request_id, {'selected_ids': [...]})`. Payload hanya subset yang terlihat dan dikonfirmasi. X/Escape/Hentikan membatalkan job tanpa memilih semua. Fokus awal pada pencarian; Ctrl/Shift dan keyboard Treeview tetap tersedia.
 
-Request terikat `job_id`/operasi/`request_id`, hanya satu pending dan satu jawaban. Stop/terminal menginvalidasi dialog sebelum callback lain dapat berjalan. Callback lama tidak boleh menyetujui atau menghentikan job baru. Tenggat worker 600 detik, tanpa auto-consent. `respond=False` tidak berarti keputusan diterima. Sumber: [App](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/spt_desktop/app.py), [interaction](https://github.com/cepeter-job/spt-downloader/blob/be67f5153a07ce100048d67191a02ca1d0fca1db/spt_desktop/interaction.py).
+Request terikat `job_id`/operasi/`request_id`, hanya satu pending dan satu jawaban. Stop/terminal menginvalidasi dialog sebelum callback lain dapat berjalan. Callback lama tidak boleh menyetujui atau menghentikan job baru. Tenggat worker 600 detik, tanpa auto-consent. `respond=False` tidak berarti keputusan diterima. Sumber: [App](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/app.py), [interaction](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/interaction.py).
 
-Daftar besar dirender bertahap tanpa memotong data. Selama generasi filter/render belum selesai, submit nonaktif. Hasil tertunda selalu memeriksa token job/request lagi. Batas dan pengukuran performa mengikuti spesifikasi, bukan klaim baseline sudah diuji dengan semua ukuran daftar.
+**Usulan, belum implemented:** batching render/filter untuk daftar besar. Baseline memasukkan ulang seluruh hasil filter melalui loop sinkron di `selection_dialog.filter_records`; tidak ada worker render/chunk-generation. Jika batching diterapkan kelak, jangan memotong data; kunci submit selama generasi belum selesai dan tolak hasil stale berdasarkan token job/request. Batas dan pengukuran performa mengikuti spesifikasi, bukan klaim baseline sudah diuji untuk semua ukuran daftar.
 
 ## Penggantian file
 
 Penggantian `resume.xlsx` saja berlangsung otomatis setelah verifikasi scope dan race. Jika SPT/PDF terpilih akan diganti, tampilkan folder persis dari request dan semua path yang akan diganti, termasuk PDF bila ada. Jangan hanya menampilkan basename atau memilih sendiri folder terakhir. Scroll dua arah tersedia. **Jangan ganti** fokus awal; X/Escape sama dengan jawaban `overwrite=False`. **Ganti file tersebut** mengirim `True`. Alt+S tetap Stop langsung.
 
-Jelaskan bahwa file diganti seluruhnya, bukan merge baris. SPT lain dalam file yang diganti tidak otomatis dipertahankan. File masa lain yang tidak diganti tetap ada; `resume.xlsx` baru hanya mengindeks pilihan proses saat ini. Setelah setuju, tunggu terminal dan verifikasi backend; jangan langsung menampilkan sukses.
+Jelaskan bahwa file diganti seluruhnya, bukan merge baris. SPT lain dalam file yang diganti tidak otomatis dipertahankan. File masa/model lain yang tidak diganti tetap ada. Untuk folder existing yang lolos verifikasi, `coretax.write_folder_resume` membuat indeks gabungan hasil baru dan workbook lama yang dipertahankan; bukan hanya daftar pilihan baru. COMPLETE job tetap berlaku untuk pilihan proses saat ini. Jika penggantian ditolak, resume lama juga tidak dipublikasikan ulang. Setelah setuju, tunggu terminal dan verifikasi backend; jangan langsung menampilkan sukses.
 
-Worker baseline mengirim `folder`, tetapi dialog lama menerima payload tanpa folder. Spesifikasi mengusulkan menonaktifkan approve pada payload tanpa konteks folder; ini penguatan yang perlu regresi tersendiri, bukan perilaku baseline yang sudah terbukti. Pemeriksaan identitas folder/file, hash, rollback, dan custody PDF tetap milik backend.
+**Sudah diimplementasikan:** GUI menolak `folder` yang hilang, bukan string, kosong, atau hanya whitespace sebelum membuat dialog persetujuan. Nilai folder valid tetap ditampilkan persis, termasuk whitespace literal; path panjang dapat diperiksa lewat field readonly dan scrollbar. Jumlah file tidak mengubah izin penggantian per file. Request stale tidak boleh menghentikan job baru. Pemeriksaan identitas folder/file, hash, rollback, dan custody PDF tetap milik backend. Lihat `overwrite_dialog` dan tes `test_desktop_dialog_layout.py`; bukan lagi usulan Phase 2.
 
 ## Panel hasil
 
 Buka folder hanya memakai path yang disahkan controller. COMPLETE memerlukan terminal sah, exit code sesuai, output valid, dan cleanup selesai. COMPLETE berlaku untuk subset terpilih, bukan seluruh tahun. Hasil parsial boleh dibuka bila lokasi hasil sah, dengan status belum lengkap yang tetap terlihat. Tanpa output sah, tombol buka tidak tersedia.
 
-Petunjuk hasil: “Simpan seluruh folder hasil beserta subfoldernya. Jangan mengganti nama file agar tautannya tetap berfungsi.” Struktur Excel per masa, sheet form Badan, nilai sumber, dan tautan relatif tidak berubah.
+Petunjuk hasil: “Simpan seluruh folder hasil beserta subfoldernya. Jangan mengganti nama file agar tautannya tetap berfungsi.” Struktur Excel adalah per jenis pajak, masa/tahun sumber, dan **Model SPT literal**. Semua form dalam sebuah workbook berasal dari model itu saja. Nilai sumber serta tautan relatif tetap; Normal dan pembetulan yang berbeda tidak digabung di satu workbook. File gabungan lama diverifikasi sebelum memilih folder baru, bukan ditulis ulang/dihapus diam-diam.
 
 PDF laporan keuangan/auditan Badan dapat ikut disimpan jika tersedia lewat tautan baca yang didukung dan lolos pemeriksaan. BPE/lampiran lain tetap tidak dijanjikan. Metadata bukan bukti byte PDF tersimpan. Jangan menampilkan jumlah PDF atau daftar file aktual tanpa data presentasi yang sah. Kalimat lama yang menolak semua PDF tidak lagi digunakan.
 
@@ -88,9 +90,9 @@ Folder hilang: jelaskan mungkin dipindahkan/dihapus. Folder ada tetapi gagal dib
 
 ## Pengaturan dan cek login
 
-Urutan: Nama pengguna, Password baru, Browser, Sumber detail SPT, checkbox **jalankan proses sedot di background**. Origin Satu ditetapkan aplikasi, bukan combobox atau URL bebas. Helper menjelaskan login otomatis dan mode akun kosong/manual. Microsoft Edge/Google Chrome dipetakan ke `msedge`/`chrome`.
+Urutan widget existing: **Akun / username**, **Password baru**, **Browser**, **Sumber detail SPT**, checkbox **jalankan proses sedot di background**. Sumber detail menyediakan **DOM** dan **JSON-hybrid (pilot)**; profil desktop baru/mode hilang atau tidak sah memakai `json-first`, preferensi `dom` atau `json-first` yang sah dipertahankan. CLI/library tetap default DOM tanpa opsi eksplisit. **Buka folder log** sudah tersedia; tindakan membuka folder tidak mengirim isinya ke pihak lain. Origin Satu ditetapkan aplikasi, bukan combobox atau URL bebas. Helper menjelaskan login otomatis dan mode akun kosong/manual. Microsoft Edge/Google Chrome dipetakan ke `msedge`/`chrome`.
 
-Password kosong mempertahankan entri sesuai kontrak; perubahan akun yang perlu password baru dijelaskan dekat field. Hapus login hanya menghapus entri aplikasi untuk situs terpilih, bukan akun portal atau seluruh Credential Manager. Jangan menjanjikan transaksi atomik Credential Manager dan file preferensi.
+Password kosong mempertahankan entri sesuai kontrak; perubahan akun yang perlu password baru dijelaskan dekat field. Hapus login hanya menghapus entri aplikasi pada origin Satu tetap (`LOGIN_ORIGIN`), bukan pilihan situs pengguna, akun portal, entri legacy Coretax, atau seluruh Credential Manager. Jangan menjanjikan transaksi atomik Credential Manager dan file preferensi.
 
 Simpan bukan bukti login berhasil. Cek login nonaktif saat dirty, akun belum tersedia, atau operasi lain aktif. Dirty dihitung dari nilai dibanding preferensi tersimpan ditambah password baru; mengembalikan nilai semula tidak meninggalkan dirty palsu. Cek memakai operasi tersendiri, tidak memerlukan NPWP/tahun, tidak mengambil SPT, dan tidak menimpa hasil ekspor terakhir.
 
@@ -101,7 +103,7 @@ Simpan bukan bukti login berhasil. Cek login nonaktif saat dirty, akun belum ter
 | `LOGIN_OK` | Login berhasil; akun/password tersimpan dipakai dan akses siap. |
 | `LOGIN_UNVERIFIED` | Password belum bisa dipastikan; bukan bukti benar/salah. |
 | `LOGIN_MANUAL` | Perlu login di browser saat mulai unduh. |
-| `LOGIN_BLOCKED` | Login belum bisa dicek; periksa situs dan akun. |
+| `LOGIN_BLOCKED` | Login belum bisa dicek; periksa akses Coretax/Satu dan akun. |
 | `LOGIN_ERROR` / `ERROR` | Cek login belum berhasil; bukan hasil ekspor. |
 | Batal diminta | Membatalkan cek login… tunggu cleanup/terminal. |
 | `CANCELLED` | Cek login dibatalkan; tidak ada SPT diunduh. |
@@ -114,20 +116,24 @@ Jangan mengklasifikasikan sebab melalui substring pesan. Jika reason code aman b
 | --- | --- | --- |
 | Tutup saat unduhan aktif | Hentikan unduhan dan tutup aplikasi? | Kembali; Hentikan dan tutup. Escape/X = Kembali. |
 | Hapus login | Hapus login yang disimpan? | Batal; Hapus login. Escape/X = Batal. |
-| Tutup Pengaturan dirty | Perubahan belum disimpan | Simpan; Abaikan; Kembali. Escape/X = Kembali. |
+| Tutup Pengaturan dirty (**usulan**) | Perubahan belum disimpan | Sasaran: Simpan; Abaikan; Kembali. Escape/X = Kembali. Belum ada pada baseline. |
 | Pemilihan SPT | Pilih SPT yang akan diunduh | Sedot SPT terpilih; Hentikan unduhan. Escape/X = Stop. |
 | Penggantian | Ganti hasil sebelumnya? | Jangan ganti; Ganti file tersebut. Escape/X = false. |
 
-Pilihan aman fokus awal pada keputusan destruktif. Tidak ada Return global yang menyetujui overwrite. Saat cek login aktif, Escape/Tutup membatalkan cek dulu dan menunggu cleanup. Tombol Stop langsung membatalkan tanpa konfirmasi tambahan. Dialog mengembalikan fokus ke pemicu yang masih valid; progress tidak mencuri fokus. Bersihkan grab, traces, dan after sebelum destroy/job berikutnya.
+Pilihan aman fokus awal pada keputusan destruktif. Tidak ada Return global yang menyetujui overwrite. Saat cek login aktif, Escape/Tutup membatalkan cek dulu dan menunggu cleanup. Tombol Stop langsung membatalkan tanpa konfirmasi tambahan. Dialog mengembalikan fokus ke pemicu yang masih valid; progress tidak mencuri fokus. Setelah terminal ekspor, App mengarahkan fokus ke Buka hasil jika tersedia atau Mulai unduh, bukan Entry yang bisa tergulir keluar viewport. Bersihkan grab, traces, dan after sebelum destroy/job berikutnya.
 
-Konfirmasi edit belum disimpan belum ada pada baseline. Jika Simpan gagal, jangan menutup dialog atau menampilkan sukses. Uji kegagalan kedua penyimpanan dan delete secara terpisah; salah satu write dapat sudah berhasil.
+Konfirmasi edit belum disimpan belum ada pada baseline: `settings.refresh`/`check` menghitung dirty untuk menonaktifkan pengecekan, tetapi `settings.close` saat idle langsung membersihkan variabel/password lalu menutup dialog tanpa keputusan Simpan/Abaikan. Saat cek aktif, close membatalkan cek dan menunggu cleanup; jalur tersebut harus dipertahankan dalam usulan berikutnya. Jika Simpan gagal, jangan menutup dialog atau menampilkan sukses. Uji kegagalan kedua penyimpanan dan delete secara terpisah; salah satu write dapat sudah berhasil.
 
 ## Aksesibilitas dan performa
 
 Label terlihat dan fokus biru belum membuktikan aksesibilitas native. Uji name/role/value/focus melalui UI Automation, Narrator/NVDA, terutama tabel pilihan, input, modal, dan hasil. Kekurangan kontrol kritis dicatat sebagai blocker, bukan alasan mengganti toolkit diam-diam.
 
-Uji DPI 100/125/150/200%, pembesaran teks, multi-monitor, High Contrast, Tab/Shift+Tab, Enter/Space/Escape, dan shortcut. Reflow harus mempertahankan informasi scope; jangan meluluskan clipping dengan minimum jendela melebihi work area. Sasaran ukuran/performa B-TK-1 adalah target belum terukur.
+Uji DPI 100/125/150/200%, pembesaran teks, multi-monitor, High Contrast, Tab/Shift+Tab, Enter/Space/Escape, dan shortcut. Reflow harus mempertahankan informasi scope; jangan meluluskan clipping dengan minimum jendela melebihi work area. Ukuran normal/compact penuh pada 200% belum terverifikasi pada layar yang cukup besar; screenshot 200% yang tersedia menguji ukuran ter-clamp dan minimum. Jangan menamai hasil ini kepatuhan DPI menyeluruh.
+
+PR #58 menggunakan callback idle milik dialog untuk mapping awal/perubahan konten, mengabaikan notifikasi Configure redundan berdasar ukuran viewport aktual, dan tetap menggabungkan resize nyata melalui callback 75 ms. Tidak ada thread Tk baru, batching row atau batas jumlah record baru. Seluruh callback harus dibatalkan saat Stop/terminal/close; jangan membatalkan timer root yang bukan milik dialog.
+
+Pada pasangan sintetis Windows yang dilaporkan, median filter 1/100/1.000 SPT menjadi 4,86/9,55/15,73 ms; median opening masih 137–185 ms dan semua 40 sampelnya di atas 100 ms. Sorting tidak seluruhnya lebih cepat. Cancellation maksimum 73,33 ms berlaku untuk sampel tersebut, bukan jaminan semua mesin. Lihat [metodologi dan bukti PR #58](../superpowers/reports/2026-10-21-phase2-performance-evidence.md); pengukuran ini bukan throughput Coretax/Excel/PDF.
 
 Ukur GUI terpisah dari worker/browser; batasi event, status history, row-batch, serta callback tertunda. Pertahankan polling baseline dan update widget inkremental. Seluruh pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE hanya di GitHub runner sesuai [AGENTS.md](../../AGENTS.md). Pemeriksaan dokumen lokal bukan bukti runtime atau aksesibilitas.
 
-Kontrak workbook terkonsolidasi: Ringkasan, Daftar SPT, dan Audit hanya berada di `resume.xlsx`. Workbook SPT berisi worksheet per form/tab dan pembetulan teramati, tanpa banner/header/footer administratif atau sheet administratif tersembunyi. Hyperlink dari resume menuju form tetap relatif.
+Kontrak workbook terkonsolidasi: Ringkasan, Daftar SPT, dan Audit hanya berada di `resume.xlsx`. Workbook SPT terpisah per masa/tahun dan Model SPT literal, berisi worksheet form/tab untuk model itu saja, tanpa banner/header/footer administratif atau sheet administratif tersembunyi. Hyperlink dari resume menuju form tetap relatif.
