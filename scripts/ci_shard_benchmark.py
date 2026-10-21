@@ -70,8 +70,8 @@ def summary_text(result):
         'Setup uses shared wall-clock timestamps after checkout through pytest session start; '
         'the pytest session itself uses a monotonic clock. '
         'This excludes runner queue, checkout, uploads, packaging and provenance; '
-        'these are not total-CI speedups. Production remains '
-        'serial and retains its existing required gate and artifact checks.\n'
+        'these are not total-CI speedups. Production integration and packaging '
+        'retain their separate required gate and artifact checks.\n'
     )
 
 

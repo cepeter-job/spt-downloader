@@ -27,6 +27,11 @@ from openpyxl.utils import get_column_letter
 
 NAVY, BLUE, PALE, GRAY = '17365D', '2463A0', 'EDF3FA', '64748B'
 INVALID_XML_TEXT = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
+FINANCIAL_LABELS = frozenset({
+    'Laporan Keuangan', 'Laporan Keuangan yang Telah Diaudit*',
+    'Laporan Keuangan/Laporan Keuangan yang Telah Diaudit*',
+    'a. 1. Laporan Keuangan/Laporan Keuangan yang Telah Diaudit*',
+})
 
 
 def validate_scope(npwp, year):
@@ -150,7 +155,7 @@ def _validate_financial_attachments(record, scope, seen_paths):
             continue
         if (status != 'COMPLETE' or type(size) is not int or not 0 < size <= 20 * 1024 * 1024
                 or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
-                or attachment['label'].strip() not in ('Laporan Keuangan', 'Laporan Keuangan yang Telah Diaudit*')):
+                or attachment['label'].strip() not in FINANCIAL_LABELS):
             raise ValueError('Financial PDF completion, byte count, hash or label is invalid.')
         # This checks naming/scope, not authenticity: the publisher must still
         # lock the declared file and verify its actual bytes and digest.

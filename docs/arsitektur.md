@@ -59,6 +59,24 @@ Login tersimpan mengikat elemen/form yang telah diperiksa. Origin, identitas kon
 
 Rute home Coretax adalah isyarat untuk menuju pencarian, bukan bukti autentikasi. Kontrol pencarian wajib pajak yang terlihat menjadi marker kesiapan. **Cek Kredensial** menggunakan profil sementara, satu percobaan kredensial tersimpan, dan tidak memakai profil ekspor. SSO yang sudah login tidak menguji password tersimpan.
 
+Sesudah form Satu dikirim, pemeriksa mengizinkan pertukaran kode OpenID yang
+teramati pada konfigurasi aplikasi: POST `/identityprovider/connect/token`,
+client `cats-angular-client`, dan callback `/home/id-ID/auth-callback` atau
+`/returnsheets/id-ID/auth-callback`. Request harus berasal dari frame utama
+halaman milik pemeriksa, berbentuk form authorization-code dengan PKCE, serta
+memiliki code dan redirect URI yang cocok dengan callback. Setiap callback
+hanya memperoleh satu percobaan; redirect HTTP dan retry transport dimatikan.
+Service worker diblokir. Pengecualian ini tidak mengizinkan POST Coretax lainnya,
+refresh token, password grant, iframe, atau popup. Respons token tetap diproses
+oleh aplikasi Coretax; pemeriksa tidak membaca token dari storage atau menulisnya
+ke diagnostik, dan tetap menunggu marker pencarian sebelum LOGIN_OK.
+
+Dasar inspeksi 21 Oktober 2026: konfigurasi statis beranda
+`main.49d8f10ca1a7d961.js`, Pencarian WP `main.cccfdb820c20596c.js`, dan metadata
+`/identityprovider/.well-known/openid-configuration`. Log kategori POST yang
+diblokir saja tidak membuktikan endpoint spesifiknya. Uji browser memakai server
+loopback sintetis di runner, termasuk redirect, penolakan, putus koneksi, dan Stop.
+
 Jangan meneruskan exception browser atau Credential Manager mentah ke log GUI. Diagnostics dapat mengandung sumber halaman, identifier, URL proxy, atau rahasia. Jangan mewariskan flag debug kredensial Playwright.
 
 ## Status dan Stop

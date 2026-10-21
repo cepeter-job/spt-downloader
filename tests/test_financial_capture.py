@@ -92,6 +92,32 @@ def routed(browser, monkeypatch):
             context.close()
 
 
+@pytest.mark.parametrize('limited', [False, True])
+def test_detail_records_anonymous_table_duration_and_counts(routed, tmp_path, limited):
+    page, requests = routed()
+    page.evaluate('''limited => {
+        const table = '<table><thead><tr><th>Literal</th></tr></thead>' +
+            '<tbody><tr><td>SYNTHETIC-PRIVATE-CELL</td></tr></tbody></table>';
+        document.querySelector('#induk').insertAdjacentHTML('beforeend', table);
+        document.querySelector('#l1d').insertAdjacentHTML('beforeend', '<p-table>'+table+
+            (limited ? '<button class="p-paginator-next">Next</button>' : '')+'</p-table>');
+    }''', limited)
+    with driver.diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path, max_pages=1)
+        assert log.flush()
+    assert result['capture_complete'] is not limited
+    rows = [json.loads(line) for path in (tmp_path / 'diagnostics/logs').glob('*.jsonl')
+            for line in path.read_text(encoding='utf-8').splitlines()]
+    tables = [row for row in rows if row['event'] == 'phase.completed' and row.get('phase') == 'table']
+    assert [(row['form_ordinal'], row['table_ordinal']) for row in tables] == [(1, 1), (1, 2), (2, 1)]
+    assert tables[0]['body_rows'] == 2 and tables[0]['pages'] == 1
+    assert tables[0]['status'] == 'COMPLETE' and tables[0]['duration_ms'] >= 0
+    assert tables[-1]['status'] == ('PARTIAL' if limited else 'COMPLETE')
+    serialized = json.dumps(rows)
+    for private in (RECORD['record_id'], PDF_URL, '1.234,56', '0000123', 'SYNTHETIC-PRIVATE-CELL'):
+        assert private not in serialized
+
+
 @pytest.mark.parametrize('failure,want_state,want_owned,want_document,want_views', [
     ('hidden', 'hidden', 1, 1, 1),
     ('ancestor', 'hidden', 1, 1, 1),

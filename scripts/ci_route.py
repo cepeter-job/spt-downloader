@@ -32,13 +32,13 @@ def choose_mode(event, paths, ref):
 
 
 def execution_plan(event, profiles, windows_mode='', cache_mode=''):
-    """Keep automatic runs serial; dispatch alone may select the bounded pilot."""
-    windows_mode = windows_mode or 'serial'
+    """Use two isolated Windows shards; dispatch alone may override mode or cache."""
+    windows_mode = windows_mode or 'two-shards'
     cache_mode = cache_mode or 'restore'
     if windows_mode not in {'serial', 'two-shards'} or cache_mode not in {'restore', 'cold'}:
         raise ValueError('Unknown Windows execution or cache mode.')
-    if event != 'workflow_dispatch' and (windows_mode != 'serial' or cache_mode != 'restore'):
-        raise ValueError('Only workflow_dispatch may select the Windows comparison pilot.')
+    if event != 'workflow_dispatch' and (windows_mode != 'two-shards' or cache_mode != 'restore'):
+        raise ValueError('Only workflow_dispatch may override the production Windows execution plan.')
     if (not isinstance(profiles, dict) or not profiles
             or any(not isinstance(value, str) or not value
                    for pair in profiles.items() for value in pair)):

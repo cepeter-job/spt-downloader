@@ -10,7 +10,7 @@ on:
       windows_mode:
         description: Full Windows validation mode for a same-commit pipeline comparison
         type: choice
-        default: serial
+        default: two-shards
         options: [serial, two-shards]
       cache_mode:
         description: Restore available caches or measure a cold full pipeline
@@ -33,7 +33,7 @@ env:
 
 # Python 3.14.8 adalah satu-satunya profil produksi; matrix dibangkitkan
 # dari spt_desktop/runtime.py. Setiap runner menjalankan satu proses pytest;
-# Tk, Credential Manager, dan proses milik aplikasi tetap serial.
+# Tk, Credential Manager, dan proses milik aplikasi tetap serial pada setiap runner.
 # Build baru dimulai setelah tes Windows/portable dan audit lulus.
 jobs:
   route:

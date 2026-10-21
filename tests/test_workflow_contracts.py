@@ -95,7 +95,7 @@ def test_production_contract_rejects_broken_pipeline(mutation):
 
 
 @pytest.mark.parametrize('mutation', [
-    'sharded-default', 'repository-variable-mode', 'shared-dispatch-concurrency',
+    'serial-default', 'repository-variable-mode', 'shared-dispatch-concurrency',
     'disabled-pr-supersession', 'unbound-windows-matrix', 'missing-shard-download',
     'colliding-shard-directories', 'wrong-shard-download-condition',
     'single-shard-verification', 'unbound-inventory-run', 'unbound-inventory-attempt',
@@ -116,8 +116,8 @@ def test_dispatch_pilot_contract_rejects_incomplete_or_unbound_pipeline(mutation
     fresh = next(s for s in windows['steps'] if 'scripts.ci_runtime' in s.get('run', ''))
     windows_uv = next(s for s in windows['steps'] if s.get('uses', '').startswith('astral-sh/setup-uv@'))
     upload = next(s for s in windows['steps'] if s.get('uses', '').startswith('actions/upload-artifact@'))
-    if mutation == 'sharded-default':
-        document['on']['workflow_dispatch']['inputs']['windows_mode']['default'] = 'two-shards'
+    if mutation == 'serial-default':
+        document['on']['workflow_dispatch']['inputs']['windows_mode']['default'] = 'serial'
     elif mutation == 'repository-variable-mode':
         step = next(s for s in jobs['route']['steps'] if s.get('id') == 'route')
         step['env']['WINDOWS_MODE_INPUT'] = '${{ vars.WINDOWS_MODE }}'

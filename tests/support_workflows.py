@@ -252,7 +252,7 @@ def validate_production(document):
     inputs = triggers['workflow_dispatch']['inputs']
     assert set(inputs) == {'windows_mode', 'cache_mode'}
     for name, default, options in (
-            ('windows_mode', 'serial', ['serial', 'two-shards']),
+            ('windows_mode', 'two-shards', ['serial', 'two-shards']),
             ('cache_mode', 'restore', ['restore', 'cold'])):
         assert inputs[name]['type'] == 'choice' and inputs[name]['default'] == default
         assert inputs[name]['options'] == options

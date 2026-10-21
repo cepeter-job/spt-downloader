@@ -20,7 +20,7 @@ Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer pe
 | --- | --- | --- |
 | `route` | Memutuskan dokumentasi aman atau pemeriksaan kode lengkap; memvalidasi workflow. | Pekerjaan kecil, tanpa instalasi stack aplikasi. |
 | `portable` | CPython 3.14.8 produksi pada Linux; logika tanpa browser/Tk/native Windows. | Satu proses pytest pada satu runner. |
-| `windows` | Suite produksi CPython 3.14.8; Edge fixture, GUI Tk, batas native, dan bootstrap worker nyata. | Default serial; evaluasi manual dapat memakai dua runner terisolasi, satu proses pytest per runner. |
+| `windows` | Suite produksi CPython 3.14.8; Edge fixture, GUI Tk, batas native, dan bootstrap worker nyata. | Dua runner terisolasi, satu proses pytest per shard; dispatch manual juga menyediakan kontrol serial. |
 | `dependency-audit` | Environment build pada Python produksi Windows dan tool audit terisolasi. | Satu runner; jadwal mingguan menjalankan audit tanpa build. |
 | `package` | Satu executable produksi 3.14.8 setelah tes/audit; self-test source kemudian frozen. | Satu build, artifact diverifikasi ulang. |
 | Pemeriksaan artifact | File allowlist, laporan self-test, checksum, dan identitas run/commit/artifact. | Hanya set distribusi yang diunggah dan dibaca kembali. |
@@ -35,7 +35,7 @@ Pemilih [scripts/ci_tests.py](../scripts/ci_tests.py) memilih subset portable un
 ## Batas waktu job Windows
 
 Job `windows` memiliki batas **30 menit** untuk seluruh pekerjaan, termasuk
-setup, suite serial lengkap, pemeriksaan bootstrap worker, upload bukti dan
+setup, bagian suite pada shard tersebut, pemeriksaan bootstrap worker, upload bukti dan
 cleanup. Batas ini bukan target durasi tes maupun klaim percepatan. Job package
 terpisah tetap memiliki batas 20 menit; job lain tidak berubah.
 
@@ -45,16 +45,17 @@ job dibatalkan saat batas 20 menit tercapai dan package tidak dijalankan.
 JUnit serta inventory yang tersimpan membuktikan hasil tes, bukan keberhasilan
 pipeline atau executable untuk run tersebut.
 
-Headroom tetap dibatasi: tidak ada test filtering, sharding produksi,
-`continue-on-error`, perubahan dependensi atau penghapusan pemeriksaan artifact.
+Headroom tetap dibatasi: pembagian dua shard wajib mencakup seluruh inventory;
+tidak ada pengurangan tes, `continue-on-error`, perubahan dependensi atau
+penghapusan pemeriksaan artifact. Kontrol serial manual memakai batas yang sama.
 Jika durasi mendekati batas baru, gunakan pengukuran per tahap dan durasi tes
 untuk mencari penyebabnya; jangan menaikkan batas terus-menerus tanpa bukti.
 
 ## Benchmark opsional pembagian tes Windows
 
 [windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml)
-berjalan lewat dispatch atau perubahan PR yang cocok dengan trigger-nya. Produksi
-tetap serial; benchmark tidak mengganti job `windows`, check gabungan, packaging
+berjalan lewat dispatch atau perubahan PR yang cocok dengan trigger-nya. Benchmark
+tidak mengganti job `windows`, check gabungan, packaging
 atau artifact readback. Profil Python dibaca dari sumber yang sama dengan CI utama.
 
 Satu runner mengerjakan suite serial, dua runner lain masing-masing satu shard,
@@ -68,18 +69,20 @@ Laporan membandingkan pytest, setup + pytest, serta jumlah runner-seconds shard.
 Itu bukan waktu CI total. Dispatch `cache_mode=restore` tidak menjamin hit; mode
 `cold` melewati restore tanpa menghapus cache repo, dan benchmark tidak menulis cache.
 
-Sebelum mengusulkan sharding produksi, kumpulkan sedikitnya lima perbandingan pada
-commit yang sama, pisahkan kondisi cache, ukur antre/setup/build/readback melalui
-metadata Actions, lalu tinjau flake, kelengkapan inventory dan biaya runner.
+Keputusan adopsi memakai sedikitnya lima perbandingan pipeline lengkap pada commit
+yang sama, kondisi cache terpisah, serta antre/setup/build/readback dari metadata
+Actions. Tinjauan juga mencakup flake, kelengkapan inventory dan biaya runner.
 Sasaran median CI kandidat turun setidaknya 20% adalah target evaluasi, bukan gate
 benchmark. [Evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md)
-memutuskan tetap serial; percepatan pytest saja belum membuktikan target CI total.
+adalah keputusan historis untuk tetap serial berdasarkan bukti saat itu;
+[evaluasi 21 Oktober](audits/2026-10-21-windows-shard-evaluation.md) menyimpan bukti
+pipeline lengkap dan keputusan terbaru.
 
 ### Perbandingan pipeline lengkap
 
 Dispatch [workflow build](../.github/workflows/windows-build.yml) menerima
 `windows_mode=serial` atau `two-shards` dan `cache_mode=restore` atau `cold`.
-Push dan PR tetap memakai default serial selama evaluasi. Kedua pilihan manual
+Push, PR, dan default dispatch memakai dua shard. Kedua pilihan manual
 menjalankan portable, audit, managed worker, source/frozen GUI, build, upload,
 artifact readback dan check gabungan yang sama. Run manual memiliki grup concurrency
 tersendiri agar pasangan pada satu commit dapat dibandingkan tanpa saling membatalkan.
@@ -99,6 +102,12 @@ tidak menjadi bagian hasil waktu dispatch.
 
 Hasil dan keputusan adopsi dicatat pada
 [evaluasi 21 Oktober](audits/2026-10-21-windows-shard-evaluation.md).
+
+Untuk membandingkan atau mendiagnosis masalah, buat dispatch baru pada commit yang
+sama dengan `windows_mode=serial`; ini tidak mengubah default PR/push. Jika perlu
+mengembalikan default produksi, revert perubahan adopsi lewat PR dan jalankan
+kembali seluruh gate. Jangan melewati shard yang gagal atau memakai artifact lama
+untuk melanjutkan packaging.
 
 Nama artifact menyertakan attempt agar rerun lengkap tidak menimpa bukti sebelumnya.
 Jika verifikasi inventory perlu diulang, jalankan ulang seluruh workflow atau
@@ -149,7 +158,7 @@ Beberapa keputusan menjaga beban tetap terukur:
 - Perubahan dokumentasi yang terbukti aman tidak menjalankan semua interpreter, browser, dan build.
 - Subset Linux memberi feedback portable tanpa browser/GUI; suite Windows penuh mempertahankan seluruh perilaku target.
 - Satu proses pytest per runner menghindari perkalian proses browser dan perebutan resource Tk/Windows Job Object.
-- Fase tes memakai satu runner portable, satu Windows, dan satu audit; satu runner build dimulai setelah gate tersebut. Run usang dibatalkan sesuai `concurrency` workflow.
+- Fase tes memakai satu runner portable, dua runner shard Windows (satu untuk dispatch serial), dan satu audit; satu runner build dimulai setelah gate tersebut. Run usang dibatalkan sesuai `concurrency` workflow.
 - Audit mingguan tidak membuat ulang executable dan tidak menjalankan suite browser.
 - Artifact executable yang sudah terkompresi diunggah tanpa kompresi tambahan.
 - Durasi job dan keadaan cache perlu dibandingkan pada scope yang setara sebelum menyatakan penghematan numerik.
@@ -259,8 +268,8 @@ job yang benar, dependency packaging, urutan self-test/checksum/upload/readback,
 artifact ID, izin per job, check gabungan yang selalu berjalan, dan setiap upload
 diagnostik ketika pytest gagal. Komentar tidak dapat menggantikan perintah build.
 
-Kasus mutasi membuktikan dependency hilang, urutan salah, izin berlebih, shard
-produksi yang belum disetujui, dan upload bukti tanpa failure guard tetap ditolak.
+Kasus mutasi membuktikan dependency hilang, urutan salah, izin berlebih, matrix
+shard yang tidak lengkap, dan upload bukti tanpa failure guard tetap ditolak.
 Bentuk flow/block YAML, urutan `needs`, serta pembungkus ekspresi yang ekuivalen
 diterima. Key `on` tetap berupa nama event dan duplicate key ditolak. Helper ini
 bukan interpreter Bash/PowerShell atau evaluator ekspresi Actions; actionlint dan

@@ -162,7 +162,7 @@ def test_unrelated_blocks_do_not_override_observed_login_outcome(browser, tmp_pa
     assert result['reason'] == reason and result['blocked_requests'] == 3
 
 
-@pytest.mark.parametrize('field', ['target_origin', 'method', 'resource_type'])
+@pytest.mark.parametrize('field', ['target_origin', 'method', 'resource_type', 'request_kind'])
 def test_network_diagnostic_categories_reject_arbitrary_values(tmp_path, field):
     private = 'SYNTHETIC_PRIVATE_VALUE'
     with diagnostics.session(tmp_path, 'worker') as log:
