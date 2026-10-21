@@ -212,9 +212,18 @@ Helper yang dipakai lintas modul pengujian berada di `tests/support_*.py`, bukan
 `test_*.py`. Gunakan owner yang sesuai: data run sintetis, bukti PDF, template,
 protokol browser, laporan build, atau GUI. Modul support tidak berisi tes yang
 ikut dikoleksi dan tidak membuka browser, koneksi, atau window ketika diimpor.
-Fixture tetap mempertahankan scope dan teardown semula; jangan memindahkan guard
-autouse lokal ke seluruh suite. Modul data tidak boleh menarik dependensi Tk
-atau Playwright hanya karena helper GUI memakai data yang sama.
+Pada pemindahan helper tanpa optimasi perilaku, pertahankan scope dan teardown
+semula; jangan memindahkan guard autouse lokal ke seluruh suite. Modul data tidak
+boleh menarik dependensi Tk atau Playwright hanya karena helper GUI memakai data
+yang sama.
+
+Untuk optimasi browser sintetis, ukur setup, eksekusi, dan teardown bersama-sama.
+`support_isolated_browser` memakai satu proses Edge per modul, tetapi membuat
+context baru untuk setiap kasus dan menutupnya melalui `finally`, termasuk popup
+saat kasus gagal. Gunakan pola ini untuk modul yang tidak menguji penghentian
+proses browser itu sendiri. Kesiapan fixture dapat ditunggu melalui sinyal
+permintaan yang selesai; respons gagal tetap harus mencapai pemeriksaan penolakan
+yang sesuai. Jeda yang sengaja menguji timeout atau kondisi terlambat tetap diperlukan.
 
 Pada pemindahan owner, pertahankan identitas kelas dan arah monkeypatch. Contoh:
 `support_browser_protocol.META` dan `View` harus dipakai oleh simulator yang sama;

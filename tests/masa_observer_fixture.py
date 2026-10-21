@@ -140,6 +140,6 @@ function footer(g){const c=JSON.parse(g.dataset.config);
 function show(i){document.querySelectorAll('[data-main-panel]').forEach((p,j)=>{
     p.style.display=i===j?'block':'none';if(i===j)p.querySelectorAll('p-table').forEach(g=>{if(!g.dataset.loaded){g.dataset.loaded='1';load(g);footer(g);}});
 });}
-send(cfg.primary,{RecordId:cfg.record,OnManualClick:false});
+window.primaryDone=false;send(cfg.primary,{RecordId:cfg.record,OnManualClick:false}).finally(()=>window.primaryDone=true);
 for(const property of ['value','checked'])Object.defineProperty(HTMLInputElement.prototype,property,{get(){window.valueReads++;throw Error('DOM values are forbidden');}});
 """

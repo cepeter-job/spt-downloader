@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import importlib.util
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from playwright.sync_api import sync_playwright
+from support_isolated_browser import browser, isolated_context
 
 HTML = '''<div class="main-content"><div class="p-tabview">
 <ul class="p-tabview-nav"><li><a role="tab" onclick="show(0)">Induk</a></li><li><a role="tab" onclick="show(1)">Lampiran</a></li></ul>
@@ -16,12 +16,11 @@ import pytest
 
 
 @pytest.mark.parametrize('wrapped_panels', [False, True])
-def test_driver_captures_tabs_and_all_table_pages_without_deduplication(wrapped_panels):
+def test_driver_captures_tabs_and_all_table_pages_without_deduplication(browser, wrapped_panels):
     assert importlib.util.find_spec('coretax_browser'), 'Browser extractor missing'
     import coretax_browser as driver
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_content(HTML)
         if wrapped_panels:
             page.evaluate('''() => document.querySelectorAll('.p-tabview-panel').forEach(panel=>{
@@ -38,14 +37,12 @@ def test_driver_captures_tabs_and_all_table_pages_without_deduplication(wrapped_
         assert table['rows'] == [['001', '1.000,00']] * 4
         assert table['pages'] == 2
         assert result['capture_complete']
-        browser.close()
 
 
-def test_pagination_uses_largest_supported_page_size():
+def test_pagination_uses_largest_supported_page_size(browser):
     import coretax_browser as driver
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_content(HTML)
         page.evaluate('''() => {
           const trigger=document.createElement('div'); trigger.className='p-dropdown-trigger'; trigger.textContent='page size';
@@ -59,14 +56,12 @@ def test_pagination_uses_largest_supported_page_size():
         result = driver.capture_detail(page, max_pages=5)
         assert page.locator('body').get_attribute('data-chosen') == '50', 'Largest supported UI page size was not selected'
         assert result['capture_complete']
-        browser.close()
 
 
-def test_capture_starts_at_first_page_even_if_grid_retained_a_later_page():
+def test_capture_starts_at_first_page_even_if_grid_retained_a_later_page(browser):
     import coretax_browser as driver
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_content(HTML)
         page.evaluate('''() => {
           const paginator=document.querySelector('.p-paginator');
@@ -76,16 +71,13 @@ def test_capture_starts_at_first_page_even_if_grid_retained_a_later_page():
         }''')
         result=driver.capture_detail(page,max_pages=5)
         assert len(result['sections'][1]['tables'][0]['rows']) == 4, 'Retained later-page state skipped source rows'
-        browser.close()
 
 
-def test_readonly_view_opens_return_in_new_tab():
+def test_readonly_view_opens_return_in_new_tab(browser):
     import coretax_browser as driver
     assert callable(getattr(driver, 'open_return_readonly', None)), 'Read-only return navigation missing'
     target='https://coretax.intranet.pajak.go.id/returnsheets/id-ID/corporate-income-tax-return/fixture-taxpayer/fixture-return/ICT_RCIT/fixture-record'
-    with sync_playwright() as p:
-        browser=p.chromium.launch(channel='msedge',headless=True)
-        context=browser.new_context()
+    with isolated_context(browser) as context:
         page=context.new_page()
         page.route('**/*',lambda route:route.fulfill(body=HTML,content_type='text/html'))
         page.set_content(f'''<div class="main-content"><table><tbody><tr><td><button id="ViewButton" onclick="window.open('{target}')">View</button><button id="Action9" onclick="throw Error('Must not cancel')">Cancel</button></td></tr></tbody></table></div>''')
@@ -93,10 +85,9 @@ def test_readonly_view_opens_return_in_new_tab():
         detail,popup=driver.open_return_readonly(page,page.locator('tbody tr').first,'fixture-taxpayer')
         assert popup
         assert detail.url == target
-        browser.close()
 
 
-def test_inventory_reads_every_page_and_filters_to_selected_year(tmp_path):
+def test_inventory_reads_every_page_and_filters_to_selected_year(browser, tmp_path):
     import coretax_browser as driver
     assert callable(getattr(driver, 'collect_inventory', None)), 'Inventory workflow missing'
     origin='https://coretax.intranet.pajak.go.id'
@@ -109,9 +100,8 @@ def test_inventory_reads_every_page_and_filters_to_selected_year(tmp_path):
         return f'''<a href="/returnsheets/id-ID/submitted-returnsheets/{taxpayer_id}">SPT Dilaporkan</a><div class="main-content"><h2>Fixture taxpayer</h2>
         <p-table><table><thead><tr><th></th><th>Jenis Pajak</th><th>Masa Pajak</th><th>Model SPT</th></tr></thead><tbody></tbody></table><div class="p-paginator"><button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="offset=2;load()">Next</button></div></p-table></div>
         <script>let offset=0; function load(){{fetch('{endpoint}',{{method:'POST',body:JSON.stringify({{TaxpayerAggregateIdentifier:'{taxpayer_id}',First:offset,Rows:2,Filters:[],isArchieved:false,Submitted:{str(submitted).lower()}}})}}).then(r=>r.json()).then(d=>{{document.querySelector('tbody').innerHTML=d.Payload.Data.map(x=>'<tr><td><button id="ViewButton">View</button></td><td>PPh</td><td>'+x.Period+'</td><td>Normal</td></tr>').join(''); document.querySelector('.p-highlight').textContent=offset/2+1;document.querySelector('.p-paginator-next').disabled=offset+d.Payload.Data.length>=d.Payload.TotalRecords;}})}}load();</script>'''
-    with sync_playwright() as p:
-        browser=p.chromium.launch(channel='msedge',headless=True)
-        page=browser.new_page()
+    with isolated_context(browser) as context:
+        page=context.new_page()
         def handle(route):
             url=route.request.url
             if '/returnsheet/api/' in url:
@@ -130,23 +120,20 @@ def test_inventory_reads_every_page_and_filters_to_selected_year(tmp_path):
         assert result['audit'][-1]['total'] == 3
         assert result['audit'][-1]['scanned'] == 3
         assert result['audit'][-1]['selected'] == 2
-        browser.close()
 
 
-def test_table_source_total_mismatch_is_reported_as_partial():
+def test_table_source_total_mismatch_is_reported_as_partial(browser):
     import coretax_browser as driver
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_content(HTML)
         page.evaluate('''() => {let total=document.createElement('span'); total.className='p-paginator-current'; total.textContent='Menampilkan 1 sampai 2 dari 99 entri'; document.querySelector('.p-paginator').appendChild(total);}''')
         result = driver.capture_detail(page, max_pages=5)
         assert not result['capture_complete'], 'Unreconciled source count must not be marked complete'
         assert result['errors']
-        browser.close()
 
 
-def test_detail_expands_all_collapsed_accordions():
+def test_detail_expands_all_collapsed_accordions(browser):
     import coretax_browser as driver
     fixture = '''<div class="main-content">
     <div class="p-accordion-header"><a aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('fixture-one').hidden=false">Fixture one</a></div>
@@ -154,22 +141,19 @@ def test_detail_expands_all_collapsed_accordions():
     <div class="p-accordion-header"><a aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('fixture-two').hidden=false">Fixture two</a></div>
     <div id="fixture-two" hidden><label for="value-two">Fixture two value</label><input id="value-two" disabled value="002"></div>
     </div>'''
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_default_timeout(1500)
         page.set_content(fixture)
         captured = driver.capture_detail(page)
         assert captured['capture_complete'], captured['errors']
         assert [field['value'] for field in captured['sections'][0]['fields']] == ['001', '002']
-        browser.close()
 
 
-def test_capture_resets_with_previous_when_first_control_is_absent():
+def test_capture_resets_with_previous_when_first_control_is_absent(browser):
     import coretax_browser as driver
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_content(HTML)
         page.evaluate('''() => {
           const paginator=document.querySelector('.p-paginator');
@@ -182,10 +166,9 @@ def test_capture_resets_with_previous_when_first_control_is_absent():
         assert table['rows'] == [['001', '1.000,00']] * 4
         assert table['pages'] == 2
         assert captured['capture_complete']
-        browser.close()
 
 
-def test_exclusive_accordion_preserves_visible_data_but_reports_partial():
+def test_exclusive_accordion_preserves_visible_data_but_reports_partial(browser):
     import coretax_browser as driver
     fixture = '''<div class="main-content">
     <div class="p-accordion-header"><a aria-expanded="false" onclick="showAccordion(this,'fixture-one')">Fixture one</a></div>
@@ -198,12 +181,10 @@ def test_exclusive_accordion_preserves_visible_data_but_reports_partial():
       document.querySelectorAll('.fixture-content').forEach(e=>e.hidden=true);
       control.setAttribute('aria-expanded','true'); document.getElementById(id).hidden=false;
     }</script>'''
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as context:
+        page = context.new_page()
         page.set_content(fixture)
         captured = driver.capture_detail(page)
         assert not captured['capture_complete']
         assert [field['value'] for field in captured['sections'][0]['fields']] == ['002']
         assert any('collapsed' in error['message'] for error in captured['errors'])
-        browser.close()
