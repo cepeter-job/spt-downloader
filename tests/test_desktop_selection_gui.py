@@ -7,7 +7,7 @@ import pytest
 from spt_desktop.app import App
 
 
-from support_gui import button, consent_event, widgets, window
+from support_gui import named_widget, button, consent_event, widgets, window
 
 def select_first(root, dialog):
     tree = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'Treeview')
@@ -31,7 +31,7 @@ def test_selection_starts_empty_and_search_sends_only_the_clicked_return(tmp_pat
         button = next(widget for widget in widgets(dialog)
                       if widget.winfo_class() == 'TButton' and widget.cget('text') == 'Sedot SPT terpilih')
         assert not tree.selection() and button.instate(['disabled']) and not controller.replies
-        entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+        entry = named_widget(dialog, 'search')
         entry.insert(0, 'Februari')
         root.update()
         assert len(tree.get_children()) == 1
@@ -54,7 +54,7 @@ def test_closing_selection_cancels_without_implicitly_selecting_every_record(tmp
 
 
 def test_overwrite_dialog_defaults_to_preserving_existing_files(tmp_path):
-    with window(tmp_path, {'files': ['resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx']}, 'overwrite') as (root, app, controller, dialog):
+    with window(tmp_path, {'files': ['resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'}, 'overwrite') as (root, app, controller, dialog):
         buttons = [widget for widget in widgets(dialog) if widget.winfo_class() == 'TButton']
         decline = next(widget for widget in buttons if widget.cget('text') == 'Jangan ganti')
         assert not controller.replies
@@ -79,7 +79,7 @@ def test_selection_uses_local_row_ids_and_preserves_the_observed_identifier(tmp_
 def test_filtering_clears_hidden_selections_before_consent(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
         tree = select_first(root, dialog)
-        entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+        entry = named_widget(dialog, 'search')
         entry.insert(0, 'februari')
         root.update()
         assert len(tree.get_children()) == 1 and not tree.selection()
@@ -97,7 +97,7 @@ def test_empty_inventory_cannot_implicitly_authorize_all_returns(tmp_path):
 
 
 @pytest.mark.parametrize('kind,payload', [
-    ('selection', records()), ('overwrite', {'files': ['resume.xlsx']})])
+    ('selection', records()), ('overwrite', {'files': ['resume.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'})])
 def test_stop_destroys_pending_consent_and_does_not_allow_a_late_reopen(tmp_path, kind, payload):
     with window(tmp_path, payload, kind) as (root, app, controller, dialog):
         app.stop()
@@ -110,7 +110,7 @@ def test_stop_destroys_pending_consent_and_does_not_allow_a_late_reopen(tmp_path
 
 
 @pytest.mark.parametrize('kind,payload', [
-    ('selection', records()), ('overwrite', {'files': ['resume.xlsx']})])
+    ('selection', records()), ('overwrite', {'files': ['resume.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'})])
 def test_terminal_destroys_pending_consent_before_another_job_can_start(tmp_path, kind, payload):
     with window(tmp_path, payload, kind) as (root, app, controller, dialog):
         controller.active = False
@@ -122,7 +122,7 @@ def test_terminal_destroys_pending_consent_before_another_job_can_start(tmp_path
 
 
 @pytest.mark.parametrize('kind,payload', [
-    ('selection', records()), ('overwrite', {'files': ['resume.xlsx']})])
+    ('selection', records()), ('overwrite', {'files': ['resume.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'})])
 def test_dialog_callback_cannot_authorize_a_different_job(tmp_path, kind, payload):
     with window(tmp_path, payload, kind) as (root, app, controller, dialog):
         if kind == 'selection':
@@ -169,7 +169,7 @@ def test_foreign_request_does_not_replace_the_pending_dialog(tmp_path):
 
 def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
-        entry = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+        entry = named_widget(dialog, 'search')
         entry.insert(0, 'Februari')
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         assert root.grab_current() is None
@@ -193,7 +193,7 @@ def test_closing_filtered_selection_keeps_the_next_job_search_independent(tmp_pa
 
 
 def test_only_the_explicit_overwrite_button_authorizes_replacement(tmp_path):
-    with window(tmp_path, {'files': ['resume.xlsx']}, 'overwrite') as (root, app, controller, dialog):
+    with window(tmp_path, {'files': ['resume.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'}, 'overwrite') as (root, app, controller, dialog):
         assert not controller.replies
         button(dialog, 'Ganti file tersebut').invoke()
         root.update()
@@ -202,7 +202,7 @@ def test_only_the_explicit_overwrite_button_authorizes_replacement(tmp_path):
 
 
 def test_closing_overwrite_preserves_existing_files(tmp_path):
-    with window(tmp_path, {'files': ['resume.xlsx']}, 'overwrite') as (root, app, controller, dialog):
+    with window(tmp_path, {'files': ['resume.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'}, 'overwrite') as (root, app, controller, dialog):
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         root.update()
         assert controller.replies == [('overwrite', 'a' * 32, {'overwrite': False})]
@@ -212,7 +212,7 @@ def test_closing_overwrite_preserves_existing_files(tmp_path):
 
 
 @pytest.mark.parametrize('kind,payload', [
-    ('selection', records()), ('overwrite', {'files': ['resume.xlsx']})])
+    ('selection', records()), ('overwrite', {'files': ['resume.xlsx'], 'folder': r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_EXPORT'})])
 def test_rejected_consent_dismisses_without_cancelling_terminal_cleanup(tmp_path, monkeypatch, kind, payload):
     with window(tmp_path, payload, kind) as (root, app, controller, dialog):
         monkeypatch.setattr(controller, 'respond', lambda *args: False)
@@ -234,8 +234,8 @@ def test_rejected_consent_dismisses_without_cancelling_terminal_cleanup(tmp_path
 def test_overwrite_displays_the_exact_prior_export_folder(tmp_path):
     folder = r'C:\Users\SYNTHETIC_USER\Downloads\SYNTHETIC_WP\2025\SYNTHETIC_EXPORT'
     with window(tmp_path, {'files': ['resume.xlsx'], 'folder': folder}, 'overwrite') as (root, app, controller, dialog):
-        visible_text = [str(widget.cget('text')) for widget in widgets(dialog) if 'text' in widget.keys()]
-        assert any(folder in text for text in visible_text)
+        field = named_widget(dialog, 'folder')
+        assert field.instate(['readonly']) and field.get() == folder
         assert not controller.replies
 
 

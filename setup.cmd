@@ -5,13 +5,13 @@ set "UV_PYTHON_PREFERENCE="
 cd /d "%~dp0"
 where uv >nul 2>nul
 if errorlevel 1 (
-  echo uv 0.13.1 diperlukan. Panduan instalasi: https://docs.astral.sh/uv/getting-started/installation/
+  echo uv 0.13.4 diperlukan. Panduan instalasi: https://docs.astral.sh/uv/getting-started/installation/
   pause
   exit /b 1
 )
-powershell -NoProfile -NonInteractive -Command "$version = (& uv --version) -replace '^uv ([0-9]+\.[0-9]+\.[0-9]+).*','$1'; if ($LASTEXITCODE -ne 0 -or $version -ne '0.13.1') { exit 1 }"
+powershell -NoProfile -NonInteractive -Command "$version = (& uv --version) -replace '^uv ([0-9]+\.[0-9]+\.[0-9]+).*','$1'; if ($LASTEXITCODE -ne 0 -or $version -ne '0.13.4') { exit 1 }"
 if errorlevel 1 (
-  echo Gunakan uv 0.13.1 sesuai pin aplikasi dan katalog Python yang sudah diverifikasi.
+  echo Gunakan uv 0.13.4 sesuai pin aplikasi dan katalog Python yang sudah diverifikasi.
   pause
   exit /b 1
 )
