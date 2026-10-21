@@ -101,6 +101,29 @@ Untuk benchmark, gunakan SPT/model/opsi PDF dan versi build yang sama, pisahkan 
 
 Default Pengaturan desktop baru adalah JSON-hybrid; pilihan DOM yang sudah disimpan tetap berlaku. CLI/collector tetap DOM tanpa opsi eksplisit. Log lama tidak memperoleh field benchmark ini secara retroaktif.
 
+### Pengukuran per tabel DOM
+
+Fase `table` mencatat durasi pembacaan satu tabel, termasuk pemilihan ukuran
+halaman, reset ke halaman pertama, dan seluruh pagination. `form_ordinal` dan
+`table_ordinal` menunjukkan posisi form serta tabel dalam traversal; `ordinal`
+tetap menunjuk SPT terpilih. Tidak ada nama form, nama file, URL, atau isi sel
+dalam event ini. Cocokkan posisi dengan checkpoint secara privat bila perlu.
+
+Completion tabel menyertakan `pages`, `body_rows`, dan `status` COMPLETE/PARTIAL.
+Error dan Stop tetap menghasilkan `phase.failed`/`phase.cancelled`. Waktu tabel
+termasuk di dalam `detail` dan `return_detail`, sehingga jangan dijumlahkan
+kembali. Banyak halaman yang seluruh jumlah barisnya cocok bukan bukti loop
+macet. Bandingkan run dengan cakupan dan build yang sama sebelum menyatakan
+percepatan; log lama hanya memiliki durasi detail keseluruhan.
+
+Pada Cek Kredensial, `auth.state` dapat menandai `code_exchange_allowed`,
+`code_exchange_failed`, `home_detected`, dan `search_opened` untuk menelusuri
+alur Satu → callback Coretax → beranda → pencarian. `auth.request_blocked`
+membedakan `request_kind=code_exchange` dari `other`; nilai itu kategori tetap,
+bukan URL. Code, state, verifier PKCE, token, header, dan body tetap tidak dicatat.
+Pertukaran kode yang diizinkan belum membuktikan login berhasil: hasil akhir
+tetap berasal dari `auth.result` dan marker pencarian yang terlihat.
+
 ## Batas penyimpanan dan kegagalan
 
 Ukuran file maksimal 1 MiB, maksimal tiga segmen per session. Retensi tujuh hari dan anggaran 32 file pada folder log; file regular milik logger yang tidak aktif dibersihkan paling tua dahulu. File asing, hardlink, symlink/reparse dan session aktif tidak dihapus. Jika kapasitas tidak dapat direklamasi dengan aman, logger tidak menambah file.

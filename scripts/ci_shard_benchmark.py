@@ -4,16 +4,7 @@ import json
 import math
 from pathlib import Path
 
-from scripts.ci_tests import shard_for
-
-
-def _nodes(report, key):
-    value = report.get(key)
-    if (not isinstance(value, list) or not value
-            or any(not isinstance(node, str) or not node for node in value)
-            or len(value) != len(set(value))):
-        raise ValueError(f'Benchmark {key} collection is empty or malformed.')
-    return set(value)
+from scripts.ci_tests import check_windows_inventories
 
 
 def _seconds(report):
@@ -25,37 +16,17 @@ def _seconds(report):
     return float(value)
 
 
-def verify(baseline, shards, python_version, commit):
+def verify(baseline, shards, python_version, commit, *, run_id, run_attempt):
     """Fail closed unless both successful shard inventories exactly partition baseline."""
     if not isinstance(baseline, dict) or not isinstance(shards, list) or len(shards) != 2:
         raise ValueError('Expected one baseline and exactly two shard reports.')
-
-    full_nodes = _nodes(baseline, 'all')
-    serial_nodes = _nodes(baseline, 'selected')
-    if serial_nodes != full_nodes or 'shard' in baseline:
-        raise ValueError('Baseline must execute every collected Windows test without sharding.')
-
-    durations = []
-    for index, report in enumerate([baseline, *shards]):
-        if not isinstance(report, dict):
-            raise ValueError('Benchmark evidence is not an object.')
-        expected = {
-            'workload': 'windows', 'platform': 'win32',
-            'python': python_version, 'commit': commit, 'exitstatus': 0,
-        }
-        if any(report.get(field) != value for field, value in expected.items()):
-            raise ValueError('Benchmark evidence has a mismatched runner, version, commit or exit status.')
-        if _nodes(report, 'all') != full_nodes:
-            raise ValueError('Windows collectors disagree about the complete test inventory.')
-        durations.append(_seconds(report))
-        if index == 0:
-            continue
-        if report.get('shard') != {'index': index - 1, 'count': 2}:
-            raise ValueError('Benchmark shard identity is missing or incorrect.')
-        expected_nodes = {node for node in full_nodes if shard_for(node, 2) == index - 1}
-        if not expected_nodes or _nodes(report, 'selected') != expected_nodes:
-            raise ValueError('Shard evidence omits or duplicates Windows tests.')
-
+    full_nodes = check_windows_inventories(
+        baseline, python_version, commit, run_id=run_id, run_attempt=run_attempt)
+    shard_nodes = check_windows_inventories(
+        shards, python_version, commit, run_id=run_id, run_attempt=run_attempt)
+    if shard_nodes != full_nodes:
+        raise ValueError('Baseline and shards disagree about the complete test inventory.')
+    durations = [_seconds(report) for report in [baseline, *shards]]
     result = {
         'total_tests': len(full_nodes),
         'shard_counts': [len(shard['selected']) for shard in shards],
@@ -99,8 +70,8 @@ def summary_text(result):
         'Setup uses shared wall-clock timestamps after checkout through pytest session start; '
         'the pytest session itself uses a monotonic clock. '
         'This excludes runner queue, checkout, uploads, packaging and provenance; '
-        'these are not total-CI speedups. Production remains '
-        'serial and retains its existing required gate and artifact checks.\n'
+        'these are not total-CI speedups. Production integration and packaging '
+        'retain their separate required gate and artifact checks.\n'
     )
 
 
@@ -111,6 +82,8 @@ def main(argv=None):
     parser.add_argument('shard_one', type=Path)
     parser.add_argument('--python-version', required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--run-id', required=True)
+    parser.add_argument('--run-attempt', required=True)
     parser.add_argument('--summary', type=Path)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
@@ -120,7 +93,8 @@ def main(argv=None):
         for path in (args.baseline, args.shard_zero, args.shard_one)
     )
     result = verify(baseline, [shard_zero, shard_one],
-                    args.python_version, args.commit)
+                    args.python_version, args.commit,
+                    run_id=args.run_id, run_attempt=args.run_attempt)
     if args.output:
         args.output.write_text(json.dumps(result, indent=2, allow_nan=False) + '\n', encoding='utf-8')
     text = summary_text(result)

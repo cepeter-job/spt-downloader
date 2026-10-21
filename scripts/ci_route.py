@@ -31,6 +31,56 @@ def choose_mode(event, paths, ref):
     return 'full'
 
 
+def execution_plan(event, profiles, windows_mode='', cache_mode=''):
+    """Use two isolated Windows shards; dispatch alone may override mode or cache."""
+    windows_mode = windows_mode or 'two-shards'
+    cache_mode = cache_mode or 'restore'
+    if windows_mode not in {'serial', 'two-shards'} or cache_mode not in {'restore', 'cold'}:
+        raise ValueError('Unknown Windows execution or cache mode.')
+    if event != 'workflow_dispatch' and (windows_mode != 'two-shards' or cache_mode != 'restore'):
+        raise ValueError('Only workflow_dispatch may override the production Windows execution plan.')
+    if (not isinstance(profiles, dict) or not profiles
+            or any(not isinstance(value, str) or not value
+                   for pair in profiles.items() for value in pair)):
+        raise ValueError('The Windows matrix requires explicit Python profiles.')
+    variants = [('serial', '')] if windows_mode == 'serial' else [('shard-0', '0/2'), ('shard-1', '1/2')]
+    return {
+        'windows_mode': windows_mode, 'cache_mode': cache_mode,
+        'windows_matrix': {'include': [
+            {'profile': profile, 'python': version, 'mode': label, 'shard': shard}
+            for profile, version in profiles.items() for label, shard in variants
+        ]},
+    }
+
+
+def validate_execution_plan(outputs, event):
+    """Reject incomplete or forged matrix outputs even when a matrix job is green."""
+    required = {'windows_mode', 'cache_mode', 'python_matrix', 'windows_matrix'}
+    if not required <= outputs.keys() or any(not isinstance(outputs[key], str) for key in required):
+        raise ValueError('CI execution-plan outputs are missing or malformed.')
+    if not outputs['windows_mode'] or not outputs['cache_mode']:
+        raise ValueError('CI execution-plan modes must be explicit.')
+    try:
+        matrix = json.loads(outputs['python_matrix'])
+        windows = json.loads(outputs['windows_matrix'])
+    except (TypeError, ValueError) as exc:
+        raise ValueError('CI execution matrices are not valid JSON.') from exc
+    if not isinstance(matrix, dict) or set(matrix) != {'include'}:
+        raise ValueError('CI Python profiles are missing or malformed.')
+    entries = matrix['include']
+    if (not isinstance(entries, list) or not entries
+            or any(not isinstance(entry, dict) or set(entry) != {'profile', 'python'}
+                   or any(not isinstance(value, str) or not value for value in entry.values())
+                   for entry in entries)):
+        raise ValueError('CI Python profiles are missing or malformed.')
+    profiles = {entry['profile']: entry['python'] for entry in entries}
+    if len(profiles) != len(entries):
+        raise ValueError('CI Python profiles are duplicated.')
+    expected = execution_plan(event, profiles, outputs['windows_mode'], outputs['cache_mode'])
+    if windows != expected['windows_matrix']:
+        raise ValueError('CI Windows matrix does not match the complete execution plan.')
+
+
 def changed_paths(repository, base, head):
     if not all(re.fullmatch(r'[0-9a-f]{40}', value or '') and set(value) != {'0'}
                for value in (base, head)):
@@ -52,13 +102,17 @@ def validate_needs(needs, event, ref):
         raise ValueError('CI returned a missing or unexpected workload result.')
     if needs['route'].get('result') != 'success':
         raise ValueError('CI routing did not succeed.')
-    mode = needs['route'].get('outputs', {}).get('mode')
+    outputs = needs['route'].get('outputs', {})
+    if not isinstance(outputs, dict):
+        raise ValueError('CI routing outputs are missing or malformed.')
+    mode = outputs.get('mode')
     if mode not in {'full', 'docs', 'audit'}:
         raise ValueError('CI routing returned an unknown mode.')
     if mode == 'docs' and event not in {'push', 'pull_request'}:
         raise ValueError('This event cannot skip validation as documentation.')
     if (mode == 'audit') != (event == 'schedule') or (event == 'schedule' and ref != MAIN_REF):
         raise ValueError('Only the main schedule may use audit-only routing.')
+    validate_execution_plan(outputs, event)
     required = {'route'}
     if mode == 'full':
         required.update({'portable', 'windows', 'package', 'dependency-audit'})
@@ -88,11 +142,17 @@ def main(argv=None):
     from spt_desktop.runtime import PYTHON_PROFILES
     matrix = {'include': [{'profile': profile, 'python': version}
                           for profile, version in PYTHON_PROFILES.items()]}
+    plan = execution_plan(event, PYTHON_PROFILES, os.environ.get('WINDOWS_MODE_INPUT', ''),
+                          os.environ.get('CACHE_MODE_INPUT', ''))
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
         output.write(f'mode={mode}\n')
         output.write('python_matrix=' + json.dumps(matrix, separators=(',', ':')) + '\n')
         output.write('production_python=' + PYTHON_PROFILES['production'] + '\n')
-    summary = f'CI workload mode: {mode}. Compared paths: {len(paths) if paths else "unavailable"}.'
+        for key in ('windows_mode', 'cache_mode'):
+            output.write(f'{key}={plan[key]}\n')
+        output.write('windows_matrix=' + json.dumps(plan['windows_matrix'], separators=(',', ':')) + '\n')
+    summary = (f'CI workload mode: {mode}. Windows: {plan["windows_mode"]}. '
+               f'Cache: {plan["cache_mode"]}. Compared paths: {len(paths) if paths else "unavailable"}.')
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:

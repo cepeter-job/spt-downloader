@@ -2,26 +2,75 @@
 from spt_desktop import diagnostics
 import base64
 import hashlib
+import json
 from pathlib import Path
 import stat
 from urllib.parse import urlparse
 import uuid
 
 from coretax_browser import list_taxpayer_id, trusted_origin, verify_detail_url
+from coretax_exporter import FINANCIAL_LABELS
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_PDF_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT_MS = 30000
-_LABELS = {'Laporan Keuangan', 'Laporan Keuangan yang Telah Diaudit*'}
+_LABELS = FINANCIAL_LABELS
 
-_SCAN = r'''() => [...document.querySelectorAll('a, button, input')]
-    .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')
-    .map(el => ({label: el.innerText || el.value || el.getAttribute('aria-label') || '',
+_SCAN = r'''() => {
+    const roots = document.querySelectorAll('.main-content');
+    if (roots.length !== 1) return [];
+    const root = roots[0], labels = new Set(__LABELS__);
+    const visible = el => !!el.getClientRects().length &&
+        !['hidden','collapse'].includes(getComputedStyle(el).visibility) &&
+        !el.closest('[hidden],[aria-hidden="true"]');
+    const boundary = '.p-tabview-panel,.p-panel,p-panel,.p-accordion-tab,p-accordiontab,section,fieldset,.main-content';
+    const owner = el => el.closest(boundary);
+    const headings = 'label,legend,h1,h2,h3,h4,h5,h6,.p-panel-title,.p-accordion-header-text';
+    const approved = el => el && visible(el) && typeof el.innerText==='string' &&
+        labels.has(el.innerText.trim()) ? el.innerText : null;
+    const tableLabel = table => {
+        // Bind only the observed attachment-table shape, never an arbitrary grid.
+        const rows = table.tHead ? [...table.tHead.rows] : [];
+        if (rows.length !== 1 || JSON.stringify([...rows[0].cells].map(c=>c.innerText.trim())) !==
+            JSON.stringify(['NO.','FILENAME','TINDAKAN'])) return null;
+        if (table.hasAttribute('aria-labelledby')) {
+            const ids = table.getAttribute('aria-labelledby').trim().split(/\s+/);
+            if (ids.length !== 1 || !ids[0]) return null;
+            const matches = [...document.querySelectorAll('[id]')].filter(el=>el.id===ids[0]);
+            if (matches.length !== 1 || !root.contains(matches[0]) || owner(matches[0]) !== owner(table)) return null;
+            const label = approved(matches[0]);
+            // Explicit contradictory/hidden ownership cannot fall back to nearby text.
+            if (table.caption && approved(table.caption)?.trim() !== label?.trim()) return null;
+            return label;
+        }
+        if (table.caption) return approved(table.caption);
+        const candidates = [];
+        for (let node=table; node && node!==owner(table); node=node.parentElement) {
+            if (node!==table && node.matches('table')) return null;
+            for (let sibling=node.previousElementSibling; sibling; sibling=sibling.previousElementSibling) {
+                if (sibling.matches('table,'+boundary) || sibling.querySelector('table,'+boundary)) return null;
+                const found = [...(sibling.matches(headings)?[sibling]:[]), ...sibling.querySelectorAll(headings)]
+                    .filter(visible);
+                candidates.push(...found);
+            }
+            if (candidates.length) return candidates.length===1 && owner(candidates[0])===owner(table)
+                ? approved(candidates[0]) : null;
+        }
+        return null;
+    };
+    return [...root.querySelectorAll('a, button, input')].filter(visible).map(el => {
+        const direct = el.innerText || el.value || el.getAttribute('aria-label') || '';
+        const table = el.tagName==='A' ? el.closest('table') : null;
+        const label = labels.has(direct.trim()) ? direct : table ? tableLabel(table) : null;
+        if (!label) return null;
+        return {label,
                 href: el.tagName === 'A' ? el.getAttribute('href') : null,
                 resolved_href: el.tagName === 'A' ? el.href : null,
                 document_url: window.location.href,
                 unsafe: el.tagName !== 'A' || el.hasAttribute('onclick') ||
-                        el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')}))'''
+                        el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')};
+    }).filter(Boolean);
+}'''.replace('__LABELS__', json.dumps(sorted(_LABELS)))
 
 _START = r'''async ({key, url, limit, timeout, document_url}) => {
     // A Python-side scope check cannot bind a later browser evaluation.

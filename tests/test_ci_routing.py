@@ -36,6 +36,80 @@ def test_ci_matrix_and_audit_use_the_promoted_production_version(monkeypatch, tm
     assert json.loads(data['python_matrix']) == {
         'include': [{'profile': 'production', 'python': '3.14.8'}]
     }
+    assert data['windows_mode'] == 'two-shards'
+    assert data['cache_mode'] == 'restore'
+    assert json.loads(data['windows_matrix']) == {'include': [
+        {'profile': 'production', 'python': '3.14.8', 'mode': 'shard-0', 'shard': '0/2'},
+        {'profile': 'production', 'python': '3.14.8', 'mode': 'shard-1', 'shard': '1/2'},
+    ]}
+
+
+@pytest.mark.parametrize('windows_mode,expected', [
+    ('serial', [('serial', '')]),
+    ('two-shards', [('shard-0', '0/2'), ('shard-1', '1/2')]),
+])
+@pytest.mark.parametrize('cache_mode', ['restore', 'cold'])
+def test_dispatch_explicitly_selects_one_complete_serial_or_two_shard_plan(windows_mode, expected, cache_mode):
+    plan = ci_module('ci_route').execution_plan(
+        'workflow_dispatch', {'production': '3.14.8'}, windows_mode, cache_mode)
+    assert plan == {
+        'windows_mode': windows_mode, 'cache_mode': cache_mode,
+        'windows_matrix': {'include': [
+            {'profile': 'production', 'python': '3.14.8', 'mode': mode, 'shard': shard}
+            for mode, shard in expected
+        ]},
+    }
+
+
+@pytest.mark.parametrize('event', ['pull_request', 'push', 'schedule'])
+def test_automatic_events_keep_two_shards_and_restore_caches(event):
+    route = ci_module('ci_route')
+    plan = route.execution_plan(event, {'production': '3.14.8'})
+    assert plan['windows_mode'] == 'two-shards' and plan['cache_mode'] == 'restore'
+    assert [entry['shard'] for entry in plan['windows_matrix']['include']] == ['0/2', '1/2']
+    for windows_mode, cache_mode in [('serial', 'restore'), ('two-shards', 'cold'), ('serial', 'cold')]:
+        with pytest.raises(ValueError, match='dispatch'):
+            route.execution_plan(event, {'production': '3.14.8'}, windows_mode, cache_mode)
+
+
+@pytest.mark.parametrize('windows_mode,cache_mode', [
+    ('shard-0', 'restore'), ('three-shards', 'restore'),
+    ('serial', 'warm'), ('serial ', 'restore'), ('serial', 'cold '),
+])
+def test_unknown_dispatch_settings_fail_closed(windows_mode, cache_mode):
+    with pytest.raises(ValueError):
+        ci_module('ci_route').execution_plan(
+            'workflow_dispatch', {'production': '3.14.8'}, windows_mode, cache_mode)
+
+
+def test_dispatch_outputs_bind_full_validation_to_the_selected_matrix(monkeypatch, tmp_path):
+    route = ci_module('ci_route')
+    monkeypatch.setattr(route, 'changed_paths', lambda *_: ['README.md'])
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'workflow_dispatch')
+    monkeypatch.setenv('GITHUB_REF', 'refs/heads/synthetic-pilot')
+    monkeypatch.setenv('WINDOWS_MODE_INPUT', 'two-shards')
+    monkeypatch.setenv('CACHE_MODE_INPUT', 'cold')
+    target = tmp_path / 'github-output'
+    monkeypatch.setenv('GITHUB_OUTPUT', str(target))
+    route.main(['route'])
+    data = dict(line.split('=', 1) for line in target.read_text().splitlines())
+    assert data['mode'] == 'full'
+    assert data['windows_mode'] == 'two-shards' and data['cache_mode'] == 'cold'
+    assert json.loads(data['windows_matrix']) == {'include': [
+        {'profile': 'production', 'python': '3.14.8', 'mode': 'shard-0', 'shard': '0/2'},
+        {'profile': 'production', 'python': '3.14.8', 'mode': 'shard-1', 'shard': '1/2'},
+    ]}
+    # An explicit serial dispatch stays available after the automatic default changes.
+    serial_target = tmp_path / 'github-output-serial'
+    monkeypatch.setenv('GITHUB_OUTPUT', str(serial_target))
+    monkeypatch.setenv('WINDOWS_MODE_INPUT', 'serial')
+    route.main(['route'])
+    serial = dict(line.split('=', 1) for line in serial_target.read_text().splitlines())
+    assert serial['mode'] == 'full'
+    assert serial['windows_mode'] == 'serial' and serial['cache_mode'] == 'cold'
+    assert json.loads(serial['windows_matrix']) == {'include': [
+        {'profile': 'production', 'python': '3.14.8', 'mode': 'serial', 'shard': ''},
+    ]}
 
 
 @pytest.mark.parametrize('paths, expected', [
@@ -57,6 +131,8 @@ def test_only_known_documentation_changes_may_skip_execution(paths, expected):
 
 def test_manual_dispatch_forces_full_validation_and_schedule_only_audits_main():
     route = ci_module('ci_route')
+    plan = route.execution_plan('workflow_dispatch', {'production': '3.14.8'})
+    assert plan['windows_mode'] == 'two-shards' and plan['cache_mode'] == 'restore'
     assert route.choose_mode('workflow_dispatch', ['README.md'], 'refs/heads/main') == 'full'
     assert route.choose_mode('schedule', None, 'refs/heads/main') == 'audit'
     with pytest.raises(ValueError, match='main'):
@@ -90,10 +166,18 @@ def test_renaming_runtime_code_to_documentation_cannot_hide_deleted_code(tmp_pat
     assert route.changed_paths(tmp_path, 'f' * 40, head) is None
 
 
-def needs_for(mode, event='pull_request'):
+def needs_for(mode, event='pull_request', windows_mode='two-shards', cache_mode='restore'):
     needs = {name: {'result': 'skipped'} for name in
              ('route', 'portable', 'windows', 'package', 'dependency-audit', 'attest')}
-    needs['route'] = {'result': 'success', 'outputs': {'mode': mode}}
+    entries = [('serial', '')] if windows_mode == 'serial' else [('shard-0', '0/2'), ('shard-1', '1/2')]
+    needs['route'] = {'result': 'success', 'outputs': {
+        'mode': mode, 'windows_mode': windows_mode, 'cache_mode': cache_mode,
+        'python_matrix': json.dumps({'include': [{'profile': 'production', 'python': '3.14.8'}]}),
+        'windows_matrix': json.dumps({'include': [
+            {'profile': 'production', 'python': '3.14.8', 'mode': label, 'shard': shard}
+            for label, shard in entries
+        ]}),
+    }}
     if mode == 'full':
         for name in ('portable', 'windows', 'package', 'dependency-audit'):
             needs[name]['result'] = 'success'
@@ -138,6 +222,45 @@ def test_aggregate_rejects_forged_routing_and_unattested_main_artifacts():
     needs['attest']['result'] = 'skipped'
     with pytest.raises(ValueError, match='attest'):
         route.validate_needs(needs, 'push', 'refs/heads/main')
+    for event, mode, ref in [('pull_request', 'full', 'refs/pull/1/merge'),
+                             ('push', 'full', 'refs/heads/main'),
+                             ('schedule', 'audit', 'refs/heads/main')]:
+        for windows_mode, cache_mode in [('serial', 'restore'), ('two-shards', 'cold')]:
+            forged = needs_for(mode, event, windows_mode, cache_mode)
+            with pytest.raises(ValueError, match='dispatch'):
+                route.validate_needs(forged, event, ref)
+
+
+def test_dispatch_aggregate_requires_the_complete_declared_shard_plan():
+    route = ci_module('ci_route')
+    route.validate_needs(needs_for('full', 'workflow_dispatch', 'serial'),
+                         'workflow_dispatch', 'refs/heads/synthetic-pilot')
+    needs = needs_for('full', 'workflow_dispatch', 'two-shards', 'cold')
+    route.validate_needs(needs, 'workflow_dispatch', 'refs/heads/synthetic-pilot')
+    for replacement in [
+        {'include': [{'profile': 'production', 'python': '3.14.8', 'mode': 'shard-0', 'shard': '0/2'}]},
+        {'include': [
+            {'profile': 'production', 'python': '3.14.8', 'mode': 'shard-0', 'shard': '0/2'},
+            {'profile': 'production', 'python': '3.14.8', 'mode': 'shard-1', 'shard': '0/2'},
+        ]},
+        {'include': [{'profile': 'production', 'python': '3.14.8', 'mode': 'serial', 'shard': ''}]},
+    ]:
+        damaged = copy.deepcopy(needs)
+        damaged['route']['outputs']['windows_matrix'] = json.dumps(replacement)
+        with pytest.raises(ValueError):
+            route.validate_needs(damaged, 'workflow_dispatch', 'refs/heads/synthetic-pilot')
+    for key in ('windows_mode', 'cache_mode', 'windows_matrix', 'python_matrix'):
+        damaged = copy.deepcopy(needs)
+        del damaged['route']['outputs'][key]
+        with pytest.raises(ValueError):
+            route.validate_needs(damaged, 'workflow_dispatch', 'refs/heads/synthetic-pilot')
+    for result in ('failure', 'cancelled', 'skipped'):
+        damaged = copy.deepcopy(needs)
+        damaged['windows']['result'] = result
+        with pytest.raises(ValueError):
+            route.validate_needs(damaged, 'workflow_dispatch', 'refs/heads/synthetic-pilot')
+    with pytest.raises(ValueError, match='dispatch'):
+        route.validate_needs(needs, 'pull_request', 'refs/pull/1/merge')
 
 
 def test_unknown_tests_are_routed_to_windows_and_never_dropped():
@@ -181,12 +304,16 @@ def test_inventory_check_rejects_incomplete_windows_tests_and_mixed_commit_evide
     assert hasattr(module, 'check_inventories'), 'Cross-runner collection validation is missing'
     all_nodes = ['tests/test_exporter.py::test_synthetic', 'tests/test_new.py::test_synthetic']
     portable = {'all': all_nodes, 'selected': all_nodes[:1], 'workload': 'portable',
-                'python': '3.14.8', 'commit': 'a' * 40, 'platform': 'linux'}
+                'python': '3.14.8', 'commit': 'a' * 40, 'platform': 'linux',
+                'run_id': '123', 'run_attempt': '1', 'exitstatus': 0}
     windows = dict(portable, selected=all_nodes, workload='windows', platform='win32')
-    assert module.check_inventories(portable, windows, '3.14.8', 'a' * 40) == 2
+    assert module.check_inventories(portable, windows, '3.14.8', 'a' * 40,
+                                    run_id='123', run_attempt='1') == 2
     for key, value in [('selected', []), ('selected', all_nodes[1:]), ('all', all_nodes[1:]),
-                       ('commit', 'b' * 40), ('python', '3.11.17'), ('platform', 'linux')]:
+                       ('commit', 'b' * 40), ('python', '3.11.17'), ('platform', 'linux'),
+                       ('run_id', '124'), ('run_attempt', '2'), ('exitstatus', 1)]:
         damaged = copy.deepcopy(windows)
         damaged[key] = value
         with pytest.raises(ValueError):
-            module.check_inventories(portable, damaged, '3.14.8', 'a' * 40)
+            module.check_inventories(portable, damaged, '3.14.8', 'a' * 40,
+                                     run_id='123', run_attempt='1')

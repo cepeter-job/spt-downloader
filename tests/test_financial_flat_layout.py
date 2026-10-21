@@ -68,9 +68,16 @@ def test_flat_record_bound_pdf_metadata_can_be_exported_and_verified(tmp_path, m
 
 
 @pytest.mark.parametrize('count', [1, 2])
-def test_desktop_publishes_flat_pdfs_beside_each_model_excel_with_exact_links(tmp_path, count):
+@pytest.mark.parametrize('label', [LABEL,
+    'Laporan Keuangan/Laporan Keuangan yang Telah Diaudit*',
+    'a. 1. Laporan Keuangan/Laporan Keuangan yang Telah Diaudit*'])
+def test_desktop_publishes_flat_pdfs_beside_each_model_excel_with_exact_links(tmp_path, count, label):
     source = tmp_path / 'private-job'
     run = flat_run(source, count)
+    for record in run['records']:
+        record['attachments'][0]['label'] = label
+    for item in run['output_attachments']:
+        item['label'] = label
     expected = {item['relative_path']: PDF for item in deepcopy(run['output_attachments'])}
     assert len(expected) == count
     unrelated = source / 'SYNTHETIC_UNDECLARED_PRIVATE.pdf'
@@ -90,12 +97,14 @@ def test_desktop_publishes_flat_pdfs_beside_each_model_excel_with_exact_links(tm
                 links = [cell.hyperlink.target for row in workbook['Audit'] for cell in row
                          if cell.hyperlink and cell.hyperlink.target.endswith('.pdf')]
                 assert set(links) == set(expected) and len(links) == count
+                assert sum(cell.value == label for row in workbook['Audit'] for cell in row) == count
             else:
                 proof = json.loads(workbook.properties.identifier)
                 assert len(proof['records']) == 1
                 links = [item['relative_path'] for record in proof['records']
                          for item in record['attachments'] if item['status'] == 'COMPLETE']
                 assert len(links) == 1 and set(links) <= set(expected)
+                assert proof['records'][0]['attachments'][0]['label'] == label
             assert all(PurePosixPath(link).parent == PurePosixPath('.') for link in links)
             assert all((final / link).is_file() for link in links)
         finally:

@@ -45,7 +45,7 @@ ENUMS = {
         'adapter_ineligible', 'coverage_incomplete', 'forms_unavailable', 'unsupported_tax', 'checkpoint_reuse'}),
     'tax_kind': frozenset({'ppn', 'pph21', 'unifikasi', 'corporate', 'other'}),
     'phase': frozenset({'startup', 'runtime', 'authentication', 'inventory', 'details',
-                       'detail', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
+                       'detail', 'table', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
                        'return_detail', 'list_restore', 'open_detail', 'json_observe', 'json_project'}),
     'stage': frozenset({'setup', 'authentication', 'inventory', 'details', 'export',
                        'publish', 'finished', 'login_check', 'selection', 'overwrite'}),
@@ -59,13 +59,15 @@ ENUMS = {
     'target_origin': frozenset({'coretax', 'satu', 'other'}),
     'method': frozenset({'GET', 'HEAD', 'POST', 'OTHER'}),
     'resource_type': frozenset({'document', 'xhr', 'fetch', 'other'}),
+    'request_kind': frozenset({'code_exchange', 'other'}),
     'reason': frozenset({'waiting_redirect', 'waiting_form', 'login_form_ready',
         'existing_session', 'existing_home', 'origin_blocked', 'origin_mismatch',
         'challenge', 'unsafe_form', 'form_changed', 'readiness_timeout',
         'credential_missing', 'account_mismatch', 'verified', 'verification_timeout',
-        'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed'}),
+        'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed',
+        'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
