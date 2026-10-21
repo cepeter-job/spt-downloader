@@ -1,6 +1,8 @@
 """Real, synthetic dialog contracts; execute only on the GitHub Windows runner."""
 from dataclasses import replace
 import gc
+import _tkinter
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -17,6 +19,22 @@ def settle(root):
     root.after(250, lambda: done.set(True))
     root.wait_variable(done)
     root.update_idletasks()
+
+
+def queue_native_resize(root, app, dialog):
+    """Produce an actual viewport resize without executing the owned timer."""
+    width, height = dialog.winfo_width(), dialog.winfo_height()
+    target = width - 1 if width > dialog.minsize()[0] else width + 1
+    dialog.geometry(f'{target}x{height}')
+    flags = _tkinter.WINDOW_EVENTS | _tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        root.tk.dooneevent(flags)
+        if (dialog.winfo_width() != width
+                and app._interaction['layout_after'] is not None):
+            return
+        time.sleep(.001)
+    pytest.fail('A real native resize did not queue owned layout work')
 
 
 def label_text(widget):
@@ -279,6 +297,7 @@ def test_selection_reflow_preserves_data_and_owned_resources(active_app, monkeyp
     settle(root)
     sentinel = root.after(60000, lambda: None)
     before = set(root.tk.splitlist(root.tk.call('after', 'info')))
+    queue_native_resize(root, app, dialog)
     for _ in range(20):
         dialog.event_generate('<Configure>')
     pending = app._interaction['layout_after']
@@ -308,7 +327,7 @@ def test_selection_reflow_preserves_data_and_owned_resources(active_app, monkeyp
         interaction = app._interaction
         assert interaction is not None
         modal = interaction['dialog']
-        modal.event_generate('<Configure>')
+        queue_native_resize(root, app, modal)
         pending = interaction['layout_after']
         traces = [(variable, token) for variable, token in interaction['traces']]
         app._close_interaction()
@@ -332,7 +351,7 @@ def test_selection_reflow_preserves_data_and_owned_resources(active_app, monkeyp
 def test_old_reflow_cannot_steal_terminal_focus(active_app):
     root, app, controller = active_app
     dialog = open_selection(active_app)
-    dialog.event_generate('<Configure>')
+    queue_native_resize(root, app, dialog)
     interaction = app._interaction
     assert interaction['layout_after'] is not None
     root_binding = root.bind('<Alt-j>')
@@ -528,6 +547,7 @@ def test_dialog_close_cancels_only_owned_callbacks(active_app, monkeypatch):
     dialog = open_overwrite(active_app)
     sentinel = root.after(60000, lambda: None)
     before = set(root.tk.splitlist(root.tk.call('after', 'info')))
+    queue_native_resize(root, app, dialog)
     for _ in range(20):
         dialog.event_generate('<Configure>')
     token = app._interaction['layout_after']
@@ -551,7 +571,7 @@ def test_dialog_close_cancels_only_owned_callbacks(active_app, monkeypatch):
         interaction = app._interaction
         assert interaction is not None
         modal = interaction['dialog']
-        modal.event_generate('<Configure>')
+        queue_native_resize(root, app, modal)
         pending = interaction['layout_after']
         app._close_interaction()
         assert interaction['layout_after'] is None and interaction['bindings'] == [] and interaction['traces'] == []

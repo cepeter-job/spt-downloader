@@ -620,15 +620,28 @@ class App:
                              style='SPT.Primary.TButton', state='disabled', command=confirm)
         submit.grid(row=0, column=2, sticky='e')
 
+        layout_size = None
+
         def update_scrollregion(event=None):
             if self._interaction_current(interaction):
+                # Wrapping finishes in idle geometry work after reflow returns.
+                # Match the measured body so its final lines remain reachable.
+                height = max(body.winfo_reqheight(), canvas.winfo_height())
+                if int(canvas.itemcget(body_window, 'height') or 0) != height:
+                    canvas.itemconfigure(body_window, height=height)
                 canvas.configure(scrollregion=canvas.bbox('all'))
 
         def reflow():
+            nonlocal layout_size
             interaction['layout_after'] = None
             if not self._interaction_current(interaction):
                 return
-            width = max(1, canvas.winfo_width())
+            width = canvas.winfo_width()
+            if width <= 1:
+                # Native Map/Configure supplies the first usable viewport.
+                # Do not spin idle callbacks while the modal is not mapped.
+                return
+            layout_size = (width, canvas.winfo_height())
             canvas.itemconfigure(body_window, width=width)
             text_width = max(px(80), width - px(8))
             for label in (intro, scope, search_label, id_label, summary_label, notice_label, keyboard_hint):
@@ -642,7 +655,17 @@ class App:
             if (not self._interaction_current(interaction)
                     or (event is not None and event.widget not in (dialog, canvas))):
                 return
-            if interaction['layout_after'] is None:
+            if event is not None and (canvas.winfo_width(), canvas.winfo_height()) == layout_size:
+                # Windows can deliver obsolete/duplicate Configure messages
+                # after the viewport is already arranged at its actual size.
+                return
+            if event is None or layout_size is None:
+                # Initial and content layout must not wait for resize debounce.
+                # Reuse the modal's owned token so Stop retires either kind.
+                if interaction['layout_after'] is not None:
+                    dialog.after_cancel(interaction['layout_after'])
+                interaction['layout_after'] = dialog.after_idle(reflow)
+            elif interaction['layout_after'] is None:
                 interaction['layout_after'] = dialog.after(75, reflow)
 
         def reveal_focus(event):
@@ -795,15 +818,28 @@ class App:
                 tree.xview_scroll(1, 'units')
             return 'break'
 
+        layout_size = None
+
         def update_scrollregion(event=None):
             if self._interaction_current(interaction):
+                # Wrapping finishes in idle geometry work after reflow returns.
+                # Match the measured body so its final lines remain reachable.
+                height = max(body.winfo_reqheight(), canvas.winfo_height())
+                if int(canvas.itemcget(body_window, 'height') or 0) != height:
+                    canvas.itemconfigure(body_window, height=height)
                 canvas.configure(scrollregion=canvas.bbox('all'))
 
         def reflow():
+            nonlocal layout_size
             interaction['layout_after'] = None
             if not self._interaction_current(interaction):
                 return
-            width = max(1, canvas.winfo_width())
+            width = canvas.winfo_width()
+            if width <= 1:
+                # Native Map/Configure supplies the first usable viewport.
+                # Do not spin idle callbacks while the modal is not mapped.
+                return
+            layout_size = (width, canvas.winfo_height())
             canvas.itemconfigure(body_window, width=width)
             text_width = max(px(80), width - px(8))
             for label in (intro, folder_label, file_count, keep_hint):
@@ -816,7 +852,17 @@ class App:
             if (not self._interaction_current(interaction)
                     or (event is not None and event.widget not in (dialog, canvas))):
                 return
-            if interaction['layout_after'] is None:
+            if event is not None and (canvas.winfo_width(), canvas.winfo_height()) == layout_size:
+                # Windows can deliver obsolete/duplicate Configure messages
+                # after the viewport is already arranged at its actual size.
+                return
+            if event is None or layout_size is None:
+                # Initial and content layout must not wait for resize debounce.
+                # Reuse the modal's owned token so Stop retires either kind.
+                if interaction['layout_after'] is not None:
+                    dialog.after_cancel(interaction['layout_after'])
+                interaction['layout_after'] = dialog.after_idle(reflow)
+            elif interaction['layout_after'] is None:
                 interaction['layout_after'] = dialog.after(75, reflow)
 
         def reveal_focus(event):
