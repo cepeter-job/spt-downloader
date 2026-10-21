@@ -279,6 +279,7 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
     observed_states = set()
     blocked_categories = set()
     blocked_requests = 0
+    coretax_blocked_after_submit = False
     categories = {CORETAX_ORIGIN: 'coretax', ALLOWED_ORIGINS[0]: 'satu'}
     def diagnostic(event, reason, **fields):
         # Only category constants cross into logging, never URLs or form content.
@@ -303,7 +304,7 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
         try:
             context=playwright.chromium.launch_persistent_context(fresh,channel=browser,headless=headless)
             def guard(route):
-                nonlocal blocked_requests
+                nonlocal blocked_requests, coretax_blocked_after_submit
                 request=route.request
                 target=_origin(request.url)
                 if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
@@ -313,6 +314,10 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                     resource=resource if resource in ('document','xhr','fetch') else 'other'
                     category=categories.get(target,'other')
                     reason='origin_not_allowed' if target not in ALLOWED_ORIGINS else 'cross_origin_write'
+                    # Track every occurrence independently of log deduplication:
+                    # the same category can occur before and after submission.
+                    if submitted and target == CORETAX_ORIGIN and reason == 'cross_origin_write':
+                        coretax_blocked_after_submit = True
                     key=(category,method,resource,reason)
                     if key not in blocked_categories:
                         blocked_categories.add(key)
@@ -375,6 +380,12 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                 if _origin(page.url) not in ALLOWED_ORIGINS:
                     return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.','origin_blocked')
                 time.sleep(0.1)
+            check_cancel()
+            if coretax_blocked_after_submit:
+                return finish('LOGIN_UNVERIFIED',
+                    'Login belum terverifikasi. Pemeriksa memblokir permintaan lanjutan ke Coretax '
+                    'setelah form login dikirim. Ini bukan bukti password salah. '
+                    'Gunakan Mulai untuk alur login unduhan biasa.', 'cross_origin_write')
             return finish('LOGIN_UNVERIFIED','Login belum terverifikasi dalam batas waktu; periksa akun, password, atau koneksi. Tidak ada percobaan ulang otomatis.','verification_timeout')
         except CaptureCancelled:
             diagnostic('auth.result', 'cancelled', status='CANCELLED', submitted=submitted)
