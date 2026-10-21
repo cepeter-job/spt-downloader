@@ -5,6 +5,7 @@ import hashlib
 
 import pytest
 from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
 import coretax
 import coretax_exporter as exporter
 from support_templates import assert_layout, section, source_run
@@ -32,6 +33,16 @@ def test_all_observed_reference_forms_preserve_approved_layout(tmp_path):
     reference = load_workbook(RESOURCE)
     try:
         assert book.sheetnames == reference.sheetnames == FORMS
+        # Explicitly approved number-format exceptions; all other style and
+        # layout attributes still compare against the untouched reference.
+        accounting = reference['L1-D']['C44'].number_format
+        for form, rows, columns in [('L6', range(2, 9), [2]),
+                                    ('L7', range(1, 14), range(3, 10))]:
+            for row in rows:
+                for column in columns:
+                    cell = reference[form].cell(row, column)
+                    if not isinstance(cell, MergedCell):
+                        cell.number_format = accounting
         for name in FORMS:
             assert_layout(book[name], reference[name])
             assert book[name].max_row == reference[name].max_row
@@ -385,9 +396,10 @@ def test_footer_label_after_blank_prefix_binds_merged_total(tmp_path, form, head
         book.close()
 
 
-def test_l3_all_details_and_three_captured_totals_map_without_recalculation(tmp_path):
+@pytest.mark.parametrize('count', [4654, 4656])
+def test_l3_all_details_and_three_captured_totals_map_without_recalculation(tmp_path, count):
     rows = [[str(index), 'SYNTHETIC WITHHOLDER', '0000000000000002', 'SYNTHETIC TAX',
-             '1.000,00', '20,00', f'000{index}', '01-01-2025'] for index in range(4654)]
+             '1.000,00', '20,00', f'000{index}', '01-01-2025'] for index in range(count)]
     footer = [['JUMLAH', '8.000,00', '900,00', ''],
               ['KREDIT PAJAK LUAR NEGERI', '', '100,00', ''],
               ['JUMLAH KREDIT PAJAK', '', '1.000,00', '']]
@@ -395,15 +407,17 @@ def test_l3_all_details_and_three_captured_totals_map_without_recalculation(tmp_
     book, reports = export(tmp_path, [section('L3', tables=[table])])
     try:
         sheet = book['L3']
-        assert sheet['A8'].value == '0' and sheet['A4661'].value == '4653'
+        last = 7 + count
+        assert sheet['A8'].value == '0' and sheet.cell(last, 1).value == str(count - 1)
         assert sheet['C8'].value == '0000000000000002'
-        assert sheet['G4661'].value == '0004653'
-        assert sheet['E4662'].value == 8000
-        assert sheet['F4662'].value == 900
-        assert sheet['A4663'].value == 'KREDIT PAJAK LUAR NEGERI'
-        assert sheet['F4663'].value == 100
-        assert sheet['F4664'].value == 1000
-        assert sheet.max_row == 4664 and reports[0]['complete']
+        assert sheet.cell(last, 7).value == f'000{count - 1}'
+        assert sheet.cell(last + 1, 5).value == 8000
+        assert sheet.cell(last + 1, 6).value == 900
+        assert sheet.cell(last + 2, 1).value == 'KREDIT PAJAK LUAR NEGERI'
+        assert sheet.cell(last + 2, 6).value == 100
+        assert sheet.cell(last + 3, 6).value == 1000
+        assert f'A{last + 3}:D{last + 3}' in sheet.merged_cells
+        assert sheet.max_row == last + 3 and reports[0]['complete']
     finally:
         book.close()
 
@@ -423,6 +437,15 @@ def test_requested_clean_forms_omit_raw_display_but_keep_truthful_audit(tmp_path
         assert reports[0]['unmapped_fields'] == 1
         assert reports[0]['unmapped_tables'] == 1 and reports[0]['unmapped_rows'] == 1
         assert reports[0]['complete'] is False
+        resume = load_workbook(tmp_path / 'resume.xlsx')
+        try:
+            audit_rows = [row for row in resume['Audit'].iter_rows(values_only=True)
+                          if row[0] == 'Pemetaan template']
+            assert len(audit_rows) == 1
+            assert audit_rows[0][1:5] == (1, 1, 1, 'PARTIAL')
+            assert f' / {form}:' in audit_rows[0][5]
+        finally:
+            resume.close()
         if form in ('L6', 'L7'):
             cells = [sheet.cell(row, column) for row in (range(2, 9) if form == 'L6' else range(1, 14))
                      for column in ([2] if form == 'L6' else range(3, 10))]
@@ -430,5 +453,61 @@ def test_requested_clean_forms_omit_raw_display_but_keep_truthful_audit(tmp_path
                 # C13 belongs to the merged JUMLAH label and has no value slot.
                 if cell.coordinate != 'C13':
                     assert 'Rp' in cell.number_format and '*' in cell.number_format
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize('fault', ['unknown_label', 'conflicting_prefix', 'wrong_span', 'extra_footer'])
+def test_unsupported_footer_stays_raw_without_partial_table_writes(tmp_path, fault):
+    footer, spans = [['', 'JUMLAH', '1.234,50']], [[1, 3, 1]]
+    if fault == 'unknown_label':
+        footer[0][1] = 'SYNTHETIC UNKNOWN TOTAL'
+    elif fault == 'conflicting_prefix':
+        footer[0][0] = 'SYNTHETIC CONFLICT'
+    elif fault == 'wrong_span':
+        spans[0] = [1, 2, 1]
+    else:
+        footer *= 2
+        spans *= 2
+    table = captured_table('L4', 8, [['0001', '0002', 'SYNTHETIC TYPE', 'SYNTHETIC SOURCE', '1.000,00']],
+                           footer, spans)
+    book, reports = export(tmp_path, [section('L4', tables=[table])])
+    try:
+        assert book['L4']['A9'].value is None and book['L4']['E10'].value is None
+        assert any(cell.value == '1.234,50' for cells in book['L4'] for cell in cells)
+        assert reports[0]['unmapped_tables'] == 1
+        assert not reports[0]['complete']
+    finally:
+        book.close()
+
+
+def test_unsafe_footer_amount_stays_literal_and_unresolved(tmp_path):
+    footer = [['', 'JUMLAH', '9.999.999.999.999.999,99']]
+    table = captured_table('L4', 8, [['0001', '0002', 'SYNTHETIC TYPE', 'SYNTHETIC SOURCE', '1.000,00']],
+                           footer, [[1, 3, 1]])
+    book, reports = export(tmp_path, [section('L4', tables=[table])])
+    try:
+        assert book['L4']['A9'].value == '0001'
+        assert book['L4']['E10'].value == footer[0][2]
+        assert book['L4']['E10'].data_type == 's'
+        assert reports[0]['unmapped_rows'] == 1 and not reports[0]['complete']
+    finally:
+        book.close()
+
+
+def test_l7_ten_year_rows_and_total_use_accounting_without_raw_appendix(tmp_path):
+    footer = [['JUMLAH'] + ['9.876,50'] * 6]
+    rows = [[str(index), str(2015 + index)] + ['1.234,50'] * 7 for index in range(10)]
+    table = captured_table('L7', 2, rows, footer, [[3, 1, 1, 1, 1, 1, 1]])
+    table['headers'][7] = 'KOMPENSASI KERUGIAN FISKAL / 2025 / TAHUN PAJAK INI - NILAI (Rp)'
+    book, reports = export(tmp_path, [section('L7', tables=[table], text='Synthetic duplicate page text')])
+    try:
+        sheet = book['L7']
+        assert sheet['B3'].value == '2015' and sheet['B12'].value == '2024'
+        assert sheet['C3'].value == sheet['I12'].value == 1234.5
+        assert sheet['D13'].value == sheet['I13'].value == 9876.5
+        assert sheet.max_row == 13 and reports[0]['complete']
+        for cell in ('C3', 'I12', 'D13', 'I13'):
+            assert 'Rp' in sheet[cell].number_format and '*' in sheet[cell].number_format
     finally:
         book.close()
