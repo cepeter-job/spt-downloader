@@ -1,83 +1,98 @@
-"""Temporary instrumented profile; not the uninstrumented performance benchmark."""
+"""Temporary exact-source candidate preparation; never writes commits or refs."""
 import argparse
-import importlib.util
+import ast
+import base64
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
-import sys
-import time
+import urllib.request
+
+BASE = 'd9336e382541d30f1fa837e5735b9b748e4c3657'
+APP_BLOB = 'ebadb445771e3e27c0d5f5f838e46a80d4aeeab8'
+
+
+def git(root, *args):
+    return subprocess.check_output(['git', '-C', str(root), *args])
+
+
+def prepare(root, out):
+    assert git(root, 'rev-parse', 'HEAD').decode().strip() == BASE
+    assert git(root, 'rev-parse', 'HEAD:spt_desktop/app.py').decode().strip() == APP_BLOB
+    path = root / 'spt_desktop/app.py'
+    source = git(root, 'show', 'HEAD:spt_desktop/app.py').decode('utf-8')
+    old = '''        def update_scrollregion(event=None):
+            if self._interaction_current(interaction):
+                canvas.configure(scrollregion=canvas.bbox('all'))
+'''
+    new = '''        def update_scrollregion(event=None):
+            if self._interaction_current(interaction):
+                # Wrapping finishes in idle geometry work after reflow returns.
+                # Match the measured body so its final lines remain reachable.
+                height = max(body.winfo_reqheight(), canvas.winfo_height())
+                if int(canvas.itemcget(body_window, 'height') or 0) != height:
+                    canvas.itemconfigure(body_window, height=height)
+                canvas.configure(scrollregion=canvas.bbox('all'))
+'''
+    assert source.count(old) == 2
+    source = source.replace(old, new)
+    old = '''            if interaction['layout_after'] is None:
+                interaction['layout_after'] = dialog.after(75, reflow)
+'''
+    new = '''            if event is None:
+                # Initial and content layout must not wait for resize debounce.
+                # Reuse the modal's owned token so Stop retires either kind.
+                if interaction['layout_after'] is not None:
+                    dialog.after_cancel(interaction['layout_after'])
+                interaction['layout_after'] = dialog.after_idle(reflow)
+            elif interaction['layout_after'] is None:
+                interaction['layout_after'] = dialog.after(75, reflow)
+'''
+    assert source.count(old) == 2
+    source = source.replace(old, new)
+    ast.parse(source)
+    path.write_bytes(source.encode('utf-8'))
+    assert git(root, 'diff', '--name-only').decode().splitlines() == ['spt_desktop/app.py']
+    subprocess.run(['git', '-C', str(root), 'diff', '--check'], check=True)
+    (out / 'candidate.patch').write_bytes(git(root, 'diff'))
+    (out / 'app.py').write_bytes(path.read_bytes())
+    print('Prepared two local layout closures; no tests or consent logic changed.')
+
+
+def publish(root, out):
+    assert os.environ['GITHUB_REPOSITORY'] == 'cepeter-job/spt-downloader'
+    assert git(root, 'rev-parse', 'HEAD').decode().strip() == BASE
+    assert git(root, 'diff', '--name-only').decode().splitlines() == ['spt_desktop/app.py']
+    subprocess.run(['git', '-C', str(root), 'add', 'spt_desktop/app.py'], check=True)
+    data = git(root, 'show', ':spt_desktop/app.py')
+    sha = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+    request = urllib.request.Request('https://api.github.com/repos/cepeter-job/spt-downloader/git/blobs',
+        data=json.dumps({'content': base64.b64encode(data).decode(), 'encoding': 'base64'}).encode(),
+        method='POST', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+            'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        result = json.load(response)
+    assert result['sha'] == sha
+    proof = {'base_commit': BASE, 'original_app_blob': APP_BLOB, 'candidate_app_blob': sha,
+             'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data),
+             'branch_refs_changed': False, 'commits_created': False}
+    (out / 'candidate-blob.json').write_text(json.dumps(proof, indent=2), encoding='utf-8')
+    print(json.dumps(proof))
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('mode', choices=['prepare', 'publish'])
     parser.add_argument('--source', required=True)
-    parser.add_argument('--revision', required=True)
-    parser.add_argument('--historical', required=True)
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
-    assert sys.platform == 'win32'
-    source = Path(args.source).resolve()
-    actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
-    assert actual == args.revision
-    sys.path.insert(0, str(source))
-    spec = importlib.util.spec_from_file_location('historical_probe', Path(args.historical).resolve())
-    probe = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(probe)
-    results = []
-    for kind, count in [('selection', 1), ('selection', 1000), ('overwrite', 101)]:
-        with probe.session(probe.payload_for(kind, count)) as (root, app, controller):
-            events = []
-            start = time.perf_counter_ns()
-            original = app._new_interaction
-            binding = None
-            def created(key, title):
-                nonlocal binding
-                interaction = original(key, title)
-                dialog = interaction['dialog']
-                def exposed(event):
-                    if event.widget is dialog:
-                        events.append({'event': 'native_expose', 'ms': (time.perf_counter_ns() - start) / 1e6})
-                binding = dialog.bind('<Expose>', exposed, add='+')
-                return interaction
-            app._new_interaction = created
-            watched = {'selection_dialog', 'overwrite_dialog', 'configure_dialog', 'request_reflow',
-                       'reflow', 'update_scrollregion', 'filter_records'}
-            def profile(frame, event, arg):
-                if event not in ('call', 'return') or frame.f_code.co_name not in watched:
-                    return
-                filename = Path(frame.f_code.co_filename)
-                if filename.name not in ('app.py', 'ui_theme.py'):
-                    return
-                qualname = frame.f_code.co_qualname
-                if filename.name == 'app.py' and not any(name in qualname for name in ('selection_dialog', 'overwrite_dialog')):
-                    return
-                row = {'event': event, 'function': qualname, 'ms': (time.perf_counter_ns() - start) / 1e6}
-                if frame.f_code.co_name == 'request_reflow':
-                    row['content_request'] = frame.f_locals.get('event') is None
-                if event == 'return' and app._interaction:
-                    row['owned_layout_pending'] = app._interaction.get('layout_after') is not None
-                events.append(row)
-            try:
-                sys.setprofile(profile)
-                app.on_event(probe.event(controller, kind))
-                handler = (time.perf_counter_ns() - start) / 1e6
-                stable = probe.settle(root, app, start)
-            finally:
-                sys.setprofile(None)
-                app._new_interaction = original
-            dialog = app._interaction['dialog']
-            if binding:
-                dialog.unbind('<Expose>', binding)
-            results.append({'dialog': kind, 'inventory_size': count,
-                'instrumented_handler_ms': handler, 'instrumented_settled_ms': stable,
-                'events': events, 'environment': probe.environment(root, dialog, actual)})
-    output = {'source_revision': actual, 'synthetic': True, 'portal_accessed': False,
-        'instrumented': True, 'timings_are_not_primary_benchmark': True,
-        'visibility_measure': 'first observed native Expose event, not compositor first-pixel timing',
-        'results': results}
-    path = Path(args.out); path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(output, indent=2), encoding='utf-8')
-    print(json.dumps([{k: r[k] for k in ('dialog', 'inventory_size', 'instrumented_handler_ms', 'instrumented_settled_ms')} for r in results]))
+    root, out = Path(args.source).resolve(), Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    if args.mode == 'prepare':
+        prepare(root, out)
+    else:
+        publish(root, out)
 
 
 if __name__ == '__main__':
