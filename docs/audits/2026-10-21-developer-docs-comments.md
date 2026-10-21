@@ -10,6 +10,11 @@ pengembangan, kebijakan Python, arsitektur, CI/rilis, serta implementasi dan tes
 yang dirujuk oleh panduan tersebut. Pada saat audit dimulai, PR #67 menangani
 fixture login; perubahan fixture itu berada di luar cakupan audit ini.
 
+Saat [PR #68](https://github.com/cepeter-job/spt-downloader/pull/68) dipublikasikan,
+PR #67 sudah tergabung pada `3b86549fba893c7307046fa0c3cdcf7801e4c01c`. Branch
+dokumentasi diselaraskan dengan main tersebut; diff terhadap main tetap hanya
+dokumentasi dan komentar. Basis temuan audit di atas tetap dipertahankan.
+
 Panduan aktif sudah menjelaskan sebagian besar kontrak data dan keselamatan.
 Koreksi difokuskan pada petunjuk yang tertinggal dan hubungan antara panduan
 dengan fungsi yang benar-benar dijalankan. Spesifikasi, benchmark, dan laporan

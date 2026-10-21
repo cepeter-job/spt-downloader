@@ -60,5 +60,5 @@
 Status dua langkah berikut dicatat pada PR/run kandidat setelah snapshot sumber
 ini dipublikasikan; checklist rencana ini bukan penunjuk hasil CI terbaru.
 
-- [ ] Publikasikan commit dan PR dengan temuan, cakupan, serta batas verifikasi yang konkret.
+- [x] Publikasikan commit dan [PR #68](https://github.com/cepeter-job/spt-downloader/pull/68) dengan temuan, cakupan, serta batas verifikasi yang konkret.
 - [ ] Baca hasil CI pada revisi kandidat dan laporkan status, tanpa mengubah gate atau mengklaim acceptance live.
