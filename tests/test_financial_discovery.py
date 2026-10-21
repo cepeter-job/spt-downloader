@@ -61,3 +61,60 @@ def test_unbound_or_action_based_attachment_never_authorizes_a_pdf_request(route
     result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
     assert result and all(item['status'] == 'PARTIAL' for item in result)
     assert requests == [('GET', DETAIL)] and not list(tmp_path.glob('*.pdf'))
+
+
+@pytest.mark.parametrize('case', ['duplicate_id', 'hidden_reference', 'multiple_references',
+    'contradictory_reference', 'foreign_section', 'nested_table', 'sibling_panel', 'sibling_accordion'])
+def test_table_label_binding_cannot_escape_explicit_ownership(routed, tmp_path, case):
+    link = f'<a href="{PDF_URL}">SYNTHETIC-PRIVATE-FILENAME.pdf</a>'
+    label = f'<label id="financial">{CURRENT_LABEL}</label>'
+    table = file_table(link).replace('<table>', '<table aria-labelledby="financial">')
+    if case == 'duplicate_id':
+        label += '<label id="financial">Other attachment</label>'
+    elif case == 'hidden_reference':
+        label = label.replace('<label ', '<label hidden ')
+    elif case == 'multiple_references':
+        label += '<label id="other">Other attachment</label>'
+        table = table.replace('aria-labelledby="financial"', 'aria-labelledby="financial other"')
+    elif case == 'contradictory_reference':
+        label += '<label id="other">Other attachment</label>'
+        table = file_table(link, f'<caption>{CURRENT_LABEL}</caption>').replace(
+            '<table>', '<table aria-labelledby="other">')
+    elif case == 'foreign_section':
+        label = '<section>' + label + '</section>'
+        table = '<section>' + table + '</section>'
+    elif case == 'nested_table':
+        label = ''
+        table = file_table(file_table(link), f'<caption>{CURRENT_LABEL}</caption>')
+    else:
+        panel, title = ('p-panel', 'p-panel-title') if case == 'sibling_panel' else (
+            'p-accordion-tab', 'p-accordion-header-text')
+        label = ''
+        table = f'<div><div class="{panel}"><span class="{title}">{CURRENT_LABEL}</span></div>' + \
+            f'<div class="{panel}">{file_table(link)}</div></div>'
+    page, requests = routed(label + table)
+    result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+    assert result and all(item['status'] == 'PARTIAL' for item in result)
+    assert requests == [('GET', DETAIL)] and not list(tmp_path.glob('*.pdf'))
+
+
+@pytest.mark.parametrize('header', ['', '<thead><tr><th>Other document</th></tr></thead>'])
+def test_financial_text_does_not_bind_an_unrecognized_file_table(routed, tmp_path, header):
+    html = f'<table><caption>{CURRENT_LABEL}</caption>{header}<tbody><tr><td>' + \
+        f'<a href="{PDF_URL}">SYNTHETIC-PRIVATE-FILENAME.pdf</a></td></tr></tbody></table>'
+    page, requests = routed(html)
+    result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+    assert result and all(item['status'] == 'PARTIAL' for item in result)
+    assert requests == [('GET', DETAIL)] and not list(tmp_path.glob('*.pdf'))
+
+
+def test_financial_link_outside_the_detail_content_is_not_downloaded(routed, tmp_path):
+    page, requests = routed('<p>No financial control in this Induk.</p>')
+    page.evaluate('''url => {
+        const aside = document.createElement('aside');
+        aside.innerHTML = '<a href="'+url+'">Laporan Keuangan</a>';
+        document.body.append(aside);
+    }''', PDF_URL)
+    result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+    assert result and all(item['status'] == 'PARTIAL' for item in result)
+    assert requests == [('GET', DETAIL)] and not list(tmp_path.glob('*.pdf'))

@@ -45,7 +45,7 @@ ENUMS = {
         'adapter_ineligible', 'coverage_incomplete', 'forms_unavailable', 'unsupported_tax', 'checkpoint_reuse'}),
     'tax_kind': frozenset({'ppn', 'pph21', 'unifikasi', 'corporate', 'other'}),
     'phase': frozenset({'startup', 'runtime', 'authentication', 'inventory', 'details',
-                       'detail', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
+                       'detail', 'table', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
                        'return_detail', 'list_restore', 'open_detail', 'json_observe', 'json_project'}),
     'stage': frozenset({'setup', 'authentication', 'inventory', 'details', 'export',
                        'publish', 'finished', 'login_check', 'selection', 'overwrite'}),
@@ -65,7 +65,7 @@ ENUMS = {
         'credential_missing', 'account_mismatch', 'verified', 'verification_timeout',
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
