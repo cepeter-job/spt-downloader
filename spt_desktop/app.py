@@ -331,6 +331,10 @@ class App:
 
     def _new_interaction(self,key,title):
         previous_focus=self.root.focus_get()
+        # A transient can stay hidden with its minimized owner while holding
+        # the input grab. Restore the owner before creating the modal.
+        if self.root.state() in ('iconic', 'withdrawn'):
+            self.root.deiconify()
         dialog=tk.Toplevel(self.root);dialog.title(title)
         dialog.transient(self.root)
         interaction={'key':key,'dialog':dialog,'focus':previous_focus,'traces':[],
