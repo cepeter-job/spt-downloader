@@ -4,6 +4,8 @@ from pathlib import Path
 import math
 import re
 
+from openpyxl.cell.cell import MergedCell
+
 from coretax_template_cells import load_template_workbook, _write, _grow, _raw_evidence
 
 FORMS = ['L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9', 'L10-A', 'L10-C',
@@ -148,7 +150,7 @@ def _money_columns(sheet, form, header, columns):
             if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
 
 
-def _footer_plan(sheet, table, target, money, columns):
+def _footer_plan(sheet, form, block, table, target, money, columns):
     footer = table.get('footer', [])
     if not footer:
         return []
@@ -156,27 +158,73 @@ def _footer_plan(sheet, table, target, money, columns):
     if columns != list(range(1, len(table['headers']) + 1)):
         return None
     spans = table.get('footer_spans', [])
-    if len(footer) != 1 or len(spans) != 1 or len(footer[0]) != len(spans[0]):
+    capacity = 3 if (form, block) == ('l3', 1) else 1
+    if len(footer) > capacity or len(spans) != len(footer):
         return None
-    if any(type(span) is not int or span < 1 for span in spans[0]):
-        return None
-    if not any(value not in ('', None) for value in footer[0]):
-        return []
-    if sum(spans[0]) != len(table['headers']):
-        return None
-    result, column = [], 1
-    for value, span in zip(footer[0], spans[0]):
-        if value not in ('', None):
-            if span == 1 and column in money:
-                result.append((column, value))
-            else:
-                labels = [c for c in range(column, column + span)
-                          if sheet.cell(target, c).value is not None
-                          and _label(sheet.cell(target, c).value) == _label(value)]
-                if len(labels) != 1:
+    result = []
+    for index, (values, widths) in enumerate(zip(footer, spans)):
+        row = target + index
+        if (len(values) != len(widths)
+                or any(type(span) is not int or span < 1 for span in widths)
+                or sum(widths) != len(table['headers'])):
+            return None
+        if not any(value not in ('', None) for value in values):
+            continue
+        # These captions were sanitized out of the reference. Accept only the
+        # observed form/slot caption, never an arbitrary label in a blank cell.
+        captions = {}
+        if form == 'l1-d':
+            caption = ['Laba (Rugi) Sebelum Pajak', 'Jumlah Aset',
+                       'Jumlah Liabilitas dan Ekuitas'][block]
+            if widths != [1] * len(columns) or _label(values[1]) != _label(caption):
+                return None
+            captions[2] = caption
+        elif (form, block, index) == ('l3', 1, 1):
+            captions[1] = 'KREDIT PAJAK LUAR NEGERI'
+        column, claimed = 1, set()
+        for value, span in zip(values, widths):
+            if value not in ('', None):
+                if span == 1 and column in money:
+                    destination, numeric = column, True
+                elif form == 'l1-d' and column == 1 and span == 1:
+                    destination, numeric = column, False
+                else:
+                    # A blank source prefix may share the template's merged
+                    # label. A second nonempty value may not claim that label.
+                    candidates = set(range(column, column + span))
+                    for region in sheet.merged_cells.ranges:
+                        if (region.min_row == region.max_row == row
+                                and region.min_col <= column
+                                and column + span - 1 <= region.max_col):
+                            candidates.add(region.min_col)
+                    labels = [c for c in candidates
+                              if not isinstance(sheet.cell(row, c), MergedCell)
+                              and (sheet.cell(row, c).value or captions.get(c))
+                              and _label(sheet.cell(row, c).value or captions.get(c)) == _label(value)]
+                    if len(labels) != 1:
+                        return None
+                    destination, numeric = labels[0], False
+                if destination in claimed or isinstance(sheet.cell(row, destination), MergedCell):
                     return None
-        column += span
+                claimed.add(destination)
+                result.append((index, destination, value, numeric))
+            column += span
     return result
+
+
+def _accounting_format(sheet, form):
+    ranges = {'l6': (2, 8, 2, 2), 'l7': (1, 13, 3, 9)}
+    if form not in ranges:
+        return
+    # The approved reference's rupiah accounting display; only number format
+    # changes, leaving labels, styles, dimensions and merge geometry intact.
+    accounting = '_-[$Rp-421]* #,##0.00_-;\\-[$Rp-421]* #,##0.00_-;_-[$Rp-421]* "-"??_-;_-@_-'
+    first, last, left, right = ranges[form]
+    for row in range(first, last + 1):
+        for column in range(left, right + 1):
+            cell = sheet.cell(row, column)
+            if not isinstance(cell, MergedCell):
+                cell.number_format = accounting
 
 
 def _body_plan(sheet, form, first, last, columns, rows):
@@ -224,6 +272,7 @@ def _current_l7_header(sheet, sections, period):
 
 def render_template_form(sheet, form, sections, *, period=None):
     form = form.casefold()
+    _accounting_format(sheet, form)
     if form == 'l7':
         _current_l7_header(sheet, sections, period)
     blocks = BLOCKS[form]
@@ -253,14 +302,17 @@ def render_template_form(sheet, form, sections, *, period=None):
             index, columns = candidates[0]
             grouped[index].append((table, columns, rows[:count]))
     offset = 0
-    for (header, first, last), items in zip(blocks, grouped):
+    for block, ((header, first, last), items) in enumerate(zip(blocks, grouped)):
         if len(items) != 1:
             pending.extend({**table, 'complete': False} for table, _, _ in items)
             continue
         table, columns, rows = items[0]
         header, first, last = header + offset, first + offset, last + offset
         money = _money_columns(sheet, form, header, columns)
-        foot = _footer_plan(sheet, table, last + 1, money, columns)
+        # Percent totals in L2 occupy numeric slots, but are not rupiah amounts.
+        footer_numbers = money | {column for column in columns
+                                 if form == 'l2' and '%' in str(sheet.cell(header, column).value)}
+        foot = _footer_plan(sheet, form, block, table, last + 1, footer_numbers, columns)
         body, style_row = _body_plan(sheet, form, first, last, columns, rows)
         if foot is None or body is None:
             pending.append({**table, 'complete': False})
@@ -276,8 +328,21 @@ def render_template_form(sheet, form, sections, *, period=None):
                     _write(sheet, row, column, value)
             if not safe:
                 pending.append({**table, 'rows': [rows[index]], 'complete': False})
-        for column, value in foot:
-            if not _write_amount(sheet, last + extra + 1, column, value):
-                pending.append({**table, 'rows': table['footer'], 'complete': False})
+        footer_safe = True
+        for row_offset, column, value, numeric in foot:
+            row = last + extra + 1 + row_offset
+            if numeric:
+                footer_safe = _write_amount(sheet, row, column, value) and footer_safe
+            else:
+                _write(sheet, row, column, value)
+        if not footer_safe:
+            pending.append({**table, 'rows': table['footer'], 'complete': False})
         offset += extra
+    if form in ('l6', 'l7', 'l10-a', 'l10-c'):
+        # Approved display-only omission. Keep unresolved audit counts and the
+        # unchanged checkpoint; never promote an unmapped form to COMPLETE.
+        unresolved = [table for table in pending if table.get('rows') or not table.get('complete', True)]
+        return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
+                'unmapped_tables': len(unresolved),
+                'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)
