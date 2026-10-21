@@ -13,6 +13,8 @@ import sys
 
 import pytest
 
+from support_isolated_browser import browser
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 ORIGIN = 'https://coretax.intranet.pajak.go.id'
@@ -503,7 +505,7 @@ def test_more_rows_than_declared_total_fails_closed():
         adapt(envelope(rows, total=1))
 
 
-def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start=0,
+def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=False, start=0,
                               changed_total=False, empty=False, stop_state=None,
                               year_catalog=False, ignore_source_filter=False, expired_catalog=False,
                               auxiliary_request=False, hash_link=False, deferred_catalog=False,
@@ -513,7 +515,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
     from urllib.parse import urlsplit
 
     import coretax_browser as driver
-    from playwright.sync_api import Locator, sync_playwright
+    from playwright.sync_api import Locator
 
     rows = [api_row(), api_row('fixture-amend-001', 'Amendment 001'), api_row('fixture-later-year', 'Normal')]
     rows[2]['TaxPeriodCode'] = '01122026'
@@ -627,9 +629,8 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
 
     @contextmanager
     def opened():
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(channel='msedge', headless=True)
-            owned_context = browser.new_context(timezone_id='Asia/Jakarta')
+        owned_context = browser.new_context(timezone_id='Asia/Jakarta')
+        try:
             page = owned_context.new_page()
             page.set_default_timeout(5000)
 
@@ -692,17 +693,16 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
                     route.abort()
 
             owned_context.route('**/*', handle)
-            try:
-                yield page, metrics
-            finally:
-                browser.close()
+            yield page, metrics
+        finally:
+            owned_context.close()
 
     return opened()
 
 
-def test_supported_submitted_list_uses_json_metadata_not_dom_cells(tmp_path, monkeypatch):
+def test_supported_submitted_list_uses_json_metadata_not_dom_cells(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
         assert result['inventory_complete'] is True, result['errors']
         assert [row['record_id'] for row in result['records']] == ['fixture-normal', 'fixture-amend-001']
@@ -717,9 +717,9 @@ def test_supported_submitted_list_uses_json_metadata_not_dom_cells(tmp_path, mon
         assert submitted['selected'] == 2
 
 
-def test_unknown_metadata_schema_uses_audited_dom_page(tmp_path, monkeypatch):
+def test_unknown_metadata_schema_uses_audited_dom_page(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, unknown=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, unknown=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
         assert result['inventory_complete'] is True, result['errors']
         assert [row['record_id'] for row in result['records']] == ['fixture-normal', 'fixture-amend-001']
@@ -732,9 +732,9 @@ def test_unknown_metadata_schema_uses_audited_dom_page(tmp_path, monkeypatch):
         assert submitted['fallback_reason']
 
 
-def test_unsafe_submitted_identity_does_not_start_dom_fallback(tmp_path, monkeypatch):
+def test_unsafe_submitted_identity_does_not_start_dom_fallback(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, unsafe=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, unsafe=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
         assert result['inventory_complete'] is False
         assert result['errors']
@@ -743,9 +743,9 @@ def test_unsafe_submitted_identity_does_not_start_dom_fallback(tmp_path, monkeyp
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
 
 
-def test_json_inventory_resets_retained_pagination_and_preserves_amendments(tmp_path, monkeypatch):
+def test_json_inventory_resets_retained_pagination_and_preserves_amendments(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, start=2) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, start=2) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
         assert result['inventory_complete'] is True, result['errors']
         assert [row['record_id'] for row in result['records']] == ['fixture-normal', 'fixture-amend-001']
@@ -754,9 +754,9 @@ def test_json_inventory_resets_retained_pagination_and_preserves_amendments(tmp_
         assert submitted['scanned'] == submitted['total'] == 3
 
 
-def test_changed_total_between_pages_is_partial_not_certified(tmp_path, monkeypatch):
+def test_changed_total_between_pages_is_partial_not_certified(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, changed_total=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, changed_total=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
         assert result['inventory_complete'] is False
         assert result['errors']
@@ -765,18 +765,18 @@ def test_changed_total_between_pages_is_partial_not_certified(tmp_path, monkeypa
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
 
 
-def test_json_inventory_page_limit_is_partial_not_first_page_complete(tmp_path, monkeypatch):
+def test_json_inventory_page_limit_is_partial_not_first_page_complete(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=1)
         assert result['inventory_complete'] is False
         assert result['errors']
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
 
 
-def test_source_bound_empty_status_lists_are_reconciled_without_fake_records(tmp_path, monkeypatch):
+def test_source_bound_empty_status_lists_are_reconciled_without_fake_records(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, empty=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, empty=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
         assert result['inventory_complete'] is True, result['errors']
         assert result['records'] == []
@@ -784,7 +784,7 @@ def test_source_bound_empty_status_lists_are_reconciled_without_fake_records(tmp
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
 
 
-def test_stop_prevents_unknown_schema_dom_fallback(tmp_path, monkeypatch):
+def test_stop_prevents_unknown_schema_dom_fallback(browser, tmp_path, monkeypatch):
     import coretax_browser as driver
 
     class FixtureStop(RuntimeError):
@@ -795,7 +795,7 @@ def test_stop_prevents_unknown_schema_dom_fallback(tmp_path, monkeypatch):
         if state['requested']:
             raise FixtureStop('Synthetic cancellation requested')
 
-    with synthetic_listing_browser(monkeypatch, unknown=True, stop_state=state) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, unknown=True, stop_state=state) as (page, metrics):
         stopped = False
         result = None
         try:

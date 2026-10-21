@@ -1,6 +1,7 @@
 """Real Edge DOM recovery contracts. All traffic is routed synthetic data."""
 import pytest
 import coretax_browser as driver
+from support_isolated_browser import browser, context
 from test_ppn_capture_readiness import page, install
 from support_browser_protocol import SourcePage, Table, run_fixture
 

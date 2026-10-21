@@ -1,6 +1,6 @@
 """Selected PPN refund controls; synthetic DOM, no network or taxpayer data."""
 import pytest
-from playwright.sync_api import sync_playwright
+from support_isolated_browser import browser, isolated_context
 import coretax_browser as driver
 from support_templates import section
 from support_templates import export_ppn
@@ -12,7 +12,7 @@ CHOICES = [('CARRY_FORWARD', '1. dikompensasikan'),
 
 @pytest.mark.parametrize('selected', [None, 0, 1, 2])
 @pytest.mark.parametrize('input_named', [False, True])
-def test_only_checked_asked_to_option_reaches_induk(tmp_path, selected, input_named):
+def test_only_checked_asked_to_option_reaches_induk(browser, tmp_path, selected, input_named):
     controls = []
     for i, (code, label) in enumerate(CHOICES):
         controls.append(
@@ -23,15 +23,11 @@ def test_only_checked_asked_to_option_reaches_induk(tmp_path, selected, input_na
             + ('checked ' if selected == i else '')
             + f'disabled></span><label for="choice-{i}">{label}</label></p-radiobutton>')
     html = '<div class="p-tabview-panel"><div class="p-accordion-content">' + ''.join(controls) + '</div></div>'
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        try:
-            page = browser.new_page()
-            page.route('**/*', lambda route: route.abort())
-            page.set_content(html)
-            fields = page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
-        finally:
-            browser.close()
+    with isolated_context(browser) as context:
+        page = context.new_page()
+        page.route('**/*', lambda route: route.abort())
+        page.set_content(html)
+        fields = page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
     assert len(fields) == (0 if selected is None else 1)
     if selected is not None:
         assert fields[0]['field'] == 'AskedTo'

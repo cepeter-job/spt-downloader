@@ -225,6 +225,16 @@ proses browser itu sendiri. Kesiapan fixture dapat ditunggu melalui sinyal
 permintaan yang selesai; respons gagal tetap harus mencapai pemeriksaan penolakan
 yang sesuai. Jeda yang sengaja menguji timeout atau kondisi terlambat tetap diperlukan.
 
+Daftarkan fixture `browser` dan dependensi fixture lain secara eksplisit pada
+setiap modul consumer; mengimpor fungsi helper atau fixture `page` saja tidak
+mendaftarkan seluruh dependensinya. Minta browser hanya pada tes yang memakainya,
+agar tes data dan ekspor tetap tidak membuka proses browser. Helper yang membuat
+context sendiri harus menerima browser secara eksplisit dan menutup context dalam
+`finally`. Pertahankan opsi khusus seperti timezone, level route page/context,
+timeout, dan metrik per pemakaian. Monkeypatch kelas Playwright tetap berscope
+fungsi; bila satu tes membuka beberapa helper, batasi patch dengan
+`monkeypatch.context()` dan tutup context browser sebelum patch dipulihkan.
+
 Pada pemindahan owner, pertahankan identitas kelas dan arah monkeypatch. Contoh:
 `support_browser_protocol.META` dan `View` harus dipakai oleh simulator yang sama;
 menambal modul pengujian lama tidak boleh menjadi mekanisme kompatibilitas.

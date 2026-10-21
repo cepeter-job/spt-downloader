@@ -3,12 +3,13 @@ from copy import deepcopy
 
 import pytest
 
+from support_isolated_browser import browser
 from test_json_inventory import synthetic_listing_browser
 
 
-def test_year_inventory_filters_before_pagination_and_reconciles_both_partitions(monkeypatch, tmp_path):
+def test_year_inventory_filters_before_pagination_and_reconciles_both_partitions(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True
     assert {r['record_id'] for r in run['records']} == {
@@ -25,9 +26,9 @@ def test_year_inventory_filters_before_pagination_and_reconciles_both_partitions
     assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
 
 
-def test_expired_catalog_uses_explicit_complete_unfiltered_fallback(monkeypatch, tmp_path):
+def test_expired_catalog_uses_explicit_complete_unfiltered_fallback(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, expired_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, expired_catalog=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True
     assert len(run['records']) == 4
@@ -38,18 +39,18 @@ def test_expired_catalog_uses_explicit_complete_unfiltered_fallback(monkeypatch,
     assert submitted[0]['filter_reason']
 
 
-def test_filtered_dom_fallback_rejects_server_ignoring_declared_filter(monkeypatch, tmp_path):
+def test_filtered_dom_fallback_rejects_server_ignoring_declared_filter(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, ignore_source_filter=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, ignore_source_filter=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is False
     assert any('filter' in e['message'].lower() for e in run['errors'])
     assert metrics['detail_actions'] == 0
 
 
-def test_empty_filtered_partitions_are_reconciled_without_unfiltered_retry(monkeypatch, tmp_path):
+def test_empty_filtered_partitions_are_reconciled_without_unfiltered_retry(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, empty=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, empty=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True and run['records'] == []
     filtered = [a for a in run['audit'] if a.get('list_filter')]
@@ -59,17 +60,17 @@ def test_empty_filtered_partitions_are_reconciled_without_unfiltered_retry(monke
     assert all(r['Filters'] for r in metrics['submitted_requests'])
 
 
-def test_changed_filtered_total_stays_partial(monkeypatch, tmp_path):
+def test_changed_filtered_total_stays_partial(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, changed_total=True) as (page, _):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, changed_total=True) as (page, _):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is False
     assert any(a.get('list_filter') and a['result'] == 'PARTIAL' for a in run['audit'])
 
 
-def test_selected_record_restores_persisted_filter_before_readonly_view(monkeypatch, tmp_path):
+def test_selected_record_restores_persisted_filter_before_readonly_view(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
         record = deepcopy(next(r for r in run['records'] if r['record_id'] == 'fixture-cross-year'))
         record.update(list_page=1, row_position=0, list_page_size=2,
@@ -81,13 +82,13 @@ def test_selected_record_restores_persisted_filter_before_readonly_view(monkeypa
         assert metrics['submitted_requests'][-1]['Filters'] == [record['list_filter']]
 
 
-def test_cancelled_filtered_inventory_removes_request_route(monkeypatch, tmp_path):
+def test_cancelled_filtered_inventory_removes_request_route(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
     stop = {'requested': False}
     def cancelled():
         if stop['requested']:
             raise driver.CaptureCancelled('synthetic cancellation')
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, stop_state=stop) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, stop_state=stop) as (page, metrics):
         with pytest.raises(driver.CaptureCancelled):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path,
                                      check_cancel=cancelled)

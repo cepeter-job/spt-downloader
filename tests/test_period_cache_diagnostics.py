@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 import pytest
+from support_isolated_browser import browser
 import coretax_inventory as inventory
 from spt_desktop import diagnostics as d
 from test_diagnostics import records
@@ -44,8 +45,8 @@ def test_planner_logs_exact_gate_without_values(tmp_path, defect, reason):
     assert 'PRIVATE-SENTINEL' not in json.dumps(records(tmp_path))
 
 
-def test_missing_database_is_not_created_and_no_network_is_sent(tmp_path):
-    with synthetic_browser() as (page, metrics):
+def test_missing_database_is_not_created_and_no_network_is_sent(browser, tmp_path):
+    with synthetic_browser(browser) as (page, metrics):
         before = page.evaluate('async()=>await indexedDB.databases()')
         with d.session(tmp_path, 'worker') as log:
             assert inventory.read_period_catalog(page) is None
@@ -59,8 +60,8 @@ def test_missing_database_is_not_created_and_no_network_is_sent(tmp_path):
 
 @pytest.mark.parametrize('mode,reason', [('store_missing','store_missing'),
     ('record_missing','record_missing'), ('projection_error','projection_error'), ('valid','available')])
-def test_existing_cache_is_readonly_and_reports_exact_state(tmp_path, mode, reason):
-    with synthetic_browser() as (page, metrics):
+def test_existing_cache_is_readonly_and_reports_exact_state(browser, tmp_path, mode, reason):
+    with synthetic_browser(browser) as (page, metrics):
         page.evaluate('''async mode=>new Promise((resolve,reject)=>{
           const q=indexedDB.open('e-tax-database',1);
           q.onupgradeneeded=()=>q.result.createObjectStore(mode==='store_missing'?'otherStore':'referenceDataStore',
@@ -94,8 +95,8 @@ def test_existing_cache_is_readonly_and_reports_exact_state(tmp_path, mode, reas
 
 
 @pytest.mark.parametrize('mode,reason', [('race','upgrade_refused'), ('hung','read_timeout')])
-def test_cache_enumeration_race_cannot_create_database_or_wait_forever(tmp_path, mode, reason):
-    with synthetic_browser() as (page, metrics):
+def test_cache_enumeration_race_cannot_create_database_or_wait_forever(browser, tmp_path, mode, reason):
+    with synthetic_browser(browser) as (page, metrics):
         page.evaluate("""mode=>{
           window.actualDatabases=indexedDB.databases.bind(indexedDB);
           indexedDB.databases=mode==='race'?async()=>[{name:'e-tax-database'}]:()=>new Promise(()=>{});
@@ -127,7 +128,7 @@ def test_sink_drops_untrusted_catalog_values(tmp_path):
 
 
 @pytest.mark.parametrize('late', ['available','failure','cancel'])
-def test_post_inventory_snapshot_does_not_change_selection_or_filters(tmp_path, monkeypatch, late):
+def test_post_inventory_snapshot_does_not_change_selection_or_filters(browser, tmp_path, monkeypatch, late):
     import coretax_browser as driver
     from test_json_inventory import synthetic_listing_browser
     calls = []
@@ -140,7 +141,7 @@ def test_post_inventory_snapshot_does_not_change_selection_or_filters(tmp_path, 
         value['ExpiryDate'] = (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
         return value
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(monkeypatch) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch) as (page, metrics):
         with d.session(tmp_path/'telemetry', 'worker') as log:
             if late=='cancel':
                 with pytest.raises(driver.CaptureCancelled):

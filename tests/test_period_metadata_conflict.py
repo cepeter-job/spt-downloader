@@ -4,15 +4,16 @@ import hashlib
 import json
 
 import pytest
+from support_isolated_browser import browser
 import coretax_browser as driver
 from spt_desktop import diagnostics as d
 from test_diagnostics import records as log_records
 from test_json_inventory import synthetic_listing_browser
 
 
-def test_catalog_reconciles_late_period_label_and_preserves_detail_source(tmp_path, monkeypatch):
+def test_catalog_reconciles_late_period_label_and_preserves_detail_source(browser, tmp_path, monkeypatch):
     # Five essential rows still span three pages and include an outside-year row.
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, archive_period_conflict=True,
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
                                    outside_year_padding=0) as (page, metrics):
         with d.session(tmp_path/'logs', 'worker') as log:
             run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path/'job')
@@ -45,8 +46,8 @@ def test_catalog_reconciles_late_period_label_and_preserves_detail_source(tmp_pa
     assert '01122024' not in text and 'Januari - Desember' not in text
 
 
-def test_late_expired_catalog_cannot_resolve_conflict(tmp_path, monkeypatch):
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, expired_catalog=True,
+def test_late_expired_catalog_cannot_resolve_conflict(browser, tmp_path, monkeypatch):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, expired_catalog=True,
                                    archive_period_conflict=True, outside_year_padding=0) as (page, metrics):
         with pytest.raises(ValueError, match='Conflicting source metadata'):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
@@ -57,9 +58,9 @@ def test_late_expired_catalog_cannot_resolve_conflict(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('changed', ['binding', 'receipt', 'missing_proof'])
-def test_restoration_rejects_changed_catalog_or_other_metadata(tmp_path, monkeypatch, changed):
+def test_restoration_rejects_changed_catalog_or_other_metadata(browser, tmp_path, monkeypatch, changed):
     original = driver.read_period_catalog
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, archive_period_conflict=True,
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
                                    outside_year_padding=0) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
         selected = deepcopy(next(r for r in run['records'] if r['record_id'] == 'fixture-normal'))
@@ -80,7 +81,7 @@ def test_restoration_rejects_changed_catalog_or_other_metadata(tmp_path, monkeyp
         assert any('metadata changed' in e['message'] for e in run['errors'])
 
 
-def test_stop_after_reconciliation_read_prevents_inventory_publication(tmp_path, monkeypatch):
+def test_stop_after_reconciliation_read_prevents_inventory_publication(browser, tmp_path, monkeypatch):
     original = driver.read_period_catalog
     stopped = False
     reads = []
@@ -98,7 +99,7 @@ def test_stop_after_reconciliation_read_prevents_inventory_publication(tmp_path,
             raise driver.CaptureCancelled()
 
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, archive_period_conflict=True,
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
                                    outside_year_padding=0) as (page, metrics):
         with pytest.raises(driver.CaptureCancelled):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path,
@@ -108,11 +109,11 @@ def test_stop_after_reconciliation_read_prevents_inventory_publication(tmp_path,
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
 
 
-def test_existing_catalog_snapshot_is_preserved_and_inventory_not_published(tmp_path, monkeypatch):
+def test_existing_catalog_snapshot_is_preserved_and_inventory_not_published(browser, tmp_path, monkeypatch):
     snapshot = tmp_path/'period-catalog-reconciliation.json'
     original = b'{"synthetic_previous_evidence":true}'
     snapshot.write_bytes(original)
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, archive_period_conflict=True,
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
                                    outside_year_padding=0) as (page, metrics):
         with pytest.raises(FileExistsError):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)

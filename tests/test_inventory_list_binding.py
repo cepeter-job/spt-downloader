@@ -2,6 +2,7 @@
 import pytest
 
 from support_browser_protocol import SignalSource, TAXPAYER, response
+from support_isolated_browser import browser
 from test_inventory_year_browser import ENDPOINT, FILTER, feature, send, synthetic_browser
 from test_json_inventory import synthetic_listing_browser
 
@@ -50,9 +51,9 @@ def auxiliary(page, payload):
     }''', {'url': ENDPOINT, 'payload': payload})
 
 
-def test_owned_route_preserves_exact_auxiliary_read_without_filtering_or_observing_it():
+def test_owned_route_preserves_exact_auxiliary_read_without_filtering_or_observing_it(browser):
     from coretax_browser import ListObserver
-    with synthetic_browser() as (page, metrics):
+    with synthetic_browser(browser) as (page, metrics):
         observer = ListObserver(page)
         try:
             with feature().InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
@@ -61,8 +62,12 @@ def test_owned_route_preserves_exact_auxiliary_read_without_filtering_or_observi
                 result = observer.wait(0)
                 sequence = observer.sequence
                 payload = {'TaxpayerAggregateIdentifier': 'synthetic-taxpayer'}
-                assert auxiliary(page, payload) == 200
-                page.wait_for_timeout(100)
+                with page.expect_request_finished(
+                    predicate=lambda request: (request.url == ENDPOINT and request.method == 'POST'
+                                               and request.post_data_json == payload),
+                    timeout=5000,
+                ):
+                    assert auxiliary(page, payload) == 200
                 assert metrics['requests'][-1] == payload
                 assert observer.sequence == sequence
                 assert observer.latest['binding'] == result['binding']
@@ -80,17 +85,17 @@ def test_owned_route_preserves_exact_auxiliary_read_without_filtering_or_observi
     {'TaxpayerAggregateIdentifier': 'synthetic-taxpayer', 'Filters': []},
     {'TaxpayerAggregateIdentifier': 'synthetic-taxpayer', 'isArchieved': False},
 ])
-def test_auxiliary_exception_does_not_authorize_other_request_shapes(payload):
-    with synthetic_browser() as (page, metrics):
+def test_auxiliary_exception_does_not_authorize_other_request_shapes(browser, payload):
+    with synthetic_browser(browser) as (page, metrics):
         with feature().InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
             assert auxiliary(page, payload) == 'blocked'
             assert guard.error is not None and metrics['requests'] == []
 
 
 @pytest.mark.parametrize('catalog,expired', [(False, False), (True, False), (True, True)])
-def test_collection_reconciles_visible_grid_despite_auxiliary_submitted_reads(monkeypatch, tmp_path, catalog, expired):
+def test_collection_reconciles_visible_grid_despite_auxiliary_submitted_reads(browser, monkeypatch, tmp_path, catalog, expired):
     import coretax_browser as driver
-    with synthetic_listing_browser(monkeypatch, year_catalog=catalog, expired_catalog=expired,
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=catalog, expired_catalog=expired,
                                    auxiliary_request=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True, run['errors']
@@ -102,14 +107,14 @@ def test_collection_reconciles_visible_grid_despite_auxiliary_submitted_reads(mo
     assert all(bool(r['Filters']) == (catalog and not expired) for r in metrics['submitted_requests'])
 
 
-def test_same_page_hash_anchor_is_not_an_additional_status_source(monkeypatch, tmp_path):
+def test_same_page_hash_anchor_is_not_an_additional_status_source(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
     original_wait = driver.ListObserver.wait
     def bounded_wait(self, after, timeout=45):
         return original_wait(self, after, timeout=min(timeout, 3))
     # Only shorten the failure deadline; all observer and browser behavior is real.
     monkeypatch.setattr(driver.ListObserver, 'wait', bounded_wait)
-    with synthetic_listing_browser(monkeypatch, hash_link=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, hash_link=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True, run['errors']
     assert len(run['sources']) == 2

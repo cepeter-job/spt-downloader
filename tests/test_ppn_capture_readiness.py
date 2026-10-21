@@ -1,6 +1,6 @@
 """Synthetic PPN initial-shell readiness and real DOM-to-XLSX contracts."""
 import pytest
-from playwright.sync_api import sync_playwright
+from support_isolated_browser import browser, context
 
 import coretax_browser as driver
 from support_templates import export_ppn
@@ -13,15 +13,9 @@ GROUP = 'III. PENGHITUNGAN PPN KURANG BAYAR / LEBIH BAYAR'
 
 
 @pytest.fixture
-def page():
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(channel='msedge', headless=True)
-        context = browser.new_context()
-        context.route('**/*', lambda route: route.abort())
-        page = context.new_page()
-        yield page
-        context.close()
-        browser.close()
+def page(context):
+    context.route('**/*', lambda route: route.abort())
+    return context.new_page()
 
 
 def markup(names):
