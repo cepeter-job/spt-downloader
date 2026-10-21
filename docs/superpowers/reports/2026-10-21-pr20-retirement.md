@@ -117,3 +117,32 @@ The current UI/UX documentation uses the 21October product snapshot, 54 text IDs
 implemented folder validation, the measured filter improvement and explicit
 unmet opening/full-size200% objectives. The 20October baseline is preserved
 verbatim below a historical banner, never silently relabelled as current.
+
+## Exact execution record for the retained tests
+
+[PR #60](https://github.com/cepeter-job/spt-downloader/pull/60) merged as
+`c6e2c4031338c335653cc2bf4e13e8c57918239f`. Its only delta from runtime baseline
+`ecbd987` is `tests/test_pr20_residual_contracts.py`; no production source or
+existing test changed. Exact head `d43dbaf4a609f60642cb9fc6a8b6cac8f976bb8d`
+and runner checkout `d4babaaee93cb2873371d8b8fb99d1fc23ffc3e6` share the actual
+merge tree `f755d41be9884a344a1539eee97dcf92f480d234`.
+
+[Run 39543975621](https://github.com/cepeter-job/spt-downloader/actions/runs/39543975621)
+completed successfully on attempt 1: **3,380 Windows cases and 456 portable
+cases**, zero failures/errors/skips. All three retained cases appear in Windows
+JUnit. Both collectors contain the same 3,380 unique nodes; portable is an
+explicit subset, so the two passing counts are not added as unique coverage.
+
+Dependency audit, CodeQL, fresh managed-worker setup/reuse, source/frozen GUI
+checks, exact-ID artifact download and the aggregate gate passed. Package
+`12321477756`, ZIP SHA-256
+`bffd47d2c8fadcbc7f6427d3ba7e177773d17fda2da8ed17c43d8e4f852a0f84`, was downloaded
+independently: six CI artifact ZIP digests, five package files, four payload
+checksums and the exact 39 worker resources all matched. Frozen metadata keeps
+CPython 3.14.8/x64/GIL, uv 0.13.4, `credentials_accessed=false` and
+`live_scrape=false`. The executable was not run locally or installed.
+
+The PR50 documentation-only route is separate from this test/build evidence.
+This record supports retiring the superseded PR20 branch after preserving the
+three scenarios; it does not establish new live-account acceptance, resolve
+the existing opening-time/DPI objectives, or authorize a release/deployment.
