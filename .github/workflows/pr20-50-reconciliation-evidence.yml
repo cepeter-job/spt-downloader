@@ -1,0 +1,46 @@
+name: PR20 and PR50 source evidence (temporary)
+on:
+  pull_request:
+    branches: [docs/uiux-baseline-20261020]
+    paths: ['.github/workflows/pr20-50-reconciliation-evidence.yml']
+permissions:
+  contents: read
+jobs:
+  archive:
+    name: Preserve exact public source for static reconciliation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ecbd9878aa732a379ba94ef848764f9815445003
+          path: current
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: acf77a11cc7928d301791150163735350347c109
+          path: legacy20
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 7a36b2e6c1c5d0490652be0db15ae94d50f12f42
+          path: docs50
+          persist-credentials: false
+      - name: Archive tracked source only, without product execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pr20-50-evidence"
+          for name in current legacy20 docs50; do
+            git -C "$name" rev-parse HEAD > "$RUNNER_TEMP/pr20-50-evidence/$name.commit"
+            git -C "$name" rev-parse HEAD^{tree} > "$RUNNER_TEMP/pr20-50-evidence/$name.tree"
+            git -C "$name" archive --format=tar HEAD > "$RUNNER_TEMP/pr20-50-evidence/$name.tar"
+          done
+          cd "$RUNNER_TEMP/pr20-50-evidence"
+          sha256sum *.tar *.commit *.tree > SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pr20-50-source-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/pr20-50-evidence/
+          retention-days: 7
+          if-no-files-found: error
