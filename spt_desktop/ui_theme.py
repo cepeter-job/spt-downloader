@@ -28,8 +28,8 @@ def effective_scale(root: tk.Misc) -> float:
     return root.winfo_fpixels('1i') / 96
 
 
-def client_work_area(root: tk.Tk) -> tuple[int, int]:
-    """Use measured window borders; never guess the taskbar or titlebar size."""
+def _window_work_metrics(window: tk.Misc, monitor_window: tk.Misc):
+    """Measure the modal border independently from its owner's monitor."""
     class MonitorInfo(ctypes.Structure):
         _fields_ = [('size', ctypes.wintypes.DWORD), ('monitor', ctypes.wintypes.RECT),
                     ('work', ctypes.wintypes.RECT), ('flags', ctypes.wintypes.DWORD)]
@@ -45,22 +45,63 @@ def client_work_area(root: tk.Tk) -> tuple[int, int]:
         function = getattr(api, name)
         function.argtypes = [ctypes.wintypes.HWND, ctypes.POINTER(ctypes.wintypes.RECT)]
         function.restype = ctypes.wintypes.BOOL
-    hwnd = api.GetAncestor(root.winfo_id(), 2)  # GA_ROOT includes native non-client borders.
-    monitor = api.MonitorFromWindow(hwnd, 2)  # MONITOR_DEFAULTTONEAREST.
+    hwnd = api.GetAncestor(window.winfo_id(), 2)
+    owner = api.GetAncestor(monitor_window.winfo_id(), 2)
+    monitor = api.MonitorFromWindow(owner, 2)
     info = MonitorInfo()
     info.size = ctypes.sizeof(info)
-    outer, inner = ctypes.wintypes.RECT(), ctypes.wintypes.RECT()
-    if (not hwnd or not monitor or not api.GetMonitorInfoW(monitor, ctypes.byref(info))
+    outer, inner, parent = (ctypes.wintypes.RECT() for _ in range(3))
+    if (not hwnd or not owner or not monitor or not api.GetMonitorInfoW(monitor, ctypes.byref(info))
             or not api.GetWindowRect(hwnd, ctypes.byref(outer))
-            or not api.GetClientRect(hwnd, ctypes.byref(inner))):
+            or not api.GetClientRect(hwnd, ctypes.byref(inner))
+            or not api.GetWindowRect(owner, ctypes.byref(parent))):
         raise OSError('Windows work area could not be measured')
     border_width = max(0, outer.right - outer.left - (inner.right - inner.left))
     border_height = max(0, outer.bottom - outer.top - (inner.bottom - inner.top))
-    width = info.work.right - info.work.left - border_width
-    height = info.work.bottom - info.work.top - border_height
-    if width <= 0 or height <= 0:
+    work = (info.work.left, info.work.top, info.work.right, info.work.bottom)
+    if work[2] - work[0] <= border_width or work[3] - work[1] <= border_height:
         raise OSError('Windows reported an invalid client work area')
-    return width, height
+    owner_rect = (parent.left, parent.top, parent.right, parent.bottom)
+    return api, hwnd, work, owner_rect, border_width, border_height
+
+
+def client_work_area(window: tk.Tk | tk.Toplevel, *, monitor_window: tk.Misc | None = None) -> tuple[int, int]:
+    """Use measured borders; never guess the taskbar or titlebar size."""
+    _, _, work, _, border_width, border_height = _window_work_metrics(
+        window, window if monitor_window is None else monitor_window)
+    return work[2] - work[0] - border_width, work[3] - work[1] - border_height
+
+
+def configure_dialog(dialog: tk.Toplevel, parent: tk.Tk, *, size_dip: tuple[int, int]) -> float:
+    """Apply native modal metrics without reconfiguring its owner's shell."""
+    scale = effective_scale(parent)
+    style = ttk.Style(dialog)
+    linespace = int(parent.tk.call('font', 'metrics', 'SPTBody', '-linespace'))
+    style.configure('SPT.Dialog.Treeview', font='SPTBody', rowheight=linespace + dip_to_px(8, scale))
+    style.configure('SPT.Dialog.Treeview.Heading', font='SPTLabel')
+    dialog.update_idletasks()
+    try:
+        available_width, available_height = client_work_area(dialog, monitor_window=parent)
+        api, hwnd, work, owner, border_width, border_height = _window_work_metrics(dialog, parent)
+    except (OSError, AttributeError):
+        # Keep the window manager's geometry when native measurement is unavailable.
+        return scale
+    width = min(dip_to_px(size_dip[0], scale), available_width)
+    height = min(dip_to_px(size_dip[1], scale), available_height)
+    dialog.minsize(min(dip_to_px(540, scale), available_width),
+                   min(dip_to_px(390, scale), available_height))
+    dialog.geometry(f'{width}x{height}')
+    dialog.update_idletasks()
+    outer_width, outer_height = width + border_width, height + border_height
+    x = min(max(work[0], (owner[0] + owner[2] - outer_width) // 2), work[2] - outer_width)
+    y = min(max(work[1], (owner[1] + owner[3] - outer_height) // 2), work[3] - outer_height)
+    # Tk's negative geometry offsets mean right/bottom anchoring, not virtual
+    # screen coordinates. Native positioning supports monitors left of primary.
+    api.SetWindowPos.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.HWND,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.wintypes.UINT]
+    api.SetWindowPos.restype = ctypes.wintypes.BOOL
+    api.SetWindowPos(hwnd, None, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010)
+    return scale
 
 
 def configure_theme(root: tk.Tk) -> None:

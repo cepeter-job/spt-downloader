@@ -9,7 +9,7 @@
 | GUI dan executable Windows | **CPython 3.14.8**, Windows x64, GIL aktif | Satu profil: `production`. |
 | Worker di mesin pengguna | **Managed CPython 3.14.8**, Windows x64, GIL aktif | Dibuat oleh `uv` di LocalAppData, bukan Python sistem. |
 | CLI `setup.cmd` | **Managed CPython 3.14.8**, Windows x64, GIL aktif | Versi sama dengan GUI/worker. |
-| `uv` | **0.13.1** | Exact pin untuk katalog managed Python, build, dan instalasi lock. |
+| `uv` | **0.13.4** | Exact pin untuk katalog managed Python, build, dan instalasi lock. |
 
 Sumber kebenaran adalah `PYTHON_PROFILES`, `UV_VERSION`, `RUNTIME_LOCK`, dan `WORKER_FILES` di [spt_desktop/runtime.py](../spt_desktop/runtime.py). Profil evaluasi `candidate` telah dipensiunkan: tidak boleh menjadi jalur distribusi atau cara diam-diam memilih 3.11. `build_desktop.py`, pemilih matrix `scripts/ci_route.py`, uji worker `scripts/ci_runtime.py`, serta `setup.cmd` memakai satu versi produksi.
 
@@ -37,7 +37,7 @@ Pekerjaan yang sudah berjalan sebaiknya diselesaikan atau dihentikan secara norm
 | `requirements-build.txt` | `locks/build.txt` | PyInstaller, uv dan seluruh persyaratan build. |
 | `requirements-audit.txt` | `locks/audit.txt` | Tool audit terisolasi. |
 
-Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.13.1`:
+Semua versi langsung dipin dan lock transitif menggunakan hash SHA-256. Resolusi universal dan persyaratan wheel tidak dilonggarkan hanya karena Python baru. Jika memutakhirkan paket, perbarui keempat lock dengan [scripts/update_locks.py](../scripts/update_locks.py) dan review perubahan secara terpisah. Gunakan `uv==0.13.4`:
 
 ```powershell
 .venv/Scripts/python.exe -m scripts.update_locks --check

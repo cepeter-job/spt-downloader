@@ -32,6 +32,24 @@ CPython 3.14.8 sudah menjadi satu-satunya profil produksi; tidak ada build kandi
 
 Pemilih [scripts/ci_tests.py](../scripts/ci_tests.py) memilih subset portable untuk feedback awal dan kompatibilitas Linux. Workload Windows menjalankan **seluruh suite**, termasuk tes portable yang memiliki cabang perilaku Windows. Pengulangan ini disengaja agar perilaku seperti junction tidak hilang dari cakupan. Manifest collection harus membuktikan subset portable benar, inventaris Windows lengkap, serta versi Python/commit sesuai. Tes baru selalu terjangkau suite Windows, lalu dapat dimasukkan ke subset portable setelah ditinjau.
 
+## Batas waktu job Windows
+
+Job `windows` memiliki batas **30 menit** untuk seluruh pekerjaan, termasuk
+setup, suite serial lengkap, pemeriksaan bootstrap worker, upload bukti dan
+cleanup. Batas ini bukan target durasi tes maupun klaim percepatan. Job package
+terpisah tetap memiliki batas 20 menit; job lain tidak berubah.
+
+Perubahan ini menanggapi [run 39455415374](https://github.com/cepeter-job/spt-downloader/actions/runs/39455415374)
+pada `3c7f119`: seluruh **3.352 tes Windows lulus dalam 1.172,46 detik**, tetapi
+job dibatalkan saat batas 20 menit tercapai dan package tidak dijalankan.
+JUnit serta inventory yang tersimpan membuktikan hasil tes, bukan keberhasilan
+pipeline atau executable untuk run tersebut.
+
+Headroom tetap dibatasi: tidak ada test filtering, sharding produksi,
+`continue-on-error`, perubahan dependensi atau penghapusan pemeriksaan artifact.
+Jika durasi mendekati batas baru, gunakan pengukuran per tahap dan durasi tes
+untuk mencari penyebabnya; jangan menaikkan batas terus-menerus tanpa bukti.
+
 ## Benchmark opsional pembagian tes Windows
 
 Workflow [windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml) hanya aktif lewat `workflow_dispatch` atau PR yang mengubah konfigurasi benchmark/CI terkait. Benchmark ini **tidak mengganti** job `windows`, check wajib `Windows tests and dependency audit`, urutan packaging, maupun verifikasi artifact produksi.

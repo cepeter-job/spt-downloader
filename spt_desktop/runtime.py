@@ -13,7 +13,7 @@ import time
 from .windows import ProcessJob
 from . import diagnostics
 
-UV_VERSION = '0.13.1'
+UV_VERSION = '0.13.4'
 PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (

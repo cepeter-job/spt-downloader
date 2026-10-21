@@ -2,13 +2,16 @@
 
 **Keputusan pemilik, 12 Oktober 2026:** gunakan desain **B**, pertahankan **Tkinter/ttk**, dan utamakan proses serta hasil yang mudah dipahami sebelum menambah fitur. Bahasa antarmuka harus terasa seperti petunjuk dari rekan kerja, bukan log mesin atau dokumen teknis.
 
-**Pembaruan 13 Oktober 2026:** [spesifikasi implementasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md) merekonsiliasi arah B dengan kode `be67f5153a07ce100048d67191a02ca1d0fca1db`. Pemilihan SPT, persetujuan penggantian, workbook per masa, PDF keuangan/auditan Badan yang didukung, dan teks khusus pemilik sudah ada pada baseline. Irisan 1 sudah diimplementasikan pada branch PR #12: katalog teks, state murni, shell ttk regular/compact, dan integrasi App/self-test. T1–T5 irisan 1 sudah diverifikasi: 719 tes Windows lulus pada commit produk `7aa2f095`, screenshot native sintetis ukuran regular/compact/minimum telah ditinjau, dan artifact frozen dibaca ulang beserta hash. PR #12 belum merged; penerimaan manusia dan tahap berikutnya tetap terpisah. Lihat [bukti tahap 1](../superpowers/reports/2026-10-13-ui-b-phase1-evidence.md). Peningkatan dialog/hasil/Pengaturan dan pengujian menyeluruh tahap berikutnya belum dianggap selesai. Paket B-copy-2 dan baseline `e99464a2…` adalah riwayat desain, bukan kontrak terbaru untuk area yang berubah.
+**Pembaruan 20 Oktober 2026 — Phase 2:** dialog pemilihan SPT dan penggantian hasil di [PR #53](https://github.com/cepeter-job/spt-downloader/pull/53) memakai baseline produk `977b06846554ca1f2e5af512a69fb201f2cbe8d1`. Lihat [bukti B-TK-P2-P1](../superpowers/reports/2026-10-20-ui-b-phase2-evidence.md) untuk kandidat/runtime yang benar-benar diuji, regresi keyboard, screenshot Windows 100/150/200%, exact artifact readback, serta batas yang tersisa. P2-14 masih PARTIAL karena ukuran normal/compact penuh pada 200% memerlukan layar lebih besar; sasaran opening 100 ms belum tercapai. PR produk tetap draft untuk penerimaan manusia. Catatan 13 Oktober di bawah adalah riwayat pada tanggal tersebut, termasuk status PR dan lingkup yang belum tersedia ketika ditulis; baseline Phase 2 mempertahankan desktop JSON-hybrid, saved DOM dan default CLI DOM.
+
+**Riwayat 13 Oktober 2026:** [spesifikasi implementasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md) merekonsiliasi arah B dengan kode `be67f5153a07ce100048d67191a02ca1d0fca1db`. Pemilihan SPT, persetujuan penggantian, workbook per masa, PDF keuangan/auditan Badan yang didukung, dan teks khusus pemilik sudah ada pada baseline. Irisan 1 sudah diimplementasikan pada branch PR #12: katalog teks, state murni, shell ttk regular/compact, dan integrasi App/self-test. T1–T5 irisan 1 sudah diverifikasi: 719 tes Windows lulus pada commit produk `7aa2f095`, screenshot native sintetis ukuran regular/compact/minimum telah ditinjau, dan artifact frozen dibaca ulang beserta hash. PR #12 belum merged; penerimaan manusia dan tahap berikutnya tetap terpisah. Lihat [bukti tahap 1](../superpowers/reports/2026-10-13-ui-b-phase1-evidence.md). Peningkatan dialog/hasil/Pengaturan dan pengujian menyeluruh tahap berikutnya belum dianggap selesai. Paket B-copy-2 dan baseline `e99464a2…` adalah riwayat desain, bukan kontrak terbaru untuk area yang berubah.
 
 ## Mulai dari sini
 
 | Kebutuhan | Baca |
 | --- | --- |
-| Menerapkan MagicPath B pada kode terbaru | [Spesifikasi B-TK-1: widget, state, dialog, dan 28 kriteria penerimaan](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md) |
+| Meninjau implementasi dialog Phase 2 | [Bukti B-TK-P2-P1: hasil, screenshot, batas DPI/performa dan artifact](../superpowers/reports/2026-10-20-ui-b-phase2-evidence.md) |
+| Menerapkan fondasi MagicPath B | [Spesifikasi B-TK-1: widget, state, dialog, dan 28 kriteria penerimaan](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md) |
 | Menulis judul, tombol, petunjuk, atau pesan gagal | [Bahasa antarmuka](bahasa-antarmuka.md) |
 | Menambahkan layar atau mengubah proses dan hasil | [Pola layar dan status](pola-dan-status.md) |
 | Menyiapkan fitur baru, review PR, dan pengujian | [Checklist dan template fitur](checklist-fitur.md) |
@@ -23,7 +26,7 @@ Pengaturan tetap dialog terpisah pada implementasi Tkinter. Pemilihan dan pengga
 
 Pada jendela lebar, ringkasan berada di samping. Saat ruang menyempit, pindahkan ringkasan ke atas. Jangan menyembunyikan NPWP/tahun aktif, memperkecil teks agar semua muat, atau menambah navigasi hanya untuk meniru dashboard web. Gunakan gulir vertikal bila perlu.
 
-**Belum termasuk:** antrean multi-NPWP, unduhan paralel, riwayat, resume GUI, pemilihan lokasi baru, dark mode, JSON-first capture, dan migrasi toolkit. Fitur tersebut memerlukan kebutuhan dan keputusan terpisah. Pemilihan SPT dan PDF yang sudah didukung bukan fitur baru dalam redesign ini.
+**Belum termasuk:** antrean multi-NPWP, unduhan paralel, riwayat, resume GUI, pemilihan lokasi baru, dark mode dan migrasi toolkit. JSON-hybrid desktop yang sudah ada pada baseline 20 Oktober dipertahankan oleh Phase 2. Fitur tersebut memerlukan kebutuhan dan keputusan terpisah. Pemilihan SPT dan PDF yang sudah didukung bukan fitur baru dalam redesign ini.
 
 ## 2. Urutan prioritas
 
@@ -91,4 +94,4 @@ Arah B sudah dipilih; spesifikasi B-TK-1 tersedia untuk review. Setelah disetuju
 
 Sesuai [AGENTS.md](../../AGENTS.md), pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE dijalankan hanya pada GitHub runner. Lokal hanya pemeriksaan dokumen/source/AST dan hash/metadata. Jangan mengubah CI/ruleset untuk mendapatkan GREEN. Bukti baseline Windows, aksesibilitas, performa, dan penerimaan manual tetap dibedakan dari pemeriksaan dokumentasi.
 
-Permintaan PR #14 menghapus footer nama pribadi, bukan subtitle umum atau petunjuk Downloads. Katalog aktif memuat 43 ID; jangan mengembalikan `app.credit` dari rancangan historis.
+Permintaan PR #14 menghapus footer nama pribadi, bukan subtitle umum atau petunjuk Downloads. Katalog pada kandidat Phase 2 memuat 54 ID; jangan mengembalikan `app.credit` dari rancangan historis.
