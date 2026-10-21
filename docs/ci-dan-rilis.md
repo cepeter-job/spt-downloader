@@ -14,6 +14,93 @@ Pemilihan perubahan memakai [scripts/ci_route.py](../scripts/ci_route.py). Hanya
 
 Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer perlu memastikan check gabungan dan PR benar-benar diwajibkan pada `main`. Jangan menyimpulkan perlindungan aktif hanya karena workflow tersedia atau berwarna hijau. Bagian [aturan repo](#aktivasi-aturan-repository) menyimpan verifikasi bertanggal; periksa ulang metadata remote sebelum mengandalkannya untuk perubahan sekarang.
 
+## Menjalankan dan membaca verifikasi
+
+Untuk batas kerja [AGENTS.md](../AGENTS.md#verification), seluruh eksekusi produk,
+pytest, Tk/browser, self-test, build dan EXE dilakukan pada GitHub runner. Perintah
+`gh` berikut membaca atau memicu pekerjaan remote; lingkungan lokal cukup untuk
+menyiapkan source/dokumen dan memeriksa hash/metadata. Referensi langkah di dalam
+runner berada pada [panduan pengembangan](pengembangan.md#referensi-perintah-pada-runner).
+
+### PR menuju main
+
+Setelah branch perubahan dipush dan PR menuju `main` dibuat, peristiwa PR memicu
+workflow. Push branch fitur tanpa PR tidak memicu workflow build karena trigger
+`push` hanya mencakup `main`. Gunakan GitHub CLI yang sudah memiliki akses repository.
+Contoh PowerShell berikut memakai nomor PR yang Anda pilih:
+
+```powershell
+$SptRepo = "cepeter-job/spt-downloader"
+$SptPr = "GANTI_DENGAN_NOMOR_PR"
+$SptPrInfo = gh pr view $SptPr --repo $SptRepo --json number,headRefName,headRefOid,baseRefName,url | ConvertFrom-Json
+$SptPrInfo
+gh pr checks $SptPr --repo $SptRepo --required
+gh pr checks $SptPr --repo $SptRepo --required --watch --fail-fast
+gh run list --repo $SptRepo --workflow windows-build.yml --event pull_request --branch $SptPrInfo.headRefName --limit 10 --json databaseId,event,headBranch,headSha,attempt,status,conclusion,url
+```
+
+`--required` mengikuti aturan repository saat diperiksa. Pastikan check gabungan
+**Windows tests and dependency audit** serta check wajib lain seperti **CodeQL**
+tercakup. Status pending belum berarti lulus; daftar check kosong juga bukan bukti
+verifikasi. Opsi dan status dijelaskan pada manual resmi
+[gh pr checks](https://cli.github.com/manual/gh_pr_checks) dan
+[gh run list](https://cli.github.com/manual/gh_run_list).
+
+Pilih `databaseId` dari run yang event, branch, revisi dan waktunya sesuai. Simpan
+attempt yang sedang diperiksa; jangan memilih run hanya karena berada di urutan
+terbaru. Ganti kedua placeholder berikut dengan identitas dari hasil pembacaan:
+
+```powershell
+$SptRunId = "GANTI_DENGAN_RUN_ID"
+$SptAttempt = "GANTI_DENGAN_ATTEMPT"
+gh run watch $SptRunId --repo $SptRepo --exit-status --interval 20
+gh run view $SptRunId --repo $SptRepo --attempt $SptAttempt --json databaseId,event,headBranch,headSha,attempt,status,conclusion,jobs,url
+```
+
+`gh run watch` memantau run yang dipilih sampai selesai. Jika akses `watch` tidak
+didukung oleh kredensial yang tersedia, gunakan `gh run view` untuk membaca
+statusnya. Pembacaan dengan `--attempt` mengikat laporan ke percobaan yang dimaksud;
+catat lagi identitasnya setelah selesai. Lihat
+[gh run watch](https://cli.github.com/manual/gh_run_watch) dan
+[gh run view](https://cli.github.com/manual/gh_run_view).
+
+**Head PR dan commit yang diuji perlu dicatat terpisah.** Pada event `pull_request`,
+checkout bawaan memakai merge ref; `github.sha` menunjuk commit gabungan itu,
+sedangkan `headRefOid` menunjuk commit branch perubahan. Inventory dan nama artifact
+workflow ini memakai `github.sha`. Cocokkan commit checkout dari log/summary serta
+inventory, bukan menganggapnya selalu sama dengan head PR. Perilaku event ini
+dijelaskan pada [dokumentasi GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request).
+
+### Dispatch tambahan bila diperlukan
+
+PR biasa memakai pemeriksaan otomatis di atas. Untuk pemeriksaan penuh tambahan,
+gunakan branch remote yang telah dipush dan catat SHA penuh yang diharapkan.
+Dispatch selalu memilih mode `full`, termasuk ketika perubahan hanya dokumentasi.
+Contoh ini memakai default dua shard dan restore cache:
+
+```powershell
+$SptRepo = "cepeter-job/spt-downloader"
+$SptBranch = "GANTI_DENGAN_BRANCH_TERPUSH"
+$SptCommit = "GANTI_DENGAN_SHA_BRANCH_40_KARAKTER"
+gh workflow run windows-build.yml --repo $SptRepo --ref $SptBranch -f windows_mode=two-shards -f cache_mode=restore
+gh run list --repo $SptRepo --workflow windows-build.yml --event workflow_dispatch --branch $SptBranch --commit $SptCommit --limit 10 --json databaseId,event,headBranch,headSha,attempt,status,conclusion,url
+```
+
+`--ref` memilih branch/tag remote, dan run harus dibaca kembali untuk memastikan
+SHA-nya cocok dengan commit yang hendak diverifikasi. Jika branch bergerak sebelum
+dispatch, run pada commit lain tidak membuktikan commit yang diharapkan. Pilih run
+dari daftar lalu gunakan `watch`/`view` di atas. Sintaks input berasal dari
+[gh workflow run](https://cli.github.com/manual/gh_workflow_run); nama dan nilai
+input ditetapkan oleh [workflow aktif](../.github/workflows/windows-build.yml).
+
+Gunakan `windows_mode=serial` hanya untuk kontrol atau diagnosis yang memerlukan
+suite pada satu runner; `cache_mode=cold` untuk perbandingan cache dingin. Kedua
+mode tetap melewati portable, suite Windows lengkap, audit, bootstrap worker,
+source/frozen self-test, packaging, inventory dan artifact readback. Dispatch
+tidak menerbitkan attestation `main`. Jalur dokumentasi aman pada PR/push cukup
+dengan gate yang ditetapkan router; tidak perlu memaksa build hanya karena
+dokumentasi berubah. Komentar dalam `.py` tetap termasuk perubahan kode.
+
 ## Pembagian pekerjaan
 
 | Kelompok pekerjaan | Lingkungan dan isi | Kebijakan resource |
@@ -184,11 +271,11 @@ SPTDownloader-Windows-x64-<commit>-python<versi>-attempt<nomor>
 Produksi menggunakan `python3.14.8` saja. Artifact 3.11.17 dari run terdahulu tetap dapat disimpan terpisah sebagai opsi rollback yang diverifikasi, bukan artifact produksi baru.
 
 1. Buka run workflow yang dimaksud. Cocokkan repository, event, branch, commit penuh, dan kesimpulan seluruh gate. Untuk rilis produksi gunakan commit `main` yang telah disetujui.
-2. Catat **run ID, head SHA, artifact ID, nama artifact, dan profil Python**. Unduh artifact berdasarkan ID/run tersebut; jangan memilih hanya berdasarkan nama atau waktu terbaru.
+2. Catat **run ID, attempt, head PR/branch, commit checkout yang diuji, artifact ID, nama artifact, dan profil Python**. Pada PR, commit checkout dapat berupa merge commit seperti dijelaskan di [alur verifikasi](#menjalankan-dan-membaca-verifikasi). Unduh artifact berdasarkan ID/run tersebut; jangan memilih hanya berdasarkan nama atau waktu terbaru.
 3. Pastikan set berkas hanya `SPTDownloader.exe`, `LICENSE.txt`, `README.txt`, `build-selftest.json`, dan `SHA256SUMS.txt`. Folder internal build, source capture, profil, dan log pribadi tidak termasuk distribusi.
 4. Hitung SHA-256 tiap berkas yang disebut dalam manifest dan cocokkan seluruh nilainya. Perbedaan apa pun berarti artifact belum layak digunakan.
 5. Baca `build-selftest.json`: `ok` dan `frozen` harus benar, bitness 64, profil/interpreter sesuai build, resource lengkap, serta `credentials_accessed` dan `live_scrape` salah. Laporan source self-test terpisah dari laporan frozen yang didistribusikan.
-6. Pada mesin Windows target, lakukan pembukaan GUI dan penerimaan yang relevan. Bedakan hasil self-test sintetis dari [penerimaan Coretax/Excel aktual](penerimaan-manual.md).
+6. Pembukaan GUI dan penerimaan pada mesin Windows target mengikuti scope operator yang berizin. Untuk pekerjaan yang dibatasi AGENTS, eksekusi EXE tetap pada runner. Bedakan hasil self-test sintetis dari [penerimaan Coretax/Excel aktual](penerimaan-manual.md); tandai penerimaan yang belum dilakukan secara eksplisit.
 
 Contoh pemeriksaan manual di PowerShell dari direktori ekstraksi:
 
@@ -199,10 +286,13 @@ Get-Content -LiteralPath .\build-selftest.json | ConvertFrom-Json
 Get-AuthenticodeSignature -LiteralPath .\SPTDownloader.exe | Select-Object Status, SignerCertificate
 ```
 
-Cocokkan hash berdasarkan nama file, bukan urutan tampilan. Kontributor juga dapat menjalankan verifier dari checkout commit yang sesuai:
+Cocokkan hash berdasarkan nama file, bukan urutan tampilan. Perintah PowerShell
+di atas membaca berkas/metadata tanpa menjalankan EXE. Verifier repository berikut
+merupakan **referensi langkah runner** dari checkout commit yang sesuai: modulnya
+mengimpor runtime produk, sehingga tetap tunduk pada batas eksekusi AGENTS.
 
 ```powershell
-.venv/Scripts/python.exe -m scripts.ci_artifact verify "C:/folder-artifact-yang-diekstrak" --python-version 3.14.8
+.venv/Scripts/python.exe -m scripts.ci_artifact verify "$env:RUNNER_TEMP/artifact-readback" --python-version 3.14.8
 ```
 
 Setiap job package CI mengunduh ulang hasil upload menggunakan **artifact ID yang persis**, memeriksa lima berkas, hash, dan laporan frozen, lalu menulis run/commit/artifact/version pada summary. Manifest koleksi tes dan laporan audit sintetis merupakan artifact diagnostik terpisah dari lima berkas distribusi.

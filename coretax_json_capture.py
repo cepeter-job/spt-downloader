@@ -213,8 +213,9 @@ class DetailJsonCapture:
                 if _has_secret(request_json):
                     self._reason('secret-request')
                     return
-            # Keep bounded metadata after MIME exclusion/drain, but never keep
-            # the driver request/response or its body through this ledger.
+            # Catatan observasi menyimpan metadata request terbatas, termasuk
+            # request_json, tanpa menahan objek request/response driver atau
+            # byte body respons pada catatan ini.
             observation = {'target': target, 'frame_url': frame.url, 'url': request.url,
                            'method': request.method, 'request_json': request_json,
                            'sequence': self._seen, 'status': None}
@@ -316,6 +317,8 @@ class DetailJsonCapture:
         if declared is not None and int(declared) + self._read_bytes > self._limits['attempt_bytes']:
             self._reason('attempt-byte-limit')
             return
+        # Driver membaca seluruh body sekaligus; batas byte/waktu diperiksa lagi
+        # sesudahnya, sehingga batas ini bukan jaminan RAM atau interupsi seketika.
         try:
             raw = response.body()
         except Exception:
@@ -494,6 +497,8 @@ def checkpoint_bodies(folder, capture, record, scope):
             raw = read(guard, reference, 8 * 1024 * 1024)
             if hashlib.sha256(raw).hexdigest() != capture.get('manifest_sha256'):
                 raise JsonSafetyError('Private checkpoint manifest bytes changed')
+            # Hash saja belum mengikat checkpoint ke SPT terpilih; manifest,
+            # metadata, dan upaya capture harus cocok sebelum body dibuka.
             saved = _json(raw)
             expected = {**saved, 'manifest': reference, 'manifest_sha256': hashlib.sha256(raw).hexdigest()}
             if json.dumps(capture, sort_keys=True) != json.dumps(expected, sort_keys=True):

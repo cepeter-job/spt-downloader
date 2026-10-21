@@ -16,6 +16,8 @@ from . import diagnostics
 UV_VERSION = '0.13.4'
 PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
+# Daftar eksplisit ini adalah batas paket worker; jangan salin workspace
+# secara rekursif karena profil, checkpoint, dan hasil pajak bersifat privat.
 WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py', 'coretax_inventory.py',
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
@@ -233,6 +235,8 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
     python = root / 'runtime' / 'Scripts' / 'python.exe'
     ready = root / 'runtime-ready.txt'
     info = _probe_python(python, expected, environment, cancelled, packages=True)
+    # Penanda ready hanya berlaku bila sumber, lock, Python, dan uv masih cocok;
+    # versi paket serta asal interpreter tetap diperiksa ulang sebelum dipakai.
     if (_compatible(info, python_profile) and _managed(info, root)
             and info.get('packages') == expected and ready.is_file()
             and ready.read_text(encoding='ascii').strip() == fingerprint):
@@ -270,6 +274,7 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
     if (not _compatible(info, python_profile) or not _managed(info, root)
             or info.get('packages') != expected):
         raise RuntimeError('Verifikasi Python/dependensi gagal; persiapan belum selesai.')
+    # Terbitkan penanda siap hanya setelah probe interpreter dan seluruh paket lolos.
     temporary = root / 'runtime-ready.tmp'
     temporary.write_text(fingerprint, encoding='ascii')
     temporary.replace(ready)

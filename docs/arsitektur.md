@@ -6,20 +6,28 @@ Aplikasi memiliki mesin capture/export yang dipakai bersama oleh CLI dan desktop
 
 ## Peta modul
 
+Untuk menelusuri fungsi dan tes saat mulai mengubah kode, gunakan [peta kode](peta-kode.md).
+Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontraknya.
+
 | Modul | Tanggung jawab |
 | --- | --- |
 | `coretax.py` | Entry point CLI, autentikasi manual CLI, orkestrasi, verifikasi set workbook, staging, dan rollback publikasi lokal. |
 | `coretax_browser.py` | Inventaris daftar, pengamatan respons UI, pemeriksaan origin/identitas, navigasi View, paginasi, serta checkpoint detail. |
+| `coretax_inventory.py`, `coretax_json_capture.py` | Bukti filter periode dan katalog, serta pengamatan/penyimpanan respons JSON yang terikat pada record dan percobaan capture. |
 | `coretax_exporter.py` | Validasi scope dan nilai, deduplikasi ID, susunan workbook, serta tautan relatif. Tidak membuka browser. |
 | `coretax_json.py`, `coretax_masa_json.py` dan modul observer/projection terkait | Binding respons native ke identitas/scope dan proyeksi form; kelayakan diperiksa terpisah dari pilihan mode. |
 | `coretax_masa_templates.py`, `coretax_pph21.py`, `coretax_badan_template.py` | Renderer template terverifikasi, angka moneter dan aturan tampilan per jenis/form. |
+| `coretax_attachments.py`, `coretax_pdf.py` | Penemuan href PDF yang didukung, unduhan terbatas, deklarasi, serta verifikasi byte melalui stream yang tetap dipegang. |
 | `spt_gui.py`, `spt_desktop/app.py` | Entry point dan GUI Tkinter, pengaturan, tombol, serta self-test source/frozen. |
 | `spt_desktop/controller.py`, `events.py` | Protokol progres/terminal, otorisasi start, Stop, dan pemrosesan event pada thread GUI. |
+| `spt_desktop/interaction.py` | Permintaan/jawaban pilihan SPT dan penggantian hasil yang terikat pada job; payload privat terpisah dari sinyal stdout/stdin. |
 | `spt_desktop/runtime.py` | Pemilihan interpreter, resource worker eksplisit, fingerprint, setup dependensi, dan verifikasi kesiapan. |
 | `spt_desktop/worker.py` | Proses terisolasi untuk capture/export atau pemeriksaan kredensial. |
 | `spt_desktop/auth.py`, `credentials.py` | Login pada form yang diperiksa, challenge manual, serta Windows Credential Manager berbasis origin. |
 | `spt_desktop/windows.py` | Instance lock dan Windows Job Object untuk kepemilikan pohon proses. |
-| `spt_desktop/paths.py`, `output.py` | Known Folders, nama folder yang aman, verifikasi salinan, dan publikasi Excel ke Downloads. |
+| `spt_desktop/paths.py`, `output.py`, `output_windows.py` | Known Folders, pemeriksaan folder/handle native, verifikasi salinan, serta publikasi Excel dan PDF ke Downloads. |
+| `spt_desktop/diagnostics.py`, `diagnostic_store.py` | Event diagnostik dengan field yang diizinkan, antrean terbatas, serta berkas log berotasi. |
+| `scripts/ci_route.py`, `ci_tests.py`, `ci_artifact.py` | Routing CI, bukti cakupan tes per runner/shard, dan pemeriksaan isi/hash artifact distribusi. |
 | `build_desktop.py` | Paket GUI tipis, bundel `uv`, allowlist resource, dan pemeriksaan executable hasil build. |
 
 GUI memakai stdlib/Tkinter dan tidak mengimpor Playwright atau openpyxl ke prosesnya. Worker memasang dependensi pada runtime terisolasi. `WORKER_FILES` merupakan allowlist eksplisit; modul worker baru harus ditambahkan di sana bersama tes kontraknya. Jangan menggantinya dengan penyalinan direktori rekursif, karena checkout dapat berdampingan dengan profil, hasil, atau environment lokal.

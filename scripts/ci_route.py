@@ -13,6 +13,8 @@ JOBS = frozenset({'route', 'portable', 'windows', 'package', 'dependency-audit',
 
 
 def is_documentation(path):
+    # Jalur cepat hanya untuk daftar dokumen yang dikenal; komentar dalam .py
+    # tetap mengubah sumber paket dan harus melewati validasi penuh.
     parts = PurePosixPath(path).parts
     return path in DOC_FILES or (
         len(parts) > 1 and parts[0] == 'docs' and '..' not in parts
@@ -86,6 +88,8 @@ def changed_paths(repository, base, head):
                for value in (base, head)):
         return None
     try:
+        # Rename tetap terlihat sebagai path lama dan baru, sehingga pemindahan
+        # kode ke folder docs tidak menyamarkan perubahan sebagai dokumentasi saja.
         result = subprocess.run(
             ['git', 'diff', '--no-ext-diff', '--no-textconv', '--name-only',
              '--no-renames', '-z', base, head, '--'], cwd=repository,
@@ -121,6 +125,8 @@ def validate_needs(needs, event, ref):
     elif mode == 'audit':
         required.add('dependency-audit')
     for name in sorted(JOBS):
+        # Status skipped hanya sah bila rute memang tidak mewajibkan job itu;
+        # job wajib yang hilang atau dilewati tidak boleh menghasilkan gate hijau.
         expected = 'success' if name in required else 'skipped'
         actual = needs[name].get('result')
         if actual != expected:

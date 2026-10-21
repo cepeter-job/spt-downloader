@@ -88,6 +88,8 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                 if not run['records']:progress.details(0,0,0)
             finally:
                 context.close()
+        # Browser dan driver sudah ditutup sebelum ekspor workbook dimulai;
+        # COMPLETE/PARTIAL baru dikirim setelah publikasi selesai.
         check_cancel()
         coretax.save_output(run,folder)
         progress.exported()
@@ -181,6 +183,8 @@ def main(argv=None):
 
 def _authorized(args):
     started,cancelled=threading.Event(),threading.Event()
+    # Simpan stdout asli untuk JSON event; keluaran library dialihkan ke
+    # stderr agar tidak mencemari protokol yang dibaca controller.
     output=sys.stdout
     def emit(item):
         output.write(json.dumps(item,ensure_ascii=True)+'\n');output.flush()
@@ -209,7 +213,7 @@ def _authorized(args):
         diagnostics.record('operation.failed', status='BLOCKED', level='WARNING')
         Progress(args.job_id,emit).finished(False,None,status='BLOCKED',message='Worker tidak menerima izin mulai dari GUI.')
         return 3
-    # No filesystem changes for Stop/EOF before start authorization.
+    # Stop/EOF sebelum izin mulai tidak boleh membuat berkas, termasuk log diagnostik.
     diagnostic_session = (contextlib.nullcontext() if cancelled.is_set() else
         diagnostics.session(diagnostics.default_root(args.root), 'worker', job_id=args.job_id))
     with diagnostic_session, contextlib.redirect_stdout(sys.stderr):

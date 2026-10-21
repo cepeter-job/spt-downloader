@@ -125,6 +125,8 @@ def _error_summary(error):
 
 
 def _safe_fields(fields):
+    # Pilih field aman dari allowlist; jangan ubah objek/pesan bebas menjadi teks
+    # karena nilainya dapat memuat identitas pajak atau rahasia autentikasi.
     result = {}
     for name, allowed in ENUMS.items():
         value = fields.get(name)
@@ -209,6 +211,8 @@ class DiagnosticLog:
                 self._queue.put_nowait(row)
                 return True
         except queue.Full:
+            # Logging tidak boleh menahan pekerjaan/Stop; antrean penuh cukup
+            # dicatat sebagai jumlah event yang terbuang.
             with self._lock:
                 self.dropped += 1
             return False

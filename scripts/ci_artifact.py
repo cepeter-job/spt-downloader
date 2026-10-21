@@ -22,6 +22,8 @@ def checked_report(folder, python_version):
         raise ValueError('Artifact reports the wrong Python version or implementation.')
     expected = {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
                 'credentials_accessed': False, 'live_scrape': False, 'free_threaded': False}
+    # JSON angka 1/0 tidak boleh menyamar sebagai boolean bukti self-test,
+    # walaupun perbandingan nilai Python menganggapnya sama dengan True/False.
     if any(type(report.get(key)) is not type(value) or report[key] != value
            for key, value in expected.items()):
         raise ValueError('Artifact has an unsuccessful or unsafe frozen self-test report.')
@@ -51,6 +53,8 @@ def write_checksums(folder, python_version):
 
 def verify(folder, python_version):
     folder = Path(folder)
+    # Periksa isi arsip sebelum hash: manifest yang benar tidak mengesahkan
+    # berkas tambahan seperti profil browser atau log pribadi.
     if {path.name for path in folder.iterdir()} != set(PAYLOAD) | {MANIFEST}:
         raise ValueError('Downloaded artifact differs from the exact five-file allowlist.')
     checked_report(folder, python_version)

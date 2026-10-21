@@ -59,7 +59,8 @@ def plan_year_filters(catalog, year, basis, *, now=None):
         try:
             wanted = in_scope({'Masa Pajak': label}, year, 'period')
         except ValueError:
-            # Preserve ambiguity for the collector to report, rather than hiding a row.
+            # Label ambigu tetap menjadi kandidat agar kolektor melaporkannya;
+            # filter awal tidak boleh diam-diam menghilangkan SPT.
             wanted = True
         if wanted:
             extra.append(code)
@@ -69,8 +70,9 @@ def plan_year_filters(catalog, year, basis, *, now=None):
         extra.sort()
         filters.append({**common, 'MatchMode': 'equals' if len(extra) == 1 else 'any' + '-equals' * len(extra),
                         'Value': extra[0] if len(extra) == 1 else extra})
-    # Retain the raw snapshot hash for custody. Renewal/order is not a change
-    # to period semantics; catalog freshness is independently validated above.
+    # Hash mentah mengikat snapshot; hash binding mengikat arti kode/label.
+    # Perubahan waktu kedaluwarsa atau urutan baris tidak mengubah binding;
+    # kesegaran katalog tetap diperiksa terpisah di atas.
     binding = {key: catalog[key] for key in ('ReferenceDataType', 'language', 'Checksum')}
     binding['Details'] = sorted(
         ({key: row[key] for key in ('Code', 'CodeDescription')} for row in catalog['Details']),
@@ -264,8 +266,8 @@ class InventoryFilterRoute:
                 raise ValueError('Unexpected request owner or submitted route')
             original = request.post_data_json
             if original == {'TaxpayerAggregateIdentifier': self.taxpayer_id}:
-                # The source also reads an identity-only auxiliary list here.
-                # Preserve it unchanged, never as filtered-grid evidence.
+                # Request tambahan ini hanya membaca identitas, bukan halaman grid.
+                # Teruskan tanpa perubahan dan tanpa menjadikannya bukti filter.
                 route.fallback()
                 return
             effective = rewrite_inventory_request(original, self.condition, taxpayer_id=self.taxpayer_id)

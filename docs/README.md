@@ -8,7 +8,8 @@ privasi dan lingkungan eksekusi di AGENTS tetap berlaku; dokumentasi tidak mempe
 
 | Kebutuhan | Panduan utama | Isi yang dipelihara di sana |
 | --- | --- | --- |
-| Setup, tes dan build | [Pengembangan](pengembangan.md) | Perintah Windows/Linux, lapisan tes, build lokal dan review. |
+| Setup, tes dan build | [Pengembangan](pengembangan.md) | Alur PR/runner, referensi perintah Windows/Linux, lapisan tes, build dan review. |
+| Menemukan fungsi yang perlu diubah | [Peta kode](peta-kode.md) | Alur CLI/desktop, pemilik data, fungsi penting dan tes terkait. |
 | Versi dan dependensi | [Kebijakan Python](python-314.md) | Pin produksi, lock, migrasi worker dan batas rollback; bukan salinan setup. |
 | Kontrak backend | [Arsitektur](arsitektur.md) | Scope, akses baca, proses, sumber nilai, Excel/PDF dan publikasi. |
 | Desain antarmuka | [UI/UX desain B](ui-ux/README.md) | Navigasi ke baseline, bahasa, interaksi dan checklist; bukan kontrak backend kedua. |
@@ -17,8 +18,8 @@ privasi dan lingkungan eksekusi di AGENTS tetap berlaku; dokumentasi tidak mempe
 | Mengambil log dan melaporkan bug | [Diagnostik](diagnostik.md) | Cara mengambil bukti, schema, retensi dan batas privasi. |
 | Memeriksa portal/Excel nyata | [Penerimaan manual](penerimaan-manual.md) | Checklist operator berizin; bukan hasil acceptance yang sudah dilakukan. |
 
-Urutan kontributor baru: pengembangan → arsitektur area yang diubah → tes yang
-relevan → CI. Untuk perubahan UI, mulai dari baseline yang ditautkan pada panduan
+Urutan kontributor baru: pengembangan → peta kode → arsitektur area yang diubah →
+tes yang relevan → CI. Untuk perubahan UI, mulai dari baseline yang ditautkan pada panduan
 UI/UX; jangan membangun ulang fitur yang sudah ada. Jangan menggunakan akun nyata
 untuk membuat tes otomatis lulus.
 
@@ -52,6 +53,7 @@ kontrak. URL/path lama dipertahankan; tidak ada penghapusan bukti.
 | Topik | Catatan yang dipertahankan |
 | --- | --- |
 | Audit dan optimasi CI | [Audit 12 Oktober](audit-2026-10-12.md); [evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md). |
+| Audit panduan kontributor | [Audit dokumentasi dan komentar 21 Oktober](audits/2026-10-21-developer-docs-comments.md). |
 | Inventaris dan period-year | [Filter sumber](inventory-year-filter.md); [acceptance filter](inventory-year-filter-acceptance.md); [grid vs auxiliary](inventory-list-binding.md). |
 | Metadata periode | [Diagnostik cache](period-cache-diagnostics.md); [readiness terbatas](period-cache-readiness.md); [alias kode/label terverifikasi](period-metadata-conflict.md). |
 | PPN | [Tahap DOM](ppn-dom-release.md); [integrasi native PR30](ppn-native-integration.md). |

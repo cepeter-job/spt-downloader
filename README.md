@@ -2,13 +2,13 @@
 
 Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan mengekspornya ke Excel. Tersedia antarmuka Windows dan CLI. Pengambilan data hanya memakai navigasi baca, mempertahankan identitas serta nilai sumber, dan mencatat kelengkapan hasil secara eksplisit.
 
-**Untuk kontributor:** mulai dari [dokumentasi development](docs/README.md). Panduan tersebut mencakup setup `uv`, arsitektur, pengujian, CI, persiapan Python 3.14, dan penerimaan manual.
+**Untuk kontributor:** mulai dari [panduan pengembangan](docs/README.md) dan [peta fungsi dalam kode](docs/peta-kode.md). Panduan tersebut mencakup setup `uv`, arsitektur, pengujian di GitHub runner, CI, kebijakan Python produksi, dan penerimaan manual.
 
 ## Memakai aplikasi Windows
 
 **Status fitur:** kode ini mencakup pemilihan SPT, workbook terpisah untuk setiap masa dan Model SPT literal, PDF keuangan/auditan Badan langsung di folder Excel, template form PPh 21/26/PPN/Unifikasi, sorting jenis pajak, dan logging diagnostik lokal. **JSON-hybrid (pilot)** menjadi bawaan Pengaturan desktop baru; pilihan **DOM** yang sudah disimpan tetap dihormati. CLI/library tetap memakai DOM bila mode tidak diberikan; gunakan `--detail-source json-first` untuk memilih JSON-hybrid secara eksplisit. JSON primer hanya digunakan untuk format teramati yang dapat diverifikasi; format yang belum didukung memakai fallback DOM yang diaudit, bukan mengabaikan kegagalan identitas atau otorisasi. Cocokkan hasil dan artifact dengan commit/run yang akan dipakai; [catatan integrasi lama](docs/README.md#catatan-teknis-dan-bukti-historis) bukan penunjuk build terbaru. Penerimaan manual/live tetap terpisah dari tes sintetis dan build.
 
-Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.14.8` dari run yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. GUI dan worker memakai CPython 3.14.8 x64/GIL yang sama. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
+Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.14.8-attempt<nomor>` dari run `main` yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit, run/attempt, artifact ID, dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. GUI dan worker memakai CPython 3.14.8 x64/GIL yang sama. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
 Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan administrator atau Python pada PATH. Lokasi portable yang dapat dipakai adalah `%LOCALAPPDATA%\Programs\SPTDownloader`. Executable belum memiliki tanda tangan Authenticode dari penerbit; checksum dan provenance build memiliki fungsi berbeda dari tanda tangan penerbit.
 

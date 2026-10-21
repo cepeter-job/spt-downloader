@@ -157,9 +157,9 @@ def _validate_financial_attachments(record, scope, seen_paths):
                 or not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest)
                 or attachment['label'].strip() not in FINANCIAL_LABELS):
             raise ValueError('Financial PDF completion, byte count, hash or label is invalid.')
-        # This checks naming/scope, not authenticity: the publisher must still
-        # lock the declared file and verify its actual bytes and digest.
-        # Keep old nested declarations readable; never rewrite source proof.
+        # Pemeriksaan ini mengikat nama ke scope; publikasi tetap harus mengunci file
+        # dan memeriksa byte serta hash yang sebenarnya. Deklarasi bersubfolder
+        # lama tetap dapat dibaca tanpa menulis ulang bukti sumber.
         if (not isinstance(path, str)
                 or not (re.fullmatch(r'LK_' + record_key + r'_[0-9a-f]{64}\.pdf', path)
                         or re.fullmatch(r'attachments/' + record_key + r'/[0-9a-f]{64}\.pdf', path))
@@ -384,6 +384,8 @@ def workbook_groups(run, *, legacy=False):
                 raise ValueError('Unsupported source period/model filename length')
             if tax in periodic:
                 filename = f'SPT Masa {periodic[tax]}/{filename}'
+        # Sanitasi nama Windows dapat menyamakan teks periode/model yang berbeda;
+        # identitas literal tetap pembeda agar satu workbook tidak menimpa lainnya.
         folded = filename.casefold()
         if folded in identities and identities[folded] != identity:
             raise ValueError('Tax type, period or model filename collision; no workbook was overwritten')
@@ -557,6 +559,8 @@ def read_workbook_proof(workbook):
         validate_export_run(proof)
         if workbook_proof(proof, presentation=False) != proof:
             raise ValueError('Workbook proof contains unsupported source metadata')
+        # Bukti lama diperiksa terhadap sheet fisiknya; pengecualian tampilan
+        # ekspor baru tidak boleh menghapus form dari pembuktian workbook lama.
         expected = [title for titles in workbook_sheet_titles(proof['records'], presentation=False) for title in titles]
         historical = [title for titles in workbook_sheet_titles(proof['records'], legacy=True, presentation=False)
                       for title in titles]

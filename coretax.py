@@ -163,7 +163,8 @@ def write_folder_resume(run, existing, destination):
         selected = filename in selected_files
         title_plan = workbook_sheet_titles(records, presentation=selected)
         if not selected:
-            # Retained records describe an existing physical proof, not a new layout.
+            # Rekaman lama mendeskripsikan sheet fisik yang sudah ada; aturan tampilan
+            # baru tidak boleh mengubah target tautan pada workbook yang dipertahankan.
             retained = load_workbook(output_path(existing, filename), read_only=True)
             try:
                 actual = set(retained.sheetnames)
@@ -348,9 +349,8 @@ def save_output(run, folder):
     try:
         current = {**run, 'output_attachments': attachment_declarations(run)}
         with pdf_custody(current, folder) as (attachments, streams):
-            # Downloads already placed these private source PDFs. Keep their
-            # readers held while publishing the new workbooks/checkpoint; do
-            # not replace the source PDF names just to regenerate Excel.
+            # Unduhan sudah menempatkan PDF sumber privat. Tahan stream terverifikasi
+            # selama publikasi workbook/checkpoint; ekspor ulang Excel tidak mengganti PDF.
             copy_held_pdfs(attachments, streams, staging)
             current['template_mapping'] = []
             files = export_split_workbooks(current, staging, mapping_reports=current['template_mapping'])
@@ -358,7 +358,8 @@ def save_output(run, folder):
             verify_outputs(saved_run, staging)
             (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
             _check_output_scope(run, folder, staging)
-            # Retain recovery once publication starts, even on interruption.
+            # Simpan staging/backup sejak publikasi dimulai agar interupsi atau
+            # rollback yang terhalang tetap menyisakan bahan pemulihan.
             retain_recovery = True
             _publish_output(staging, folder, [*files, 'run.json'])
             retain_recovery = False

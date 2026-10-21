@@ -195,8 +195,8 @@ def _financial_url(page_url, control):
         raise ValueError('Financial control is not an inspected ordinary href')
     if control.get('document_url') != page_url:
         raise ValueError('Financial control belongs to a changed detail document')
-    # Native anchor resolution includes document <base> and URL normalization;
-    # raw-href checks above remain required even when the resolved URL is safe.
+    # Resolusi anchor browser memperhitungkan <base> dan normalisasi URL;
+    # href mentah tetap diperiksa agar normalisasi tidak menyamarkan input terlarang.
     url = control.get('resolved_href')
     if (not isinstance(url, str) or not trusted_origin(url) or urlparse(url).fragment
             or not urlparse(url).path.lower().endswith('.pdf')):
@@ -238,8 +238,8 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
                 _verify_page(page, record)
                 _cancel(check_cancel)
                 record_key = hashlib.sha256(record['record_id'].encode('utf-8')).hexdigest()[:32]
-                # Bind the flat filename to the return as well as the observed
-                # URL: identical hrefs on distinct SPTs must never share a file.
+                # Nama file mengikat SPT dan URL teramati; href yang sama pada
+                # dua SPT berbeda tidak boleh menunjuk satu file milik bersama.
                 url_key = hashlib.sha256(url.encode('utf-8')).hexdigest()
                 name = f'LK_{record_key}_{url_key}.pdf'
                 target = folder / name
@@ -267,8 +267,8 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
                             stream.flush()
                             _cancel(check_cancel)
                     except BaseException:
-                        # Exclusive creation grants cleanup of our inode only; a
-                        # name substituted by another writer is never our consent.
+                        # Pembuatan eksklusif hanya mengizinkan pembersihan inode kita;
+                        # file pengganti dari penulis lain tidak boleh ikut dihapus.
                         if created is not None:
                             try:
                                 current = target.lstat()

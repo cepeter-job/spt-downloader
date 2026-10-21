@@ -240,6 +240,8 @@ class App:
         if self._disposed:
             return
         try:
+            # Pengurasan antrean dan callback UI tetap di thread Tk; thread latar
+            # menyerahkan event lewat antrean tanpa menyentuh widget.
             self.controller.poll()
         except Exception as error:
             diagnostics.record('gui.poll_failed', error=error, level='ERROR')

@@ -306,6 +306,8 @@ def adapt_inventory_page(body: bytes, context: dict) -> dict:
                 },
             })
     except _UnsupportedMetadata as exc:
+        # Skema tampilan yang belum didukung menggugurkan seluruh halaman JSON;
+        # konflik identitas, filter, dan jumlah di atas tetap menjadi galat.
         return {'eligible': False, 'reason': str(exc), 'total': total, 'rows': []}
     return {'eligible': True, 'reason': 'verified_submitted_metadata', 'total': total, 'rows': rendered}
 
@@ -839,6 +841,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         del item
     if primary_hash is None:
         reasons.append('missing_corporate_primary_response')
+    # Jumlah baris saja belum membuktikan cakupan; offset harus menyambung
+    # dari nol sampai total tanpa celah atau tumpang tindih.
     for state in grids:
         pages = sorted(state['seen'].values(), key=lambda page: page['offset'])
         total = state.get('total')
