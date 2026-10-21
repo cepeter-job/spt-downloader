@@ -200,7 +200,9 @@ def check(browser, tmp_path, monkeypatch, case='success', app='home', *, login_r
         return Login(ACCOUNT, PASSWORD)
     monkeypatch.setattr(auth, 'read_login', saved)
     if timeout is None:
-        timeout = ASYNC_LOGIN_TIMEOUT if case in ('success', 'two_apps', 'replay') else 3
+        # The connection-close fault is exercised only after a valid token POST
+        # reaches the server; give that transport the existing asynchronous budget.
+        timeout = ASYNC_LOGIN_TIMEOUT if case in ('success', 'two_apps', 'replay', 'network_failure') else 3
     with Engine(browser, case, app, login_response_delay=login_response_delay) as engine:
         monkeypatch.setattr(auth, 'CORETAX_ORIGIN', engine.coretax)
         monkeypatch.setattr(auth, 'SEARCH_URL', engine.search)
@@ -287,13 +289,9 @@ def test_token_exchange_cannot_follow_redirects_or_retry_transport(browser, tmp_
     assert_transport_failure(engine, result, rows)
 
 
-@pytest.mark.parametrize('timeout', [3, ASYNC_LOGIN_TIMEOUT])
-def test_slow_login_response_preserves_exchange_deadline_boundary(browser, tmp_path, monkeypatch, timeout):
+def test_slow_login_response_preserves_exchange_deadline_boundary(browser, tmp_path, monkeypatch):
     engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'network_failure',
-                                      login_response_delay=3.25, timeout=timeout)
-    if timeout == ASYNC_LOGIN_TIMEOUT:
-        assert_transport_failure(engine, result, rows)
-        return
+                                      login_response_delay=3.25, timeout=3)
     observed = transport_observation(engine, rows)
     assert result[0] == 'LOGIN_UNVERIFIED', observed
     assert observed['credential_posts'] == 1, observed
