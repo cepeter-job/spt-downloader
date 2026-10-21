@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   evidence:
-    name: Paired exact-commit timings, native scaling and separate profiling
+    name: Explain remaining opening latency on unchanged exact commits
     runs-on: windows-2022
-    timeout-minutes: 20
+    timeout-minutes: 8
     env:
       PYTHONUTF8: '1'
     steps:
@@ -52,16 +52,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: candidate/locks/test.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Measure unchanged methodology and capture native dialogs
+      - name: Trace full native mapping and timer dispatch without another product change
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_latency_comparison.py --baseline baseline --candidate candidate --historical historical/scripts/_p2_dialog_evidence.py --out "$env:RUNNER_TEMP/p2-performance-final"
+          .venv/Scripts/python.exe harness/scripts/_p2_latency_comparison.py --profile --source baseline --revision df8e7589fe6550d639142971483c65beef4b37d9 --historical historical/scripts/_p2_dialog_evidence.py --out "$env:RUNNER_TEMP/p2-opening-trace/baseline.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .venv/Scripts/python.exe harness/scripts/_p2_latency_comparison.py --profile --source candidate --revision d59a019c9c7cfc24af617ace824c69d7ede58d53 --historical historical/scripts/_p2_dialog_evidence.py --out "$env:RUNNER_TEMP/p2-opening-trace/candidate.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve synthetic timing, profile and original PNG evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: p2-performance-final-${{ github.sha }}
+          name: p2-opening-trace-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7
-          path: ${{ runner.temp }}/p2-performance-final/
+          path: ${{ runner.temp }}/p2-opening-trace/

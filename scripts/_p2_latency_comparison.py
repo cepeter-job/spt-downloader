@@ -32,7 +32,7 @@ def profile(args):
     rows = []
     for kind, count in [('selection', 1), ('selection', 1000), ('overwrite', 101)]:
         with probe.session(probe.payload_for(kind, count)) as (root, app, controller):
-            observations, timings, calls = {}, [], {}
+            observations, timings, calls, layout_events = {}, [], {}, []
             original = app._new_interaction
             started = time.perf_counter_ns()
             def instrumented_new(*values, **keywords):
@@ -47,10 +47,29 @@ def profile(args):
             app._new_interaction = instrumented_new
             def trace(frame, event, arg):
                 code = frame.f_code
-                if (Path(code.co_filename).name != 'app.py'
-                        or code.co_name not in ('reflow', 'request_reflow', 'update_scrollregion')
+                if (code.co_name not in ('reflow', 'request_reflow', 'update_scrollregion')
+                        or not code.co_filename.endswith('app.py')
                         or not any(x in code.co_qualname for x in ('selection_dialog', 'overwrite_dialog'))):
                     return
+                if event in ('call', 'return') and code.co_name in ('reflow', 'request_reflow'):
+                    values = frame.f_locals
+                    interaction = app._interaction
+                    canvas = values.get('canvas')
+                    dialog = interaction.get('dialog') if interaction else None
+                    if canvas is not None and dialog is not None:
+                        incoming = values.get('event')
+                        token = interaction.get('layout_after')
+                        token_kind = str(root.tk.call('after', 'info', token)[-1]) if token else None
+                        layout_events.append({'function':code.co_name,'phase':event,
+                            'ms':(time.perf_counter_ns()-started)/1e6,
+                            'canvas':[canvas.winfo_width(),canvas.winfo_height()],
+                            'dialog':[dialog.winfo_width(),dialog.winfo_height()],
+                            'mapped':bool(canvas.winfo_ismapped()),
+                            'layout_size':values.get('layout_size'),
+                            'token':token,'token_kind':token_kind,
+                            'incoming':None if incoming is None else {
+                                'widget':'dialog' if incoming.widget is dialog else 'canvas' if incoming.widget is canvas else 'other',
+                                'width':str(getattr(incoming,'width','')), 'height':str(getattr(incoming,'height',''))}})
                 if event == 'call':
                     calls[id(frame)] = time.perf_counter_ns()
                 elif event == 'return':
@@ -71,7 +90,7 @@ def profile(args):
                 'map_and_expose_are_observed_events_not_photon_latency': True,
                 'handler_ms': handler_ms, 'settled_ms': max(handler_ms, settled_ms),
                 'callback_counts': dict(collections.Counter(t['function'] for t in timings)),
-                'callbacks': timings, **observations,
+                'callbacks': timings, 'layout_events': layout_events, **observations,
                 'environment': probe.environment(root, app._interaction['dialog'], args.revision)})
     out = Path(args.out);out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(rows, indent=2), encoding='utf-8')
