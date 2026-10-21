@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import sys
 
+from support_isolated_browser import browser, isolated_context
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ORIGIN = 'https://coretax.intranet.pajak.go.id'
 URL = ORIGIN + '/returnsheets/id-ID/submitted-returnsheets/synthetic-taxpayer'
@@ -21,12 +23,10 @@ def feature():
 
 
 @contextmanager
-def synthetic_browser():
-    from playwright.sync_api import sync_playwright
+def synthetic_browser(browser):
     metrics = {'requests': [], 'unknown': 0}
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
+    with isolated_context(browser) as owned_context:
+        page = owned_context.new_page()
         page.set_default_timeout(5000)
 
         def handle(route):
@@ -41,10 +41,7 @@ def synthetic_browser():
                 route.abort()
         page.route('**/*', handle)
         page.goto(URL)
-        try:
-            yield page, metrics
-        finally:
-            browser.close()
+        yield page, metrics
 
 
 def send(page, **changes):
@@ -58,10 +55,10 @@ def send(page, **changes):
     }''', {'url': ENDPOINT, 'payload': payload})
 
 
-def test_owned_filter_route_exposes_effective_request_and_unroutes_on_exit():
+def test_owned_filter_route_exposes_effective_request_and_unroutes_on_exit(browser):
     module = feature()
     from coretax_browser import ListObserver
-    with synthetic_browser() as (page, metrics):
+    with synthetic_browser(browser) as (page, metrics):
         observer = ListObserver(page)
         try:
             with module.InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
@@ -81,35 +78,35 @@ def test_owned_filter_route_exposes_effective_request_and_unroutes_on_exit():
             observer.close()
 
 
-def test_filter_route_blocks_foreign_taxpayer_before_transport():
+def test_filter_route_blocks_foreign_taxpayer_before_transport(browser):
     module = feature()
-    with synthetic_browser() as (page, metrics):
+    with synthetic_browser(browser) as (page, metrics):
         with module.InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
             assert send(page, TaxpayerAggregateIdentifier='different-taxpayer') == 'blocked'
             assert guard.error is not None
             assert metrics['requests'] == []
 
 
-def test_filter_route_never_overwrites_existing_user_filters():
+def test_filter_route_never_overwrites_existing_user_filters(browser):
     module = feature()
-    with synthetic_browser() as (page, metrics):
+    with synthetic_browser(browser) as (page, metrics):
         with module.InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
             assert send(page, Filters=[{**FILTER, 'Value': '2023'}]) == 'blocked'
             assert guard.error is not None
             assert metrics['requests'] == []
 
 
-def test_reference_read_does_not_create_database_or_issue_network_requests():
+def test_reference_read_does_not_create_database_or_issue_network_requests(browser):
     module = feature()
-    with synthetic_browser() as (page, metrics):
+    with synthetic_browser(browser) as (page, metrics):
         assert module.read_period_catalog(page) is None
         assert page.evaluate('async()=> (await indexedDB.databases()).length') == 0
         assert metrics == {'requests': [], 'unknown': 0}
 
 
-def test_reference_read_returns_only_period_metadata_with_date_provenance():
+def test_reference_read_returns_only_period_metadata_with_date_provenance(browser):
     module = feature()
-    with synthetic_browser() as (page, metrics):
+    with synthetic_browser(browser) as (page, metrics):
         expiry = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
         page.evaluate('''async expiry => await new Promise((resolve,reject)=>{
             const request=indexedDB.open('e-tax-database',2);

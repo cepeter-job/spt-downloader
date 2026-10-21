@@ -5,7 +5,7 @@ from support_templates import section
 import pytest
 
 
-from playwright.sync_api import sync_playwright
+from support_isolated_browser import browser, isolated_context
 
 
 import coretax_browser as driver
@@ -26,19 +26,15 @@ def _grid_cells(values, inputs=False):
         for value in values) + '</div></div>'
 
 
-def test_ppn_observed_four_column_layout_binds_headers_not_input_order(tmp_path):
+def test_ppn_observed_four_column_layout_binds_headers_not_input_order(browser, tmp_path):
     label='Penyerahan yang PPN atau PPN dan PPnBM-nya harus dipungut sendiri lainnya (dengan Faktur Pajak Kode 01, 09 dan 10)'
     html='<div class="p-tabview-panel"><div class="p-accordion-header"><span class="p-accordion-header-text">I. PENYERAHAN BARANG DAN JASA</span></div><div class="p-accordion-content">'
     html+='<div class="row"><div class="col-md-7"></div>'+_grid_cells(PPN_COLUMNS)+'</div>'
     html+='<div class="row"><div class="col-md-7"><label>'+label+'</label></div>'+_grid_cells(['11',None,'17','19'],True)+'</div></div></div>'
-    with sync_playwright() as p:
-        browser=p.chromium.launch(channel='msedge',headless=True)
-        try:
-            page=browser.new_page();page.set_content(html)
-            fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
-            assert [f.get('column_label') for f in fields] == [PPN_COLUMNS[0],PPN_COLUMNS[2],PPN_COLUMNS[3]]
-        finally:
-            browser.close()
+    with isolated_context(browser) as context:
+        page=context.new_page();page.set_content(html)
+        fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
+        assert [f.get('column_label') for f in fields] == [PPN_COLUMNS[0],PPN_COLUMNS[2],PPN_COLUMNS[3]]
     wb=export('PPN',source_run('PPN',[section('INDUK',fields=fields)]),tmp_path)
     try:
         assert [wb['INDUK'].cell(15,c).value for c in range(5,9)] == [11,None,17,19]
@@ -46,18 +42,14 @@ def test_ppn_observed_four_column_layout_binds_headers_not_input_order(tmp_path)
         wb.close()
 
 
-def test_ppn_grid_never_borrows_sibling_accordion_headers():
+def test_ppn_grid_never_borrows_sibling_accordion_headers(browser):
     html='<div class="p-tabview-panel"><div class="p-accordion-content">'
     html+='<div class="row">'+_grid_cells(PPN_COLUMNS)+'</div></div>'
     html+='<div class="p-accordion-content"><div class="row"><div class="col-md-7"><label>SYNTHETIC LABEL</label></div>'+_grid_cells(['17',None,None,None],True)+'</div></div></div>'
-    with sync_playwright() as p:
-        browser=p.chromium.launch(channel='msedge',headless=True)
-        try:
-            page=browser.new_page();page.set_content(html)
-            fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
-            assert len(fields)==1 and 'column_label' not in fields[0]
-        finally:
-            browser.close()
+    with isolated_context(browser) as context:
+        page=context.new_page();page.set_content(html)
+        fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
+        assert len(fields)==1 and 'column_label' not in fields[0]
 
 
 @pytest.mark.parametrize('group,label,column,target', [
@@ -89,16 +81,12 @@ def test_ppn_semantic_aliases_do_not_escape_their_verified_sections(tmp_path):
         wb.close()
 
 
-def test_ppn_grid_does_not_assign_amount_units_to_plain_text_metadata():
+def test_ppn_grid_does_not_assign_amount_units_to_plain_text_metadata(browser):
     html='<div class="p-tabview-panel"><div class="p-accordion-content">'
     html+='<div class="row">'+_grid_cells(PPN_COLUMNS)+'</div>'
     html+='<div class="row"><div class="col-md-7"><label>Nama Bank</label></div>'
     html+='<div class="col-md-5"><div class="row"><div class="col-md-3"></div><div class="col-md-3"></div><div class="col-md-3"><input value="SYNTHETIC BANK" disabled></div><div class="col-md-3"></div></div></div></div></div></div>'
-    with sync_playwright() as p:
-        browser=p.chromium.launch(channel='msedge',headless=True)
-        try:
-            page=browser.new_page();page.set_content(html)
-            fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
-            assert len(fields)==1 and 'column_label' not in fields[0]
-        finally:
-            browser.close()
+    with isolated_context(browser) as context:
+        page=context.new_page();page.set_content(html)
+        fields=page.locator('.p-tabview-panel').evaluate(driver.FIELDS_JS)
+        assert len(fields)==1 and 'column_label' not in fields[0]

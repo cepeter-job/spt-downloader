@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from support_isolated_browser import browser
 from test_inventory_year_filter import catalog, plan
 from test_json_inventory import synthetic_listing_browser
 
@@ -39,7 +40,7 @@ def test_catalog_binding_detects_semantic_change(change):
 
 
 @pytest.mark.parametrize('change', ['renewal', 'semantic', 'expired'])
-def test_collector_rechecks_freshness_and_semantics_not_cache_timestamp(tmp_path, monkeypatch, change):
+def test_collector_rechecks_freshness_and_semantics_not_cache_timestamp(browser, tmp_path, monkeypatch, change):
     import coretax_browser as driver
     original = driver.read_period_catalog
     reads = []
@@ -58,7 +59,7 @@ def test_collector_rechecks_freshness_and_semantics_not_cache_timestamp(tmp_path
         return value
 
     monkeypatch.setattr(driver, 'read_period_catalog', changed_catalog)
-    with synthetic_listing_browser(monkeypatch, year_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=10)
         assert len(reads) >= 2
         assert result['inventory_complete'] is (change == 'renewal'), result['errors']
@@ -68,7 +69,7 @@ def test_collector_rechecks_freshness_and_semantics_not_cache_timestamp(tmp_path
 
 
 @pytest.mark.parametrize('kind', ['aria', 'ancestor'])
-def test_inventory_does_not_click_semantically_disabled_previous(tmp_path, monkeypatch, kind):
+def test_inventory_does_not_click_semantically_disabled_previous(browser, tmp_path, monkeypatch, kind):
     import coretax_browser as driver
     script = r'''kind => {
       window.addEventListener('click', e=>{
@@ -84,7 +85,7 @@ def test_inventory_does_not_click_semantically_disabled_previous(tmp_path, monke
       }).observe(document,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled']});
     }'''
     import json
-    with synthetic_listing_browser(monkeypatch, empty=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, empty=True) as (page, metrics):
         page.add_init_script('(' + script + ')(' + json.dumps(kind) + ')')
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=3)
         assert page.evaluate("Number(localStorage.getItem('previousClicks')||0)") == 0

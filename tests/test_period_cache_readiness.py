@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from support_isolated_browser import browser
 import coretax_browser as driver
 from spt_desktop import diagnostics as d
 from test_diagnostics import records
@@ -15,7 +16,7 @@ def stages(root):
 
 
 @pytest.mark.parametrize('deferred', [False, True])
-def test_ready_cache_filters_before_first_submitted_request_without_extra_navigation(tmp_path, monkeypatch, deferred):
+def test_ready_cache_filters_before_first_submitted_request_without_extra_navigation(browser, tmp_path, monkeypatch, deferred):
     # Removing the late read must make the deferred fixture scan unfiltered.
     original = driver.read_period_catalog
     write_attempts = []
@@ -50,7 +51,7 @@ def test_ready_cache_filters_before_first_submitted_request_without_extra_naviga
             write_attempts.append(attempts)
 
     monkeypatch.setattr(driver, 'read_period_catalog', readonly_catalog)
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, deferred_catalog=deferred) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, deferred_catalog=deferred) as (page, metrics):
         with d.session(tmp_path/'logs', 'worker') as log:
             result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path/'job', max_pages=20)
             assert log.flush()
@@ -71,7 +72,7 @@ def test_ready_cache_filters_before_first_submitted_request_without_extra_naviga
 
 
 @pytest.mark.parametrize('mode', ['absent', 'expired', 'expired_deferred', 'retry_error'])
-def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(tmp_path, monkeypatch, mode):
+def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(browser, tmp_path, monkeypatch, mode):
     original = driver.read_period_catalog
     calls = []
 
@@ -82,7 +83,7 @@ def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(tmp_path,
         return original(page)
 
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(monkeypatch, year_catalog=mode in ('expired', 'expired_deferred'),
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=mode in ('expired', 'expired_deferred'),
                                    expired_catalog=True, deferred_catalog=mode == 'expired_deferred') as (page, metrics):
         with d.session(tmp_path/'logs', 'worker') as log:
             result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path/'job', max_pages=20)
@@ -97,7 +98,7 @@ def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(tmp_path,
 
 
 @pytest.mark.parametrize('change', ['semantic', 'expired'])
-def test_recovered_cache_still_requires_partition_recheck(tmp_path, monkeypatch, change):
+def test_recovered_cache_still_requires_partition_recheck(browser, tmp_path, monkeypatch, change):
     original = driver.read_period_catalog
     calls = []
 
@@ -113,7 +114,7 @@ def test_recovered_cache_still_requires_partition_recheck(tmp_path, monkeypatch,
         return value
 
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=20)
         assert metrics['submitted_requests'] and all(p['Filters'] for p in metrics['submitted_requests'])
         assert not result['inventory_complete']
@@ -122,7 +123,7 @@ def test_recovered_cache_still_requires_partition_recheck(tmp_path, monkeypatch,
 
 
 @pytest.mark.parametrize('cancel', ['raise', 'callback'])
-def test_stop_during_readiness_prevents_submitted_navigation(tmp_path, monkeypatch, cancel):
+def test_stop_during_readiness_prevents_submitted_navigation(browser, tmp_path, monkeypatch, cancel):
     original = driver.read_period_catalog
     calls = []
     stopped = False
@@ -141,7 +142,7 @@ def test_stop_during_readiness_prevents_submitted_navigation(tmp_path, monkeypat
             raise driver.CaptureCancelled()
 
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
         with pytest.raises(driver.CaptureCancelled):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path,
                                      max_pages=20, check_cancel=check_cancel)
