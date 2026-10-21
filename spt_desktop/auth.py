@@ -1,14 +1,17 @@
 """Use only an inspected origin-bound sign-in form; challenges stay manual."""
 from spt_desktop import diagnostics
+import re
 import time
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,read_login
 
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
 CORETAX_ORIGIN = 'https://coretax.intranet.pajak.go.id'
 HOME_PATH = '/home/id-ID/'
+CODE_TOKEN_PATH = '/identityprovider/connect/token'
+CODE_CALLBACK_PATHS = frozenset({'/home/id-ID/auth-callback', '/returnsheets/id-ID/auth-callback'})
 
 
 class AuthBlocked(RuntimeError):
@@ -150,6 +153,46 @@ def _at_home(page):
     return _origin(page.url)==CORETAX_ORIGIN and urlsplit(page.url).path==HOME_PATH
 
 
+def _unique_auth_parameters(value):
+    if not isinstance(value, str) or len(value) > 16384 or re.search(r'%(?![0-9a-fA-F]{2})', value):
+        raise ValueError('Unsupported authentication parameters')
+    pairs = parse_qsl(value, keep_blank_values=True, strict_parsing=True, max_num_fields=16)
+    fields = dict(pairs)
+    if len(fields) != len(pairs) or '' in fields:
+        raise ValueError('Ambiguous authentication parameters')
+    return fields
+
+
+def _code_exchange_callback(request, page):
+    """Recognize the inspected Coretax OIDC exchange, never arbitrary API writes."""
+    try:
+        if (request.url != CORETAX_ORIGIN + CODE_TOKEN_PATH or request.method != 'POST'
+                or request.resource_type not in ('fetch', 'xhr') or page is None
+                or request.frame != page.main_frame or request.frame.parent_frame is not None):
+            return None
+        callback_url = request.frame.url
+        parts = urlsplit(callback_url)
+        if _origin(callback_url) != CORETAX_ORIGIN or parts.path not in CODE_CALLBACK_PATHS or parts.fragment:
+            return None
+        query = _unique_auth_parameters(parts.query)
+        if not query.get('code', '').strip() or not query.get('state', '').strip() or 'error' in query:
+            return None
+        mime = request.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+        if mime != 'application/x-www-form-urlencoded':
+            return None
+        fields = _unique_auth_parameters(request.post_data)
+        callback = CORETAX_ORIGIN + parts.path
+        if (set(fields) != {'grant_type', 'client_id', 'redirect_uri', 'code', 'code_verifier'}
+                or fields['grant_type'] != 'authorization_code' or fields['client_id'] != 'cats-angular-client'
+                or fields['redirect_uri'] != callback or fields['code'] != query['code']
+                or not re.fullmatch(r'[A-Za-z0-9._~-]{43,128}', fields['code_verifier'])):
+            return None
+        return callback
+    except Exception:
+        # Query/body and browser exception text can contain codes and PKCE secrets.
+        return None
+
+
 def _open_search_from_home(page,check_cancel,timeout=30000,emit=None):
     if not _at_home(page):return False
     check_cancel()
@@ -280,6 +323,9 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
     blocked_categories = set()
     blocked_requests = 0
     coretax_blocked_after_submit = False
+    exchanged_callbacks = set()
+    exchange_failed = False
+    exchange_deadline = 0
     categories = {CORETAX_ORIGIN: 'coretax', ALLOWED_ORIGINS[0]: 'satu'}
     def diagnostic(event, reason, **fields):
         # Only category constants cross into logging, never URLs or form content.
@@ -302,11 +348,42 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
     with tempfile.TemporaryDirectory(prefix='login-check-',dir=cache) as fresh:
         context=None
         try:
-            context=playwright.chromium.launch_persistent_context(fresh,channel=browser,headless=headless)
+            context=playwright.chromium.launch_persistent_context(fresh,channel=browser,headless=headless,
+                                                                 service_workers='block')
             def guard(route):
-                nonlocal blocked_requests, coretax_blocked_after_submit
+                nonlocal blocked_requests, coretax_blocked_after_submit, exchange_failed
                 request=route.request
                 target=_origin(request.url)
+                callback = (_code_exchange_callback(request, page)
+                            if submitted and origin == LOGIN_ORIGIN and target in ALLOWED_ORIGINS else None)
+                if callback and callback not in exchanged_callbacks and time.monotonic() < exchange_deadline:
+                    check_cancel()
+                    exchanged_callbacks.add(callback)  # Consume before transport, including failed exchanges.
+                    diagnostic('auth.state', 'code_exchange_allowed')
+                    response = None
+                    try:
+                        # Ordinary continuation would follow redirects outside the inspected endpoint.
+                        remaining = max(1, min(5000, int((exchange_deadline - time.monotonic()) * 1000)))
+                        response = route.fetch(max_redirects=0, max_retries=0, timeout=remaining)
+                        check_cancel()
+                        if (300 <= response.status < 400 or response.url != request.url
+                                or _code_exchange_callback(request, page) != callback):
+                            exchange_failed = True
+                            route.abort()
+                        else:
+                            exchange_failed = exchange_failed or not 200 <= response.status < 300
+                            route.fulfill(response=response)
+                    except Exception:
+                        # Transport exceptions can include request headers and authentication codes.
+                        exchange_failed = True
+                        try:route.abort()
+                        except Exception:pass
+                    finally:
+                        if response is not None:
+                            try:response.dispose()
+                            except Exception:pass
+                    if exchange_failed:diagnostic('auth.state', 'code_exchange_failed')
+                    return
                 if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
                     blocked_requests+=1
                     method=request.method if request.method in ('GET','HEAD','POST') else 'OTHER'
@@ -318,10 +395,12 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                     # the same category can occur before and after submission.
                     if submitted and target == CORETAX_ORIGIN and reason == 'cross_origin_write':
                         coretax_blocked_after_submit = True
-                    key=(category,method,resource,reason)
+                    request_kind='code_exchange' if request.url == CORETAX_ORIGIN + CODE_TOKEN_PATH else 'other'
+                    key=(category,method,resource,reason,request_kind)
                     if key not in blocked_categories:
                         blocked_categories.add(key)
-                        diagnostic('auth.request_blocked',reason,target_origin=category,method=method,resource_type=resource)
+                        diagnostic('auth.request_blocked',reason,target_origin=category,method=method,resource_type=resource,
+                            request_kind=request_kind)
                     route.abort()
                 else:route.fallback()
             context.route('**/*',guard)
@@ -363,6 +442,7 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
             if not current_form():return finish(*changed_form, 'form_changed')
             check_cancel()
             submitted = True
+            exchange_deadline = time.monotonic() + timeout
             button.click(timeout=5000)
             del login
             deadline=time.monotonic()+timeout
@@ -372,8 +452,10 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                 if authenticated(page):
                     return finish('LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.','verified')
                 if not opened_search and _at_home(page):
+                    diagnostic('auth.state', 'home_detected')
                     remaining=max(1,int((deadline-time.monotonic())*1000))
                     opened_search=_open_search_from_home(page,check_cancel,timeout=min(30000,remaining))
+                    if opened_search:diagnostic('auth.state', 'search_opened')
                     continue
                 if _has_challenge(page):
                     return finish('LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.','challenge')
@@ -381,6 +463,10 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                     return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.','origin_blocked')
                 time.sleep(0.1)
             check_cancel()
+            if exchange_failed:
+                return finish('LOGIN_UNVERIFIED',
+                    'Pertukaran kode login Satu ke Coretax belum berhasil; sesi belum terverifikasi. '
+                    'Tidak ada percobaan ulang otomatis.', 'code_exchange_failed')
             if coretax_blocked_after_submit:
                 return finish('LOGIN_UNVERIFIED',
                     'Login belum terverifikasi. Pemeriksa memblokir permintaan lanjutan ke Coretax '

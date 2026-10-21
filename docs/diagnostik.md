@@ -116,6 +116,14 @@ kembali. Banyak halaman yang seluruh jumlah barisnya cocok bukan bukti loop
 macet. Bandingkan run dengan cakupan dan build yang sama sebelum menyatakan
 percepatan; log lama hanya memiliki durasi detail keseluruhan.
 
+Pada Cek Kredensial, `auth.state` dapat menandai `code_exchange_allowed`,
+`code_exchange_failed`, `home_detected`, dan `search_opened` untuk menelusuri
+alur Satu → callback Coretax → beranda → pencarian. `auth.request_blocked`
+membedakan `request_kind=code_exchange` dari `other`; nilai itu kategori tetap,
+bukan URL. Code, state, verifier PKCE, token, header, dan body tetap tidak dicatat.
+Pertukaran kode yang diizinkan belum membuktikan login berhasil: hasil akhir
+tetap berasal dari `auth.result` dan marker pencarian yang terlihat.
+
 ## Batas penyimpanan dan kegagalan
 
 Ukuran file maksimal 1 MiB, maksimal tiga segmen per session. Retensi tujuh hari dan anggaran 32 file pada folder log; file regular milik logger yang tidak aktif dibersihkan paling tua dahulu. File asing, hardlink, symlink/reparse dan session aktif tidak dihapus. Jika kapasitas tidak dapat direklamasi dengan aman, logger tidak menambah file.
