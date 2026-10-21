@@ -103,3 +103,31 @@ def test_stop_during_state_wait_is_not_converted_to_partial_return(page):
     with pytest.raises(driver.CaptureCancelled):
         driver.capture_table(page,table,1,max_pages=3,check_cancel=stop_after_click)
     assert page.evaluate('moves')==1
+
+
+@pytest.mark.parametrize('selected', [10, 100])
+def test_maximum_page_size_does_not_reload_an_already_selected_size(page, selected):
+    table = fixture(page)
+    page.evaluate('''selected => {
+        window.sizeChanges = 0;
+        const picker = document.createElement('div');
+        picker.className = 'p-paginator-rpp-options';
+        picker.innerHTML = '<span class="p-dropdown-label">'+selected+'</span>' +
+            '<button class="p-dropdown-trigger" type="button">Size</button>';
+        const options = document.createElement('ul');
+        options.className = 'p-dropdown-items'; options.hidden = true;
+        options.innerHTML = '<li>10</li><li>100</li>';
+        picker.querySelector('button').onclick = () => options.hidden = false;
+        options.querySelectorAll('li').forEach(option => option.onclick = () => {
+            sizeChanges++; picker.querySelector('span').textContent = option.textContent;
+            options.hidden = true;
+        });
+        document.addEventListener('keydown', event => {if(event.key==='Escape') options.hidden=true;});
+        document.querySelector('.p-paginator').append(picker);
+        document.body.append(options);
+    }''', selected)
+    result = driver.capture_table(page, table, 1, max_pages=3)
+    assert result['complete'] and result['body_row_count'] == 2
+    assert result['rows'] == [['SAME VALUE'], ['SAME VALUE']]
+    assert page.evaluate('sizeChanges') == (0 if selected == 100 else 1)
+    assert page.locator('.p-dropdown-items').is_hidden()

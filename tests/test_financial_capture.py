@@ -92,6 +92,24 @@ def routed(browser, monkeypatch):
             context.close()
 
 
+def test_detail_records_anonymous_table_duration_and_counts(routed, tmp_path):
+    page, requests = routed()
+    with driver.diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+        assert log.flush()
+    assert result['capture_complete']
+    rows = [json.loads(line) for path in (tmp_path / 'diagnostics/logs').glob('*.jsonl')
+            for line in path.read_text(encoding='utf-8').splitlines()]
+    tables = [row for row in rows if row['event'] == 'phase.completed' and row.get('phase') == 'table']
+    assert len(tables) == 1
+    assert tables[0]['form_ordinal'] == tables[0]['table_ordinal'] == 1
+    assert tables[0]['body_rows'] == 2 and tables[0]['pages'] == 1
+    assert tables[0]['status'] == 'COMPLETE' and tables[0]['duration_ms'] >= 0
+    serialized = json.dumps(rows)
+    for private in (RECORD['record_id'], PDF_URL, '1.234,56', '0000123'):
+        assert private not in serialized
+
+
 @pytest.mark.parametrize('failure,want_state,want_owned,want_document,want_views', [
     ('hidden', 'hidden', 1, 1, 1),
     ('ancestor', 'hidden', 1, 1, 1),
