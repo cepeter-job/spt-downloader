@@ -149,3 +149,22 @@ def test_stop_retires_initial_layout_work_without_late_consent(active_window, ki
     assert pending not in remaining and sentinel in remaining
     assert controller.stopped and not controller.replies
     root.after_cancel(sentinel)
+
+
+@pytest.mark.parametrize('kind', ['selection', 'overwrite'])
+def test_duplicate_configure_does_not_queue_redundant_layout(active_window, kind):
+    root, app, controller = active_window
+    controller.payload = payload(kind, 3)
+    app.on_event(consent_event(controller, kind))
+    dialog = app._interaction['dialog']
+    wait_for_existing_timers(root)
+    viewport = named_widget(dialog, 'body_viewport')
+    before = (viewport.winfo_width(), viewport.winfo_height(), viewport.cget('scrollregion'))
+    for _ in range(20):
+        dialog.event_generate('<Configure>')
+        viewport.event_generate('<Configure>')
+    drain_native_layout_without_timers(root, dialog)
+    assert (viewport.winfo_width(), viewport.winfo_height(), viewport.cget('scrollregion')) == before
+    assert app._interaction['layout_after'] is None
+    assert_body_ready(dialog)
+    assert not controller.replies and not controller.stopped
