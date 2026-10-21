@@ -9,7 +9,6 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
-from coretax_browser import CaptureCancelled
 from coretax_json import JsonSafetyError
 from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import SCOPE
@@ -97,8 +96,8 @@ def test_page_budget_cannot_certify_incomplete_traversal(browser, tmp_path, monk
 def test_cancellation_propagates_instead_of_fallback(browser, tmp_path, monkeypatch):
     with observed(browser, tmp_path, monkeypatch) as (module, fixture, capture):
         def stop():
-            raise CaptureCancelled()
-        with pytest.raises(CaptureCancelled):
+            raise driver.CaptureCancelled()
+        with pytest.raises(driver.CaptureCancelled):
             module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, check_cancel=stop)
 
 
