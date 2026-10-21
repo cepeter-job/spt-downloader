@@ -20,7 +20,7 @@ Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer pe
 | --- | --- | --- |
 | `route` | Memutuskan dokumentasi aman atau pemeriksaan kode lengkap; memvalidasi workflow. | Pekerjaan kecil, tanpa instalasi stack aplikasi. |
 | `portable` | CPython 3.14.8 produksi pada Linux; logika tanpa browser/Tk/native Windows. | Satu proses pytest pada satu runner. |
-| `windows` | Suite produksi CPython 3.14.8; Edge fixture, GUI Tk, batas native, dan bootstrap worker nyata. | Seluruh tes berurutan dalam satu runner. |
+| `windows` | Suite produksi CPython 3.14.8; Edge fixture, GUI Tk, batas native, dan bootstrap worker nyata. | Default serial; evaluasi manual dapat memakai dua runner terisolasi, satu proses pytest per runner. |
 | `dependency-audit` | Environment build pada Python produksi Windows dan tool audit terisolasi. | Satu runner; jadwal mingguan menjalankan audit tanpa build. |
 | `package` | Satu executable produksi 3.14.8 setelah tes/audit; self-test source kemudian frozen. | Satu build, artifact diverifikasi ulang. |
 | Pemeriksaan artifact | File allowlist, laporan self-test, checksum, dan identitas run/commit/artifact. | Hanya set distribusi yang diunggah dan dibaca kembali. |
@@ -60,7 +60,9 @@ atau artifact readback. Profil Python dibaca dari sumber yang sama dengan CI uta
 Satu runner mengerjakan suite serial, dua runner lain masing-masing satu shard,
 tetap satu proses pytest per runner. Partisi hash node ID harus deterministik,
 disjoint dan bergabung tepat menjadi koleksi serial; identitas commit, versi,
-jumlah, hasil dan payload inventory wajib cocok. Tidak ada `xdist` atau akun nyata.
+run/attempt, jumlah, hasil dan payload inventory wajib cocok. Batas job benchmark
+30 menit mengikuti anggaran produksi agar serial tidak dibatalkan oleh batas
+20 menit yang lebih pendek. Tidak ada `xdist` atau akun nyata.
 
 Laporan membandingkan pytest, setup + pytest, serta jumlah runner-seconds shard.
 Itu bukan waktu CI total. Dispatch `cache_mode=restore` tidak menjamin hit; mode
@@ -72,6 +74,36 @@ metadata Actions, lalu tinjau flake, kelengkapan inventory dan biaya runner.
 Sasaran median CI kandidat turun setidaknya 20% adalah target evaluasi, bukan gate
 benchmark. [Evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md)
 memutuskan tetap serial; percepatan pytest saja belum membuktikan target CI total.
+
+### Perbandingan pipeline lengkap
+
+Dispatch [workflow build](../.github/workflows/windows-build.yml) menerima
+`windows_mode=serial` atau `two-shards` dan `cache_mode=restore` atau `cold`.
+Push dan PR tetap memakai default serial selama evaluasi. Kedua pilihan manual
+menjalankan portable, audit, managed worker, source/frozen GUI, build, upload,
+artifact readback dan check gabungan yang sama. Run manual memiliki grup concurrency
+tersendiri agar pasangan pada satu commit dapat dibandingkan tanpa saling membatalkan.
+Pembatalan validasi PR/push yang sudah usang tetap berlaku.
+
+Dalam mode dua shard, job package membaca kedua manifest asli dari direktori
+terpisah. Verifier menolak shard hilang/ganda, partisi yang salah, hasil pytest
+gagal, perbedaan commit/Python/run/attempt, atau gabungan identitas tes yang tidak
+sama dengan collector portable. Bootstrap worker berjalan pada serial atau shard
+0. Setiap shard menyimpan inventory, JUnit dan hasil pengukurannya sendiri.
+
+`cache_mode=cold` melewati restore pada pekerjaan pipeline tanpa menghapus cache
+repository. Run manual tidak menulis cache; pada push `main`, hanya serial atau
+shard 0 yang dapat menulis cache integration bersama. Catat hit/miss aktual untuk
+kedua cache, bukan hanya pilihan input. Attestation tetap khusus push `main` dan
+tidak menjadi bagian hasil waktu dispatch.
+
+Hasil dan keputusan adopsi dicatat pada
+[evaluasi 21 Oktober](audits/2026-10-21-windows-shard-evaluation.md).
+
+Nama artifact menyertakan attempt agar rerun lengkap tidak menimpa bukti sebelumnya.
+Jika verifikasi inventory perlu diulang, jalankan ulang seluruh workflow atau
+buat dispatch baru. Rerun sebagian yang mencampur manifest dari attempt lama dan
+baru akan ditolak oleh pemeriksaan provenance.
 
 ## Bukti waktu dan kegagalan tes
 
@@ -137,7 +169,7 @@ Tidak ada capture, profil, log pribadi, atau hasil wajib pajak dalam artifact. L
 Nama artifact menyertakan commit penuh dan versi interpreter:
 
 ```text
-SPTDownloader-Windows-x64-<commit>-python<versi>
+SPTDownloader-Windows-x64-<commit>-python<versi>-attempt<nomor>
 ```
 
 Produksi menggunakan `python3.14.8` saja. Artifact 3.11.17 dari run terdahulu tetap dapat disimpan terpisah sebagai opsi rollback yang diverifikasi, bukan artifact produksi baru.

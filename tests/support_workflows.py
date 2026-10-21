@@ -101,11 +101,10 @@ def _single_command(step):
     return commands[0]
 
 
-def _benchmark_arguments(step):
-    # This checks one reviewed PowerShell argv-array shape, not a shell language.
-    # Invocation, shard selection and native exit propagation are checked together.
+def _array_arguments(step, name):
+    # Parse only quoted argv elements, not arbitrary PowerShell expressions.
     lines = _logical_lines(step)
-    assert lines and _expression(lines[0]) == '$pytestArgs=@('
+    assert lines and _expression(lines[0]) == f'${name}=@('
     end = next((i for i, line in enumerate(lines) if line == ')'), None)
     assert end is not None
     source = ' '.join(lines[1:end])
@@ -115,17 +114,91 @@ def _benchmark_arguments(step):
         arguments.append(match.group(1) if match.group(1) is not None else match.group(2))
         position = match.end()
     assert not source[position:].strip(' ,\t')
+    return arguments, '\n'.join(lines[end + 1:])
+
+
+def _benchmark_arguments(step):
+    # Invocation, shard selection and native exit propagation stay bound together.
+    arguments, tail = _array_arguments(step, 'pytestArgs')
     expected = """if ($env:BENCHMARK_MODE -ne 'serial') {
         $shardIndex = $env:BENCHMARK_MODE.Substring(6)
         $pytestArgs += @('--ci-shard', "$shardIndex/2")
     }
     & .venv/Scripts/python.exe @pytestArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
-    assert _expression('\n'.join(lines[end + 1:])) == _expression(expected), 'Benchmark must execute its guarded shard argv'
+    assert _expression(tail) == _expression(expected), 'Benchmark must execute its guarded shard argv'
     assert arguments[:3] == ['-m', 'pytest', 'tests']
     assert arguments[arguments.index('--ci-workload') + 1] == 'windows'
     assert '--ci-benchmark' in arguments and '--ci-shard' not in arguments
     return arguments
+
+
+def _windows_arguments(step):
+    arguments, tail = _array_arguments(step, 'pytestArgs')
+    expected = """if ($env:CI_SHARD) {
+        $pytestArgs += @('--ci-shard', "$env:CI_SHARD")
+    }
+    & .venv/Scripts/python.exe @pytestArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
+    assert _expression(tail) == _expression(expected), 'Windows must execute its bound shard argv and preserve failures'
+    assert _expression(step['env']['CI_SHARD']) == 'matrix.shard'
+    return arguments
+
+
+def _inventory_command(step):
+    # Keep the reviewed control flow fail-closed without pretending to interpret PowerShell.
+    expected = """$inventoryArgs = @(
+        '-m', 'scripts.ci_tests', "$env:RUNNER_TEMP/inventory-portable/test-inventory.json"
+    )
+    if ($env:WINDOWS_MODE -eq 'serial') {
+        $inventoryArgs += @("$env:RUNNER_TEMP/inventory-windows-serial/test-inventory.json")
+    } elseif ($env:WINDOWS_MODE -eq 'two-shards') {
+        $inventoryArgs += @(
+            "$env:RUNNER_TEMP/inventory-windows-shard-0/test-inventory.json",
+            "$env:RUNNER_TEMP/inventory-windows-shard-1/test-inventory.json"
+        )
+    } else {
+        throw 'Unknown Windows execution mode.'
+    }
+    $inventoryArgs += @(
+        '--python-version', "$env:PYTHON_VERSION", '--commit', "$env:GITHUB_SHA",
+        '--run-id', "$env:GITHUB_RUN_ID", '--run-attempt', "$env:GITHUB_RUN_ATTEMPT"
+    )
+    & .venv/Scripts/python.exe @inventoryArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
+    assert _expression('\n'.join(_logical_lines(step))) == _expression(expected), 'Coverage must verify both original shard manifests from this run before building'
+
+
+def _complete_pytest_arguments(arguments, workload, *, benchmark=False):
+    """A matching inventory must not certify collect-only or a common filtered subset."""
+    assert arguments[:3] == ['-m', 'pytest', 'tests']
+    temporary = '$RUNNER_TEMP' if workload == 'portable' else '$env:RUNNER_TEMP'
+    suffix = 'benchmark' if benchmark else workload
+    values = {
+        '-p': {'scripts.ci_tests'}, '--ci-workload': {workload},
+        '--basetemp': {temporary + '/spt-pytest-' + suffix},
+        '--ci-manifest': {temporary + '/test-inventory.json'},
+        '--junitxml': {temporary + '/test-results.xml'},
+        '-o': {'junit_logging=no', 'junit_log_passing_tests=false'},
+    }
+    flags = {'-q', '--durations=10'} | ({'--ci-benchmark'} if benchmark else set())
+    seen, index = set(), 3
+    while index < len(arguments):
+        option = arguments[index]
+        if option in flags:
+            key = (option,)
+            index += 1
+        else:
+            assert option in values and index + 1 < len(arguments), 'Pytest selection or unsupported execution option is forbidden'
+            value = arguments[index + 1]
+            assert value in values[option], 'Pytest option is not bound to the reviewed full-suite invocation'
+            key = (option, value)
+            index += 2
+        assert key not in seen, 'Duplicate pytest option'
+        seen.add(key)
+    expected = {(flag,) for flag in flags} | {
+        (option, value) for option, allowed in values.items() for value in allowed}
+    assert seen == expected, 'Complete pytest invocation is missing required evidence options'
 
 
 def _runs(step, *prefix):
@@ -142,9 +215,11 @@ def _one(steps, condition):
     return matches[0]
 
 
-def _success_only(step):
+def _success_only(step, condition=None):
     assert step.get('continue-on-error', False) is False, 'Failure must propagate'
-    if 'if' in step:
+    if condition is not None:
+        assert _expression(step.get('if')) == _expression(condition), 'Critical step has the wrong execution condition'
+    elif 'if' in step:
         assert _expression(step['if']) == 'success()', 'Critical step cannot bypass prior failure'
 
 
@@ -160,6 +235,11 @@ def _permissions(document, overrides=None):
                 assert re.fullmatch(r'[^@]+@[0-9a-f]{40}', step['uses']), 'Action must be SHA-pinned'
             if _action(step, 'actions/checkout'):
                 assert step.get('with', {}).get('persist-credentials') is False
+            if _action(step, 'actions/upload-artifact'):
+                assert step['with']['name'].endswith('-attempt${{ github.run_attempt }}')
+                assert step['with'].get('overwrite', False) is False, 'Previous attempt evidence must be retained'
+            if _action(step, 'actions/download-artifact') and 'name' in step.get('with', {}):
+                assert step['with']['name'].endswith('-attempt${{ github.run_attempt }}')
 
 
 def validate_production(document):
@@ -169,13 +249,35 @@ def validate_production(document):
     for event in ('push', 'pull_request'):
         assert triggers[event]['branches'] == ['main']
         assert not {'paths', 'paths-ignore'} & triggers[event].keys()
+    inputs = triggers['workflow_dispatch']['inputs']
+    assert set(inputs) == {'windows_mode', 'cache_mode'}
+    for name, default, options in (
+            ('windows_mode', 'serial', ['serial', 'two-shards']),
+            ('cache_mode', 'restore', ['restore', 'cold'])):
+        assert inputs[name]['type'] == 'choice' and inputs[name]['default'] == default
+        assert inputs[name]['options'] == options
     assert _expression(document['concurrency']['group']) == _expression(
-        'windows-build-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}')
+        "windows-build-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}")
+    assert _expression(document['concurrency']['cancel-in-progress']) == "github.event_name!='schedule'"
     _permissions(document, {
         'attest': {'contents': 'read', 'id-token': 'write', 'attestations': 'write'},
         'cleanup': {'contents': 'write', 'pull-requests': 'read'},
     })
     assert 'secrets.' not in json.dumps(document) and 'coretax.intranet' not in json.dumps(document)
+    route = jobs['route']
+    for name in ('mode', 'python_matrix', 'production_python', 'windows_mode', 'cache_mode', 'windows_matrix'):
+        assert _expression(route['outputs'][name]) == f'steps.route.outputs.{name}'
+    _, route_step = _one(route['steps'], lambda s: s.get('id') == 'route')
+    assert _single_command(route_step) == ['-m', 'scripts.ci_route', 'route']
+    assert _expression(route_step['env']['WINDOWS_MODE_INPUT']) == 'inputs.windows_mode'
+    assert _expression(route_step['env']['CACHE_MODE_INPUT']) == 'inputs.cache_mode'
+    for name in ('portable', 'windows', 'dependency-audit', 'package'):
+        _, uv = _one(jobs[name]['steps'], lambda s: _action(s, 'astral-sh/setup-uv'))
+        assert _expression(uv['with']['restore-cache']) == "needs.route.outputs.cache_mode!='cold'"
+        save = "github.event_name=='push'&&github.ref=='refs/heads/main'"
+        if name == 'windows':
+            save += "&&(matrix.mode=='serial'||matrix.mode=='shard-0')"
+        assert _expression(uv['with']['save-cache']) == save
     package, aggregate = jobs['package'], jobs['validate']
     assert _needs(package) == {'route', 'portable', 'windows', 'dependency-audit'}
     assert _expression(package['if']) == "needs.route.outputs.mode=='full'"
@@ -195,20 +297,36 @@ def validate_production(document):
         "&&needs.route.result=='success'&&needs.validate.result=='success'")
 
     steps = package['steps']
-    for step in steps:
-        _success_only(step)
     downloads = [(i, s) for i, s in enumerate(steps)
                  if _action(s, 'actions/download-artifact') and 'name' in s.get('with', {})]
-    assert len(downloads) == 2
+    expected_downloads = {
+        'portable': None,
+        'windows-serial': "needs.route.outputs.windows_mode == 'serial'",
+        'windows-shard-0': "needs.route.outputs.windows_mode == 'two-shards'",
+        'windows-shard-1': "needs.route.outputs.windows_mode == 'two-shards'",
+    }
+    assert len(downloads) == len(expected_downloads)
     assert {s['with']['name'].split('-python', 1)[0] for _, s in downloads} == {
-        'test-inventory-portable', 'test-inventory-windows'}
-    inventory_i, inventory = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_tests'))
-    assert {'--python-version', '--commit'} <= set(_commands(inventory)[0])
+        'test-inventory-' + name for name in expected_downloads}
+    download_indices = {i for i, _ in downloads}
+    for i, step in enumerate(steps):
+        if i not in download_indices:
+            _success_only(step)
+    for _, step in downloads:
+        label = step['with']['name'].split('-python', 1)[0].removeprefix('test-inventory-')
+        _success_only(step, expected_downloads[label])
+        assert set(step['with']) == {'name', 'path'}
+        assert step['with']['name'] == 'test-inventory-' + label + '-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
+        assert step['with']['path'] == '${{ runner.temp }}/inventory-' + label
+    assert _expression(package['env']['WINDOWS_MODE']) == 'needs.route.outputs.windows_mode'
+    inventory_i, inventory = _one(steps, lambda s: s.get('id') == 'inventory')
+    _inventory_command(inventory)
     source_i, _ = _one(steps, lambda s: _runs(s, 'spt_gui.py', '--self-test'))
     build_i, _ = _one(steps, lambda s: _runs(s, 'build_desktop.py'))
     checksum_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'write-checksums'))
     upload_i, upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact'))
     assert upload.get('id') == 'upload'
+    assert upload['with']['name'] == 'SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}-attempt${{ github.run_attempt }}'
     assert upload['with']['if-no-files-found'] == 'error'
     assert set(upload['with']['path'].split()) == {
         'dist/SPTDownloader.exe', 'dist/LICENSE.txt', 'dist/README.txt',
@@ -218,15 +336,21 @@ def validate_production(document):
     assert _expression(readback['with']['artifact-ids']) == 'steps.upload.outputs.artifact-id'
     assert 'name' not in readback['with']
     verify_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'verify'))
-    for index in (inventory_i, source_i, build_i, checksum_i, verify_i):
+    for index in (source_i, build_i, checksum_i, verify_i):
         _single_command(steps[index])
     assert max(i for i, _ in downloads) < inventory_i < source_i < build_i < checksum_i < upload_i < readback_i < verify_i
+    _, attest_download = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/download-artifact'))
+    assert attest_download['with']['name'] == upload['with']['name']
 
     windows = jobs['windows']
     assert windows['runs-on'] == 'windows-2022' and _needs(windows) == {'route'}
+    assert windows['timeout-minutes'] == 30 and package['timeout-minutes'] == 20
+    assert windows['strategy']['fail-fast'] is False and windows['strategy']['max-parallel'] == 2
+    assert _expression(windows['strategy']['matrix']) == 'fromJSON(needs.route.outputs.windows_matrix)'
     test_i, test = _one(windows['steps'], lambda s: s.get('id') == 'tests')
     _success_only(test)
-    args = _single_command(test)
+    args = _windows_arguments(test)
+    _complete_pytest_arguments(args, 'windows')
     assert args[:3] == ['-m', 'pytest', 'tests']
     assert args[args.index('--ci-workload') + 1] == 'windows'
     assert {'--ci-manifest', '--basetemp'} <= set(args)
@@ -234,9 +358,15 @@ def validate_production(document):
     assert not any(a in {'-n', '--numprocesses', '--ci-shard', '--ci-benchmark', '&', ';'}
                    or a.startswith(('--ci-shard=', '--numprocesses=')) for a in args)
     fresh_i, fresh = _one(windows['steps'], lambda s: _runs(s, '-m', 'scripts.ci_runtime'))
-    _success_only(fresh)
+    _success_only(fresh, "matrix.mode == 'serial' || matrix.mode == 'shard-0'")
     _single_command(fresh)
     assert fresh_i > test_i
+    _, portable_tests = _one(jobs['portable']['steps'], lambda s: s.get('id') == 'tests')
+    _complete_pytest_arguments(_single_command(portable_tests), 'portable')
+    for step in windows['steps']:
+        if _action(step, 'actions/upload-artifact'):
+            prefix = 'test-inventory' if step['with']['path'].endswith('/test-inventory.json') else 'test-results'
+            assert step['with']['name'] == prefix + '-windows-${{ matrix.mode }}-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
 
 
 def validate_measurements(document, job_names):
@@ -247,7 +377,10 @@ def validate_measurements(document, job_names):
         uv_i, _ = _one(steps, lambda s: _action(s, 'astral-sh/setup-uv'))
         tests_i, tests = _one(steps, lambda s: s.get('id') == 'tests')
         _success_only(tests)
-        args = _benchmark_arguments(tests) if name == 'benchmark' else _single_command(tests)
+        args = (_benchmark_arguments(tests) if name == 'benchmark' else
+                _windows_arguments(tests) if name == 'windows' else _single_command(tests))
+        _complete_pytest_arguments(args, 'portable' if name == 'portable' else 'windows',
+                                   benchmark=name == 'benchmark')
         assert args[:3] == ['-m', 'pytest', 'tests']
         assert all(option in args for option in ('--junitxml', 'junit_logging=no', 'junit_log_passing_tests=false'))
         report_i, report = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_report', 'report'))
@@ -276,6 +409,7 @@ def validate_benchmark(document):
     jobs = document['jobs']
     assert _needs(jobs['benchmark']) == {'profile'}
     assert jobs['benchmark']['runs-on'] == 'windows-2022'
+    assert jobs['benchmark']['timeout-minutes'] == 30
     assert set(jobs['benchmark']['strategy']['matrix']['mode']) == {'serial', 'shard-0', 'shard-1'}
     assert _expression(jobs['benchmark']['env']['PYTHON_VERSION']) == 'needs.profile.outputs.production_python'
     assert _expression(jobs['benchmark']['env']['BENCHMARK_MODE']) == 'matrix.mode'
@@ -283,7 +417,7 @@ def validate_benchmark(document):
     assert _runs(profile, '-m', 'scripts.ci_route', 'route')
     _, tests = _one(jobs['benchmark']['steps'], lambda s: s.get('id') == 'tests')
     _success_only(tests)
-    _benchmark_arguments(tests)
+    _complete_pytest_arguments(_benchmark_arguments(tests), 'windows', benchmark=True)
     _, uv = _one(jobs['benchmark']['steps'], lambda s: _action(s, 'astral-sh/setup-uv'))
     assert uv['with']['save-cache'] is False
     assert _expression(uv['with']['restore-cache']) == "inputs.cache_mode!='cold'"
@@ -301,4 +435,4 @@ def validate_benchmark(document):
         'windows-benchmark-serial', 'windows-benchmark-shard-0', 'windows-benchmark-shard-1'}
     verify_i, verify = _one(compare['steps'], lambda s: _runs(s, '-m', 'scripts.ci_shard_benchmark'))
     assert max(i for i, _ in downloads) < verify_i
-    assert {'--python-version', '--commit', '--output'} <= set(_single_command(verify))
+    assert {'--python-version', '--commit', '--run-id', '--run-attempt', '--output'} <= set(_single_command(verify))

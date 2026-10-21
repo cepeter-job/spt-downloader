@@ -28,7 +28,10 @@ Attestation tetap terbatas pada push `main` yang dipercaya.
 
 ## Pengukuran dan keputusan
 
-Status awal: implementasi dan pengukuran belum selesai; belum ada keputusan adopsi.
+Status pilot: implementasi disiapkan pada PR #66 dan menunggu verifikasi GitHub.
+Pengukuran pipeline lengkap belum selesai; belum ada keputusan adopsi.
+Benchmark fase tes baseline berjalan pada
+[39579737580](https://github.com/cepeter-job/spt-downloader/actions/runs/39579737580).
 
 1. Bekukan satu commit kandidat setelah regresi dan kontrak workflow lulus.
 2. Jalankan sedikitnya lima pasangan serial versus dua shard pada commit itu.

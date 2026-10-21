@@ -64,19 +64,16 @@ def pytest_addoption(parser):
     group.addoption('--ci-benchmark', action='store_true',
                     help='Measure a separate full-suite benchmark without changing production.')
     group.addoption('--ci-shard', choices=('0/2', '1/2'),
-                    help='Run one of two Windows benchmark shards.')
+                    help='Run one of two Windows shards with an evidence manifest.')
 
 
 def pytest_sessionstart(session):
     config = session.config
     benchmark, shard = config.getoption('--ci-benchmark'), config.getoption('--ci-shard')
-    if shard and not benchmark:
-        from pytest import UsageError
-        raise UsageError('--ci-shard requires --ci-benchmark.')
-    if benchmark:
+    if benchmark or shard:
         if config.getoption('--ci-workload') != 'windows' or not config.getoption('--ci-manifest'):
             from pytest import UsageError
-            raise UsageError('Benchmark requires Windows workload and an evidence manifest.')
+            raise UsageError('Benchmark or sharding requires Windows workload and an evidence manifest.')
     if config.getoption('--ci-manifest'):
         config._ci_started = time.monotonic()
         config._ci_setup_seconds = None
@@ -145,25 +142,68 @@ def pytest_sessionfinish(session, exitstatus):
     path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
-def check_inventories(portable, windows, python_version, commit):
-    for report, workload, target in ((portable, 'portable', 'linux'), (windows, 'windows', 'win32')):
-        expected = {'workload': workload, 'platform': target,
-                    'python': python_version, 'commit': commit}
-        if any(report.get(key) != value for key, value in expected.items()):
-            raise ValueError('Test evidence does not match this commit, Python or workload.')
-        for key in ('all', 'selected'):
-            nodes = report.get(key)
-            if not isinstance(nodes, list) or not all(isinstance(node, str) for node in nodes):
-                raise ValueError('Test inventory is absent or malformed.')
-            if len(nodes) != len(set(nodes)):
-                raise ValueError('Test inventory contains duplicate test IDs.')
-    all_nodes = set(portable['all'])
-    first, second = set(portable['selected']), set(windows['selected'])
-    if not all_nodes or all_nodes != set(windows['all']):
+def _checked_inventory(report, workload, target, python_version, commit, run_id, run_attempt):
+    if not isinstance(report, dict):
+        raise ValueError('Test evidence is not an object.')
+    if any(not isinstance(value, str) or not value.strip() for value in (run_id, run_attempt)):
+        raise ValueError('Expected workflow run and attempt are required.')
+    expected = {'workload': workload, 'platform': target,
+                'python': python_version, 'commit': commit,
+                'run_id': run_id, 'run_attempt': run_attempt}
+    if any(report.get(key) != value for key, value in expected.items()):
+        raise ValueError('Test evidence does not match this runner, commit, Python, workload or run.')
+    if type(report.get('exitstatus')) is not int or report['exitstatus'] != 0:
+        raise ValueError('Test evidence does not record a successful completed pytest session.')
+    for key in ('all', 'selected'):
+        nodes = report.get(key)
+        if (not isinstance(nodes, list)
+                or any(not isinstance(node, str) or not node.strip() for node in nodes)):
+            raise ValueError('Test inventory is absent or malformed.')
+        if len(nodes) != len(set(nodes)):
+            raise ValueError('Test inventory contains duplicate test IDs.')
+    if not report['all']:
+        raise ValueError('The full test inventory is empty.')
+    return set(report['all']), set(report['selected'])
+
+
+def check_windows_inventories(windows, python_version, commit, *, run_id, run_attempt):
+    """Validate original serial or shard evidence and return its full collection."""
+    reports = [windows] if isinstance(windows, dict) else windows
+    if not isinstance(reports, list) or len(reports) not in (1, 2):
+        raise ValueError('Expected one serial Windows report or exactly two shard reports.')
+    all_nodes = None
+    for index, report in enumerate(reports):
+        full, selected = _checked_inventory(
+            report, 'windows', 'win32', python_version, commit, run_id, run_attempt)
+        if all_nodes is None:
+            all_nodes = full
+        elif full != all_nodes:
+            raise ValueError('Windows collectors disagree about the complete test inventory.')
+        if len(reports) == 1:
+            if 'shard' in report or selected != full:
+                raise ValueError('Serial Windows evidence must execute every collected test without sharding.')
+            continue
+        shard = report.get('shard')
+        if (not isinstance(shard, dict)
+                or type(shard.get('index')) is not int or type(shard.get('count')) is not int
+                or shard != {'index': index, 'count': 2}):
+            raise ValueError('Expected ordered Windows shard identities 0/2 and 1/2.')
+        expected = {node for node in full if shard_for(node, 2) == index}
+        if not expected or selected != expected:
+            raise ValueError('Shard evidence does not match its exact Windows test partition.')
+    return all_nodes
+
+
+def check_inventories(portable, windows, python_version, commit, *, run_id, run_attempt):
+    all_nodes, selected = _checked_inventory(
+        portable, 'portable', 'linux', python_version, commit, run_id, run_attempt)
+    if 'shard' in portable:
+        raise ValueError('The portable workload must not be sharded.')
+    windows_nodes = check_windows_inventories(
+        windows, python_version, commit, run_id=run_id, run_attempt=run_attempt)
+    if all_nodes != windows_nodes:
         raise ValueError('Portable and Windows collectors disagree about the full test inventory.')
-    if second != all_nodes or not first <= second:
-        raise ValueError('Windows did not execute the entire collected regression suite.')
-    if first != {node for node in all_nodes if workload_for(node) == 'portable'}:
+    if selected != {node for node in all_nodes if workload_for(node) == 'portable'}:
         raise ValueError('Executed tests do not follow the reviewed workload routing.')
     return len(all_nodes)
 
@@ -171,13 +211,16 @@ def check_inventories(portable, windows, python_version, commit):
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Verify full Windows coverage and the extra Linux subset.')
     parser.add_argument('portable', type=Path)
-    parser.add_argument('windows', type=Path)
+    parser.add_argument('windows', type=Path, nargs='+')
     parser.add_argument('--python-version', required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--run-id', required=True)
+    parser.add_argument('--run-attempt', required=True)
     args = parser.parse_args(argv)
     count = check_inventories(json.loads(args.portable.read_text(encoding='utf-8')),
-                              json.loads(args.windows.read_text(encoding='utf-8')),
-                              args.python_version, args.commit)
+                              [json.loads(path.read_text(encoding='utf-8')) for path in args.windows],
+                              args.python_version, args.commit,
+                              run_id=args.run_id, run_attempt=args.run_attempt)
     print(f'Verified full Windows inventory and matching Linux subset: {count} tests.')
 
 

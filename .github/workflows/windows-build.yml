@@ -6,6 +6,17 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      windows_mode:
+        description: Full Windows validation mode for a same-commit pipeline comparison
+        type: choice
+        default: serial
+        options: [serial, two-shards]
+      cache_mode:
+        description: Restore available caches or measure a cold full pipeline
+        type: choice
+        default: restore
+        options: [restore, cold]
   schedule:
     - cron: '17 3 * * 1'
 
@@ -13,7 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-build-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  group: windows-build-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
@@ -33,6 +44,9 @@ jobs:
       mode: ${{ steps.route.outputs.mode }}
       python_matrix: ${{ steps.route.outputs.python_matrix }}
       production_python: ${{ steps.route.outputs.production_python }}
+      windows_mode: ${{ steps.route.outputs.windows_mode }}
+      cache_mode: ${{ steps.route.outputs.cache_mode }}
+      windows_matrix: ${{ steps.route.outputs.windows_matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,6 +57,8 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
+          WINDOWS_MODE_INPUT: ${{ inputs.windows_mode }}
+          CACHE_MODE_INPUT: ${{ inputs.cache_mode }}
         run: python3 -m scripts.ci_route route
       - name: Validate Actions syntax with verified actionlint
         shell: bash
@@ -80,6 +96,7 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
+          restore-cache: ${{ needs.route.outputs.cache_mode != 'cold' }}
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           cache-dependency-glob: |
             requirements*.txt
@@ -115,7 +132,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}
+          name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/test-inventory.json
           if-no-files-found: error
           retention-days: 14
@@ -123,7 +140,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-results-portable-python${{ matrix.python }}-${{ github.sha }}
+          name: test-results-portable-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/test-results.xml
             ${{ runner.temp }}/test-measurements.json
@@ -131,7 +148,7 @@ jobs:
           retention-days: 14
 
   windows:
-    name: Windows integration (Python ${{ matrix.python }})
+    name: Windows integration (Python ${{ matrix.python }}, ${{ matrix.mode }})
     needs: route
     if: needs.route.outputs.mode == 'full'
     runs-on: windows-2022
@@ -141,7 +158,7 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: 2
-      matrix: ${{ fromJSON(needs.route.outputs.python_matrix) }}
+      matrix: ${{ fromJSON(needs.route.outputs.windows_matrix) }}
     defaults:
       run:
         shell: pwsh
@@ -159,7 +176,8 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
-          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          restore-cache: ${{ needs.route.outputs.cache_mode != 'cold' }}
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && (matrix.mode == 'serial' || matrix.mode == 'shard-0') }}
           cache-dependency-glob: |
             requirements*.txt
             locks/*.txt
@@ -178,18 +196,27 @@ jobs:
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip check --python .venv/Scripts/python.exe
-      - name: Run the complete Windows suite including native, Tk and Edge fixtures
+      - name: Run the selected Windows partition including native, Tk and Edge fixtures
         id: tests
         env:
           CI_UV_CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
           CI_PYTHON_CACHE_HIT: ${{ steps.uv.outputs.python-cache-hit }}
-        run: >-
-          .venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q
-          --basetemp "$env:RUNNER_TEMP/spt-pytest-windows"
-          --ci-manifest "$env:RUNNER_TEMP/test-inventory.json" --durations=10
-          --junitxml "$env:RUNNER_TEMP/test-results.xml"
-          -o junit_logging=no -o junit_log_passing_tests=false
+          CI_SHARD: ${{ matrix.shard }}
+        run: |
+          $pytestArgs = @(
+            '-m', 'pytest', 'tests', '-p', 'scripts.ci_tests', '--ci-workload', 'windows', '-q',
+            '--basetemp', "$env:RUNNER_TEMP/spt-pytest-windows",
+            '--ci-manifest', "$env:RUNNER_TEMP/test-inventory.json", '--durations=10',
+            '--junitxml', "$env:RUNNER_TEMP/test-results.xml",
+            '-o', 'junit_logging=no', '-o', 'junit_log_passing_tests=false'
+          )
+          if ($env:CI_SHARD) {
+            $pytestArgs += @('--ci-shard', "$env:CI_SHARD")
+          }
+          & .venv/Scripts/python.exe @pytestArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise fresh managed worker setup and verified reuse
+        if: matrix.mode == 'serial' || matrix.mode == 'shard-0'
         env:
           PYTHON_PROFILE: ${{ matrix.profile }}
         run: .venv/Scripts/python.exe -m scripts.ci_runtime --profile "$env:PYTHON_PROFILE"
@@ -200,7 +227,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-inventory-windows-python${{ matrix.python }}-${{ github.sha }}
+          name: test-inventory-windows-${{ matrix.mode }}-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/test-inventory.json
           if-no-files-found: error
           retention-days: 14
@@ -208,7 +235,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-results-windows-python${{ matrix.python }}-${{ github.sha }}
+          name: test-results-windows-${{ matrix.mode }}-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/test-results.xml
             ${{ runner.temp }}/test-measurements.json
@@ -239,6 +266,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-python: true
+          restore-cache: ${{ needs.route.outputs.cache_mode != 'cold' }}
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           cache-dependency-glob: |
             requirements*.txt
@@ -272,7 +300,7 @@ jobs:
         if: always() && steps.audit.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dependency-audit-${{ github.sha }}
+          name: dependency-audit-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/dependency-audit.json
           if-no-files-found: warn
           retention-days: 14
@@ -293,6 +321,7 @@ jobs:
     env:
       PYTHON_VERSION: ${{ matrix.python }}
       PYTHON_PROFILE: ${{ matrix.profile }}
+      WINDOWS_MODE: ${{ needs.route.outputs.windows_mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -304,6 +333,7 @@ jobs:
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
+          restore-cache: ${{ needs.route.outputs.cache_mode != 'cold' }}
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           cache-dependency-glob: |
             requirements*.txt
@@ -323,19 +353,48 @@ jobs:
       - name: Download this commit's portable test inventory
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}
+          name: test-inventory-portable-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/inventory-portable
-      - name: Download this commit's Windows test inventory
+      - name: Download this commit's serial Windows test inventory
+        if: needs.route.outputs.windows_mode == 'serial'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: test-inventory-windows-python${{ matrix.python }}-${{ github.sha }}
-          path: ${{ runner.temp }}/inventory-windows
+          name: test-inventory-windows-serial-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-windows-serial
+      - name: Download this commit's original Windows shard 0 inventory
+        if: needs.route.outputs.windows_mode == 'two-shards'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: test-inventory-windows-shard-0-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-windows-shard-0
+      - name: Download this commit's original Windows shard 1 inventory
+        if: needs.route.outputs.windows_mode == 'two-shards'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: test-inventory-windows-shard-1-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inventory-windows-shard-1
       - name: Require full Windows coverage and the matching portable subset before building
-        run: >-
-          .venv/Scripts/python.exe -m scripts.ci_tests
-          "$env:RUNNER_TEMP/inventory-portable/test-inventory.json"
-          "$env:RUNNER_TEMP/inventory-windows/test-inventory.json"
-          --python-version "$env:PYTHON_VERSION" --commit "$env:GITHUB_SHA"
+        id: inventory
+        run: |
+          $inventoryArgs = @(
+            '-m', 'scripts.ci_tests', "$env:RUNNER_TEMP/inventory-portable/test-inventory.json"
+          )
+          if ($env:WINDOWS_MODE -eq 'serial') {
+            $inventoryArgs += @("$env:RUNNER_TEMP/inventory-windows-serial/test-inventory.json")
+          } elseif ($env:WINDOWS_MODE -eq 'two-shards') {
+            $inventoryArgs += @(
+              "$env:RUNNER_TEMP/inventory-windows-shard-0/test-inventory.json",
+              "$env:RUNNER_TEMP/inventory-windows-shard-1/test-inventory.json"
+            )
+          } else {
+            throw 'Unknown Windows execution mode.'
+          }
+          $inventoryArgs += @(
+            '--python-version', "$env:PYTHON_VERSION", '--commit', "$env:GITHUB_SHA",
+            '--run-id', "$env:GITHUB_RUN_ID", '--run-attempt', "$env:GITHUB_RUN_ATTEMPT"
+          )
+          & .venv/Scripts/python.exe @inventoryArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise the source GUI without accounts
         run: .venv/Scripts/python.exe spt_gui.py --self-test --report "$env:RUNNER_TEMP/source-selftest.json"
       - name: Build and exercise the frozen GUI
@@ -346,7 +405,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}
+          name: SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}-attempt${{ github.run_attempt }}
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -371,7 +430,7 @@ jobs:
           ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         run: |
-          "Verified artifact ID $env:ARTIFACT_ID, run $env:GITHUB_RUN_ID, commit $env:GITHUB_SHA, Python $env:PYTHON_VERSION." | Add-Content $env:GITHUB_STEP_SUMMARY
+          "Verified artifact ID $env:ARTIFACT_ID, run $env:GITHUB_RUN_ID, attempt $env:GITHUB_RUN_ATTEMPT, commit $env:GITHUB_SHA, Python $env:PYTHON_VERSION." | Add-Content $env:GITHUB_STEP_SUMMARY
           "Artifact: $env:ARTIFACT_URL" | Add-Content $env:GITHUB_STEP_SUMMARY
 
   attest:
@@ -395,7 +454,7 @@ jobs:
       - name: Download the already verified artifact from this workflow run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}
+          name: SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}-attempt${{ github.run_attempt }}
           path: verified-artifact
       - name: Verify exact contents before attesting without executing the artifact
         env:

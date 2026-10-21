@@ -53,7 +53,8 @@ jobs:
     name: Windows benchmark (${{ matrix.mode }})
     needs: profile
     runs-on: windows-2022
-    timeout-minutes: 20
+    # Use the production budget: the current serial suite can exceed 20 minutes.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -123,7 +124,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-benchmark-${{ matrix.mode }}-${{ github.sha }}
+          name: windows-benchmark-${{ matrix.mode }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/test-inventory.json
           if-no-files-found: error
           retention-days: 7
@@ -131,7 +132,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-results-benchmark-${{ matrix.mode }}-${{ github.sha }}
+          name: test-results-benchmark-${{ matrix.mode }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/test-results.xml
             ${{ runner.temp }}/test-measurements.json
@@ -157,17 +158,17 @@ jobs:
       - name: Download serial evidence from this run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-benchmark-serial-${{ github.sha }}
+          name: windows-benchmark-serial-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/benchmark-serial
       - name: Download shard 0 evidence from this run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-benchmark-shard-0-${{ github.sha }}
+          name: windows-benchmark-shard-0-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/benchmark-shard-0
       - name: Download shard 1 evidence from this run
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-benchmark-shard-1-${{ github.sha }}
+          name: windows-benchmark-shard-1-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/benchmark-shard-1
       - name: Verify exact full coverage and compare measured pytest time
         shell: bash
@@ -177,12 +178,13 @@ jobs:
           "$RUNNER_TEMP/benchmark-shard-0/test-inventory.json"
           "$RUNNER_TEMP/benchmark-shard-1/test-inventory.json"
           --python-version "$PYTHON_VERSION" --commit "$GITHUB_SHA"
+          --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
           --summary "$GITHUB_STEP_SUMMARY"
           --output "$RUNNER_TEMP/benchmark-comparison.json"
       - name: Publish machine-readable benchmark comparison
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-benchmark-comparison-${{ github.sha }}
+          name: windows-benchmark-comparison-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/benchmark-comparison.json
           if-no-files-found: error
           retention-days: 7
