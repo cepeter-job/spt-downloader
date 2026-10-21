@@ -43,7 +43,9 @@ def observed(browser, tmp_path, monkeypatch, tax='PPN', *, defect=None, layout='
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, SCOPE, tmp_path) as capture:
             fixture.page.goto(FRAME)
             capture.bind_detail_page(fixture.page)
-            fixture.page.wait_for_timeout(200)
+            # Tunggu request awal selesai, termasuk 403, tanpa menutup capture
+            # yang masih harus menerima request grid selama traversal berikutnya.
+            fixture.page.wait_for_function('window.primaryDone===true', timeout=5000)
             yield module, fixture, capture
     finally:
         fixture.context.close()

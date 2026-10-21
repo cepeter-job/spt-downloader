@@ -2,19 +2,17 @@
 from itertools import count
 from types import SimpleNamespace
 import pytest
-from playwright.sync_api import sync_playwright, TimeoutError as BrowserTimeout
+from playwright.sync_api import TimeoutError as BrowserTimeout
+from support_isolated_browser import browser, context
 import coretax_browser as driver
 
 
 @pytest.fixture
-def page():
-    with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True)
-        page = browser.new_page()
-        page.route('**/*', lambda route: route.abort())
-        page.set_default_timeout(350)
-        yield page
-        browser.close()
+def page(context):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    page.set_default_timeout(350)
+    return page
 
 
 def fixture(page, start=0):

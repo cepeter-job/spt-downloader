@@ -23,9 +23,16 @@ env:
 
 jobs:
   profile:
-    name: Frozen baseline and readiness regression
+    name: Browser fixture pair ${{ matrix.pair }}
     runs-on: windows-2022
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        pair: [1, 2, 3]
+    env:
+      PROFILE_PAIR: ${{ matrix.pair }}
     defaults:
       run:
         shell: pwsh
@@ -68,10 +75,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip check --python "$env:RUNNER_TEMP/browser-profile-venv/Scripts/python.exe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Measure the baseline and retain the independent readiness result
+      - name: Measure the paired workload and independent candidate regressions
         id: observations
         run: |
-          # Both independent observations must survive a nonzero native exit.
+          # Every independent observation survives a previous nonzero native exit.
           $PSNativeCommandUseErrorActionPreference = $false
           $control = "$env:RUNNER_TEMP/browser-profile-control"
           New-Item -ItemType Directory -Force -Path $control | Out-Null
@@ -84,10 +91,14 @@ jobs:
             'tests/test_ppn_json_build_budget.py', 'tests/test_ppn_json_surface.py',
             'tests/test_ppn_json_replacement_control.py', 'tests/test_unifikasi_json_browser.py'
           )
+          $order = if ($env:PROFILE_PAIR -eq '2') { @('candidate', 'baseline') } else { @('baseline', 'candidate') }
+          $observations = @($order) + @('candidate-regressions')
           $failed = $false
-          foreach ($variant in @('baseline', 'candidate-readiness')) {
+          foreach ($variant in $observations) {
             $repository = if ($variant -eq 'baseline') { 'baseline' } else { 'candidate' }
-            $tests = if ($variant -eq 'baseline') { $workload } else { @('tests/test_masa_fixture_readiness.py') }
+            $tests = if ($variant -eq 'candidate-regressions') {
+              @('tests/test_masa_fixture_readiness.py', 'tests/test_browser_fixture_isolation.py')
+            } else { $workload }
             $evidence = "$env:RUNNER_TEMP/browser-profile-evidence/$variant"
             New-Item -ItemType Directory -Force -Path $evidence | Out-Null
             Push-Location "$env:GITHUB_WORKSPACE/$repository"
@@ -107,15 +118,127 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
-      - name: Preserve explicit timing and regression evidence, including RED
+      - name: Verify exact paired identities, successful outcomes, and source provenance
+        if: always() && steps.observations.outcome != 'skipped'
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import math
+          import os
+          from pathlib import Path
+          import subprocess
+          import xml.etree.ElementTree as ET
+
+          root = Path(os.environ['GITHUB_WORKSPACE'])
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'browser-profile-evidence'
+          baseline_sha = '766dd3e79b4077fa1ae86a7c32161dc77248cb6c'
+          variants = ('baseline', 'candidate', 'candidate-regressions')
+
+          def revision(repository, expression):
+              return subprocess.check_output(
+                  ['git', '-C', str(root / repository), 'rev-parse', expression], text=True).strip()
+
+          def require(condition, message):
+              if not condition:
+                  raise ValueError(message)
+
+          def seconds(value):
+              return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+          require(revision('baseline', 'HEAD') == baseline_sha, 'Frozen baseline checkout changed.')
+          require(revision('candidate', 'HEAD') == os.environ['GITHUB_SHA'], 'Candidate is not this workflow commit.')
+          profiler_hash = hashlib.sha256((root / 'candidate/scripts/ci_browser_profile.py').read_bytes()).hexdigest()
+          profiles = {}
+          for variant in variants:
+              repository = 'baseline' if variant == 'baseline' else 'candidate'
+              profile = json.loads((evidence / variant / 'profile.json').read_text(encoding='utf-8'))
+              expected_count = 5 if variant == 'candidate-regressions' else 107
+              expected = {
+                  'label': variant, 'commit': revision(repository, 'HEAD'),
+                  'tree': revision(repository, 'HEAD^{tree}'),
+                  'workflow_commit': os.environ['GITHUB_SHA'],
+                  'run_id': os.environ['GITHUB_RUN_ID'],
+                  'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+                  'python': os.environ['PYTHON_VERSION'], 'platform': 'win32',
+                  'implementation': 'cpython', 'profiler_sha256': profiler_hash,
+                  'test_lock_sha256': hashlib.sha256((root / repository / 'locks/test.txt').read_bytes()).hexdigest(),
+              }
+              require(all(profile.get(key) == value for key, value in expected.items()), 'Profile provenance mismatch.')
+              require(profile.get('gil_enabled') is True, 'Profile did not use CPython/GIL.')
+              require(type(profile.get('exitstatus')) is int and profile['exitstatus'] == 0, 'Pytest did not succeed.')
+              nodes = profile.get('selected_nodeids')
+              require(isinstance(nodes, list) and len(nodes) == expected_count
+                      and all(isinstance(node, str) and node for node in nodes), 'Selected test inventory is incomplete.')
+              require(nodes == sorted(set(nodes)), 'Selected test inventory is duplicated or unordered.')
+              reports = profile.get('reports')
+              require(isinstance(reports, list) and len(reports) == expected_count * 3, 'Missing pytest phases.')
+              observed = set()
+              for report in reports:
+                  identity = report.get('nodeid'), report.get('phase')
+                  require(identity not in observed, 'Duplicate pytest phase.')
+                  observed.add(identity)
+                  require(report.get('outcome') == 'passed' and seconds(report.get('seconds')), 'A pytest phase failed or skipped.')
+              require(observed == {(node, phase) for node in nodes for phase in ('setup', 'call', 'teardown')},
+                      'Pytest phase inventory differs from collection.')
+              junit = ET.fromstring((evidence / variant / 'results.xml').read_bytes())
+              cases = list(junit.iter('testcase'))
+              junit_nodes = sorted(case.get('classname', '').replace('.', '/') + '.py::' + case.get('name', '') for case in cases)
+              require(junit_nodes == nodes, 'JUnit identities differ from the profiled inventory.')
+              require(not any(case.find(tag) is not None for case in cases for tag in ('failure', 'error', 'skipped')),
+                      'JUnit records a failure, error, or skip.')
+              suites = [junit] if junit.tag == 'testsuite' else list(junit.findall('testsuite'))
+              require(sum(int(suite.get('tests', '0')) for suite in suites) == expected_count
+                      and all(int(suite.get(key, '0')) == 0 for suite in suites for key in ('failures', 'errors', 'skipped')),
+                      'JUnit summary is incomplete or unsuccessful.')
+              versions = profile.get('browser_versions')
+              require(isinstance(versions, list) and len(versions) == 1
+                      and isinstance(versions[0], str) and versions[0] not in ('', 'unavailable'), 'Browser version is missing.')
+              require(seconds(profile.get('elapsed_seconds')) and profile['elapsed_seconds'] > 0, 'Session duration is invalid.')
+              timings = profile.get('timings')
+              require(isinstance(timings, list) and timings, 'API timings are missing.')
+              for timing in timings:
+                  require(type(timing.get('count')) is int and timing['count'] > 0
+                          and type(timing.get('errors')) is int and 0 <= timing['errors'] <= timing['count']
+                          and type(timing.get('depth')) is int and timing['depth'] >= 0
+                          and type(timing.get('inclusive_ns')) is int and type(timing.get('exclusive_ns')) is int
+                          and 0 <= timing['exclusive_ns'] <= timing['inclusive_ns'], 'API timing is malformed.')
+              profiles[variant] = profile
+
+          baseline, candidate = profiles['baseline'], profiles['candidate']
+          require(baseline['selected_nodeids'] == candidate['selected_nodeids'], 'Paired test identities differ.')
+          for key in ('python', 'implementation', 'platform', 'gil_enabled',
+                      'test_lock_sha256', 'profiler_sha256', 'browser_versions'):
+              require(all(profiles[variant][key] == baseline[key] for variant in variants), 'Paired environment differs.')
+          pair = int(os.environ['PROFILE_PAIR'])
+          order = ['candidate', 'baseline'] if pair == 2 else ['baseline', 'candidate']
+          before, after = baseline['elapsed_seconds'], candidate['elapsed_seconds']
+          comparison = {
+              'pair': pair, 'order': order, 'run_id': os.environ['GITHUB_RUN_ID'],
+              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'baseline_commit': baseline['commit'], 'baseline_tree': baseline['tree'],
+              'candidate_commit': candidate['commit'], 'candidate_tree': candidate['tree'],
+              'common_cases': len(baseline['selected_nodeids']), 'regression_cases': 5,
+              'inventory_sha256': hashlib.sha256('\n'.join(baseline['selected_nodeids']).encode()).hexdigest(),
+              'baseline_seconds': before, 'candidate_seconds': after,
+              'reduction_seconds': before - after, 'reduction_percent': (before - after) / before * 100,
+              'python': baseline['python'], 'browser_versions': baseline['browser_versions'],
+              'test_lock_sha256': baseline['test_lock_sha256'], 'profiler_sha256': profiler_hash,
+          }
+          (evidence / 'comparison.json').write_text(json.dumps(comparison, indent=2, allow_nan=False) + '\n', encoding='utf-8')
+          print(json.dumps(comparison, indent=2))
+      - name: Preserve explicit paired timing and regression evidence after every outcome
         if: always() && steps.observations.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-fixture-profile-${{ github.sha }}-attempt${{ github.run_attempt }}
+          name: browser-fixture-profile-pair${{ matrix.pair }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/browser-profile-evidence/baseline/profile.json
             ${{ runner.temp }}/browser-profile-evidence/baseline/results.xml
-            ${{ runner.temp }}/browser-profile-evidence/candidate-readiness/profile.json
-            ${{ runner.temp }}/browser-profile-evidence/candidate-readiness/results.xml
+            ${{ runner.temp }}/browser-profile-evidence/candidate/profile.json
+            ${{ runner.temp }}/browser-profile-evidence/candidate/results.xml
+            ${{ runner.temp }}/browser-profile-evidence/candidate-regressions/profile.json
+            ${{ runner.temp }}/browser-profile-evidence/candidate-regressions/results.xml
+            ${{ runner.temp }}/browser-profile-evidence/comparison.json
           if-no-files-found: error
           retention-days: 14
