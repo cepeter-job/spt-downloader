@@ -426,7 +426,7 @@ def test_l3_all_details_and_three_captured_totals_map_without_recalculation(tmp_
 def test_requested_clean_forms_omit_raw_display_but_keep_truthful_audit(tmp_path, form, last):
     fields = [{'label': 'Synthetic unresolved field', 'value': '0009'}]
     table = {'name': 'Synthetic unknown table', 'headers': ['Unknown'],
-             'rows': [['=SYNTHETIC()']], 'complete': False}
+             'rows': [['=SYNTHETIC()']], 'complete': True}
     book, reports = export(tmp_path, [section(form, fields=fields, tables=[table],
                                              text='Synthetic redundant page text')])
     try:
