@@ -7,7 +7,7 @@ import pytest
 
 from spt_desktop import auth, diagnostics
 from spt_desktop.credentials import Login
-from support_login_browser import browser
+from support_login_browser import ASYNC_LOGIN_TIMEOUT, browser
 
 
 SATU = auth.ALLOWED_ORIGINS[0]
@@ -60,7 +60,8 @@ class Engine:
         mime = 'application/json' if self.case == 'wrong_mime' else 'application/x-www-form-urlencoded'
         request = 'fetch(' + json.dumps(target) + ',{method:"POST",headers:{"Content-Type":' + json.dumps(mime) + '},body:' + json.dumps(body) + '})'
         repeat = ('await ' + request + '.catch(()=>{});') if self.case == 'replay' else ''
-        return '<script>(async()=>{try{const r=await ' + request + ';if(!r.ok)return;' + repeat + 'location.assign(' + json.dumps(HOME) + ');}catch{}})();</script>'
+        destination = HOME if app == 'home' else auth.SEARCH_URL
+        return '<script>(async()=>{try{const r=await ' + request + ';if(!r.ok)return;' + repeat + 'location.assign(' + json.dumps(destination) + ');}catch{}})();</script>'
 
     def launch_persistent_context(self, path, **kwargs):
         raw = self.browser.new_context(service_workers='block')
@@ -117,9 +118,10 @@ def check(browser, tmp_path, monkeypatch, case='success', app='home'):
         reads.append(origin)
         return Login(ACCOUNT, PASSWORD)
     monkeypatch.setattr(auth, 'read_login', saved)
+    timeout = ASYNC_LOGIN_TIMEOUT if case in ('success', 'two_apps', 'replay') else 3
     with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
         result = auth.check_saved_credentials(engine, tmp_path, SATU, ACCOUNT, 'msedge', True,
-                                             lambda: None, timeout=3)
+                                             lambda: None, timeout=timeout)
         assert log.flush()
     text = '\n'.join(p.read_text(encoding='utf-8') for p in (tmp_path / 'diagnostics/logs').glob('*.jsonl'))
     for private in (CODE, STATE, VERIFIER, ACCOUNT, PASSWORD, TOKEN):
