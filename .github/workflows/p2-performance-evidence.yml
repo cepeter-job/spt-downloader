@@ -6,6 +6,7 @@ on:
       - '.github/workflows/p2-performance-evidence.yml'
       - 'scripts/_p2_performance_probe.py'
       - 'scripts/_p2_layout_trace.py'
+      - 'scripts/_p2_latency_comparison.py'
 permissions:
   contents: read
 concurrency:
@@ -13,11 +14,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   evidence:
-    name: Require RED then GREEN for actual-layout scheduling
+    name: Paired exact-commit timings, native scaling and separate profiling
     runs-on: windows-2022
-    timeout-minutes: 12
-    permissions:
-      contents: write
+    timeout-minutes: 20
     env:
       PYTHONUTF8: '1'
     steps:
@@ -28,51 +27,41 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          ref: d9336e382541d30f1fa837e5735b9b748e4c3657
-          path: source
+          ref: df8e7589fe6550d639142971483c65beef4b37d9
+          path: baseline
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: d59a019c9c7cfc24af617ace824c69d7ede58d53
+          path: candidate
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 67396564dd12b8a3d9eb8cd08920316cf83ae2d3
+          path: historical
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           version: '0.13.4'
           enable-cache: false
-      - name: Prepare pinned interpreter and test-only refinements
+      - name: Prepare pinned production interpreter and locked environment
         shell: pwsh
         run: |
           uv python install 'cpython-3.14.8-windows-x86_64-none' --no-bin --no-registry
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv venv --managed-python --python '3.14.8+gil' .venv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: source/locks/test.txt
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: candidate/locks/test.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py tests --source source --out "$env:RUNNER_TEMP/p2-final-candidate"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Require eight intended RED assertions before the product patch
+      - name: Measure unchanged methodology and capture native dialogs
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py red --source source --out "$env:RUNNER_TEMP/p2-final-candidate"
+          .venv/Scripts/python.exe harness/scripts/_p2_latency_comparison.py --baseline baseline --candidate candidate --historical historical/scripts/_p2_dialog_evidence.py --out "$env:RUNNER_TEMP/p2-performance-final"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Apply minimal actual-viewport scheduling correction
-        shell: pwsh
-        run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py implement --source source --out "$env:RUNNER_TEMP/p2-final-candidate"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Require GREEN without changing the existing assertions
-        shell: pwsh
-        working-directory: source
-        run: |
-          ../.venv/Scripts/python.exe -m pytest -q tests/test_desktop_dialog_readiness.py tests/test_desktop_dialog_layout.py tests/test_desktop_ui_theme.py tests/test_desktop_selection_gui.py tests/test_desktop_selection_sorting.py tests/test_desktop_selection_default.py --basetemp "$env:RUNNER_TEMP/p2-final-green-tests" --junitxml "$env:RUNNER_TEMP/p2-final-candidate/green.xml"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve tested blobs only for parent review
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py publish --source source --out "$env:RUNNER_TEMP/p2-final-candidate"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve exact RED and GREEN evidence
+      - name: Preserve synthetic timing, profile and original PNG evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: p2-final-candidate-${{ github.sha }}
+          name: p2-performance-final-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7
-          path: ${{ runner.temp }}/p2-final-candidate/
+          path: ${{ runner.temp }}/p2-performance-final/
