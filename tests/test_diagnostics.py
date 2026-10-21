@@ -23,6 +23,44 @@ def records(root):
             for line in file.read_text(encoding='utf-8').splitlines()]
 
 
+@pytest.mark.parametrize('state', ['missing', 'hidden', 'outside_view', 'visible', 'ambiguous', 'unavailable'])
+def test_panel_timeout_schema_keeps_only_safe_structural_metadata(tmp_path, state):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PANEL_PRIVATE_0012345678901234'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('capture.panel_timeout', level='WARNING', panel_state=state,
+                 tab_state='selected', panel_controlled=True, panel_matches=0,
+                 document_panel_matches=1, tab_views=2, duration_ms=123.5,
+                 outerHTML=secret, panel_id=secret, aria_controls=secret, url=secret,
+                 caption=secret, value=secret)
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'capture.panel_timeout']
+    assert len(events) == 1, 'The serializer must retain the bounded panel-timeout event'
+    row = events[0]
+    assert row['panel_state'] == state and row['tab_state'] == 'selected'
+    assert row['panel_controlled'] is True
+    assert row['panel_matches'] == 0 and row['document_panel_matches'] == 1
+    assert row['tab_views'] == 2 and row['duration_ms'] == 123.5
+    assert not {'outerHTML', 'panel_id', 'aria_controls', 'url', 'caption', 'value'} & row.keys()
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_panel_timeout_schema_rejects_untrusted_structural_values(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Structural diagnostics must not stringify arbitrary input')
+    with d.session(tmp_path, 'worker') as log:
+        d.record('capture.panel_timeout', level='WARNING', panel_state=Untrusted(),
+                 tab_state='SYNTHETIC_PRIVATE', panel_controlled='true', panel_matches=True,
+                 document_panel_matches=10_000_001, tab_views=Untrusted(), duration_ms=Untrusted())
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'capture.panel_timeout']
+    assert len(events) == 1
+    assert not {'panel_state', 'tab_state', 'panel_controlled', 'panel_matches',
+                'document_panel_matches', 'tab_views', 'duration_ms'} & events[0].keys()
+
+
 def test_diagnostics_are_explicit_jsonl_with_safe_metadata_and_no_stdout(tmp_path, capsys):
     d = diagnostics()
     with d.session(tmp_path, 'worker', job_id='synthetic-job', level='INFO') as log:

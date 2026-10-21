@@ -76,7 +76,7 @@ jobs:
         id: uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: '0.13.1'
+          version: '0.13.4'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -135,7 +135,9 @@ jobs:
     needs: route
     if: needs.route.outputs.mode == 'full'
     runs-on: windows-2022
-    timeout-minutes: 20
+    # Tests alone took 19m32s; budget for setup, uploads, and cleanup too.
+    # Keep bounded headroom without skipping tests or weakening package gates.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -153,7 +155,7 @@ jobs:
         id: uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: '0.13.1'
+          version: '0.13.4'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -233,7 +235,7 @@ jobs:
       - name: Set up pinned uv and audit dependency cache
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: '0.13.1'
+          version: '0.13.4'
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-python: true
@@ -298,7 +300,7 @@ jobs:
       - name: Set up pinned uv, build wheel cache and managed Python cache
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: '0.13.1'
+          version: '0.13.4'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true

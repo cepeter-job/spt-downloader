@@ -2,7 +2,7 @@
 
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
-**Baseline aktif:** `977b06846554ca1f2e5af512a69fb201f2cbe8d1`, 20 Oktober 2026; [matriks existing vs usulan](baseline-2026-10-20.md). Shell B dan modul presentasi sudah ada di `main` setelah PR #12 merged. Pemilihan/sorting, overwrite, sumber detail, login Satu, dan log juga existing. Konfirmasi Pengaturan dirty, batching daftar besar, serta kewajiban konteks folder di GUI overwrite masih usulan; jangan menandainya selesai dari dokumen ini. Tabel judul/status di bawah adalah pola presentasi; caption aktual dapat berbeda dan harus diperiksa di App/view sebelum direvisi.
+**Baseline aktif:** `ecbd9878aa732a379ba94ef848764f9815445003`, 21 Oktober 2026; [matriks existing vs pekerjaan terbuka](baseline-2026-10-21.md). PR #12, #53 dan #58 sudah merged. Shell, dialog Phase 2, konteks folder wajib dan pengurangan delay filter sudah tersedia. Konfirmasi Pengaturan dirty dan batching daftar besar tetap usulan. Tabel judul/status adalah pola presentasi; caption aktual tetap diperiksa di App/view sebelum direvisi.
 
 ## Login tersimpan tanpa pilihan origin
 
@@ -44,7 +44,7 @@ Empat penanda B-TK-1: **Masuk ke Coretax · Daftar SPT · Mengambil rincian · H
 | `CANCELLED` | Unduhan dihentikan | Data sementara yang sudah dibuat tetap ada; mulai lagi bukan resume. |
 | `BLOCKED` / `ERROR` | Unduhan belum bisa dilanjutkan / Unduhan belum berhasil | Pesan aman; sebab spesifik hanya bila tersedia, bukan tebakan. |
 
-Sumber: [controller](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/controller.py), [events](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/events.py), dan [worker](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/worker.py). View tidak membuat event sukses sendiri.
+Sumber: [controller](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/controller.py), [events](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/events.py), dan [worker](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/worker.py). View tidak membuat event sukses sendiri.
 
 `verified` pada detail menyatakan capture lengkap di kelompok yang diproses, bukan kebenaran pajak. `processed - verified` bukan jumlah seluruh kegagalan. Counter tidak tersedia bukan nol; saat stage berganti, jangan memakai denominator inventaris sebagai denominator detail.
 
@@ -60,9 +60,11 @@ Tidak perlu klik header untuk memakai urutan default. Klik header **Jenis pajak*
 
 Awal tidak terpilih; **Sedot SPT terpilih** nonaktif sampai pilihan sah ada. Filter memakai query casefold/trim, bukan mengubah NPWP. Mengubah filter mengosongkan pilihan; jangan mengirim hidden selection. Tampilkan jumlah dipilih, terlihat, dan inventaris. Bedakan pencarian tanpa hasil dari inventaris kosong.
 
+ID baris yang disorot ditampilkan lengkap dalam field readonly; fokus baris bukan persetujuan memilih. Alt+J memakai aksi sorting jenis yang sama dengan header dan mempertahankan pilihan/fokus. Enter di pencarian/tabel atau double-click baris tidak boleh menyetujui; konfirmasi memerlukan aksi pada tombol yang sah.
+
 Confirm memakai `controller.respond('selection', request_id, {'selected_ids': [...]})`. Payload hanya subset yang terlihat dan dikonfirmasi. X/Escape/Hentikan membatalkan job tanpa memilih semua. Fokus awal pada pencarian; Ctrl/Shift dan keyboard Treeview tetap tersedia.
 
-Request terikat `job_id`/operasi/`request_id`, hanya satu pending dan satu jawaban. Stop/terminal menginvalidasi dialog sebelum callback lain dapat berjalan. Callback lama tidak boleh menyetujui atau menghentikan job baru. Tenggat worker 600 detik, tanpa auto-consent. `respond=False` tidak berarti keputusan diterima. Sumber: [App](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/app.py), [interaction](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/interaction.py).
+Request terikat `job_id`/operasi/`request_id`, hanya satu pending dan satu jawaban. Stop/terminal menginvalidasi dialog sebelum callback lain dapat berjalan. Callback lama tidak boleh menyetujui atau menghentikan job baru. Tenggat worker 600 detik, tanpa auto-consent. `respond=False` tidak berarti keputusan diterima. Sumber: [App](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/app.py), [interaction](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/interaction.py).
 
 **Usulan, belum implemented:** batching render/filter untuk daftar besar. Baseline memasukkan ulang seluruh hasil filter melalui loop sinkron di `selection_dialog.filter_records`; tidak ada worker render/chunk-generation. Jika batching diterapkan kelak, jangan memotong data; kunci submit selama generasi belum selesai dan tolak hasil stale berdasarkan token job/request. Batas dan pengukuran performa mengikuti spesifikasi, bukan klaim baseline sudah diuji untuk semua ukuran daftar.
 
@@ -72,7 +74,7 @@ Penggantian `resume.xlsx` saja berlangsung otomatis setelah verifikasi scope dan
 
 Jelaskan bahwa file diganti seluruhnya, bukan merge baris. SPT lain dalam file yang diganti tidak otomatis dipertahankan. File masa/model lain yang tidak diganti tetap ada. Untuk folder existing yang lolos verifikasi, `coretax.write_folder_resume` membuat indeks gabungan hasil baru dan workbook lama yang dipertahankan; bukan hanya daftar pilihan baru. COMPLETE job tetap berlaku untuk pilihan proses saat ini. Jika penggantian ditolak, resume lama juga tidak dipublikasikan ulang. Setelah setuju, tunggu terminal dan verifikasi backend; jangan langsung menampilkan sukses.
 
-Worker baseline mengirim `folder`, tetapi dialog lama menerima payload tanpa folder. Spesifikasi mengusulkan menonaktifkan approve pada payload tanpa konteks folder; ini penguatan yang perlu regresi tersendiri, bukan perilaku baseline yang sudah terbukti. Pemeriksaan identitas folder/file, hash, rollback, dan custody PDF tetap milik backend.
+**Sudah diimplementasikan:** GUI menolak `folder` yang hilang, bukan string, kosong, atau hanya whitespace sebelum membuat dialog persetujuan. Nilai folder valid tetap ditampilkan persis, termasuk whitespace literal; path panjang dapat diperiksa lewat field readonly dan scrollbar. Jumlah file tidak mengubah izin penggantian per file. Request stale tidak boleh menghentikan job baru. Pemeriksaan identitas folder/file, hash, rollback, dan custody PDF tetap milik backend. Lihat `overwrite_dialog` dan tes `test_desktop_dialog_layout.py`; bukan lagi usulan Phase 2.
 
 ## Panel hasil
 
@@ -126,7 +128,11 @@ Konfirmasi edit belum disimpan belum ada pada baseline: `settings.refresh`/`chec
 
 Label terlihat dan fokus biru belum membuktikan aksesibilitas native. Uji name/role/value/focus melalui UI Automation, Narrator/NVDA, terutama tabel pilihan, input, modal, dan hasil. Kekurangan kontrol kritis dicatat sebagai blocker, bukan alasan mengganti toolkit diam-diam.
 
-Uji DPI 100/125/150/200%, pembesaran teks, multi-monitor, High Contrast, Tab/Shift+Tab, Enter/Space/Escape, dan shortcut. Reflow harus mempertahankan informasi scope; jangan meluluskan clipping dengan minimum jendela melebihi work area. Sasaran ukuran/performa B-TK-1 adalah target belum terukur.
+Uji DPI 100/125/150/200%, pembesaran teks, multi-monitor, High Contrast, Tab/Shift+Tab, Enter/Space/Escape, dan shortcut. Reflow harus mempertahankan informasi scope; jangan meluluskan clipping dengan minimum jendela melebihi work area. Ukuran normal/compact penuh pada 200% belum terverifikasi pada layar yang cukup besar; screenshot 200% yang tersedia menguji ukuran ter-clamp dan minimum. Jangan menamai hasil ini kepatuhan DPI menyeluruh.
+
+PR #58 menggunakan callback idle milik dialog untuk mapping awal/perubahan konten, mengabaikan notifikasi Configure redundan berdasar ukuran viewport aktual, dan tetap menggabungkan resize nyata melalui callback 75 ms. Tidak ada thread Tk baru, batching row atau batas jumlah record baru. Seluruh callback harus dibatalkan saat Stop/terminal/close; jangan membatalkan timer root yang bukan milik dialog.
+
+Pada pasangan sintetis Windows yang dilaporkan, median filter 1/100/1.000 SPT menjadi 4,86/9,55/15,73 ms; median opening masih 137–185 ms dan semua 40 sampelnya di atas 100 ms. Sorting tidak seluruhnya lebih cepat. Cancellation maksimum 73,33 ms berlaku untuk sampel tersebut, bukan jaminan semua mesin. Lihat [metodologi dan bukti PR #58](../superpowers/reports/2026-10-21-phase2-performance-evidence.md); pengukuran ini bukan throughput Coretax/Excel/PDF.
 
 Ukur GUI terpisah dari worker/browser; batasi event, status history, row-batch, serta callback tertunda. Pertahankan polling baseline dan update widget inkremental. Seluruh pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE hanya di GitHub runner sesuai [AGENTS.md](../../AGENTS.md). Pemeriksaan dokumen lokal bukan bukti runtime atau aksesibilitas.
 

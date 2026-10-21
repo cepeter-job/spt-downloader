@@ -1,4 +1,5 @@
 """Render observed PPh21/26 forms without restyling their reference cells."""
+from copy import copy
 from pathlib import Path
 from decimal import Decimal
 import math
@@ -251,6 +252,11 @@ def _appendix(sheet, form, sections):
         extra = max(0, needed - (last - first + 1))
         _grow(sheet, last + 1, extra, first)
         for row, (mapping, values, table) in enumerate(rows, first):
+            if form == 'l-ia':
+                # A reserved blank row can become employee data after growth.
+                # Restore its body borders without changing column-specific formats.
+                for column in range(1, 15):
+                    sheet.cell(row, column).border = copy(sheet.cell(first, column).border)
             valid = True
             for column, value in zip(mapping, values):
                 if column in money_columns:

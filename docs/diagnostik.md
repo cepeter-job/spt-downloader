@@ -66,6 +66,27 @@ Untuk kasus Coretax → Satu, origin tersimpan Satu dapat dilanjutkan hanya sete
 
 Aturan jaringan tidak dilonggarkan: origin asing dan request non-GET/HEAD ke origin selain origin kredensial tetap ditolak. Counter bukan bukti bahwa request yang diblokir menyebabkan reload loop, dan timeout bukan diagnosis password salah. Gunakan urutan state dan kategori blocking untuk menentukan observasi lanjutan; jangan mengirim HAR mentah atau kredensial.
 
+## Snapshot setelah timeout panel
+
+`capture.panel_timeout` dicatat pada WARNING sekali ketika budget tunggu panel habis, bukan pada setiap polling. Event ini tidak mengganti `capture.partial` atau mengubah hasil PARTIAL, selector, klik tab, retry, maupun budget tunggu. Durasi `duration_ms` hanya mencakup penantian panel sampai budget habis, tidak mencakup pembukaan detail, pekerjaan sebelumnya, atau pembacaan snapshot sesudahnya.
+
+Snapshot hanya berisi struktur: `panel_controlled` menyatakan penggunaan `aria-controls`; `panel_matches` menghitung kandidat dalam view yang sedang dipakai; `document_panel_matches` menghitung kecocokan ID yang sama di dokumen dan **tidak diisi** pada jalur fallback tanpa ID; `tab_views` menghitung `.p-tabview` di bawah `.main-content`. ID sebenarnya tidak pernah masuk log. `tab_state` adalah `selected`, `unselected`, atau `unknown`; yang terakhir dipakai bila asosiasi tab atau atribut pemilihannya tidak tunggal/teramati.
+
+`panel_state` memakai kategori tetap:
+
+| State | Observasi sesudah timeout |
+|---|---|
+| `missing` | Tidak ada kandidat pada view maupun kecocokan ID dokumen yang teramati |
+| `outside_view` | ID memiliki kecocokan di dokumen, tetapi tidak di view yang sedang dipakai |
+| `hidden` | Kandidat tunggal tidak mempunyai kotak berukuran positif atau CSS visibility-nya hidden/collapse |
+| `visible` | Kandidat tunggal mempunyai kotak berukuran positif dan CSS visibility yang teramati bukan hidden/collapse |
+| `ambiguous` | Ada lebih dari satu kandidat dalam view; diagnostik tidak memilih salah satunya |
+| `unavailable` | Snapshot gagal/tidak tersedia; counter yang tidak diketahui dihilangkan, bukan ditulis nol |
+
+State merupakan observasi struktur dan geometri saat snapshot, **bukan** salinan keputusan visibilitas internal Playwright atau bukti penyebab timeout. DOM dapat berubah antara kegagalan dan snapshot; `visible` setelah timeout bukan alasan mengulang atau mengesahkan capture. Tidak ada pembacaan nilai form, caption, HTML, URL, atau isi tabel untuk event ini. Logger tetap memfilter enum, tipe dan rentang counter; exception dari probe tidak mengganti timeout asli.
+
+Probe melakukan satu evaluasi sinkron read-only setelah kegagalan. Batas 100 ms pada `Locator.evaluate` membatasi pencarian view, **bukan** seluruh eksekusi JavaScript atau respons browser yang macet. Ini bukan jaminan latensi keras; mekanisme Stop dan cleanup proses milik aplikasi tetap berlaku. Snapshot juga tidak menambah informasi pada log historis. Penggunaan build diagnostik dan reproduksi live memerlukan persetujuan terpisah; tes sintetis tidak membuktikan timeout live telah diperbaiki.
+
 ## Benchmark DOM versus JSON (lokal, tanpa payload)
 
 `detail.source` mencatat `source_requested` (`dom`/`json-first`), `source_used` (`dom`/`json`), dan `source_reason` dari kategori tetap: `dom_requested`, `native_verified`, `capture_incomplete`, `adapter_ineligible`, `coverage_incomplete`, `forms_unavailable`, `unsupported_tax`, atau `checkpoint_reuse`. Ini tidak mencatat string alasan adapter mentah. `tax_kind` hanya `ppn`, `pph21`, `unifikasi`, `corporate`, atau `other`; `ordinal` adalah posisi anonim dalam pilihan job, bukan ID SPT.

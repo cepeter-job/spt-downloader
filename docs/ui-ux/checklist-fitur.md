@@ -4,7 +4,7 @@
 
 ## Periksa baseline sebelum membuka pekerjaan
 
-Mulai dari [baseline aktif 20 Oktober 2026](baseline-2026-10-20.md), lalu periksa kembali `main` dan PR yang sudah merged. Catat commit sumber dan bukti yang berlaku; tanggal file desain bukan bukti bahwa fiturnya belum dibuat. Pisahkan **existing**, **diusulkan**, **diimplementasikan**, dan **diverifikasi untuk commit tertentu**. Tahap 2 tidak membangun ulang shell, pemilihan/sorting, JSON-hybrid atau tombol log yang sudah ada.
+Mulai dari [baseline aktif 21 Oktober 2026](baseline-2026-10-21.md), lalu periksa kembali `main` dan PR yang sudah merged. Catat commit sumber dan bukti yang berlaku; tanggal file desain bukan bukti bahwa fiturnya belum dibuat. Pisahkan **existing**, **diusulkan**, **diimplementasikan**, dan **diverifikasi untuk commit tertentu**. PR #53 dan #58 sudah merged: jangan merencanakan ulang dialog, konteks folder wajib, Alt+J atau perbaikan filter sebagai fitur yang belum ada. Settings dirty, target opening 100 ms dan full-size 200% tetap dipisahkan dari pekerjaan yang selesai.
 
 ## Alur kerja
 
@@ -94,6 +94,8 @@ Keputusan pemilik: [disetujui/perlu revisi, tanggal, catatan]. Persetujuan desai
 - [ ] Origin Satu tetap (tanpa URL bebas), arti tahun pajak, NPWP, serta pemisahan workbook masa/model tetap akurat.
 - [ ] Default desktop JSON-hybrid dan preferensi tersimpan tidak disamakan dengan default CLI/library DOM; fallback tidak dilabeli sukses JSON.
 - [ ] Search yang menghapus pilihan dibedakan dari sorting yang mempertahankannya; indeks resume gabungan tidak disamakan dengan cakupan COMPLETE job.
+- [ ] Katalog 54 ID dan konteks folder wajib mengikuti source, bukan snapshot 44 ID sebelum Phase 2.
+- [ ] Bukti PR #53/#58 dipin ke commit dan batasnya; filtering yang lebih cepat tidak diklaim memenuhi target opening atau DPI penuh.
 - [ ] Semua tombol memiliki aksi yang benar-benar didukung; tidak ada resume/antrean semu.
 - [ ] Kriteria keyboard, DPI, pembaca layar, privasi, dan performa dapat diuji.
 

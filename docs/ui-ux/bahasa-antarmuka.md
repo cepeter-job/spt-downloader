@@ -1,6 +1,6 @@
 # Menulis bahasa antarmuka
 
-**Baseline aktif, 20 Oktober 2026:** `977b06846554ca1f2e5af512a69fb201f2cbe8d1`. Permintaan PR #14 sudah terintegrasi: footer nama pribadi dan ID `app.credit` dihapus. Katalog kini berisi **44 ID**, termasuk `app.bugreport`; lima teks pemilik lainnya tetap. Setiap workbook masa/model berisi form model itu saja; Ringkasan/Daftar SPT/Audit ada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF yang akan tertimpa tetap membutuhkan persetujuan. Lihat [kontrak baseline](baseline-2026-10-20.md).
+**Baseline aktif, 21 Oktober 2026:** `ecbd9878aa732a379ba94ef848764f9815445003`. Permintaan PR #14 sudah terintegrasi: footer nama pribadi dan ID `app.credit` dihapus. Katalog kini berisi **54 ID**, termasuk `app.bugreport`; lima teks pemilik lainnya tetap. Setiap workbook masa/model berisi form model itu saja; Ringkasan/Daftar SPT/Audit ada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF yang akan tertimpa tetap membutuhkan persetujuan. Lihat [kontrak baseline](baseline-2026-10-21.md).
 
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
@@ -45,7 +45,7 @@ Istilah pajak dan nama berkas yang membantu pencarian tetap dipertahankan: NPWP,
 | `app.bugreport` | bugreport : sharmila@kemenkeu.go.id |
 | `selection.confirm` | Sedot SPT terpilih |
 
-Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/tests/test_desktop_selection_gui.py).
+Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/tests/test_desktop_selection_gui.py).
 
 ## Kosakata yang konsisten
 
@@ -97,7 +97,35 @@ Tabel ini menyalin nilai ID yang ada, bukan inventaris widget yang semuanya suda
 | `download.error.title` | Unduhan belum berhasil |
 | `login.unverified.title` | Password belum bisa dipastikan |
 
-Template pemilihan, dialog penggantian, dan delta ID lain ada pada bagian 11 [spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md). Perubahan copy ID yang sama harus selaras; jangan membuat ID baru hanya karena susunan kata diperbaiki.
+### ID lainnya pada katalog yang sama
+
+Baris berikut melengkapi katalog 54 ID, termasuk dialog yang sudah diimplementasikan. Placeholder nama/jumlah harus mengikuti pemeriksaan `copy_text`; jangan mengubah nilai tidak diketahui menjadi nol.
+
+| ID | Teks exact |
+| --- | --- |
+| `selection.title` | Pilih SPT yang akan diunduh |
+| `selection.help` | Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan. |
+| `selection.search.label` | Cari jenis pajak, masa, pembetulan, atau ID SPT |
+| `selection.empty` | Daftar ini tidak memuat SPT yang bisa dipilih. |
+| `selection.focused_id` | ID SPT yang disorot |
+| `selection.keyboard_hint` | Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J. |
+| `selection.summary` | {selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan. |
+| `selection.no_match` | Tidak ada SPT yang cocok dengan pencarian. |
+| `selection.filter_reset` | Pencarian berubah. Pilih lagi SPT yang akan diunduh. |
+| `download.details.body` | {processed} dari {total} SPT sudah diproses. Kelengkapan {verified} SPT sudah diperiksa. |
+| `download.publish.title` | Menyimpan hasil unduhan |
+| `overwrite.title` | Ganti hasil sebelumnya? |
+| `overwrite.folder.label` | Folder hasil sebelumnya |
+| `overwrite.help` | File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru. |
+| `overwrite.files_count` | {count} file akan diganti. |
+| `overwrite.keep_hint` | Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya. |
+| `overwrite.context_missing` | Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim. |
+| `overwrite.decline` | Jangan ganti |
+| `overwrite.confirm` | Ganti file tersebut |
+| `settings.background.help` | Jika memungkinkan. Browser tetap muncul saat perlu login. |
+| `settings.dirty.title` | Perubahan belum disimpan |
+
+Sumber aktif adalah `spt_desktop/ui_copy.py` pada commit baseline, bukan daftar usulan ID di spesifikasi historis. Perubahan copy ID yang sama harus selaras; jangan membuat ID baru hanya karena susunan kata diperbaiki.
 
 ## Sumber detail, browser, dan bantuan yang sudah tersedia
 

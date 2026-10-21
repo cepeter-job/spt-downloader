@@ -1,4 +1,5 @@
 """Fill only observed PPN and Unifikasi forms using approved public layouts."""
+from copy import copy
 from pathlib import Path
 from decimal import Decimal
 import math
@@ -344,10 +345,51 @@ def _unifikasi_footer(table, labels, aliases, column, allowed):
     return result
 
 
+def _parse_percent_rate(value):
+    """Parse a TINGKAT (%) percentage-points string into an Excel fraction.
+
+    Strict: digits with optional comma decimal separator, no thousands
+    separator, no period, no suffix. Blank yields (None, True) meaning
+    "blank, not zero". Out of range or too many significant digits yields
+    (None, False).
+    """
+    if value is None or value == '':
+        return None, True
+    if isinstance(value, bool):
+        return None, False
+    if isinstance(value, (int, float)):
+        rate = Decimal(str(value))
+    elif isinstance(value, str):
+        if not re.fullmatch(r'[0-9]+(?:,[0-9]+)?', value):
+            return None, False
+        try:
+            rate = Decimal(value.replace(',', '.'))
+        except Exception:
+            return None, False
+    else:
+        return None, False
+    if rate < 0 or rate > 100:
+        return None, False
+    fraction = rate / Decimal(100)
+    if len(fraction.as_tuple().digits) > 15:
+        return None, False
+    return float(fraction), True
+
+
 def _unifikasi_appendix(sheet, blocks, sections, form):
     grouped = [[] for _ in blocks]
     fields, pending, evidence = [], [], []
     money = UNIFIKASI_MONEY[form]
+    if form == 'daftar i' and len(blocks) == 2:
+        # Pre-set percent rate number format on body rate cells before
+        # growth so inserted body rows inherit it. J14 spacer stays blank
+        # and borderless; only its border is copied from I14.
+        (_, _, b0_first, b0_last), (_, _, b1_first, b1_last) = blocks
+        for row in range(b0_first, b0_last + 1):
+            sheet.cell(row, 10).number_format = '0.00%'
+        for row in range(b1_first, b1_last):
+            sheet.cell(row, 10).number_format = '0.00%'
+        sheet.cell(b1_last, 10).border = copy(sheet.cell(b1_last, 9).border)
     for section in sections:
         fields.extend(section.get('fields', []))
         for table in section.get('tables', []):
@@ -400,7 +442,18 @@ def _unifikasi_appendix(sheet, blocks, sections, form):
         for row, values in enumerate(rows, first):
             safe = True
             for column, value in zip(mapping, values):
-                if column in money:
+                if column == 10 and form == 'daftar i':
+                    if value is None or value == '':
+                        pass  # blank rate: leave empty, not zero
+                    else:
+                        fraction, ok = _parse_percent_rate(value)
+                        if ok:
+                            _write(sheet, row, column, fraction)
+                            sheet.cell(row, column).number_format = '0.00%'
+                        else:
+                            _write(sheet, row, column, value)
+                            safe = False
+                elif column in money:
                     safe = _write_unifikasi_amount(sheet, row, column, value) and safe
                 else:
                     _write(sheet, row, column, value)
@@ -544,6 +597,14 @@ def render_template_form(sheet, tax, form, sections):
         return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
                 'unmapped_tables': len(unresolved),
                 'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
+    if tax == 'PPh Unifikasi' and form != 'induk':
+        # Clean appendix omission: do not append raw evidence to the sheet.
+        # Unresolved bindings remain truthful in the report; raw checkpoint
+        # immutable. Identity-only omissions apply to Induk forms only.
+        unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
+        return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
+                'unmapped_tables': len(unresolved),
+                'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved)}
     display_fields = ([field for field in fields if not _redundant_unifikasi_identity(field)]
                       if form == 'induk' else fields)
     display_sections = ([{**section, 'text': ''} for section in sections]

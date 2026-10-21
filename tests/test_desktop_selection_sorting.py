@@ -1,7 +1,7 @@
 """Real Tk header sorting contracts. GitHub Windows execution only."""
 from copy import deepcopy
 import pytest
-from support_gui import window, widgets, button
+from support_gui import named_widget, window, widgets, button
 
 
 def inventory():
@@ -22,7 +22,7 @@ def tree_in(dialog):
 
 
 def search_in(dialog):
-    return next(widget for widget in widgets(dialog) if widget.winfo_class() == 'TEntry')
+    return named_widget(dialog, 'search')
 
 
 def click_type_heading(root, tree):

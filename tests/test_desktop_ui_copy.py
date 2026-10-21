@@ -87,6 +87,11 @@ def test_catalog_matches_approved_copy():
         'action.new': 'Unduh SPT lain',
         'action.details': 'Lihat rincian',
         'selection.title': 'Pilih SPT yang akan diunduh',
+        'selection.help': 'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.',
+        'selection.search.label': 'Cari jenis pajak, masa, pembetulan, atau ID SPT',
+        'selection.empty': 'Daftar ini tidak memuat SPT yang bisa dipilih.',
+        'selection.focused_id': 'ID SPT yang disorot',
+        'selection.keyboard_hint': 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.',
         'selection.summary': '{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.',
         'selection.no_match': 'Tidak ada SPT yang cocok dengan pencarian.',
         'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.',
@@ -103,6 +108,11 @@ def test_catalog_matches_approved_copy():
         'download.cancelled.title': 'Unduhan dihentikan',
         'download.error.title': 'Unduhan belum berhasil',
         'overwrite.title': 'Ganti hasil sebelumnya?',
+        'overwrite.folder.label': 'Folder hasil sebelumnya',
+        'overwrite.help': 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.',
+        'overwrite.files_count': '{count} file akan diganti.',
+        'overwrite.keep_hint': 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.',
+        'overwrite.context_missing': 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.',
         'overwrite.decline': 'Jangan ganti',
         'overwrite.confirm': 'Ganti file tersebut',
         'settings.origin.label': 'Situs login',
@@ -130,3 +140,44 @@ def test_copy_module_has_only_standard_library_imports():
             assert node.level == 0
             modules.append(node.module.split('.')[0])
     assert set(modules) <= {'typing', 'types', 'string', '__future__', 'collections'}
+
+
+@pytest.mark.parametrize('key,expected', [
+    ('selection.help', 'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
+    ('selection.search.label', 'Cari jenis pajak, masa, pembetulan, atau ID SPT'),
+    ('selection.empty', 'Daftar ini tidak memuat SPT yang bisa dipilih.'),
+    ('selection.focused_id', 'ID SPT yang disorot'),
+    ('selection.keyboard_hint', 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.'),
+])
+def test_phase2_selection_copy_is_exact(key, expected):
+    from spt_desktop.ui_copy import copy_text
+    assert copy_text(key) == expected
+
+
+@pytest.mark.parametrize('key,expected', [
+    ('overwrite.folder.label', 'Folder hasil sebelumnya'),
+    ('overwrite.help', 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.'),
+    ('overwrite.keep_hint', 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.'),
+    ('overwrite.context_missing', 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.'),
+])
+def test_phase2_overwrite_copy_is_exact(key, expected):
+    from spt_desktop.ui_copy import copy_text
+    assert copy_text(key) == expected
+
+
+@pytest.mark.parametrize('count,expected', [(0, '0 file akan diganti.'), (2, '2 file akan diganti.')])
+def test_overwrite_count_template_is_strict(count, expected):
+    from spt_desktop.ui_copy import copy_text
+    assert copy_text('overwrite.files_count', count=count) == expected
+
+
+@pytest.mark.parametrize('values,error', [
+    ({'count': True}, TypeError), ({'count': False}, TypeError),
+    ({'count': '2'}, TypeError), ({'count': 2.0}, TypeError),
+    ({'count': -1}, ValueError), ({}, ValueError),
+    ({'count': 1, 'extra': 0}, ValueError),
+])
+def test_overwrite_count_rejects_wrong_types_and_keys(values, error):
+    from spt_desktop.ui_copy import copy_text
+    with pytest.raises(error):
+        copy_text('overwrite.files_count', **values)

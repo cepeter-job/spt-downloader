@@ -2,15 +2,18 @@
 
 **Keputusan pemilik, 12 Oktober 2026:** gunakan desain **B**, pertahankan **Tkinter/ttk**, dan utamakan proses serta hasil yang mudah dipahami sebelum menambah fitur. Bahasa antarmuka harus terasa seperti petunjuk dari rekan kerja, bukan log mesin atau dokumen teknis.
 
-**Baseline aktif, 20 Oktober 2026:** `main@977b06846554ca1f2e5af512a69fb201f2cbe8d1`. Mulai dari [baseline UI/UX terkini](baseline-2026-10-20.md), bukan prototipe atau rencana tahap 1 yang lama. [PR #12](https://github.com/cepeter-job/spt-downloader/pull/12) sudah merged pada 13 Oktober 2026 sebagai `d04cd0da67393410beea4735bed9d63e0cb79655`; shell B dan modul presentasi sudah ada di `main`. Pemilihan SPT beserta sorting, sumber detail JSON-hybrid/DOM, login Satu, logging, workbook per masa **dan Model SPT**, serta PDF yang didukung harus dipertahankan.
+**Baseline aktif, 21 Oktober 2026:** perilaku produk dipin pada `main@ecbd9878aa732a379ba94ef848764f9815445003`, setelah PR #53 dan #58 merged. Mulai dari [baseline UI/UX 21 Oktober](baseline-2026-10-21.md). Shell B, dialog pemilihan/penggantian, konteks folder wajib, ID lengkap yang disorot, Alt+J, serta perbaikan waktu filter sudah diimplementasikan. Default desktop JSON-hybrid, saved DOM, login Satu, logging, pemisahan workbook masa/model dan PDF yang didukung tetap dipertahankan.
 
-[Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md), rencana tahap 1, dan [bukti T5](../superpowers/reports/2026-10-13-ui-b-phase1-evidence.md) adalah riwayat keputusan/hasil untuk commit yang disebut di dalamnya. Angka 719 tes dan screenshot Oktober 13 tidak mengesahkan tampilan atau seluruh fungsi pada baseline Oktober 20. Penguatan dialog, penerimaan manual, aksesibilitas, dan performa tetap perlu bukti baru sesuai perubahan yang diajukan.
+[Bukti Phase 2](../superpowers/reports/2026-10-20-ui-b-phase2-evidence.md) dan [bukti performa PR #58](../superpowers/reports/2026-10-21-phase2-performance-evidence.md) tetap dipin ke commit yang benar-benar diuji. Filter membaik, tetapi target opening 100 ms belum tercapai; P2-14 untuk ukuran normal/compact penuh pada 200% masih PARTIAL. Jangan menyamakan merge dengan sertifikasi aksesibilitas, penerimaan semua akun Coretax, atau deployment.
+
+[Snapshot 20 Oktober sebelum Phase 2](baseline-2026-10-20.md), [spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md), rencana tahap 1, dan [bukti T5](../superpowers/reports/2026-10-13-ui-b-phase1-evidence.md) adalah arsip keputusan/hasil. PR #12 sudah merged pada 13 Oktober. Angka 719 tes dan screenshot lama tidak mengesahkan perubahan berikutnya. Jangan memulihkan footer nama pribadi atau membangun ulang tahap yang sudah selesai.
 
 ## Mulai dari sini
 
 | Kebutuhan | Baca |
 | --- | --- |
-| Menentukan fitur yang sudah ada dan sisa pekerjaan sebelum tahap 2 | [Baseline aktif 20 Oktober 2026](baseline-2026-10-20.md) |
+| Menentukan fitur yang sudah ada dan pekerjaan berikutnya | [Baseline aktif 21 Oktober 2026](baseline-2026-10-21.md) |
+| Meninjau hasil dialog dan performa | [Phase 2](../superpowers/reports/2026-10-20-ui-b-phase2-evidence.md) dan [PR #58: angka serta batas ukur](../superpowers/reports/2026-10-21-phase2-performance-evidence.md) |
 | Menelusuri alasan desain tahap 1 | [Spesifikasi B-TK-1 historis](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md); rekonsiliasi dahulu dengan baseline aktif |
 | Menulis judul, tombol, petunjuk, atau pesan gagal | [Bahasa antarmuka](bahasa-antarmuka.md) |
 | Menambahkan layar atau mengubah proses dan hasil | [Pola layar dan status](pola-dan-status.md) |
@@ -52,7 +55,7 @@ Setiap jenis pajak memakai workbook per masa/tahun sumber dan **Model SPT litera
 
 `resume.xlsx` tetap memuat Ringkasan/Daftar SPT/Audit. Pada publikasi ke folder yang sudah ada, backend memverifikasi workbook lama dan membuat indeks folder gabungan untuk hasil sah yang dipertahankan serta hasil baru. Ini berbeda dari cakupan COMPLETE job saat ini yang tetap subset terpilih; indeks bukan bukti semua file lama diunduh ulang. Penolakan overwrite mempertahankan hasil lama termasuk resume. PDF keuangan/auditan Badan tertentu dapat ikut disimpan melalui tautan baca yang didukung; jangan mengatakan semua PDF dikecualikan atau semua lampiran tersedia.
 
-Sumber kontrak: [arsitektur pada baseline](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/docs/arsitektur.md), [App](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/app.py), dan [AGENTS.md](../../AGENTS.md).
+Sumber kontrak: [arsitektur pada baseline](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/docs/arsitektur.md), [App](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/app.py), dan [AGENTS.md](../../AGENTS.md).
 
 ## 4. Cara memetakan desain ke Tkinter/ttk
 
@@ -62,7 +65,7 @@ Kelompokkan pola berulang, bukan membuat abstraksi untuk setiap label. B-TK-1 me
 
 Katalog teks memakai ID stabil seperti `download.complete.title`, bukan teks itu sendiri sebagai key. Placeholder bernama, misalnya `{processed}`, `{total}`, dan `{verified}`, diperiksa sebelum format. Hindari merangkai potongan kalimat. Nilai tidak diketahui bukan nol. Jika event tidak menyediakan penyebab rinci, gunakan pesan generik yang aman, bukan menebak dari exception.
 
-Tetap gunakan `after()` dan aliran event yang sudah ada. Jangan menambahkan loop menunggu, tidur, parsing workbook, atau proses browser pada callback. Polling baseline 100 ms dan queue 128 event bukan alasan merender ulang seluruh layar setiap event. Consent memakai pesan privat; daftar record tidak dipindahkan ke stdout. Referensi: [controller baseline](https://github.com/cepeter-job/spt-downloader/blob/977b06846554ca1f2e5af512a69fb201f2cbe8d1/spt_desktop/controller.py), [Tkinter 3.14](https://docs.python.org/3.14/library/tkinter.html#threading-model).
+Tetap gunakan `after()` dan aliran event yang sudah ada. Jangan menambahkan loop menunggu, tidur, parsing workbook, atau proses browser pada callback. Polling baseline 100 ms dan queue 128 event bukan alasan merender ulang seluruh layar setiap event. Consent memakai pesan privat; daftar record tidak dipindahkan ke stdout. Referensi: [controller baseline](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/spt_desktop/controller.py), [Tkinter 3.14](https://docs.python.org/3.14/library/tkinter.html#threading-model).
 
 ## 5. Fondasi visual
 
@@ -78,7 +81,7 @@ Tetap gunakan `after()` dan aliran event yang sudah ada. Jangan menambahkan loop
 
 Token adalah acuan bersama, bukan hex baru yang disalin bebas. Inter pada pratinjau tidak menjamin metrik sama dengan Segoe UI. Jika label tidak muat, perbaiki layout, bukan mengecilkan huruf atau memotong arti. Teks khusus pemilik tetap utuh dan boleh membungkus.
 
-Target visual: teks biasa minimal 4,5:1, teks besar serta komponen/fokus relevan 3:1, pembesaran teks sampai 200%. Ini acuan desain, bukan sertifikat kepatuhan native. Rujukan: [WCAG 2.2](https://www.w3.org/TR/WCAG22/). Pengujian Windows mencakup keyboard, Narrator/NVDA, High Contrast, DPI antar-monitor, dan urutan fokus. Target geometry serta anggaran kinerja dijelaskan pada B-TK-1, belum dianggap hasil ukur.
+Target visual: teks biasa minimal 4,5:1, teks besar serta komponen/fokus relevan 3:1, pembesaran teks sampai 200%. Ini acuan desain, bukan sertifikat kepatuhan native. Rujukan: [WCAG 2.2](https://www.w3.org/TR/WCAG22/). Pengujian Windows mencakup keyboard, Narrator/NVDA, High Contrast, DPI antar-monitor, dan urutan fokus. Target geometry serta anggaran kinerja tetap dibedakan dari hasil ukur. PR #58 menyediakan bukti sintetis filter, opening, cancellation dan screenshot; full-size 200%, pembaca layar serta High Contrast belum dinyatakan diterima.
 
 ## 6. Sumber desain dan pengelolaan revisi
 
@@ -92,8 +95,8 @@ Setiap perubahan mencatat alasan, copy ID/layar terdampak, kondisi pemicu, sumbe
 
 ## 7. Syarat sebelum implementasi
 
-Arah B dan implementasi tahap 1 sudah dipilih/diselesaikan melalui PR #12. Untuk tahap berikutnya, tulis delta terhadap [baseline aktif](baseline-2026-10-20.md), bedakan fitur existing dari usulan, lalu minta review desain dan susun rencana kecil. Jangan meminta implementasi ulang tahap 1 atau menyatakan seluruh tahap selanjutnya selesai karena fitur sejenis sudah ada. Perubahan dokumen bukan izin merge atau deployment otomatis.
+Arah B dan fondasi tahap 1 sudah diselesaikan melalui PR #12; dialog Phase 2 dan perbaikan filter sudah merged melalui PR #53/#58. Untuk tahap berikutnya, tulis delta terhadap [baseline aktif](baseline-2026-10-21.md), bedakan fitur existing dari usulan, lalu minta review desain dan susun rencana kecil. Jangan meminta implementasi ulang tahap 1 atau menyatakan seluruh tahap selanjutnya selesai karena fitur sejenis sudah ada. Perubahan dokumen bukan izin merge atau deployment otomatis.
 
 Sesuai [AGENTS.md](../../AGENTS.md), pytest, product import, Tk/browser fixture, source/frozen self-test, build, dan EXE dijalankan hanya pada GitHub runner. Lokal hanya pemeriksaan dokumen/source/AST dan hash/metadata. Jangan mengubah CI/ruleset untuk mendapatkan GREEN. Bukti baseline Windows, aksesibilitas, performa, dan penerimaan manual tetap dibedakan dari pemeriksaan dokumentasi.
 
-Permintaan PR #14 menghapus footer nama pribadi, bukan subtitle umum atau petunjuk Downloads. Katalog aktif pada commit yang dipin memuat 44 ID termasuk `app.bugreport`; jumlah ID adalah metadata baseline, bukan jumlah kontrol yang dirender. Jangan mengembalikan `app.credit` dari rancangan historis.
+Permintaan PR #14 menghapus footer nama pribadi, bukan subtitle umum atau petunjuk Downloads. Katalog aktif pada commit yang dipin memuat 54 ID termasuk `app.bugreport`; jumlah ID adalah metadata baseline, bukan jumlah kontrol yang dirender. Jangan mengembalikan `app.credit` dari rancangan historis.

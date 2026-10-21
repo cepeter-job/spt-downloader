@@ -13,7 +13,7 @@ import time
 from .windows import ProcessJob
 from . import diagnostics
 
-UV_VERSION = '0.13.1'
+UV_VERSION = '0.13.4'
 PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 WORKER_FILES = (
@@ -21,6 +21,7 @@ WORKER_FILES = (
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
     'coretax_pph21_json_bindings.py', 'coretax_pph21_observer.py', 'coretax_pph21_projection.py',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
+    'coretax_badan_template.py', 'resources/corporate_format.xlsx',
     'coretax_masa_json.py', 'coretax_masa_bindings.py',
     'coretax_masa_observer.py', 'coretax_masa_projection.py', 'coretax_unifikasi_json.py',
     'resources/ppn_format.xlsx', 'resources/unifikasi_format.xlsx',
