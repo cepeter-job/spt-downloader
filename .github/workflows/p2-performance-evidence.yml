@@ -1,0 +1,70 @@
+name: Phase 2 performance evidence (temporary)
+on:
+  pull_request:
+    branches: [perf/ui-b-phase2-latency]
+    paths:
+      - '.github/workflows/p2-performance-evidence.yml'
+      - 'scripts/_p2_performance_probe.py'
+permissions:
+  contents: read
+concurrency:
+  group: p2-performance-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  evidence:
+    name: Pinned synthetic baseline and dependency evidence
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: source
+          ref: 198edafdd24f6fb37ac60b34caea60540ade72e3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: historical-probe
+          ref: 67396564dd12b8a3d9eb8cd08920316cf83ae2d3
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Prepare pinned test interpreter
+        shell: pwsh
+        run: |
+          uv python install 'cpython-3.14.8-windows-x86_64-none' --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python '3.14.8+gil' .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: source/locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve immutable public source and narrowly refreshed auditor lock
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/p2-performance" | Out-Null
+          git -C source archive --format=zip --output="$env:RUNNER_TEMP/p2-performance/source-198edaf.zip" HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location source
+          uv pip compile requirements-audit.txt --python-version 3.14.8 --universal --generate-hashes --only-binary :all: --upgrade-package certifi==2026.10.19 --output-file locks/audit.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff -- locks/audit.txt | Out-File -Encoding utf8 "$env:RUNNER_TEMP/p2-performance/audit-lock.diff"
+          Copy-Item locks/audit.txt "$env:RUNNER_TEMP/p2-performance/audit-updated.txt"
+          Pop-Location
+      - name: Measure unchanged product baseline with existing synthetic method
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe historical-probe/scripts/_p2_dialog_evidence.py --source source --revision 198edafdd24f6fb37ac60b34caea60540ade72e3 --out "$env:RUNNER_TEMP/p2-performance/baseline"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve source and synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: p2-performance-preflight-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: ${{ runner.temp }}/p2-performance/
