@@ -52,7 +52,7 @@ kontrak. URL/path lama dipertahankan; tidak ada penghapusan bukti.
 
 | Topik | Catatan yang dipertahankan |
 | --- | --- |
-| Audit dan optimasi CI | [Audit 12 Oktober](audit-2026-10-12.md); [evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md). |
+| Audit dan optimasi CI | [Audit 12 Oktober](audit-2026-10-12.md); [evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md); [evaluasi dua shard Windows](audits/2026-10-21-windows-shard-evaluation.md); [pengukuran fixture browser](audits/2026-10-21-browser-fixture-performance.md). |
 | Audit panduan kontributor | [Audit dokumentasi dan komentar 21 Oktober](audits/2026-10-21-developer-docs-comments.md). |
 | Inventaris dan period-year | [Filter sumber](inventory-year-filter.md); [acceptance filter](inventory-year-filter-acceptance.md); [grid vs auxiliary](inventory-list-binding.md). |
 | Metadata periode | [Diagnostik cache](period-cache-diagnostics.md); [readiness terbatas](period-cache-readiness.md); [alias kode/label terverifikasi](period-metadata-conflict.md). |
