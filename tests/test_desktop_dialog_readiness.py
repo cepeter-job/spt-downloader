@@ -168,3 +168,41 @@ def test_duplicate_configure_does_not_queue_redundant_layout(active_window, kind
     assert app._interaction['layout_after'] is None
     assert_body_ready(dialog)
     assert not controller.replies and not controller.stopped
+
+
+@pytest.mark.parametrize('kind', ['selection', 'overwrite'])
+@pytest.mark.parametrize('hidden_state', ['iconic', 'withdrawn'])
+def test_consent_restores_hidden_owner_before_taking_modal_input(active_window, kind, hidden_state):
+    root, app, controller = active_window
+    controller.payload = payload(kind, 3)
+    root.state(hidden_state)
+    root.update()
+    assert root.state() == hidden_state
+    app.on_event(consent_event(controller, kind))
+    dialog = app._interaction['dialog']
+    root.update()
+    assert root.state() == 'normal'
+    assert root.winfo_viewable() and dialog.winfo_viewable()
+    assert root.grab_current() is dialog
+    assert not controller.replies and not controller.stopped
+    assert not named_widget(dialog, 'records' if kind == 'selection' else 'files').selection()
+    action = named_widget(dialog, 'stop' if kind == 'selection' else 'decline')
+    assert action.winfo_viewable() and action.instate(['!disabled'])
+    app.stop()
+    root.update()
+    assert controller.stopped and not controller.replies
+    assert app._interaction is None and root.grab_current() is None
+
+
+@pytest.mark.parametrize('kind', ['selection', 'overwrite'])
+def test_consent_preserves_maximized_owner(active_window, kind):
+    root, app, controller = active_window
+    controller.payload = payload(kind, 3)
+    root.state('zoomed')
+    root.update()
+    assert root.state() == 'zoomed'
+    app.on_event(consent_event(controller, kind))
+    root.update()
+    assert root.state() == 'zoomed'
+    assert app._interaction['dialog'].winfo_viewable()
+    assert not controller.replies and not controller.stopped

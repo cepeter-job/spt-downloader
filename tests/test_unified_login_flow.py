@@ -125,6 +125,9 @@ def test_blocked_post_login_requests_are_counted_without_private_values(browser,
             'msedge', True, lambda: None, timeout=2)
         assert log.flush()
     assert status == 'LOGIN_UNVERIFIED' and len(engine.posts) == 1
+    assert 'memblokir permintaan lanjutan ke Coretax' in message
+    assert 'bukan bukti password salah' in message and 'Mulai' in message
+    assert 'periksa akun, password, atau koneksi' not in message
     assert not engine.unknown and all(c.closed for c in engine.contexts)
     text = '\n'.join(p.read_text(encoding='utf-8') for p in (tmp_path / 'diagnostics/logs').glob('*.jsonl'))
     rows = [json.loads(line) for line in text.splitlines()]
@@ -133,7 +136,7 @@ def test_blocked_post_login_requests_are_counted_without_private_values(browser,
     assert (blocked[0]['target_origin'], blocked[0]['method'], blocked[0]['resource_type'], blocked[0]['reason']) == (
         'coretax', 'POST', 'fetch', 'cross_origin_write')
     result = next(r for r in rows if r['event'] == 'auth.result')
-    assert result['reason'] == 'verification_timeout' and result['blocked_requests'] == 3
+    assert result['reason'] == 'cross_origin_write' and result['blocked_requests'] == 3
     for private in [ACCOUNT, SECRET, SATU, auth.CORETAX_ORIGIN, 'SYNTHETIC_PRIVATE_QUERY', 'SYNTHETIC_POST_ONLY']:
         assert private not in text and private not in message
 
