@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/p2-performance-evidence.yml'
       - 'scripts/_p2_performance_probe.py'
+      - 'scripts/_p2_layout_trace.py'
 permissions:
   contents: read
 concurrency:
@@ -12,11 +13,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   evidence:
-    name: Validate minimal idle-layout candidate after observed RED
+    name: Trace duplicate native Configure events on unchanged candidate
     runs-on: windows-2022
-    timeout-minutes: 12
-    permissions:
-      contents: write
+    timeout-minutes: 8
     env:
       PYTHONUTF8: '1'
     steps:
@@ -29,11 +28,16 @@ jobs:
           persist-credentials: false
           ref: d9336e382541d30f1fa837e5735b9b748e4c3657
           path: source
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: 67396564dd12b8a3d9eb8cd08920316cf83ae2d3
+          path: historical
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
         with:
           version: '0.13.4'
           enable-cache: false
-      - name: Prepare pinned interpreter and candidate
+      - name: Recreate unchanged candidate and trace mapping events
         shell: pwsh
         run: |
           uv python install 'cpython-3.14.8-windows-x86_64-none' --no-bin --no-registry
@@ -42,26 +46,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: source/locks/test.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py prepare --source source --out "$env:RUNNER_TEMP/p2-candidate"
+          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py prepare --source source --out "$env:RUNNER_TEMP/p2-configure-trace"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify readiness and existing dialog behavior without weakening tests
-        shell: pwsh
-        working-directory: source
-        run: |
-          ../.venv/Scripts/python.exe -m pytest -q tests/test_desktop_dialog_readiness.py tests/test_desktop_dialog_layout.py tests/test_desktop_ui_theme.py tests/test_desktop_selection_gui.py tests/test_desktop_selection_sorting.py tests/test_desktop_selection_default.py --basetemp "$env:RUNNER_TEMP/p2-candidate-tests" --junitxml "$env:RUNNER_TEMP/p2-candidate/results.xml"
+          .venv/Scripts/python.exe harness/scripts/_p2_layout_trace.py --source source --historical historical/scripts/_p2_dialog_evidence.py --out "$env:RUNNER_TEMP/p2-configure-trace/trace.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve tested App blob only for parent review
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          .venv/Scripts/python.exe harness/scripts/_p2_performance_probe.py publish --source source --out "$env:RUNNER_TEMP/p2-candidate"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Preserve synthetic candidate evidence
+      - name: Preserve original candidate and native event trace
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: p2-idle-candidate-${{ github.sha }}
+          name: p2-configure-trace-${{ github.sha }}
           if-no-files-found: error
           retention-days: 7
-          path: ${{ runner.temp }}/p2-candidate/
+          path: ${{ runner.temp }}/p2-configure-trace/
