@@ -1,5 +1,7 @@
 """Dialog readiness contracts, exercised only on the synthetic Windows runner."""
 import gc
+import _tkinter
+import time
 import tkinter as tk
 
 import pytest
@@ -12,6 +14,25 @@ def wait_for_existing_timers(root):
     root.after(250, lambda: done.set(True))
     root.wait_variable(done)
     root.update_idletasks()
+
+
+def drain_native_layout_without_timers(root, dialog):
+    # Native mapping/Configure events are not all idle callbacks on Windows.
+    # Exclude TIMER_EVENTS so fixture setup cannot hide the resize delay.
+    flags = _tkinter.WINDOW_EVENTS | _tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT
+    viewport = named_widget(dialog, 'body_viewport')
+    deadline, quiet = time.monotonic() + 2, 0
+    while time.monotonic() < deadline:
+        pending = root.tk.dooneevent(flags)
+        root.update_idletasks()
+        if not pending and dialog.winfo_ismapped() and viewport.winfo_width() > 1:
+            quiet += 1
+            if quiet == 3:
+                return
+        else:
+            quiet = 0
+        time.sleep(.001)
+    raise AssertionError('The native test window did not map and settle')
 
 
 @pytest.fixture
@@ -72,9 +93,8 @@ def test_initial_consent_layout_ready_after_idle_without_timer_wait(active_windo
     app.on_event(consent_event(controller, kind))
     interaction = app._interaction
     dialog = interaction['dialog']
-    # Idle geometry must be ready without waiting for the resize timer.
-    # This is a readiness contract, not a fragile elapsed-time assertion.
-    root.update_idletasks()
+    # Readiness after native mapping/idle work, not a fragile wall-clock target.
+    drain_native_layout_without_timers(root, dialog)
     assert_body_ready(dialog)
     assert interaction['layout_after'] is None
     tree = named_widget(dialog, 'records' if kind == 'selection' else 'files')
@@ -98,7 +118,7 @@ def test_filter_content_reflow_finishes_at_idle_and_keeps_reset_consent(active_w
     tree.selection_set('record-0')
     root.update()
     named_widget(dialog, 'search').insert(0, 'no-synthetic-match')
-    root.update_idletasks()
+    drain_native_layout_without_timers(root, dialog)
     assert_body_ready(dialog)
     assert app._interaction['layout_after'] is None
     assert not tree.selection() and not tree.get_children()
