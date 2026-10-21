@@ -26,7 +26,9 @@ def prepare(root, out):
             if self._interaction_current(interaction):
                 canvas.configure(scrollregion=canvas.bbox('all'))
 '''
-    new = '''        def update_scrollregion(event=None):
+    new = '''        layout_ready = False
+
+        def update_scrollregion(event=None):
             if self._interaction_current(interaction):
                 # Wrapping finishes in idle geometry work after reflow returns.
                 # Match the measured body so its final lines remain reachable.
@@ -37,10 +39,32 @@ def prepare(root, out):
 '''
     assert source.count(old) == 2
     source = source.replace(old, new)
+    old = '''        def reflow():
+            interaction['layout_after'] = None
+            if not self._interaction_current(interaction):
+                return
+            width = max(1, canvas.winfo_width())
+            canvas.itemconfigure(body_window, width=width)
+'''
+    new = '''        def reflow():
+            nonlocal layout_ready
+            interaction['layout_after'] = None
+            if not self._interaction_current(interaction):
+                return
+            width = canvas.winfo_width()
+            if width <= 1:
+                # Native Map/Configure supplies the first usable viewport.
+                # Do not spin idle callbacks while the modal is not mapped.
+                return
+            layout_ready = True
+            canvas.itemconfigure(body_window, width=width)
+'''
+    assert source.count(old) == 2
+    source = source.replace(old, new)
     old = '''            if interaction['layout_after'] is None:
                 interaction['layout_after'] = dialog.after(75, reflow)
 '''
-    new = '''            if event is None:
+    new = '''            if event is None or not layout_ready:
                 # Initial and content layout must not wait for resize debounce.
                 # Reuse the modal's owned token so Stop retires either kind.
                 if interaction['layout_after'] is not None:
