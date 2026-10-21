@@ -27,6 +27,13 @@ class Page:
     def wait_for_timeout(self, milliseconds):
         self.waits += 1
         mode = self.engine.mode
+        if self.waits == 1 and mode in ('blocked_before', 'blocked_both'):
+            # Complete these intercepted requests before the login form appears.
+            self.raw.evaluate('''async (url) => {
+                for (let i = 0; i < 3; i++) {
+                    await fetch(url, {method: 'POST', body: 'SYNTHETIC_POST_ONLY'}).catch(() => {});
+                }
+            }''', auth.CORETAX_ORIGIN + '/synthetic-readiness?token=SYNTHETIC_PRIVATE_QUERY')
         # Release each transition only after the product has inspected the shell.
         # A slow CI runner cannot complete the redirect before the first check.
         if self.waits == 1 and mode not in ('stalled', 'cancelled'):
@@ -72,15 +79,19 @@ class Engine:
             request = r.request
             if request.url == self.entry or request.url == auth.SEARCH_URL:
                 html = '<input id="ObjectPermitNumber">' if self.posts else '<main>SYNTHETIC ENTRY SHELL</main>'
-                if self.posts and self.mode == 'blocked':
+                if self.posts and self.mode in ('blocked', 'blocked_both', 'blocked_optional'):
                     target = auth.CORETAX_ORIGIN + '/synthetic-readiness?token=SYNTHETIC_PRIVATE_QUERY'
-                    html = '<script>for(let i=0;i<3;i++)fetch(' + json.dumps(target) + ',{method:"POST",body:"SYNTHETIC_POST_ONLY"}).catch(()=>{});</script>'
+                    after = ('document.body.innerHTML="<input id=ObjectPermitNumber>";'
+                             if self.mode == 'blocked_optional' else '')
+                    html = ('<script>(async()=>{for(let i=0;i<3;i++)await fetch(' + json.dumps(target)
+                            + ',{method:"POST",body:"SYNTHETIC_POST_ONLY"}).catch(()=>{});'
+                            + after + '})();</script>')
                 r.fulfill(body=html, content_type='text/html')
             elif request.url == LOGIN + '?trace=SYNTHETIC_TOKEN_ONLY':
                 r.fulfill(body='<main>SYNTHETIC LOGIN SHELL</main>', content_type='text/html')
             elif request.url == LOGIN and request.method == 'POST':
                 self.posts.append(request.post_data)
-                if self.mode == 'reject':
+                if self.mode in ('reject', 'blocked_before'):
                     r.fulfill(body=FORM, content_type='text/html')
                 else:
                     r.fulfill(body='<script>location.assign(' + json.dumps(auth.SEARCH_URL) + ')</script>', content_type='text/html')
@@ -91,5 +102,4 @@ class Engine:
         context = Context(raw, self)
         self.contexts.append(context)
         return context
-
 

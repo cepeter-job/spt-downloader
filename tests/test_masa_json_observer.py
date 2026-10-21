@@ -8,7 +8,7 @@ import json
 import pytest
 from playwright.sync_api import sync_playwright
 
-from coretax_browser import CaptureCancelled
+import coretax_browser as driver
 from coretax_json import JsonSafetyError
 from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import SCOPE
@@ -69,6 +69,10 @@ def test_all_masa_tabs_bind_real_requests_without_reading_tax_values(browser, tm
                                     'duplicate-form', 'extra-table', 'missing-request', 'filtered',
                                     'missing-footer', 'wrong-footer-kind', 'untyped-footer-kind'])
 def test_unknown_or_incomplete_structure_never_claims_observed_coverage(browser, tmp_path, monkeypatch, defect):
+    if defect in {'missing-form', 'extra-form', 'duplicate-form'}:
+        # These catalogs stay invalid; exercise the real readiness rejection
+        # without spending the production deadline waiting for a repair.
+        monkeypatch.setattr(driver, 'DETAIL_READY_TIMEOUT', 0.05)
     with observed(browser, tmp_path, monkeypatch, defect=defect) as (module, fixture, capture):
         assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
         assert fixture.page.evaluate('window.forbiddenClicks') == 0
@@ -92,8 +96,8 @@ def test_page_budget_cannot_certify_incomplete_traversal(browser, tmp_path, monk
 def test_cancellation_propagates_instead_of_fallback(browser, tmp_path, monkeypatch):
     with observed(browser, tmp_path, monkeypatch) as (module, fixture, capture):
         def stop():
-            raise CaptureCancelled()
-        with pytest.raises(CaptureCancelled):
+            raise driver.CaptureCancelled()
+        with pytest.raises(driver.CaptureCancelled):
             module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, check_cancel=stop)
 
 

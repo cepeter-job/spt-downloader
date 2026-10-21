@@ -506,7 +506,8 @@ def test_more_rows_than_declared_total_fails_closed():
 def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start=0,
                               changed_total=False, empty=False, stop_state=None,
                               year_catalog=False, ignore_source_filter=False, expired_catalog=False,
-                              auxiliary_request=False, hash_link=False, deferred_catalog=False, archive_period_conflict=False):
+                              auxiliary_request=False, hash_link=False, deferred_catalog=False,
+                              archive_period_conflict=False, outside_year_padding=20):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -536,7 +537,7 @@ def synthetic_listing_browser(monkeypatch, *, unknown=False, unsafe=False, start
         rows.extend([cross, monthly])
         displays.extend([{**EXPECTED_META, 'Masa Pajak': 'Februari 2023 - Januari 2024'},
                          {**EXPECTED_META, 'Masa Pajak': 'Juni 2024'}])
-        for number in range(20):
+        for number in range(outside_year_padding):
             later = api_row(f'fixture-outside-{number}')
             later['TaxPeriodCode'] = '01122026'
             rows.append(later)

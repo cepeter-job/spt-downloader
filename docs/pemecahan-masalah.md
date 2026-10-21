@@ -27,9 +27,24 @@ Jangan menghapus seluruh `%LOCALAPPDATA%\SPTDownloader` sebagai langkah pertama:
 | Login manual berhenti di homepage | Aplikasi perlu kontrol pencarian `ObjectPermitNumber`, bukan homepage saja. Periksa akses intranet dan apakah rute pencarian benar-benar dapat dimuat. |
 | Cek Kredensial menunjukkan password belum diuji | Sesi SSO sudah login. Hasil ini tidak menyatakan password tersimpan benar atau salah. |
 | Cek Kredensial timeout/belum terverifikasi | Periksa jaringan, challenge, dan layout login. Jangan berulang kali mencoba password untuk menganggap timeout sebagai password salah. |
+| Cek Kredensial menyebut permintaan lanjutan Coretax diblokir | Pemeriksa mengamati request yang ditolak oleh pembatasan origin setelah form login dikirim. Password tetap belum terverifikasi. Gunakan **Mulai** untuk alur login unduhan biasa sesuai scope yang dipilih; jangan mengulangi Cek Kredensial atau membuka semua POST. Pengecualian endpoint memerlukan inspeksi request yang berizin dan tes sintetis. |
 | CAPTCHA/MFA atau form baru | Selesaikan challenge pada browser terlihat. Perubahan form perlu inspeksi dan fixture baru sebelum login otomatis diperluas. |
 | `--reuse-browser` ditolak | Gunakan hanya origin loopback HTTP/HTTPS tanpa path, query, fragment, atau kredensial. Jangan mengekspos port debugging ke jaringan. |
 | Login berhasil pada browser tetapi headless ditolak | Browser dapat tetap terlihat ketika pemindahan sesi tidak diterima. Jangan memaksa pemindahan cookie ke origin atau profil lain. |
+
+## Dialog pemilihan dan penggantian hasil
+
+Permintaan keputusan memulihkan jendela utama yang diminimalkan sebelum membuka
+dialog modal. Jendela yang sudah dimaksimalkan tetap dimaksimalkan. Dialog tetap
+memerlukan pilihan eksplisit; pemunculannya tidak memilih SPT atau menyetujui
+penggantian file.
+
+Pada build lama, jendela utama yang tampak tidak dapat diklik atau dimaksimalkan
+dapat sedang menunggu dialog modal tersembunyi. Gunakan Alt+Tab untuk menemukan
+**Pilih SPT yang akan diunduh** atau dialog penggantian hasil. Jika batas waktu
+keputusan sudah habis, run berakhir ERROR tanpa persetujuan otomatis. Pertahankan
+checkpoint dan mulai run baru melalui aplikasi; jangan mengirim ulang keputusan
+ke job yang sudah berakhir.
 
 ## Capture, scope, dan output
 
