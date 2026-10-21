@@ -199,6 +199,7 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
                             candidates.add(region.min_col)
                     labels = [c for c in candidates
                               if not isinstance(sheet.cell(row, c), MergedCell)
+                              and (sheet.cell(row, c).value or captions.get(c))
                               and _label(sheet.cell(row, c).value or captions.get(c)) == _label(value)]
                     if len(labels) != 1:
                         return None

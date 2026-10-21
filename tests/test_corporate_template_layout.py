@@ -511,3 +511,17 @@ def test_l7_ten_year_rows_and_total_use_accounting_without_raw_appendix(tmp_path
             assert 'Rp' in sheet[cell].number_format and '*' in sheet[cell].number_format
     finally:
         book.close()
+
+
+@pytest.mark.parametrize('unsupported', [0, False])
+def test_falsy_footer_value_cannot_match_an_empty_reference_label(tmp_path, unsupported):
+    footer = [['TOTAL', '100,00', unsupported, '20,00']]
+    rows = [['0000000000000002', 'SYNTHETIC WITHHOLDER', '0001', 'SYNTHETIC TAX',
+             '1.000,00', '2,00', '20,00']]
+    table = captured_table('L4', 2, rows, footer, [[4, 1, 1, 1]])
+    book, reports = export(tmp_path, [section('L4', tables=[table])])
+    try:
+        assert book['L4']['A3'].value is None and book['L4']['F4'].value is None
+        assert reports[0]['unmapped_tables'] == 1 and not reports[0]['complete']
+    finally:
+        book.close()
