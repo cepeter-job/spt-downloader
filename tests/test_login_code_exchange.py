@@ -1,5 +1,6 @@
 """Synthetic Satu -> Coretax OIDC callback; never uses a live account/token."""
 import json
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from types import SimpleNamespace
@@ -23,8 +24,9 @@ FORM = '<form method="post" action="/login"><input name="username"><input type="
 
 
 class Engine:
-    def __init__(self, browser, case='success', app='home'):
+    def __init__(self, browser, case='success', app='home', *, login_response_delay=0):
         self.browser, self.case, self.app = browser, case, app
+        self.login_response_delay = login_response_delay
         self.chromium = self
         self.posts, self.tokens, self.unknown, self.contexts = [], [], [], []
         self.redirected = []
@@ -166,6 +168,9 @@ class Engine:
                 if self.case in ('iframe', 'popup'):
                     destination = self.coretax + '/synthetic-frame-host'
                 html = '<script>location.assign(' + json.dumps(destination) + ')</script>'
+                if self.login_response_delay:
+                    # Inject a slow credential response while the real click is pending.
+                    time.sleep(self.login_response_delay)
                 r.fulfill(body=html, content_type='text/html')
             elif url == LOGIN:
                 r.fulfill(body=FORM, content_type='text/html')
@@ -188,14 +193,15 @@ class Engine:
         return state
 
 
-def check(browser, tmp_path, monkeypatch, case='success', app='home'):
+def check(browser, tmp_path, monkeypatch, case='success', app='home', *, login_response_delay=0, timeout=None):
     reads = []
     def saved(origin):
         reads.append(origin)
         return Login(ACCOUNT, PASSWORD)
     monkeypatch.setattr(auth, 'read_login', saved)
-    timeout = ASYNC_LOGIN_TIMEOUT if case in ('success', 'two_apps', 'replay') else 3
-    with Engine(browser, case, app) as engine:
+    if timeout is None:
+        timeout = ASYNC_LOGIN_TIMEOUT if case in ('success', 'two_apps', 'replay') else 3
+    with Engine(browser, case, app, login_response_delay=login_response_delay) as engine:
         monkeypatch.setattr(auth, 'CORETAX_ORIGIN', engine.coretax)
         monkeypatch.setattr(auth, 'SEARCH_URL', engine.search)
         monkeypatch.setattr(auth, 'ALLOWED_ORIGINS', (SATU, engine.coretax))
@@ -209,6 +215,31 @@ def check(browser, tmp_path, monkeypatch, case='success', app='home'):
     assert all(c.closed for c in engine.contexts) and not engine.unknown
     assert all(parse_qs(body) == {'username': [ACCOUNT], 'password': [PASSWORD]} for body in engine.posts)
     return engine, reads, result, [json.loads(line) for line in text.splitlines()]
+
+
+def transport_observation(engine, rows):
+    """Expose only synthetic counts and fixed diagnostic categories on failure."""
+    return {
+        'credential_posts': len(engine.posts),
+        'token_posts': len(engine.tokens),
+        'redirect_requests': len(engine.redirected),
+        'callback_frames': engine.callback_frames,
+        'auth_events': [(row.get('event'), row.get('reason'), row.get('request_kind'))
+                        for row in rows if row.get('event', '').startswith('auth.')],
+    }
+
+
+def assert_transport_failure(engine, result, rows):
+    observed = transport_observation(engine, rows)
+    assert result[0] == 'LOGIN_UNVERIFIED', observed
+    assert observed['token_posts'] == observed['credential_posts'] == 1, observed
+    assert observed['redirect_requests'] == 0, observed
+    assert observed['callback_frames'] == ['owned'], observed
+    states = [row.get('reason') for row in rows if row.get('event') == 'auth.state']
+    assert 'code_exchange_allowed' in states and 'code_exchange_failed' in states, observed
+    assert states.index('code_exchange_allowed') < states.index('code_exchange_failed'), observed
+    outcomes = [row.get('reason') for row in rows if row.get('event') == 'auth.result']
+    assert outcomes == ['code_exchange_failed'], observed
 
 
 @pytest.mark.parametrize('app', ['home', 'returnsheets'])
@@ -253,8 +284,29 @@ def test_rejected_code_exchange_is_not_success_or_retried(browser, tmp_path, mon
     'redirect_foreign_307', 'redirect_foreign_308', 'network_failure'])
 def test_token_exchange_cannot_follow_redirects_or_retry_transport(browser, tmp_path, monkeypatch, case):
     engine, reads, result, rows = check(browser, tmp_path, monkeypatch, case)
-    assert result[0] == 'LOGIN_UNVERIFIED'
-    assert len(engine.tokens) == len(engine.posts) == 1 and engine.redirected == []
+    assert_transport_failure(engine, result, rows)
+
+
+@pytest.mark.parametrize('timeout', [3, ASYNC_LOGIN_TIMEOUT])
+def test_slow_login_response_preserves_exchange_deadline_boundary(browser, tmp_path, monkeypatch, timeout):
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'network_failure',
+                                      login_response_delay=3.25, timeout=timeout)
+    if timeout == ASYNC_LOGIN_TIMEOUT:
+        assert_transport_failure(engine, result, rows)
+        return
+    observed = transport_observation(engine, rows)
+    assert result[0] == 'LOGIN_UNVERIFIED', observed
+    assert observed['credential_posts'] == 1, observed
+    assert observed['token_posts'] == observed['redirect_requests'] == 0, observed
+    assert observed['callback_frames'] == ['owned'], observed
+    assert ('auth.request_blocked', 'cross_origin_write', 'code_exchange') in observed['auth_events'], observed
+    assert not any(row.get('reason') == 'code_exchange_allowed' for row in rows), observed
+    assert [row.get('reason') for row in rows if row.get('event') == 'auth.result'] == ['cross_origin_write'], observed
+
+
+def test_transport_fixture_reaches_network_fault_after_slow_login_response(browser, tmp_path, monkeypatch):
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'network_failure', login_response_delay=3.25)
+    assert_transport_failure(engine, result, rows)
 
 
 def test_credential_check_explicitly_blocks_service_workers(browser, tmp_path, monkeypatch):

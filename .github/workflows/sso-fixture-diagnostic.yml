@@ -1,0 +1,83 @@
+name: Diagnose SSO transport fixture
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/test_login_code_exchange.py'
+      - '.github/workflows/sso-fixture-diagnostic.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sso-fixture-diagnostic-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    name: Observe SSO transport deadline (temporary)
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore the pinned Windows test environment
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.13.4'
+          python-version: '3.14.8'
+          enable-cache: true
+          cache-python: true
+          restore-cache: true
+          save-cache: false
+          cache-dependency-glob: |
+            requirements*.txt
+            locks/*.txt
+          cache-suffix: Windows-X64-python3.14.8-integration
+      - name: Install the hash-locked test environment
+        run: |
+          python -I -S scripts/ci_python_cache.py --python-version '3.14.8'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv python install 'cpython-3.14.8-windows-x86_64-none' --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python '3.14.8+gil' .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Preserve controlled deadline results and repeated original observations
+        id: probe
+        run: |
+          $evidence = "$env:RUNNER_TEMP/sso-fixture-evidence"
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          $failed = 0
+          & .venv/Scripts/python.exe -m pytest tests/test_login_code_exchange.py -q `
+            -k 'slow_login_response' --basetemp "$env:RUNNER_TEMP/sso-slow-login" `
+            --junitxml "$evidence/deadline-boundary.xml" `
+            -o junit_logging=no -o junit_log_passing_tests=false
+          if ($LASTEXITCODE -ne 0) { $failed = 1 }
+          for ($iteration = 1; $iteration -le 5; $iteration++) {
+            & .venv/Scripts/python.exe -m pytest `
+              'tests/test_login_code_exchange.py::test_token_exchange_cannot_follow_redirects_or_retry_transport[network_failure]' -q `
+              --basetemp "$env:RUNNER_TEMP/sso-original-$iteration" `
+              --junitxml "$evidence/original-$iteration.xml" `
+              -o junit_logging=no -o junit_log_passing_tests=false
+            if ($LASTEXITCODE -ne 0) { $failed = 1 }
+          }
+          exit $failed
+      - name: Retain synthetic probe evidence even on failure
+        if: always() && steps.probe.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sso-fixture-diagnostic-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sso-fixture-evidence/*.xml
+          if-no-files-found: error
+          retention-days: 14
