@@ -18,9 +18,9 @@ FAMILIES = ('corporate', 'PPN', 'PPh Unifikasi', 'PPh Pasal 21/26')
 
 
 @contextmanager
-def native_case(browser, tmp_path, monkeypatch, family):
+def native_case(browser, tmp_path, monkeypatch, family, *, corporate_groups=False):
     if family == 'corporate':
-        fixture = NativeFixture(browser, tmp_path, monkeypatch)
+        fixture = NativeFixture(browser, tmp_path, monkeypatch, groups=corporate_groups)
         try:
             fixture.page.goto(corpus.LIST_URL)
             with DetailJsonCapture(fixture.context, fixture.page, fixture.record,
@@ -52,15 +52,16 @@ def native_case(browser, tmp_path, monkeypatch, family):
                 fixture.page, fixture.record, SCOPE, capture, **options)
 
 
-def rebind_at_control_read(page, monkeypatch, outcome='owned'):
+def rebind_at_control_read(page, monkeypatch, outcome='owned', *, after_click=False):
     """Return the real first binding, then make it stale deterministically.
 
-    No timer races: the source read boundary dispatches a synthetic event after
-    obtaining its original result. Both pre-click and post-click readers see
-    the same old result, while subsequent reads see the actual current DOM.
+    The default preserves the pre-click identity regression. With after_click,
+    the first readiness read returns the old ID after the real click, forcing
+    a retry against the actual current DOM without a timer race.
     """
     page.evaluate("""outcome => {
         window.nativeRebound = false;
+        window.nativeReadinessRetries = 0;
         window.nativeTabClicks = [];
         window.valueReads = window.valueReads || 0;
         const view = document.querySelector('.main-content .p-tabview');
@@ -94,6 +95,10 @@ def rebind_at_control_read(page, monkeypatch, outcome='owned'):
             }
             if (outcome === 'missing') tab.removeAttribute('aria-controls');
             if (outcome === 'caption') tab.textContent = 'UNREVIEWED REORDERED TAB';
+            if (outcome === 'reorder') {
+                const first = tab.closest('li');
+                nav.insertBefore(first.nextElementSibling, first);
+            }
             window.nativeRebound = true;
         }, {once:true});
     }""", outcome)
@@ -106,7 +111,8 @@ def rebind_at_control_read(page, monkeypatch, outcome='owned'):
     def get_attribute(locator, name, *args, **kwargs):
         nonlocal released
         value = original_attribute(locator, name, *args, **kwargs)
-        if not released and name == 'aria-controls' and value == original_id:
+        if (not released and name == 'aria-controls' and value == original_id
+                and (not after_click or page.evaluate('nativeTabClicks.length > 0'))):
             released = True
             locator.dispatch_event('synthetic-native-rebind')
         return value
@@ -115,7 +121,12 @@ def rebind_at_control_read(page, monkeypatch, outcome='owned'):
         # Bound the legacy hard-coded wait; no fixture update relies on timing.
         if kwargs.get('timeout') == 30000:
             kwargs['timeout'] = 500
-        return original_wait(locator, *args, **kwargs)
+        try:
+            return original_wait(locator, *args, **kwargs)
+        except driver.PlaywrightTimeoutError:
+            if after_click and released and kwargs.get('timeout') == 100:
+                page.evaluate('nativeReadinessRetries++')
+            raise
 
     monkeypatch.setattr(locator_type, 'get_attribute', get_attribute)
     monkeypatch.setattr(locator_type, 'wait_for', wait_for)
@@ -136,6 +147,61 @@ def test_native_observer_follows_current_binding(browser, tmp_path, monkeypatch,
         assert fixture.page.evaluate('window.valueReads') == 0
         assert not fixture.unexpected
         assert capture.drain()['complete'] is True
+
+
+@pytest.mark.parametrize('family', FAMILIES)
+def test_native_observer_retries_stale_post_click_binding(browser, tmp_path, monkeypatch, family):
+    with native_case(browser, tmp_path, monkeypatch, family,
+                     corporate_groups=True) as (fixture, capture, observe):
+        rebind_at_control_read(fixture.page, monkeypatch, after_click=True)
+        forms = observe(max_pages=10)
+        assert fixture.page.evaluate('nativeRebound') is True
+        assert fixture.page.evaluate('nativeReadinessRetries') >= 1
+        assert forms is not None
+        assert len(forms) == {'corporate': 4, 'PPN': 7, 'PPh Unifikasi': 4,
+                              'PPh Pasal 21/26': 5}[family]
+        clicks = fixture.page.evaluate('nativeTabClicks')
+        assert len(clicks) == len(forms) and len(set(clicks)) == len(clicks)
+        assert fixture.page.evaluate('window.valueReads') == 0
+        assert not fixture.unexpected
+        assert capture.drain()['complete'] is True
+
+
+@pytest.mark.parametrize('family', FAMILIES)
+def test_native_observer_rejects_live_nth_tab_reorder(browser, tmp_path, monkeypatch, family):
+    with native_case(browser, tmp_path, monkeypatch, family,
+                     corporate_groups=True) as (fixture, capture, observe):
+        first_caption = fixture.page.locator(
+            '.main-content .p-tabview-nav a[role=tab]').first.inner_text().strip()
+        rebind_at_control_read(fixture.page, monkeypatch, 'reorder', after_click=True)
+        assert observe(max_pages=10) is None
+        assert fixture.page.evaluate('nativeRebound') is True
+        current_caption = fixture.page.locator(
+            '.main-content .p-tabview-nav a[role=tab]').first.inner_text().strip()
+        assert current_caption != first_caption
+        assert fixture.page.evaluate('nativeTabClicks') == [first_caption]
+        assert fixture.page.evaluate('window.valueReads') == 0
+        assert not fixture.unexpected
+
+
+@pytest.mark.parametrize('family', FAMILIES)
+def test_native_observer_stop_during_post_click_readiness_retry(
+        browser, tmp_path, monkeypatch, family):
+    with native_case(browser, tmp_path, monkeypatch, family,
+                     corporate_groups=True) as (fixture, capture, observe):
+        rebind_at_control_read(fixture.page, monkeypatch, after_click=True)
+
+        def stop_after_wait():
+            if fixture.page.evaluate('nativeReadinessRetries > 0'):
+                raise driver.CaptureCancelled('SYNTHETIC STOP DURING NATIVE READINESS RETRY')
+
+        with pytest.raises(driver.CaptureCancelled):
+            observe(max_pages=10, check_cancel=stop_after_wait)
+        assert fixture.page.evaluate('nativeRebound') is True
+        assert fixture.page.evaluate('nativeReadinessRetries') == 1
+        assert len(fixture.page.evaluate('nativeTabClicks')) == 1
+        assert fixture.page.evaluate('window.valueReads') == 0
+        assert not fixture.unexpected
 
 
 @pytest.mark.parametrize('family', FAMILIES)
