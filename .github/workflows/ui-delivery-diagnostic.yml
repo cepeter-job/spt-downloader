@@ -1,0 +1,57 @@
+name: UI delivery diagnostics
+
+on:
+  push:
+    branches: [feat/ui-delivery-completion]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-delivery-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  settings:
+    name: Settings behavior and native UI evidence
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          python-version: '3.14.8'
+          enable-cache: true
+          cache-python: true
+          save-cache: false
+          cache-dependency-glob: locks/test.txt
+      - name: Prepare exact synthetic test runtime
+        shell: pwsh
+        run: |
+          python -I -S scripts/ci_python_cache.py --python-version 3.14.8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python 3.14.8+gil .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Exercise Settings decisions
+        id: settings
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe -m pytest tests/test_desktop_settings_decisions.py -q --basetemp "$env:RUNNER_TEMP/ui-settings-tests" --junitxml "$env:RUNNER_TEMP/ui-settings-results.xml" -o junit_logging=no -o junit_log_passing_tests=false
+          exit $LASTEXITCODE
+      - name: Preserve synthetic results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ui-delivery-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ui-settings-results.xml
+          if-no-files-found: error
+          retention-days: 14
