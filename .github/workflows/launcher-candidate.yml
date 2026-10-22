@@ -279,7 +279,7 @@ jobs:
           $custody | ConvertTo-Json | Set-Content "$root/custody.json"
           foreach ($mode in @('source','frozen')) {
             $runtime = if ($mode -eq 'source') {"$env:RUNNER_TEMP/reader-runtime/python.exe"} else {"$env:RUNNER_TEMP/reader-application/SPTDownloader.exe"}
-            powershell -NoProfile -STA -File scripts/launcher_candidate/reader_probe.ps1 -Runtime $runtime -Reader '${{ matrix.reader }}' -ActivationTiming '${{ matrix.activation }}' -NvdaPath "$env:RUNNER_TEMP/nvda-portable/nvda.exe" -OutputDirectory "$root/$mode"
+            & "$env:RUNNER_TEMP/reader-runtime/python.exe" -B scripts/launcher_candidate/reader_runner.py -Runtime $runtime -Reader '${{ matrix.reader }}' -ActivationTiming '${{ matrix.activation }}' -NvdaPath "$env:RUNNER_TEMP/nvda-portable/nvda.exe" -OutputDirectory "$root/$mode"
             if ($LASTEXITCODE -ne 0) { throw 'Reader probe failed before validated evidence' }
             & "$env:RUNNER_TEMP/reader-runtime/python.exe" -B scripts/launcher_candidate/reader_report.py --directory "$root/$mode" --inventory "$env:RUNNER_TEMP/reader-runtime/inventory.json"
             if ($LASTEXITCODE -ne 0) { throw 'Reader evidence contract failed' }
@@ -295,6 +295,7 @@ jobs:
             ${{ runner.temp }}/reader-evidence/*/report.json
             ${{ runner.temp }}/reader-evidence/*/native.json
             ${{ runner.temp }}/reader-evidence/*/cleanup.json
+            ${{ runner.temp }}/reader-evidence/*/owned-tree.json
             ${{ runner.temp }}/reader-evidence/*/host/host-error.json
             ${{ runner.temp }}/reader-evidence/*/*-blocked.json
           if-no-files-found: error

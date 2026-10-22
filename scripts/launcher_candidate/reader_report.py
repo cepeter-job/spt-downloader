@@ -27,6 +27,9 @@ def main():
     cleanup = json.loads((root / 'cleanup.json').read_text(encoding='utf-8-sig'))
     if cleanup != {'host_exited': True, 'reader_exited': True}:
         raise ValueError('owned cleanup incomplete')
+    owned = json.loads((root / 'owned-tree.json').read_text(encoding='utf-8'))
+    if owned.get('contained_before_resume') is not True or owned.get('cleanup_complete') is not True:
+        raise ValueError('reader descendant cleanup incomplete')
     print(json.dumps({'reader': report['reader'], 'mode': report['mode'],
                       'activation_timing': report['activation_timing'], 'outcomes': report['outcomes']}))
 
