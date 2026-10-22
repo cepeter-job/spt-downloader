@@ -319,3 +319,57 @@ def test_search_observer_failure_is_unavailable_and_cleans_partial_registration(
         assert event['search_observation'] == 'unavailable'
         assert 'search_requests' not in event and 'search_responses' not in event
         assert SECRET not in str(error.value) and SECRET not in json.dumps(records(tmp_path))
+
+
+def worker_failure(error, monkeypatch, root):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from spt_desktop import worker
+
+    closed, emitted = [], []
+    monkeypatch.setattr(worker, 'playwright_factory', lambda: nullcontext(object()))
+    context = SimpleNamespace(close=lambda: closed.append(True))
+    monkeypatch.setattr(worker, 'authenticate_owned', lambda *args, **kwargs: (context, object()))
+
+    def collect(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(worker, 'collect_inventory', collect)
+    result = worker.run_job(NPWP, 2025, root, 'synthetic-search-worker',
+                            'msedge', False, emitted.append, lambda: False)
+    assert result == 1 and closed == [True]
+    assert emitted[-1]['status'] == 'ERROR' and emitted[-1]['percent'] < 100
+    assert not list(root.rglob('*.xlsx')) and not list(root.rglob('run.json'))
+    return emitted
+
+
+def test_desktop_receives_only_the_owned_safe_search_hint(browser, monkeypatch, tmp_path):
+    with search_page(browser, monkeypatch) as (page, metrics):
+        with pytest.raises(BrowserTimeout) as captured:
+            driver.collect_inventory(page, NPWP, 2025, 'period', tmp_path / 'capture')
+        error = captured.value
+        # Even arbitrary exception args must never become the worker UI message.
+        error.args = (SECRET + ' ' + NPWP,)
+        emitted = worker_failure(error, monkeypatch, tmp_path / 'worker')
+        assert '403' in emitted[-1]['message']
+        assert SECRET not in json.dumps(emitted) and NPWP not in json.dumps(emitted)
+
+
+def test_owned_search_hint_validates_reason_and_flags_without_coercion():
+    assert hasattr(driver, 'TaxpayerSearchTimeout'), 'Owned private-safe search timeout is missing'
+
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Public search hints must not stringify arbitrary input')
+
+    error = driver.TaxpayerSearchTimeout(Untrusted(), limited=Untrusted())
+    error.args = (SECRET,)
+    assert SECRET not in error.public_message
+    assert 'HTTP' not in error.public_message
+    assert SECRET not in driver.TaxpayerSearchTimeout(SECRET).public_message
+
+
+def test_desktop_keeps_arbitrary_browser_errors_generic(monkeypatch, tmp_path):
+    emitted = worker_failure(BrowserTimeout(SECRET + ' ' + NPWP), monkeypatch, tmp_path)
+    assert SECRET not in json.dumps(emitted) and NPWP not in json.dumps(emitted)
+    assert '403' not in emitted[-1]['message']
