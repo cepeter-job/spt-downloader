@@ -166,9 +166,9 @@ def _write_api(method, endpoint, payload):
     return json.loads(raw)
 
 
-def _download(endpoint, path):
+def _download(endpoint, path, *, accept):
     with Path(path).open('xb') as output:
-        _command(['gh', 'api', '--method', 'GET', '-H', 'Accept: application/octet-stream', endpoint],
+        _command(['gh', 'api', '--method', 'GET', '-H', 'Accept: ' + accept, endpoint],
                  output=output)
 
 
@@ -246,7 +246,9 @@ def prepare(output, **identity):
     source = validate_source(run, _jobs(repository, run_id, attempt), artifact, **identity)
     assets = Path(output) / 'assets'
     assets.mkdir(parents=True, exist_ok=False)
-    _download(f'repos/{repository}/actions/artifacts/{identity["artifact_id"]}/zip', assets / ARCHIVE)
+    # Endpoint Actions memakai media API untuk redirect ZIP; octet-stream ditolak dengan HTTP 415.
+    _download(f'repos/{repository}/actions/artifacts/{identity["artifact_id"]}/zip', assets / ARCHIVE,
+              accept='application/vnd.github+json')
     with tempfile.TemporaryDirectory(prefix='spt-release-') as temporary:
         folder = Path(temporary) / 'payload'
         extract_verified_archive(assets / ARCHIVE, folder,
@@ -322,7 +324,8 @@ def _release_assets(repository, release, destination, *, tag, commit, draft, rel
     for entry in entries:
         _positive(entry.get('id'))
         path = destination / entry['name']
-        _download(f'repos/{repository}/releases/assets/{entry["id"]}', path)
+        _download(f'repos/{repository}/releases/assets/{entry["id"]}', path,
+                  accept='application/octet-stream')
         _verify_bytes(path, entry.get('digest'), entry.get('size'))
 
 

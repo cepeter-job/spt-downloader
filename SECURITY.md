@@ -42,8 +42,10 @@ Maintainer memeriksa jalur penerimaan berikut pada akun yang bertugas:
    **Email** dan **On GitHub** untuk **Watching** sesuai kanal yang dipantau.
 3. Pada bagian **Actions**, aktifkan notifikasi dan pilih **Only notify for failed
    workflows** bila hanya kegagalan yang perlu dikirim. Notifikasi bawaan Actions
-   mengikuti pemicu run; notifikasi schedule mengikuti pemilik jadwal. Preferensi
-   ini bukan bukti semua kegagalan `main` akan diterima oleh orang yang sama.
+   mengikuti pemicu run. Untuk schedule, penerima mengikuti pembuat workflow,
+   pengubah cron terakhir, atau orang yang mengaktifkan kembali workflow sesuai
+   riwayat perubahan. Preferensi ini bukan bukti semua kegagalan `main` akan
+   diterima oleh orang yang sama.
 4. Cocokkan satu kejadian yang benar-benar diterima dengan URL dan waktu run/laporan.
    Catat penerima, waktu penerimaan, serta maintainer cadangan yang telah menyetujui
    tanggung jawabnya. Jangan menaruh isi laporan privat atau alamat rahasia dalam

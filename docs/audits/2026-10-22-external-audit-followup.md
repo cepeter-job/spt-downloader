@@ -18,7 +18,7 @@ alert adalah snapshot saat pemeriksaan, bukan jaminan tidak ada temuan baru.
 | Dependabot security updates | Sudah aktif. |
 | Secret scanning dan push protection | Keduanya sudah aktif. Tidak ada alert secret scanning terbuka. |
 | CodeQL | Default setup untuk Python dan Actions, query suite `default`; tidak ada alert terbuka. |
-| Izin default Actions | `read`; workflow tidak diizinkan memberi approval PR. |
+| Izin default Actions | `read`; `GITHUB_TOKEN` workflow tidak diizinkan memberi approval PR. |
 | Registrasi workflow lama | Enam workflow tanpa berkas pada semua branch saat pemeriksaan dinonaktifkan; readback masing-masing `disabled_manually`. |
 
 Registrasi yang dinonaktifkan adalah `browser-fixture-profile.yml`,
@@ -51,9 +51,19 @@ atau eksekusi EXE pada GitHub runner.
 Percobaan kandidat release pertama,
 [39734888768](https://github.com/cepeter-job/spt-downloader/actions/runs/39734888768),
 memakai `publish=false` dan gagal saat mengunduh ZIP sebelum verifikasi signature.
-Kegagalan itu tidak menghasilkan release atau tag. Keberhasilan kandidat berikutnya
-harus dibuktikan oleh run verifikasi nyata dan readback artifact kandidat;
-publikasi serta penerimaan live tetap mempunyai bukti terpisah.
+Probe read-only atas artifact yang sama mereproduksi HTTP 415 untuk header
+`Accept: application/octet-stream`. Header `application/vnd.github+json`
+berhasil mengunduh 28.631.766 byte dengan SHA-256
+`0c169e36bfb2dd6b3ac1045676359e155c5938983ce69697869a42d601b245c2`,
+sesuai metadata artifact sumber. Endpoint Actions dan endpoint asset release
+memerlukan perlakuan media yang berbeda; header biner tetap diperlukan untuk
+asset release, sesuai [dokumentasi Actions](https://docs.github.com/en/rest/actions/artifacts#download-an-artifact)
+dan [asset release](https://docs.github.com/en/rest/releases/assets#get-a-release-asset).
+
+Kegagalan pertama tidak menghasilkan release atau tag. Bukti penerimaan perbaikan
+harus mencakup run verifikasi nyata dan readback artifact kandidat; koordinat hasil
+terakhir dicatat pada [checklist PR #75](https://github.com/cepeter-job/spt-downloader/pull/75).
+Publikasi serta penerimaan live tetap mempunyai bukti terpisah.
 
 ## Disposisi temuan eksternal
 
