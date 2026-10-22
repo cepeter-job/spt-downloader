@@ -11,10 +11,15 @@ import sys
 import sysconfig
 import tkinter
 import _tkinter
+import _ctypes
+import _ssl
+import zlib
 
 
 def probe():
-    root = Path(sys.executable).resolve().parent
+    root = Path(sys.base_prefix).resolve()
+    if sysconfig.is_python_build() or 'sitecustomize' in sys.modules or 'usercustomize' in sys.modules:
+        raise RuntimeError('candidate depends on build or customization context')
     window = tkinter.Tk()
     window.withdraw()
     try:
@@ -45,8 +50,13 @@ def probe():
             loaded[role] = path.relative_to(root).as_posix()
             absolute[role] = str(path)
             hashes[role] = hashlib.sha256(path.read_bytes()).hexdigest()
-        libraries = {"tcl": Path(window.tk.call("info", "library")).resolve(), "tk": Path(window.tk.getvar("tk_library")).resolve()}
-        return {"schema": 1, "python": platform.python_version(), "architecture": "x64" if struct.calcsize("P") == 8 and platform.machine().lower() in ("amd64", "x86_64") else platform.machine(), "gil": not bool(sysconfig.get_config_var("Py_GIL_DISABLED")), "tcl": str(window.tk.call("info", "patchlevel")), "tk": str(window.tk.call("package", "present", "Tk")), "loaded": loaded, "loaded_absolute": absolute, "loaded_sha256": hashes, "libraries": {key: value.relative_to(root).as_posix() for key, value in libraries.items()}, "library_absolute": {key: str(value) for key, value in libraries.items()}, "executable": str(Path(sys.executable).resolve()), "gil_enabled": sys._is_gil_enabled()}
+        native_modules = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths if path.is_relative_to(root)}
+        for basename in ('libffi-8.dll', 'libcrypto-3.dll', 'libssl-3.dll', 'zlib1.dll', 'libtommath.dll'):
+            matches = [path for path in paths if path.name.casefold() == basename.casefold()]
+            if len(matches) != 1 or not matches[0].is_relative_to(root):
+                raise RuntimeError(f'candidate dependency is not local: {basename}')
+        libraries = {"tcl": Path(str(window.tk.call("info", "library"))).resolve(), "tk": Path(str(window.tk.getvar("tk_library"))).resolve()}
+        return {"schema": 1, "python": platform.python_version(), "architecture": "x64" if struct.calcsize("P") == 8 and platform.machine().lower() in ("amd64", "x86_64") else platform.machine(), "gil": not bool(sysconfig.get_config_var("Py_GIL_DISABLED")), "tcl": str(window.tk.call("info", "patchlevel")), "tk": str(window.tk.call("package", "present", "Tk")), "loaded": loaded, "loaded_absolute": absolute, "loaded_sha256": hashes, "libraries": {key: value.relative_to(root).as_posix() for key, value in libraries.items()}, "library_absolute": {key: str(value) for key, value in libraries.items()}, "executable": str(Path(sys.executable).resolve()), "gil_enabled": sys._is_gil_enabled(), "native_modules": native_modules, "sys_path": sys.path, "prefix": sys.prefix, "base_prefix": sys.base_prefix, "is_python_build": sysconfig.is_python_build(), "tkinter_path": tkinter.__file__}
     finally:
         window.destroy()
 

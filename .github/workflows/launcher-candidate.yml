@@ -28,6 +28,8 @@ jobs:
         run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
   native:
     needs: inventory
+    outputs:
+      runtime-artifact-id: ${{ steps.runtime.outputs.artifact-id }}
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
@@ -48,7 +50,8 @@ jobs:
         shell: pwsh
         run: scripts/launcher_candidate/build.ps1 -Sources scripts/launcher_candidate/sources.json -OutputDirectory "$env:RUNNER_TEMP/launcher-candidate"
       - name: Upload declared runtime only
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: runtime
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: launcher-candidate-${{ github.sha }}
           path: ${{ runner.temp }}/launcher-candidate/
@@ -56,9 +59,66 @@ jobs:
           retention-days: 14
       - name: Upload synthetic build and probe evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: launcher-candidate-evidence-${{ github.sha }}
           path: ${{ runner.temp }}/launcher-candidate-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  standalone:
+    needs: native
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.native.outputs.runtime-artifact-id }}
+          path: ${{ runner.temp }}/relocated-candidate
+          merge-multiple: true
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Probe relocated artifact on a fresh runner without native sources
+        shell: pwsh
+        run: |
+          foreach ($name in @('PYTHONHOME', 'PYTHONPATH', 'TCL_LIBRARY', 'TK_LIBRARY', 'TCLLIBPATH')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+          $runtime = "$env:RUNNER_TEMP/relocated-candidate"
+          $evidence = "$env:RUNNER_TEMP/standalone-evidence"
+          New-Item -ItemType Directory -Path $evidence | Out-Null
+          $probe = "$env:GITHUB_WORKSPACE/scripts/launcher_candidate/probe.py"
+          $inventory = "$env:GITHUB_WORKSPACE/scripts/launcher_candidate/inventory.py"
+          Push-Location $env:RUNNER_TEMP
+          try {
+            & "$runtime/python.exe" -I -B $inventory --root $runtime
+            if ($LASTEXITCODE -ne 0) { throw 'Read-back inventory failed' }
+            & "$runtime/python.exe" -I -B $probe --output "$evidence/relocated-probe.json"
+            if ($LASTEXITCODE -ne 0) { throw 'Relocated probe failed' }
+            & "$runtime/python.exe" -I -B -m venv --without-pip "$env:RUNNER_TEMP/stdlib-venv"
+            if ($LASTEXITCODE -ne 0) { throw 'Standalone stdlib venv creation failed' }
+            & "$env:RUNNER_TEMP/stdlib-venv/Scripts/python.exe" -I -B $probe --output "$evidence/stdlib-venv-probe.json"
+            if ($LASTEXITCODE -ne 0) { throw 'Standalone venv probe failed' }
+          } finally { Pop-Location }
+          uv venv --python "$runtime/python.exe" "$env:RUNNER_TEMP/locked-candidate-env"
+          if ($LASTEXITCODE -ne 0) { throw 'uv candidate environment failed' }
+          uv pip sync --python "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" --require-hashes --only-binary :all: locks/build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Locked candidate build environment failed' }
+          & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -B -m pytest tests/test_launcher_candidate_inventory.py -q --basetemp "$env:RUNNER_TEMP/standalone-inventory-tests"
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate interpreter inventory tests failed' }
+          & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -I -B -m PyInstaller --version
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate PyInstaller import failed' }
+          & "$runtime/python.exe" -I -B $inventory --root $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime bytes changed during qualification' }
+      - name: Upload relocation and virtual-environment evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-standalone-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/standalone-evidence/
           if-no-files-found: error
           retention-days: 14

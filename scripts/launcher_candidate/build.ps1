@@ -50,6 +50,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Developer command environment failed' }
 foreach ($line in $environment) { if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process') } }
 $msbuild = Join-Path $vs.installationPath 'MSBuild/Current/Bin/MSBuild.exe'
 $compiler = Join-Path $vcTools.FullName 'bin/Hostx64/x64/cl.exe'
+$bootstrap = (Get-Command python.exe).Source
 $nativeEvidence = [ordered]@{
     schema = 1; head = $env:GITHUB_SHA; run_id = $env:GITHUB_RUN_ID; attempt = $env:GITHUB_RUN_ATTEMPT
     tree = (& git rev-parse 'HEAD^{tree}'); runner_image = $env:ImageVersion
@@ -57,6 +58,7 @@ $nativeEvidence = [ordered]@{
     windows_sdk = $sdk.Name; compiler_file_version = (Get-Item -LiteralPath $compiler).VersionInfo.FileVersion
     compiler_sha256 = (Get-FileHash -LiteralPath $compiler).Hash.ToLowerInvariant()
     msbuild_file_version = (Get-Item -LiteralPath $msbuild).VersionInfo.FileVersion
+    bootstrap_path = $bootstrap; bootstrap_sha256 = (Get-FileHash -LiteralPath $bootstrap).Hash.ToLowerInvariant()
     sources = $manifest.sources; configuration = 'Release/x64/GIL/BuildForRelease'; patches = @()
 }
 # Upstream nmake generates manifest.uuid with git when it is absent. ZIP inputs
@@ -90,16 +92,22 @@ try {
     Invoke-Native 'tk-install' 'nmake.exe' @('/nologo', '/f', 'makefile.vc', 'install', 'MACHINE=AMD64', 'OPTS=noembed', "TCLDIR=$($roots.tcl)", "INSTALLDIR=$tclInstall")
 } finally { Pop-Location }
 $pythonBuild = Join-Path $roots.cpython 'PCbuild'
-$bootstrap = (Get-Command python.exe).Source
+Copy-Item -LiteralPath "$($roots.tcl)/license.terms" -Destination "$tclInstall/tcllicense.terms"
+Copy-Item -LiteralPath "$($roots.tk)/license.terms" -Destination "$tclInstall/tklicense.terms"
 $properties = @('/nologo', '/m:2', '/v:minimal', '/p:Configuration=Release', '/p:Platform=x64', "/p:PlatformToolset=$toolset", "/p:VCToolsVersion=$($vcTools.Name)", "/p:WindowsTargetPlatformVersion=$($sdk.Name)", '/p:BuildForRelease=true', '/p:IncludeExternals=true', '/p:IncludeTests=false', '/p:IncludeUwp=false', '/p:IncludeCTypes=true', '/p:IncludeSSL=true', '/p:IncludeTkinter=true', '/p:UseDisableGil=false', "/p:PythonForBuild=$bootstrap", '/p:TclVersion=9.1.0.0', '/p:TkVersion=9.1.0.0', "/p:tcltkDir=$tclInstall\", "/p:zlibNgDir=$($roots['zlib-ng'])\", "/p:libffiDir=$($roots.libffi)\", "/p:bz2Dir=$($roots.bzip2)\", "/p:mpdecimalDir=$($roots.mpdecimal)\", "/p:sqlite3Dir=$($roots.sqlite)\", "/p:lzmaDir=$($roots.xz)\", "/p:zstdDir=$($roots.zstd)\", "/p:opensslDir=$($roots.openssl)\", "/p:opensslOutDir=$($roots['openssl-bin'])\amd64\")
 Invoke-Native 'cpython-build' $msbuild (@("$pythonBuild/pcbuild.proj") + $properties)
 $built = Join-Path $pythonBuild 'amd64'
 New-Item -ItemType Directory -Path "$stage/DLLs", "$stage/Lib", "$stage/tcl", "$stage/licenses" | Out-Null
 foreach ($name in @('python.exe', 'pythonw.exe', 'python314.dll', 'python3.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) { Copy-Item -LiteralPath "$built/$name" -Destination $stage }
-# Explicit built extension/DLL families only; never copy the workspace or build folder.
-Get-ChildItem -LiteralPath $built -File | Where-Object { $_.Extension -eq '.pyd' -or ($_.Extension -eq '.dll' -and $_.Name -notin @('python314.dll', 'python3.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination "$stage/DLLs" }
+Copy-Item -LiteralPath "$built/LICENSE.txt" -Destination "$stage/LICENSE.txt"
+# Literal runtime payload, following PC/layout (no shell-extension/test binaries).
+$extensions = @('_asyncio', '_decimal', '_elementtree', '_multiprocessing', '_overlapped', 'pyexpat', '_queue', '_remote_debugging', 'select', 'unicodedata', 'winsound', '_uuid', '_wmi', '_zoneinfo', '_ctypes', '_bz2', '_lzma', '_sqlite3', '_zstd', '_ssl', '_hashlib', '_tkinter', '_socket')
+foreach ($name in $extensions) { Copy-Item -LiteralPath "$built/$name.pyd" -Destination "$stage/DLLs" }
+foreach ($name in @('libffi-8.dll', 'libcrypto-3.dll', 'libssl-3.dll', 'sqlite3.dll', 'tcl91.dll', 'tcl9tk91.dll', 'zlib1.dll', 'libtommath.dll')) { Copy-Item -LiteralPath "$built/$name" -Destination "$stage/DLLs" }
 & robocopy "$($roots.cpython)/Lib" "$stage/Lib" /E /XD test tests __pycache__ /XF '*.pyc' /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw 'Cannot copy standard library' }
+# CPython 3.13+ keeps these original names in its standalone venv layout.
+foreach ($name in @('venvlauncher.exe', 'venvwlauncher.exe')) { Copy-Item -LiteralPath "$built/$name" -Destination "$stage/Lib/venv/scripts/nt" }
 & robocopy "$tclInstall/lib" "$stage/tcl" /E /XF '*.lib' '*.a' '*.sh' '*.pdb' /NFL /NDL /NJH /NJS /NP | Out-Null
 if ($LASTEXITCODE -ge 8) { throw 'Cannot copy script libraries' }
 foreach ($source in $manifest.sources) { if ($source.license) { Copy-Item -LiteralPath (Join-Path $roots[$source.name] $source.license) -Destination "$stage/licenses/$($source.name.Replace('cpython','python')).txt" } }
