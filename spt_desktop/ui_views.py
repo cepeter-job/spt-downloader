@@ -339,8 +339,8 @@ class MainView(ttk.Frame):
         self._last_compact, self._last_geometry = policy.compact, geometry
         self.form.configure(padding=self.px(12 if policy.compact else 16))
         self.progress_panel.configure(padding=self.px(12 if policy.compact else 16))
-        self.content_slot.grid_remove()
-        self.scope_panel.grid_remove()
+        # Grid updates move mapped panels directly. Hiding them first remaps
+        # every native child during otherwise unchanged status/layout updates.
         self.workspace.columnconfigure(0, weight=1)
         self.workspace.columnconfigure(1, weight=0, minsize=0 if policy.compact else summary_width)
         self.scope_panel.grid_propagate(policy.compact)

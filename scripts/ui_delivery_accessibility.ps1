@@ -48,6 +48,26 @@ public static class SptAccessNative {
   public class Contrast { public uint Flags; public string Scheme; public bool Enabled { get { return (Flags&1)!=0; } } }
   public class MonitorRecord { public string Device; public RECT Bounds,Work; public bool Primary;
     public int ScalePercent,ScaleResult; }
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] public struct PROCESSENTRY {
+    public uint Size,Usage,ProcessId; public UIntPtr DefaultHeap; public uint ModuleId,Threads,ParentId;
+    public int BasePriority; public uint Flags;
+    [MarshalAs(UnmanagedType.ByValTStr,SizeConst=260)] public string ExeFile;
+  }
+  [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags,uint processId);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern bool Process32FirstW(IntPtr snapshot,ref PROCESSENTRY entry);
+  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern bool Process32NextW(IntPtr snapshot,ref PROCESSENTRY entry);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  public static Dictionary<int,int> ProcessParents() {
+    IntPtr snapshot=CreateToolhelp32Snapshot(2,0);
+    if(snapshot==new IntPtr(-1)) throw new Win32Exception();
+    try {
+      var parents=new Dictionary<int,int>(); PROCESSENTRY entry=new PROCESSENTRY();
+      entry.Size=(uint)Marshal.SizeOf(typeof(PROCESSENTRY));
+      if(!Process32FirstW(snapshot,ref entry)) throw new Win32Exception();
+      do { parents[(int)entry.ProcessId]=(int)entry.ParentId; } while(Process32NextW(snapshot,ref entry));
+      return parents;
+    } finally { CloseHandle(snapshot); }
+  }
   public delegate bool MonitorCallback(IntPtr monitor,IntPtr dc,ref RECT rect,IntPtr data);
   [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc,IntPtr clip,MonitorCallback callback,IntPtr data);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool GetMonitorInfoW(IntPtr monitor,ref MONITORINFO info);
@@ -101,6 +121,12 @@ public static class SptAccessNative {
 
 function Write-Evidence($Path, $Value) {
     $Value | ConvertTo-Json -Depth 25 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Write-RestorationCheckpoint {
+    # Evidence persistence must never prevent the independent restoration steps.
+    try { Write-Evidence (Join-Path $output 'report.json') $report }
+    catch { [Console]::Error.WriteLine("Restoration checkpoint write failed: " + $_.Exception.Message) }
 }
 
 function Read-UiaNode($Element, $Depth, $Index, $Parent) {
@@ -204,6 +230,37 @@ function Wait-HostSnapshot($Process, [string]$Directory, [int]$Sequence) {
     throw 'Synthetic host did not reach the requested observation.'
 }
 
+function Confirm-OwnedHost($Launcher, [int]$HostProcessId, [IntPtr]$WindowHandle) {
+    # uv virtualenv launchers can spawn the real interpreter before Python runs.
+    # Trust neither the ready-file pid nor the UIA provider without OS ancestry.
+    if ($Launcher.HasExited) { throw 'Launcher exited before host ownership verification.' }
+    $parents = [SptAccessNative]::ProcessParents()
+    $chain = [Collections.Generic.List[int]]::new()
+    $currentId = $HostProcessId
+    $childCreated = [DateTime]::MaxValue
+    for ($depth=0; $depth -lt 32; $depth++) {
+        if ($chain.Contains($currentId)) { throw 'Synthetic host ancestry contains a cycle.' }
+        $chain.Add($currentId)
+        $process = [Diagnostics.Process]::GetProcessById($currentId)
+        try {
+            $created = $process.StartTime.ToUniversalTime()
+            if ($created -gt $childCreated -or $created -lt $Launcher.StartTime.ToUniversalTime()) {
+                throw 'Synthetic host ancestry fails process creation-time validation.'
+            }
+            $childCreated = $created
+        } finally { $process.Dispose() }
+        if ($currentId -eq $Launcher.Id) { break }
+        if (-not $parents.ContainsKey($currentId)) { throw 'Synthetic host is absent from native process snapshot.' }
+        $currentId = $parents[$currentId]
+    }
+    if ($currentId -ne $Launcher.Id) { throw 'Reported host is not a descendant of the launched interpreter.' }
+    [uint32]$windowProcessId = 0
+    [void][SptAccessNative]::GetWindowThreadProcessId($WindowHandle,[ref]$windowProcessId)
+    if ($windowProcessId -ne $HostProcessId) { throw 'Native window owner does not match the verified host.' }
+    return @{launcher_pid=$Launcher.Id; actual_host_pid=$HostProcessId; ancestry=@($chain.ToArray());
+        ancestry_source='Toolhelp32 process snapshot, creation ordering and GetWindowThreadProcessId'}
+}
+
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $output) { throw 'Use a new diagnostic output directory; prior evidence is never overwritten.' }
 [void](New-Item -ItemType Directory -Path $output)
@@ -238,7 +295,8 @@ try {
     $report.high_contrast_before = $beforeContrast
     if ($RequestLargeDisplay) {
         $report.display_attempts = @()
-        $candidates = @($modes | Where-Object { $_.PelsWidth -ge 2560 -and $_.PelsHeight -ge 1800 -and $_.BitsPerPel -eq 32 } |
+        $candidates = @($modes | Where-Object { $_.BitsPerPel -eq 32 -and
+                $_.PelsWidth -ge $originalMode.PelsWidth -and $_.PelsHeight -ge $originalMode.PelsHeight } |
             Sort-Object @{Expression={$_.PelsWidth * $_.PelsHeight}} -Descending)
         foreach ($candidate in $candidates) {
             $testResult = [SptAccessNative]::ChangeDisplaySettingsExW($device,[ref]$candidate,[IntPtr]::Zero,2,[IntPtr]::Zero)
@@ -246,12 +304,20 @@ try {
             if ($testResult -eq 0) {
                 $applyResult = [SptAccessNative]::ChangeDisplaySettingsExW($device,[ref]$candidate,[IntPtr]::Zero,0,[IntPtr]::Zero)
                 $attempt.apply_result = $applyResult
-                if ($applyResult -eq 0) { $modeChanged = $true }
+                if ($applyResult -eq 0) {
+                    $modeChanged = $true
+                    $report.selected_mode = $candidate
+                }
             }
             $report.display_attempts += $attempt
             if ($modeChanged) { Start-Sleep -Seconds 2; break }
         }
-        $report.large_display_request_succeeded = $modeChanged
+        $report.large_display_request_succeeded = ($modeChanged -and
+            $report.selected_mode.PelsWidth -ge 2560 -and $report.selected_mode.PelsHeight -ge 1800)
+        $report.supported_fallback_applied = ($modeChanged -and -not $report.large_display_request_succeeded)
+        $report.full_size_200_percent_display_prerequisite = if ($report.large_display_request_succeeded) {
+            'Large resolution applied; actual 200% scale and attained client geometry must still be verified'
+        } else { 'UNATTAINED: no applied display mode meets the sufficiently large 200% prerequisite' }
     }
     $report.monitors_observed = @([SptAccessNative]::Monitors())
     $modesToObserve = @('original')
@@ -264,7 +330,9 @@ try {
             $contrastTouched = $true
             [SptAccessNative]::SetContrast($contrast)
             Start-Sleep -Seconds 2
-            if (-not [SptAccessNative]::GetContrast().Enabled) { throw 'High Contrast did not become active.' }
+            $report.high_contrast_after_enable = [SptAccessNative]::GetContrast()
+            Write-Evidence (Join-Path $output 'report.json') $report
+            if (-not $report.high_contrast_after_enable.Enabled) { throw 'High Contrast did not become active.' }
         }
         foreach ($scenario in @('main','selection','overwrite')) {
             foreach ($layout in @('normal','compact')) {
@@ -276,18 +344,23 @@ try {
                 $start.UseShellExecute = $false
                 $start.CreateNoWindow = $true
                 $child = [Diagnostics.Process]::Start($start)
+                $ownedHost = $null
                 $case = @{scenario=$scenario; layout=$layout; contrast=$contrastMode; snapshots=@()}
                 try {
                     for ($step=0; $step -lt 6; $step++) {
                         if ($step -gt 0) { Write-Evidence (Join-Path $caseDirectory 'command.json') @{sequence=$step; action='tab'} }
                         $snapshot = Wait-HostSnapshot $child $caseDirectory $step
+                        $ownership = Confirm-OwnedHost $child ([int]$snapshot.pid) ([IntPtr]$snapshot.hwnd)
+                        if ($null -eq $ownedHost) { $ownedHost = [Diagnostics.Process]::GetProcessById([int]$snapshot.pid) }
+                        elseif ($ownedHost.Id -ne [int]$snapshot.pid) { throw 'Synthetic host identity changed during observation.' }
+                        $case.ownership = $ownership
                         [void][SptAccessNative]::SetForegroundWindow([IntPtr]$snapshot.hwnd)
                         Start-Sleep -Milliseconds 150
-                        $uia = Read-UiaTree ([IntPtr]$snapshot.hwnd) $child.Id
+                        $uia = Read-UiaTree ([IntPtr]$snapshot.hwnd) ([int]$snapshot.pid)
                         $snapshot | Add-Member -NotePropertyName high_contrast -NotePropertyValue ([SptAccessNative]::GetContrast())
                         $snapshot | Add-Member -NotePropertyName monitors -NotePropertyValue @([SptAccessNative]::Monitors())
                         Write-Evidence (Join-Path $caseDirectory "observation-$step.json") @{host=$snapshot; uia=$uia}
-                        $frame = Save-NativeFrame ([IntPtr]$snapshot.hwnd) $child.Id (Join-Path $caseDirectory "frame-$step.png")
+                        $frame = Save-NativeFrame ([IntPtr]$snapshot.hwnd) ([int]$snapshot.pid) (Join-Path $caseDirectory "frame-$step.png")
                         $case.snapshots += @{sequence=$step; frame=$frame; uia_node_count=$uia.nodes.Count;
                             uia_exposure=$uia.exposure;
                             nominal_geometry_attained=$snapshot.nominal_geometry_attained}
@@ -303,14 +376,24 @@ try {
                             if (-not $child.WaitForExit(5000)) {
                                 $case.forced_cleanup = $true
                                 $report.failures += "$contrastMode/$scenario/$layout required forced synthetic-host cleanup"
-                                $child.Kill()
+                                if ($null -ne $ownedHost -and -not $ownedHost.HasExited) {
+                                    $ownedHost.Kill()
+                                    if (-not $ownedHost.WaitForExit(5000)) { throw 'Owned synthetic interpreter remained alive.' }
+                                }
+                                if (-not $child.HasExited) { $child.Kill() }
                                 if (-not $child.WaitForExit(5000)) { throw 'Synthetic host remained alive after forced cleanup.' }
                             }
                         }
                         $case.exit_code = $child.ExitCode
+                        if ($null -ne $ownedHost -and -not $ownedHost.HasExited) {
+                            $ownedHost.Kill()
+                            [void]$ownedHost.WaitForExit(5000)
+                            $report.failures += 'Owned synthetic interpreter outlived its launcher and required cleanup.'
+                        }
                         if ($child.ExitCode -ne 0) { $report.failures += "$contrastMode/$scenario/$layout host exit $($child.ExitCode)" }
                     } catch { $report.failures += "Synthetic host cleanup failed: $($_.Exception.Message)" }
                     finally {
+                        if ($null -ne $ownedHost) { $ownedHost.Dispose() }
                         $child.Dispose()
                         $report.cases += $case
                         Write-Evidence (Join-Path $output 'report.json') $report
@@ -321,16 +404,27 @@ try {
     }
 } catch {
     $report.failures += $_.Exception.Message
+    [Console]::Error.WriteLine("Diagnostic failure: " + $_.Exception.Message)
 } finally {
+    $report.restoration['started'] = $true
+    $report.restoration['high_contrast_requested'] = $contrastTouched
+    $report.restoration['display_requested'] = $modeChanged
+    Write-RestorationCheckpoint
     if ($contrastTouched -and $null -ne $beforeContrast) {
         try {
+            $report.restoration['high_contrast_before_restore'] = [SptAccessNative]::GetContrast()
+            Write-RestorationCheckpoint
             [SptAccessNative]::SetContrast($beforeContrast)
             $restored = [SptAccessNative]::GetContrast()
-            $report.restoration.high_contrast = $restored
+            $report.restoration['high_contrast'] = $restored
+            Write-RestorationCheckpoint
             if ($restored.Flags -ne $beforeContrast.Flags -or $restored.Scheme -ne $beforeContrast.Scheme) {
                 $report.failures += 'High Contrast restoration did not exactly match original flags/scheme.'
             }
-        } catch { $report.failures += "High Contrast restoration failed: $($_.Exception.Message)" }
+        } catch {
+            $report.failures += "High Contrast restoration failed: $($_.Exception.Message)"
+            [Console]::Error.WriteLine("High Contrast restoration failed: " + $_.Exception.Message)
+        }
     }
     if ($modeChanged) {
         try {
@@ -344,9 +438,13 @@ try {
                 $report.restoration.display.Orientation -ne $originalMode.Orientation) {
                 $report.failures += 'Display restoration did not match the original resolution, depth, frequency or orientation.'
             }
-        } catch { $report.failures += "Display restoration failed: $($_.Exception.Message)" }
+        } catch {
+            $report.failures += "Display restoration failed: $($_.Exception.Message)"
+            [Console]::Error.WriteLine("Display restoration failed: " + $_.Exception.Message)
+        }
     }
     if ($oldContext -ne [IntPtr]::Zero) { [void][SptAccessNative]::SetThreadDpiAwarenessContext($oldContext) }
+    $report.restoration['finished'] = $true
     $report.diagnostic_completed = ($report.failures.Count -eq 0)
     $report.screenshot_capture_count = @($report.cases | ForEach-Object { $_.snapshots } |
         Where-Object { $_.frame.captured }).Count

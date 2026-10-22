@@ -292,6 +292,9 @@ class App:
     def request_close(self):
         if self._disposed:
             return
+        if self._settings_close is not None and not self.controller.active:
+            self._settings_close(on_closed=self.request_close)
+            return
         if self.controller.active:
             if not messagebox.askyesno('Hentikan pekerjaan?', 'Hentikan worker milik aplikasi dan tutup jendela? Checkpoint lokal tidak dihapus.',
                                        parent=self.root, default='no'):
@@ -943,6 +946,7 @@ class App:
         credential_account = self.preferences['identifier']
         credential_changed = False
         credential_action = None
+        shutdown_request = None
         def selected():
             mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
             return {'browser':browser.get(),'headless':hidden.get(),'login_origin':LOGIN_ORIGIN,
@@ -964,8 +968,12 @@ class App:
             self._settings_dialog=None;self._credential_status=None
             self._settings_refresh=None;self._settings_close=None;self._settings_closing=False
             self.settings_button.focus_set()
-        def close():
-            nonlocal decision_dialog
+            if shutdown_request is not None:
+                shutdown_request()
+        def close(*, on_closed=None):
+            nonlocal decision_dialog, shutdown_request
+            if on_closed is not None:
+                shutdown_request = on_closed
             if self.controller.active:
                 self._settings_closing=True;self.stop();refresh(preserve_status=True);return
             if decision_dialog is not None:
@@ -988,8 +996,10 @@ class App:
             ttk.Label(body, text=explanation, wraplength=420).pack(fill='x', pady=(0, 16))
             actions = ttk.Frame(body)
             actions.pack(fill='x')
-            def dismiss(event=None):
-                nonlocal decision_dialog
+            def dismiss(event=None, *, cancel_shutdown=True):
+                nonlocal decision_dialog, shutdown_request
+                if cancel_shutdown:
+                    shutdown_request = None
                 prompt.grab_release()
                 prompt.destroy()
                 decision_dialog = None
@@ -1000,11 +1010,14 @@ class App:
                     controls[0][1].focus_set()
                 return 'break'
             def save_and_close():
-                dismiss()
+                nonlocal shutdown_request
+                dismiss(cancel_shutdown=False)
                 if save():
                     finish_close()
+                else:
+                    shutdown_request = None
             def discard():
-                dismiss()
+                dismiss(cancel_shutdown=False)
                 finish_close()
             ttk.Button(actions, text='Simpan', command=save_and_close).pack(side='left', padx=(0, 8))
             ttk.Button(actions, text='Abaikan', command=discard).pack(side='left', padx=(0, 8))
