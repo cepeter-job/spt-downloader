@@ -54,11 +54,8 @@ COPY: Mapping[str, str] = MappingProxyType({'app.title': 'Coretax SPT downloader
  'settings.account.label': 'Nama pengguna',
  'settings.password.help': 'Kosongkan jika tidak diganti',
  'settings.background.help': 'Jika memungkinkan. Browser tetap muncul saat perlu login.',
- 'settings.check': 'Cek login',
- 'settings.cancel_check': 'Batalkan cek',
  'settings.delete': 'Hapus login',
- 'settings.dirty.title': 'Perubahan belum disimpan',
- 'login.unverified.title': 'Password belum bisa dipastikan'} )
+ 'settings.dirty.title': 'Perubahan belum disimpan'} )
 
 STAGE_LABELS = ('Masuk ke Coretax', 'Daftar SPT',
                 'Mengambil rincian', 'Hasil unduhan')

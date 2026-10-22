@@ -119,21 +119,6 @@ def test_worker_cli_mode_reaches_export_and_keeps_stdout_json_only(tmp_path, mon
     assert 'SYNTHETIC DIAGNOSTIC' in output.err and 'SYNTHETIC DIAGNOSTIC' not in output.out
 
 
-def test_login_check_launch_does_not_acquire_export_mode_or_scope(tmp_path, monkeypatch):
-    from spt_desktop.controller import JobController
-    # This is a regression contract; it may pass before the new feature.
-    controller = JobController(tmp_path, lambda event: None)
-    captured = []
-    monkeypatch.setattr(controller, '_start_worker', lambda *args: captured.append(args) or 'check-only')
-    assert controller.start_login_check('https://satu.intranet.pajak.go.id',
-                                       'SYNTHETIC ACCOUNT', 'chrome', False) == 'check-only'
-    arguments, browser, headless, operation = captured[0]
-    assert arguments == ['--check-login', '--origin', 'https://satu.intranet.pajak.go.id',
-                         '--account', 'SYNTHETIC ACCOUNT']
-    assert (browser, headless, operation) == ('chrome', False, 'login_check')
-    assert '--npwp' not in arguments and '--year' not in arguments and '--detail-source' not in arguments
-
-
 @pytest.mark.parametrize('mode', MODES)
 def test_offline_canonical_json_exports_real_workbooks_without_browser_or_native_decode(tmp_path, monkeypatch, mode):
     import coretax
@@ -187,7 +172,7 @@ def test_real_mode_widget_saves_reloads_and_launches_selected_mode(window, mode,
     assert controller.checks == [] and app.settings_button.instate(['disabled'])
 
 
-def test_saved_mode_does_not_become_a_credential_check_argument(window):
+def test_saving_mode_with_named_account_does_not_start_work(window):
     root, app, controller, path = window
     app.preferences['identifier'] = 'SYNTHETIC ACCOUNT'
     app.settings()
@@ -196,9 +181,8 @@ def test_saved_mode_does_not_become_a_credential_check_argument(window):
     widget.current(1)
     root.update_idletasks()
     button(app._settings_dialog, 'Simpan').invoke()
-    button(app._settings_dialog, 'Cek login').invoke()
-    assert controller.checks == [(app.preferences['login_origin'], 'SYNTHETIC ACCOUNT', 'msedge', True)]
-    assert widget.instate(['disabled']) and controller.exports == []
+    assert app.preferences['identifier'] == 'SYNTHETIC ACCOUNT'
+    assert widget.instate(['readonly']) and not controller.active and not controller.exports
     assert not (path / 'jobs').exists()
 
 

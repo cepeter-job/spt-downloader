@@ -1,10 +1,10 @@
 # Menulis bahasa antarmuka
 
-**Baseline aktif, 21 Oktober 2026:** `ecbd9878aa732a379ba94ef848764f9815445003`. Permintaan PR #14 sudah terintegrasi: footer nama pribadi dan ID `app.credit` dihapus. Katalog kini berisi **54 ID**, termasuk `app.bugreport`; lima teks pemilik lainnya tetap. Setiap workbook masa/model berisi form model itu saja; Ringkasan/Daftar SPT/Audit ada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF yang akan tertimpa tetap membutuhkan persetujuan. Lihat [kontrak baseline](baseline-2026-10-21.md).
+**Baseline aktif, 21 Oktober 2026:** `ecbd9878aa732a379ba94ef848764f9815445003`. Permintaan PR #14 sudah terintegrasi: footer nama pribadi dan ID `app.credit` dihapus. Katalog kini berisi **51 ID**, termasuk `app.bugreport`; lima teks pemilik lainnya tetap. Setiap workbook masa/model berisi form model itu saja; Ringkasan/Daftar SPT/Audit ada di `resume.xlsx`. Resume boleh diganti otomatis setelah verifikasi, sedangkan SPT/PDF yang akan tertimpa tetap membutuhkan persetujuan. Lihat [kontrak baseline](baseline-2026-10-21.md).
 
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
-Pengaturan memakai caption dari `spt_desktop/ui_copy.py`: **Cek login**, **Batalkan cek**, dan **Hapus login**. Simpan tetap terpisah dari pemeriksaan login; pemeriksaan tidak memulai ekspor. `settings.origin.label` tetap ada dalam katalog, tetapi origin Satu ditetapkan aplikasi dan tidak menjadi field bebas.
+Pengaturan menyediakan **Simpan**, **Hapus login**, dan **Tutup**. Simpan mempertahankan dialog dan hanya menyimpan perubahan; login otomatis dilakukan saat **Mulai unduh**. Tombol Cek login/Batalkan cek dan shortcut Alt+C dihapus. `settings.origin.label` tetap ada dalam katalog, tetapi origin Satu ditetapkan aplikasi dan tidak menjadi field bebas.
 
 ## Nada yang digunakan
 
@@ -53,7 +53,7 @@ Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya dis
 | --- | --- | --- |
 | Cakupan ekspor | Data yang akan diunduh | Sesudah inventaris, pengguna memilih SPT. |
 | Origin login | Login melalui Coretax → Satu | Origin tetap milik aplikasi; tidak ada URL bebas atau pilihan situs pada Pengaturan saat ini. |
-| Kredensial | Akun dan password; login tersimpan | Target katalog **Cek login** / **Hapus login**; caption widget existing berbeda seperti dicatat di atas. |
+| Kredensial | Akun dan password; login tersimpan | **Hapus login** menghapus entri aplikasi dengan konfirmasi; **Simpan** menyimpan perubahan. |
 | Headless | Gunakan checkbox pemilik yang dikunci | Tambahkan: “Jika memungkinkan. Browser tetap muncul saat perlu login.” |
 | Workbook | File Excel | Nama dan subfolder asli tidak diubah. |
 | Checkpoint | Data sementara | Tidak menjanjikan otomatis dilanjutkan atau selalu sudah dibuat. |
@@ -85,8 +85,6 @@ Tabel ini menyalin nilai ID yang ada, bukan inventaris widget yang semuanya suda
 | `settings.origin.label` | Situs login |
 | `settings.account.label` | Nama pengguna |
 | `settings.password.help` | Kosongkan jika tidak diganti |
-| `settings.check` | Cek login |
-| `settings.cancel_check` | Batalkan cek |
 | `settings.delete` | Hapus login |
 | `download.exported.title` | File Excel sudah dibuat |
 | `download.complete.title` | File Excel sudah siap |
@@ -95,11 +93,10 @@ Tabel ini menyalin nilai ID yang ada, bukan inventaris widget yang semuanya suda
 | `download.stopping.title` | Menghentikan unduhan… |
 | `download.cancelled.title` | Unduhan dihentikan |
 | `download.error.title` | Unduhan belum berhasil |
-| `login.unverified.title` | Password belum bisa dipastikan |
 
 ### ID lainnya pada katalog yang sama
 
-Baris berikut melengkapi katalog 54 ID, termasuk dialog yang sudah diimplementasikan. Placeholder nama/jumlah harus mengikuti pemeriksaan `copy_text`; jangan mengubah nilai tidak diketahui menjadi nol.
+Baris berikut melengkapi katalog 51 ID, termasuk dialog yang sudah diimplementasikan. Placeholder nama/jumlah harus mengikuti pemeriksaan `copy_text`; jangan mengubah nilai tidak diketahui menjadi nol.
 
 | ID | Teks exact |
 | --- | --- |
@@ -143,7 +140,6 @@ Petunjuk hasil: “Simpan seluruh folder hasil beserta subfoldernya. Jangan meng
 
 Penggantian: “File di bawah akan diganti seluruhnya dengan hasil pilihan kali ini. SPT lain yang sebelumnya berada dalam file yang sama tidak ikut dipertahankan. File lain yang tidak tercantum tetap ada.” Jangan menyebut merge data atau semua hasil lama pasti tetap ada. Pada folder yang sudah ada dan lolos verifikasi, `resume.xlsx` baru mengindeks hasil baru bersama workbook sah yang dipertahankan. Status unduhan saat ini tetap hanya menyatakan pilihan job ini; jangan menyebut isi seluruh indeks sebagai data yang baru diunduh.
 
-`LOGIN_UNVERIFIED` tidak membuktikan password salah. Gunakan alasan SSO/timeout hanya bila ada reason code yang aman dan terstruktur. Jika belum ada, gunakan “Pemeriksaan belum memastikan password. Ini tidak berarti password salah.” Jangan menebak dari URL, substring pesan, atau exception.
 
 Pada kegagalan dua penyimpanan, jangan mengatakan “Tidak ada perubahan tersimpan” tanpa bukti. Gunakan “Sebagian perubahan mungkin belum tersimpan. Periksa akses penyimpanan Windows, lalu simpan lagi.” Dialog tetap terbuka. Pembatalan memakai “Data sementara yang sudah dibuat tetap disimpan di komputer”, bukan jaminan checkpoint selalu ada.
 

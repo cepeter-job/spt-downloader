@@ -84,9 +84,7 @@ class App:
         self._closing=False;self._result=None
         self._settings_dialog=None
         self._credential_status=None
-        self._settings_refresh=None
         self._settings_close=None
-        self._settings_closing=False
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
@@ -124,10 +122,6 @@ class App:
             messagebox.showerror('Log tidak tersedia',
                 'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
                 parent=self._settings_dialog or self.root)
-
-    def _running(self, active):
-        stopping = (active and getattr(self.controller, 'job_id', None) == self._interaction_stopped_job)
-        self.view.set_busy(active, stopping=stopping)
 
     def start(self):
         if self.controller.active or self._closing or self._disposed:
@@ -167,16 +161,9 @@ class App:
         self._interaction_stopped_job = job_id
         self._close_interaction()
         self.controller.stop()
-        if getattr(self.controller, 'operation', 'export') == 'login_check':
-            message = 'Menghentikan pengecekan… tidak ada ekspor.'
-            if self._credential_status is not None:
-                self._credential_status.set(message)
-            self.status.set(message)
-            self._running(True)
-        else:
-            self._ui_state = mark_stopping(self._ui_state)
-            self.status.set('Menghentikan unduhan… data sementara tetap disimpan.')
-            self.view.render(self._ui_state, active=True)
+        self._ui_state = mark_stopping(self._ui_state)
+        self.status.set('Menghentikan unduhan… data sementara tetap disimpan.')
+        self.view.render(self._ui_state, active=True)
         self.stop_button.state(['disabled'])
 
     def on_event(self, event):
@@ -187,28 +174,6 @@ class App:
             return
         kind = event['type']
         if kind == 'terminal' and self.controller.active:
-            return
-        if getattr(self.controller, 'operation', 'export') == 'login_check':
-            if kind != 'terminal' and self._interaction_stopped_job == job_id:
-                return
-            message = event.get('message', '')[:500]
-            self.status.set(message)
-            if self._credential_status is not None:
-                self._credential_status.set(message)
-            if kind == 'terminal':
-                self.bar.stop()
-                self.bar.configure(mode='determinate', value=0)
-                self.percent.set('—')
-                self._running(False)
-                if self._settings_refresh:
-                    self._settings_refresh(preserve_status=True)
-                if self._settings_closing and self._settings_close:
-                    self._settings_close()
-            else:
-                if str(self.bar['mode']) != 'indeterminate':
-                    self.bar.configure(mode='indeterminate')
-                    self.bar.start(20)
-                self.percent.set('—')
             return
         if kind in ('selection_required', 'overwrite_required'):
             if (not self._export_job_active(job_id)
@@ -252,11 +217,8 @@ class App:
                 self._interaction_stopped_job = getattr(self.controller, 'job_id', None)
                 self._close_interaction()
                 self.controller.close()
-                if getattr(self.controller, 'operation', 'export') == 'export':
-                    self._ui_state = mark_stopping(self._ui_state)
-                    self.view.render(self._ui_state, active=self.controller.active)
-                else:
-                    self._running(self.controller.active)
+                self._ui_state = mark_stopping(self._ui_state)
+                self.view.render(self._ui_state, active=self.controller.active)
             self.status.set('Proses belum bisa dipantau. Menunggu proses berhenti; hasil belum dinyatakan selesai.')
             if not self.controller.active and self._ui_state.job_id == getattr(self.controller, 'job_id', None):
                 self.on_event({'job_id': self._ui_state.job_id, 'type': 'terminal', 'status': 'ERROR',
@@ -920,13 +882,13 @@ class App:
             self._settings_dialog.focus_set();return
         if self.controller.active:return
         dialog=tk.Toplevel(self.root);dialog.title('Pengaturan SPT Downloader')
-        self._settings_dialog=dialog;self._settings_closing=False
+        self._settings_dialog=dialog
         dialog.transient(self.root);dialog.grab_set()
         frame=ttk.Frame(dialog,padding=20);frame.pack(fill='both',expand=True);frame.columnconfigure(1,weight=1)
         identifier=tk.StringVar(dialog,value=self.preferences['identifier']);password=tk.StringVar(dialog)
         browser=tk.StringVar(dialog,value=self.preferences['browser']);hidden=tk.BooleanVar(dialog,value=self.preferences['headless'])
         detail_source=tk.StringVar(dialog,value=DETAIL_SOURCE_LABELS[self.preferences['detail_source']])
-        self._credential_status=tk.StringVar(dialog,value='Login belum dicek. Cek tidak mengambil SPT atau mengekspor hasil.')
+        self._credential_status=tk.StringVar(dialog,value='Akun tersimpan dipakai saat Mulai unduh; akun kosong memakai login manual.')
         controls=[('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
                   ('Password baru',ttk.Entry(frame,textvariable=password,show='●',width=40)),
                   ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
@@ -937,9 +899,8 @@ class App:
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
         hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek login. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan, lalu pilih Mulai unduh. CAPTCHA/MFA diselesaikan di browser.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
-        check_buttons=ttk.Frame(frame);check_buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
@@ -959,16 +920,14 @@ class App:
             active=self.controller.active
             for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button]:
                 widget.state(['disabled' if active else '!disabled'])
-            check_button.state(['disabled' if active or dirty() or not identifier.get().strip() else '!disabled'])
-            cancel_button.state(['!disabled' if active and not self._settings_closing else 'disabled'])
             if not active and not preserve_status:
-                self._credential_status.set('Simpan perubahan dahulu sebelum Cek login.' if dirty() else
-                    'Login belum dicek. Cek tidak mengambil SPT atau mengekspor hasil.')
+                self._credential_status.set('Perubahan belum disimpan. Pilih Simpan untuk menerapkannya.' if dirty() else
+                    'Akun tersimpan dipakai saat Mulai unduh; akun kosong memakai login manual.')
         def finish_close():
             for variable,token in traces:variable.trace_remove('write',token)
             password.set('');dialog.grab_release();dialog.destroy()
             self._settings_dialog=None;self._credential_status=None
-            self._settings_refresh=None;self._settings_close=None;self._settings_closing=False
+            self._settings_close=None
             self.settings_button.focus_set()
             if shutdown_request is not None:
                 shutdown_request()
@@ -977,7 +936,7 @@ class App:
             if on_closed is not None:
                 shutdown_request = on_closed
             if self.controller.active:
-                self._settings_closing=True;self.stop();refresh(preserve_status=True);return
+                return
             if decision_dialog is not None:
                 decision_dialog.lift()
                 return
@@ -1062,7 +1021,7 @@ class App:
                 return False
             pending_preferences = False
             password.set('');refresh()
-            self._credential_status.set('Pengaturan disimpan. Tekan Cek login untuk menguji login otomatis.')
+            self._credential_status.set('Pengaturan disimpan. Akun tersimpan akan dipakai saat Mulai unduh.')
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
             return True
         def remove():
@@ -1088,30 +1047,13 @@ class App:
             self.preferences = preferences
             pending_preferences = False
             refresh()
-            self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
-        def check():
-            if self.controller.active:return
-            if dirty():
-                self._credential_status.set('Simpan perubahan dahulu sebelum Cek login.');return
-            try:
-                self.controller.start_login_check(LOGIN_ORIGIN,identifier.get(),browser.get(),hidden.get())
-            except (ValueError,RuntimeError) as error:
-                self._credential_status.set(str(error));return
-            self._poll_failed = False
-            self._running(True);refresh(preserve_status=True)
-            self._credential_status.set('Menyiapkan cek login tersimpan…')
-            self.status.set('Menyiapkan cek login tersimpan…')
-            self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
+            self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai unduh.')
         save_button=ttk.Button(buttons,text='Simpan',command=save);save_button.pack(side='left',padx=(0,8))
         remove_button=ttk.Button(buttons,text=copy_text('settings.delete'),command=remove);remove_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
-        check_button=ttk.Button(check_buttons,text=copy_text('settings.check'),command=check,underline=0)
-        check_button.pack(side='left',padx=(0,8))
-        cancel_button=ttk.Button(check_buttons,text=copy_text('settings.cancel_check'),command=self.stop,state='disabled')
-        cancel_button.pack(side='left')
-        self._settings_refresh=refresh;self._settings_close=close
+        self._settings_close=close
         for variable in (identifier,password,browser,hidden,detail_source):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
-        dialog.bind('<Alt-c>',lambda e:check());refresh()
+        refresh()
         controls[0][1].focus_set()
         return dialog

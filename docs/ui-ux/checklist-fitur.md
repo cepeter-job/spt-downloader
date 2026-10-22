@@ -94,7 +94,7 @@ Keputusan pemilik: [disetujui/perlu revisi, tanggal, catatan]. Persetujuan desai
 - [ ] Origin Satu tetap (tanpa URL bebas), arti tahun pajak, NPWP, serta pemisahan workbook masa/model tetap akurat.
 - [ ] Default desktop JSON-hybrid dan preferensi tersimpan tidak disamakan dengan default CLI/library DOM; fallback tidak dilabeli sukses JSON.
 - [ ] Search yang menghapus pilihan dibedakan dari sorting yang mempertahankannya; indeks resume gabungan tidak disamakan dengan cakupan COMPLETE job.
-- [ ] Katalog 54 ID dan konteks folder wajib mengikuti source, bukan snapshot 44 ID sebelum Phase 2.
+- [ ] Katalog 51 ID dan konteks folder wajib mengikuti source, bukan snapshot 44 ID sebelum Phase 2.
 - [ ] Bukti PR #53/#58 dipin ke commit dan batasnya; filtering yang lebih cepat tidak diklaim memenuhi target opening atau DPI penuh.
 - [ ] Semua tombol memiliki aksi yang benar-benar didukung; tidak ada resume/antrean semu.
 - [ ] Kriteria keyboard, DPI, pembaca layar, privasi, dan performa dapat diuji.
@@ -106,7 +106,7 @@ Keputusan pemilik: [disetujui/perlu revisi, tanggal, catatan]. Persetujuan desai
 - [ ] 99% tidak mengaktifkan hasil; COMPLETE tetap memerlukan bukti controller.
 - [ ] Hasil kosong berasal dari inventaris lengkap, bukan exception atau total yang belum diketahui.
 - [ ] PARTIAL selalu tampak belum lengkap, meskipun folder boleh dibuka.
-- [ ] Cek login tidak memicu ekspor; simpan tidak otomatis berarti login berhasil.
+- [ ] Pengaturan tidak memuat Cek login/Batalkan cek/Alt+C; simpan tidak memulai worker atau berarti login berhasil.
 - [ ] SSO/timeout tidak dianggap password valid/salah; tidak ada retry kredensial otomatis.
 - [ ] Hapus login hanya pada origin Satu aplikasi; kegagalan simpan kedua sumber tidak diberi status sukses.
 - [ ] Footer nama pribadi tidak dipulihkan; kontak bugreport, subtitle, dan teks pemilik yang berlaku tetap sesuai katalog/test commit baseline.
@@ -121,7 +121,7 @@ Checkbox berarti bukti tersedia, bukan sekadar pekerjaan direncanakan. Untuk PR 
 
 ## Review dengan pengguna
 
-Gunakan data contoh dan tugas singkat: mulai unduh, perbaiki NPWP, selesaikan login, jelaskan hasil belum lengkap, hentikan proses, cek login, dan cari folder hasil. Minta pengguna menjelaskan apa yang baru terjadi dan apa langkah berikutnya. Catat kesalahan tafsir, bukan hanya apakah layar disukai.
+Gunakan data contoh dan tugas singkat: mulai unduh, perbaiki NPWP, selesaikan login, jelaskan hasil belum lengkap, hentikan proses, ubah/simpan login, dan cari folder hasil. Minta pengguna menjelaskan apa yang baru terjadi dan apa langkah berikutnya. Catat kesalahan tafsir, bukan hanya apakah layar disukai.
 
 Jangan menerima desain bila pengguna mengira hasil belum lengkap sudah lengkap, SSO sudah menguji password, atau Mulai lagi melanjutkan data sementara. Perbaiki teks/layout yang menyebabkan tafsir tersebut, lalu ulangi tugas terkait. Studi kecil membantu menemukan friksi, bukan dasar klaim persentase keberhasilan umum.
 

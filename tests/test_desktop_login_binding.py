@@ -133,11 +133,9 @@ def test_initial_inspection_cannot_use_another_approved_origins_credential(login
     monkeypatch.setattr(auth, '_has_challenge', lambda current: False)
     monkeypatch.setattr(auth, 'read_login', lambda origin: (
         reads.append(origin) or Login('SYNTHETIC_ACCOUNT', 'SYNTHETIC_PASSWORD_ONLY')))
-    status, message = auth.check_saved_credentials(
-        engine, tmp_path, ORIGIN, 'SYNTHETIC_ACCOUNT', 'msedge', True,
-        lambda: None, timeout=0)
+    with pytest.raises(auth.AuthBlocked):
+        auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: None, lambda: None, manual_timeout=0, account='SYNTHETIC_ACCOUNT')
     assert moved and auth._origin(page.url) == other_origin
-    assert status == 'LOGIN_MANUAL'
     assert reads == [] and page.actions == []
     assert closed == [True]
-    assert 'SYNTHETIC_PASSWORD_ONLY' not in message

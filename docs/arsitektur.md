@@ -23,7 +23,7 @@ Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontra
 | `spt_desktop/controller.py`, `events.py` | Protokol progres/terminal, otorisasi start, Stop, dan pemrosesan event pada thread GUI. |
 | `spt_desktop/interaction.py` | Permintaan/jawaban pilihan SPT dan penggantian hasil yang terikat pada job; payload privat terpisah dari sinyal stdout/stdin. |
 | `spt_desktop/runtime.py` | Pemilihan interpreter, resource worker eksplisit, fingerprint, setup dependensi, dan verifikasi kesiapan. |
-| `spt_desktop/worker.py` | Proses terisolasi untuk capture/export atau pemeriksaan kredensial. |
+| `spt_desktop/worker.py` | Proses terisolasi untuk autentikasi dan capture/export. |
 | `spt_desktop/auth.py`, `credentials.py` | Login pada form yang diperiksa, challenge manual, serta Windows Credential Manager berbasis origin. |
 | `spt_desktop/windows.py` | Instance lock dan Windows Job Object untuk kepemilikan pohon proses. |
 | `spt_desktop/profile_lifecycle.py` | Profil login sementara dengan penanda identitas dan lease proses; pembersihan konservatif setelah proses berakhir. |
@@ -68,35 +68,13 @@ PDF keuangan/auditan hanya didukung melalui href baca biasa yang teramati pada I
 
 ## Kredensial dan autentikasi desktop
 
-Kredensial desktop hanya boleh diambil dari Windows Credential Manager untuk `LOGIN_ORIGIN` Satu yang tetap dan identifier akun terpilih. Pengguna tidak memilih URL origin. Preferensi allowlist menyimpan browser, headless, identifier dan mode sumber detail; nilai `login_origin` dipaksa ke konstanta aplikasi. Akun kosong memilih login manual tanpa membaca credential tersimpan. Password, token dan cookie tidak masuk file preferensi atau event GUI. Urutan tindakan pengguna ada pada [README](../README.md#cek-kredensial); caption/fokus Pengaturan ada pada [pola UI](ui-ux/pola-dan-status.md#pengaturan-dan-cek-login).
+Kredensial desktop hanya boleh diambil dari Windows Credential Manager untuk `LOGIN_ORIGIN` Satu yang tetap dan identifier akun terpilih. Pengguna tidak memilih URL origin. Preferensi allowlist menyimpan browser, headless, identifier dan mode sumber detail; nilai `login_origin` dipaksa ke konstanta aplikasi. Akun kosong memilih login manual tanpa membaca credential tersimpan. Password, token dan cookie tidak masuk file preferensi atau event GUI. Urutan tindakan pengguna ada pada [README](../README.md#login-tersimpan); caption/fokus Pengaturan ada pada [pola UI](ui-ux/pola-dan-status.md#pengaturan-dan-login-tersimpan).
 
 Login tersimpan mengikat elemen/form yang telah diperiksa. Origin, identitas kontrol, dan tujuan submit hasil resolusi browser diperiksa kembali sebelum setiap aksi kredensial, dengan pemeriksaan Stop pada batas yang sama. Perubahan form, tujuan, challenge, atau field yang tidak dikenal memerlukan login manual pada browser terlihat.
 
-Rute home Coretax adalah isyarat untuk menuju pencarian, bukan bukti autentikasi. Kontrol pencarian wajib pajak yang terlihat menjadi marker kesiapan. **Cek Kredensial** menggunakan profil sementara, satu percobaan kredensial tersimpan, dan tidak memakai profil ekspor. SSO yang sudah login tidak menguji password tersimpan.
+Rute home Coretax adalah isyarat untuk menuju pencarian, bukan bukti autentikasi. Kontrol pencarian wajib pajak yang terlihat menjadi marker kesiapan. Autentikasi berjalan melalui `authenticate_owned` saat Mulai unduh. Setiap unduhan dengan akun tersimpan menggunakan profil sementara baru dan mencocokkan identifier sebelum mengisi form; sesi SSO yang belum terkait akun tersebut ditolak untuk login otomatis. Akun kosong memakai alur manual. Tidak ada operasi pemeriksaan kredensial terpisah, command `--check-login`, atau penerimaan event `login_check` pada controller.
 
-Sesudah form Satu dikirim, pemeriksa mengizinkan pertukaran kode OpenID yang
-teramati pada konfigurasi aplikasi: POST `/identityprovider/connect/token`,
-client `cats-angular-client`, dan callback `/home/id-ID/auth-callback` atau
-`/returnsheets/id-ID/auth-callback`. Request harus berasal dari frame utama
-halaman milik pemeriksa, berbentuk form authorization-code dengan PKCE, serta
-memiliki code dan redirect URI yang cocok dengan callback. Setiap callback
-hanya memperoleh satu percobaan; redirect HTTP dan retry transport dimatikan.
-Service worker diblokir. Pengecualian ini tidak mengizinkan POST Coretax lainnya,
-refresh token, password grant, iframe, atau popup. Respons token tetap diproses
-oleh aplikasi Coretax; pemeriksa tidak membaca token dari storage atau menulisnya
-ke diagnostik, dan tetap menunggu marker pencarian sebelum LOGIN_OK.
-
-Kegagalan definitif pertukaran kode mengakhiri pemeriksaan sebagai
-LOGIN_UNVERIFIED; marker yang muncul setelah kegagalan tidak mengubahnya menjadi
-LOGIN_OK. Stop tetap didahulukan. Kategori kegagalan transport yang tetap dapat
-dicatat tanpa URL, query, header, body atau pesan exception. Kategori itu membantu
-diagnosis berikutnya, bukan bukti password salah atau izin membuka POST lain.
-
-Dasar inspeksi 21 Oktober 2026: konfigurasi statis beranda
-`main.49d8f10ca1a7d961.js`, Pencarian WP `main.cccfdb820c20596c.js`, dan metadata
-`/identityprovider/.well-known/openid-configuration`. Log kategori POST yang
-diblokir saja tidak membuktikan endpoint spesifiknya. Uji browser memakai server
-loopback sintetis di runner, termasuk redirect, penolakan, putus koneksi, dan Stop.
+Profil sementara `login-check` dari versi lama tetap dapat dibersihkan oleh reaper setelah kepemilikan dan akhir proses terverifikasi. Schema diagnostik lama tetap dapat dibaca, tetapi alur produk baru tidak memancarkan operasi tersebut.
 
 Jangan meneruskan exception browser atau Credential Manager mentah ke log GUI. Diagnostics dapat mengandung sumber halaman, identifier, URL proxy, atau rahasia. Jangan mewariskan flag debug kredensial Playwright.
 
@@ -108,7 +86,6 @@ Run data membedakan kelengkapan inventaris, detail, tabel, dan keseluruhan run. 
 | --- | --- |
 | CLI | COMPLETE `0`, PARTIAL `2`, terblokir `1`, interupsi `130`. |
 | Worker ekspor desktop | COMPLETE `0`, PARTIAL `2`, BLOCKED `3`, CANCELLED `4`, ERROR `1`. |
-| Worker Cek Kredensial | LOGIN_OK `0`, LOGIN_UNVERIFIED `5`, LOGIN_MANUAL `6`, LOGIN_BLOCKED `3`, LOGIN_ERROR `1`, CANCELLED `4`. |
 
 Jangan menyamakan exit code CLI dengan worker. Controller memerlukan event terminal yang sesuai dengan `job_id`, operasi, exit code, hasil yang diverifikasi, dan selesainya pembersihan proses. Exit `0` saja tidak berarti berhasil. Progres tahap merupakan informasi pekerjaan; persentase 100 hanya muncul pada COMPLETE final.
 

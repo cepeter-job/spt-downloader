@@ -24,10 +24,8 @@ Jangan menghapus seluruh `%LOCALAPPDATA%\SPTDownloader` sebagai langkah pertama:
 | --- | --- |
 | Edge/Chrome tidak ditemukan | Pasang browser yang dipilih melalui saluran organisasi/resmi, lalu ulangi. Tes fixture memakai Edge terpasang; memasang Chromium generik tidak otomatis memenuhi `channel='msedge'`. |
 | Profil sedang dipakai | Tutup jendela automation khusus aplikasi atau tunggu job sebelumnya selesai. Jangan mematikan browser pribadi atau menyalin cookie profil pribadi. |
+| Login unduhan belum siap | Periksa jaringan dan browser aplikasi. Selesaikan CAPTCHA/MFA atau form yang tidak dikenali secara manual; timeout tidak membuktikan password salah. Akun kosong pada Pengaturan memilih mode manual. |
 | Login manual berhenti di homepage | Aplikasi perlu kontrol pencarian `ObjectPermitNumber`, bukan homepage saja. Periksa akses intranet dan apakah rute pencarian benar-benar dapat dimuat. |
-| Cek login menunjukkan password belum diuji | Sesi SSO sudah login. Hasil ini tidak menyatakan password tersimpan benar atau salah. |
-| Cek login timeout/belum terverifikasi | Periksa jaringan, challenge, dan layout login. Jangan berulang kali mencoba password untuk menganggap timeout sebagai password salah. |
-| Cek login menyebut permintaan lanjutan Coretax diblokir | Pemeriksa mengamati request yang ditolak oleh pembatasan origin setelah form login dikirim. Password tetap belum terverifikasi. Gunakan **Mulai** untuk alur login unduhan biasa sesuai scope yang dipilih; jangan mengulangi Cek login atau membuka semua POST. Pengecualian endpoint memerlukan inspeksi request yang berizin dan tes sintetis. |
 | CAPTCHA/MFA atau form baru | Selesaikan challenge pada browser terlihat. Perubahan form perlu inspeksi dan fixture baru sebelum login otomatis diperluas. |
 | `--reuse-browser` ditolak | Gunakan hanya origin loopback HTTP/HTTPS tanpa path, query, fragment, atau kredensial. Jangan mengekspos port debugging ke jaringan. |
 | Login berhasil pada browser tetapi headless ditolak | Browser dapat tetap terlihat ketika pemindahan sesi tidak diterima. Jangan memaksa pemindahan cookie ke origin atau profil lain. |

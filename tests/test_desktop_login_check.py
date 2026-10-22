@@ -1,4 +1,4 @@
-"""Credential checks use intercepted synthetic pages, never a live account."""
+"""Normal download login uses intercepted synthetic pages, never a live account."""
 from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
@@ -19,11 +19,6 @@ def browser():
         browser=p.chromium.launch(channel='msedge',headless=True)
         yield browser
         browser.close()
-
-
-def check_function():
-    assert hasattr(auth,'check_saved_credentials'), 'Cek Kredensial does not exist'
-    return auth.check_saved_credentials
 
 
 class RoutedPlaywright:
@@ -52,146 +47,128 @@ class RoutedPlaywright:
         return context
 
 
-def saved(monkeypatch):
-    reads=[]
-    monkeypatch.setattr(auth,'read_login',lambda origin:(reads.append(origin) or Login(ACCOUNT,SECRET)))
-    return reads
+def run_login(browser, tmp_path, monkeypatch, mode='success', form=FORM, account=ACCOUNT):
+    monkeypatch.setattr(auth, 'SEARCH_URL', READY_URL if mode == 'already' else ORIGIN + '/login')
+    engine = RoutedPlaywright(browser, mode, form)
+    reads, events = [], []
+    monkeypatch.setattr(auth, 'read_login', lambda origin: (reads.append(origin) or Login(ACCOUNT, SECRET)))
+    if mode in ('reject', 'challenge'):
+        wait = auth._wait_ready
+        monkeypatch.setattr(auth, '_wait_ready', lambda page, deadline, cancel, emit=None:
+            wait(page, auth.time.monotonic() + 0.2, cancel, emit=emit))
+    try:
+        context, page = auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: events.append(args), lambda: None, manual_timeout=0, account=account)
+    except auth.AuthBlocked as error:
+        message = str(error)
+        assert SECRET not in message and ACCOUNT not in message
+        return False, message, engine, reads, events
+    else:
+        try:
+            assert auth.authenticated(page)
+            return True, '', engine, reads, events
+        finally:
+            context.close()
+    finally:
+        assert all(not context.pages for context in engine.contexts)
 
 
-def run_check(browser,tmp_path,monkeypatch,mode='success',form=FORM,origin=ORIGIN,account=ACCOUNT,cancelled=lambda:None):
-    function=check_function()
-    monkeypatch.setattr(auth,'SEARCH_URL',READY_URL if mode=='already' else ORIGIN+'/login')
-    engine=RoutedPlaywright(browser,mode,form)
-    reads=saved(monkeypatch)
-    status,message=function(engine,tmp_path,origin,account,'msedge',True,cancelled,timeout=0.4 if mode=='reject' else 5)
-    assert all(not context.pages for context in engine.contexts)
-    assert all(not path.exists() for path in engine.paths)
-    assert not (tmp_path/'profile').exists()
-    assert SECRET not in message and ACCOUNT not in message
-    return status,message,engine,reads
-
-
-def test_saved_password_verified_only_after_one_real_form_submission(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch)
-    assert status=='LOGIN_OK' and 'Login berhasil' in message
-    assert reads==[ORIGIN] and len(engine.posts)==1
+@pytest.mark.parametrize('mode', ['success', 'slow_success'])
+def test_named_download_submits_saved_password_once_without_a_preliminary_check(browser, tmp_path, monkeypatch, mode):
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, mode=mode)
+    assert ready and reads == [ORIGIN] and len(engine.posts) == 1
     assert 'username=SYNTHETIC_ACCOUNT' in engine.posts[0]
     assert 'password=SYNTHETIC_PASSWORD_ONLY' in engine.posts[0]
+    assert not any(kind == 'login_required' for kind, _ in events)
 
 
-def test_already_authenticated_sso_does_not_certify_saved_password(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,mode='already')
-    assert status=='LOGIN_UNVERIFIED' and 'belum diuji' in message
-    assert reads==[] and engine.posts==[]
+def test_unbound_sso_cannot_start_named_download_or_read_password(browser, tmp_path, monkeypatch):
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, mode='already')
+    assert not ready and 'SSO' in message
+    assert not reads and not engine.posts
 
 
-def test_timeout_is_not_wrong_password_and_never_retries(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,mode='reject')
-    assert status=='LOGIN_UNVERIFIED' and 'belum terverifikasi' in message
-    assert len(engine.posts)==1 and reads==[ORIGIN]
+def test_rejected_password_is_not_retried_during_download_login(browser, tmp_path, monkeypatch):
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, mode='reject')
+    assert not ready and len(engine.posts) == 1 and reads == [ORIGIN]
     assert 'password salah' not in message.lower()
+    assert any(kind == 'login_required' for kind, _ in events)
 
 
-@pytest.mark.parametrize('form',[FORM+'<input id="captcha">',FORM+'<input autocomplete="one-time-code">'])
-def test_challenge_requires_manual_without_reading_password(browser,tmp_path,monkeypatch,form):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,form=form)
-    assert status=='LOGIN_MANUAL' and 'CAPTCHA/MFA' in message
-    assert reads==[] and engine.posts==[]
+@pytest.mark.parametrize('form', [FORM + '<input id="captcha">', FORM + '<input autocomplete="one-time-code">',
+    FORM.replace('>Login<', '>Submit SPT<'),
+    FORM.replace('<button type="submit"', '<button formaction="/returnsheets/submit" type="submit"')])
+def test_challenged_or_unsafe_download_login_stays_manual_without_reading_password(browser, tmp_path, monkeypatch, form):
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, form=form)
+    assert not ready and not reads and not engine.posts
+    assert any(kind == 'login_required' for kind, _ in events)
 
 
-def test_post_password_mfa_is_not_success(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,mode='challenge')
-    assert status=='LOGIN_MANUAL' and len(engine.posts)==1
+def test_post_password_mfa_stays_manual_and_never_resubmits(browser, tmp_path, monkeypatch):
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, mode='challenge')
+    assert not ready and len(engine.posts) == 1 and reads == [ORIGIN]
+    assert any(kind == 'login_required' for kind, _ in events)
 
 
-def test_origin_mismatch_does_not_read_any_password(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,origin=auth.CORETAX_ORIGIN)
-    assert status=='LOGIN_BLOCKED' and 'Origin' in message
-    assert ORIGIN in message and reads==[] and engine.posts==[]
+def test_selected_account_mismatch_never_submits_during_download(browser, tmp_path, monkeypatch):
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, account='OTHER_SYNTHETIC_ACCOUNT')
+    assert not ready and reads == [ORIGIN] and not engine.posts
 
 
-def test_saved_account_mismatch_never_submits(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,account='OTHER_SYNTHETIC_ACCOUNT')
-    assert status=='LOGIN_BLOCKED' and 'Akun' in message
-    assert reads==[ORIGIN] and engine.posts==[]
-
-
-def test_missing_credential_has_explicit_status(browser,tmp_path,monkeypatch):
-    function=check_function();engine=RoutedPlaywright(browser)
-    monkeypatch.setattr(auth,'SEARCH_URL',ORIGIN+'/login')
-    monkeypatch.setattr(auth,'read_login',lambda origin:None)
-    status,message=function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,lambda:None,timeout=0.4)
-    assert status=='LOGIN_BLOCKED' and 'belum disimpan' in message
+def test_missing_credential_falls_back_to_manual_download_login(browser, tmp_path, monkeypatch):
+    monkeypatch.setattr(auth, 'SEARCH_URL', ORIGIN + '/login')
+    monkeypatch.setattr(auth, 'read_login', lambda origin: None)
+    engine = RoutedPlaywright(browser)
+    events = []
+    with pytest.raises(auth.AuthBlocked):
+        auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: events.append(args), lambda: None, manual_timeout=0, account=ACCOUNT)
     assert not engine.posts and all(not context.pages for context in engine.contexts)
+    assert any(kind == 'login_required' for kind, _ in events)
 
 
-def test_unknown_layout_does_not_read_or_guess_submit(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,form=FORM.replace('>Login<','>Submit SPT<'))
-    assert status=='LOGIN_MANUAL' and 'Form' in message
-    assert reads==[] and engine.posts==[]
-
-
-def test_same_origin_formaction_tax_submit_never_reads_password(browser,tmp_path,monkeypatch):
-    html=FORM.replace('<button type="submit"','<button formaction="/returnsheets/submit" type="submit"')
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,form=html)
-    assert status=='LOGIN_MANUAL' and reads==[] and not engine.posts
-
-
-def test_network_failure_is_distinct_and_secret_free(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,mode='network')
-    assert status=='LOGIN_ERROR' and 'koneksi' in message.lower() and reads==[]
-
-
-def test_cancelled_check_closes_fresh_context_and_removes_owned_profile(browser,tmp_path,monkeypatch):
+def test_stop_after_submission_closes_download_browser(browser, tmp_path, monkeypatch):
     from coretax_browser import CaptureCancelled
-    function=check_function();engine=RoutedPlaywright(browser,mode='reject');saved(monkeypatch)
-    monkeypatch.setattr(auth,'SEARCH_URL',ORIGIN+'/login')
+    monkeypatch.setattr(auth, 'SEARCH_URL', ORIGIN + '/login')
+    monkeypatch.setattr(auth, 'read_login', lambda origin: Login(ACCOUNT, SECRET))
+    engine = RoutedPlaywright(browser, mode='reject')
     def cancelled():
-        if engine.posts:raise CaptureCancelled('synthetic cancellation')
+        if engine.posts:
+            raise CaptureCancelled('Synthetic cancellation after password submission')
     with pytest.raises(CaptureCancelled):
-        function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,cancelled,timeout=1)
-    assert all(not context.pages for context in engine.contexts)
-    assert all(not path.exists() for path in engine.paths)
+        auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: None, cancelled, manual_timeout=0, account=ACCOUNT)
+    assert len(engine.posts) == 1 and all(not context.pages for context in engine.contexts)
 
 
-def test_every_check_uses_a_new_profile(browser,tmp_path,monkeypatch):
-    function=check_function();engine=RoutedPlaywright(browser);saved(monkeypatch)
-    monkeypatch.setattr(auth,'SEARCH_URL',ORIGIN+'/login')
-    for _ in range(2):
-        assert function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,lambda:None,timeout=5)[0]=='LOGIN_OK'
-    assert len(set(engine.paths))==2
+def test_compound_masuk_button_is_still_bound_for_download_login(browser, tmp_path, monkeypatch):
+    form = FORM.replace('>Login</button>', '><span class="indicator-label">Masuk</span><span style="display:none">Please wait</span></button>')
+    ready, message, engine, reads, events = run_login(browser, tmp_path, monkeypatch, form=form)
+    assert ready and reads == [ORIGIN] and len(engine.posts) == 1
 
 
-def test_compound_masuk_button_still_logs_in_automatically(browser,tmp_path,monkeypatch):
-    form=FORM.replace('>Login</button>','><span class="indicator-label">Masuk</span><span class="indicator-progress">Please wait...</span></button>')
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,form=form)
-    assert status=='LOGIN_OK' and len(engine.posts)==1 and reads==[ORIGIN]
-
-
-
-@pytest.mark.parametrize('failure',['read','fill','click'])
-def test_internal_secret_bearing_errors_never_reach_result(browser,tmp_path,monkeypatch,failure):
-    function=check_function();engine=RoutedPlaywright(browser)
-    monkeypatch.setattr(auth,'SEARCH_URL',ORIGIN+'/login')
-    def unsafe_error(*args,**kwargs):raise RuntimeError(ACCOUNT+' '+SECRET+' synthetic private call log')
-    if failure=='read':monkeypatch.setattr(auth,'read_login',unsafe_error)
+@pytest.mark.parametrize('failure', ['read', 'fill', 'click'])
+def test_secret_bearing_login_errors_do_not_escape_into_manual_download_messages(browser, tmp_path, monkeypatch, failure):
+    monkeypatch.setattr(auth, 'SEARCH_URL', ORIGIN + '/login')
+    engine = RoutedPlaywright(browser)
+    def unsafe_error(*args, **kwargs):
+        raise RuntimeError(ACCOUNT + ' ' + SECRET + ' synthetic private call log')
+    if failure == 'read':
+        monkeypatch.setattr(auth, 'read_login', unsafe_error)
     else:
-        saved(monkeypatch)
-        original=auth._bind_login_fields
-        def controls(page,inspected):
-            fields,current=original(page,inspected)
-            origin,identifier,password,button=fields
-            monkeypatch.setattr(identifier if failure=='fill' else button,
-                                'fill' if failure=='fill' else 'click',unsafe_error)
-            return fields,current
-        monkeypatch.setattr(auth,'_bind_login_fields',controls)
-    status,message=function(engine,tmp_path,ORIGIN,ACCOUNT,'msedge',True,lambda:None,timeout=0.4)
-    assert status=='LOGIN_ERROR'
-    assert SECRET not in message and ACCOUNT not in message and 'private call log' not in message
+        monkeypatch.setattr(auth, 'read_login', lambda origin: Login(ACCOUNT, SECRET))
+        original = auth._bind_login_fields
+        def controls(page, inspected):
+            fields, current = original(page, inspected)
+            origin, identifier, password, button = fields
+            monkeypatch.setattr(identifier if failure == 'fill' else button,
+                'fill' if failure == 'fill' else 'click', unsafe_error)
+            return fields, current
+        monkeypatch.setattr(auth, '_bind_login_fields', controls)
+    events = []
+    with pytest.raises(auth.AuthBlocked) as error:
+        auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: events.append(args), lambda: None, manual_timeout=0, account=ACCOUNT)
+    for private in (ACCOUNT, SECRET, 'synthetic private call log'):
+        assert private not in str(error.value) and private not in repr(events)
     assert all(not context.pages for context in engine.contexts)
-    assert all(not path.exists() for path in engine.paths)
-
-
-def test_asynchronous_success_is_not_bound_to_a_subsecond_fixture_deadline(browser,tmp_path,monkeypatch):
-    status,message,engine,reads=run_check(browser,tmp_path,monkeypatch,mode='slow_success')
-    assert status=='LOGIN_OK' and len(engine.posts)==1 and reads==[ORIGIN]

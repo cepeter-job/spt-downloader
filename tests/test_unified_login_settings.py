@@ -76,7 +76,7 @@ def test_settings_has_no_origin_label_or_origin_selector(settings):
     assert not writes and not deletes
 
 
-def test_save_and_check_use_satu_even_after_legacy_coretax_settings(settings):
+def test_saved_credentials_use_satu_even_after_legacy_coretax_settings(settings):
     root, app, controller, writes, deletes = settings
     password = next(w for w in widgets(app._settings_dialog)
                     if w.winfo_class() == 'TEntry' and w.cget('show'))
@@ -84,8 +84,7 @@ def test_save_and_check_use_satu_even_after_legacy_coretax_settings(settings):
     button(app._settings_dialog, 'Simpan').invoke(); root.update()
     assert writes == [(SATU, ACCOUNT, 'SYNTHETIC_PASSWORD_ONLY')]
     assert password.get() == '' and not deletes
-    button(app._settings_dialog, 'Cek login').invoke(); root.update()
-    assert controller.checks == [(SATU, ACCOUNT, 'msedge', True)]
+    assert not controller.active and not controller.exports and not controller.checks
 
 
 def test_start_passes_the_selected_saved_account_without_password(settings):
@@ -96,7 +95,7 @@ def test_start_passes_the_selected_saved_account_without_password(settings):
     assert controller.start_options == [{'account': ACCOUNT}]
     assert not writes and not deletes
 
-def test_switch_to_manual_mode_keeps_saved_secret_and_invalidates_check(settings):
+def test_switch_to_manual_mode_keeps_saved_secret_and_requires_no_check(settings):
     root, app, controller, writes, deletes = settings
     app._credential_status.set('Login berhasil; kredensial tersimpan terverifikasi.')
     account = next(w for w in widgets(app._settings_dialog)
@@ -105,7 +104,7 @@ def test_switch_to_manual_mode_keeps_saved_secret_and_invalidates_check(settings
     assert 'Login berhasil' not in app._credential_status.get()
     button(app._settings_dialog, 'Simpan').invoke(); root.update()
     assert app.preferences['identifier'] == '' and not writes and not deletes
-    assert button(app._settings_dialog, 'Cek login').instate(['disabled'])
+    assert not controller.active and not controller.exports
 
 
 
