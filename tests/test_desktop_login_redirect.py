@@ -23,6 +23,9 @@ def run_download_login(browser, tmp_path, monkeypatch, *, mode='success', entry=
         wait = auth._wait_ready
         monkeypatch.setattr(auth, '_wait_ready', lambda page, deadline, cancel, emit=None:
             wait(page, auth.time.monotonic() + 0.2, cancel, emit=emit))
+    if mode == 'stalled':
+        # Only this case tests a pre-form timeout. Rejection must reach the
+        # inspected form and submit once before its short verification window.
         login_ready = auth._wait_login_ready
         monkeypatch.setattr(auth, '_wait_login_ready', lambda page, origin, cancel, timeout, observe:
             login_ready(page, origin, cancel, 0.2, observe))
