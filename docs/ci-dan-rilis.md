@@ -10,6 +10,13 @@ Push ke `main`, PR menuju `main`, dan `workflow_dispatch` menjalankan pemeriksaa
 
 Nama check gabungan tetap **Windows tests and dependency audit** agar aturan branch yang sudah mengacu pada nama tersebut tidak perlu mengejar nama matrix. Check ini menggabungkan hasil yang diwajibkan untuk event dan perubahan tersebut. Gagal, dibatalkan, atau terlewatnya job yang seharusnya berjalan tidak boleh dinyatakan berhasil oleh agregator.
 
+Setiap push `main` memakai grup concurrency dengan run ID sendiri. Push dokumentasi
+yang tiba sesudah push kode tidak membatalkan build kode yang sedang berjalan atau
+menggantikan run kode yang masih mengantre. Pembaruan pada PR yang sama tetap
+membatalkan validasi PR yang sudah usang. Dispatch dan jadwal juga punya identitas
+run tersendiri; mematikan cancellation saja tidak cukup untuk melindungi antrean
+`main` karena satu grup concurrency hanya mempunyai satu slot pending.
+
 Pemilihan perubahan memakai [scripts/ci_route.py](../scripts/ci_route.py). Hanya perubahan dokumentasi yang cocok dengan allowlist aman yang dapat melewati pekerjaan runtime. Perubahan tak dikenal, basis diff yang tidak dapat ditetapkan, atau ketidakpastian klasifikasi menjalankan pemeriksaan lengkap. Perubahan script, lock, requirements, workflow, resource, atau aturan pemilih tes tetap memerlukan gate kode.
 
 Pengaturan ruleset/branch protection di GitHub terpisah dari YAML. Maintainer perlu memastikan check gabungan dan PR benar-benar diwajibkan pada `main`. Jangan menyimpulkan perlindungan aktif hanya karena workflow tersedia atau berwarna hijau. Bagian [aturan repo](#aktivasi-aturan-repository) menyimpan verifikasi bertanggal; periksa ulang metadata remote sebelum mengandalkannya untuk perubahan sekarang.
@@ -117,7 +124,7 @@ dokumentasi berubah. Komentar dalam `.py` tetap termasuk perubahan kode.
 
 CPython 3.14.8 sudah menjadi satu-satunya profil produksi; tidak ada build kandidat maupun pekerjaan matrix 3.11. Kegagalan worker/GUI/packaging pada 3.14 tetap menghalangi penggabungan. Prosedur migrasi/rollback dijelaskan pada [kebijakan Python](python-314.md).
 
-Pemilih [scripts/ci_tests.py](../scripts/ci_tests.py) memilih subset portable untuk feedback awal dan kompatibilitas Linux. Workload Windows menjalankan **seluruh suite**, termasuk tes portable yang memiliki cabang perilaku Windows. Pengulangan ini disengaja agar perilaku seperti junction tidak hilang dari cakupan. Manifest collection harus membuktikan subset portable benar, inventaris Windows lengkap, serta versi Python/commit sesuai. Tes baru selalu terjangkau suite Windows, lalu dapat dimasukkan ke subset portable setelah ditinjau.
+Pemilih [scripts/ci_tests.py](../scripts/ci_tests.py) memilih subset portable untuk feedback awal dan kompatibilitas Linux. Workload Windows menjalankan **seluruh suite**, termasuk tes portable yang memiliki cabang perilaku Windows. Pengulangan ini disengaja agar perilaku seperti junction tidak hilang dari cakupan. Manifest collection harus membuktikan subset portable benar, inventaris Windows lengkap, serta versi Python/commit sesuai. Setiap tes yang dipilih harus mempunyai tepat satu status `passed` untuk setup, call, dan teardown. Skip, xfail/xpass, fase yang hilang, laporan ganda, atau outcome untuk node yang tidak dipilih ditolak sebelum packaging walaupun exit pytest bernilai nol. Inventory hanya menyimpan status; alasan skip dan pesan kegagalan tidak disalin. Tes baru selalu terjangkau suite Windows, lalu dapat dimasukkan ke subset portable setelah ditinjau.
 
 ## Batas waktu job Windows
 
@@ -141,7 +148,11 @@ untuk mencari penyebabnya; jangan menaikkan batas terus-menerus tanpa bukti.
 ## Benchmark opsional pembagian tes Windows
 
 [windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml)
-berjalan lewat dispatch atau perubahan PR yang cocok dengan trigger-nya. Benchmark
+berjalan hanya melalui `workflow_dispatch`: buka **Actions → Benchmark Windows
+test sharding → Run workflow**. PR, push, dan jadwal tidak menjalankan benchmark.
+Gunakan saat menyelidiki perubahan Python/runner, cache, atau pembagian shard,
+serta ketika membutuhkan perbandingan performa yang terukur. Validasi PR rutin
+tetap memakai workflow build produksi. Benchmark
 tidak mengganti job `windows`, check gabungan, packaging
 atau artifact readback. Profil Python dibaca dari sumber yang sama dengan CI utama.
 
@@ -173,7 +184,7 @@ Push, PR, dan default dispatch memakai dua shard. Kedua pilihan manual
 menjalankan portable, audit, managed worker, source/frozen GUI, build, upload,
 artifact readback dan check gabungan yang sama. Run manual memiliki grup concurrency
 tersendiri agar pasangan pada satu commit dapat dibandingkan tanpa saling membatalkan.
-Pembatalan validasi PR/push yang sudah usang tetap berlaku.
+Pembatalan validasi PR yang sudah usang tetap berlaku; setiap push `main` dipertahankan.
 
 Dalam mode dua shard, job package membaca kedua manifest asli dari direktori
 terpisah. Verifier menolak shard hilang/ganda, partisi yang salah, hasil pytest
@@ -208,7 +219,7 @@ Job portable, Windows produksi, serta setiap varian benchmark menyimpan JUnit
 terpisah. Inventory tetap memakai nama dan format pokok yang dikonsumsi gate
 packaging. Upload inventory dan diagnostik tetap dicoba ketika langkah pytest
 gagal, termasuk kegagalan assertion, fixture, atau collection; kegagalan tersebut
-tetap membuat job gagal. Artifact distribusi tetap hanya lima berkas yang lama.
+tetap membuat job gagal. Artifact distribusi memakai tujuh berkas eksplisit di bawah.
 
 Inventory sekarang mencatat exit status dan durasi setiap sesi pytest, bukan
 hanya benchmark. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
@@ -245,7 +256,7 @@ Beberapa keputusan menjaga beban tetap terukur:
 - Perubahan dokumentasi yang terbukti aman tidak menjalankan semua interpreter, browser, dan build.
 - Subset Linux memberi feedback portable tanpa browser/GUI; suite Windows penuh mempertahankan seluruh perilaku target.
 - Satu proses pytest per runner menghindari perkalian proses browser dan perebutan resource Tk/Windows Job Object.
-- Fase tes memakai satu runner portable, dua runner shard Windows (satu untuk dispatch serial), dan satu audit; satu runner build dimulai setelah gate tersebut. Run usang dibatalkan sesuai `concurrency` workflow.
+- Fase tes memakai satu runner portable, dua runner shard Windows (satu untuk dispatch serial), dan satu audit; satu runner build dimulai setelah gate tersebut. Run PR usang dibatalkan; push `main` memakai grup per run agar bukti build kode tidak hilang.
 - Audit mingguan tidak membuat ulang executable dan tidak menjalankan suite browser.
 - Artifact executable yang sudah terkompresi diunggah tanpa kompresi tambahan.
 - Durasi job dan keadaan cache perlu dibandingkan pada scope yang setara sebelum menyatakan penghematan numerik.
@@ -258,6 +269,26 @@ Instalasi runtime/test/build memakai `uv pip sync --require-hashes --only-binary
 
 Actions dipin dengan commit SHA penuh. Checkout tidak menyimpan kredensial Git. Job tes/build memakai token baca. Job `attest` pada push `main` mendapat `id-token: write` dan `attestations: write`; job `cleanup` sesudah gate mendapat `contents: write` serta akses baca PR. Secret penandatanganan penerbit tidak tersedia pada run PR.
 
+Bootstrap `setup-uv` juga memeriksa SHA-256 arsip upstream **uv 0.13.4** yang
+ditinjau, selain pin action dan versi. Nilai berasal dari
+[release upstream](https://github.com/astral-sh/uv/releases/tag/0.13.4):
+
+| Runner | Arsip | SHA-256 |
+| --- | --- | --- |
+| Ubuntu x64 | `uv-x86_64-unknown-linux-gnu.tar.gz` | `2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f` |
+| Windows x64 | `uv-x86_64-pc-windows-msvc.zip` | `ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225` |
+
+Pembaruan uv harus meninjau versi dan kedua digest bersama. Binary uv yang dibundel
+tetap berasal dari paket build yang terkunci dengan hash dan diperiksa versinya.
+`distribution-sbom.json` menggunakan CycloneDX 1.6: hash executable akhir,
+identitas build, hash/ukuran setiap binary native dalam CArchive PyInstaller,
+versi CPython/Tcl/Tk/uv yang diamati, versi PE bila tersedia, serta pin dan digest
+lock worker yang diunduh terpisah. Versi native yang tidak tersedia tidak ditebak.
+Inventaris ini **bukan audit kerentanan native**; pip-audit memeriksa paket Python,
+dan Edge merupakan prasyarat eksternal yang dikelola pengguna. Hash executable
+mencakup bootloader PyInstaller; tidak ada klaim penilaian kerentanan bootloader
+tersendiri.
+
 Tidak ada capture, profil, log pribadi, atau hasil wajib pajak dalam artifact. Laporan self-test hanya memuat fakta non-rahasia tentang interpreter, resource, GUI, dan apakah akses kredensial/live scrape dilakukan.
 
 ## Memverifikasi artifact
@@ -268,20 +299,20 @@ Nama artifact menyertakan commit penuh dan versi interpreter:
 SPTDownloader-Windows-x64-<commit>-python<versi>-attempt<nomor>
 ```
 
-Produksi menggunakan `python3.14.8` saja. Artifact 3.11.17 dari run terdahulu tetap dapat disimpan terpisah sebagai opsi rollback yang diverifikasi, bukan artifact produksi baru.
+Produksi menggunakan `python3.14.8` saja. Artifact 3.11.17 dari run terdahulu tetap dapat disimpan terpisah sebagai opsi rollback yang diverifikasi, bukan artifact produksi baru. Workflow promosi meminta `source_python_version` secara eksplisit sesuai build/receipt asal; versi tersebut tidak diganti otomatis dengan pin produksi saat ini. Promosi terkelola tetap memerlukan format tujuh berkas dan seluruh provenance yang dijelaskan dalam [panduan promosi dan rollback](promosi-dan-rollback.md).
 
 1. Buka run workflow yang dimaksud. Cocokkan repository, event, branch, commit penuh, dan kesimpulan seluruh gate. Untuk rilis produksi gunakan commit `main` yang telah disetujui.
 2. Catat **run ID, attempt, head PR/branch, commit checkout yang diuji, artifact ID, nama artifact, dan profil Python**. Pada PR, commit checkout dapat berupa merge commit seperti dijelaskan di [alur verifikasi](#menjalankan-dan-membaca-verifikasi). Unduh artifact berdasarkan ID/run tersebut; jangan memilih hanya berdasarkan nama atau waktu terbaru.
-3. Pastikan set berkas hanya `SPTDownloader.exe`, `LICENSE.txt`, `README.txt`, `build-selftest.json`, dan `SHA256SUMS.txt`. Folder internal build, source capture, profil, dan log pribadi tidak termasuk distribusi.
+3. Pastikan set berkas hanya `SPTDownloader.exe`, `LICENSE.txt`, `README.txt`, `build-selftest.json`, `build-info.json`, `distribution-sbom.json`, dan `SHA256SUMS.txt`. Folder internal build, source capture, profil, dan log pribadi tidak termasuk distribusi.
 4. Hitung SHA-256 tiap berkas yang disebut dalam manifest dan cocokkan seluruh nilainya. Perbedaan apa pun berarti artifact belum layak digunakan.
-5. Baca `build-selftest.json`: `ok` dan `frozen` harus benar, bitness 64, profil/interpreter sesuai build, resource lengkap, serta `credentials_accessed` dan `live_scrape` salah. Laporan source self-test terpisah dari laporan frozen yang didistribusikan.
+5. Baca `build-selftest.json`: `ok` dan `frozen` harus benar, bitness 64, profil/interpreter sesuai build, resource lengkap, serta `credentials_accessed` dan `live_scrape` salah. `build-info.json` harus mencatat schema 1, commit penuh, run ID dan attempt yang sama; SBOM harus mengikat identitas tersebut dan hash executable. Laporan source self-test terpisah dari laporan frozen yang didistribusikan.
 6. Pembukaan GUI dan penerimaan pada mesin Windows target mengikuti scope operator yang berizin. Untuk pekerjaan yang dibatasi AGENTS, eksekusi EXE tetap pada runner. Bedakan hasil self-test sintetis dari [penerimaan Coretax/Excel aktual](penerimaan-manual.md); tandai penerimaan yang belum dilakukan secara eksplisit.
 
 Contoh pemeriksaan manual di PowerShell dari direktori ekstraksi:
 
 ```powershell
 Get-Content -LiteralPath .\SHA256SUMS.txt
-Get-FileHash -Algorithm SHA256 -LiteralPath .\SPTDownloader.exe, .\LICENSE.txt, .\README.txt, .\build-selftest.json
+Get-FileHash -Algorithm SHA256 -LiteralPath .\SPTDownloader.exe, .\LICENSE.txt, .\README.txt, .\build-selftest.json, .\build-info.json, .\distribution-sbom.json
 Get-Content -LiteralPath .\build-selftest.json | ConvertFrom-Json
 Get-AuthenticodeSignature -LiteralPath .\SPTDownloader.exe | Select-Object Status, SignerCertificate
 ```
@@ -295,7 +326,7 @@ mengimpor runtime produk, sehingga tetap tunduk pada batas eksekusi AGENTS.
 .venv/Scripts/python.exe -m scripts.ci_artifact verify "$env:RUNNER_TEMP/artifact-readback" --python-version 3.14.8
 ```
 
-Setiap job package CI mengunduh ulang hasil upload menggunakan **artifact ID yang persis**, memeriksa lima berkas, hash, dan laporan frozen, lalu menulis run/commit/artifact/version pada summary. Manifest koleksi tes dan laporan audit sintetis merupakan artifact diagnostik terpisah dari lima berkas distribusi.
+Setiap job package CI mengunduh ulang hasil upload menggunakan **artifact ID yang persis**, memeriksa tujuh berkas, hash, identitas build, SBOM dan laporan frozen. Executable hasil readback kemudian menjalankan bootstrap worker dingin, reuse dan cancellation sintetis dengan uv bundel, tanpa uv dari PATH. Laporan `packaged-bootstrap.json` mengikat hash EXE ke artifact ID/run/attempt/commit dan disimpan terpisah. Kegagalan smoke tersebut menggagalkan package; artifact yang sudah terunggah belum otomatis layak rilis. Manifest koleksi tes, laporan audit dan bootstrap merupakan artifact diagnostik terpisah dari tujuh berkas distribusi.
 
 Checksum dalam arsip yang sama tidak sendirian membuktikan identitas penerbit. Pernyataan berhasil di PR/release perlu menyebut run, commit, dan artifact yang benar-benar dibaca kembali.
 
@@ -309,15 +340,27 @@ Checksum dalam arsip yang sama tidak sendirian membuktikan identitas penerbit. P
 
 Executable saat ini belum ditandatangani dengan sertifikat penerbit tepercaya. Jangan menyebut manifest atau attestation sebagai Authenticode, memakai sertifikat buatan sebagai pengganti identitas tepercaya, atau menyarankan menonaktifkan Defender/TLS agar aplikasi berjalan.
 
-Pada push kode ke `main`, job `attest` membaca ulang artifact run yang sama, memeriksa isinya tanpa mengeksekusinya, lalu membuat attestation untuk executable dan manifest. PR/manual dispatch tidak menerbitkan attestation `main`. Verifikasi keduanya dengan commit penuh yang telah Anda cocokkan pada run:
+Pada push kode ke `main`, job `attest` membaca ulang artifact run yang sama,
+memeriksa isinya tanpa mengeksekusinya, lalu membuat attestation untuk executable,
+manifest, build-info dan SBOM. Attestation kelima mengikat digest ZIP asli dari
+output `upload-artifact`, agar rollback dapat membuktikan byte arsip asli setelah
+artifact Actions kedaluwarsa. PR/manual dispatch build tidak menerbitkan
+attestation `main`. Contoh verifikasi executable dan manifest dengan commit yang
+telah dicocokkan pada run:
 
 ```powershell
 $SptVerifiedCommit = "GANTI_DENGAN_SHA_MAIN_40_KARAKTER"
-gh attestation verify .\SPTDownloader.exe --repo cepeter-job/spt-downloader --signer-workflow cepeter-job/spt-downloader/.github/workflows/windows-build.yml --source-ref refs/heads/main --source-digest $SptVerifiedCommit
-gh attestation verify .\SHA256SUMS.txt --repo cepeter-job/spt-downloader --signer-workflow cepeter-job/spt-downloader/.github/workflows/windows-build.yml --source-ref refs/heads/main --source-digest $SptVerifiedCommit
+gh attestation verify .\SPTDownloader.exe --repo cepeter-job/spt-downloader --signer-workflow cepeter-job/spt-downloader/.github/workflows/windows-build.yml --source-ref refs/heads/main --source-digest $SptVerifiedCommit --signer-digest $SptVerifiedCommit --deny-self-hosted-runners
+gh attestation verify .\SHA256SUMS.txt --repo cepeter-job/spt-downloader --signer-workflow cepeter-job/spt-downloader/.github/workflows/windows-build.yml --source-ref refs/heads/main --source-digest $SptVerifiedCommit --signer-digest $SptVerifiedCommit --deny-self-hosted-runners
 ```
 
 Perintah mengikat identitas repo/workflow, ref, commit sumber, dan digest artifact; lihat [manual resmi GitHub CLI](https://cli.github.com/manual/gh_attestation_verify). Laporan sukses run yang sebenarnya tetap diperlukan untuk menyatakan attestation tersedia dan lolos verifikasi.
+
+[Promosi dan rollback](promosi-dan-rollback.md) menggunakan dispatch terpisah yang
+secara default hanya memverifikasi kandidat. ZIP asli dan kelima bundle provenance
+dipertahankan sebagai aset release setelah publikasi eksplisit. Penyimpanan
+artifact Actions selama 14 hari tetap untuk bukti CI sementara; itu bukan kanal
+distribusi atau penyimpanan rollback jangka panjang.
 
 Sebelum signing produksi diaktifkan, maintainer perlu menetapkan pemilik sertifikat, penyimpanan key, akses job tepercaya, layanan timestamp, dan verifikasi signature setelah signing. Urutannya harus menghasilkan checksum/provenance untuk **byte akhir setelah signing**. Self-test perlu tetap memeriksa executable yang benar-benar didistribusikan. Pengadaan identitas signing dan kebijakan distribusi adalah prasyarat di luar perubahan kode biasa.
 
@@ -338,6 +381,14 @@ Job `cleanup` berjalan hanya pada push `main` setelah check gabungan sukses. [sc
 ```
 
 Kandidat harus berasal dari PR tertutup di repo yang sama, bukan branch default/protected atau head maupun base PR terbuka, dan SHA branch saat ini harus sama dengan head PR. Perlindungan base juga berlaku untuk PR dari fork. Riwayat harus membuktikan head tersebut ancestor dari main yang diuji. Branch hasil squash/rebase yang belum memiliki bukti ancestry dipertahankan. Main yang berubah membuat cleanup berhenti.
+
+Jika API memberikan SHA `main` lain yang valid, cleanup berhenti dengan kode keluar
+0 dan hasil `status: stopped`, `reason: base_changed`. Hasil tersebut tetap mencatat
+penghapusan yang sudah terkonfirmasi sebelum perubahan teramati; tidak ada
+penghapusan lanjutan. Push baru dengan demikian tidak mengubah build lama yang
+sudah terverifikasi menjadi run gagal hanya karena cleanup tidak lagi sesuai.
+SHA yang hilang/tidak valid, kegagalan API/autentikasi dan penolakan deletion lease
+tetap menghasilkan kode keluar 1; penghentian aman ini bukan pengabaian error.
 
 Opsi `--apply` mengaktifkan penghapusan dan memerlukan `GH_TOKEN` dengan `contents: write`. Jangan menulis nilai token ke command, file, atau log. Script mengecek kembali metadata dan memakai Git `--force-with-lease=<ref>:<sha>` pada penghapusan, sehingga push baru pada branch yang sama ditolak oleh server alih-alih ikut terhapus. Tidak ada penghapusan branch berdasarkan umur atau status PR tertutup saja.
 

@@ -407,6 +407,12 @@ def authenticate(page, noninteractive):
     page.locator('#ObjectPermitNumber').wait_for(state='visible', timeout=45000)
 
 
+class _DetailSource(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        namespace.detail_source_explicit = True
+
+
 def parser():
     cli = argparse.ArgumentParser(description='Read-only authorized Coretax SPT export by exact NPWP and selected tax year.')
     cli.add_argument('--npwp', help='Exactly 16 digits; no normalization or separators')
@@ -421,7 +427,8 @@ def parser():
     cli.add_argument('--non-interactive', action='store_true', help='Requires NPWP/year and an authenticated session; never prompts for credentials')
     cli.add_argument('--inventory-only', action='store_true', help='Capture SPT list only; output is explicitly PARTIAL for full-detail scope')
     cli.add_argument('--detail-limit', type=int, help='Test-only detail limit; output stays PARTIAL if any return remains unexported')
-    cli.add_argument('--detail-source', choices=['dom', 'json-first'], default='dom',
+    cli.set_defaults(detail_source_explicit=False)
+    cli.add_argument('--detail-source', choices=['dom', 'json-first'], default='dom', action=_DetailSource,
                      help='DOM by default; opt-in JSON hybrid with whole-record DOM fallback')
     cli.add_argument('--max-pages', type=int, default=1000, help='Safety cap per list/table; reaching it is reported as PARTIAL')
     return cli
@@ -442,8 +449,13 @@ def _main(argv=None):
         print('SPT files: ' + ', '.join(name for name in run['output_files'] if name != 'resume.xlsx'))
         return 0 if run.get('complete') else 2
     if args.resume:
-        folder = args.resume.resolve()
-        run = json.loads((folder / 'inventory.json').read_text(encoding='utf-8'))
+        from coretax_resume import load_resume_inventory
+        folder = args.resume.absolute()
+        try:
+            run, args.detail_source = load_resume_inventory(folder,
+                detail_source=args.detail_source if args.detail_source_explicit else None)
+        except (OSError, ValueError) as error:
+            cli.error(str(error))
         if args.npwp is not None and args.npwp != run['npwp'] or args.year is not None and str(args.year) != str(run['year']):
             cli.error('Resume scope must match the checkpoint exactly')
         npwp, year = validate_scope(run['npwp'], run['year'])

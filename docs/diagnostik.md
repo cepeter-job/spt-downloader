@@ -38,6 +38,8 @@ Remove-Item Env:SPT_LOG_LEVEL
 
 Schema 1 memuat waktu UTC, level, role, ID session, referensi job, urutan, durasi, fase, status tetap, counter terbatas, dan exit/OS error code jika sah. Versi Python serta status frozen membantu membedakan lingkungan. Lokasi error berupa token file/fungsi aplikasi dan nomor baris, maksimal delapan frame.
 
+Build baru juga mencatat `build_commit`, `build_run_id`, dan `build_run_attempt` dari metadata publik yang ditanam saat packaging dan disalin ke worker. Metadata dibatasi ukuran dan skemanya; file tidak sah atau source tanpa metadata menghasilkan `build_commit=unknown`, tanpa menebak dari environment. Cocokkan koordinat ini dengan artifact yang dipakai. Field tambahan bukan jaminan keaslian file log; provenance tetap diverifikasi pada distribusi.
+
 Pesan exception, chain, locals, baris kode, path lengkap, URL, NPWP, tahun/nama wajib pajak, akun, password, cookies, token, header/body HTTP, nilai form/tabel, payload consent dan nama/hash PDF **tidak disalin**. Field dan nilai yang tidak termasuk allowlist dibuang tanpa memanggil `str()` pada objek tak dikenal. Tidak ada perekaman browser/network atau penyalinan raw stdout/stderr.
 
 `phase.completed` berarti fungsi keluar normal, **bukan** bukti hasil pajak COMPLETE. Gunakan `worker.finished` yang berasal dari rekonsiliasi controller, beserta Audit hasil untuk lingkup data. Error yang sudah ditangani sebagai PARTIAL tetap mempunyai event diagnostik tanpa mengubah status bisnis.

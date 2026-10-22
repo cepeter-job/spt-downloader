@@ -15,6 +15,16 @@ class CleanupError(RuntimeError):
     """Pembersihan berhenti bila bukti keamanan atau izin tidak mencukupi."""
 
 
+class BaseMoved(CleanupError):
+    """Main valid sudah berubah; pekerjaan berikutnya berhenti tanpa menggagalkan build."""
+
+    def __init__(self, *, base, expected_base, current_base, result):
+        super().__init__(f'{base} berubah dari commit yang telah diuji; pembersihan selanjutnya dihentikan.')
+        self.result = {'status': 'stopped', 'reason': 'base_changed', 'base': base,
+                       'expected_base': expected_base, 'current_base': current_base,
+                       'deleted': list(result['deleted']), 'eligible': list(result['eligible'])}
+
+
 def valid_branch(name):
     return (isinstance(name, str) and bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]*', name))
             and not any(part.startswith('.') or part.endswith('.lock') or not part
@@ -85,11 +95,17 @@ def cleanup(api, *, base, expected_base, apply=False, delete=None):
     repository = api.get()
     if repository.get('default_branch') != base:
         raise CleanupError('Target harus cabang default repositori.')
+    result = {'deleted': [], 'eligible': []}
 
     def ensure_main():
         current = api.get('branches/' + quote(base, safe=''))
-        if not current or current.get('commit', {}).get('sha') != expected_base:
-            raise CleanupError(f'{base} berubah dari commit yang telah diuji; pembersihan dihentikan.')
+        commit = current.get('commit') if isinstance(current, dict) else None
+        current_sha = commit.get('sha') if isinstance(commit, dict) else None
+        if not valid_sha(current_sha):
+            raise CleanupError(f'Metadata commit {base} tidak valid; pembersihan dihentikan.')
+        if current_sha != expected_base:
+            raise BaseMoved(base=base, expected_base=expected_base,
+                            current_base=current_sha, result=result)
 
     def open_branches():
         # Base PR aktif juga masih dipakai, termasuk PR dengan head pada fork.
@@ -114,7 +130,6 @@ def cleanup(api, *, base, expected_base, apply=False, delete=None):
             continue
         candidates[name] = sha
 
-    result = {'deleted': [], 'eligible': []}
     for name, sha in sorted(candidates.items()):
         comparison = api.get(f'compare/{sha}...{expected_base}')
         # PR tertutup saja tidak cukup. SHA cabang harus benar-benar ancestor main,
@@ -188,6 +203,9 @@ def main(argv=None):
         result = cleanup(api, base=args.base, expected_base=args.expected_base, apply=args.apply,
                          delete=lambda name, sha: delete_with_lease(remote, name, sha, env=env))
         print(json.dumps(result, ensure_ascii=True))
+        return 0
+    except BaseMoved as error:
+        print(json.dumps(error.result, ensure_ascii=True))
         return 0
     except CleanupError as error:
         print(str(error), file=sys.stderr)

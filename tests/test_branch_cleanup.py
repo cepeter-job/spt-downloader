@@ -1,5 +1,6 @@
 """Pembersihan hanya menyentuh cabang selesai yang riwayatnya aman di main."""
 from copy import deepcopy
+import json
 import os
 import subprocess
 
@@ -86,6 +87,107 @@ def test_cleanup_refuses_main_that_is_not_the_tested_commit():
     with pytest.raises(CleanupError, match='main'):
         cleanup(api, base='main', expected_base=BASE, apply=True,
                 delete=lambda *args: pytest.fail('Tidak boleh menghapus cabang'))
+
+
+@pytest.fixture
+def cleanup_cli(monkeypatch):
+    from scripts import cleanup_branches as module
+
+    api, removed = Metadata(), []
+    monkeypatch.setenv('GH_TOKEN', 'SYNTHETIC-NOT-A-REAL-TOKEN')
+    monkeypatch.setattr(module, 'GitHubAPI', lambda *args: api)
+    monkeypatch.setattr(module, 'delete_with_lease',
+                        lambda remote, branch, sha, **kwargs: removed.append((branch, sha)))
+    argv = ['--repository', REPOSITORY, '--base', 'main', '--expected-base', BASE, '--apply']
+    return module, api, removed, argv
+
+
+@pytest.mark.parametrize('move_when', ['initial', 'recheck', 'after_first_delete'])
+def test_cleanup_cli_stops_successfully_when_valid_main_has_moved(
+        cleanup_cli, monkeypatch, capsys, move_when):
+    module, api, removed, argv = cleanup_cli
+    next_head, moved_base = 'd' * 40, 'c' * 40
+    api.branches.append({'name': 'work/next', 'protected': False, 'commit': {'sha': next_head}})
+    api.closed.append(pull('work/next', next_head))
+    original_get = api.get
+    observed_move = False
+
+    def get(path=''):
+        nonlocal observed_move
+        assert not observed_move, 'No more API work is allowed after observing a moved main'
+        if path == 'branches/main':
+            if move_when == 'initial':
+                api.main = moved_base
+            observed_move = api.main == moved_base
+        if path.startswith('compare/'):
+            if move_when == 'recheck':
+                api.main = moved_base
+            return {'status': 'ahead', 'behind_by': 0,
+                    'merge_base_commit': {'sha': path.split('/')[1].split('...')[0]}}
+        if path == 'branches/work%2Fnext':
+            return {'name': 'work/next', 'protected': False, 'commit': {'sha': next_head}}
+        return original_get(path)
+
+    def delete(remote, branch, sha, **kwargs):
+        assert api.main == BASE, 'A branch must not be deleted after main moves'
+        removed.append((branch, sha))
+        if move_when == 'after_first_delete':
+            api.main = moved_base
+
+    monkeypatch.setattr(api, 'get', get)
+    monkeypatch.setattr(module, 'delete_with_lease', delete)
+    assert module.main(argv) == 0
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    expected_deleted = ['work/done'] if move_when == 'after_first_delete' else []
+    assert result == {'status': 'stopped', 'reason': 'base_changed', 'base': 'main',
+                      'expected_base': BASE, 'current_base': moved_base,
+                      'deleted': expected_deleted, 'eligible': expected_deleted}
+    assert removed == ([('work/done', HEAD)] if expected_deleted else [])
+    assert observed_move and captured.err == ''
+
+
+@pytest.mark.parametrize('read_when', ['initial', 'recheck'])
+@pytest.mark.parametrize('response', [
+    None, [], {'commit': None}, {'commit': {}},
+    {'commit': {'sha': 'C' * 40}}, {'commit': {'sha': 'c' * 39}},
+])
+def test_cleanup_cli_keeps_missing_or_malformed_main_as_failure(
+        cleanup_cli, monkeypatch, capsys, read_when, response):
+    module, api, removed, argv = cleanup_cli
+    original_get, main_reads = api.get, 0
+
+    def get(path=''):
+        nonlocal main_reads
+        if path == 'branches/main':
+            main_reads += 1
+            if main_reads == (1 if read_when == 'initial' else 2):
+                return deepcopy(response)
+        return original_get(path)
+
+    monkeypatch.setattr(api, 'get', get)
+    assert module.main(argv) == 1
+    captured = capsys.readouterr()
+    assert removed == [] and captured.out == '' and captured.err
+
+
+@pytest.mark.parametrize('failure', ['missing_token', 'api_error', 'deletion_lease'])
+def test_cleanup_cli_does_not_hide_auth_api_or_deletion_failures(
+        cleanup_cli, monkeypatch, capsys, failure):
+    module, api, removed, argv = cleanup_cli
+
+    def refused(*args, **kwargs):
+        raise module.CleanupError('Synthetic authorization, API or lease failure')
+
+    if failure == 'missing_token':
+        monkeypatch.delenv('GH_TOKEN')
+    elif failure == 'api_error':
+        monkeypatch.setattr(api, 'get', refused)
+    else:
+        monkeypatch.setattr(module, 'delete_with_lease', refused)
+    assert module.main(argv) == 1
+    captured = capsys.readouterr()
+    assert removed == [] and captured.out == '' and captured.err
 
 
 @pytest.mark.parametrize('head_repository', [REPOSITORY, 'someone/fork'])

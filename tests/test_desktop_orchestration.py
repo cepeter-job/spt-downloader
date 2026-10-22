@@ -1,6 +1,7 @@
 """The orchestration test mocks only browser capture and uses real Excel publication."""
 import importlib
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -22,7 +23,10 @@ def test_complete_event_is_after_browser_cleanup_and_verified_downloads(tmp_path
     synthetic_browser(module,monkeypatch,state)
     run=fixture_run()
     run['inventory_complete']=True
-    monkeypatch.setattr(module,'collect_inventory',lambda *a,**k:run)
+    def inventory(page,npwp,year,basis,folder,**kwargs):
+        (folder/'inventory.json').write_text(json.dumps(run),encoding='utf-8')
+        return run
+    monkeypatch.setattr(module,'collect_inventory',inventory)
     def details(page,data,folder,**kwargs):
         data['complete']=True
         kwargs['on_progress'](data,len(data['records']))

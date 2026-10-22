@@ -226,8 +226,15 @@ def self_test(report=None):
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Simple authorized Coretax to Excel desktop app')
-    parser.add_argument('--self-test',action='store_true');parser.add_argument('--report',type=Path)
+    modes=parser.add_mutually_exclusive_group()
+    modes.add_argument('--self-test',action='store_true')
+    modes.add_argument('--runtime-self-test',action='store_true')
+    parser.add_argument('--report',type=Path)
     args=parser.parse_args(argv)
+    if args.runtime_self_test:
+        if args.report is None:parser.error('--runtime-self-test requires --report')
+        from scripts.ci_runtime import packaged_self_test
+        return packaged_self_test(args.report)
     if args.self_test:return self_test(args.report)
     with diagnostics.session(diagnostics.default_root(), 'gui'):
         return _run_gui()

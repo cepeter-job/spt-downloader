@@ -24,8 +24,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-build-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  # Each main push keeps its own active/pending slot: a later docs-only push
+  # cannot cancel or replace the preceding code build. PR updates still coalesce.
+  group: windows-build-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHONUTF8: '1'
@@ -93,6 +95,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.4'
+          checksum: '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -173,6 +176,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -263,6 +267,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-python: true
@@ -311,6 +316,8 @@ jobs:
     if: needs.route.outputs.mode == 'full'
     runs-on: windows-2022
     timeout-minutes: 20
+    outputs:
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -330,6 +337,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -395,10 +403,14 @@ jobs:
           )
           & .venv/Scripts/python.exe @inventoryArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record the immutable build identity before source and frozen self-tests
+        run: .venv/Scripts/python.exe -m scripts.ci_artifact build-info . --python-version "$env:PYTHON_VERSION"
       - name: Exercise the source GUI without accounts
         run: .venv/Scripts/python.exe spt_gui.py --self-test --report "$env:RUNNER_TEMP/source-selftest.json"
       - name: Build and exercise the frozen GUI
         run: .venv/Scripts/python.exe build_desktop.py --python-profile "$env:PYTHON_PROFILE" --output dist
+      - name: Inventory the actual packaged native bytes and managed worker dependencies
+        run: .venv/Scripts/python.exe -m scripts.ci_sbom create dist --python-version "$env:PYTHON_VERSION"
       - name: Validate frozen report and record artifact checksums
         run: .venv/Scripts/python.exe -m scripts.ci_artifact write-checksums dist --python-version "$env:PYTHON_VERSION"
       - name: Upload the exact verified Windows payload
@@ -414,6 +426,8 @@ jobs:
             dist/LICENSE.txt
             dist/README.txt
             dist/build-selftest.json
+            dist/build-info.json
+            dist/distribution-sbom.json
             dist/SHA256SUMS.txt
       - name: Read back the uploaded artifact by its exact artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -421,10 +435,25 @@ jobs:
           artifact-ids: ${{ steps.upload.outputs.artifact-id }}
           path: ${{ runner.temp }}/artifact-readback
           merge-multiple: true
-      - name: Verify the downloaded bytes and five-file allowlist
+      - name: Verify the downloaded bytes and seven-file allowlist
         run: >-
           .venv/Scripts/python.exe -m scripts.ci_artifact verify
           "$env:RUNNER_TEMP/artifact-readback" --python-version "$env:PYTHON_VERSION"
+      - name: Exercise clean bootstrap, reuse and owned cancellation from the exact uploaded executable
+        id: packaged-runtime
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: >-
+          .venv/Scripts/python.exe -m scripts.ci_runtime --profile "$env:PYTHON_PROFILE"
+          --executable "$env:RUNNER_TEMP/artifact-readback/SPTDownloader.exe"
+          --artifact-id "$env:ARTIFACT_ID" --report "$env:RUNNER_TEMP/packaged-bootstrap.json"
+      - name: Retain successful synthetic packaged bootstrap evidence separately
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-bootstrap-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/packaged-bootstrap.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Record verified artifact coordinates
         env:
           ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
@@ -460,13 +489,21 @@ jobs:
         env:
           PYTHON_VERSION: ${{ matrix.python }}
         run: python3 -m scripts.ci_artifact verify verified-artifact --python-version "$PYTHON_VERSION"
-      - name: Attest executable and its complete checksum manifest
+      - name: Attest executable, complete manifest, build identity and distribution SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           create-storage-record: false
           subject-path: |
             verified-artifact/SPTDownloader.exe
             verified-artifact/SHA256SUMS.txt
+            verified-artifact/build-info.json
+            verified-artifact/distribution-sbom.json
+      - name: Attest the original uploaded ZIP digest for durable rollback verification
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          create-storage-record: false
+          subject-name: SPTDownloader-Windows-x64.zip
+          subject-digest: sha256:${{ needs.package.outputs.artifact_digest }}
 
   validate:
     # Pertahankan nama pemeriksaan cabang meskipun pekerjaan CI dipisahkan.

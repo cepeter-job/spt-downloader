@@ -15,7 +15,8 @@ def test_packaging_command_is_thin_windowed_and_explicit(tmp_path):
     command=builder().build_command(tmp_path/'source',tmp_path/'output',tmp_path/'uv.exe')
     assert '--onefile' in command and '--windowed' in command and '--noupx' in command
     data=[command[i+1].rsplit(';',1)[0] for i,v in enumerate(command) if v=='--add-data']
-    expected={str(tmp_path/'source'/n) for n in WORKER_FILES}|{str(tmp_path/'source'/'LICENSE')}
+    expected={str(tmp_path/'source'/n) for n in WORKER_FILES}|{
+        str(tmp_path/'source'/'LICENSE'), str(tmp_path/'source'/'build-info.json')}
     assert set(data)==expected
     assert not any('*' in arg for arg in command)
     exclusions=[command[i+1] for i,v in enumerate(command) if v=='--exclude-module']

@@ -154,6 +154,8 @@ class DiagnosticLog:
 
     def __init__(self, root, role, *, job_id=None, level='INFO', max_bytes=1048576,
                  backup_count=3, max_files=32, retention_days=7, queue_size=256):
+        from .build_info import diagnostic_fields
+        self._build = diagnostic_fields()
         self.session_id = uuid.uuid4().hex
         self.role = role
         self.level = level if type(level) is str and level in LEVELS else 'INFO'
@@ -202,7 +204,7 @@ class DiagnosticLog:
                        'session_id': self.session_id, 'sequence': self._sequence,
                        'elapsed_ms': max(0, round((time.monotonic() - self._started) * 1000, 2)),
                        'python': '.'.join(map(str, sys.version_info[:3])),
-                       'frozen': bool(getattr(sys, 'frozen', False)), **_safe_fields(fields)}
+                       'frozen': bool(getattr(sys, 'frozen', False)), **_safe_fields(fields), **self._build}
                 reference = job_reference(job_id) or _job.get() or self.job_ref
                 if reference:
                     row['job_ref'] = reference

@@ -12,8 +12,10 @@ import sys
 import sysconfig
 from spt_desktop.runtime import WORKER_FILES, UV_VERSION, PYTHON_PROFILES, python_version
 from spt_desktop.windows import ProcessJob
+from spt_desktop.build_info import read_build_info
 
 ROOT=Path(__file__).resolve().parent
+BUILD_DATA = WORKER_FILES + ('LICENSE', 'build-info.json')
 
 
 def build_command(root,output,uv_binary):
@@ -22,7 +24,7 @@ def build_command(root,output,uv_binary):
              '--windowed','--noupx','--name','SPTDownloader',
              '--distpath',str(output),'--workpath',str(output/'_build'),
              '--specpath',str(output/'_spec')]
-    for name in WORKER_FILES+('LICENSE',):
+    for name in BUILD_DATA:
         parent=str(Path(name).parent)
         command.extend(['--add-data',str(root/name)+';'+parent])
     command.extend(['--add-binary',str(uv_binary)+';tools'])
@@ -87,8 +89,10 @@ def build(output, python_profile='production'):
     uv_binary=Path(uv.find_uv_bin())
     version=subprocess.run([str(uv_binary),'--version'],capture_output=True,text=True,check=True,timeout=15)
     if not version.stdout.startswith('uv '+UV_VERSION+' '):raise RuntimeError('Bundled uv binary version mismatch')
-    for name in WORKER_FILES+('LICENSE',):
+    for name in BUILD_DATA:
         if not (ROOT/name).is_file():raise FileNotFoundError('Missing allowed build resource: '+name)
+    if read_build_info(ROOT) is None:
+        raise RuntimeError('Build requires valid immutable build-info.json metadata.')
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     subprocess.run(build_command(ROOT,output,uv_binary),cwd=ROOT,check=True)
     executable=output/'SPTDownloader.exe'
@@ -108,6 +112,7 @@ def build(output, python_profile='production'):
     data['build_profile'] = python_profile
     report.write_text(json.dumps(data, indent=2), encoding='utf-8')
     shutil.copy2(ROOT/'LICENSE',output/'LICENSE.txt')
+    shutil.copy2(ROOT/'build-info.json',output/'build-info.json')
     (output/'README.txt').write_text(
         'SPT Downloader — Windows 10/11 x64\n'
         'Sumber/lisensi: https://github.com/cepeter-job/spt-downloader (GPL-3.0)\n\n'
