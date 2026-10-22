@@ -106,3 +106,48 @@ def test_controlled_tab_never_downgrades_to_the_previous_visible_form(
     assert result['attachments'] == []
     assert requests == [('GET', DETAIL)]
     assert not list(tmp_path.rglob('*.pdf'))
+
+
+def test_tab_reordering_during_wait_cannot_relabel_another_panel(routed, tmp_path, monkeypatch):
+    page, requests = routed()
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
+    page.evaluate('''() => {
+        const tab = document.querySelector('a[aria-controls="induk"]');
+        const click = tab.onclick;
+        tab.onclick = event => {
+            window.syntheticReorderClicked = true;
+            return click.call(tab, event);
+        };
+        tab.addEventListener('synthetic-reorder', () => {
+            const list = tab.closest('ul');
+            list.prepend(document.querySelector('a[aria-controls="l1d"]').closest('li'));
+            document.getElementById('induk').hidden = true;
+            document.getElementById('l1d').hidden = false;
+            window.syntheticTabsReordered = true;
+        }, {once:true});
+    }''')
+    locator_type = type(page.locator('body'))
+    original_inner_text = locator_type.inner_text
+    reordered = False
+
+    def inner_text(locator, *args, **kwargs):
+        nonlocal reordered
+        value = original_inner_text(locator, *args, **kwargs)
+        if (not reordered and value == 'Induk'
+                and page.evaluate('Boolean(window.syntheticReorderClicked)')):
+            reordered = True
+            locator.dispatch_event('synthetic-reorder')
+        return value
+
+    monkeypatch.setattr(locator_type, 'inner_text', inner_text)
+
+    result = driver.capture_detail(page, record=periodic_record(), folder=tmp_path)
+
+    assert page.evaluate('Boolean(window.syntheticTabsReordered)')
+    assert result['capture_complete'] is False
+    assert result['errors']
+    assert len(result['sections']) == 1
+    assert result['sections'][0]['name'] == 'Induk'
+    assert result['sections'][0]['fields'][0]['value'] == '0000123'
+    assert result['attachments'] == [] and requests == [('GET', DETAIL)]
+    assert not list(tmp_path.rglob('*.pdf'))
