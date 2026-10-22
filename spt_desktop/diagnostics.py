@@ -65,6 +65,7 @@ ENUMS = {
     'request_kind': frozenset({'code_exchange', 'other'}),
     'exchange_failure': frozenset({'fetch_exception', 'http_rejected', 'redirect_rejected',
         'response_url_changed', 'callback_changed', 'fulfill_exception'}),
+    'transport_failure': frozenset({'timeout', 'tls', 'dns', 'proxy', 'connection', 'context_closed', 'unknown'}),
     'reason': frozenset({'waiting_redirect', 'waiting_form', 'login_form_ready',
         'existing_session', 'existing_home', 'origin_blocked', 'origin_mismatch',
         'challenge', 'unsafe_form', 'form_changed', 'readiness_timeout',
@@ -431,6 +432,8 @@ def self_test(root):
                        token='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
                 benchmark.update(source_used='json', status='COMPLETE', body_rows=2, cached=False)
         record('auth.state', reason='waiting_redirect', expected_origin='satu', observed_origin='coretax')
+        record('auth.state', reason='code_exchange_failed', exchange_failure='fetch_exception',
+               transport_failure='tls', message='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
         record('auth.request_blocked',reason='cross_origin_write',target_origin='coretax',method='POST',resource_type='fetch')
         record('auth.result', status='LOGIN_BLOCKED', reason='origin_mismatch',
                expected_origin='coretax', observed_origin='satu', submitted=False,
@@ -455,6 +458,8 @@ def self_test(root):
     results = [row for row in rows if row['event'] == 'auth.result']
     if (not any(row.get('reason') == 'waiting_redirect' and row.get('expected_origin') == 'satu'
                 and row.get('observed_origin') == 'coretax' for row in states)
+            or not any(row.get('reason') == 'code_exchange_failed' and row.get('exchange_failure') == 'fetch_exception'
+                       and row.get('transport_failure') == 'tls' for row in states)
             or not any(row.get('status') == 'LOGIN_BLOCKED' and row.get('reason') == 'origin_mismatch'
                        and row.get('submitted') is False for row in results)):
         raise RuntimeError('Synthetic authentication diagnostics self-test failed')
