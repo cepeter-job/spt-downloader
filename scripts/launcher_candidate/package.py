@@ -98,6 +98,12 @@ def package(runtime, output):
         venv = scratch / 'build-env'
         subprocess.run(['uv', 'venv', '--python', str(runtime / 'python.exe'), str(venv)], env=env, check=True)
         python = venv / 'Scripts/python.exe'
+        subprocess.run(['uv', 'pip', 'sync', '--python', str(python), '--require-hashes', '--only-binary', ':all:', str(ROOT / 'locks/test.txt')], env=env, check=True)
+        subprocess.run([str(python), '-B', '-m', 'pytest',
+                        str(ROOT / 'tests/test_launcher_candidate_inventory.py'),
+                        str(ROOT / 'tests/test_launcher_candidate_package.py'), '-q',
+                        '--basetemp', str(scratch / 'candidate-contract-tests')],
+                       cwd=ROOT, env=env, check=True, timeout=120)
         subprocess.run(['uv', 'pip', 'sync', '--python', str(python), '--require-hashes', '--only-binary', ':all:', str(ROOT / 'locks/build.txt')], env=env, check=True)
         # Re-enter through the candidate venv to reuse the production build validator.
         code = ('import sys; sys.path.insert(0,sys.argv[1]); import build_desktop; '
