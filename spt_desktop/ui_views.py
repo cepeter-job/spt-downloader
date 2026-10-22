@@ -32,6 +32,8 @@ class MainView(ttk.Frame):
         self.scale = effective_scale(self.window)
         self._disposed = False
         self._reflow_after = None
+        self._reflow_idle = False
+        self._layout_size = None
         self._reveal_after = None
         self._pending_reveal = 'form'
         self._last_geometry = None
@@ -109,9 +111,9 @@ class MainView(ttk.Frame):
         self.bugreport_label = ttk.Label(self.footer, text=copy_text('app.bugreport'),
             style='SPT.Stage.TLabel', justify='right', wraplength=self.px(500))
         self.bugreport_label.grid(row=1, column=0, sticky='e', pady=(self.px(4), 0))
-        self.canvas.bind('<Configure>', lambda event: self.request_reflow())
+        self.canvas.bind('<Configure>', self.request_reflow)
         self.workspace.bind('<Configure>', self._update_scrollregion)
-        self.bind('<Configure>', lambda event: self.request_reflow())
+        self.bind('<Configure>', self.request_reflow)
         self.bind('<Destroy>', self._on_destroy, add='+')
         for sequence, handler in (('<MouseWheel>', self._wheel), ('<FocusIn>', self._reveal_focus)):
             self._root_bindings.append((sequence, self.window.bind(sequence, handler, add='+')))
@@ -257,8 +259,24 @@ class MainView(ttk.Frame):
                 label.grid_remove()
         self.request_reflow()
 
-    def request_reflow(self) -> None:
-        if not self._disposed and self._reflow_after is None:
+    def request_reflow(self, event=None) -> None:
+        if self._disposed or (event is not None and event.widget not in (self, self.canvas)):
+            return
+        size = (self.winfo_width(), self.winfo_height(),
+                self.canvas.winfo_width(), self.canvas.winfo_height())
+        if event is not None and size == self._layout_size:
+            return
+        if event is None or self._layout_size is None:
+            # Content and initial geometry must not wait for resize debounce.
+            # Reuse pending idle work; promote only a delayed resize callback.
+            if self._reflow_after is not None:
+                if self._reflow_idle:
+                    return
+                self.after_cancel(self._reflow_after)
+            self._reflow_idle = True
+            self._reflow_after = self.after_idle(self._reflow)
+        elif self._reflow_after is None:
+            self._reflow_idle = False
             self._reflow_after = self.after(75, self._reflow)
 
     @staticmethod
@@ -317,8 +335,12 @@ class MainView(ttk.Frame):
 
     def _reflow(self):
         self._reflow_after = None
+        self._reflow_idle = False
         if self._disposed or self.winfo_width() <= 1 or self.canvas.winfo_width() <= 1:
+            # Native mapping supplies the next usable size; never spin idle work.
             return
+        self._layout_size = (self.winfo_width(), self.winfo_height(),
+                             self.canvas.winfo_width(), self.canvas.winfo_height())
         policy = layout_policy(self.window.winfo_width() / self.scale, 0)
         # Keep the usable viewport large enough for a field label and entry
         # even when Windows restores the minimum-size application window.
