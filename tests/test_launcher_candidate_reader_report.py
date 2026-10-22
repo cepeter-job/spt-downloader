@@ -208,3 +208,16 @@ def test_wrapper_records_sanitized_early_probe_exit(tmp_path):
     value = json.loads((directory / 'probe-exit.json').read_text())
     assert value == {'schema': 1, 'exit_code': 1, 'timed_out': False,
                      'phase_retained': False, 'report_retained': False, 'failure_retained': False}
+
+
+def test_probe_existing_output_refusal_never_writes_diagnostics(tmp_path):
+    import subprocess
+    from pathlib import Path
+    marker = tmp_path / 'owner.txt'
+    marker.write_text('synthetic unrelated owner')
+    probe = Path(contracts.__file__).with_name('reader_probe.ps1')
+    result = subprocess.run(['powershell', '-NoProfile', '-File', str(probe), '-Runtime', 'unused',
+                             '-Reader', 'Narrator', '-OutputDirectory', str(tmp_path)], capture_output=True)
+    assert result.returncode != 0
+    assert list(tmp_path.iterdir()) == [marker]
+    assert marker.read_text() == 'synthetic unrelated owner'

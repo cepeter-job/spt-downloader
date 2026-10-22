@@ -5,10 +5,22 @@ param([Parameter(Mandatory=$true)][string]$Runtime,
  [Parameter(Mandatory=$true)][string]$OutputDirectory,
  [ValidateSet('before_tk','late')][string]$ActivationTiming='before_tk', [string]$NvdaPath)
 $ErrorActionPreference='Stop'
+$ownedOutput=$false
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:OS -ne 'Windows_NT') {throw 'GitHub Windows runner required'}
 if (Test-Path -LiteralPath $OutputDirectory) {throw 'New output directory required'}
 $output=[IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $output | Out-Null
+$ownedOutput=$true
+function Save($path,$data) {$data | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $path -Encoding UTF8}
+function Phase($name) {$script:currentPhase=$name; Save (Join-Path $output 'probe-phase.json') @{phase=$name;reader=$Reader;activation_timing=$ActivationTiming;utc=[DateTime]::UtcNow.ToString('o')}}
+# Diagnostics are guarded by successful ownership of the newly created directory.
+trap {
+ $failure=@{schema=1;phase=$currentPhase;exception=$_.Exception.GetType().Name;
+  hresult=$_.Exception.HResult;inner_exception=if ($_.Exception.InnerException) {$_.Exception.InnerException.GetType().Name} else {$null}}
+ if ($ownedOutput) {Save (Join-Path $output 'probe-failure.json') $failure}
+ exit 1
+}
+Phase 'loading_observer_types'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, Accessibility, System.Windows.Forms
 Add-Type -ReferencedAssemblies Accessibility -TypeDefinition @'
 using System;
@@ -30,8 +42,6 @@ public static class ReaderNative {
  }
 }
 '@
-function Save($path,$data) {$data | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $path -Encoding UTF8}
-function Phase($name) {Save (Join-Path $output 'probe-phase.json') @{phase=$name;reader=$Reader;activation_timing=$ActivationTiming;utc=[DateTime]::UtcNow.ToString('o')}}
 function Owned([IntPtr]$handle,[int]$processId) {
  [uint32]$actual=0; [void][ReaderNative]::GetWindowThreadProcessId($handle,[ref]$actual)
  if ($actual -ne $processId) {throw 'Unowned native window'}
@@ -143,9 +153,11 @@ function SpeechText {
  return $null
 }
 $readerExe=if ($Reader -eq 'NVDA') {$NvdaPath} else {Join-Path $env:WINDIR 'System32/Narrator.exe'}
+Phase 'checking_preexisting_reader'
 if (Get-Process -Name $Reader -ErrorAction SilentlyContinue) {throw 'Preexisting reader; isolated runner required'}
 $readerProcess=$null; $hostProcess=$null; $state=$null; $readerAvailable=$false
 $readerLauncherId=$null
+Phase 'reading_screenreader_flag'
 $originalScreenReader=[ReaderNative]::ScreenReader()
 $speechObserved=$false; $speechExposed=$false; $speechFacility=$false
 $mode=if ((Split-Path -Leaf $Runtime) -eq 'python.exe') {'source'} else {'frozen'}

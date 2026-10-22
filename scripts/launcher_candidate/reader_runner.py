@@ -9,6 +9,17 @@ import sys
 import time
 
 
+def record_probe_exit(output, code, *, timed_out):
+    """Only called after this invocation has reserved a new probe output path."""
+    output.mkdir(exist_ok=True)
+    (output / 'probe-exit.json').write_text(json.dumps({
+        'schema': 1, 'exit_code': code, 'timed_out': timed_out,
+        'phase_retained': (output / 'probe-phase.json').is_file(),
+        'report_retained': (output / 'report.json').is_file(),
+        'failure_retained': (output / 'probe-failure.json').is_file(),
+    }), encoding='utf-8')
+
+
 def close_owned(kernel, job, pids, last_error):
     """Request termination and certify only exits actually observed on handles."""
     handles, unverified = [], []
@@ -47,10 +58,15 @@ def main():
     kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
     job = ProcessJob()
     process = None
+    code = None
+    timed_out = False
     try:
         process = job.spawn(['powershell', '-NoProfile', '-STA', '-File',
                              str(Path(__file__).with_name('reader_probe.ps1')), *sys.argv[1:]])
         code = process.wait(timeout=240)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        raise
     finally:
         buffer = ctypes.create_string_buffer(8 + ctypes.sizeof(ctypes.c_size_t) * 1024)
         if not kernel.QueryInformationJobObject(job._handle, 3, buffer, len(buffer), None):
@@ -63,6 +79,7 @@ def main():
         pids = [ctypes.c_size_t.from_buffer(buffer, 8 + index * ctypes.sizeof(ctypes.c_size_t)).value
                 for index in range(count)]
         cleanup = close_owned(kernel, job, pids, ctypes.get_last_error)
+        record_probe_exit(output, code, timed_out=timed_out)
         if process is not None:
             process.wait(timeout=15)
         if output.exists():

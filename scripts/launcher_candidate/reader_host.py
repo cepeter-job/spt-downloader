@@ -9,6 +9,18 @@ import time
 SCENARIOS = ('main', 'settings', 'selection', 'overwrite', 'progress', 'result')
 
 
+def replace_snapshot(pending, target, *, sleep=time.sleep):
+    """Windows readers can briefly deny delete-sharing of the ready snapshot."""
+    for attempt in range(5):
+        try:
+            pending.replace(target)
+            return
+        except PermissionError as error:
+            if getattr(error, 'winerror', None) not in (32, 33) or attempt == 4:
+                raise
+            sleep(0.02)
+
+
 def prepare_directory(directory):
     directory = Path(directory).absolute()
     if directory.exists() or directory.is_symlink() or directory.is_junction():
@@ -164,7 +176,7 @@ def _host(scenario, directory):
                 'credentials_accessed': False, 'live_scrape': False, 'stopped': controller.stopped}
         temp = directory / 'ready.pending'
         temp.write_text(json.dumps(data), encoding='utf-8')
-        temp.replace(directory / 'ready.json')
+        replace_snapshot(temp, directory / 'ready.json')
 
     def poll():
         nonlocal sequence
