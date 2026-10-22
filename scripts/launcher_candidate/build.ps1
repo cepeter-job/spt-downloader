@@ -30,6 +30,11 @@ foreach ($source in $manifest.sources) {
     if ($directories.Count -ne 1) { throw 'Unexpected archive root' }
     $roots[$source.name] = $directories[0].FullName
 }
+# sqlite3.vcxproj derives its resource version from the directory suffix.
+# Preserve the immutable archive bytes while satisfying that upstream convention.
+$sqliteBuildRoot = Join-Path $work 'sqlite-3.50.4.0'
+Copy-Item -LiteralPath $roots.sqlite -Destination $sqliteBuildRoot -Recurse
+$roots.sqlite = $sqliteBuildRoot
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json | ConvertFrom-Json | Select-Object -First 1
 if (-not $vs) { throw 'Missing Visual C++ compiler' }
