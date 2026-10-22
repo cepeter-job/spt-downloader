@@ -344,6 +344,7 @@ def test_every_uv_bootstrap_checks_the_reviewed_platform_archive_bytes():
     reviewed = {
         'ubuntu-24.04': '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f',
         'windows-2022': 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225',
+        'windows-2025': 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225',
     }
     checked = 0
     for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
