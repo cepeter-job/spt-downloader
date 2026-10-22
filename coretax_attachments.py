@@ -1,6 +1,7 @@
 """Read existing corporate financial PDFs without remote document actions."""
 from spt_desktop import diagnostics
 import base64
+from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path
@@ -10,11 +11,18 @@ import uuid
 
 from coretax_browser import list_taxpayer_id, trusted_origin, verify_detail_url
 from coretax_exporter import FINANCIAL_LABELS
+from coretax_financial_post import FinancialPost, verify_sources
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_PDF_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT_MS = 30000
 _LABELS = FINANCIAL_LABELS
+POST_SOURCE_PINS = {
+    '/returnsheets/id-ID/525.ec1edffbb4a91d20.js':
+        'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
+    '/returnsheets/id-ID/main.cccfdb820c20596c.js':
+        '696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd',
+}
 
 _SCAN = r'''() => {
     const roots = document.querySelectorAll('.main-content');
@@ -61,8 +69,7 @@ _SCAN = r'''() => {
         }
         return null;
     };
-    // Structural observations never authorize a request. In particular, a
-    // filename button remains unsupported even when its table has a label.
+    // Pengamatan struktur sendiri tidak mengizinkan request.
     const tables = [...root.querySelectorAll('table')].filter(visible).filter(attachmentTable);
     const observations = [];
     for (const table of tables) {
@@ -89,13 +96,44 @@ _SCAN = r'''() => {
                 unsafe: el.tagName !== 'A' || el.hasAttribute('onclick') ||
                         el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')};
     }).filter(Boolean);
+    const forms = [...root.querySelectorAll('rshshr-citr-main-form')].filter(visible);
+    if (forms.length === 1) {
+        for (const table of tables) {
+            const label = tableLabel(table), grid = table.closest('ui-grid-documents');
+            if (!label || !grid || table.closest('rshshr-citr-main-form') !== forms[0] ||
+                grid.querySelectorAll('table').length !== 1) continue;
+            for (const body of table.tBodies) for (const row of body.rows) {
+                const cells = [...row.cells];
+                const actions = [...row.querySelectorAll('a,button,input,[role="button"]')].filter(visible);
+                if (!visible(row) || cells.length !== 3 || cells.some(c=>c.colSpan!==1 || c.rowSpan!==1) ||
+                    !/^\d+$/.test(cells[0].innerText.trim()) ||
+                    !/\.pdf$/i.test(cells[1].innerText.trim()) || actions.length !== 1) continue;
+                const button = actions[0];
+                if (button.tagName !== 'BUTTON' || button.getAttribute('type') !== 'button' ||
+                    button.getAttribute('title') !== 'Unduh' || button.disabled ||
+                    button.getAttribute('aria-disabled') === 'true' || !cells[2].contains(button) ||
+                    !button.classList.contains('p-button-secondary') ||
+                    button.querySelectorAll('.pi.pi-download').length !== 1 ||
+                    ['onclick','onmousedown','onpointerdown'].some(name=>button.hasAttribute(name))) continue;
+                // WeakMap mengikat node asli; clone identik tidak mewarisi izin.
+                if (!window._spt_financial_nodes) Object.defineProperty(window, '_spt_financial_nodes',
+                    {value: new WeakMap(), configurable: true});
+                const nodes = window._spt_financial_nodes;
+                if (!nodes.has(button)) nodes.set(button, crypto.randomUUID());
+                controls.push({label, method: 'POST', document_url: window.location.href,
+                    button_index: [...root.querySelectorAll('button')].indexOf(button),
+                    identity: nodes.get(button), row_text: row.innerText,
+                    filename: cells[1].innerText});
+            }
+        }
+    }
     if (!tables.length && !controls.length) observations.push({attachment_tables: 0,
         candidate_controls: 0, control_kind: 'none', binding_state: 'no_control',
         href_present: false, handler_present: false});
     return {controls, observations};
 }'''.replace('__LABELS__', json.dumps(sorted(_LABELS)))
 
-_START = r'''async ({key, url, limit, timeout, document_url}) => {
+_START = r'''async ({key, url, limit, timeout, document_url, method='GET', body, headers}) => {
     // A Python-side scope check cannot bind a later browser evaluation.
     if (window.location.href !== document_url) {
         throw new Error('Inspected financial document changed before request');
@@ -105,9 +143,9 @@ _START = r'''async ({key, url, limit, timeout, document_url}) => {
     Object.defineProperty(window, key, {value: state, configurable: true});
     state.timer = setTimeout(() => controller.abort(), timeout);
     try {
-        const response = await fetch(url, {method: 'GET', credentials: 'same-origin',
+        const response = await fetch(url, {method, credentials: 'same-origin', body,
             redirect: 'error', cache: 'no-store', signal: controller.signal,
-            headers: {Accept: 'application/pdf'}});
+            headers: headers || {Accept: 'application/pdf'}});
         const length = response.headers.get('content-length');
         const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
         if (!response.ok || response.url !== url || response.redirected || type !== 'application/pdf' ||
@@ -173,6 +211,13 @@ def _partial(label, reason):
             'bytes': 0, 'hash': '', 'reason': reason}
 
 
+def _release_nodes(page):
+    try:
+        page.evaluate('() => {delete window._spt_financial_nodes;}')
+    except Exception:
+        pass
+
+
 def _verify_page(page, record):
     identifier = record.get('record_id')
     if not isinstance(identifier, str) or not identifier or len(identifier) > 512:
@@ -181,13 +226,16 @@ def _verify_page(page, record):
     verify_detail_url(page.url, taxpayer, identifier)
 
 
-def _read_pdf(page, url, check_cancel, document_url):
+def _read_pdf(page, url, check_cancel, document_url, request=None):
     key = '_spt_financial_' + uuid.uuid4().hex
     data = bytearray()
     try:
         _cancel(check_cancel)
-        page.evaluate(_START, {'key': key, 'url': url, 'limit': MAX_PDF_BYTES,
-                               'timeout': _DOWNLOAD_TIMEOUT_MS, 'document_url': document_url})
+        arguments = {'key': key, 'url': url, 'limit': MAX_PDF_BYTES,
+                     'timeout': _DOWNLOAD_TIMEOUT_MS, 'document_url': document_url}
+        if request is not None:
+            arguments.update(request)
+        page.evaluate(_START, arguments)
         _cancel(check_cancel)
         while True:
             _cancel(check_cancel)
@@ -244,7 +292,9 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
         raise ValueError('Financial output cannot contain parent traversal')
     folder = folder.absolute()
     results = []
-    with DirectoryGuard() as guard:
+    sources = None
+    with ExitStack() as lifecycle, DirectoryGuard() as guard:
+        lifecycle.callback(_release_nodes, page)
         _include_folder(guard, folder)
         scanned = page.evaluate(_SCAN)
         _cancel(check_cancel)
@@ -258,56 +308,78 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
             _cancel(check_cancel)
             label = control['label']
             try:
-                _verify_page(page, record)
-                url = _financial_url(page.url, control)
-                data = _read_pdf(page, url, check_cancel, control['document_url'])
-                _verify_page(page, record)
-                _cancel(check_cancel)
-                record_key = hashlib.sha256(record['record_id'].encode('utf-8')).hexdigest()[:32]
-                # Nama file mengikat SPT dan URL teramati; href yang sama pada
-                # dua SPT berbeda tidak boleh menunjuk satu file milik bersama.
-                url_key = hashlib.sha256(url.encode('utf-8')).hexdigest()
-                name = f'LK_{record_key}_{url_key}.pdf'
-                target = folder / name
-                if target.exists():
-                    # Retry PARTIAL boleh memakai byte identik dari GET terbaru,
-                    # tetapi tidak boleh mengganti file lama atau mengikuti symlink.
-                    with locked_file(target) as existing:
-                        digest, size = hashlib.sha256(), 0
-                        for chunk in iter(lambda: existing.read(1048576), b''):
-                            _cancel(check_cancel)
-                            size += len(chunk)
-                            if size > len(data):
-                                raise ValueError('Existing financial PDF differs from the inspected response')
-                            digest.update(chunk)
-                        _cancel(check_cancel)
-                        if size != len(data) or digest.hexdigest() != hashlib.sha256(data).hexdigest():
-                            raise ValueError('Existing financial PDF differs from the inspected response')
-                else:
-                    created = None
-                    try:
-                        with target.open('xb') as stream:
-                            created = target.lstat()
-                            _cancel(check_cancel)
-                            stream.write(data)
-                            stream.flush()
-                            _cancel(check_cancel)
-                    except BaseException:
-                        # Pembuatan eksklusif hanya mengizinkan pembersihan inode kita;
-                        # file pengganti dari penulis lain tidak boleh ikut dihapus.
-                        if created is not None:
+                with ExitStack() as operation:
+                    _verify_page(page, record)
+                    transport = None
+                    if control.get('method') == 'POST':
+                        if sources is None:
                             try:
-                                current = target.lstat()
-                                if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
-                                    target.unlink()
-                            except OSError:
-                                # Jangan tutupi pembatalan asli dengan kegagalan cleanup.
-                                # Byte yang tersisa tetap privat, tanpa deklarasi COMPLETE.
-                                pass
-                        raise
-                results.append({'label': label, 'relative_path': target.relative_to(folder).as_posix(),
-                                'status': 'COMPLETE', 'bytes': len(data),
-                                'hash': hashlib.sha256(data).hexdigest()})
+                                sources = verify_sources(page, POST_SOURCE_PINS,
+                                    control['document_url'], check_cancel)
+                            except Exception:
+                                sources = False
+                                raise
+                        if sources is False:
+                            raise ValueError('Financial source build is not supported')
+                        transport = operation.enter_context(FinancialPost(page, record, control,
+                            POST_SOURCE_PINS, sources, _SCAN, _verify_page, check_cancel))
+                        url = transport.url
+                        data = _read_pdf(page, url, check_cancel, control['document_url'],
+                                         request=transport.request())
+                        identity = transport.identity()
+                    else:
+                        url = _financial_url(page.url, control)
+                        data = _read_pdf(page, url, check_cancel, control['document_url'])
+                        identity = url
+
+                    def check_scope():
+                        _cancel(check_cancel)
+                        _verify_page(page, record)
+                        if transport is not None:
+                            transport.verified()
+
+                    check_scope()
+                    record_key = hashlib.sha256(record['record_id'].encode('utf-8')).hexdigest()[:32]
+                    # POST mengikat URL dan hash body, tanpa menyimpan header/ID.
+                    url_key = hashlib.sha256(identity.encode('utf-8')).hexdigest()
+                    name = f'LK_{record_key}_{url_key}.pdf'
+                    target = folder / name
+                    if target.exists():
+                        # Retry hanya menerima byte identik; tidak mengganti file lama.
+                        with locked_file(target) as existing:
+                            digest, size = hashlib.sha256(), 0
+                            for chunk in iter(lambda: existing.read(1048576), b''):
+                                check_scope()
+                                size += len(chunk)
+                                if size > len(data):
+                                    raise ValueError('Existing financial PDF differs from the inspected response')
+                                digest.update(chunk)
+                            check_scope()
+                            if size != len(data) or digest.hexdigest() != hashlib.sha256(data).hexdigest():
+                                raise ValueError('Existing financial PDF differs from the inspected response')
+                    else:
+                        created = None
+                        try:
+                            check_scope()
+                            with target.open('xb') as stream:
+                                created = target.lstat()
+                                check_scope()
+                                stream.write(data)
+                                stream.flush()
+                                check_scope()
+                        except BaseException:
+                            # Bersihkan inode milik kita saja, tanpa menutupi Stop.
+                            if created is not None:
+                                try:
+                                    current = target.lstat()
+                                    if (current.st_dev, current.st_ino) == (created.st_dev, created.st_ino):
+                                        target.unlink()
+                                except OSError:
+                                    pass
+                            raise
+                    results.append({'label': label, 'relative_path': target.relative_to(folder).as_posix(),
+                                    'status': 'COMPLETE', 'bytes': len(data),
+                                    'hash': hashlib.sha256(data).hexdigest()})
             except Exception as error:
                 diagnostics.record('pdf.partial', phase='pdf', level='WARNING', error=error)
                 _cancel(check_cancel)

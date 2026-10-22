@@ -12,7 +12,6 @@ from .runtime import SetupCancelled,ensure_runtime,worker_source
 from . import diagnostics
 from .windows import ProcessJob
 from .paths import downloads_folder
-from .credentials import ALLOWED_ORIGINS
 from .interaction import read_message, select_records, write_reply
 from .profile_lifecycle import reap_profiles
 from coretax_json import validate_detail_source
@@ -47,11 +46,6 @@ def parse_event(line,job_id,operation='export'):
     elif 'request_id' in event:return None
     if any(not isinstance(event[k],str) or len(event[k])>500 for k in ('message','stage') if k in event):return None
     if any(type(event[k]) is not int or event[k]<0 for k in ('processed','total','verified','scanned') if k in event):return None
-    if operation=='login_check':
-        if percent!=0 or event.get('output') is not None:return None
-        if kind=='terminal' and event.get('status') not in (
-                'LOGIN_OK','LOGIN_UNVERIFIED','LOGIN_MANUAL','LOGIN_BLOCKED','LOGIN_ERROR','CANCELLED','ERROR'):return None
-        return event
     if operation!='export':return None
     if kind=='terminal':
         status=event.get('status')
@@ -102,13 +96,6 @@ class JobController:
         arguments=['--npwp',npwp,'--year',str(year),'--detail-source',detail_source]
         if account:arguments.extend(['--account',account])
         return self._start_worker(arguments,browser,headless,'export')
-
-    def start_login_check(self,origin,account,browser='msedge',headless=True):
-        if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
-        if origin not in ALLOWED_ORIGINS:raise ValueError('Origin login tidak disetujui.')
-        if not isinstance(account,str) or not account.strip() or len(account)>256 or '\0' in account:
-            raise ValueError('Simpan akun sebelum mengecek kredensial.')
-        return self._start_worker(['--check-login','--origin',origin,'--account',account],browser,headless,'login_check')
 
     def _start_worker(self,arguments,browser,headless,operation):
         if browser not in ('msedge','chrome'):raise ValueError('Browser tidak valid.')
@@ -294,9 +281,6 @@ class JobController:
         # Status harus cocok dengan kontrak operasi dan exit code;
         # exit 0 sendiri belum membuktikan keberhasilan.
         expected={'COMPLETE':0,'PARTIAL':2,'BLOCKED':3,'CANCELLED':4,'ERROR':1}
-        if self.operation=='login_check':
-            expected={'LOGIN_OK':0,'LOGIN_UNVERIFIED':5,'LOGIN_MANUAL':6,'LOGIN_BLOCKED':3,
-                      'LOGIN_ERROR':1,'ERROR':1,'CANCELLED':4}
         if self._cancel.is_set():
             event={'job_id':self.job_id,'type':'terminal','status':'CANCELLED','percent':self._percent,
                    'output':None,'message':'Dihentikan. Checkpoint lokal dipertahankan.'}

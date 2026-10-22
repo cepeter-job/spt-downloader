@@ -30,19 +30,17 @@ Penulisan checkpoint saat Stop menggunakan file sementara yang di-flush sebelum 
 
 Buka **Pengaturan → Buka folder log** untuk melihat diagnostik lokal berotasi. Log mencatat tahap, durasi, status, dan lokasi error tanpa menyalin data SPT/kredensial atau raw stdout/stderr. Lihat [cara menggunakan log, level DEBUG, retensi, dan batas privasi](docs/diagnostik.md). Logging bukan bukti COMPLETE dan tidak mengunggah data otomatis.
 
-### Cek login
+### Login tersimpan
 
-Simpan akun dan password pada **Pengaturan**, kemudian klik **Cek login**. Origin Satu ditetapkan aplikasi, bukan diisi pengguna. Pemeriksaan ini tidak memerlukan NPWP atau tahun, memakai profil browser sementara yang baru, dan mencoba kredensial tersimpan satu kali. Pemeriksaan tidak memulai pengambilan SPT atau ekspor. Tombol dinonaktifkan selama ada perubahan pengaturan yang belum disimpan; **Simpan** mempertahankan dialog agar pemeriksaan bisa segera dijalankan.
+Simpan akun dan password pada **Pengaturan**, tutup dialog, lalu pilih **Mulai unduh** dengan NPWP dan tahun yang diizinkan. Login otomatis berjalan sebagai bagian unduhan melalui Coretax → Satu. Tidak ada tombol atau operasi Cek login terpisah. Akun kosong memakai login manual; CAPTCHA/MFA dan form yang tidak dikenali diselesaikan pada browser terlihat.
 
-**Login berhasil** memerlukan bukti bahwa kredensial tersimpan telah dikirim melalui form yang sah dan kontrol pencarian wajib pajak Coretax terlihat. Sesi SSO yang sudah login dilaporkan sebagai **password belum diuji**. CAPTCHA/MFA atau form yang tidak dikenal membutuhkan tindakan manual. Timeout berarti **belum terverifikasi**, bukan bukti password salah. Hasil ini berlaku untuk pemeriksaan tersebut, bukan jaminan password tetap valid di kemudian hari.
-
-Gunakan **Batalkan cek**, Escape, atau tutup Pengaturan untuk menghentikan pemeriksaan milik aplikasi sebelum dialog ditutup. Password disimpan hanya di Windows Credential Manager, terikat pada origin yang diizinkan. Password kosong mempertahankan entri lama; penghapusan entri meminta konfirmasi. File preferensi tidak menyimpan password, token, atau cookie.
+Password disimpan hanya di Windows Credential Manager, terikat pada origin Satu yang diizinkan. Password kosong mempertahankan entri lama; penghapusan lewat **Hapus login** meminta konfirmasi. File preferensi tidak menyimpan password, token, atau cookie. Untuk akun tersimpan, setiap unduhan memakai profil sementara baru dan mencocokkan akun sebelum mengisi form; sesi SSO yang identitasnya belum terkait akun tidak cukup untuk memulai unduhan otomatis.
 
 Saat menutup Pengaturan atau aplikasi dengan perubahan yang belum disimpan, pilih **Simpan**, **Abaikan**, atau **Kembali**. Escape/X pada keputusan sama dengan Kembali. Kegagalan simpan mempertahankan dialog. Jika login sudah disimpan/dihapus tetapi preferensi gagal ditulis, pesan menjelaskan hasil sebagian itu; Abaikan tidak membatalkan perubahan login yang sudah berhasil.
 
 ### Setelah login manual
 
-Rute `https://coretax.intranet.pajak.go.id/home/id-ID/` hanya menjadi petunjuk navigasi. Aplikasi membuka alamat pencarian wajib pajak yang dikenal satu kali, lalu menunggu kontrol `ObjectPermitNumber` terlihat. Homepage saja tidak membuktikan autentikasi siap. Batas lima menit adalah tenggat maksimum; pekerjaan berlanjut segera setelah kontrol pencarian terverifikasi. Mekanisme yang sama dipakai sesudah pengiriman password pada Cek login tanpa mencoba password untuk kedua kali.
+Rute `https://coretax.intranet.pajak.go.id/home/id-ID/` hanya menjadi petunjuk navigasi. Aplikasi membuka alamat pencarian wajib pajak yang dikenal satu kali, lalu menunggu kontrol `ObjectPermitNumber` terlihat. Homepage saja tidak membuktikan autentikasi siap. Batas lima menit adalah tenggat maksimum; pekerjaan berlanjut segera setelah kontrol pencarian terverifikasi. Mekanisme yang sama dipakai sesudah pengiriman password pada alur unduhan tanpa mencoba password untuk kedua kali.
 
 ## Lokasi hasil dan kerahasiaan
 

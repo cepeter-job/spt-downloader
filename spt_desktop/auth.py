@@ -1,16 +1,12 @@
 """Use only an inspected origin-bound sign-in form; challenges stay manual."""
 from spt_desktop import diagnostics
-import re
 import time
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import urlsplit
 from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,read_login
-from .profile_lifecycle import temporary_profile
 
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
 CORETAX_ORIGIN = 'https://coretax.intranet.pajak.go.id'
 HOME_PATH = '/home/id-ID/'
-CODE_TOKEN_PATH = '/identityprovider/connect/token'
-CODE_CALLBACK_PATHS = frozenset({'/home/id-ID/auth-callback', '/returnsheets/id-ID/auth-callback'})
 
 
 class AuthBlocked(RuntimeError):
@@ -152,80 +148,6 @@ def _at_home(page):
     return _origin(page.url)==CORETAX_ORIGIN and urlsplit(page.url).path==HOME_PATH
 
 
-def _unique_auth_parameters(value):
-    if not isinstance(value, str) or len(value) > 16384 or re.search(r'%(?![0-9a-fA-F]{2})', value):
-        raise ValueError('Unsupported authentication parameters')
-    pairs = parse_qsl(value, keep_blank_values=True, strict_parsing=True, max_num_fields=16)
-    fields = dict(pairs)
-    if len(fields) != len(pairs) or '' in fields:
-        raise ValueError('Ambiguous authentication parameters')
-    return fields
-
-
-def _code_exchange_callback(request, page):
-    """Recognize the inspected Coretax OIDC exchange, never arbitrary API writes."""
-    try:
-        if (request.url != CORETAX_ORIGIN + CODE_TOKEN_PATH or request.method != 'POST'
-                or request.resource_type not in ('fetch', 'xhr') or page is None
-                or request.frame != page.main_frame or request.frame.parent_frame is not None):
-            return None
-        callback_url = request.frame.url
-        parts = urlsplit(callback_url)
-        if _origin(callback_url) != CORETAX_ORIGIN or parts.path not in CODE_CALLBACK_PATHS or parts.fragment:
-            return None
-        query = _unique_auth_parameters(parts.query)
-        if not query.get('code', '').strip() or not query.get('state', '').strip() or 'error' in query:
-            return None
-        mime = request.headers.get('content-type', '').split(';', 1)[0].strip().lower()
-        if mime != 'application/x-www-form-urlencoded':
-            return None
-        fields = _unique_auth_parameters(request.post_data)
-        callback = CORETAX_ORIGIN + parts.path
-        if (set(fields) != {'grant_type', 'client_id', 'redirect_uri', 'code', 'code_verifier'}
-                or fields['grant_type'] != 'authorization_code' or fields['client_id'] != 'cats-angular-client'
-                or fields['redirect_uri'] != callback or fields['code'] != query['code']
-                or not re.fullmatch(r'[A-Za-z0-9._~-]{43,128}', fields['code_verifier'])):
-            return None
-        return callback
-    except Exception:
-        # Query/body and browser exception text can contain codes and PKCE secrets.
-        return None
-
-
-def _exchange_transport_failure(error):
-    """Reduce a trusted SDK error to a constant; never expose transport text."""
-    # This worker-only path must not load Playwright into the stdlib GUI process.
-    from playwright.sync_api import Error, TimeoutError
-    if isinstance(error, TimeoutError):
-        return 'timeout'
-    if not isinstance(error, Error):
-        return 'unknown'
-    try:
-        message = error.message
-    except Exception:
-        return 'unknown'
-    if type(message) is not str:
-        return 'unknown'
-    # Call logs can contain URLs, headers and authorization bodies. Inspect only
-    # a bounded headline, anchored to known error wording, never arbitrary tokens.
-    headline = message[:512].split('\n', 1)[0].rstrip('\r')
-    headline = re.sub(r'^(?:Route|APIRequestContext)\.fetch: ', '', headline, count=1, flags=re.IGNORECASE)
-    patterns = (
-        ('context_closed', r'(?:Target page, context or browser has been closed|Request context disposed\.?)'),
-        ('timeout', r'(?:Timeout [0-9]+ms exceeded\.?|(?:connect|read|write) ETIMEDOUT(?: .+)?)'),
-        ('tls', r'(?:self-signed certificate(?: in certificate chain)?|unable to (?:verify the first certificate|get local issuer certificate)|certificate (?:has expired|is not yet valid)|Hostname/IP does not match certificate\'s altnames: .+)'),
-        ('dns', r'getaddrinfo (?:ENOTFOUND|EAI_AGAIN)(?: .+)?'),
-        ('proxy', r'(?:net::ERR_(?:PROXY_CONNECTION_FAILED|TUNNEL_CONNECTION_FAILED|SOCKS_CONNECTION_FAILED)|Proxy connection timed out|Socks[45] (?:Authentication failed|proxy rejected connection))'),
-        # The pinned SDK appends a system code when the Node error headline
-        # does not already contain it, e.g. "socket hang up (ECONNRESET)".
-        ('connection', r'(?:(?:connect|read|write) (?:ECONNRESET|ECONNREFUSED|EPIPE|ENETUNREACH|EHOSTUNREACH)(?: .+)?|(?:socket hang up|Socket closed)(?: \(ECONNRESET\))?)'),
-    )
-    for category, pattern in patterns:
-        if re.fullmatch(pattern, headline, flags=re.IGNORECASE):
-            return category
-    return 'unknown'
-
-
 def _open_search_from_home(page,check_cancel,timeout=30000,emit=None):
     if not _at_home(page):return False
     check_cancel()
@@ -255,7 +177,9 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
         check_cancel()
         try:
             owned=playwright.chromium.launch_persistent_context(str(profile),channel=browser,
-                headless=hidden,viewport={'width':1600,'height':1000})
+                headless=hidden,viewport={'width':1600,'height':1000},service_workers='block')
+            # Only contexts created with this policy may capture/replay a PDF POST.
+            owned._spt_financial_route_policy = 'service_workers_blocked'
         except Exception:
             raise AuthBlocked('Browser tidak dapat dibuka. Pastikan Edge/Chrome terpasang dan profil tidak dipakai.') from None
         try:
@@ -339,217 +263,3 @@ def _wait_login_ready(page, expected_origin, check_cancel, timeout, observe):
         if remaining <= 0:
             return 'readiness_timeout', None
         page.wait_for_timeout(min(200, max(1, int(remaining * 1000))))
-
-
-@diagnostics.traced('authentication')
-def check_saved_credentials(playwright,root,origin,account,browser,headless,check_cancel,timeout=20):
-    """Verify one saved login, never an old session or a manually replaced password."""
-    from coretax_browser import CaptureCancelled
-    if origin not in ALLOWED_ORIGINS or browser not in ('msedge','chrome'):
-        raise ValueError('Origin/browser pengecekan tidak disetujui.')
-    if not isinstance(account,str) or not account.strip() or '\0' in account:
-        raise ValueError('Akun tersimpan harus dipilih dari Pengaturan.')
-    check_cancel()
-    page = None
-    submitted = False
-    observed_states = set()
-    blocked_categories = set()
-    blocked_requests = 0
-    coretax_blocked_after_submit = False
-    exchanged_callbacks = set()
-    exchange_failed = False
-    exchange_failure_result = ('LOGIN_UNVERIFIED',
-        'Pertukaran kode login Satu ke Coretax belum berhasil; sesi belum terverifikasi. '
-        'Tidak ada percobaan ulang otomatis.', 'code_exchange_failed')
-    exchange_deadline = 0
-    categories = {CORETAX_ORIGIN: 'coretax', ALLOWED_ORIGINS[0]: 'satu'}
-    def diagnostic(event, reason, **fields):
-        # Only category constants cross into logging, never URLs or form content.
-        try:
-            current = categories.get(_origin(page.url), 'other') if page is not None else 'other'
-        except Exception:
-            current = 'other'
-        if event == 'auth.state':
-            key = reason, current
-            if key in observed_states:
-                return
-            observed_states.add(key)
-        diagnostics.record(event, operation='login_check', phase='authentication',
-            expected_origin=categories[origin], observed_origin=current, reason=reason, **fields)
-    def finish(status, message, reason):
-        check_cancel()
-        if exchange_failed:
-            status, message, reason = exchange_failure_result
-        diagnostic('auth.result', reason, status=status, submitted=submitted, blocked_requests=blocked_requests)
-        return status, message
-    with temporary_profile(root,'login-check') as fresh:
-        context=None
-        try:
-            context=playwright.chromium.launch_persistent_context(str(fresh),channel=browser,headless=headless,
-                                                                 service_workers='block')
-            def guard(route):
-                nonlocal blocked_requests, coretax_blocked_after_submit, exchange_failed
-                request=route.request
-                target=_origin(request.url)
-                callback = (_code_exchange_callback(request, page)
-                            if submitted and origin == LOGIN_ORIGIN and target in ALLOWED_ORIGINS else None)
-                if (not exchange_failed and callback and callback not in exchanged_callbacks
-                        and time.monotonic() < exchange_deadline):
-                    check_cancel()
-                    exchanged_callbacks.add(callback)  # Consume before transport, including failed exchanges.
-                    diagnostic('auth.state', 'code_exchange_allowed')
-                    response = None
-                    failure = None
-                    transport_failure = None
-                    exception_category = 'fetch_exception'
-                    try:
-                        # Ordinary continuation would follow redirects outside the inspected endpoint.
-                        remaining = max(1, min(5000, int((exchange_deadline - time.monotonic()) * 1000)))
-                        response = route.fetch(max_redirects=0, max_retries=0, timeout=remaining)
-                        check_cancel()
-                        if 300 <= response.status < 400:
-                            failure = 'redirect_rejected'
-                        elif response.url != request.url:
-                            failure = 'response_url_changed'
-                        elif _code_exchange_callback(request, page) != callback:
-                            failure = 'callback_changed'
-                        elif not 200 <= response.status < 300:
-                            failure = 'http_rejected'
-                        if failure:
-                            exchange_failed = True
-                        if failure in ('redirect_rejected', 'response_url_changed', 'callback_changed'):
-                            route.abort()
-                        else:
-                            exception_category = 'fulfill_exception'
-                            route.fulfill(response=response)
-                    except CaptureCancelled:
-                        raise
-                    except Exception as error:
-                        # Transport exceptions can include request headers and authentication codes.
-                        failure = failure or exception_category
-                        if failure == 'fetch_exception':
-                            transport_failure = _exchange_transport_failure(error)
-                        exchange_failed = True
-                        try:
-                            route.abort()
-                        except Exception:
-                            # A closed route needs no further abort; its exception may contain auth data.
-                            pass
-                    finally:
-                        if response is not None:
-                            try:
-                                response.dispose()
-                            except Exception:
-                                # Context teardown remains the fallback when response disposal races shutdown.
-                                pass
-                    if failure:
-                        diagnostic('auth.state', 'code_exchange_failed', exchange_failure=failure,
-                                   transport_failure=transport_failure)
-                    return
-                if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
-                    blocked_requests+=1
-                    method=request.method if request.method in ('GET','HEAD','POST') else 'OTHER'
-                    resource=getattr(request,'resource_type','other')
-                    resource=resource if resource in ('document','xhr','fetch') else 'other'
-                    category=categories.get(target,'other')
-                    reason='origin_not_allowed' if target not in ALLOWED_ORIGINS else 'cross_origin_write'
-                    # Track every occurrence independently of log deduplication:
-                    # the same category can occur before and after submission.
-                    if submitted and target == CORETAX_ORIGIN and reason == 'cross_origin_write':
-                        coretax_blocked_after_submit = True
-                    request_kind='code_exchange' if request.url == CORETAX_ORIGIN + CODE_TOKEN_PATH else 'other'
-                    key=(category,method,resource,reason,request_kind)
-                    if key not in blocked_categories:
-                        blocked_categories.add(key)
-                        diagnostic('auth.request_blocked',reason,target_origin=category,method=method,resource_type=resource,
-                            request_kind=request_kind)
-                    route.abort()
-                else:route.fallback()
-            context.route('**/*',guard)
-            page=context.pages[0] if context.pages else context.new_page()
-            page.goto(SEARCH_URL,wait_until='domcontentloaded',timeout=30000)
-            state, fields = _wait_login_ready(page, origin, check_cancel, min(5, timeout),
-                lambda reason: diagnostic('auth.state', reason))
-            if state == 'existing_session':
-                return finish('LOGIN_UNVERIFIED','Sesi SSO tersedia, tetapi password tersimpan belum diuji.',state)
-            if state == 'existing_home':
-                _wait_ready(page,time.monotonic()+timeout,check_cancel)
-                return finish('LOGIN_UNVERIFIED','Beranda Coretax terbuka, tetapi password tersimpan belum diuji.',state)
-            if state == 'origin_blocked':
-                return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.',state)
-            if state == 'challenge':
-                return finish('LOGIN_MANUAL','CAPTCHA/MFA terdeteksi; selesaikan melalui login manual saat Mulai.',state)
-            if state == 'readiness_timeout':
-                return finish('LOGIN_UNVERIFIED','Halaman login belum siap dalam batas waktu; password belum diuji. Periksa koneksi intranet.',state)
-            if fields is None:
-                return finish('LOGIN_MANUAL','Form login belum dikenali dengan aman; gunakan login manual saat Mulai.',state)
-            if fields[0] != origin:
-                return finish('LOGIN_BLOCKED',f'Origin login berbeda. Pilih {fields[0]} di Pengaturan lalu Simpan.','origin_mismatch')
-            fields,current_form=_bind_login_fields(page,fields)
-            changed_form=('LOGIN_MANUAL','Form login berubah; gunakan login manual saat Mulai.')
-            if not current_form():return finish(*changed_form, 'form_changed')
-            check_cancel()
-            login=read_login(origin)
-            if login is None:
-                return finish('LOGIN_BLOCKED','Kredensial Satu belum disimpan; isi akun/password di Pengaturan lalu Simpan. Entri Coretax lama tidak dipindahkan otomatis.','credential_missing')
-            if login.identifier!=account:
-                return finish('LOGIN_BLOCKED','Akun tersimpan berbeda dari Pengaturan; masukkan akun/password lalu Simpan.','account_mismatch')
-            _,identifier,password,button=fields
-            if not current_form():return finish(*changed_form, 'form_changed')
-            check_cancel()
-            identifier.fill(login.identifier,timeout=5000)
-            if not current_form():return finish(*changed_form, 'form_changed')
-            check_cancel()
-            password.fill(login.password,timeout=5000)
-            if not current_form():return finish(*changed_form, 'form_changed')
-            check_cancel()
-            submitted = True
-            exchange_deadline = time.monotonic() + timeout
-            button.click(timeout=5000)
-            del login
-            deadline=time.monotonic()+timeout
-            opened_search=False
-            while time.monotonic()<deadline:
-                check_cancel()
-                if exchange_failed:return finish(*exchange_failure_result)
-                ready = authenticated(page)
-                # Sync browser calls can dispatch the exchange route while checking
-                # a marker. A late marker must not overwrite that exchange failure.
-                check_cancel()
-                if exchange_failed:return finish(*exchange_failure_result)
-                if ready:
-                    return finish('LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.','verified')
-                if not opened_search and _at_home(page):
-                    diagnostic('auth.state', 'home_detected')
-                    remaining=max(1,int((deadline-time.monotonic())*1000))
-                    opened_search=_open_search_from_home(page,check_cancel,timeout=min(30000,remaining))
-                    check_cancel()
-                    if exchange_failed:return finish(*exchange_failure_result)
-                    if opened_search:diagnostic('auth.state', 'search_opened')
-                    continue
-                challenge = _has_challenge(page)
-                check_cancel()
-                if exchange_failed:return finish(*exchange_failure_result)
-                if challenge:
-                    return finish('LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.','challenge')
-                if _origin(page.url) not in ALLOWED_ORIGINS:
-                    return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.','origin_blocked')
-                time.sleep(0.1)
-            check_cancel()
-            if exchange_failed:
-                return finish(*exchange_failure_result)
-            if coretax_blocked_after_submit:
-                return finish('LOGIN_UNVERIFIED',
-                    'Login belum terverifikasi. Pemeriksa memblokir permintaan lanjutan ke Coretax '
-                    'setelah form login dikirim. Ini bukan bukti password salah. '
-                    'Gunakan Mulai untuk alur login unduhan biasa.', 'cross_origin_write')
-            return finish('LOGIN_UNVERIFIED','Login belum terverifikasi dalam batas waktu; periksa akun, password, atau koneksi. Tidak ada percobaan ulang otomatis.','verification_timeout')
-        except CaptureCancelled:
-            diagnostic('auth.result', 'cancelled', status='CANCELLED', submitted=submitted)
-            raise
-        except Exception:
-            # Fill/navigation exceptions may contain secrets or token-bearing URLs.
-            check_cancel()
-            return finish('LOGIN_ERROR','Pengecekan gagal; periksa koneksi intranet, browser, dan akses Windows Credential Manager.','check_error')
-        finally:
-            if context is not None:context.close()

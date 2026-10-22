@@ -32,8 +32,8 @@ def artifact(tmp_path):
         'credentials_accessed': False, 'live_scrape': False,
         'python': '3.14.8', 'python_implementation': 'CPython', 'free_threaded': False,
         'tcl': '8.6.15', 'tk': '8.6.15', 'worker_python': python_version(),
-        'worker_resources': list(WORKER_FILES), 'credential_check_controls': True,
-        'gui_controls': ['Cek login'], 'build_profile': 'production',
+        'worker_resources': list(WORKER_FILES), 'credential_check_controls': False,
+        'gui_controls': ['Simpan', 'Hapus login', 'Tutup'], 'build_profile': 'production',
         'personal_use_labels': ['Coretax → Excel · for personal use only'],
         'ui_text': {
             'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
@@ -93,7 +93,7 @@ def test_artifact_damage_cannot_receive_provenance(artifact, damage):
 
 
 @pytest.mark.parametrize('key,value', [('tk', ''), ('worker_resources', []),
-                                      ('credential_check_controls', False),
+                                      ('credential_check_controls', True),
                                       ('build_profile', 'candidate')])
 def test_incomplete_frozen_runtime_evidence_cannot_be_checksummed(artifact, key, value):
     path = artifact / 'build-selftest.json'

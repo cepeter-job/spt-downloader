@@ -90,7 +90,6 @@ def test_dirty_close_defaults_to_return_and_preserves_edits(settings):
     root.update()
     assert dialog.winfo_exists() and root.grab_current() is dialog
     assert persisted(path)['browser'] == 'msedge' and not writes and not errors
-    assert button(dialog, 'Cek login').instate(['disabled'])
 
 
 @pytest.mark.parametrize('close_method', ['escape', 'window'])
@@ -153,7 +152,6 @@ def test_failed_save_keeps_settings_and_does_not_claim_success(settings, monkeyp
     assert app.preferences['browser'] == 'msedge'
     assert errors and 'SYNTHETIC_SECRET_MUST_NOT_APPEAR' not in repr(errors)
     assert 'Pengaturan disimpan.' not in app._credential_status.get()
-    assert button(dialog, 'Cek login').instate(['disabled'])
     assert len(writes) == (1 if failure == 'preferences' else 0)
 
 
@@ -168,7 +166,6 @@ def test_partial_password_save_stays_pending_and_retry_does_not_repeat_vault_wri
     root.update()
     assert len(writes) == 1 and password_entry(dialog).get() == ''
     assert 'Password sudah disimpan' in app._credential_status.get()
-    assert button(dialog, 'Cek login').instate(['disabled'])
     prompt = decision(root, app, dialog)
     monkeypatch.setattr(gui, 'save_preferences', real_save)
     button(prompt, 'Simpan').invoke()
@@ -187,20 +184,15 @@ def test_reverted_preferences_close_without_a_false_dirty_prompt(settings):
     assert app._settings_dialog is None and not writes and not errors
 
 
-def test_login_captions_start_and_cancel_the_existing_check(settings):
+def test_settings_actions_preserve_credentials_without_starting_a_job(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     labels = [w.cget('text') for w in widgets(dialog) if w.winfo_class() == 'TButton']
-    assert {'Cek login', 'Batalkan cek', 'Hapus login'} <= set(labels)
-    button(dialog, 'Cek login').invoke()
-    assert ctl.checks == [(gui.LOGIN_ORIGIN, 'SYNTHETIC_ACCOUNT', 'msedge', True)]
-    app._settings_close()
-    assert ctl.stops == 1 and dialog.winfo_exists()
-    ctl.active = False
-    app.on_event({'job_id': ctl.job_id, 'type': 'terminal', 'status': 'CANCELLED',
-                  'percent': 0, 'output': None, 'message': 'Cek login dibatalkan.'})
+    assert {'Simpan', 'Hapus login', 'Tutup'} <= set(labels)
+    assert 'Cek login' not in labels and 'Batalkan cek' not in labels
+    button(dialog, 'Tutup').invoke()
     root.update()
     assert app._settings_dialog is None and root.grab_current() is None
-    assert not ctl.exports and not writes and not errors
+    assert not ctl.active and not ctl.exports and not writes and not errors
 
 
 def test_partial_delete_keeps_saved_preferences_honest_and_requires_retry(settings, monkeypatch):
@@ -215,7 +207,6 @@ def test_partial_delete_keeps_saved_preferences_honest_and_requires_retry(settin
     assert app.preferences['identifier'] == 'SYNTHETIC_ACCOUNT'
     assert (path / 'preferences.json').read_bytes() == original
     assert errors and 'Login sudah dihapus' in app._credential_status.get()
-    assert button(dialog, 'Cek login').instate(['disabled'])
     prompt = decision(root, app, dialog)
     button(prompt, 'Kembali').invoke()
 
@@ -229,7 +220,7 @@ def test_deleted_login_cannot_be_reselected_without_new_password(settings, monke
     button(dialog, 'Simpan').invoke()
     root.update()
     assert errors and persisted(path)['identifier'] == ''
-    assert button(dialog, 'Cek login').instate(['disabled']) and not writes
+    assert not writes
 
 
 @pytest.mark.parametrize('close_method', ['escape', 'window'])
@@ -331,7 +322,6 @@ def test_changed_account_partial_save_retries_once_and_rejects_old_account_witho
     assert password_entry(dialog).get() == ''
     assert persisted(path)['identifier'] == 'SYNTHETIC_ACCOUNT'
     assert app.preferences['identifier'] == 'SYNTHETIC_ACCOUNT'
-    assert button(dialog, 'Cek login').instate(['disabled'])
     monkeypatch.setattr(gui, 'save_preferences', real_save)
     account.delete(0, 'end')
     account.insert(0, 'SYNTHETIC_ACCOUNT')
@@ -339,7 +329,6 @@ def test_changed_account_partial_save_retries_once_and_rejects_old_account_witho
     button(dialog, 'Simpan').invoke()
     root.update()
     assert len(errors) == error_count + 1
-    assert button(dialog, 'Cek login').instate(['disabled'])
     account.delete(0, 'end')
     account.insert(0, 'SYNTHETIC_SECOND_ACCOUNT')
     button(dialog, 'Simpan').invoke()
@@ -347,7 +336,6 @@ def test_changed_account_partial_save_retries_once_and_rejects_old_account_witho
     assert len(writes) == 1
     assert persisted(path)['identifier'] == 'SYNTHETIC_SECOND_ACCOUNT'
     assert app.preferences['identifier'] == 'SYNTHETIC_SECOND_ACCOUNT'
-    assert button(dialog, 'Cek login').instate(['!disabled'])
     assert 'password' not in persisted(path)
 
 

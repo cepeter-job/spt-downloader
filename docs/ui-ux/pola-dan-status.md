@@ -8,11 +8,11 @@
 
 Pengaturan hanya meminta akun/password, browser, dan opsi unduh. Navigasi tetap dimulai dari Coretax, lalu aplikasi menunggu form Satu yang dikenali; origin login tidak dipilih pengguna. Kunci Windows Credential Manager untuk login otomatis selalu origin Satu yang persis diizinkan. Preferensi origin Coretax lama diabaikan tanpa membaca, memindahkan, atau menghapus credential lamanya. Jika entri Satu belum tersedia, isi ulang akun/password melalui Pengaturan lalu Simpan.
 
-**Cek login** menguji satu submit pada profil sementara. **Mulai Unduh** meneruskan identifier yang dipilih (bukan password) ke worker, menunggu form dengan alur kesiapan yang sama, dan mencocokkan identifier credential sebelum mengisi form. Untuk akun tersimpan, worker memakai profil sementara baru agar tidak mengunduh dengan sesi akun lama yang identitasnya tidak diketahui. Profil dibersihkan setelah browser ditutup; hasil cek bukan file penanda password-valid atau izin mempercayai profil lain. SSO tanpa pengiriman credential belum membuktikan akun yang dipilih; gunakan mode manual bila identitas sesi tidak dapat dikaitkan.
+**Mulai unduh** meneruskan identifier yang dipilih ke worker, menunggu form yang dikenali, dan mencocokkan identifier credential sebelum mengisi form. Untuk akun tersimpan, worker memakai profil sementara baru agar tidak mengunduh dengan sesi akun lama yang identitasnya tidak diketahui. Profil dibersihkan setelah browser ditutup. SSO tanpa pengiriman credential belum membuktikan akun yang dipilih; gunakan mode manual bila identitas sesi tidak dapat dikaitkan.
 
-Akun kosong memilih mode manual tanpa membaca credential tersimpan. Mengosongkan akun lalu Simpan tidak menghapus password; penghapusan tetap melalui tombol khusus dengan konfirmasi. Mode manual dapat memakai profil manual yang sudah ada. Perubahan akun/password menghapus status cek dari tampilan. Akun baru yang tidak kosong tetap memerlukan password baru. Password tidak diteruskan lewat argv atau disimpan dalam preferensi/log.
+Akun kosong memilih mode manual tanpa membaca credential tersimpan. Mengosongkan akun lalu Simpan tidak menghapus password; penghapusan tetap melalui tombol khusus dengan konfirmasi. Mode manual dapat memakai profil manual yang sudah ada. Akun baru yang tidak kosong tetap memerlukan password baru. Password tidak diteruskan lewat argv atau disimpan dalam preferensi/log.
 
-Form/challenge tidak aman tetap manual, CAPTCHA/MFA tidak dilewati, dan tidak ada percobaan submit otomatis berulang. Cek yang sukses diikuti unduh pada sesi baru diuji dengan fixture browser sintetis; ini bukan klaim bahwa reload loop intranet sudah diperbaiki. Diagnostik blocking tersedia untuk membuktikan sebab loop tanpa membuka seluruh request.
+Form/challenge tidak aman tetap manual, CAPTCHA/MFA tidak dilewati, dan tidak ada percobaan submit otomatis berulang. Login unduhan diuji dengan fixture browser sintetis; bukti tersebut terpisah dari penerimaan akun intranet nyata.
 
 ## Form unduhan
 
@@ -20,7 +20,7 @@ Label terlihat terus; placeholder tidak menggantikan label. Pengaturan bukan lan
 
 Error berada di field; fokus ke kesalahan pertama dan teks tetap dipertahankan. Tidak menghapus titik/spasi, memperbaiki tahun dua digit, atau menghilangkan nol awal secara otomatis. Klik/Enter/shortcut melewati guard start yang sama; satu pekerjaan aktif.
 
-Teks utama **Mulai unduh** mengikuti Alt+M; Hentikan tetap Alt+S. Pengaturan Alt+P; Cek login Alt+C. Jangan menggarisbawahi huruf yang salah; tampilkan shortcut dalam bantuan. Enter global tidak boleh menyetujui dialog penggantian tanpa fokus/aksi yang tepat.
+Teks utama **Mulai unduh** mengikuti Alt+M; Hentikan tetap Alt+S. Pengaturan Alt+P. Jangan menggarisbawahi huruf yang salah; tampilkan shortcut dalam bantuan. Enter global tidak boleh menyetujui dialog penggantian tanpa fokus/aksi yang tepat.
 
 ## Tahap proses
 
@@ -88,27 +88,13 @@ PDF laporan keuangan/auditan Badan dapat ikut disimpan jika tersedia lewat tauta
 
 Folder hilang: jelaskan mungkin dipindahkan/dihapus. Folder ada tetapi gagal dibuka: jelaskan kegagalan membuka. Jangan membuat status COMPLETE baru atau menebak lokasi pengganti.
 
-## Pengaturan dan cek login
+## Pengaturan dan login tersimpan
 
 Urutan widget existing: **Akun / username**, **Password baru**, **Browser**, **Sumber detail SPT**, checkbox **jalankan proses sedot di background**. Sumber detail menyediakan **DOM** dan **JSON-hybrid (pilot)**; profil desktop baru/mode hilang atau tidak sah memakai `json-first`, preferensi `dom` atau `json-first` yang sah dipertahankan. CLI/library tetap default DOM tanpa opsi eksplisit. **Buka folder log** sudah tersedia; tindakan membuka folder tidak mengirim isinya ke pihak lain. Origin Satu ditetapkan aplikasi, bukan combobox atau URL bebas. Helper menjelaskan login otomatis dan mode akun kosong/manual. Microsoft Edge/Google Chrome dipetakan ke `msedge`/`chrome`.
 
 Password kosong mempertahankan entri sesuai kontrak; perubahan akun yang perlu password baru dijelaskan dekat field. Hapus login hanya menghapus entri aplikasi pada origin Satu tetap (`LOGIN_ORIGIN`), bukan pilihan situs pengguna, akun portal, entri legacy Coretax, atau seluruh Credential Manager. Jangan menjanjikan transaksi atomik Credential Manager dan file preferensi.
 
-Simpan bukan bukti login berhasil. Cek login nonaktif saat dirty, akun belum tersedia, atau operasi lain aktif. Dirty dihitung dari nilai dibanding preferensi tersimpan ditambah password baru; mengembalikan nilai semula tidak meninggalkan dirty palsu. Cek memakai operasi tersendiri, tidak memerlukan NPWP/tahun, tidak mengambil SPT, dan tidak menimpa hasil ekspor terakhir.
-
-| Status | Label dan arti |
-| --- | --- |
-| Belum diuji | Login belum dicek, bukan gagal atau berhasil. |
-| Aktif | Mengecek login… satu percobaan; Batalkan cek tersedia. |
-| `LOGIN_OK` | Login berhasil; akun/password tersimpan dipakai dan akses siap. |
-| `LOGIN_UNVERIFIED` | Password belum bisa dipastikan; bukan bukti benar/salah. |
-| `LOGIN_MANUAL` | Perlu login di browser saat mulai unduh. |
-| `LOGIN_BLOCKED` | Login belum bisa dicek; periksa akses Coretax/Satu dan akun. |
-| `LOGIN_ERROR` / `ERROR` | Cek login belum berhasil; bukan hasil ekspor. |
-| Batal diminta | Membatalkan cek login… tunggu cleanup/terminal. |
-| `CANCELLED` | Cek login dibatalkan; tidak ada SPT diunduh. |
-
-Jangan mengklasifikasikan sebab melalui substring pesan. Jika reason code aman belum ada, pakai pesan generik. Perubahan protokol alasan membutuhkan rancangan/tes terpisah, bukan diselipkan sebagai copy update.
+Simpan mempertahankan dialog dan tidak memulai worker atau membuktikan login berhasil. Tutup Pengaturan lalu pilih Mulai unduh untuk memakai akun tersimpan. Tidak ada tombol Cek login/Batalkan cek atau shortcut Alt+C. Dirty dihitung dari nilai dibanding preferensi tersimpan ditambah password baru; mengembalikan nilai semula tidak meninggalkan dirty palsu. Simpan, ubah akun/password, dan Hapus login mempertahankan hasil ekspor terakhir.
 
 ## Dialog dan fokus
 
@@ -120,11 +106,11 @@ Jangan mengklasifikasikan sebab melalui substring pesan. Jika reason code aman b
 | Pemilihan SPT | Pilih SPT yang akan diunduh | Sedot SPT terpilih; Hentikan unduhan. Escape/X = Stop. |
 | Penggantian | Ganti hasil sebelumnya? | Jangan ganti; Ganti file tersebut. Escape/X = false. |
 
-Pilihan aman fokus awal pada keputusan destruktif. Tidak ada Return global yang menyetujui overwrite. Saat cek login aktif, Escape/Tutup membatalkan cek dulu dan menunggu cleanup. Tombol Stop langsung membatalkan tanpa konfirmasi tambahan. Dialog mengembalikan fokus ke pemicu yang masih valid; progress tidak mencuri fokus. Setelah terminal ekspor, App mengarahkan fokus ke Buka hasil jika tersedia atau Mulai unduh, bukan Entry yang bisa tergulir keluar viewport. Bersihkan grab, traces, dan after sebelum destroy/job berikutnya.
+Pilihan aman fokus awal pada keputusan destruktif. Tidak ada Return global yang menyetujui overwrite. Tombol Stop langsung membatalkan tanpa konfirmasi tambahan. Dialog mengembalikan fokus ke pemicu yang masih valid; progress tidak mencuri fokus. Setelah terminal ekspor, App mengarahkan fokus ke Buka hasil jika tersedia atau Mulai unduh, bukan Entry yang bisa tergulir keluar viewport. Bersihkan grab, traces, dan after sebelum destroy/job berikutnya.
 
-Perubahan browser, akun, sumber detail, pilihan background, atau password baru memerlukan keputusan **Simpan / Abaikan / Kembali** saat Pengaturan maupun aplikasi ditutup. Kembali, Escape, dan X mempertahankan edit serta membatalkan penutupan aplikasi. Simpan hanya menutup setelah penyimpanan berhasil; kegagalan mempertahankan dialog. Saat cek aktif, close tetap membatalkan cek dan menunggu cleanup.
+Perubahan browser, akun, sumber detail, pilihan background, atau password baru memerlukan keputusan **Simpan / Abaikan / Kembali** saat Pengaturan maupun aplikasi ditutup. Kembali, Escape, dan X mempertahankan edit serta membatalkan penutupan aplikasi. Simpan hanya menutup setelah penyimpanan berhasil; kegagalan mempertahankan dialog.
 
-Windows Credential Manager dan preferensi merupakan dua penyimpanan terpisah. Setelah password berhasil disimpan, field password segera dikosongkan; retry preferensi tidak menulis ulang password. Setelah login berhasil dihapus, kegagalan preferensi dilaporkan sebagai penghapusan yang sudah terjadi dan preferensi yang masih perlu disimpan. Abaikan membuang edit yang belum tersimpan, tetapi tidak membatalkan perubahan Credential Manager yang sudah berhasil; dialog menyebut batas ini. Akun yang telah dihapus tidak boleh dipilih lagi tanpa password baru. Cek login tetap nonaktif selama perubahan atau retry belum selesai.
+Windows Credential Manager dan preferensi merupakan dua penyimpanan terpisah. Setelah password berhasil disimpan, field password segera dikosongkan; retry preferensi tidak menulis ulang password. Setelah login berhasil dihapus, kegagalan preferensi dilaporkan sebagai penghapusan yang sudah terjadi dan preferensi yang masih perlu disimpan. Abaikan membuang edit yang belum tersimpan, tetapi tidak membatalkan perubahan Credential Manager yang sudah berhasil; dialog menyebut batas ini. Akun yang telah dihapus tidak boleh dipilih lagi tanpa password baru.
 
 ## Aksesibilitas dan performa
 

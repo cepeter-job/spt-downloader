@@ -12,6 +12,22 @@ from spt_desktop.credentials import Login
 ORIGIN = 'https://satu.intranet.pajak.go.id'
 
 
+def test_owned_download_context_blocks_service_worker_route_bypass(monkeypatch, tmp_path):
+    launches = []
+    page = SimpleNamespace(goto=lambda *args, **kwargs: None)
+    context = SimpleNamespace(pages=[page], close=lambda: None)
+    def launch(profile, **options):
+        launches.append(options)
+        return context
+    engine = SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=launch))
+    monkeypatch.setattr(auth, 'authenticated', lambda current: current is page)
+    actual, selected = auth.authenticate_owned(engine, tmp_path / 'owned-profile', 'msedge', True,
+        lambda *args: None, lambda: None)
+    assert actual is context and selected is page
+    assert len(launches) == 1 and launches[0].get('service_workers') == 'block'
+    assert getattr(context, '_spt_financial_route_policy', None) == 'service_workers_blocked'
+
+
 class Form:
     def __init__(self, page):
         self.page = page
@@ -133,11 +149,9 @@ def test_initial_inspection_cannot_use_another_approved_origins_credential(login
     monkeypatch.setattr(auth, '_has_challenge', lambda current: False)
     monkeypatch.setattr(auth, 'read_login', lambda origin: (
         reads.append(origin) or Login('SYNTHETIC_ACCOUNT', 'SYNTHETIC_PASSWORD_ONLY')))
-    status, message = auth.check_saved_credentials(
-        engine, tmp_path, ORIGIN, 'SYNTHETIC_ACCOUNT', 'msedge', True,
-        lambda: None, timeout=0)
+    with pytest.raises(auth.AuthBlocked):
+        auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: None, lambda: None, manual_timeout=0, account='SYNTHETIC_ACCOUNT')
     assert moved and auth._origin(page.url) == other_origin
-    assert status == 'LOGIN_MANUAL'
     assert reads == [] and page.actions == []
     assert closed == [True]
-    assert 'SYNTHETIC_PASSWORD_ONLY' not in message

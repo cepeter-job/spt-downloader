@@ -11,8 +11,7 @@ from spt_desktop.credentials import Login
 
 
 @pytest.mark.parametrize('stop_after', ['inspection', 'identifier', 'password'])
-@pytest.mark.parametrize('operation', ['export', 'login_check'])
-def test_stop_between_credential_actions_prevents_the_next_action(monkeypatch, tmp_path, stop_after, operation):
+def test_stop_between_credential_actions_prevents_the_next_action(monkeypatch, tmp_path, stop_after):
     stopped = threading.Event()
     actions = []
 
@@ -46,18 +45,16 @@ def test_stop_between_credential_actions_prevents_the_next_action(monkeypatch, t
         if stopped.is_set():
             raise CaptureCancelled('Synthetic Stop during credential entry')
 
+    page = SimpleNamespace(url=origin + '/login', goto=lambda *args, **kwargs: None)
+    closed = []
+    context = SimpleNamespace(pages=[page], close=lambda: closed.append(True))
+    engine = SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=lambda *args, **kwargs: context))
+    monkeypatch.setattr(auth, 'authenticated', lambda page: False)
+    monkeypatch.setattr(auth, '_at_home', lambda page: False)
     with pytest.raises(CaptureCancelled):
-        if operation == 'export':
-            auth.try_saved_login(object(), check_cancel)
-        else:
-            page = SimpleNamespace(url=origin + '/login', goto=lambda *args, **kwargs: None)
-            context = SimpleNamespace(pages=[page], route=lambda *args: None, close=lambda: None)
-            engine = SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=lambda *args, **kwargs: context))
-            monkeypatch.setattr(auth, 'authenticated', lambda page: False)
-            monkeypatch.setattr(auth, '_at_home', lambda page: False)
-            monkeypatch.setattr(auth, '_has_challenge', lambda page: False)
-            auth.check_saved_credentials(engine, tmp_path, origin, 'SYNTHETIC_ACCOUNT',
-                                         'msedge', True, check_cancel, timeout=1)
+        auth.authenticate_owned(engine, tmp_path / 'profile', 'msedge', False,
+            lambda *args: None, check_cancel, manual_timeout=1, account='SYNTHETIC_ACCOUNT')
+    assert closed == [True]
     assert actions == {'inspection': [], 'identifier': ['identifier'], 'password': ['identifier', 'password']}[stop_after]
 
 
@@ -67,19 +64,19 @@ def test_exit_waits_for_delayed_terminal_reader_without_blocking_poll(tmp_path):
     release_reader = threading.Event()
     ctl = controller.JobController(tmp_path, events.append)
     ctl.active = True
-    ctl.operation = 'login_check'
+    ctl.operation = 'export'
     ctl.job_id = 'synthetic-delayed-terminal'
     ctl.process = SimpleNamespace(
-        returncode=0, poll=lambda: 0, stdin=io.StringIO(),
+        returncode=2, poll=lambda: 2, stdin=io.StringIO(),
         stdout=io.StringIO(), stderr=io.StringIO(),
     )
     ctl._job = SimpleNamespace(close=closed.set)
 
     def read_terminal():
         release_reader.wait()
-        ctl._enqueue({'job_id': ctl.job_id, 'type': 'terminal', 'stage': 'login_check',
-                      'status': 'LOGIN_OK', 'percent': 0, 'output': None,
-                      'message': 'Synthetic credentials verified'})
+        ctl._enqueue({'job_id': ctl.job_id, 'type': 'terminal', 'stage': 'finished',
+                      'status': 'PARTIAL', 'percent': 0, 'output': None,
+                      'message': 'Synthetic partial download without published output'})
 
     reader = threading.Thread(target=read_terminal)
     ctl._readers = [reader]
@@ -93,7 +90,7 @@ def test_exit_waits_for_delayed_terminal_reader_without_blocking_poll(tmp_path):
         reader.join(timeout=2)
         assert not reader.is_alive()
         assert not ctl.poll()
-        assert [event['status'] for event in events] == ['LOGIN_OK']
+        assert [event['status'] for event in events] == ['PARTIAL']
     finally:
         release_reader.set()
         reader.join(timeout=2)

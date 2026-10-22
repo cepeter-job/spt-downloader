@@ -115,7 +115,9 @@ def self_test(report=None):
             assert not origin_selector
             assert 'Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
-            assert {'Cek login','Batalkan cek','Simpan','Tutup','Buka folder log'}<=labels
+            assert {'Simpan','Hapus login','Tutup','Buka folder log'}<=labels
+            assert not {'Cek login','Batalkan cek'}.intersection(labels)
+            assert not dialog.bind('<Alt-c>')
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
             background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
             assert len(background)==1
@@ -208,7 +210,7 @@ def self_test(report=None):
                   'selection_sorting_control':sorting,
                   'automatic_login_controls':automatic_login,
                   'bugreport_footer':bugreport_footer,
-                  'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
+                  'credential_check_controls':False,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
             if report:

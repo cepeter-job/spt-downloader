@@ -155,7 +155,7 @@ def test_controller_reclaims_profile_after_forced_stop_before_terminal(tmp_path,
     try:
         with native_owner(tmp_path, kind) as (job, process, path):
             ctl.active = True
-            ctl.operation = 'login_check'
+            ctl.operation = 'export'
             ctl.job_id = 'synthetic-profile-stop'
             ctl._job, ctl.process = job, process
             ctl.stop()
@@ -188,7 +188,7 @@ def test_controller_reclaims_prior_abandonment_before_preparing_a_new_worker(tmp
         monkeypatch.setattr(controller, 'ensure_runtime', no_runtime)
         ctl = controller.JobController(tmp_path, lambda event: None)
         try:
-            ctl.start_login_check(auth.LOGIN_ORIGIN, 'SYNTHETIC_ACCOUNT')
+            ctl.start('0000000000000001', '2025', account='SYNTHETIC_ACCOUNT')
             deadline = time.monotonic() + 5
             while ctl.active and time.monotonic() < deadline:
                 ctl.poll()
@@ -307,29 +307,5 @@ def test_account_bound_export_has_recoverable_profile_ownership_before_browser_s
     code = worker.run_job('0000000000000001', '2025', tmp_path, 'synthetic-profile-export',
                           'msedge', True, events.append, lambda: False, account='SYNTHETIC_ACCOUNT')
     assert code == 4 and events[-1]['status'] == 'CANCELLED'
-    assert len(observed) == 1 and all(not value.exists() for value in observed[0])
-    assert not (tmp_path / 'profile').exists()
-
-
-def test_credential_check_has_recoverable_profile_ownership_before_browser_start(tmp_path):
-    module = profiles()
-    observed = []
-
-    class SyntheticPlaywright:
-        @property
-        def chromium(self):
-            return self
-
-        def launch_persistent_context(self, value, **kwargs):
-            path = Path(value)
-            marker, _ = ownership(tmp_path, path)
-            observed.append((path, marker))
-            module.reap_profiles(tmp_path)
-            assert path.exists() and marker.exists()
-            raise OSError('Synthetic browser unavailable before any portal access')
-
-    status, _ = auth.check_saved_credentials(SyntheticPlaywright(), tmp_path, auth.LOGIN_ORIGIN,
-                                             'SYNTHETIC_ACCOUNT', 'msedge', True, lambda: None)
-    assert status == 'LOGIN_ERROR'
     assert len(observed) == 1 and all(not value.exists() for value in observed[0])
     assert not (tmp_path / 'profile').exists()
