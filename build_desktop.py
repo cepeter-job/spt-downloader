@@ -93,6 +93,7 @@ def build(output, python_profile='production', *, candidate_runtime=None):
     command = build_command(ROOT,output,uv_binary)
     if candidate_runtime is not None:
         runtime = Path(candidate_runtime).resolve(strict=True)
+        command[-1:-1] = ['--hidden-import', 'scripts.launcher_candidate.probe']
         for source, destination in ((runtime/'tcl/tcl9.1', '_tcl_data'),
                                     (runtime/'tcl/tk9.1', '_tk_data'),
                                     (runtime/'licenses', 'candidate-licenses')):

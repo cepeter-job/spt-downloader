@@ -36,6 +36,8 @@ def package(runtime, output):
     runtime, output = runtime.resolve(strict=True), output.absolute()
     if output.exists():
         raise ValueError('candidate output must be a new directory')
+    if digest(runtime / 'inventory.json') != '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239':
+        raise ValueError('runtime inventory is not the exact qualified artifact')
     inventory = json.loads((runtime / 'inventory.json').read_text(encoding='utf-8'))
     validate_inventory(inventory, runtime)
     if Path(sys.base_prefix).resolve() != runtime:
@@ -102,6 +104,8 @@ def verify(output, report):
         raise ValueError('read-back application file set or hash mismatch')
     allowed = {'SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
                'source-selftest.json', 'worker-independence.json', 'runtime-inventory.json', 'embedded-payload.json'}
+    if digest(output / 'runtime-inventory.json') != '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239':
+        raise ValueError('read-back inventory is not the qualified runtime')
     inventory = json.loads((output / 'runtime-inventory.json').read_text(encoding='utf-8'))
     allowed.update(inventory['licenses'])
     if set(actual) != allowed:

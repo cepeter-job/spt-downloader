@@ -212,8 +212,8 @@ def self_test(report=None, candidate_report=False):
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
             if candidate_report:
-                from scripts.launcher_candidate.probe import application_probe
-                data['launcher_candidate'] = application_probe(root)
+                import importlib
+                data['launcher_candidate'] = importlib.import_module('scripts.launcher_candidate.probe').application_probe(root)
             if report:
                 report=Path(report);report.parent.mkdir(parents=True,exist_ok=True)
                 report.write_text(json.dumps(data,indent=2),encoding='utf-8')

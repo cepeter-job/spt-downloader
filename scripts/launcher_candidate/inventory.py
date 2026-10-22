@@ -119,6 +119,8 @@ def validate_candidate_report(report: dict, inventory: dict) -> None:
             raise ValueError('unsafe or incomplete candidate self-test')
     if type(report.get('frozen')) is not bool:
         raise ValueError('missing source/frozen identity')
+    if any(report.get(key) != IDENTITY[key] for key in ('python', 'tcl', 'tk')):
+        raise ValueError('self-test runtime fields disagree with candidate identity')
     proof = report.get('launcher_candidate')
     if not isinstance(proof, dict):
         raise ValueError('missing actual launcher proof')
