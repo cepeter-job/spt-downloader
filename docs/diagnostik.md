@@ -136,6 +136,30 @@ URL callback, code, state dan verifier tidak disalin. Setelah kegagalan definiti
 pemeriksaan berhenti tanpa menunggu siklus reload berikutnya. Penyebab transport
 live tetap harus dibuktikan dari kategori yang teramati pada build tersebut.
 
+Untuk `exchange_failure=fetch_exception`, `transport_failure` menambahkan
+subkategori tetap berikut. Nilai ini mempersempit pengamatan, bukan membuktikan
+penyebab jaringan, validitas password, atau keberhasilan login.
+
+| `transport_failure` | Pengamatan yang dikenali |
+|---|---|
+| `timeout` | Tipe timeout Playwright atau penanda timeout yang dikenali |
+| `tls` | Penanda kegagalan TLS/sertifikat yang dikenali |
+| `dns` | Penanda `getaddrinfo` untuk kegagalan resolusi nama |
+| `proxy` | Penanda kegagalan koneksi/autentikasi/handshake proxy yang eksplisit |
+| `connection` | Penanda koneksi ditolak, terputus, atau tidak terjangkau |
+| `context_closed` | Penanda page/context/browser ditutup atau request context dibuang |
+| `unknown` | Exception atau format yang tidak dikenali dengan aman |
+
+Pengenalan memakai tipe error Playwright dan paling banyak 512 karakter dari
+baris pertama pesan bertipe string, dengan pola yang terikat pada awal pesan.
+Isi pesan tetap hanya diproses di memori dan tidak disalin ke diagnostik. URL,
+call log, chain, header dan body tidak dipakai sebagai sumber penanda; exception
+atau nilai yang tidak dikenal tidak diubah menjadi string. Format baru atau
+ambigu tetap `unknown`. Kegagalan HTTP/redirect/callback/fulfill mempertahankan
+`exchange_failure` yang sudah ada tanpa subkategori transport tambahan.
+Aturan origin, satu percobaan, tanpa retry/redirect transport, batas waktu,
+verifikasi sesi dan prioritas Stop tetap berlaku.
+
 Fase `panel_ready`, `accordion_expand`, dan `panel_extract` memisahkan penantian
 panel, pembukaan accordion, serta pengambilan field/teks. Posisi form memakai
 `form_ordinal`; nama form atau isi field tidak dicatat. Durasi fase anak termasuk

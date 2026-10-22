@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlencode
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 from coretax_browser import CaptureCancelled
 from spt_desktop import auth, diagnostics
@@ -32,6 +33,7 @@ class Engine:
         self.posts, self.tokens, self.unknown, self.contexts = [], [], [], []
         self.redirected = []
         self.callback_frames = []
+        self.fetch_options = []
         engine = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -151,6 +153,11 @@ class Engine:
                 return getattr(self.raw, name)
 
             def fetch(self, **options):
+                engine.fetch_options.append(options.copy())
+                if isinstance(engine.route_fault, Exception):
+                    # TLS/DNS/proxy failures are injected only at the external
+                    # transport boundary; the owned browser and checker stay real.
+                    raise engine.route_fault
                 response = self.raw.fetch(**options)
                 if engine.route_fault == 'response_url_changed':
                     class ChangedResponse:
@@ -338,7 +345,81 @@ def test_failed_exchange_identifies_only_its_safe_transport_category(browser, tm
     failures = [row for row in rows if row.get('event') == 'auth.state'
                 and row.get('reason') == 'code_exchange_failed']
     assert [row.get('exchange_failure') for row in failures] == [expected]
+    if expected != 'fetch_exception':
+        assert all('transport_failure' not in row for row in failures)
     assert 'SYNTHETIC_PRIVATE_FULFILL_EXCEPTION' not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('error_type,message,expected', [
+    (PlaywrightTimeoutError, 'Synthetic timeout without transport text', 'timeout'),
+    (PlaywrightError, 'Route.fetch: Timeout 4321ms exceeded.', 'timeout'),
+    (PlaywrightError, 'Route.fetch: self-signed certificate in certificate chain', 'tls'),
+    (PlaywrightError, 'Route.fetch: getaddrinfo ENOTFOUND synthetic.invalid', 'dns'),
+    (PlaywrightError, 'apiRequestContext.fetch: getaddrinfo EAI_AGAIN synthetic.invalid', 'dns'),
+    (PlaywrightError, 'Route.fetch: net::ERR_PROXY_CONNECTION_FAILED', 'proxy'),
+    (PlaywrightError, 'Route.fetch: Socks5 Authentication failed', 'proxy'),
+    (PlaywrightError, 'Route.fetch: read ECONNRESET', 'connection'),
+    (PlaywrightError, 'Route.fetch: socket hang up (ECONNRESET)', 'connection'),
+    (PlaywrightError, 'Route.fetch: Target page, context or browser has been closed', 'context_closed'),
+    (PlaywrightError, 'Route.fetch: Request context disposed.', 'context_closed'),
+    (PlaywrightError, 'Route.fetch: Unrecognized synthetic failure', 'unknown'),
+    (RuntimeError, 'Route.fetch: read ECONNRESET', 'unknown'),
+    (PlaywrightError, 'Route.fetch: https://synthetic.invalid/ECONNRESET?token=private', 'unknown'),
+    (PlaywrightError, 'Route.fetch: Unrecognized synthetic failure\nCall log:\n - getaddrinfo ENOTFOUND private', 'unknown'),
+    (PlaywrightError, 'Route.fetch: getaddrinfo ENOTFOUNDX synthetic.invalid', 'unknown'),
+    (PlaywrightError, 'Route.fetch: ' + 'x' * 1024 + ' getaddrinfo ENOTFOUND private', 'unknown'),
+    (PlaywrightError, 'Route.fetch: socket hang up https://synthetic.invalid/ECONNRESET', 'unknown'),
+], ids=['typed-timeout', 'timeout', 'tls', 'dns', 'dns-transient', 'proxy', 'socks-proxy',
+        'connection', 'serialized-connection-code', 'closed-page', 'disposed-context', 'unknown', 'non-playwright',
+        'url-is-not-error-code', 'ignore-call-log', 'error-code-boundary', 'bounded-headline', 'socket-url-is-not-code'])
+def test_fetch_failure_reports_only_safe_transport_subcategory(browser, tmp_path, monkeypatch,
+                                                               error_type, message, expected):
+    private = 'SYNTHETIC_PRIVATE_FETCH_EXCEPTION ' + CODE + VERIFIER
+    error = error_type(message + '\n' + private)
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, route_fault=error)
+    assert result[0] == 'LOGIN_UNVERIFIED'
+    assert len(engine.posts) == 1 and engine.tokens == engine.redirected == []
+    assert len(engine.fetch_options) == 1
+    assert engine.fetch_options[0]['max_redirects'] == engine.fetch_options[0]['max_retries'] == 0
+    assert 0 < engine.fetch_options[0]['timeout'] <= 5000
+    failures = [row for row in rows if row.get('event') == 'auth.state'
+                and row.get('reason') == 'code_exchange_failed']
+    assert [row.get('exchange_failure') for row in failures] == ['fetch_exception']
+    assert [row.get('transport_failure') for row in failures] == [expected]
+    assert private not in json.dumps(rows) and message not in json.dumps(rows)
+    outcomes = [row for row in rows if row.get('event') == 'auth.result']
+    assert [row.get('reason') for row in outcomes] == ['code_exchange_failed']
+    assert outcomes[0]['blocked_requests'] == 0
+
+
+@pytest.mark.parametrize('playwright_error', [False, True], ids=['arbitrary-exception', 'non-string-message'])
+def test_fetch_diagnostics_do_not_stringify_unknown_exception_or_message(browser, tmp_path, monkeypatch,
+                                                                        playwright_error):
+    stringified = []
+    class PrivateValue:
+        def __str__(self):
+            stringified.append(True)
+            return 'SYNTHETIC_PRIVATE_TRANSPORT_VALUE'
+    class PrivateError(RuntimeError):
+        def __str__(self):
+            return str(PrivateValue())
+    error = PlaywrightError(PrivateValue()) if playwright_error else PrivateError()
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, route_fault=error)
+    assert result[0] == 'LOGIN_UNVERIFIED' and len(engine.posts) == 1 and not engine.tokens
+    assert len(engine.fetch_options) == 1
+    failures = [row for row in rows if row.get('event') == 'auth.state'
+                and row.get('reason') == 'code_exchange_failed']
+    assert [row.get('transport_failure') for row in failures] == ['unknown']
+    assert stringified == []
+    assert 'SYNTHETIC_PRIVATE_TRANSPORT_VALUE' not in json.dumps(rows)
+
+
+def test_real_connection_close_reports_connection_subcategory(browser, tmp_path, monkeypatch):
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'network_failure')
+    assert_transport_failure(engine, result, rows)
+    failures = [row for row in rows if row.get('event') == 'auth.state'
+                and row.get('reason') == 'code_exchange_failed']
+    assert [row.get('transport_failure') for row in failures] == ['connection']
 
 
 def test_failed_exchange_finishes_without_waiting_for_more_callback_attempts(browser, tmp_path, monkeypatch):
@@ -368,14 +449,15 @@ def test_visible_search_marker_cannot_override_failed_exchange(browser, tmp_path
     assert_transport_failure(engine, result, rows)
 
 
-def test_stop_after_failed_exchange_takes_precedence_over_unverified_result(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize('fault', [None, PlaywrightTimeoutError('Synthetic timeout')], ids=['http-rejection', 'fetch-timeout'])
+def test_stop_after_failed_exchange_takes_precedence_over_unverified_result(browser, tmp_path, monkeypatch, fault):
     failed = []
     def stop():
         if failed:
             raise CaptureCancelled('Synthetic stop after exchange failure')
     with pytest.raises(CaptureCancelled):
-        check(browser, tmp_path, monkeypatch, 'rejected', on_failure=lambda engine: failed.append(engine),
-              check_cancel=stop)
+        check(browser, tmp_path, monkeypatch, 'rejected' if fault is None else 'success',
+              route_fault=fault, on_failure=lambda engine: failed.append(engine), check_cancel=stop)
     assert failed and all(context.closed for context in failed[0].contexts)
     rows = [json.loads(line) for path in (tmp_path / 'diagnostics/logs').glob('*.jsonl')
             for line in path.read_text(encoding='utf-8').splitlines()]

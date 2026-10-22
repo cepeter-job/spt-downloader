@@ -192,6 +192,40 @@ def _code_exchange_callback(request, page):
         return None
 
 
+def _exchange_transport_failure(error):
+    """Reduce a trusted SDK error to a constant; never expose transport text."""
+    # This worker-only path must not load Playwright into the stdlib GUI process.
+    from playwright.sync_api import Error, TimeoutError
+    if isinstance(error, TimeoutError):
+        return 'timeout'
+    if not isinstance(error, Error):
+        return 'unknown'
+    try:
+        message = error.message
+    except Exception:
+        return 'unknown'
+    if type(message) is not str:
+        return 'unknown'
+    # Call logs can contain URLs, headers and authorization bodies. Inspect only
+    # a bounded headline, anchored to known error wording, never arbitrary tokens.
+    headline = message[:512].split('\n', 1)[0].rstrip('\r')
+    headline = re.sub(r'^(?:Route|APIRequestContext)\.fetch: ', '', headline, count=1, flags=re.IGNORECASE)
+    patterns = (
+        ('context_closed', r'(?:Target page, context or browser has been closed|Request context disposed\.?)'),
+        ('timeout', r'(?:Timeout [0-9]+ms exceeded\.?|(?:connect|read|write) ETIMEDOUT(?: .+)?)'),
+        ('tls', r'(?:self-signed certificate(?: in certificate chain)?|unable to (?:verify the first certificate|get local issuer certificate)|certificate (?:has expired|is not yet valid)|Hostname/IP does not match certificate\'s altnames: .+)'),
+        ('dns', r'getaddrinfo (?:ENOTFOUND|EAI_AGAIN)(?: .+)?'),
+        ('proxy', r'(?:net::ERR_(?:PROXY_CONNECTION_FAILED|TUNNEL_CONNECTION_FAILED|SOCKS_CONNECTION_FAILED)|Proxy connection timed out|Socks[45] (?:Authentication failed|proxy rejected connection))'),
+        # The pinned SDK appends a system code when the Node error headline
+        # does not already contain it, e.g. "socket hang up (ECONNRESET)".
+        ('connection', r'(?:(?:connect|read|write) (?:ECONNRESET|ECONNREFUSED|EPIPE|ENETUNREACH|EHOSTUNREACH)(?: .+)?|(?:socket hang up|Socket closed)(?: \(ECONNRESET\))?)'),
+    )
+    for category, pattern in patterns:
+        if re.fullmatch(pattern, headline, flags=re.IGNORECASE):
+            return category
+    return 'unknown'
+
+
 def _open_search_from_home(page,check_cancel,timeout=30000,emit=None):
     if not _at_home(page):return False
     check_cancel()
@@ -366,6 +400,7 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                     diagnostic('auth.state', 'code_exchange_allowed')
                     response = None
                     failure = None
+                    transport_failure = None
                     exception_category = 'fetch_exception'
                     try:
                         # Ordinary continuation would follow redirects outside the inspected endpoint.
@@ -389,9 +424,11 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                             route.fulfill(response=response)
                     except CaptureCancelled:
                         raise
-                    except Exception:
+                    except Exception as error:
                         # Transport exceptions can include request headers and authentication codes.
                         failure = failure or exception_category
+                        if failure == 'fetch_exception':
+                            transport_failure = _exchange_transport_failure(error)
                         exchange_failed = True
                         try:
                             route.abort()
@@ -406,7 +443,8 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                                 # Context teardown remains the fallback when response disposal races shutdown.
                                 pass
                     if failure:
-                        diagnostic('auth.state', 'code_exchange_failed', exchange_failure=failure)
+                        diagnostic('auth.state', 'code_exchange_failed', exchange_failure=failure,
+                                   transport_failure=transport_failure)
                     return
                 if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
                     blocked_requests+=1
