@@ -152,64 +152,72 @@ def test_owned_cleanup_unavailable_handle_fails_closed():
     assert result['unverified_processes'] == [{'pid': 321, 'operation': 'OpenProcess', 'winerror': 5}]
 
 
-def test_snapshot_reader_allows_atomic_windows_replace(tmp_path):
+def test_snapshot_publication_does_not_replace_open_previous_snapshot(tmp_path):
     import ctypes
     from ctypes import wintypes
-    import base64
-    import subprocess
-    import sys
-    from pathlib import Path
-    target, pending = tmp_path / 'ready.json', tmp_path / 'ready.pending'
-    target.write_text('old')
-    pending.write_text('new')
+    import json
+    from scripts.launcher_candidate import reader_host
+    publisher_type = getattr(reader_host, 'SnapshotPublisher', None)
+    assert publisher_type is not None, 'immutable snapshot publisher missing'
+    publisher = publisher_type(tmp_path)
+    first = publisher.publish({'sequence': 0, 'synthetic': 'old'})
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
     kernel.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
     kernel.CreateFileW.restype = wintypes.HANDLE
     kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
-    handle = kernel.CreateFileW(str(target), 0x80000000, 1, None, 3, 0, None)
+    handle = kernel.CreateFileW(str(first), 0x80000000, 1, None, 3, 0, None)
     assert handle != wintypes.HANDLE(-1).value
     try:
-        with pytest.raises(PermissionError) as denied: pending.replace(target)
-        assert denied.value.winerror == 5
+        second = publisher.publish({'sequence': 1, 'synthetic': 'new'})
+        assert first.name == 'ready-000.json' and second.name == 'ready-001.json'
+        assert json.loads(first.read_text()) == {'sequence': 0, 'synthetic': 'old'}
+        assert json.loads(second.read_text()) == {'sequence': 1, 'synthetic': 'new'}
     finally:
         kernel.CloseHandle(handle)
+
+
+def test_snapshot_publication_cap_fails_closed(tmp_path):
+    from scripts.launcher_candidate import reader_host
+    publisher_type = getattr(reader_host, 'SnapshotPublisher', None)
+    assert publisher_type is not None, 'immutable snapshot publisher missing'
+    publisher = publisher_type(tmp_path)
+    for sequence in range(128): publisher.publish({'sequence': sequence})
+    with pytest.raises(ValueError): publisher.publish({'sequence': 128})
+    assert len(list(tmp_path.iterdir())) == 128
+
+
+@pytest.mark.parametrize('case', ['latest', 'malformed_name', 'incomplete_json', 'oversize', 'gap', 'pending_only'])
+def test_snapshot_reader_rejects_incomplete_or_malformed_publications(tmp_path, case):
+    import base64
+    import json
+    import subprocess
+    from pathlib import Path
+    good = {'sequence': 0, 'pid': 1, 'hwnd': 2, 'tk_initialized': False, 'candidate': {}}
+    (tmp_path / 'ready-000.json').write_text(json.dumps(good))
+    if case == 'latest': (tmp_path / 'ready-001.json').write_text(json.dumps({**good, 'sequence': 1}))
+    elif case == 'malformed_name': (tmp_path / 'ready-bad.json').write_text('{}')
+    elif case == 'incomplete_json': (tmp_path / 'ready-001.json').write_text('{')
+    elif case == 'oversize': (tmp_path / 'ready-001.json').write_text(' ' * 1048577)
+    elif case == 'gap': (tmp_path / 'ready-002.json').write_text(json.dumps(good))
+    elif case == 'pending_only':
+        (tmp_path / 'ready-000.json').unlink()
+        (tmp_path / 'ready.pending').write_text('{')
     probe = Path(contracts.__file__).with_name('reader_probe.ps1')
     quoted = lambda value: "'" + str(value).replace("'", "''") + "'"
     script = r'''
-    $ErrorActionPreference='Stop'
-    $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile(PROBE, [ref]$tokens, [ref]$errors)
-    $fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'OpenSnapshot'}, $true)
-    if (-not $fn) {throw 'OpenSnapshot missing'}
+    $ErrorActionPreference='Stop'; $tokens=$null; $errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseFile(PROBE,[ref]$tokens,[ref]$errors)
+    $fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ReadSnapshot'},$true)
+    if (-not $fn) {throw 'ReadSnapshot missing'}
     Invoke-Expression $fn.Extent.Text
-    $stream=OpenSnapshot TARGET
-    try {
-        & PYTHON -c 'from pathlib import Path; import sys; Path(sys.argv[1]).replace(sys.argv[2])' PENDING TARGET
-        if ($LASTEXITCODE -ne 0) {throw 'candidate Path.replace failed with shared reader held'}
-    } finally {$stream.Dispose()}
-    '''.replace('PROBE', quoted(probe)).replace('TARGET', quoted(target)).replace('PENDING', quoted(pending)).replace('PYTHON', quoted(sys.executable))
+    $rejected=$false; $value=$null
+    try {$value=ReadSnapshot DIRECTORY} catch {$rejected=$true}
+    if (CASE -eq 'latest') {if ($rejected -or $value.sequence -ne 1) {throw 'latest snapshot not read'}}
+    elseif (CASE -eq 'pending_only') {if ($rejected -or $null -ne $value) {throw 'incomplete publication used'}}
+    elseif (-not $rejected) {throw 'malformed publication accepted'}
+    '''.replace('PROBE', quoted(probe)).replace('DIRECTORY', quoted(tmp_path)).replace('CASE', quoted(case))
     result = subprocess.run(['powershell', '-NoProfile', '-EncodedCommand', base64.b64encode(script.encode('utf-16-le')).decode()], capture_output=True)
     assert result.returncode == 0, result.stderr.decode(errors='replace')
-    assert target.read_text() == 'new'
-
-@pytest.mark.parametrize('winerror,attempts', [(32, 5), (5, 1)])
-def test_snapshot_replace_is_bounded_and_does_not_swallow_other_errors(winerror, attempts):
-    from scripts.launcher_candidate import reader_host
-    replace_snapshot = getattr(reader_host, 'replace_snapshot', None)
-    assert replace_snapshot is not None, 'bounded fixture replacement missing'
-    class Pending:
-        calls = 0
-        def replace(self, target):
-            self.calls += 1
-            error = PermissionError('synthetic detail must not be recorded')
-            error.winerror = winerror
-            raise error
-    pending = Pending()
-    waits = []
-    with pytest.raises(PermissionError): replace_snapshot(pending, None, sleep=waits.append)
-    assert pending.calls == attempts
-    assert len(waits) == attempts - 1
-
 
 def test_wrapper_records_sanitized_early_probe_exit(tmp_path):
     import json
