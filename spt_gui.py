@@ -260,7 +260,14 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description='Simple authorized Coretax to Excel desktop app')
     parser.add_argument('--self-test',action='store_true');parser.add_argument('--report',type=Path)
     parser.add_argument('--candidate-report',action='store_true',help=argparse.SUPPRESS)
+    parser.add_argument('--candidate-scenario', choices=('main', 'settings', 'selection', 'overwrite', 'progress', 'result'), help=argparse.SUPPRESS)
+    parser.add_argument('--candidate-directory', type=Path, help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
+    if args.candidate_scenario or args.candidate_directory:
+        if not args.candidate_scenario or not args.candidate_directory or args.self_test or args.candidate_report:
+            parser.error('candidate scenario requires only a new candidate directory')
+        import importlib
+        return importlib.import_module('scripts.launcher_candidate.reader_host').run(args.candidate_scenario, args.candidate_directory)
     if args.candidate_report and not args.self_test:parser.error("--candidate-report requires --self-test")
     if args.self_test:return self_test(args.report, args.candidate_report)
     with diagnostics.session(diagnostics.default_root(), 'gui'):

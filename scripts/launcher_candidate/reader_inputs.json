@@ -1,0 +1,10 @@
+{
+  "name": "NVDA",
+  "version": "2026.2",
+  "url": "https://download.nvaccess.org/releases/2026.2/nvda_2026.2.exe",
+  "sha256": "f3f8d29974a88d687b3c4809be192219ec579c5bdabcda5aaf53635288bca824",
+  "official_release": "https://www.nvaccess.org/post/nvda-2026-2/",
+  "source_commit": "f62c980589d1ac30babf68ad48177e9ad29a2e84",
+  "license": "GPL-2.0-or-later with the upstream special exceptions",
+  "license_url": "https://raw.githubusercontent.com/nvaccess/nvda/f62c980589d1ac30babf68ad48177e9ad29a2e84/copying.txt"
+}

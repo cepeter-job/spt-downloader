@@ -218,3 +218,83 @@ jobs:
           path: ${{ runner.temp }}/readback-selftest.json
           if-no-files-found: error
           retention-days: 14
+
+  readers:
+    needs: [package, application-readback]
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        reader: [NVDA, Narrator]
+        activation: [before_tk, late]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.package.outputs.application-artifact-id }}
+          path: ${{ runner.temp }}/reader-application
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: '12400037968'
+          run-id: '39718421643'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/reader-runtime
+          merge-multiple: true
+      - name: Verify exact runtime and read-back application custody
+        shell: pwsh
+        run: |
+          $runtime = "$env:RUNNER_TEMP/reader-runtime"
+          if ((Get-FileHash "$runtime/inventory.json").Hash.ToLowerInvariant() -ne '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239') { throw 'Unverified native inventory' }
+          & "$runtime/python.exe" -I -B scripts/launcher_candidate/inventory.py --root $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime custody failed' }
+          $application = "$env:RUNNER_TEMP/reader-application"
+          $manifest = Get-Content "$application/candidate-manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.head -ne $env:GITHUB_SHA -or $manifest.run_id -ne $env:GITHUB_RUN_ID) { throw 'Application provenance mismatch' }
+          foreach ($file in $manifest.files.PSObject.Properties) {
+            if ((Get-FileHash (Join-Path $application $file.Name)).Hash.ToLowerInvariant() -ne $file.Value) { throw 'Application byte mismatch' }
+          }
+      - name: Acquire official pinned portable NVDA in disposable runner context
+        if: matrix.reader == 'NVDA'
+        shell: pwsh
+        run: |
+          $readerInput = Get-Content scripts/launcher_candidate/reader_inputs.json -Raw | ConvertFrom-Json
+          Invoke-WebRequest -Uri $readerInput.license_url -OutFile "$env:RUNNER_TEMP/nvda-license.txt"
+          Invoke-WebRequest -Uri $readerInput.url -OutFile "$env:RUNNER_TEMP/nvda-installer.exe"
+          if ((Get-FileHash "$env:RUNNER_TEMP/nvda-installer.exe").Hash.ToLowerInvariant() -ne $readerInput.sha256) { throw 'NVDA acquisition digest mismatch' }
+          $installer = Start-Process "$env:RUNNER_TEMP/nvda-installer.exe" -ArgumentList @('--create-portable-silent', ('--portable-path="'+$env:RUNNER_TEMP+'\nvda-portable"')) -WindowStyle Hidden -PassThru
+          if (-not $installer.WaitForExit(90000)) { $installer.Kill(); throw 'Portable NVDA acquisition timeout' }
+          if ($installer.ExitCode -ne 0) { throw 'Portable NVDA acquisition failed' }
+      - name: Observe source and exact read-back frozen password prerequisite
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = "$env:RUNNER_TEMP/reader-evidence"
+          New-Item -ItemType Directory -Path $root | Out-Null
+          Copy-Item scripts/launcher_candidate/reader_inputs.json "$root/reader-inputs.json"
+          $custody = @{head=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;attempt=$env:GITHUB_RUN_ATTEMPT;application_artifact='${{ needs.package.outputs.application-artifact-id }}';application_sha256=(Get-FileHash "$env:RUNNER_TEMP/reader-application/SPTDownloader.exe").Hash.ToLowerInvariant()}
+          $custody | ConvertTo-Json | Set-Content "$root/custody.json"
+          foreach ($mode in @('source','frozen')) {
+            $runtime = if ($mode -eq 'source') {"$env:RUNNER_TEMP/reader-runtime/python.exe"} else {"$env:RUNNER_TEMP/reader-application/SPTDownloader.exe"}
+            powershell -NoProfile -STA -File scripts/launcher_candidate/reader_probe.ps1 -Runtime $runtime -Reader '${{ matrix.reader }}' -ActivationTiming '${{ matrix.activation }}' -NvdaPath "$env:RUNNER_TEMP/nvda-portable/nvda.exe" -OutputDirectory "$root/$mode"
+            if ($LASTEXITCODE -ne 0) { throw 'Reader probe failed before validated evidence' }
+            & "$env:RUNNER_TEMP/reader-runtime/python.exe" -B scripts/launcher_candidate/reader_report.py --directory "$root/$mode" --inventory "$env:RUNNER_TEMP/reader-runtime/inventory.json"
+            if ($LASTEXITCODE -ne 0) { throw 'Reader evidence contract failed' }
+          }
+      - name: Retain only sanitized synthetic reader evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-readers-${{ matrix.reader }}-${{ matrix.activation }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/reader-evidence/custody.json
+            ${{ runner.temp }}/reader-evidence/reader-inputs.json
+            ${{ runner.temp }}/reader-evidence/*/report.json
+            ${{ runner.temp }}/reader-evidence/*/native.json
+            ${{ runner.temp }}/reader-evidence/*/cleanup.json
+            ${{ runner.temp }}/reader-evidence/*/*-blocked.json
+          if-no-files-found: error
+          retention-days: 14

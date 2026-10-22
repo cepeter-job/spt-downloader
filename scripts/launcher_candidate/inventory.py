@@ -152,3 +152,94 @@ def candidate_resources(inventory: dict) -> dict:
     names.update(name for name in files if any(name.startswith(prefix + '/')
                  for prefix in inventory['libraries'].values()))
     return {name: files[name] for name in sorted(names)}
+
+
+READER_GATES = {'password', 'names_roles_values_states', 'focus', 'selection', 'speech_navigation'}
+PASSWORD_CHECKS = {'msaa_value', 'uia_value', 'msaa_selection', 'uia_selection',
+                   'focus_notifications', 'typing_echo', 'reader_copy', 'remap', 'reopen'}
+
+
+def validate_reader_report(report: dict, inventory: dict) -> None:
+    """Validate claims, not accessibility itself. Blocked evidence never becomes PASS."""
+    try:
+        _validate_reader_report(report, inventory)
+    except (KeyError, TypeError, AttributeError) as error:
+        raise ValueError('malformed reader evidence') from error
+
+
+def _validate_reader_report(report, inventory):
+    if report['schema'] != 1 or report['mode'] not in ('source', 'frozen'):
+        raise ValueError('invalid reader schema or execution mode')
+    if report['scenario'] not in ('main', 'settings', 'selection', 'overwrite', 'progress', 'result'):
+        raise ValueError('unknown scenario')
+    if report['activation_timing'] not in ('before_tk', 'late'):
+        raise ValueError('missing activation timing')
+    reader, ownership, candidate = report['reader'], report['ownership'], report['candidate']
+    if reader['name'] not in ('NVDA', 'Narrator') or type(reader['available']) is not bool:
+        raise ValueError('unknown reader or availability')
+    for key, expected in IDENTITY.items():
+        if type(candidate.get(key)) is not type(expected) or candidate.get(key) != expected or inventory.get(key) != expected:
+            raise ValueError('reader candidate identity mismatch')
+    if (candidate['resources'] != candidate_resources(inventory) or candidate['loaded_sha256'] !=
+            {role: inventory['files'][name] for role, name in inventory['loaded'].items()}):
+        raise ValueError('reader native/script resource mismatch')
+    evidence = report['evidence']
+    for item in evidence.values():
+        path = item['path']
+        if not isinstance(path, str) or not path or ':' in path or '\\' in path or path.startswith('/') or any(p in ('', '.', '..') for p in path.split('/')):
+            raise ValueError('external evidence path')
+        if not re.fullmatch('[0-9a-f]{64}', item['sha256']):
+            raise ValueError('missing evidence digest')
+        if any(item[key] != report[key] for key in ('mode', 'scenario', 'activation_timing')) or item['reader'] != reader['name'] or item['pid'] != ownership['pid']:
+            raise ValueError('cross-run reader evidence')
+
+    def refs(item):
+        names = item.get('evidence')
+        if not isinstance(names, list) or not names or any(name not in evidence for name in names):
+            raise ValueError('missing observation evidence')
+
+    outcomes = report['outcomes']
+    if set(outcomes) != READER_GATES:
+        raise ValueError('missing independent outcomes')
+    for item in outcomes.values():
+        status = item['status']
+        if status not in ('passed', 'failed', 'blocked', 'not_tested'):
+            raise ValueError('invalid reader outcome')
+        if status in ('passed', 'failed'): refs(item)
+        elif not isinstance(item.get('reason'), str) or not item['reason'].strip():
+            raise ValueError('missing blocked/not-tested prerequisite')
+    observations = report['password_observations']
+    exposed = any(item.get('exposed') is True for item in observations.values())
+    password_status = outcomes['password']['status']
+    if exposed and password_status != 'failed':
+        raise ValueError('password exposure cannot pass or be hidden as blocked')
+    if password_status != 'passed' and any(item['status'] == 'passed' for key, item in outcomes.items() if key != 'password'):
+        raise ValueError('general acceptance requires password gate')
+    active_claim = any(item['status'] in ('passed', 'failed') for item in outcomes.values())
+    if active_claim:
+        activation = report['activation']
+        if (reader['available'] is not True or not reader.get('version') or type(reader.get('pid')) is not int
+                or reader['pid'] <= 0 or ownership.get('windows_verified') is not True or ownership.get('isolated') is not True):
+            raise ValueError('reader unavailable or unowned')
+        if any(activation.get(k) is not True for k in ('observed', 'reader_running', 'tk_initialized')):
+            raise ValueError('reader activation unverified')
+        refs(activation)
+    if any(item['status'] == 'passed' for item in outcomes.values()):
+        for provider in ('MSAA', 'UIA'):
+            item = report['providers'][provider]
+            if item.get('observed') is not True: raise ValueError('missing provider observation')
+            refs(item)
+    if password_status == 'passed':
+        if set(observations) != PASSWORD_CHECKS:
+            raise ValueError('incomplete password observations')
+        for item in observations.values():
+            if item.get('observed') is not True or item.get('exposed') is not False:
+                raise ValueError('unverified protected password')
+            refs(item)
+    elif password_status == 'failed' and not exposed:
+        raise ValueError('password failure requires observed exposure')
+    if outcomes['speech_navigation']['status'] == 'passed' or password_status == 'passed':
+        speech = report['speech']
+        if speech.get('observed') is not True or speech.get('method') not in ('reader_output', 'human_audio_observation'):
+            raise ValueError('speech cannot be inferred from providers')
+        refs(speech)
