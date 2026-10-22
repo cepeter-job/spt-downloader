@@ -23,7 +23,7 @@ EVENTS = frozenset({
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
-    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial',
+    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout',
@@ -31,6 +31,8 @@ EVENTS = frozenset({
 ENUMS = {
     'panel_state': frozenset({'missing', 'hidden', 'outside_view', 'visible', 'ambiguous', 'unavailable'}),
     'tab_state': frozenset({'selected', 'unselected', 'unknown'}),
+    'control_kind': frozenset({'anchor', 'button', 'input', 'other', 'none'}),
+    'binding_state': frozenset({'bound', 'unbound', 'ambiguous', 'no_control'}),
     'catalog_stage': frozenset({'planning', 'readiness', 'recheck', 'reconciliation', 'restoration', 'after_inventory'}),
     'catalog_reason': frozenset({'available', 'catalog_missing', 'catalog_type',
         'catalog_language', 'catalog_checksum', 'catalog_details', 'catalog_expiry_invalid',
@@ -46,7 +48,8 @@ ENUMS = {
     'tax_kind': frozenset({'ppn', 'pph21', 'unifikasi', 'corporate', 'other'}),
     'phase': frozenset({'startup', 'runtime', 'authentication', 'inventory', 'details',
                        'detail', 'table', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
-                       'return_detail', 'list_restore', 'open_detail', 'json_observe', 'json_project'}),
+                       'return_detail', 'list_restore', 'open_detail', 'json_observe', 'json_project',
+                       'panel_ready', 'accordion_expand', 'panel_extract'}),
     'stage': frozenset({'setup', 'authentication', 'inventory', 'details', 'export',
                        'publish', 'finished', 'login_check', 'selection', 'overwrite'}),
     'operation': frozenset({'export', 'login_check', 'offline', 'resume'}),
@@ -60,6 +63,8 @@ ENUMS = {
     'method': frozenset({'GET', 'HEAD', 'POST', 'OTHER'}),
     'resource_type': frozenset({'document', 'xhr', 'fetch', 'other'}),
     'request_kind': frozenset({'code_exchange', 'other'}),
+    'exchange_failure': frozenset({'fetch_exception', 'http_rejected', 'redirect_rejected',
+        'response_url_changed', 'callback_changed', 'fulfill_exception'}),
     'reason': frozenset({'waiting_redirect', 'waiting_form', 'login_form_ready',
         'existing_session', 'existing_home', 'origin_blocked', 'origin_mismatch',
         'challenge', 'unsafe_form', 'form_changed', 'readiness_timeout',
@@ -67,7 +72,7 @@ ENUMS = {
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed',
         'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
@@ -143,7 +148,7 @@ def _safe_fields(fields):
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)
-    for name in ('headless', 'accepted', 'submitted', 'cached', 'panel_controlled'):
+    for name in ('headless', 'accepted', 'submitted', 'cached', 'panel_controlled', 'href_present', 'handler_present'):
         if type(fields.get(name)) is bool:
             result[name] = fields[name]
     return result

@@ -24,9 +24,10 @@ FORM = '<form method="post" action="/login"><input name="username"><input type="
 
 
 class Engine:
-    def __init__(self, browser, case='success', app='home', *, login_response_delay=0):
+    def __init__(self, browser, case='success', app='home', *, login_response_delay=0, route_fault=None):
         self.browser, self.case, self.app = browser, case, app
         self.login_response_delay = login_response_delay
+        self.route_fault = route_fault
         self.chromium = self
         self.posts, self.tokens, self.unknown, self.contexts = [], [], [], []
         self.redirected = []
@@ -141,7 +142,38 @@ class Engine:
                 self.callback_frames.append('owned' if request.frame == page.main_frame else (
                     'iframe' if request.frame.parent_frame is not None else 'popup'))
         raw.on('request', observe)
-        state = SimpleNamespace(pages=[page], route=raw.route, closed=False)
+        class FaultRoute:
+            """Inject boundary faults after the actual synthetic HTTP exchange."""
+            def __init__(self, route):
+                self.raw = route
+
+            def __getattr__(self, name):
+                return getattr(self.raw, name)
+
+            def fetch(self, **options):
+                response = self.raw.fetch(**options)
+                if engine.route_fault == 'response_url_changed':
+                    class ChangedResponse:
+                        url = engine.coretax + '/synthetic-unapproved-response'
+
+                        def __getattr__(self, name):
+                            return getattr(response, name)
+                    return ChangedResponse()
+                if engine.route_fault == 'callback_changed':
+                    page.evaluate('(path)=>history.replaceState(null,"",path)', auth.HOME_PATH)
+                return response
+
+            def fulfill(self, **options):
+                if engine.route_fault == 'fulfill_exception':
+                    raise RuntimeError('SYNTHETIC_PRIVATE_FULFILL_EXCEPTION ' + CODE + VERIFIER)
+                return self.raw.fulfill(**options)
+
+        engine = self
+        def install_guard(pattern, handler):
+            def guarded(route):
+                handler(FaultRoute(route) if self.route_fault and route.request.url == self.token else route)
+            raw.route(pattern, guarded)
+        state = SimpleNamespace(pages=[page], route=install_guard, closed=False)
         def close():
             state.closed = True
             raw.close()
@@ -193,7 +225,8 @@ class Engine:
         return state
 
 
-def check(browser, tmp_path, monkeypatch, case='success', app='home', *, login_response_delay=0, timeout=None):
+def check(browser, tmp_path, monkeypatch, case='success', app='home', *, login_response_delay=0, timeout=None,
+          route_fault=None, on_failure=None, check_cancel=lambda: None):
     reads = []
     def saved(origin):
         reads.append(origin)
@@ -203,14 +236,22 @@ def check(browser, tmp_path, monkeypatch, case='success', app='home', *, login_r
         # The connection-close fault is exercised only after a valid token POST
         # reaches the server; give that transport the existing asynchronous budget.
         timeout = ASYNC_LOGIN_TIMEOUT if case in ('success', 'two_apps', 'replay', 'network_failure') else 3
-    with Engine(browser, case, app, login_response_delay=login_response_delay) as engine:
+    with Engine(browser, case, app, login_response_delay=login_response_delay, route_fault=route_fault) as engine:
         monkeypatch.setattr(auth, 'CORETAX_ORIGIN', engine.coretax)
         monkeypatch.setattr(auth, 'SEARCH_URL', engine.search)
         monkeypatch.setattr(auth, 'ALLOWED_ORIGINS', (SATU, engine.coretax))
-        with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
-            result = auth.check_saved_credentials(engine, tmp_path, SATU, ACCOUNT, 'msedge', True,
-                                                 lambda: None, timeout=timeout)
-            assert log.flush()
+        with monkeypatch.context() as scoped:
+            record = diagnostics.record
+            def observe(event, **fields):
+                recorded = record(event, **fields)
+                if event == 'auth.state' and fields.get('reason') == 'code_exchange_failed' and on_failure:
+                    on_failure(engine)
+                return recorded
+            scoped.setattr(diagnostics, 'record', observe)
+            with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+                result = auth.check_saved_credentials(engine, tmp_path, SATU, ACCOUNT, 'msedge', True,
+                                                     check_cancel, timeout=timeout)
+                assert log.flush()
     text = '\n'.join(p.read_text(encoding='utf-8') for p in (tmp_path / 'diagnostics/logs').glob('*.jsonl'))
     for private in (CODE, STATE, VERIFIER, ACCOUNT, PASSWORD, engine.token):
         assert private not in text and private not in result[1]
@@ -280,6 +321,67 @@ def test_code_exchange_exception_does_not_authorize_other_posts(browser, tmp_pat
 def test_rejected_code_exchange_is_not_success_or_retried(browser, tmp_path, monkeypatch):
     engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'rejected')
     assert result[0] == 'LOGIN_UNVERIFIED' and len(engine.tokens) == len(engine.posts) == 1
+
+
+@pytest.mark.parametrize('case,fault,expected', [
+    ('network_failure', None, 'fetch_exception'),
+    ('rejected', None, 'http_rejected'),
+    ('redirect_same_302', None, 'redirect_rejected'),
+    ('success', 'response_url_changed', 'response_url_changed'),
+    ('success', 'callback_changed', 'callback_changed'),
+    ('success', 'fulfill_exception', 'fulfill_exception'),
+])
+def test_failed_exchange_identifies_only_its_safe_transport_category(browser, tmp_path, monkeypatch, case, fault, expected):
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, case, route_fault=fault,
+                                      timeout=ASYNC_LOGIN_TIMEOUT)
+    assert_transport_failure(engine, result, rows)
+    failures = [row for row in rows if row.get('event') == 'auth.state'
+                and row.get('reason') == 'code_exchange_failed']
+    assert [row.get('exchange_failure') for row in failures] == [expected]
+    assert 'SYNTHETIC_PRIVATE_FULFILL_EXCEPTION' not in json.dumps(rows)
+
+
+def test_failed_exchange_finishes_without_waiting_for_more_callback_attempts(browser, tmp_path, monkeypatch):
+    failed = []
+    waits_after_failure = []
+    def sleep(seconds):
+        if failed:
+            waits_after_failure.append(seconds)
+        time.sleep(seconds)
+    # Keep real browser/time behavior; observe only the checker's wait boundary.
+    monkeypatch.setattr(auth, 'time', SimpleNamespace(monotonic=time.monotonic, sleep=sleep))
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'rejected',
+                                      on_failure=lambda engine: failed.append(True))
+    assert_transport_failure(engine, result, rows)
+    assert failed and waits_after_failure == [], 'A definitive failure must end the check before another polling wait'
+
+
+def test_visible_search_marker_cannot_override_failed_exchange(browser, tmp_path, monkeypatch):
+    def show_marker(engine):
+        # A marker becomes visible after the failed exchange, in the actual owned
+        # browser page. The checker must retain the prior definitive failure.
+        engine.contexts[0].pages[0].evaluate('''(path)=>{
+            history.replaceState(null,"",path);
+            document.body.innerHTML='<input id="ObjectPermitNumber">';
+        }''', '/returnsheets/id-ID/taxpayer-search')
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'rejected', on_failure=show_marker)
+    assert_transport_failure(engine, result, rows)
+
+
+def test_stop_after_failed_exchange_takes_precedence_over_unverified_result(browser, tmp_path, monkeypatch):
+    failed = []
+    def stop():
+        if failed:
+            raise CaptureCancelled('Synthetic stop after exchange failure')
+    with pytest.raises(CaptureCancelled):
+        check(browser, tmp_path, monkeypatch, 'rejected', on_failure=lambda engine: failed.append(engine),
+              check_cancel=stop)
+    assert failed and all(context.closed for context in failed[0].contexts)
+    rows = [json.loads(line) for path in (tmp_path / 'diagnostics/logs').glob('*.jsonl')
+            for line in path.read_text(encoding='utf-8').splitlines()]
+    outcomes = [row for row in rows if row.get('event') == 'auth.result']
+    assert [row.get('status') for row in outcomes] == ['CANCELLED']
+    assert [row.get('reason') for row in outcomes] == ['cancelled']
 
 
 @pytest.mark.parametrize('case', ['redirect_same_302', 'redirect_foreign_303', 'redirect_same_307', 'redirect_same_308',

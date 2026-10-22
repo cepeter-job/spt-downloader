@@ -19,6 +19,7 @@ Catat build/commit, run ID dan artifact ID bila dari GitHub, profil Python, tang
 - [ ] GUI dapat dibuka tanpa administrator dan persiapan runtime selesai atau menampilkan error yang dapat ditindaklanjuti.
 - [ ] Akun/password dimasukkan hanya pada dialog lokal. Tidak muncul pada preferensi, pesan GUI, atau log yang akan dibagikan.
 - [ ] Bila Cek login dipakai, pemeriksaan memakai sesi baru dan tidak memulai ekspor. Catat apakah password benar-benar diuji atau hanya SSO yang sudah siap.
+- [ ] Jika pertukaran kode gagal, Cek login berhenti sebagai belum terverifikasi tanpa menunggu reload berulang. Catat hanya kategori `exchange_failure` dan identitas build; jangan salin URL callback atau parameter autentikasi.
 - [ ] CAPTCHA/MFA diselesaikan langsung oleh pengguna. Form yang tidak dikenali memerlukan login manual; tidak ada percobaan menebak tombol submit.
 - [ ] Setelah login manual, halaman pencarian dengan kontrol NPWP terlihat dan pekerjaan berlanjut segera setelah siap.
 - [ ] Pembatalan Cek login menghentikan proses miliknya sebelum pengaturan ditutup.
@@ -26,7 +27,7 @@ Catat build/commit, run ID dan artifact ID bila dari GitHub, profil Python, tang
 ## Inventaris dan detail
 
 - [ ] NPWP serta nama wajib pajak pada hasil pencarian cocok dengan scope yang diizinkan.
-- [ ] Daftar status yang tersedia telah dibaca dan setiap jumlah sumber cocok dengan hasil pemindaian yang tercatat di Audit.
+- [ ] Inventaris baru hanya membaca SPT Dilaporkan; daftar arsip dan status lain tidak dipindai. Jumlah sumber Dilaporkan cocok dengan pemindaian pada Audit. Checkpoint lama tetap menyatakan cakupan asalnya.
 - [ ] Ambil sampel minimal satu SPT per jenis yang ada, masa yang berbeda bila tersedia, serta pembetulan yang memiliki ID berbeda. Gunakan data yang memang tersedia, bukan membuat jenis/masa baru.
 - [ ] Sampel View membuka wajib pajak dan SPT yang benar; metadata, masa/tahun, status, dan identitas pembetulan cocok dengan halaman sumber.
 - [ ] Tab, field, dan tabel yang didukung terambil, termasuk halaman tabel berikutnya. Footer/totals tidak berulang sebagai baris tambahan karena paginasi.
@@ -56,6 +57,10 @@ Kegagalan file terkunci atau listrik padam tidak perlu dibuat pada data nyata. G
 - [ ] Setiap jenis memakai workbook per **masa/tahun dan Model SPT literal**: Normal dan pembetulan berbeda tidak berbagi workbook. Semua form dalam satu workbook milik model itu; folder jenis serta tautan relatif sesuai [kontrak output](arsitektur.md#kontrak-excel-dan-transaksi-publikasi). Jenis/masa yang tidak ada tidak dibuat.
 - [ ] Workbook SPT hanya berisi form, tanpa Ringkasan/Daftar SPT/Audit/banner/header/footer cetak tambahan; field sumber dan header kolom tetap ada.
 - [ ] NPWP/ID dan nol awal tetap literal. Slot moneter terverifikasi mengikuti nilai/format numerik yang didukung; nilai malformed atau presisi tidak aman tidak ditebak. Cocokkan kembali dengan sumber, bukan hanya tampilan sel.
+- [ ] Pada Badan yang teramati, rentang akuntansi/persentase yang disetujui tampil sesuai; L2 memakai pecahan persentase numerik, dan pengurang akumulasi penyusutan L1-D tampil negatif dengan nilai sumber tetap tersimpan.
+- [ ] Total L9 kelompok LAINNYA terikat ke tabel yang benar pada capture baru yang menyimpan pemilik kelompok. Capture lama tanpa bukti pemilik tetap dilaporkan belum terpetakan.
+- [ ] L11-B menampilkan label DER, referensi total rata-rata utang/modal, serta rasio dua desimal yang dihitung Excel. Periksa referensi ketika tabel tumbuh; operand hilang/tidak aman atau modal nol tidak menghasilkan rasio fiktif dan memiliki alasan PARTIAL pada Audit.
+- [ ] Blok tambahan yang dihilangkan dari L2/L3/L4/L11-A/L11-B tidak menghilangkan checkpoint atau hitungan yang belum terpetakan pada Audit.
 - [ ] Tautan indeks resume menuju workbook, lembar, dan pembetulan yang tepat; SPT tidak diberi backlink generik ke resume.
 - [ ] Pada scope yang sama, hanya resume yang sudah ada diperbarui tanpa dialog; SPT/PDF terpilih yang sudah ada tetap meminta consent. Penolakan membatalkan publikasi tanpa mengubah resume atau file lama.
 - [ ] Salinan seluruh folder ke lokasi uji lain tetap memiliki tautan relatif yang berfungsi tanpa mengganti nama berkas.

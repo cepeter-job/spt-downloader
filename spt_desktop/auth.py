@@ -324,6 +324,9 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
     coretax_blocked_after_submit = False
     exchanged_callbacks = set()
     exchange_failed = False
+    exchange_failure_result = ('LOGIN_UNVERIFIED',
+        'Pertukaran kode login Satu ke Coretax belum berhasil; sesi belum terverifikasi. '
+        'Tidak ada percobaan ulang otomatis.', 'code_exchange_failed')
     exchange_deadline = 0
     categories = {CORETAX_ORIGIN: 'coretax', ALLOWED_ORIGINS[0]: 'satu'}
     def diagnostic(event, reason, **fields):
@@ -340,6 +343,9 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
         diagnostics.record(event, operation='login_check', phase='authentication',
             expected_origin=categories[origin], observed_origin=current, reason=reason, **fields)
     def finish(status, message, reason):
+        check_cancel()
+        if exchange_failed:
+            status, message, reason = exchange_failure_result
         diagnostic('auth.result', reason, status=status, submitted=submitted, blocked_requests=blocked_requests)
         return status, message
     with temporary_profile(root,'login-check') as fresh:
@@ -353,25 +359,39 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                 target=_origin(request.url)
                 callback = (_code_exchange_callback(request, page)
                             if submitted and origin == LOGIN_ORIGIN and target in ALLOWED_ORIGINS else None)
-                if callback and callback not in exchanged_callbacks and time.monotonic() < exchange_deadline:
+                if (not exchange_failed and callback and callback not in exchanged_callbacks
+                        and time.monotonic() < exchange_deadline):
                     check_cancel()
                     exchanged_callbacks.add(callback)  # Consume before transport, including failed exchanges.
                     diagnostic('auth.state', 'code_exchange_allowed')
                     response = None
+                    failure = None
+                    exception_category = 'fetch_exception'
                     try:
                         # Ordinary continuation would follow redirects outside the inspected endpoint.
                         remaining = max(1, min(5000, int((exchange_deadline - time.monotonic()) * 1000)))
                         response = route.fetch(max_redirects=0, max_retries=0, timeout=remaining)
                         check_cancel()
-                        if (300 <= response.status < 400 or response.url != request.url
-                                or _code_exchange_callback(request, page) != callback):
+                        if 300 <= response.status < 400:
+                            failure = 'redirect_rejected'
+                        elif response.url != request.url:
+                            failure = 'response_url_changed'
+                        elif _code_exchange_callback(request, page) != callback:
+                            failure = 'callback_changed'
+                        elif not 200 <= response.status < 300:
+                            failure = 'http_rejected'
+                        if failure:
                             exchange_failed = True
+                        if failure in ('redirect_rejected', 'response_url_changed', 'callback_changed'):
                             route.abort()
                         else:
-                            exchange_failed = exchange_failed or not 200 <= response.status < 300
+                            exception_category = 'fulfill_exception'
                             route.fulfill(response=response)
+                    except CaptureCancelled:
+                        raise
                     except Exception:
                         # Transport exceptions can include request headers and authentication codes.
+                        failure = failure or exception_category
                         exchange_failed = True
                         try:
                             route.abort()
@@ -385,7 +405,8 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
                             except Exception:
                                 # Context teardown remains the fallback when response disposal races shutdown.
                                 pass
-                    if exchange_failed:diagnostic('auth.state', 'code_exchange_failed')
+                    if failure:
+                        diagnostic('auth.state', 'code_exchange_failed', exchange_failure=failure)
                     return
                 if target not in ALLOWED_ORIGINS or (request.method not in ('GET','HEAD') and target!=origin):
                     blocked_requests+=1
@@ -452,24 +473,33 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
             opened_search=False
             while time.monotonic()<deadline:
                 check_cancel()
-                if authenticated(page):
+                if exchange_failed:return finish(*exchange_failure_result)
+                ready = authenticated(page)
+                # Sync browser calls can dispatch the exchange route while checking
+                # a marker. A late marker must not overwrite that exchange failure.
+                check_cancel()
+                if exchange_failed:return finish(*exchange_failure_result)
+                if ready:
                     return finish('LOGIN_OK','Login berhasil; kredensial tersimpan terverifikasi.','verified')
                 if not opened_search and _at_home(page):
                     diagnostic('auth.state', 'home_detected')
                     remaining=max(1,int((deadline-time.monotonic())*1000))
                     opened_search=_open_search_from_home(page,check_cancel,timeout=min(30000,remaining))
+                    check_cancel()
+                    if exchange_failed:return finish(*exchange_failure_result)
                     if opened_search:diagnostic('auth.state', 'search_opened')
                     continue
-                if _has_challenge(page):
+                challenge = _has_challenge(page)
+                check_cancel()
+                if exchange_failed:return finish(*exchange_failure_result)
+                if challenge:
                     return finish('LOGIN_MANUAL','CAPTCHA/MFA diperlukan setelah login; belum dapat menyatakan kredensial valid.','challenge')
                 if _origin(page.url) not in ALLOWED_ORIGINS:
                     return finish('LOGIN_BLOCKED','Login beralih ke origin yang tidak disetujui; hubungi administrator.','origin_blocked')
                 time.sleep(0.1)
             check_cancel()
             if exchange_failed:
-                return finish('LOGIN_UNVERIFIED',
-                    'Pertukaran kode login Satu ke Coretax belum berhasil; sesi belum terverifikasi. '
-                    'Tidak ada percobaan ulang otomatis.', 'code_exchange_failed')
+                return finish(*exchange_failure_result)
             if coretax_blocked_after_submit:
                 return finish('LOGIN_UNVERIFIED',
                     'Login belum terverifikasi. Pemeriksa memblokir permintaan lanjutan ke Coretax '

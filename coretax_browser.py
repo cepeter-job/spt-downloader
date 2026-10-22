@@ -79,7 +79,7 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  if(name==='L1-D' && groups.length!==1) return null;
  if(name==='L9'){
   const inner=component.endsWith('grid2')?['PERMANEN','TIDAK PERMANEN']:
-   ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA'];
+   ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA','KELOMPOK LAINNYA'];
   if(groups.length!==2 || !inner.includes(groups[1])) return null;
  }
  return {form:name,component,groups};
@@ -412,8 +412,9 @@ def _ppn_catalog_ready(page, check_cancel=None):
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
     _check_cancel(check_cancel)
-    page.locator('.main-content').wait_for(timeout=45000)
-    wait_idle(page)
+    with diagnostics.measure('panel_ready', form_ordinal=1):
+        page.locator('.main-content').wait_for(timeout=45000)
+        wait_idle(page)
     root = page.locator('.main-content').first
     sections = []
     errors = []
@@ -427,18 +428,20 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
     def capture_panel(panel, name):
         nonlocal financial_attempted
         # Accordion hanya membuka isi; jangan klik tombol aksi yang belum dikenali.
-        expanders = panel.locator('.p-accordion-header a[aria-expanded=false]').element_handles()
-        try:
-            for expander in expanders:
-                _check_cancel(check_cancel)
-                expander.evaluate('(e)=>e.click()')
-        finally:
-            for expander in expanders:
-                expander.dispose()
-        wait_idle(page)
+        with diagnostics.measure('accordion_expand', form_ordinal=len(sections) + 1):
+            expanders = panel.locator('.p-accordion-header a[aria-expanded=false]').element_handles()
+            try:
+                for expander in expanders:
+                    _check_cancel(check_cancel)
+                    expander.evaluate('(e)=>e.click()')
+            finally:
+                for expander in expanders:
+                    expander.dispose()
+            wait_idle(page)
         if panel.locator('.p-accordion-header a[aria-expanded=false]').count():
             errors.append({'object': name, 'message': 'Some accordion sections remain collapsed; their content could not be fully captured'})
-        section = {'name': name, 'fields': panel.evaluate(FIELDS_JS), 'text': panel.inner_text(), 'tables': []}
+        with diagnostics.measure('panel_extract', form_ordinal=len(sections) + 1):
+            section = {'name': name, 'fields': panel.evaluate(FIELDS_JS), 'text': panel.inner_text(), 'tables': []}
         tables = panel.locator('table')
         for i in range(tables.count()):
             _check_cancel(check_cancel)
@@ -498,24 +501,25 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if tab.evaluate('(e)=>e.closest(\"li\").classList.contains(\"p-disabled\")||e.getAttribute(\"aria-disabled\")===\"true\"'):
                     continue
                 name = prefix + tab.inner_text().strip()
-                tab.evaluate('(e)=>e.click()')
-                wait_idle(page)
-                panel_id = tab.get_attribute('aria-controls')
-                if panel_id:
-                    panel = view.locator('[id=' + repr(panel_id) + ']')
-                else:
-                    panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])').first
-                wait_started = time.monotonic()
-                deadline = wait_started + DETAIL_PANEL_TIMEOUT
-                while True:
-                    _check_cancel(check_cancel)
-                    try:
-                        panel.wait_for(state='visible', timeout=100)
-                        break
-                    except PlaywrightTimeoutError:
-                        if time.monotonic() >= deadline:
-                            _record_panel_timeout(view, panel_id, (time.monotonic() - wait_started) * 1000)
-                            raise
+                with diagnostics.measure('panel_ready', form_ordinal=len(sections) + 1):
+                    tab.evaluate('(e)=>e.click()')
+                    wait_idle(page)
+                    panel_id = tab.get_attribute('aria-controls')
+                    if panel_id:
+                        panel = view.locator('[id=' + repr(panel_id) + ']')
+                    else:
+                        panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])').first
+                    wait_started = time.monotonic()
+                    deadline = wait_started + DETAIL_PANEL_TIMEOUT
+                    while True:
+                        _check_cancel(check_cancel)
+                        try:
+                            panel.wait_for(state='visible', timeout=100)
+                            break
+                        except PlaywrightTimeoutError:
+                            if time.monotonic() >= deadline:
+                                _record_panel_timeout(view, panel_id, (time.monotonic() - wait_started) * 1000)
+                                raise
                 _check_cancel(check_cancel)
                 capture_panel(panel, name)
             except Exception as exc:
@@ -799,7 +803,6 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
         row.get_by_role('button', name='Pilih', exact=True).evaluate('(e)=>e.click()')
         observer.wait(before)
         taxpayer_id = list_taxpayer_id(page.url)
-        sources.append({'url': urldefrag(page.url).url, 'label': 'SPT Belum Disampaikan'})
         links = page.locator('a[href]').evaluate_all('(els)=>els.map(e=>({href:e.getAttribute(\"href\"),label:e.innerText.trim()}))')
         for link in links:
             _check_cancel(check_cancel)
@@ -809,11 +812,12 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 linked_taxpayer = list_taxpayer_id(url)
             except RuntimeError:
                 continue
-            if linked_taxpayer == taxpayer_id:
+            if (linked_taxpayer == taxpayer_id and link['label'] == 'SPT Dilaporkan'
+                    and urlparse(url).path.rstrip('/') == '/returnsheets/id-ID/submitted-returnsheets/' + taxpayer_id):
                 if url not in [s['url'] for s in sources]:
                     sources.append({'url': url, 'label': link['label']})
-        if len(sources) == 1:
-            errors.append({'object': 'Status navigation', 'message': 'No other SPT status lists discovered; refusing to certify all-SPT completeness'})
+        if len(sources) != 1:
+            raise RuntimeError('No unique inspected submitted SPT list; refusing inventory capture')
         retry_missing_catalog = False
         try:
             diagnostics.record('catalog.checkpoint', catalog_stage='planning')
@@ -844,7 +848,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
             submitted = (urlparse(source['url']).path.startswith('/returnsheets/id-ID/submitted-returnsheets/')
                          and source['label'] == 'SPT Dilaporkan')
             if retry_missing_catalog and submitted:
-                # Earlier status navigation may populate the cache. Retry once,
+                # The landing page may finish populating its cache. Retry once,
                 # before this source starts; never rewrite completed evidence.
                 retry_missing_catalog = False
                 diagnostics.record('catalog.checkpoint', catalog_stage='readiness')
@@ -889,8 +893,10 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                         InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
                 before = observer.sequence
                 page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
-                if list_taxpayer_id(page.url) != taxpayer_id:
-                    raise RuntimeError('Status navigation changed the selected taxpayer; refusing capture')
+                if (list_taxpayer_id(page.url) != taxpayer_id
+                        or urlparse(page.url).path != urlparse(source['url']).path
+                        or urlparse(page.url).query != urlparse(source['url']).query):
+                    raise RuntimeError('Submitted navigation changed the selected list or taxpayer; refusing capture')
                 response = observer.wait(before)
                 entry['total'] = response['total']
                 table = page.locator('.main-content table').first
@@ -1051,6 +1057,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                       'result': 'RECONCILED', 'note': 'Same RecordId appears in multiple status lists. Retained once; all source occurrences preserved. Distinct amendments retain distinct identifiers.'})
     result = {'npwp': npwp, 'year': year, 'year_basis': basis, 'taxpayer_name': taxpayer_name,
               'records': unique, 'audit': audit, 'errors': errors, 'sources': sources,
+              'scope_description': 'Hanya SPT Dilaporkan dalam tahun pilihan; seluruh jenis dan pembetulan yang teramati pada daftar tersebut.',
               'inventory_complete': bool(sources) and not errors and all(e['result'] == 'RECONCILED' for e in audit)}
     (folder / 'inventory.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     # Observe late cache availability before the selection deadline starts.

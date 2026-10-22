@@ -126,6 +126,28 @@ bukan URL. Code, state, verifier PKCE, token, header, dan body tetap tidak dicat
 Pertukaran kode yang diizinkan belum membuktikan login berhasil: hasil akhir
 tetap berasal dari `auth.result` dan marker pencarian yang terlihat.
 
+## Pengamatan tambahan login, panel, dan PDF
+
+Pada `auth.state` dengan alasan `code_exchange_failed`, `exchange_failure`
+membedakan `fetch_exception`, `http_rejected`, `redirect_rejected`,
+`response_url_changed`, `callback_changed`, dan `fulfill_exception`.
+Semua nilai berasal dari enum tetap; pesan exception, kode HTTP/body respons,
+URL callback, code, state dan verifier tidak disalin. Setelah kegagalan definitif,
+pemeriksaan berhenti tanpa menunggu siklus reload berikutnya. Penyebab transport
+live tetap harus dibuktikan dari kategori yang teramati pada build tersebut.
+
+Fase `panel_ready`, `accordion_expand`, dan `panel_extract` memisahkan penantian
+panel, pembukaan accordion, serta pengambilan field/teks. Posisi form memakai
+`form_ordinal`; nama form atau isi field tidak dicatat. Durasi fase anak termasuk
+di dalam `detail`, bukan tambahan waktu yang boleh dijumlahkan kembali.
+
+`pdf.discovery` mencatat jumlah tabel lampiran/kontrol, kategori kontrol
+(`anchor`, `button`, `input`, `other`, `none`), keberadaan href/handler sebagai boolean,
+dan hasil binding (`bound`, `unbound`, `ambiguous`, `no_control`). Tidak ada
+nama file, href, HTML, label bebas, atau isi lampiran dalam event. Hasil ini
+tidak memberi izin klik tambahan: kontrol yang belum didukung tetap PARTIAL.
+Capture lama tanpa struktur kontrol tidak dapat dipakai untuk menebak endpoint.
+
 ## Batas penyimpanan dan kegagalan
 
 Ukuran file maksimal 1 MiB, maksimal tiga segmen per session. Retensi tujuh hari dan anggaran 32 file pada folder log; file regular milik logger yang tidak aktif dibersihkan paling tua dahulu. File asing, hardlink, symlink/reparse dan session aktif tidak dihapus. Jika kapasitas tidak dapat direklamasi dengan aman, logger tidak menambah file.

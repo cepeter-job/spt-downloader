@@ -35,6 +35,8 @@ def select_records(run, selected_ids):
     selected['selection'] = {'inventory_count': len(records),
                              'selected_ids': [record['record_id'] for record in selected['records']]}
     selected['scope_description'] = f"Pilihan pengguna: {len(chosen)} dari {len(records)} SPT teramati."
+    if run.get('scope_description'):
+        selected['scope_description'] += ' ' + run['scope_description']
     # Details must establish completeness again for this explicitly declared subset.
     selected['complete'] = False
     selected.pop('output_files', None)
