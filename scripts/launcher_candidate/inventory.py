@@ -107,3 +107,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def validate_candidate_report(report: dict, inventory: dict) -> None:
+    """Require exact launcher proof independently of the worker profile."""
+    raise NotImplementedError('candidate report validation is not implemented')

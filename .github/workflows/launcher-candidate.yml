@@ -25,7 +25,7 @@ jobs:
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
       - name: Synthetic inventory contract
         shell: pwsh
-        run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
+        run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py tests/test_launcher_candidate_package.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
   native:
     needs: inventory
     outputs:
@@ -109,7 +109,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'uv candidate environment failed' }
           uv pip sync --python "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" --require-hashes --only-binary :all: locks/build.txt
           if ($LASTEXITCODE -ne 0) { throw 'Locked candidate build environment failed' }
-          & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -B -m pytest tests/test_launcher_candidate_inventory.py -q --basetemp "$env:RUNNER_TEMP/standalone-inventory-tests"
+          & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -B -m pytest tests/test_launcher_candidate_inventory.py tests/test_launcher_candidate_package.py -q --basetemp "$env:RUNNER_TEMP/standalone-inventory-tests"
           if ($LASTEXITCODE -ne 0) { throw 'Candidate interpreter inventory tests failed' }
           & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -I -B -m PyInstaller --version
           if ($LASTEXITCODE -ne 0) { throw 'Candidate PyInstaller import failed' }
@@ -122,3 +122,4 @@ jobs:
           path: ${{ runner.temp }}/standalone-evidence/
           if-no-files-found: error
           retention-days: 14
+
