@@ -1,0 +1,80 @@
+name: UI delivery diagnostics
+
+on:
+  push:
+    branches: [feat/ui-delivery-completion]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-delivery-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  settings:
+    name: Settings behavior and native UI evidence
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          python-version: '3.14.8'
+          enable-cache: true
+          cache-python: true
+          save-cache: false
+          cache-dependency-glob: locks/test.txt
+      - name: Prepare exact synthetic test runtime
+        shell: pwsh
+        run: |
+          python -I -S scripts/ci_python_cache.py --python-version 3.14.8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python 3.14.8+gil .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Exercise Settings decisions
+        id: settings
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe -m pytest tests/test_desktop_settings_decisions.py tests/test_desktop_ui_views.py tests/test_desktop_ui_theme.py tests/test_desktop_dialog_readiness.py tests/test_desktop_build.py tests/test_ci_artifacts.py -q --basetemp "$env:RUNNER_TEMP/ui-settings-tests" --junitxml "$env:RUNNER_TEMP/ui-settings-results.xml" -o junit_logging=no -o junit_log_passing_tests=false
+          exit $LASTEXITCODE
+      - name: Measure matched dialog baseline and candidate
+        if: steps.settings.outcome == 'success'
+        shell: pwsh
+        run: |
+          git worktree add --detach "$env:RUNNER_TEMP/ui-baseline" d402b98a1a534f761e60500fc1cc17f367461298
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .venv/Scripts/python.exe scripts/ui_delivery_performance.py --baseline "$env:RUNNER_TEMP/ui-baseline" --baseline-revision d402b98a1a534f761e60500fc1cc17f367461298 --candidate "$env:GITHUB_WORKSPACE" --candidate-revision "$env:GITHUB_SHA" --trace --out "$env:RUNNER_TEMP/ui-performance"
+          exit $LASTEXITCODE
+      - name: Inspect native display and accessibility
+        if: steps.settings.outcome == 'success'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -STA -File scripts/ui_delivery_accessibility.ps1 -Python .venv/Scripts/python.exe -OutputDirectory "$env:RUNNER_TEMP/ui-accessibility" -RequestLargeDisplay -IncludeHighContrast *> "$env:RUNNER_TEMP/ui-accessibility-process.txt"
+          $sptDiagnosticExit = $LASTEXITCODE
+          $sptDiagnosticExit | Set-Content "$env:RUNNER_TEMP/ui-accessibility-exit.txt"
+          Get-Content "$env:RUNNER_TEMP/ui-accessibility-process.txt"
+          exit $sptDiagnosticExit
+      - name: Preserve synthetic results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ui-delivery-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ui-settings-results.xml
+            ${{ runner.temp }}/ui-performance
+            ${{ runner.temp }}/ui-accessibility
+            ${{ runner.temp }}/ui-accessibility-process.txt
+            ${{ runner.temp }}/ui-accessibility-exit.txt
+          if-no-files-found: error
+          retention-days: 14

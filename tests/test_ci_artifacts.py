@@ -33,7 +33,7 @@ def artifact(tmp_path):
         'python': '3.14.8', 'python_implementation': 'CPython', 'free_threaded': False,
         'tcl': '8.6.15', 'tk': '8.6.15', 'worker_python': python_version(),
         'worker_resources': list(WORKER_FILES), 'credential_check_controls': True,
-        'gui_controls': ['Cek Kredensial'], 'build_profile': 'production',
+        'gui_controls': ['Cek login'], 'build_profile': 'production',
         'personal_use_labels': ['Coretax → Excel · for personal use only'],
         'ui_text': {
             'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',

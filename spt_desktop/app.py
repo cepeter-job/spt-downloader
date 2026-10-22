@@ -292,6 +292,9 @@ class App:
     def request_close(self):
         if self._disposed:
             return
+        if self._settings_close is not None and not self.controller.active:
+            self._settings_close(on_closed=self.request_close)
+            return
         if self.controller.active:
             if not messagebox.askyesno('Hentikan pekerjaan?', 'Hentikan worker milik aplikasi dan tutup jendela? Checkpoint lokal tidak dihapus.',
                                        parent=self.root, default='no'):
@@ -452,6 +455,9 @@ class App:
             return
         interaction = self._new_interaction(key, copy_text('selection.title'))
         dialog = interaction['dialog']
+        # Resolve native size before mapping the full child tree at a temporary
+        # geometry, which otherwise makes Windows arrange every child twice.
+        configure_dialog(dialog, self.root, size_dip=(920, 600))
         scale = effective_scale(self.root)
         px = lambda value: dip_to_px(value, scale)
         frame = ttk.Frame(dialog, padding=px(12))
@@ -711,7 +717,6 @@ class App:
         interaction['traces'].append((search, search.trace_add('write', filter_records)))
         dialog.protocol('WM_DELETE_WINDOW', lambda: self._cancel_interaction(interaction))
         dialog.bind('<Escape>', lambda event: self._cancel_interaction(interaction))
-        configure_dialog(dialog, self.root, size_dip=(920, 600))
         filter_records()
         entry.focus_set()
 
@@ -733,6 +738,7 @@ class App:
             return
         interaction = self._new_interaction(key, copy_text('overwrite.title'))
         dialog = interaction['dialog']
+        configure_dialog(dialog, self.root, size_dip=(800, 520))
         scale = effective_scale(self.root)
         px = lambda value: dip_to_px(value, scale)
         frame = ttk.Frame(dialog, padding=px(12))
@@ -906,7 +912,6 @@ class App:
             interaction['bindings'].append((widget, sequence, token))
         dialog.protocol('WM_DELETE_WINDOW', decline)
         dialog.bind('<Escape>', decline_key)
-        configure_dialog(dialog, self.root, size_dip=(800, 520))
         request_reflow()
         safe_button.focus_set()
 
@@ -921,7 +926,7 @@ class App:
         identifier=tk.StringVar(dialog,value=self.preferences['identifier']);password=tk.StringVar(dialog)
         browser=tk.StringVar(dialog,value=self.preferences['browser']);hidden=tk.BooleanVar(dialog,value=self.preferences['headless'])
         detail_source=tk.StringVar(dialog,value=DETAIL_SOURCE_LABELS[self.preferences['detail_source']])
-        self._credential_status=tk.StringVar(dialog,value='Kredensial belum dicek. Cek tidak melakukan scraping atau ekspor.')
+        self._credential_status=tk.StringVar(dialog,value='Login belum dicek. Cek tidak mengambil SPT atau mengekspor hasil.')
         controls=[('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
                   ('Password baru',ttk.Entry(frame,textvariable=password,show='●',width=40)),
                   ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
@@ -932,78 +937,177 @@ class App:
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
         hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek Kredensial. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan dahulu, lalu Cek login. CAPTCHA/MFA tidak dilewati.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
         check_buttons=ttk.Frame(frame);check_buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
+        decision_dialog = None
+        pending_preferences = False
+        credential_account = self.preferences['identifier']
+        credential_changed = False
+        credential_action = None
+        shutdown_request = None
         def selected():
             mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
             return {'browser':browser.get(),'headless':hidden.get(),'login_origin':LOGIN_ORIGIN,
                     'identifier':identifier.get(),'detail_source':mode}
+        def dirty():
+            return pending_preferences or bool(password.get()) or selected()!=self.preferences
         def refresh(*args,preserve_status=False):
             active=self.controller.active
-            dirty=bool(password.get()) or selected()!=self.preferences
             for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button]:
                 widget.state(['disabled' if active else '!disabled'])
-            check_button.state(['disabled' if active or dirty or not identifier.get().strip() else '!disabled'])
+            check_button.state(['disabled' if active or dirty() or not identifier.get().strip() else '!disabled'])
             cancel_button.state(['!disabled' if active and not self._settings_closing else 'disabled'])
             if not active and not preserve_status:
-                self._credential_status.set('Simpan perubahan dahulu sebelum Cek Kredensial.' if dirty else
-                    'Kredensial belum dicek. Cek tidak melakukan scraping atau ekspor.')
-        def close():
-            if self.controller.active:
-                self._settings_closing=True;self.stop();refresh(preserve_status=True);return
+                self._credential_status.set('Simpan perubahan dahulu sebelum Cek login.' if dirty() else
+                    'Login belum dicek. Cek tidak mengambil SPT atau mengekspor hasil.')
+        def finish_close():
             for variable,token in traces:variable.trace_remove('write',token)
             password.set('');dialog.grab_release();dialog.destroy()
             self._settings_dialog=None;self._credential_status=None
             self._settings_refresh=None;self._settings_close=None;self._settings_closing=False
             self.settings_button.focus_set()
+            if shutdown_request is not None:
+                shutdown_request()
+        def close(*, on_closed=None):
+            nonlocal decision_dialog, shutdown_request
+            if on_closed is not None:
+                shutdown_request = on_closed
+            if self.controller.active:
+                self._settings_closing=True;self.stop();refresh(preserve_status=True);return
+            if decision_dialog is not None:
+                decision_dialog.lift()
+                return
+            if not dirty():
+                finish_close()
+                return
+            previous_focus = dialog.focus_get()
+            prompt = tk.Toplevel(dialog)
+            decision_dialog = prompt
+            prompt.title(copy_text('settings.dirty.title'))
+            prompt.transient(dialog)
+            body = ttk.Frame(prompt, padding=20)
+            body.pack(fill='both', expand=True)
+            explanation = 'Simpan perubahan sebelum menutup Pengaturan?'
+            if credential_changed:
+                explanation += (' Login yang sudah disimpan atau dihapus tetap berlaku. '
+                                'Abaikan hanya membuang perubahan yang belum tersimpan.')
+            ttk.Label(body, text=explanation, wraplength=420).pack(fill='x', pady=(0, 16))
+            actions = ttk.Frame(body)
+            actions.pack(fill='x')
+            def dismiss(event=None, *, cancel_shutdown=True):
+                nonlocal decision_dialog, shutdown_request
+                if cancel_shutdown:
+                    shutdown_request = None
+                prompt.grab_release()
+                prompt.destroy()
+                decision_dialog = None
+                dialog.grab_set()
+                if previous_focus is not None and previous_focus.winfo_exists():
+                    previous_focus.focus_set()
+                else:
+                    controls[0][1].focus_set()
+                return 'break'
+            def save_and_close():
+                nonlocal shutdown_request
+                dismiss(cancel_shutdown=False)
+                if save():
+                    finish_close()
+                else:
+                    shutdown_request = None
+            def discard():
+                dismiss(cancel_shutdown=False)
+                finish_close()
+            ttk.Button(actions, text='Simpan', command=save_and_close).pack(side='left', padx=(0, 8))
+            ttk.Button(actions, text='Abaikan', command=discard).pack(side='left', padx=(0, 8))
+            return_button = ttk.Button(actions, text='Kembali', command=dismiss)
+            return_button.pack(side='left')
+            prompt.protocol('WM_DELETE_WINDOW', dismiss)
+            prompt.bind('<Escape>', dismiss)
+            prompt.grab_set()
+            return_button.focus_set()
         def save():
-            if self.controller.active:return
+            nonlocal pending_preferences, credential_account, credential_changed, credential_action
+            if self.controller.active:return False
             try:
                 if password.get():
                     if not identifier.get().strip():raise ValueError('Masukkan akun sebelum menyimpan password.')
                     save_login(LOGIN_ORIGIN,identifier.get(),password.get())
-                elif identifier.get() and identifier.get()!=self.preferences['identifier']:
+                    # Vault and preferences are separate stores. A retry must not
+                    # repeat the successful secret write or pretend it rolled back.
+                    credential_account = identifier.get()
+                    credential_changed = pending_preferences = True
+                    credential_action = 'saved'
+                    password.set('')
+                elif identifier.get() and identifier.get()!=credential_account:
                     raise ValueError('Isi password baru ketika mengganti akun; atau pertahankan akun kosong untuk login manual.')
                 preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
-            except ValueError as error:messagebox.showerror('Pengaturan belum disimpan',str(error),parent=dialog);return
+            except ValueError:
+                messagebox.showerror('Pengaturan belum disimpan',
+                    'Periksa akun dan password baru saat mengganti akun. Akun kosong memakai login manual.',parent=dialog)
+                return False
             except OSError as error:
                 diagnostics.record('settings.failed', error=error, level='ERROR')
-                messagebox.showerror('Pengaturan belum disimpan','Windows menolak penyimpanan kredensial/preferensi. Periksa izin workspace.',parent=dialog);return
+                change = 'Login sudah dihapus' if credential_action == 'deleted' else 'Password sudah disimpan'
+                message = (change + ', tetapi pengaturan belum tersimpan. Coba Simpan lagi.'
+                           if pending_preferences else
+                           'Pengaturan belum disimpan. Windows menolak penyimpanan login atau preferensi.')
+                self._credential_status.set(message)
+                refresh(preserve_status=True)
+                messagebox.showerror('Pengaturan belum disimpan',message,parent=dialog)
+                return False
+            pending_preferences = False
             password.set('');refresh()
-            self._credential_status.set('Pengaturan disimpan. Tekan Cek Kredensial untuk menguji login otomatis.')
+            self._credential_status.set('Pengaturan disimpan. Tekan Cek login untuk menguji login otomatis.')
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
+            return True
         def remove():
+            nonlocal pending_preferences, credential_account, credential_changed, credential_action
             if self.controller.active:return
-            if not messagebox.askyesno('Hapus kredensial?','Hapus kredensial login Satu aplikasi dari Windows Credential Manager?',parent=dialog,default='no'):return
+            if not messagebox.askyesno('Hapus login yang disimpan?','Hapus login Satu yang disimpan oleh aplikasi ini?',parent=dialog,default='no'):return
             try:delete_login(LOGIN_ORIGIN)
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
-            password.set('');identifier.set('');self.preferences['identifier']=''
-            save_preferences(self.workspace,self.preferences)
-            self._credential_status.set('Kredensial login Satu dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
+            credential_account = ''
+            credential_changed = pending_preferences = True
+            credential_action = 'deleted'
+            password.set('');identifier.set('')
+            preferences = dict(self.preferences, identifier='')
+            try:
+                save_preferences(self.workspace,preferences)
+            except OSError as error:
+                diagnostics.record('settings.failed', error=error, level='ERROR')
+                message = 'Login sudah dihapus, tetapi pengaturan belum tersimpan. Coba Simpan lagi.'
+                self._credential_status.set(message)
+                refresh(preserve_status=True)
+                messagebox.showerror('Pengaturan belum disimpan',message,parent=dialog)
+                return
+            self.preferences = preferences
+            pending_preferences = False
+            refresh()
+            self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
         def check():
             if self.controller.active:return
-            if password.get() or selected()!=self.preferences:
-                self._credential_status.set('Simpan perubahan dahulu sebelum Cek Kredensial.');return
+            if dirty():
+                self._credential_status.set('Simpan perubahan dahulu sebelum Cek login.');return
             try:
                 self.controller.start_login_check(LOGIN_ORIGIN,identifier.get(),browser.get(),hidden.get())
             except (ValueError,RuntimeError) as error:
                 self._credential_status.set(str(error));return
             self._poll_failed = False
             self._running(True);refresh(preserve_status=True)
-            self._credential_status.set('Menyiapkan pengecekan kredensial tersimpan…')
-            self.status.set('Menyiapkan pengecekan kredensial tersimpan…')
+            self._credential_status.set('Menyiapkan cek login tersimpan…')
+            self.status.set('Menyiapkan cek login tersimpan…')
             self.bar.configure(mode='indeterminate');self.bar.start(20);self.percent.set('—')
         save_button=ttk.Button(buttons,text='Simpan',command=save);save_button.pack(side='left',padx=(0,8))
-        remove_button=ttk.Button(buttons,text='Hapus kredensial',command=remove);remove_button.pack(side='left',padx=(0,8))
+        remove_button=ttk.Button(buttons,text=copy_text('settings.delete'),command=remove);remove_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
-        check_button=ttk.Button(check_buttons,text='Cek Kredensial',command=check,underline=0)
+        check_button=ttk.Button(check_buttons,text=copy_text('settings.check'),command=check,underline=0)
         check_button.pack(side='left',padx=(0,8))
-        cancel_button=ttk.Button(check_buttons,text='Batalkan Cek',command=self.stop,state='disabled')
+        cancel_button=ttk.Button(check_buttons,text=copy_text('settings.cancel_check'),command=self.stop,state='disabled')
         cancel_button.pack(side='left')
         self._settings_refresh=refresh;self._settings_close=close
         for variable in (identifier,password,browser,hidden,detail_source):traces.append((variable,variable.trace_add('write',refresh)))

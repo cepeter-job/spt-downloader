@@ -39,8 +39,8 @@ def test_check_button_launches_only_saved_account_no_npwp_no_password(window):
     root,app,ctl,path=window
     app.settings();root.update_idletasks()
     buttons=[widget.cget('text') for widget in descendants(root) if widget.winfo_class()=='TButton']
-    assert 'Cek Kredensial' in buttons, 'Native settings credential-check button is missing'
-    button(root,'Cek Kredensial').invoke()
+    assert 'Cek login' in buttons, 'Native settings credential-check button is missing'
+    button(root,'Cek login').invoke()
     assert ctl.checks==[(ORIGIN,ACCOUNT,'msedge',True)]
     assert ctl.exports==[] and app.npwp.get()==''
     assert app.start_button.instate(['disabled'])
@@ -48,7 +48,7 @@ def test_check_button_launches_only_saved_account_no_npwp_no_password(window):
     ctl.active=False
     app.on_event({'job_id':ctl.job_id,'type':'terminal','status':'LOGIN_OK','percent':0,'output':None,'message':'Login berhasil; kredensial tersimpan terverifikasi.'})
     assert 'Login berhasil' in app._credential_status.get()
-    assert button(root,'Cek Kredensial').instate(['!disabled'])
+    assert button(root,'Cek login').instate(['!disabled'])
     assert app.open_button.instate(['disabled']) and app.percent.get()!='100%'
     assert not (path/'jobs').exists()
 
@@ -56,27 +56,27 @@ def test_check_button_launches_only_saved_account_no_npwp_no_password(window):
 def test_unsaved_password_disables_check_until_save(window,monkeypatch):
     root,app,ctl,path=window
     app.settings();root.update_idletasks()
-    assert 'Cek Kredensial' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
+    assert 'Cek login' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
     entry=next(w for w in descendants(root) if w.winfo_class()=='TEntry' and w.cget('show'))
     entry.insert(0,'SYNTHETIC_NEW_PASSWORD_ONLY')
-    button(root,'Cek Kredensial').invoke()
+    button(root,'Cek login').invoke()
     assert ctl.checks==[]
     assert 'Simpan' in app._credential_status.get()
     writes=[]
     monkeypatch.setattr(gui,'save_login',lambda *args:writes.append(args))
     button(root,'Simpan').invoke()
     assert writes==[(ORIGIN,ACCOUNT,'SYNTHETIC_NEW_PASSWORD_ONLY')]
-    assert entry.get()=='' and button(root,'Cek Kredensial').instate(['!disabled'])
+    assert entry.get()=='' and button(root,'Cek login').instate(['!disabled'])
     assert 'SYNTHETIC_NEW_PASSWORD_ONLY' not in (path/'preferences.json').read_text()
-    button(root,'Cek Kredensial').invoke()
+    button(root,'Cek login').invoke()
     assert len(ctl.checks)==1
 
 
 def test_closing_settings_cancels_and_waits_for_terminal_cleanup(window):
     root,app,ctl,path=window
     app.settings();root.update_idletasks()
-    assert 'Cek Kredensial' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
-    button(root,'Cek Kredensial').invoke()
+    assert 'Cek login' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
+    button(root,'Cek login').invoke()
     dialog=app._settings_dialog
     button(root,'Tutup').invoke()
     assert ctl.stops==1 and dialog.winfo_exists()
@@ -91,8 +91,8 @@ def test_check_keeps_previous_export_result_and_displays_honest_failure(window):
     app._result=previous;app.open_button.state(['!disabled'])
     export_state=app._ui_state
     app.settings();root.update_idletasks()
-    assert 'Cek Kredensial' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
-    button(root,'Cek Kredensial').invoke()
+    assert 'Cek login' in [w.cget('text') for w in descendants(root) if w.winfo_class()=='TButton']
+    button(root,'Cek login').invoke()
     ctl.active=False
     app.on_event({'job_id':ctl.job_id,'type':'terminal','status':'LOGIN_UNVERIFIED','percent':0,'output':None,'message':'Login belum terverifikasi; periksa koneksi.'})
     assert app._result==previous and app.open_button.instate(['!disabled'])
@@ -105,5 +105,5 @@ def test_source_selftest_exercises_masked_settings_and_check_controls(tmp_path):
     report=tmp_path/'selftest.json'
     assert spt_gui.self_test(report)==0
     data=json.loads(report.read_text())
-    assert 'Cek Kredensial' in data['gui_controls']
+    assert 'Cek login' in data['gui_controls']
     assert data['credential_check_controls'] and not data['credentials_accessed'] and not data['live_scrape']

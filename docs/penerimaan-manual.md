@@ -18,10 +18,10 @@ Catat build/commit, run ID dan artifact ID bila dari GitHub, profil Python, tang
 
 - [ ] GUI dapat dibuka tanpa administrator dan persiapan runtime selesai atau menampilkan error yang dapat ditindaklanjuti.
 - [ ] Akun/password dimasukkan hanya pada dialog lokal. Tidak muncul pada preferensi, pesan GUI, atau log yang akan dibagikan.
-- [ ] Bila Cek Kredensial dipakai, pemeriksaan memakai sesi baru dan tidak memulai ekspor. Catat apakah password benar-benar diuji atau hanya SSO yang sudah siap.
+- [ ] Bila Cek login dipakai, pemeriksaan memakai sesi baru dan tidak memulai ekspor. Catat apakah password benar-benar diuji atau hanya SSO yang sudah siap.
 - [ ] CAPTCHA/MFA diselesaikan langsung oleh pengguna. Form yang tidak dikenali memerlukan login manual; tidak ada percobaan menebak tombol submit.
 - [ ] Setelah login manual, halaman pencarian dengan kontrol NPWP terlihat dan pekerjaan berlanjut segera setelah siap.
-- [ ] Pembatalan Cek Kredensial menghentikan proses miliknya sebelum pengaturan ditutup.
+- [ ] Pembatalan Cek login menghentikan proses miliknya sebelum pengaturan ditutup.
 
 ## Inventaris dan detail
 

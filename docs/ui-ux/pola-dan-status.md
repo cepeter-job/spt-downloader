@@ -8,7 +8,7 @@
 
 Pengaturan hanya meminta akun/password, browser, dan opsi unduh. Navigasi tetap dimulai dari Coretax, lalu aplikasi menunggu form Satu yang dikenali; origin login tidak dipilih pengguna. Kunci Windows Credential Manager untuk login otomatis selalu origin Satu yang persis diizinkan. Preferensi origin Coretax lama diabaikan tanpa membaca, memindahkan, atau menghapus credential lamanya. Jika entri Satu belum tersedia, isi ulang akun/password melalui Pengaturan lalu Simpan.
 
-**Cek Kredensial** menguji satu submit pada profil sementara. **Mulai Unduh** meneruskan identifier yang dipilih (bukan password) ke worker, menunggu form dengan alur kesiapan yang sama, dan mencocokkan identifier credential sebelum mengisi form. Untuk akun tersimpan, worker memakai profil sementara baru agar tidak mengunduh dengan sesi akun lama yang identitasnya tidak diketahui. Profil dibersihkan setelah browser ditutup; hasil cek bukan file penanda password-valid atau izin mempercayai profil lain. SSO tanpa pengiriman credential belum membuktikan akun yang dipilih; gunakan mode manual bila identitas sesi tidak dapat dikaitkan.
+**Cek login** menguji satu submit pada profil sementara. **Mulai Unduh** meneruskan identifier yang dipilih (bukan password) ke worker, menunggu form dengan alur kesiapan yang sama, dan mencocokkan identifier credential sebelum mengisi form. Untuk akun tersimpan, worker memakai profil sementara baru agar tidak mengunduh dengan sesi akun lama yang identitasnya tidak diketahui. Profil dibersihkan setelah browser ditutup; hasil cek bukan file penanda password-valid atau izin mempercayai profil lain. SSO tanpa pengiriman credential belum membuktikan akun yang dipilih; gunakan mode manual bila identitas sesi tidak dapat dikaitkan.
 
 Akun kosong memilih mode manual tanpa membaca credential tersimpan. Mengosongkan akun lalu Simpan tidak menghapus password; penghapusan tetap melalui tombol khusus dengan konfirmasi. Mode manual dapat memakai profil manual yang sudah ada. Perubahan akun/password menghapus status cek dari tampilan. Akun baru yang tidak kosong tetap memerlukan password baru. Password tidak diteruskan lewat argv atau disimpan dalam preferensi/log.
 
@@ -116,13 +116,15 @@ Jangan mengklasifikasikan sebab melalui substring pesan. Jika reason code aman b
 | --- | --- | --- |
 | Tutup saat unduhan aktif | Hentikan unduhan dan tutup aplikasi? | Kembali; Hentikan dan tutup. Escape/X = Kembali. |
 | Hapus login | Hapus login yang disimpan? | Batal; Hapus login. Escape/X = Batal. |
-| Tutup Pengaturan dirty (**usulan**) | Perubahan belum disimpan | Sasaran: Simpan; Abaikan; Kembali. Escape/X = Kembali. Belum ada pada baseline. |
+| Tutup Pengaturan atau aplikasi dengan perubahan | Perubahan belum disimpan | Simpan; Abaikan; Kembali. Fokus awal Kembali; Escape/X = Kembali. |
 | Pemilihan SPT | Pilih SPT yang akan diunduh | Sedot SPT terpilih; Hentikan unduhan. Escape/X = Stop. |
 | Penggantian | Ganti hasil sebelumnya? | Jangan ganti; Ganti file tersebut. Escape/X = false. |
 
 Pilihan aman fokus awal pada keputusan destruktif. Tidak ada Return global yang menyetujui overwrite. Saat cek login aktif, Escape/Tutup membatalkan cek dulu dan menunggu cleanup. Tombol Stop langsung membatalkan tanpa konfirmasi tambahan. Dialog mengembalikan fokus ke pemicu yang masih valid; progress tidak mencuri fokus. Setelah terminal ekspor, App mengarahkan fokus ke Buka hasil jika tersedia atau Mulai unduh, bukan Entry yang bisa tergulir keluar viewport. Bersihkan grab, traces, dan after sebelum destroy/job berikutnya.
 
-Konfirmasi edit belum disimpan belum ada pada baseline: `settings.refresh`/`check` menghitung dirty untuk menonaktifkan pengecekan, tetapi `settings.close` saat idle langsung membersihkan variabel/password lalu menutup dialog tanpa keputusan Simpan/Abaikan. Saat cek aktif, close membatalkan cek dan menunggu cleanup; jalur tersebut harus dipertahankan dalam usulan berikutnya. Jika Simpan gagal, jangan menutup dialog atau menampilkan sukses. Uji kegagalan kedua penyimpanan dan delete secara terpisah; salah satu write dapat sudah berhasil.
+Perubahan browser, akun, sumber detail, pilihan background, atau password baru memerlukan keputusan **Simpan / Abaikan / Kembali** saat Pengaturan maupun aplikasi ditutup. Kembali, Escape, dan X mempertahankan edit serta membatalkan penutupan aplikasi. Simpan hanya menutup setelah penyimpanan berhasil; kegagalan mempertahankan dialog. Saat cek aktif, close tetap membatalkan cek dan menunggu cleanup.
+
+Windows Credential Manager dan preferensi merupakan dua penyimpanan terpisah. Setelah password berhasil disimpan, field password segera dikosongkan; retry preferensi tidak menulis ulang password. Setelah login berhasil dihapus, kegagalan preferensi dilaporkan sebagai penghapusan yang sudah terjadi dan preferensi yang masih perlu disimpan. Abaikan membuang edit yang belum tersimpan, tetapi tidak membatalkan perubahan Credential Manager yang sudah berhasil; dialog menyebut batas ini. Akun yang telah dihapus tidak boleh dipilih lagi tanpa password baru. Cek login tetap nonaktif selama perubahan atau retry belum selesai.
 
 ## Aksesibilitas dan performa
 
