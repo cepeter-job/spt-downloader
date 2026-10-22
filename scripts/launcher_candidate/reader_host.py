@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import time
 
-SCENARIOS = ('main', 'settings', 'selection', 'overwrite', 'progress', 'result')
+SCENARIOS = ('main', 'settings', 'selection', 'overwrite', 'progress', 'result', 'regression')
 
 
 class SnapshotPublisher:
@@ -84,6 +84,8 @@ def run(scenario, directory):
         raise RuntimeError('candidate fixture requires a GitHub Windows runner')
     directory = prepare_directory(directory)
     try:
+        if scenario == 'regression':
+            return _regression(directory)
         return _host(scenario, directory)
     except Exception as error:
         import traceback
@@ -227,6 +229,191 @@ def _host(scenario, directory):
         root.destroy()
         app_module.save_login, app_module.delete_login = original
 
+
+
+def _regression(directory):
+    """Finite behavioral checks of real App handlers; no reader acceptance claim."""
+    from contextlib import contextmanager
+    import subprocess
+    import tkinter as tk
+    from spt_desktop import app as gui
+    from spt_desktop.windows import ProcessJob
+    from scripts.launcher_candidate.probe import application_probe
+
+    checks = dict.fromkeys(('settings_return_discard_save_clear', 'selection_explicit_consent',
+        'overwrite_preserve_and_explicit_consent', 'stale_and_stop_precedence',
+        'complete_partial_eligibility', 'owned_cleanup'), False)
+    report = {'checks': checks, 'frozen': bool(getattr(sys, 'frozen', False)),
+              'credentials_accessed': False, 'live_scrape': False,
+              'accessibility_acceptance': False,
+              'eligibility_scope': 'App terminal UI gate; full controller/output eligibility covered by candidate Windows suite'}
+
+    def checkpoint():
+        (directory / 'regression.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+
+    def children(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from children(child)
+
+    def button(widget, text):
+        return next(w for w in children(widget) if w.winfo_class() == 'TButton' and w.cget('text') == text)
+
+    @contextmanager
+    def window(label):
+        root = tk.Tk()
+        errors = []
+        root.report_callback_exception = lambda kind, *_: errors.append(kind.__name__)
+        controller = SyntheticController()
+        workspace = directory / label
+        workspace.mkdir()
+        gui.save_preferences(workspace, dict(gui.DEFAULTS, identifier='SYNTHETIC_ACCOUNT'))
+        app = gui.App(root, workspace, controller)
+        try:
+            root.update()
+            root.focus_force()
+            root.update()
+            if 'candidate' not in report:
+                report['candidate'] = application_probe(root)
+            yield root, app, controller
+            assert not errors, 'Tk callback failure in finite regression'
+        finally:
+            controller.close()
+            app._dispose()
+            for token in root.tk.splitlist(root.tk.call('after', 'info')):
+                root.after_cancel(token)
+            root.destroy()
+
+    def start(app):
+        app.npwp.set('0000000000000001')
+        app.year.set('2025')
+        app.start()
+        assert app.controller.active
+
+    def event(controller, kind, **values):
+        return dict(job_id=controller.job_id, type=kind, percent=20,
+                    stage='details', message='Synthetic regression', **values)
+
+    original = gui.save_login, gui.delete_login
+    vault_writes = []
+    gui.save_login = lambda *args, **kwargs: vault_writes.append(True)
+    gui.delete_login = lambda *args, **kwargs: None
+    checkpoint()
+    try:
+        with window('settings') as (root, app, controller):
+            def password(dialog):
+                return next(w for w in children(dialog) if w.winfo_class() == 'TEntry' and w.cget('show'))
+            def decision():
+                app._settings_close()
+                root.update()
+                return next(w for w in children(root) if isinstance(w, tk.Toplevel) and w.title() == 'Perubahan belum disimpan')
+            dialog = app.settings()
+            password(dialog).insert(0, 'SYNTHETIC_REGRESSION_SECRET')
+            prompt = decision()
+            button(prompt, 'Kembali').invoke()
+            root.update()
+            assert password(dialog).get() and app._settings_dialog is dialog and not vault_writes
+            button(decision(), 'Abaikan').invoke()
+            root.update()
+            assert app._settings_dialog is None and not vault_writes
+            dialog = app.settings()
+            assert password(dialog).get() == ''
+            password(dialog).insert(0, 'SYNTHETIC_REGRESSION_SECRET')
+            button(decision(), 'Simpan').invoke()
+            root.update()
+            assert vault_writes == [True] and app._settings_dialog is None
+            dialog = app.settings()
+            assert password(dialog).get() == ''
+            app._settings_close()
+            assert app._settings_dialog is None
+        checks['settings_return_discard_save_clear'] = True
+        checkpoint()
+
+        with window('selection') as (root, app, controller):
+            start(app)
+            literal = '::synthetic {return}; [literal] / id'
+            controller.payload = {'records': [{'record_id': literal, 'meta': {'Jenis Pajak': 'PPN', 'Model SPT': 'Pembetulan 001'}}]}
+            app.on_event(event(controller, 'selection_required', request_id='a'*32))
+            dialog = app._interaction['dialog']
+            tree = next(w for w in children(dialog) if w.winfo_class() == 'Treeview')
+            confirm = button(dialog, 'Sedot SPT terpilih')
+            assert not tree.selection() and confirm.instate(['disabled']) and not controller.replies
+            tree.selection_set(tree.get_children()[0])
+            tree.event_generate('<<TreeviewSelect>>')
+            root.update()
+            assert not controller.replies
+            confirm.invoke()
+            assert controller.replies == [{'kind': 'selection', 'request_id': 'a'*32, 'payload': {'selected_ids': [literal]}}]
+            assert app._interaction is None
+        checks['selection_explicit_consent'] = True
+        checkpoint()
+
+        for allow in (False, True):
+            with window('overwrite-' + str(allow)) as (root, app, controller):
+                start(app)
+                controller.payload = {'folder': str(directory / 'SYNTHETIC_EXPORT'), 'files': ['resume.xlsx']}
+                app.on_event(event(controller, 'overwrite_required', request_id='b'*32))
+                dialog = app._interaction['dialog']
+                assert not controller.replies
+                button(dialog, 'Ganti file tersebut' if allow else 'Jangan ganti').invoke()
+                assert controller.replies == [{'kind': 'overwrite', 'request_id': 'b'*32, 'payload': {'overwrite': allow}}]
+                assert app._interaction is None
+        checks['overwrite_preserve_and_explicit_consent'] = True
+        checkpoint()
+
+        with window('stale-stop') as (root, app, controller):
+            start(app)
+            before = app._ui_state
+            app.on_event(dict(event(controller, 'progress'), job_id='stale-job'))
+            assert app._ui_state is before
+            app.stop()
+            assert controller.stopped and app._ui_state.view_state == 'stopping'
+            stopped = app._ui_state
+            app.on_event(event(controller, 'progress'))
+            app.on_event(dict(event(controller, 'terminal', status='COMPLETE', output=str(directory)), percent=100))
+            assert app._ui_state is stopped and app._result is None
+            app.on_event(event(controller, 'terminal', status='CANCELLED', output=None))
+            assert app._ui_state.terminal_status == 'CANCELLED'
+        checks['stale_and_stop_precedence'] = True
+        checkpoint()
+
+        for terminal in ('PARTIAL', 'COMPLETE'):
+            with window('terminal-' + terminal) as (root, app, controller):
+                start(app)
+                complete = dict(event(controller, 'terminal', status='COMPLETE', output=str(directory)), percent=100)
+                before = app._ui_state
+                app.on_event(complete)
+                assert app._ui_state is before, 'Active cleanup must withhold terminal completion'
+                controller.active = False
+                app.on_event(dict(complete, output=None))
+                assert app._ui_state is before, 'COMPLETE requires output'
+                app.on_event(dict(complete, percent=20))
+                assert app._ui_state is before, 'COMPLETE requires exactly 100 percent'
+                app.on_event(complete if terminal == 'COMPLETE' else event(controller, 'terminal', status='PARTIAL', output=None))
+                assert app._ui_state.terminal_status == terminal
+                assert (app._ui_state.percent == 100) == (terminal == 'COMPLETE')
+                assert app.open_button.instate(['!disabled' if terminal == 'COMPLETE' else 'disabled'])
+        checks['complete_partial_eligibility'] = True
+        checkpoint()
+
+        # Exercise native owned-tree termination with a fixed synthetic child.
+        # No command or path is accepted from the fixture caller.
+        with ProcessJob() as owned:
+            process = owned.spawn(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+                                   'Start-Sleep -Seconds 60'], stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                assert process.poll() is None
+            finally:
+                owned.close()
+                process.wait(timeout=10)
+            assert process.poll() is not None
+        checks['owned_cleanup'] = True
+        checkpoint()
+        return 0
+    finally:
+        gui.save_login, gui.delete_login = original
+        checkpoint()
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

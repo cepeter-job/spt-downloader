@@ -77,6 +77,37 @@ def run_selftest(command, report):
     return json.loads(report.read_text(encoding='utf-8'))
 
 
+def run_regression(command, report, inventory, *, frozen):
+    from spt_desktop.windows import ProcessJob
+    from scripts.launcher_candidate.inventory import IDENTITY, candidate_resources
+    with tempfile.TemporaryDirectory(prefix='spt-candidate-behavior-') as folder:
+        directory = Path(folder) / 'fixture'
+        with ProcessJob() as owned:
+            process = owned.spawn([*map(str, command), '--candidate-scenario', 'regression',
+                                   '--candidate-directory', str(directory)])
+            try:
+                code = process.wait(timeout=90)
+            finally:
+                owned.close()
+                process.wait(timeout=10)
+                if (directory / 'regression.json').is_file():
+                    shutil.copy2(directory / 'regression.json', report)
+            if code:
+                raise RuntimeError('Candidate behavioral regression failed')
+    result = json.loads(report.read_text(encoding='utf-8'))
+    required = {'settings_return_discard_save_clear', 'selection_explicit_consent',
+                'overwrite_preserve_and_explicit_consent', 'stale_and_stop_precedence',
+                'complete_partial_eligibility', 'owned_cleanup'}
+    proof = result['candidate']
+    if (set(result['checks']) != required or any(value is not True for value in result['checks'].values())
+            or result.get('frozen') is not frozen or result.get('credentials_accessed') is not False
+            or result.get('live_scrape') is not False or result.get('accessibility_acceptance') is not False
+            or any(proof.get(key) != value for key, value in IDENTITY.items())
+            or proof.get('resources') != candidate_resources(inventory)
+            or proof.get('loaded_sha256') != {key: inventory['files'][name] for key, name in inventory['loaded'].items()}):
+        raise RuntimeError('Candidate behavioral report is incomplete or has wrong identity')
+
+
 def package(runtime, output):
     runtime, output = runtime.resolve(strict=True), output.absolute()
     if output.exists():
@@ -112,6 +143,7 @@ def package(runtime, output):
         source_report = output / 'source-selftest.json'
         subprocess.run([str(python), '-B', str(ROOT / 'spt_gui.py'), '--self-test', '--candidate-report', '--report', str(source_report)], cwd=scratch, env=env, check=True, timeout=90)
         validate_candidate_report(json.loads(source_report.read_text(encoding='utf-8')), inventory)
+        run_regression([python, ROOT / 'spt_gui.py'], output / 'source-regression.json', inventory, frozen=False)
         subprocess.run([str(python), '-I', '-B', '-c', code, str(ROOT), str(scratch / 'build'), str(runtime)], cwd=scratch, env=env, check=True, timeout=600)
         subprocess.run([str(python), '-B', str(ROOT / 'scripts/launcher_candidate/inspect_archive.py'),
                         str(scratch / 'build/SPTDownloader.exe'), str(runtime), str(output / 'embedded-payload.json')],
@@ -119,6 +151,7 @@ def package(runtime, output):
         for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json'):
             shutil.copy2(scratch / 'build' / name, output / name)
         validate_candidate_report(json.loads((output / 'build-selftest.json').read_text(encoding='utf-8')), inventory)
+        run_regression([output / 'SPTDownloader.exe'], output / 'frozen-regression.json', inventory, frozen=True)
     (output / 'worker-independence.json').write_text(json.dumps(preservation, indent=2), encoding='utf-8')
     shutil.copytree(runtime / 'licenses', output / 'licenses')
     shutil.copy2(runtime / 'inventory.json', output / 'runtime-inventory.json')
@@ -151,7 +184,8 @@ def verify(output, report):
     if expected != actual or len({name.casefold() for name in actual}) != len(actual):
         raise ValueError('read-back application file set or hash mismatch')
     allowed = {'SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
-               'source-selftest.json', 'worker-independence.json', 'runtime-inventory.json', 'embedded-payload.json'}
+               'source-selftest.json', 'source-regression.json', 'frozen-regression.json',
+               'worker-independence.json', 'runtime-inventory.json', 'embedded-payload.json'}
     if digest(output / 'runtime-inventory.json') != '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239':
         raise ValueError('read-back inventory is not the qualified runtime')
     inventory = json.loads((output / 'runtime-inventory.json').read_text(encoding='utf-8'))
@@ -167,6 +201,7 @@ def verify(output, report):
         try:
             os.chdir(folder)
             result = run_selftest([output / 'SPTDownloader.exe'], report)
+            run_regression([output / 'SPTDownloader.exe'], report.with_suffix('.regression.json'), inventory, frozen=True)
         finally:
             os.chdir(previous)
     result['candidate_existing_preservation'] = preservation

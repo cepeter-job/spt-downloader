@@ -243,7 +243,7 @@ def test_probe_existing_output_refusal_never_writes_diagnostics(tmp_path):
     assert list(tmp_path.iterdir()) == [marker]
     assert marker.read_text() == 'synthetic unrelated owner'
 
-@pytest.mark.skipif(__import__('sys').platform != 'win32', reason='Native candidate behavioral fixture')
+@pytest.mark.skipif(__import__('sys').platform != 'win32' or __import__('os').environ.get('SPT_CANDIDATE_REGRESSION') != '1', reason='Explicit candidate Windows behavioral fixture')
 def test_finite_regression_scenario_exercises_real_app_and_owned_cleanup(tmp_path):
     import json
     from scripts.launcher_candidate.reader_host import run

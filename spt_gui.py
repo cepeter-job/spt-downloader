@@ -260,7 +260,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description='Simple authorized Coretax to Excel desktop app')
     parser.add_argument('--self-test',action='store_true');parser.add_argument('--report',type=Path)
     parser.add_argument('--candidate-report',action='store_true',help=argparse.SUPPRESS)
-    parser.add_argument('--candidate-scenario', choices=('main', 'settings', 'selection', 'overwrite', 'progress', 'result'), help=argparse.SUPPRESS)
+    parser.add_argument('--candidate-scenario', choices=('main', 'settings', 'selection', 'overwrite', 'progress', 'result', 'regression'), help=argparse.SUPPRESS)
     parser.add_argument('--candidate-directory', type=Path, help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
     if args.candidate_scenario or args.candidate_directory:
