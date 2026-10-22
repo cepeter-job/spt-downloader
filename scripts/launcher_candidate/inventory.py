@@ -217,6 +217,17 @@ def _validate_reader_report(report, inventory):
         raise ValueError('general acceptance requires password gate')
     active_claim = any(item['status'] in ('passed', 'failed') for item in outcomes.values())
     if active_claim:
+        if ownership.get('windows_verified') is not True or ownership.get('isolated') is not True:
+            raise ValueError('unowned observation')
+    for item in observations.values():
+        if item.get('exposed') is True:
+            if item.get('observed') is not True:
+                raise ValueError('exposure requires observation')
+            refs(item)
+    # An owned exposure remains a failure even when acceptance prerequisites fail.
+    requires_activation = any(item['status'] in ('passed', 'failed')
+                              for key, item in outcomes.items() if key != 'password') or password_status == 'passed'
+    if requires_activation:
         activation = report['activation']
         if (reader['available'] is not True or not reader.get('version') or type(reader.get('pid')) is not int
                 or reader['pid'] <= 0 or ownership.get('windows_verified') is not True or ownership.get('isolated') is not True):

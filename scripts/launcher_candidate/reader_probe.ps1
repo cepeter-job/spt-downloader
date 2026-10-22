@@ -43,6 +43,16 @@ function Exposed($value) {
  return $false
 }
 function Observation($observed,$exposed) {return @{observed=$observed;exposed=$exposed;evidence=@('native')}}
+function ReducePhase($values) {
+ $observed=$false; $exposed=$false
+ foreach($item in $values.Values) {
+  if ($item -is [Collections.IDictionary]) {
+   $observed=$observed -or ($item.observed -eq $true)
+   $exposed=$exposed -or ($item.exposed -eq $true)
+  }
+ }
+ return @{observed=$observed;exposed=$exposed;evidence=@('native')}
+}
 function EntryObservation($state) {
  Owned ([IntPtr]$state.password_hwnd) $state.pid
  $result=@{msaa_value=(Observation $false $false);uia_value=(Observation $false $false);msaa_selection=(Observation $false $false);uia_selection=(Observation $false $false)}
@@ -178,7 +188,7 @@ try {
    $action | Set-Content -LiteralPath (Join-Path $hostDirectory 'command.txt') -Encoding UTF8
    Start-Sleep -Milliseconds 600; $state=ReadState; $phase=EntryObservation $state
    $native.observations+=@{phase=$action;values=$phase}
-   $observations[$action]=Observation ($phase.msaa_value.observed -or $phase.uia_value.observed) ($phase.msaa_value.exposed -or $phase.uia_value.exposed)
+   $observations[$action]=ReducePhase $phase
   }
  }
  $native.pid=$state.pid; $native.speech_viewer_available=$speechFacility; $native.speech_observed=$speechObserved
@@ -187,8 +197,8 @@ try {
  $reason=if (-not $readerAvailable) {'Actual reader could not run on disposable runner'} elseif (-not $state.tk_initialized) {'Actual reader running but Tk initialization unobserved'} else {'Speech, typing echo, focus notifications and reader inspection require actual output observation'}
  $outcomes=@{}
  foreach($gate in @('password','names_roles_values_states','focus','selection','speech_navigation')) {$outcomes[$gate]=@{status='blocked';reason=$reason;evidence=@('native')}}
- $leak=@($observations.Values | Where-Object {$_.exposed -eq $true}).Count -gt 0
- if ($leak -and $readerAvailable -and $state.tk_initialized) {
+ $leak=(ReducePhase $observations).exposed
+ if ($leak) {
   $outcomes.password=@{status='failed';evidence=@('native')}
   foreach($key in @('names_roles_values_states','focus','selection','speech_navigation')) {$outcomes[$key].reason='Password gate failed; adoption stopped'}
  }
