@@ -152,12 +152,12 @@ def test_owned_cleanup_unavailable_handle_fails_closed():
     assert result['unverified_processes'] == [{'pid': 321, 'operation': 'OpenProcess', 'winerror': 5}]
 
 
-def test_snapshot_replace_retries_windows_sharing_violation(tmp_path):
+def test_snapshot_reader_allows_atomic_windows_replace(tmp_path):
     import ctypes
     from ctypes import wintypes
-    from scripts.launcher_candidate import reader_host
-    replace_snapshot = getattr(reader_host, 'replace_snapshot', None)
-    assert replace_snapshot is not None, 'bounded fixture replacement missing'
+    import base64
+    import subprocess
+    from pathlib import Path
     target, pending = tmp_path / 'ready.json', tmp_path / 'ready.pending'
     target.write_text('old')
     pending.write_text('new')
@@ -167,17 +167,26 @@ def test_snapshot_replace_retries_windows_sharing_violation(tmp_path):
     kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
     handle = kernel.CreateFileW(str(target), 0x80000000, 1, None, 3, 0, None)
     assert handle != wintypes.HANDLE(-1).value
-    waits = []
-    def release(delay):
-        waits.append(delay)
-        kernel.CloseHandle(handle)
     try:
-        replace_snapshot(pending, target, sleep=release)
-        assert waits == [0.02]
-        assert target.read_text() == 'new'
+        with pytest.raises(PermissionError) as denied: pending.replace(target)
+        assert denied.value.winerror == 5
     finally:
-        if not waits: kernel.CloseHandle(handle)
-
+        kernel.CloseHandle(handle)
+    probe = Path(contracts.__file__).with_name('reader_probe.ps1')
+    quoted = lambda value: "'" + str(value).replace("'", "''") + "'"
+    script = r'''
+    $ErrorActionPreference='Stop'
+    $tokens=$null; $errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseFile(PROBE, [ref]$tokens, [ref]$errors)
+    $fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'OpenSnapshot'}, $true)
+    if (-not $fn) {throw 'OpenSnapshot missing'}
+    Invoke-Expression $fn.Extent.Text
+    $stream=OpenSnapshot TARGET
+    try {[IO.File]::Replace(PENDING,TARGET,$null)} finally {$stream.Dispose()}
+    '''.replace('PROBE', quoted(probe)).replace('TARGET', quoted(target)).replace('PENDING', quoted(pending))
+    result = subprocess.run(['powershell', '-NoProfile', '-EncodedCommand', base64.b64encode(script.encode('utf-16-le')).decode()], capture_output=True)
+    assert result.returncode == 0, result.stderr.decode(errors='replace')
+    assert target.read_text() == 'new'
 
 @pytest.mark.parametrize('winerror,attempts', [(32, 5), (5, 1)])
 def test_snapshot_replace_is_bounded_and_does_not_swallow_other_errors(winerror, attempts):
