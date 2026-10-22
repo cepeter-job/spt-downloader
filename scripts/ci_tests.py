@@ -68,6 +68,28 @@ def pytest_addoption(parser):
                     help='Run one of two Windows shards with an evidence manifest.')
 
 
+class _OutcomeRecorder:
+    """Retain terminal statuses only, never assertion text or skip reasons."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def pytest_runtest_logreport(self, report):
+        outcomes = self.config._ci_outcomes
+        status = report.outcome
+        if hasattr(report, 'wasxfail'):
+            status = 'xfailed' if report.skipped else 'xpassed'
+        # Lists deliberately preserve duplicate reports. A rerun or duplicate
+        # call must not silently replace an earlier skipped or failed phase.
+        outcomes.setdefault(report.nodeid, {}).setdefault(report.when, []).append(status)
+
+
+def pytest_configure(config):
+    if config.getoption('--ci-manifest'):
+        config._ci_outcomes = {}
+        config.pluginmanager.register(_OutcomeRecorder(config), 'ci-terminal-outcomes')
+
+
 def pytest_sessionstart(session):
     config = session.config
     benchmark, shard = config.getoption('--ci-benchmark'), config.getoption('--ci-shard')
@@ -142,6 +164,7 @@ def pytest_sessionfinish(session, exitstatus):
     report = json.loads(path.read_text(encoding='utf-8'))
     report['exitstatus'] = int(exitstatus)
     report['elapsed_seconds'] = time.monotonic() - config._ci_started
+    report['outcomes'] = dict(sorted(config._ci_outcomes.items()))
     path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
@@ -168,6 +191,12 @@ def _checked_inventory(report, workload, target, python_version, commit, run_id,
             raise ValueError('Test inventory contains duplicate test IDs.')
     if not report['all']:
         raise ValueError('The full test inventory is empty.')
+    outcomes = report.get('outcomes')
+    if not isinstance(outcomes, dict) or set(outcomes) != set(report['selected']):
+        raise ValueError('Completed test outcomes do not match the selected inventory.')
+    completed = {phase: ['passed'] for phase in ('setup', 'call', 'teardown')}
+    if any(phases != completed for phases in outcomes.values()):
+        raise ValueError('Every selected test must complete each phase once without skip or xfail.')
     return set(report['all']), set(report['selected'])
 
 

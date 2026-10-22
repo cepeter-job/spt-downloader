@@ -7,11 +7,11 @@ from pathlib import Path
 import re
 import sys
 import threading
-import tempfile
 import coretax
 from coretax_exporter import validate_scope
 from coretax_json import validate_detail_source
-from coretax_browser import CaptureCancelled,collect_inventory,collect_details
+from coretax_browser import CaptureCancelled,collect_inventory,collect_details,_atomic_checkpoint
+from coretax_resume import persist_selection
 from .auth import AuthBlocked,authenticate_owned,check_saved_credentials
 from .credentials import ALLOWED_ORIGINS
 from .events import Progress
@@ -19,6 +19,7 @@ from . import diagnostics
 from .interaction import Requests, select_records
 from .output import existing_outputs, publish_workbooks
 from .paths import downloads_folder
+from .profile_lifecycle import temporary_profile
 
 
 def playwright_factory():
@@ -51,8 +52,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
             auth_options={} if account is None else {'account':account}
             if account:
                 # A check in another profile cannot establish this profile's account identity.
-                cache=root/'cache';cache.mkdir(parents=True,exist_ok=True)
-                profile=Path(profiles.enter_context(tempfile.TemporaryDirectory(prefix='login-run-',dir=cache)))
+                profile=profiles.enter_context(temporary_profile(root,'login-run'))
             context,page=authenticate_owned(playwright,profile,browser,headless,auth_event,check_cancel,**auth_options)
             try:
                 progress.authenticated()
@@ -70,6 +70,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     if not isinstance(reply, dict) or set(reply) != {'selected_ids'}:
                         raise ValueError('Invalid selection response')
                     run = select_records(run, reply['selected_ids'])
+                    persist_selection(run, folder, detail_source=detail_source)
                 run['started_at']=datetime.now().astimezone().isoformat()
                 verified=0
                 def details_progress(data,ordinal):
@@ -120,7 +121,13 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         if run is not None and folder is not None:
             run['complete']=False
             run.setdefault('errors',[]).append({'object':'Cancellation','message':'User stopped the job; capture is PARTIAL'})
-            (folder/'run.json').write_text(json.dumps(run,ensure_ascii=False,indent=2),encoding='utf-8')
+            try:
+                _atomic_checkpoint(folder/'run.json',run)
+            except Exception as checkpoint_error:
+                # Preserve the last durable checkpoint and the Stop terminal
+                # even when storage is full or the aggregate is locked.
+                diagnostics.record('operation.failed', job_id=job_id, level='WARNING',
+                                   error=checkpoint_error, status='CANCELLED')
         progress.finished(False,None,status='CANCELLED',message='Dihentikan. Checkpoint lokal tetap tersedia; tidak ada hasil COMPLETE.')
         return 4
     except AuthBlocked as error:

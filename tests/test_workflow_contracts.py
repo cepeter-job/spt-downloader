@@ -202,13 +202,18 @@ def test_matching_manifests_cannot_hide_unexecuted_or_common_filtered_tests(job,
 
 
 @pytest.mark.parametrize('mutation', [
-    'automatic-push', 'missing-shard', 'different-python', 'ignored-comparison',
+    'automatic-push', 'automatic-pull-request', 'automatic-schedule',
+    'missing-shard', 'different-python', 'ignored-comparison',
     'comment-only-arguments', 'removed-shard-branch', 'unbound-shard-mode',
 ])
 def test_benchmark_contract_rejects_unscoped_or_incomplete_execution(mutation):
     document = deepcopy(benchmark())
     if mutation == 'automatic-push':
         document['on']['push'] = {'branches': ['main']}
+    elif mutation == 'automatic-pull-request':
+        document['on']['pull_request'] = {'branches': ['main']}
+    elif mutation == 'automatic-schedule':
+        document['on']['schedule'] = [{'cron': '0 0 * * 1'}]
     elif mutation == 'missing-shard':
         document['jobs']['benchmark']['strategy']['matrix']['mode'].remove('shard-1')
     elif mutation == 'different-python':

@@ -307,6 +307,10 @@ def test_inventory_check_rejects_incomplete_windows_tests_and_mixed_commit_evide
                 'python': '3.14.8', 'commit': 'a' * 40, 'platform': 'linux',
                 'run_id': '123', 'run_attempt': '1', 'exitstatus': 0}
     windows = dict(portable, selected=all_nodes, workload='windows', platform='win32')
+    for report in (portable, windows):
+        report['outcomes'] = {
+            node: {phase: ['passed'] for phase in ('setup', 'call', 'teardown')}
+            for node in report['selected']}
     assert module.check_inventories(portable, windows, '3.14.8', 'a' * 40,
                                     run_id='123', run_attempt='1') == 2
     for key, value in [('selected', []), ('selected', all_nodes[1:]), ('all', all_nodes[1:]),
@@ -317,3 +321,37 @@ def test_inventory_check_rejects_incomplete_windows_tests_and_mixed_commit_evide
         with pytest.raises(ValueError):
             module.check_inventories(portable, damaged, '3.14.8', 'a' * 40,
                                      run_id='123', run_attempt='1')
+
+
+def test_documentation_push_cannot_cancel_or_replace_an_unfinished_main_code_build():
+    from support_workflows import load_workflow, _expression
+
+    workflow = load_workflow(ROOT / '.github/workflows/windows-build.yml')
+    concurrency = workflow['concurrency']
+    # A main push needs its own run identity, including when another main push
+    # is still pending. Turning cancellation off alone preserves only one slot.
+    assert _expression(concurrency['group']) == _expression(
+        "windows-build-${{ github.event_name }}-${{ github.event_name == 'pull_request' "
+        "&& github.event.pull_request.number || github.run_id }}")
+    assert _expression(concurrency['cancel-in-progress']) == "github.event_name=='pull_request'"
+
+
+def test_every_uv_bootstrap_checks_the_reviewed_platform_archive_bytes():
+    from support_workflows import load_workflow
+
+    # Official uv 0.13.4 release asset digests, recorded independently of the
+    # setup action's remotely resolved release manifest.
+    reviewed = {
+        'ubuntu-24.04': '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f',
+        'windows-2022': 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225',
+    }
+    checked = 0
+    for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
+        for job in load_workflow(path)['jobs'].values():
+            for step in job.get('steps', []):
+                if step.get('uses', '').startswith('astral-sh/setup-uv@'):
+                    assert step['with']['version'] == '0.13.4'
+                    assert step['with'].get('checksum') == reviewed[job['runs-on']], (
+                        'Bootstrap uv must fail if its reviewed archive bytes change')
+                    checked += 1
+    assert checked >= 5

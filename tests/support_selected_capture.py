@@ -1,5 +1,6 @@
 """Synthetic selected capture helpers; no collected tests or shared mutable test state."""
 import inspect
+import json
 from types import SimpleNamespace
 from spt_desktop import worker
 from support_runs import fixture_run
@@ -27,7 +28,11 @@ def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on
     run['inventory_complete'] = True
     if marker is not None:
         run['records'][2]['sections'][0]['fields'][0]['value'] = marker
-    monkeypatch.setattr(worker, 'collect_inventory', lambda *args, **kwargs: run)
+    def inventory(page, npwp, year, basis, folder, **kwargs):
+        # The real inventory collector persists this before asking for consent.
+        (folder / 'inventory.json').write_text(json.dumps(run), encoding='utf-8')
+        return run
+    monkeypatch.setattr(worker, 'collect_inventory', inventory)
     stopped = False
 
     def request(kind, payload, percent):

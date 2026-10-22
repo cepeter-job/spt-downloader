@@ -1,6 +1,7 @@
 """Progress/stop tests use only synthetic data and no intranet access."""
 import importlib
 import importlib.util
+import json
 from pathlib import Path
 import pytest
 import coretax_browser as capture
@@ -82,7 +83,11 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
     monkeypatch.setattr(worker, 'playwright_factory', lambda: nullcontext(object()))
     context = SimpleNamespace(close=lambda: None)
     monkeypatch.setattr(worker, 'authenticate_owned', lambda *args: (context, object()))
-    monkeypatch.setattr(worker, 'collect_inventory', lambda *args, **kwargs: run)
+    def inventory(page,npwp,year,basis,folder,**kwargs):
+        (folder/'inventory.json').write_text(json.dumps(run),encoding='utf-8')
+        return run
+
+    monkeypatch.setattr(worker, 'collect_inventory', inventory)
 
     def deliver_details(page, data, folder, on_progress, check_cancel):
         for ordinal in range(1, len(data['records']) + 1):

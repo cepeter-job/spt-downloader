@@ -8,27 +8,14 @@ on:
         type: choice
         default: restore
         options: [restore, cold]
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/windows-build.yml'
-      - '.github/workflows/windows-shard-benchmark.yml'
-      - 'scripts/ci_tests.py'
-      - 'scripts/ci_report.py'
-      - 'scripts/ci_python_cache.py'
-      - 'spt_desktop/runtime.py'
-      - 'requirements*.txt'
-      - 'locks/*.txt'
-      - 'scripts/ci_shard_benchmark.py'
-      - 'tests/test_ci_sharding.py'
 
 permissions:
   contents: read
 
 # Isolated from the production build and from its required branch check.
 concurrency:
-  group: windows-shard-benchmark-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: windows-shard-benchmark-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   PYTHONUTF8: '1'
@@ -77,6 +64,7 @@ jobs:
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-python: true
