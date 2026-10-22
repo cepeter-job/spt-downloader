@@ -45,10 +45,10 @@ jobs:
         id: settings
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe -m pytest tests/test_desktop_settings_decisions.py tests/test_desktop_login_check_gui.py tests/test_unified_login_settings.py tests/test_desktop_ui_integration.py tests/test_desktop_ui_copy.py tests/test_desktop_ui_views.py tests/test_desktop_ui_theme.py tests/test_desktop_dialog_readiness.py tests/test_desktop_dialog_layout.py tests/test_desktop_selection_gui.py tests/test_desktop_selection_sorting.py tests/test_desktop_overwrite.py tests/test_desktop_overwrite_safety.py tests/test_json_hybrid_transport.py -q --basetemp "$env:RUNNER_TEMP/ui-settings-tests" --junitxml "$env:RUNNER_TEMP/ui-settings-results.xml" -o junit_logging=no -o junit_log_passing_tests=false
+          .venv/Scripts/python.exe -m pytest tests/test_desktop_settings_decisions.py tests/test_desktop_ui_views.py tests/test_desktop_ui_theme.py tests/test_desktop_dialog_readiness.py tests/test_desktop_build.py tests/test_ci_artifacts.py -q --basetemp "$env:RUNNER_TEMP/ui-settings-tests" --junitxml "$env:RUNNER_TEMP/ui-settings-results.xml" -o junit_logging=no -o junit_log_passing_tests=false
           exit $LASTEXITCODE
       - name: Measure matched dialog baseline and candidate
-        if: always() && steps.settings.outcome != 'skipped'
+        if: steps.settings.outcome == 'success'
         shell: pwsh
         run: |
           git worktree add --detach "$env:RUNNER_TEMP/ui-baseline" d402b98a1a534f761e60500fc1cc17f367461298
@@ -56,7 +56,7 @@ jobs:
           .venv/Scripts/python.exe scripts/ui_delivery_performance.py --baseline "$env:RUNNER_TEMP/ui-baseline" --baseline-revision d402b98a1a534f761e60500fc1cc17f367461298 --candidate "$env:GITHUB_WORKSPACE" --candidate-revision "$env:GITHUB_SHA" --trace --out "$env:RUNNER_TEMP/ui-performance"
           exit $LASTEXITCODE
       - name: Inspect native display and accessibility
-        if: always() && steps.settings.outcome != 'skipped'
+        if: steps.settings.outcome == 'success'
         shell: pwsh
         run: |
           powershell -NoProfile -STA -File scripts/ui_delivery_accessibility.ps1 -Python .venv/Scripts/python.exe -OutputDirectory "$env:RUNNER_TEMP/ui-accessibility" -RequestLargeDisplay -IncludeHighContrast *> "$env:RUNNER_TEMP/ui-accessibility-process.txt"

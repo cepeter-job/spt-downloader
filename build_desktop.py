@@ -43,7 +43,7 @@ def validate_report(data, python_profile='production'):
             and all(re.fullmatch(r'\d+\.\d+\.\d+', str(data.get(name, ''))) for name in ('tcl', 'tk'))
             and data.get('worker_python') == python_version()
             and data.get('worker_resources') == list(WORKER_FILES)
-            and data.get('credential_check_controls') and 'Cek Kredensial' in data.get('gui_controls', [])
+            and data.get('credential_check_controls') and 'Cek login' in data.get('gui_controls', [])
             and data.get('automatic_login_controls') == {
                 'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
             and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only']
@@ -117,7 +117,7 @@ def build(output, python_profile='production'):
         'Dependency worker memakai lock SHA-256 yang disertakan; Python sistem dan registry tidak diubah.\n'
         'Persiapan pertama memerlukan internet; ekspor membutuhkan akses intranet yang sah dan Edge/Chrome.\n'
         'Masukkan akun/sandi melalui Pengaturan; sandi disimpan di Windows Credential Manager.\n'
-        'Simpan pengaturan, lalu pilih Cek Kredensial: sesi terisolasi baru, satu upaya login, tanpa ekspor.\n'
+        'Simpan pengaturan, lalu pilih Cek login: sesi terisolasi baru, satu upaya login, tanpa ekspor.\n'
         'Login berhasil hanya muncul setelah pengiriman sandi tersimpan terverifikasi.\n'
         'NPWP harus tepat 16 digit ASCII; tahun pajak empat digit. Mulai menjalankan satu pekerjaan baca-saja.\n'
         'Setelah inventaris, pilih SPT lalu klik Sedot SPT terpilih. Tidak ada pilihan otomatis.\n'
