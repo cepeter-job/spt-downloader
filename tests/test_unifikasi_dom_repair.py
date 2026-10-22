@@ -139,9 +139,10 @@ def test_empty_appendix_preserves_reported_zero_without_fake_body(tmp_path, form
     book, reports = export(tmp_path, [section(form, tables=[table])])
     try:
         sheet = book[form]
-        assert sheet.cell(footer_row, amount_col).value == 0
-        assert sheet.cell(footer_row, amount_col).data_type == 'n'
-        assert sheet.cell(footer_row, amount_col).number_format == ACCOUNTING_RP
+        output_footer = 6 if form == 'LAMPIRAN-I' else footer_row
+        assert sheet.cell(output_footer, amount_col).value == 0
+        assert sheet.cell(output_footer, amount_col).data_type == 'n'
+        assert sheet.cell(output_footer, amount_col).number_format == ACCOUNTING_RP
         assert sheet['A5'].value is None and sheet['B5'].value is None
         assert reports and reports[0]['complete']
     finally:
@@ -202,12 +203,14 @@ def test_monetary_template_formats_match_ppn_and_pph21():
         workbook.close()
 
 
-def test_conflicting_period_year_preserves_raw_evidence(tmp_path):
+def test_conflicting_period_year_preserves_source_and_unresolved_report(tmp_path):
     fields = [{'label': 'Masa Pajak', 'value': 'Januari 2025'}, {'label': 'Tahun Pajak', 'value': '2024'}]
     book, reports = export(tmp_path, [section('INDUK', fields=fields)])
     try:
         assert reports and not reports[0]['complete']
         assert book['INDUK']['D4'].value is None and book['INDUK']['D5'].value is None
-        assert any(c.value == '2024' for row in book['INDUK'] for c in row)
+        assert reports[0]['unmapped_fields'] == 2
+        assert not any(c.value == '2024' for row in book['INDUK'] for c in row)
+        assert fields[1]['value'] == '2024'
     finally:
         book.close()

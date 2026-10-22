@@ -104,15 +104,15 @@ def test_bpnr_rate_and_reported_footer_shift_with_body_growth(tmp_path, count):
     book, reports = export(tmp_path, [section('DAFTAR-I', tables=[table])])
     try:
         sheet = book['DAFTAR-I']
-        assert sheet['J10'].value == 'TINGKAT (%)'
-        assert sheet['K10'].value == 'PAJAK PENGHASILAN (Rp)'
-        for row in range(11, 11 + count):
+        assert sheet['J11'].value == 'TINGKAT (%)'
+        assert sheet['K11'].value == 'PAJAK PENGHASILAN (Rp)'
+        for row in range(12, 12 + count):
             assert sheet.cell(row, 10).value == 0.02
             assert sheet.cell(row, 10).data_type == 'n'
             assert sheet.cell(row, 10).number_format == '0.00%'
             assert sheet.cell(row, 11).value == 24.69
             assert sheet.cell(row, 14).value == '0000000000000002000001'
-        total_row = 15 + max(0, count - 4)
+        total_row = 16 + max(0, count - 4)
         assert sheet.cell(total_row, 11).value == 987.65
         assert sheet.cell(total_row, 11).data_type == 'n'
         assert sheet.cell(total_row, 10).value is None
@@ -147,12 +147,14 @@ def test_native_rate_is_on_form_once_and_tax_remains_numeric(tmp_path):
         book.close()
 
 
-def test_unknown_induk_field_remains_unresolved_visible_evidence(tmp_path):
+def test_unknown_induk_field_stays_unresolved_without_redundant_display(tmp_path):
     field = {'field': 'UnexpectedAmount', 'label': 'NPWP',
              'group': 'A. IDENTITAS PEMOTONG', 'value': 'SYNTHETIC-UNRESOLVED'}
     book, reports = export(tmp_path, [section('INDUK', fields=[field])])
     try:
         assert reports and reports[0]['complete'] is False
-        assert any(c.value == 'SYNTHETIC-UNRESOLVED' for row in book['INDUK'] for c in row)
+        assert reports[0]['unmapped_fields'] == 1
+        assert not any(c.value == 'SYNTHETIC-UNRESOLVED' for row in book['INDUK'] for c in row)
+        assert book['INDUK'].max_row == 25
     finally:
         book.close()
