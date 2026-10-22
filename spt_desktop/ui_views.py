@@ -266,8 +266,11 @@ class MainView(ttk.Frame):
                 self.canvas.winfo_width(), self.canvas.winfo_height())
         if event is not None and size == self._layout_size:
             return
-        if event is None or self._layout_size is None:
-            # Content and initial geometry must not wait for resize debounce.
+        if (event is None or self._layout_size is None
+                or size[:2] == self._layout_size[:2]):
+            # Wrapping can change the viewport after a content reflow returns.
+            # With unchanged outer dimensions, finish that layout at idle too;
+            # only an actual shell resize belongs behind the debounce.
             # Reuse pending idle work; promote only a delayed resize callback.
             if self._reflow_after is not None:
                 if self._reflow_idle:
