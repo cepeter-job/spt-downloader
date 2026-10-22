@@ -41,7 +41,8 @@ def _positive(value):
 def _identity(repository, run_id, run_attempt, commit, artifact_id, python_version):
     if (not isinstance(repository, str)
             or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
-            or not re.fullmatch(r'\d+\.\d+\.\d+', python_version)):
+            or not isinstance(python_version, str)
+            or not re.fullmatch(r'[1-9][0-9]*\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', python_version)):
         raise ValueError('Repository or Python identity is invalid.')
     return dict(repository=repository, run_id=_positive(run_id), run_attempt=_positive(run_attempt),
                 commit=_sha(commit), artifact_id=_positive(artifact_id), python_version=python_version)
@@ -156,6 +157,12 @@ def _api(endpoint, *, missing=False):
         if missing and re.search(rb'\bHTTP 404\b', error.stderr or b''):
             return None
         raise RuntimeError('GitHub metadata request failed; no fallback to weaker evidence.') from error
+    return json.loads(raw)
+
+
+def _write_api(method, endpoint, payload):
+    raw = _command(['gh', 'api', '--method', method, endpoint, '--input', '-'],
+                   input_data=json.dumps(payload).encode('utf-8'))
     return json.loads(raw)
 
 
@@ -296,10 +303,17 @@ def _tag(value):
     return value
 
 
-def _release_assets(repository, release, destination, *, tag, commit, draft):
-    if (release.get('tag_name') != tag or release.get('target_commitish') != commit
-            or release.get('draft') is not draft or type(release.get('id')) is not int):
+def _release_identity(release, *, tag, commit, draft, release_id=None):
+    if (not isinstance(release, dict) or release.get('tag_name') != tag
+            or release.get('target_commitish') != commit or release.get('draft') is not draft
+            or type(release.get('id')) is not int or release['id'] < 1
+            or (release_id is not None and release['id'] != release_id)):
         raise ValueError('Release identity or publication state does not match.')
+    return release['id']
+
+
+def _release_assets(repository, release, destination, *, tag, commit, draft, release_id=None):
+    _release_identity(release, tag=tag, commit=commit, draft=draft, release_id=release_id)
     entries = release.get('assets', [])
     if (len(entries) != len(ASSETS) + 1
             or {entry.get('name') for entry in entries} != set(ASSETS) | {RELEASE_MANIFEST}):
@@ -312,16 +326,20 @@ def _release_assets(repository, release, destination, *, tag, commit, draft):
         _verify_bytes(path, entry.get('digest'), entry.get('size'))
 
 
+def _verify_tag(repository, tag, commit):
+    ref = _api(f'repos/{repository}/git/ref/tags/{quote(tag, safe="")}')
+    obj = ref.get('object', {}) if isinstance(ref, dict) else {}
+    if not isinstance(obj, dict) or obj.get('type') != 'commit' or obj.get('sha') != commit:
+        raise ValueError('Release tag no longer points directly to the verified source commit.')
+
+
 def restore_release(output, tag, **identity):
     """Read retained release assets even after the Actions archive has expired."""
     identity = _identity(**identity)
     tag = _tag(tag)
     repository = identity['repository']
     release = _api(f'repos/{repository}/releases/tags/{quote(tag, safe="")}')
-    ref = _api(f'repos/{repository}/git/ref/tags/{quote(tag, safe="")}')
-    obj = ref.get('object', {})
-    if obj.get('type') != 'commit' or obj.get('sha') != identity['commit']:
-        raise ValueError('Rollback release tag no longer identifies the selected source commit.')
+    _verify_tag(repository, tag, identity['commit'])
     assets = Path(output) / 'assets'
     _release_assets(repository, release, assets, tag=tag, commit=identity['commit'], draft=False)
     verify_candidate(assets, **identity)
@@ -344,37 +362,60 @@ def publish(assets, tag, **identity):
         raise ValueError('Refusing to overwrite an existing release or tag.')
     # The atomic create-only ref request closes the tag-name race. No force
     # update, clobber, deletion, or retry of a partially created release is used.
-    _command(['gh', 'api', '--method', 'POST', f'repos/{repository}/git/refs', '--input', '-'],
-             input_data=json.dumps({'ref': 'refs/tags/' + tag, 'sha': source['commit']}).encode('utf-8'))
+    _write_api('POST', f'repos/{repository}/git/refs',
+               {'ref': 'refs/tags/' + tag, 'sha': source['commit']})
+    notes = (
+        f'Exact verified Windows distribution from `{source["commit"]}`.\n\n'
+        f'Source run {source["run_id"]}, attempt {source["run_attempt"]}, '
+        f'artifact {source["artifact_id"]}, Python {source["python_version"]}.\n\n'
+        'Original artifact ZIP, build identity, SBOM, checksum manifests and signed provenance '
+        'are retained for verification and rollback. This is synthetic CI evidence; '
+        'it does not claim a Windows publisher signature or real-account acceptance.\n')
+    created = _write_api('POST', f'repos/{repository}/releases', {
+        'tag_name': tag, 'target_commitish': source['commit'], 'name': 'SPT Downloader ' + tag,
+        'body': notes, 'draft': True, 'prerelease': False, 'make_latest': 'false',
+    })
+    release_id = _release_identity(created, tag=tag, commit=source['commit'], draft=True)
+    if created.get('assets') != []:
+        raise ValueError('A new release draft must not contain unexpected existing assets.')
+    endpoint = f'repos/{repository}/releases/{release_id}'
+    # GET /releases/tags/{tag} only retrieves published releases. Keep the
+    # numeric ID returned by creation for every upload, readback and mutation.
+    for name in (*ASSETS, RELEASE_MANIFEST):
+        path = assets / name
+        upload_url = f'https://uploads.github.com/{endpoint}/assets?name={quote(name, safe="")}'
+        uploaded = json.loads(_command([
+            'gh', 'api', '--method', 'POST', upload_url,
+            '-H', 'Content-Type: application/octet-stream',
+            '-H', 'Accept: application/vnd.github+json', '--input', str(path),
+        ]))
+        if not isinstance(uploaded, dict) or uploaded.get('name') != name:
+            raise ValueError('Uploaded release asset identity does not match the candidate.')
+        _positive(uploaded.get('id'))
+        _verify_bytes(path, uploaded.get('digest'), uploaded.get('size'))
     with tempfile.TemporaryDirectory(prefix='spt-publish-') as temporary:
-        notes = Path(temporary) / 'notes.md'
-        notes.write_text(
-            f'Exact verified Windows distribution from `{source["commit"]}`.\n\n'
-            f'Source run {source["run_id"]}, attempt {source["run_attempt"]}, '
-            f'artifact {source["artifact_id"]}, Python {source["python_version"]}.\n\n'
-            'Original artifact ZIP, build identity, SBOM, checksum manifests and signed provenance '
-            'are retained for verification and rollback. This is synthetic CI evidence; '
-            'it does not claim a Windows publisher signature or real-account acceptance.\n', encoding='utf-8')
-        _command(['gh', 'release', 'create', tag, '--repo', repository, '--target', source['commit'],
-                  '--verify-tag', '--draft', '--latest=false', '--title', 'SPT Downloader ' + tag,
-                  '--notes-file', str(notes), *[str(assets / name) for name in (*ASSETS, RELEASE_MANIFEST)]])
-        release = _api(f'repos/{repository}/releases/tags/{quote(tag, safe="")}')
+        release = _api(endpoint)
         readback = Path(temporary) / 'readback'
-        _release_assets(repository, release, readback, tag=tag, commit=source['commit'], draft=True)
+        _release_assets(repository, release, readback, tag=tag, commit=source['commit'],
+                        draft=True, release_id=release_id)
         for name in (*ASSETS, RELEASE_MANIFEST):
             if _hash(readback / name) != _hash(assets / name):
                 raise ValueError('Draft release readback differs from the verified candidate.')
         verify_candidate(readback, **identity)
-        _command(['gh', 'release', 'edit', tag, '--repo', repository, '--draft=false', '--latest'])
-        final = _api(f'repos/{repository}/releases/tags/{quote(tag, safe="")}')
+        # A tag can be moved while assets upload or signatures are verified.
+        # Check its direct commit immediately before making this draft public.
+        _verify_tag(repository, tag, source['commit'])
+        published = _write_api('PATCH', endpoint, {'draft': False, 'make_latest': 'true'})
+        _release_identity(published, tag=tag, commit=source['commit'],
+                          draft=False, release_id=release_id)
+        final = _api(endpoint)
         final_readback = Path(temporary) / 'published'
-        _release_assets(repository, final, final_readback, tag=tag, commit=source['commit'], draft=False)
+        _release_assets(repository, final, final_readback, tag=tag, commit=source['commit'],
+                        draft=False, release_id=release_id)
         for name in (*ASSETS, RELEASE_MANIFEST):
             if _hash(final_readback / name) != _hash(assets / name):
                 raise ValueError('Published release bytes changed after draft verification.')
-        ref = _api(f'repos/{repository}/git/ref/tags/{quote(tag, safe="")}')
-        if ref.get('object', {}).get('type') != 'commit' or ref['object'].get('sha') != source['commit']:
-            raise ValueError('Published release tag differs from the verified source commit.')
+        _verify_tag(repository, tag, source['commit'])
     return final['html_url']
 
 
@@ -386,7 +427,8 @@ def main(argv=None):
     parser.add_argument('--run-attempt', required=True, type=int)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--artifact-id', required=True, type=int)
-    parser.add_argument('--python-version', default='3.14.8')
+    parser.add_argument('--python-version', required=True,
+                        help='Exact source build Python version, including for retained releases.')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--tag', required=True)
     parser.add_argument('--rollback-tag', default='')

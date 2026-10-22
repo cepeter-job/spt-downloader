@@ -11,16 +11,21 @@ empty leaves or staged subtree when a directory itself must be removed/moved.
 Other platforms retain checked reads and ordinary fresh-folder publication.
 Their directory guard does not pin paths, and their checked directory rename
 does not provide the Windows protection against concurrent namespace changes.
+Verified file deletion therefore requires Windows and refuses portable fallback.
 
 API contracts:
 https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
 https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw
+https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
+https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_disposition_info
+https://learn.microsoft.com/en-us/windows/win32/winprog/windows-data-types
 https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/open-osfhandle
 https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/87f86c9b-6c2a-4803-84b7-131a74a434fa
 """
 from contextlib import contextmanager
 import ctypes.wintypes
 import errno
+import hashlib
 import os
 from pathlib import Path
 import stat
@@ -28,12 +33,19 @@ import sys
 
 
 _GENERIC_READ = 0x80000000
+_DELETE = 0x00010000
 _FILE_SHARE_READ = 0x00000001
 _FILE_SHARE_WRITE = 0x00000002
 _OPEN_EXISTING = 3
 _FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 _FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 _FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
+_FILE_DISPOSITION_INFO = 4
+
+
+class _FileDispositionInfo(ctypes.Structure):
+    # Windows BOOLEAN is one unsigned byte, unlike the four-byte BOOL return.
+    _fields_ = [('DeleteFile', ctypes.c_ubyte)]
 
 
 def _kernel():
@@ -49,6 +61,10 @@ def _kernel():
         ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPCWSTR, ctypes.wintypes.DWORD,
     ]
     kernel.MoveFileExW.restype = ctypes.wintypes.BOOL
+    kernel.SetFileInformationByHandle.argtypes = [
+        ctypes.wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, ctypes.wintypes.DWORD,
+    ]
+    kernel.SetFileInformationByHandle.restype = ctypes.wintypes.BOOL
     return kernel
 
 
@@ -96,9 +112,11 @@ def _file_info(path):
     return info
 
 
-def _open_windows_fd(path, *, directory):
+def _open_windows_fd(path, *, directory, delete=False):
     import msvcrt
 
+    if directory and delete:
+        raise ValueError('Verified deletion supports ordinary files only')
     kernel = _kernel()
     flags = _FILE_FLAG_OPEN_REPARSE_POINT
     sharing = _FILE_SHARE_READ
@@ -111,7 +129,7 @@ def _open_windows_fd(path, *, directory):
     # GENERIC_READ includes directory-list access, not just attribute access.
     # No security attributes means the native handle is not inheritable.
     handle = kernel.CreateFileW(
-        _native_path(path), _GENERIC_READ, sharing, None,
+        _native_path(path), _GENERIC_READ | (_DELETE if delete else 0), sharing, None,
         _OPEN_EXISTING, flags, None,
     )
     if handle == ctypes.c_void_p(-1).value:
@@ -248,6 +266,63 @@ def locked_file(path):
         _check_type(after, directory=False)
         if _state(after) != _state(before) or _state(_file_info(path)) != _state(before):
             raise ValueError('Output file changed while being read')
+
+
+def delete_verified(path, expected):
+    """Delete the exact fingerprinted file through its still-held Windows handle.
+
+    ``expected`` is (device, inode, size, mtime_ns, sha256). Ordinary ancestors
+    remain pinned, and file sharing denies data writes and rename/delete until
+    FileDispositionInfo has marked this same object for deletion on close.
+    Unsupported platforms, changed/shared files, locks and native errors retain
+    the file; there is no pathname-based unlink fallback or permission change.
+    """
+    if sys.platform != 'win32':
+        raise OSError(errno.ENOTSUP, 'Verified recovery deletion requires native Windows custody')
+    if (not isinstance(expected, (tuple, list)) or len(expected) != 5
+            or any(type(value) is not int or value < 0 for value in expected[:4])
+            or not expected[1] or not isinstance(expected[4], str) or len(expected[4]) != 64
+            or any(value not in '0123456789abcdef' for value in expected[4])):
+        raise ValueError('Invalid expected deletion fingerprint')
+    expected = tuple(expected)
+    path = _absolute(path)
+
+    def check(info):
+        _check_type(info, directory=False)
+        if info.st_nlink != 1:
+            raise ValueError('Shared output file cannot be deleted')
+        if _state(info) != expected[:4]:
+            raise ValueError('Output file identity or state changed before deletion')
+
+    with DirectoryGuard() as guard:
+        directories = {}
+        for parent in reversed(path.parents):
+            info = parent.lstat()
+            _check_type(info, directory=True)
+            directories[parent] = _identity(info)
+        guard.include(directories)
+        check(_file_info(path))
+        descriptor = _open_windows_fd(path, directory=False, delete=True)
+        try:
+            check(os.fstat(descriptor))
+            check(_file_info(path))
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: os.read(descriptor, 1048576), b''):
+                digest.update(chunk)
+            check(os.fstat(descriptor))
+            check(_file_info(path))
+            if digest.hexdigest() != expected[4]:
+                raise ValueError('Output file bytes changed before deletion')
+            import msvcrt
+            disposition = _FileDispositionInfo(1)
+            # Unlike FILE_FLAG_DELETE_ON_CLOSE at open time, this cannot mark
+            # an unverified or failed-read file for deletion as we unwind.
+            if not _kernel().SetFileInformationByHandle(
+                    msvcrt.get_osfhandle(descriptor), _FILE_DISPOSITION_INFO,
+                    ctypes.byref(disposition), ctypes.sizeof(disposition)):
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            os.close(descriptor)
 
 
 def move_no_replace(source, target):

@@ -8,6 +8,11 @@ memiliki satu `publication-recovery-*.json` yang menunjuk `manifest.json` di
 `jobs/.spt-publish-*`; backup dan journal tetap privat. Jangan menaruhnya di
 Downloads, mengedit path/hash, atau mengunggahnya ke issue.
 
+Pemulihan ini memerlukan Windows. Identitas dan hash file yang akan dibersihkan
+diverifikasi melalui handle yang tetap terbuka sampai permintaan penghapusan
+native; perubahan, hardlink dan file terkunci ditolak. Platform lain ditolak
+sebelum hasil dipindahkan, tanpa fallback penghapusan berdasarkan nama path.
+
 ## Langkah operator
 
 1. Hentikan aplikasi dan pastikan job/browser miliknya sudah berakhir. Tutup Excel yang membuka hasil tersebut. Jangan menjalankan pemulihan bersama ekspor baru.

@@ -295,7 +295,7 @@ Nama artifact menyertakan commit penuh dan versi interpreter:
 SPTDownloader-Windows-x64-<commit>-python<versi>-attempt<nomor>
 ```
 
-Produksi menggunakan `python3.14.8` saja. Artifact 3.11.17 dari run terdahulu tetap dapat disimpan terpisah sebagai opsi rollback yang diverifikasi, bukan artifact produksi baru.
+Produksi menggunakan `python3.14.8` saja. Artifact 3.11.17 dari run terdahulu tetap dapat disimpan terpisah sebagai opsi rollback yang diverifikasi, bukan artifact produksi baru. Workflow promosi meminta `source_python_version` secara eksplisit sesuai build/receipt asal; versi tersebut tidak diganti otomatis dengan pin produksi saat ini. Promosi terkelola tetap memerlukan format tujuh berkas dan seluruh provenance yang dijelaskan dalam [panduan promosi dan rollback](promosi-dan-rollback.md).
 
 1. Buka run workflow yang dimaksud. Cocokkan repository, event, branch, commit penuh, dan kesimpulan seluruh gate. Untuk rilis produksi gunakan commit `main` yang telah disetujui.
 2. Catat **run ID, attempt, head PR/branch, commit checkout yang diuji, artifact ID, nama artifact, dan profil Python**. Pada PR, commit checkout dapat berupa merge commit seperti dijelaskan di [alur verifikasi](#menjalankan-dan-membaca-verifikasi). Unduh artifact berdasarkan ID/run tersebut; jangan memilih hanya berdasarkan nama atau waktu terbaru.

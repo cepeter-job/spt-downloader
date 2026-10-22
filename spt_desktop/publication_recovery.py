@@ -4,14 +4,16 @@ The journal makes process-death recovery discoverable. It does not turn several
 filesystem moves into one atomic transaction or guarantee storage hardware.
 """
 from contextlib import ExitStack
+import errno
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import sys
 import uuid
 
-from .output_windows import DirectoryGuard, locked_file
+from .output_windows import DirectoryGuard, delete_verified, locked_file
 
 
 _MAX_MANIFEST = 64 * 1024 * 1024
@@ -260,9 +262,13 @@ def _recover_one(source, downloads, notice):
                     continue
                 path = coretax.output_path(target, entry[key])
                 if path.exists():
-                    if not _same_bytes(output._fingerprint(path), expected):
+                    actual = output._fingerprint(path)
+                    if not _same_bytes(actual, expected):
                         raise ValueError('Publication recovery cleanup encountered changed bytes')
-                    path.unlink()
+                    # A reconstructed original can have a new inode. Bind
+                    # deletion to this checked version while preserving any
+                    # version that changes before native custody is acquired.
+                    delete_verified(path, actual)
         for name, expected in before.items():
             if not _same_bytes(output._fingerprint(coretax.output_path(target, name)), expected):
                 raise ValueError('Restored publication bytes differ from the prior output')
@@ -273,6 +279,8 @@ def _recover_one(source, downloads, notice):
 
 def recover_publication(source, downloads):
     """Explicitly restore a pending publication; refuse changed/unowned paths."""
+    if sys.platform != 'win32':
+        raise OSError(errno.ENOTSUP, 'Publication recovery requires native Windows custody')
     from . import output
     source, downloads = output._safe_path(source), output._safe_path(downloads)
     if source.is_relative_to(downloads):

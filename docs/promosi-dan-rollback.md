@@ -15,8 +15,11 @@ produksi sudah diterbitkan atau rollback pada mesin pengguna sudah dilakukan.
 
 ## Identitas dan gate sumber
 
-Operator memasukkan run ID, attempt, commit 40 karakter dan artifact ID dari satu
-build `main` yang berhasil. Verifier membaca metadata run, seluruh job pada attempt
+Operator memasukkan run ID, attempt, commit 40 karakter, artifact ID dan
+`source_python_version` dari satu build `main` yang berhasil. Versi sumber wajib
+ditulis lengkap sebagai angka ASCII `major.minor.patch`, tanpa leading zero atau
+suffix. Nilainya tidak memakai default pin produksi terbaru: promosi dan rollback
+harus tetap mengikat versi build asal. Verifier membaca metadata run, seluruh job pada attempt
 tersebut, serta metadata artifact. Route, portable, kedua shard Windows, audit,
 package, provenance dan check gabungan harus tepat sekali berhasil pada identitas
 yang sama. Nama artifact, ukuran, digest SHA-256, branch, repository asal dan status
@@ -58,8 +61,9 @@ $SptRun = "GANTI_RUN_ID"
 $SptAttempt = "GANTI_ATTEMPT"
 $SptCommit = "GANTI_SHA_MAIN_40_KARAKTER"
 $SptArtifact = "GANTI_ARTIFACT_ID"
+$SptPython = "GANTI_VERSI_PYTHON_BUILD_ASAL"
 $SptNewTag = "v2026.10.22"
-gh workflow run release-promotion.yml --repo $SptRepo --ref main -f source_run_id=$SptRun -f source_run_attempt=$SptAttempt -f source_commit=$SptCommit -f artifact_id=$SptArtifact -f tag=$SptNewTag -f publish=false
+gh workflow run release-promotion.yml --repo $SptRepo --ref main -f source_run_id=$SptRun -f source_run_attempt=$SptAttempt -f source_commit=$SptCommit -f source_python_version=$SptPython -f artifact_id=$SptArtifact -f tag=$SptNewTag -f publish=false
 ```
 
 Perintah ini memicu verifikasi pada runner; tidak menjalankan produk di komputer
@@ -79,23 +83,42 @@ Job verify hanya mempunyai `contents: read`, `actions: read` dan `attestations: 
 
 Publisher memverifikasi ulang kandidat dan kelima signature sebelum mutasi remote.
 Tag/release yang sudah ada ditolak. Ref baru dibuat secara create-only pada SHA
-sumber, kemudian release draft dibuat dengan aset eksplisit. Setiap aset draft
-diunduh kembali berdasarkan asset ID, diperiksa digest/ukurannya, dibandingkan
-dengan kandidat, dan diverifikasi lagi. Baru sesudah itu draft dipublikasikan
-sebagai release terbaru; aset serta tag dibaca kembali setelah publikasi.
+sumber, kemudian REST `POST /releases` membuat draft dan mengembalikan release ID.
+ID numerik yang sama digunakan untuk upload aset, readback draft, perubahan status
+publikasi dan readback akhir. Endpoint pencarian release berdasarkan tag hanya
+digunakan untuk release yang telah diterbitkan, bukan untuk menemukan draft baru.
+Setiap aset draft diunduh kembali berdasarkan asset ID, diperiksa digest/ukurannya,
+dibandingkan dengan kandidat, dan diverifikasi lagi. Tepat sebelum publikasi,
+tag harus masih menunjuk langsung ke SHA sumber yang sama; tag yang berpindah atau
+berubah menjadi annotated tag menghentikan proses dengan draft tetap privat.
+Baru sesudah itu draft dipublikasikan sebagai release terbaru; aset serta tag
+dibaca kembali setelah publikasi.
 
 Tidak ada force-update, `--clobber`, penghapusan otomatis atau penggantian release
 lama. Bila publikasi gagal di tengah, draft/tag yang sudah dibuat dibiarkan untuk
-ditinjau; jangan menganggap rerun dapat menimpanya. Proses mengikuti perilaku
-[gh release create](https://cli.github.com/manual/gh_release_create) dan
-[gh release edit](https://cli.github.com/manual/gh_release_edit). Immutability
-release adalah pengaturan GitHub yang terpisah; workflow tidak mengaktifkannya dan
-tidak menyimpulkan bahwa pengaturan itu sudah aktif.
+ditinjau; jangan menganggap rerun dapat menimpanya. Proses mengikuti kontrak
+[REST create/get/update release](https://docs.github.com/en/rest/releases/releases),
+[upload release asset](https://docs.github.com/en/rest/releases/assets#upload-a-release-asset)
+dan input berkas/JSON [gh api](https://cli.github.com/manual/gh_api).
+Pemeriksaan tag tidak mengunci ref secara atomik selama request publikasi.
+Immutability release dan perlindungan tag merupakan pengaturan GitHub yang
+terpisah; workflow tidak mengaktifkan atau mengasumsikan pengaturan tersebut.
+
+GitHub membatasi create/update release ketika commit target mempunyai perubahan
+berkas `.github/workflows/` dibanding default branch saat ini. Operasi tersebut
+dapat memerlukan izin `Workflows: write`, yang tidak tersedia untuk `GITHUB_TOKEN`.
+Akibatnya promosi ulang sumber lama dapat berhenti dengan 403/404 meskipun semua
+byte dan signature valid. Verifikasi kandidat dan pembacaan release lama tetap
+tersedia; workflow tidak otomatis mengganti token atau memperluas izin. Publikasi
+yang terhalang memerlukan keputusan maintainer dan credential/prosedur manual
+yang diotorisasi secara terpisah. Batas ini mengikuti
+[persyaratan izin create release](https://docs.github.com/en/rest/releases/releases#create-a-release)
+dan [update release](https://docs.github.com/en/rest/releases/releases#update-a-release).
 
 ## Memeriksa dan menggunakan release terdahulu
 
 Isi `rollback_tag` dengan tag release terdahulu, identitas sumber dengan run,
-attempt, SHA dan artifact ID asli yang tercatat pada receipt release tersebut,
+attempt, SHA, artifact ID dan `source_python_version` asli yang tercatat pada receipt release tersebut,
 serta `publish=false`. `tag` diisi nama kandidat pemulihan baru yang aman. Jalur ini
 membaca aset release berdasarkan ID dan memverifikasi tag → commit, digest aset,
 manifest, identitas payload dan kelima bundle provenance. Ia tidak memerlukan
@@ -103,8 +126,9 @@ artifact atau run Actions lama masih tersedia.
 
 Setelah verifikasi sukses, operator dapat memilih executable release lama untuk
 distribusi sesuai prosedur penerimaan yang berizin. Bila perlu menerbitkan ulang
-byte lama sebagai release terbaru, gunakan **tag baru** dan `publish=true`; sumber
-dan byte lama tetap sama, release sebelumnya tetap utuh. Pemulihan executable
+byte lama sebagai release terbaru, gunakan **tag baru** dan `publish=true` bila
+izin create/update release untuk commit sumber tersebut mencukupi; sumber dan
+byte lama tetap sama, release sebelumnya tetap utuh. Pemulihan executable
 tidak melakukan downgrade otomatis, menghapus output, mengubah checkpoint,
 mengganti credential store atau mengklaim kompatibilitas data pengguna. Simpan
 identitas build yang akan dipulihkan dan verifikasi ruang lingkup penerimaan
@@ -112,7 +136,9 @@ sesuai [panduan penerimaan manual](penerimaan-manual.md).
 
 Tes delivery memakai metadata, arsip dan adapter signature yang jelas sintetis
 untuk membuktikan penolakan sumber salah, perubahan byte/receipt/bundle, kegagalan
-readback draft serta upaya publish di luar main. Tes tersebut tidak menyatakan
+readback draft, tag yang berubah sebelum publikasi, pengikatan release ID serta
+upaya publish di luar main. Versi Python sumber diuji terpisah dari pin produksi
+saat ini. Tes tersebut tidak menyatakan
 signature sintetis sebagai signature GitHub yang sah. Keberhasilan promosi nyata
 memerlukan run dispatch yang membaca dan memverifikasi attestation GitHub aktual;
 penerimaan rollback nyata memerlukan bukti terpisah pada target berizin.

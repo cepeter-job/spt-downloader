@@ -614,7 +614,7 @@ def publishing_release(prepared_release, monkeypatch):
             state['created'] = True
             state['uploaded'] = {name: (assets / name).read_bytes() for name in by_name}
             return b''
-        pytest.fail('Publication must mutate the created numeric release ID')
+        raise AssertionError('Publication must mutate the created numeric release ID')
 
     def download(endpoint, path):
         name = by_id[int(endpoint.rsplit('/', 1)[1])]['name']
