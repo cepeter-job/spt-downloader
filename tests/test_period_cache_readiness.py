@@ -16,8 +16,8 @@ def stages(root):
 
 
 @pytest.mark.parametrize('deferred', [False, True])
-def test_ready_cache_filters_before_first_submitted_request_without_extra_navigation(browser, tmp_path, monkeypatch, deferred):
-    # Removing the late read must make the deferred fixture scan unfiltered.
+def test_cache_available_before_submitted_navigation_filters_without_draft_rescan(browser, tmp_path, monkeypatch, deferred):
+    # A catalog requiring a second navigation cannot justify revisiting drafts.
     original = driver.read_period_catalog
     write_attempts = []
 
@@ -58,13 +58,14 @@ def test_ready_cache_filters_before_first_submitted_request_without_extra_naviga
         assert result['inventory_complete'], result['errors']
         assert {r['record_id'] for r in result['records']} == {
             'fixture-normal', 'fixture-amend-001', 'fixture-monthly', 'fixture-cross-year'}
-        assert metrics['submitted_requests'] and all(p['Filters'] for p in metrics['submitted_requests'])
+        assert metrics['submitted_requests']
+        assert all(bool(p['Filters']) is (not deferred) for p in metrics['submitted_requests'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
-        # Existing search selection + draft scan + one navigation per partition.
-        assert sum('/not-submitted-' in p for p in metrics['list_navigations']) == 2
+        # Only the taxpayer-selection landing precedes submitted partitions.
+        assert sum('/not-submitted-' in p for p in metrics['list_navigations']) == 1
         submitted_entries = [e for e in result['audit'] if e['status'] == 'SPT Dilaporkan']
         assert sum('/submitted-' in p for p in metrics['list_navigations']) == len(submitted_entries)
-        assert all(e['filter_mode'] == 'period-year-candidates' for e in submitted_entries)
+        assert all(e['filter_mode'] == ('unfiltered' if deferred else 'period-year-candidates') for e in submitted_entries)
     assert write_attempts and not any(write_attempts)
     observed = stages(tmp_path/'logs')
     assert observed.count('readiness') == int(deferred)
@@ -91,7 +92,7 @@ def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(browser, 
         assert result['inventory_complete'], result['errors']
         assert all(not p['Filters'] for p in metrics['submitted_requests'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
-        assert len(metrics['list_navigations']) == 3
+        assert len(metrics['list_navigations']) == 2
     assert len(calls) == (2 if mode == 'expired' else 3)
     assert stages(tmp_path/'logs').count('readiness') == (0 if mode == 'expired' else 1)
     assert 'PRIVATE-READINESS-ERROR' not in json.dumps(records(tmp_path/'logs'))
@@ -105,6 +106,8 @@ def test_recovered_cache_still_requires_partition_recheck(browser, tmp_path, mon
     def read(page):
         value = original(page)
         calls.append(value is not None)
+        if len(calls) == 1:
+            return None
         if len(calls) >= 3 and value is not None:
             value = deepcopy(value)
             if change == 'semantic':
@@ -114,7 +117,7 @@ def test_recovered_cache_still_requires_partition_recheck(browser, tmp_path, mon
         return value
 
     monkeypatch.setattr(driver, 'read_period_catalog', read)
-    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=20)
         assert metrics['submitted_requests'] and all(p['Filters'] for p in metrics['submitted_requests'])
         assert not result['inventory_complete']
@@ -148,4 +151,4 @@ def test_stop_during_readiness_prevents_submitted_navigation(browser, tmp_path, 
                                      max_pages=20, check_cancel=check_cancel)
         assert metrics['submitted_requests'] == []
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
-        assert len(metrics['list_navigations']) == 2
+        assert len(metrics['list_navigations']) == 1

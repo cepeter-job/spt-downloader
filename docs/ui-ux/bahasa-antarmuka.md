@@ -4,7 +4,7 @@
 
 [Kembali ke panduan](README.md) · [Spesifikasi B-TK-1](../superpowers/specs/2026-10-13-magicpath-b-tkinter-design.md)
 
-Katalog `spt_desktop/ui_copy.py` sudah diimplementasikan, tetapi keberadaan sebuah ID tidak berarti semua widget memakai teks itu. Misalnya, Pengaturan masih menampilkan **Cek Kredensial**, **Batalkan Cek**, dan **Hapus kredensial**, sedangkan katalog memuat padanan **Cek login**, **Batalkan cek**, dan **Hapus login**. `settings.origin.label` masih ada dalam katalog, tetapi bukan alasan mengembalikan pemilih origin. Penyelarasan caption widget adalah perubahan terpisah dengan tesnya.
+Pengaturan memakai caption dari `spt_desktop/ui_copy.py`: **Cek login**, **Batalkan cek**, dan **Hapus login**. Simpan tetap terpisah dari pemeriksaan login; pemeriksaan tidak memulai ekspor. `settings.origin.label` tetap ada dalam katalog, tetapi origin Satu ditetapkan aplikasi dan tidak menjadi field bebas.
 
 ## Nada yang digunakan
 

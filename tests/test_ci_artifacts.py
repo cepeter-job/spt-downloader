@@ -33,7 +33,7 @@ def artifact(tmp_path):
         'python': '3.14.8', 'python_implementation': 'CPython', 'free_threaded': False,
         'tcl': '8.6.15', 'tk': '8.6.15', 'worker_python': python_version(),
         'worker_resources': list(WORKER_FILES), 'credential_check_controls': True,
-        'gui_controls': ['Cek Kredensial'], 'build_profile': 'production',
+        'gui_controls': ['Cek login'], 'build_profile': 'production',
         'personal_use_labels': ['Coretax → Excel · for personal use only'],
         'ui_text': {
             'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
@@ -146,6 +146,24 @@ def test_release_source_requires_exact_successful_main_run_and_artifact():
     result = delivery_module('ci_release').validate_source(run, jobs, artifact_data, **expected)
     assert result == dict(expected, artifact_digest=artifact_data['digest'],
                          artifact_size=100, artifact_name=artifact_data['name'])
+
+
+@pytest.mark.parametrize('endpoint,accept', [
+    ('repos/synthetic-owner/spt-downloader/actions/artifacts/456/zip', 'application/vnd.github+json'),
+    ('repos/synthetic-owner/spt-downloader/releases/assets/789', 'application/octet-stream'),
+])
+def test_release_download_preserves_bytes_with_the_endpoint_media_type(tmp_path, monkeypatch, endpoint, accept):
+    module = delivery_module('ci_release')
+    payload = b'PK\x03\x04SYNTHETIC BINARY DOWNLOAD\x00\xff'
+
+    def command(argv, *, output):
+        assert argv == ['gh', 'api', '--method', 'GET', '-H', 'Accept: ' + accept, endpoint]
+        output.write(payload)
+
+    monkeypatch.setattr(module, '_command', command)
+    target = tmp_path / 'download.zip'
+    module._download(endpoint, target, accept=accept)
+    assert target.read_bytes() == payload
 
 
 @pytest.mark.parametrize('damage', [
@@ -467,8 +485,9 @@ def prepared_release(artifact, tmp_path, monkeypatch):
         assert endpoint in responses, 'Preparation must not mutate GitHub'
         return responses[endpoint]
 
-    def download(endpoint, path):
+    def download(endpoint, path, *, accept):
         assert endpoint == 'repos/synthetic-owner/spt-downloader/actions/artifacts/456/zip'
+        assert accept == 'application/vnd.github+json', 'Actions ZIP redirects reject the release-asset media type'
         Path(path).write_bytes(archive.read_bytes())
 
     def command(argv, *, cwd=None, **kwargs):
@@ -529,9 +548,13 @@ def test_rollback_uses_retained_assets_after_actions_artifact_expiry(prepared_re
         return {'object': {'type': 'commit', 'sha': identity['commit']}}
 
     by_id = {entry['id']: entry for entry in release['assets']}
+
+    def download(endpoint, path, *, accept):
+        assert accept == 'application/octet-stream', 'Release assets must return bytes instead of JSON metadata'
+        Path(path).write_bytes((assets / by_id[int(endpoint.rsplit('/', 1)[1])]['name']).read_bytes())
+
     monkeypatch.setattr(module, '_api', api)
-    monkeypatch.setattr(module, '_download', lambda endpoint, path: Path(path).write_bytes(
-        (assets / by_id[int(endpoint.rsplit('/', 1)[1])]['name']).read_bytes()))
+    monkeypatch.setattr(module, '_download', download)
     before = len(commands)
     restored = module.restore_release(tmp_path / 'rollback', 'v2026.10.22', **identity)
     assert {path.name for path in restored.iterdir()} == {path.name for path in assets.iterdir()}
@@ -648,7 +671,8 @@ def publishing_release(prepared_release, monkeypatch):
             return b''
         raise AssertionError('Publication must mutate the created numeric release ID')
 
-    def download(endpoint, path):
+    def download(endpoint, path, *, accept):
+        assert accept == 'application/octet-stream', 'Draft and published asset readback must return bytes'
         name = by_id[int(endpoint.rsplit('/', 1)[1])]['name']
         content = state['uploaded'][name]
         if state['damage'] == 'archive' and name == module.ARCHIVE:

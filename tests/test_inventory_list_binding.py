@@ -99,8 +99,7 @@ def test_collection_reconciles_visible_grid_despite_auxiliary_submitted_reads(br
                                    auxiliary_request=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True, run['errors']
-    draft = next(a for a in run['audit'] if a['status'] == 'SPT Belum Disampaikan')
-    assert draft['total'] == draft['scanned'] == 0 and draft['result'] == 'RECONCILED'
+    assert all(a['status'] == 'SPT Dilaporkan' and a['result'] == 'RECONCILED' for a in run['audit'])
     assert len(run['records']) == (4 if catalog else 2)
     assert metrics['auxiliary_requests'] > 0
     assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
@@ -117,7 +116,7 @@ def test_same_page_hash_anchor_is_not_an_additional_status_source(browser, monke
     with synthetic_listing_browser(browser, monkeypatch, hash_link=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is True, run['errors']
-    assert len(run['sources']) == 2
+    assert len(run['sources']) == 1
     assert all(s['label'] and '#' not in s['url'] for s in run['sources'])
-    assert {a['status'] for a in run['audit']} == {'SPT Belum Disampaikan', 'SPT Dilaporkan'}
+    assert {a['status'] for a in run['audit']} == {'SPT Dilaporkan'}
     assert metrics['unregistered_requests'] == 0

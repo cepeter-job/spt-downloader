@@ -4,6 +4,9 @@ Repository: [cepeter-job/spt-downloader](https://github.com/cepeter-job/spt-down
 Implementation and current verification: [PR #72](https://github.com/cepeter-job/spt-downloader/pull/72).
 Historical baseline: [22 October audit](2026-10-22-devops-audit.md).
 
+Post-merge administrative verification and the external audit follow-up are
+recorded in [the follow-up checklist](2026-10-22-external-audit-followup.md).
+
 The baseline audit is retained unchanged in substance. This document maps its
 findings to implementation and acceptance evidence; it does not relabel external
 or unobserved controls as passed. The PR checklist and checks on its current head

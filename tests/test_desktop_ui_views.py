@@ -113,6 +113,95 @@ def test_reflow_has_one_pending_callback_and_dispose_cancels_only_its_own(shell)
     assert unrelated in remaining and not (after - before) & remaining
 
 
+@pytest.mark.parametrize('geometry', ['1120x800', '640x560'])
+def test_unchanged_shell_reflow_keeps_visible_panels_mapped(shell, geometry):
+    """A redundant layout must not hide/remap the form and summary native windows."""
+    root, view, _ = shell
+    root.geometry(geometry)
+    settle(root)
+    panels = (view.content_slot, view.scope_panel)
+    assert all(panel.winfo_ismapped() for panel in panels)
+    unmaps = []
+    bindings = [(panel, panel.bind('<Unmap>', lambda event: unmaps.append(str(event.widget)), add='+'))
+                for panel in panels]
+    try:
+        view.request_reflow()
+        settle(root)
+        assert all(panel.winfo_ismapped() for panel in panels)
+        assert unmaps == [], 'Unchanged shell reflow hid visible panels before mapping them again'
+    finally:
+        for panel, token in bindings:
+            panel.unbind('<Unmap>', token)
+
+
+def drain_shell_layout_without_timers(root, view):
+    """Process native geometry and idle work without hiding a delayed reflow."""
+    import _tkinter
+    import time
+    flags = _tkinter.WINDOW_EVENTS | _tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT
+    deadline, quiet = time.monotonic() + 2, 0
+    while time.monotonic() < deadline:
+        pending = root.tk.dooneevent(flags)
+        root.update_idletasks()
+        if not pending and view.winfo_ismapped() and view.canvas.winfo_width() > 1:
+            quiet += 1
+            if quiet == 3:
+                return
+        else:
+            quiet = 0
+        time.sleep(.001)
+    raise AssertionError('The native shell did not map and settle')
+
+
+@pytest.mark.parametrize('change', ['progress', 'errors'])
+def test_shell_content_layout_completes_without_resize_timer(shell, change):
+    root, view, _ = shell
+    if change == 'progress':
+        from spt_desktop.ui_state import begin_export
+        view.render(begin_export('synthetic-job', '0000000000000001', '2025'), active=True)
+    else:
+        view.show_errors({'npwp': 'form.npwp.error', 'year': 'form.year.error'})
+    drain_shell_layout_without_timers(root, view)
+    assert view._reflow_after is None, 'Changed content is still waiting for a resize timer'
+    assert int(view.canvas.itemcget(view._canvas_window, 'width')) == view.canvas.winfo_width()
+    assert view.workspace.winfo_reqheight() <= float(view.canvas.cget('scrollregion').split()[3])
+    if change == 'progress':
+        assert view.progress_panel.winfo_ismapped() and not view.form.winfo_ismapped()
+        assert view.scope_npwp.get() == '0000000000000001' and view.scope_year.get() == '2025'
+    else:
+        assert view.npwp_error.get() and view.year_error.get()
+
+
+def test_duplicate_shell_configure_does_not_queue_layout(shell):
+    root, view, _ = shell
+    before = (view.canvas.winfo_width(), view.canvas.winfo_height(), view.canvas.cget('scrollregion'))
+    for _ in range(20):
+        view.event_generate('<Configure>')
+        view.canvas.event_generate('<Configure>')
+    drain_shell_layout_without_timers(root, view)
+    assert view._reflow_after is None, 'Unchanged geometry queued a redundant reflow'
+    assert (view.canvas.winfo_width(), view.canvas.winfo_height(), view.canvas.cget('scrollregion')) == before
+
+
+@pytest.mark.parametrize('content_change', [False, True])
+def test_shell_resize_coalesces_but_content_can_make_it_ready(shell, content_change):
+    root, view, _ = shell
+    root.geometry('640x560')
+    drain_shell_layout_without_timers(root, view)
+    pending = view._reflow_after
+    assert pending is not None, 'A genuine native resize must retain coalesced work'
+    assert str(root.tk.call('after', 'info', pending)[1]) == 'timer'
+    if content_change:
+        view.show_errors({'npwp': 'form.npwp.error'})
+        drain_shell_layout_without_timers(root, view)
+        assert view._reflow_after is None, 'Explicit content invalidation did not replace delayed resizing'
+        assert pending not in root.tk.splitlist(root.tk.call('after', 'info'))
+        assert view.npwp_error.get()
+    else:
+        settle(root)
+    assert view.scope_panel.winfo_y() < view.content_slot.winfo_y()
+
+
 @pytest.mark.parametrize('width,height', [(540, 390), (640, 560), (900, 700), (1120, 800)])
 def test_error_labels_wrap_without_overlapping_action_bar(shell, width, height):
     root, view, _ = shell

@@ -1,0 +1,14 @@
+[run]
+branch = True
+relative_files = True
+source = .
+omit =
+    tests/*
+    .venv/*
+data_file = ${RUNNER_TEMP?}/.coverage-portable
+
+[report]
+# Subset Linux tidak mewakili seluruh perilaku native Windows atau proses worker.
+show_missing = True
+skip_empty = True
+fail_under = 0

@@ -76,7 +76,7 @@ def self_test(report=None):
             for width,height in ((540,430),(800,620)):
                 root.geometry(f'{width}x{height}')
                 settled=tk.BooleanVar(root)
-                root.after(250,lambda:settled.set(True))
+                root.after(250,lambda s=settled:s.set(True))
                 root.wait_variable(settled)
                 root.update_idletasks()
                 left=contact.winfo_rootx()-root.winfo_rootx()
@@ -115,7 +115,7 @@ def self_test(report=None):
             assert not origin_selector
             assert 'Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
-            assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup','Buka folder log'}<=labels
+            assert {'Cek login','Batalkan cek','Simpan','Tutup','Buka folder log'}<=labels
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
             background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
             assert len(background)==1

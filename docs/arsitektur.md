@@ -45,12 +45,16 @@ Rantai provenance yang dijaga:
 
 1. Pencarian kembali ke origin HTTPS dan path pencarian yang diizinkan sebelum NPWP dimasukkan.
 2. Tepat satu baris dipilih, dengan sel NPWP sama persis dan nama wajib pajak berasal dari baris tersebut.
-3. URL daftar membuktikan identitas wajib pajak. Daftar status lain hanya diikuti bila berasal dari wajib pajak yang sama.
+3. URL daftar membuktikan identitas wajib pajak. Inventaris baru hanya mengikuti satu navigasi SPT Dilaporkan yang teramati dan terikat ke wajib pajak yang sama. Halaman awal setelah Pilih boleh berupa draft, tetapi daftar draft/arsip/status lain tidak dipindai. Navigasi Dilaporkan yang hilang, ambigu atau berpindah identitas tidak disertifikasi sebagai daftar kosong.
 4. Respons daftar harus memiliki skema yang didukung, status sukses eksplisit, dan jumlah baris yang cocok dengan DOM. `TotalRecords` direkonsiliasi dengan seluruh halaman.
 5. Kontrol View yang dikenali membuka detail; URL detail harus memuat segmen identitas wajib pajak dan SPT yang dipilih.
 6. Checkpoint detail harus cocok dengan scope, ID, metadata, posisi/halaman daftar, serta provenance inventaris sebelum digabungkan.
 
 `RecordId` yang berulang pada beberapa status digabungkan hanya bila metadata konsisten; `source_occurrences` mempertahankan asal kemunculannya. Pasangan periode kode/label hanya boleh diterima dengan katalog sumber yang valid, segar dan tidak ambigu; nilai setiap kemunculan tetap literal. [Catatan period-alias](period-metadata-conflict.md) menjelaskan batas bukti tersebut. Pembetulan dengan ID berbeda tetap berbeda. Konflik metadata tanpa bukti ekuivalensi tetap kegagalan validasi, bukan dasar memilih salah satu nilai.
+
+Rekonsiliasi lintas-status tetap diperlukan untuk membaca bukti lama; inventaris
+baru tidak memperluas scope ke arsip. Manifest pilihan dan checkpoint lama tidak
+ditulis ulang agar terlihat berasal dari pemindaian Dilaporkan yang baru.
 
 Metadata scope per-record yang tidak tersedia pada capture lama tidak dapat membuktikan NPWP secara independen. Jangan menyimpulkan provenance legacy yang tidak tersimpan. Capture baru membawa metadata scope; pemeriksaan yang tersedia tetap wajib dilakukan saat ekspor ulang.
 
@@ -81,6 +85,12 @@ Service worker diblokir. Pengecualian ini tidak mengizinkan POST Coretax lainnya
 refresh token, password grant, iframe, atau popup. Respons token tetap diproses
 oleh aplikasi Coretax; pemeriksa tidak membaca token dari storage atau menulisnya
 ke diagnostik, dan tetap menunggu marker pencarian sebelum LOGIN_OK.
+
+Kegagalan definitif pertukaran kode mengakhiri pemeriksaan sebagai
+LOGIN_UNVERIFIED; marker yang muncul setelah kegagalan tidak mengubahnya menjadi
+LOGIN_OK. Stop tetap didahulukan. Kategori kegagalan transport yang tetap dapat
+dicatat tanpa URL, query, header, body atau pesan exception. Kategori itu membantu
+diagnosis berikutnya, bukan bukti password salah atau izin membuka POST lain.
 
 Dasar inspeksi 21 Oktober 2026: konfigurasi statis beranda
 `main.49d8f10ca1a7d961.js`, Pencarian WP `main.cccfdb820c20596c.js`, dan metadata
@@ -118,7 +128,13 @@ Pemetaan tabel memerlukan header yang sesuai; header berulang L1-D/L9 juga memer
 
 Footer Badan memakai posisi fisik dan colspan sumber. Label total boleh berada setelah sel kosong di dalam rentang merge template yang sama, tetapi label bertentangan atau colspan tidak sesuai tetap ditolak. Kode akun footer L1-D dipertahankan sebagai teks; total terakhir tetap pada baris 101 untuk kapasitas referensi. L3 mendukung tiga footer teramati: JUMLAH, KREDIT PAJAK LUAR NEGERI, dan JUMLAH KREDIT PAJAK, tanpa menghitung ulang nilainya. Pertumbuhan baris menggeser footer bersama layout.
 
-Sesuai pengecualian tampilan yang disetujui, L6, L7, L10-A, dan L10-C tidak menampilkan blok tambahan/belum dipetakan maupun salinan teks halaman. Checkpoint tetap utuh dan Audit pada resume tetap melaporkan field/tabel/baris yang belum terikat; penghilangan tampilan tidak menjadikannya COMPLETE. L6 B2:B8 dan L7 C1:I13 memakai format akuntansi rupiah pada sel yang dapat ditulis; merge label JUMLAH A13:C13 tetap dipertahankan. Lampiran Badan lainnya tetap menampilkan bukti mentah yang belum didukung.
+Sesuai pengecualian tampilan yang disetujui, L2, L3, L4, L6, L7, L10-A, L10-C, L11-A, dan L11-B tidak menampilkan blok tambahan/belum dipetakan maupun salinan teks halaman. Checkpoint tetap utuh dan Audit pada resume tetap melaporkan field/tabel/baris yang belum terikat; penghilangan tampilan tidak menjadikannya COMPLETE. Lampiran Badan lainnya tetap menampilkan bukti mentah yang belum didukung.
+
+Rentang moneter yang disetujui pada L1-D, L2, L3, L6, L7, L9, L10-A, L11-A, dan L11-B memakai format akuntansi pada sel yang dapat ditulis. Header, kode, dan nilai yang tidak aman tetap literal. Persentase L2 pada kolom yang terikat ke header persentase memakai pecahan numerik dengan pemeriksaan sintaks dan presisi; pemberian format persen pada sel teks tidak mengubah teks menjadi angka. Penambahan baris menyalin format aslinya dan mempertahankan merge label.
+
+Normalisasi negatif L1-D hanya berlaku untuk caption pengurang akumulasi penyusutan yang cocok tepat pada kelompok sumber yang terverifikasi. L9 menerima caption kelompok `LAINNYA` dan `KELOMPOK LAINNYA` di bawah pemilik komponen yang sesuai; capture lama tanpa bukti pemilik tetap belum terpetakan. Nilai sumber dan checkpoint tidak diubah oleh aturan tampilan tersebut.
+
+PERHITUNGAN DER pada L11-B merujuk total rata-rata utang dan modal yang teramati dan berhasil dipetakan secara unik. Referensi rumus mengikuti perpindahan baris ketika tabel tumbuh. Rasio hanya tersedia bila kedua operand numerik aman dan modal bukan nol. Operand hilang/tidak aman atau modal nol menghasilkan alasan DER parsial tersendiri pada audit, tanpa menambah hitungan field/tabel/baris sumber yang belum terpetakan secara fiktif.
 
 Pada Unifikasi, kolom tarif DAFTAR-I menyimpan pecahan Excel berformat persen; nilai sumber `2,50` menjadi `0.025`, bukan `2.5`. Spacer tidak diperlakukan sebagai tarif/footer. Lampiran memakai tampilan bersih tanpa blok mentah tambahan, sementara checkpoint dan hitungan unresolved tetap dipertahankan. Perubahan tampilan ini tidak mengubah status capture yang sebenarnya.
 

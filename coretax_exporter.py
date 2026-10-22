@@ -696,10 +696,15 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
         put(summary, 23, 1, 'Pemetaan template pengambilan terbaru')
         put(summary, 23, 2, 'COMPLETE' if all(r['complete'] for r in mapping_reports) else 'PARTIAL')
         for report in mapping_reports:
+            derivation_note = {
+                'missing_average': ' DER belum dihitung: saldo rata-rata utang atau modal belum tersedia.',
+                'unsafe_average': ' DER belum dihitung: saldo rata-rata utang atau modal bukan angka Excel yang aman.',
+                'zero_capital_average': ' DER belum dihitung: saldo rata-rata modal nol.',
+            }.get(report.get('derived_reason'), '') if report.get('derived_complete') is False else ''
             values = ['Pemetaan template', report.get('unmapped_fields', 0),
                       report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),
                       'COMPLETE' if report['complete'] else 'PARTIAL',
-                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat capture sumber pada checkpoint job."]
+                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat capture sumber pada checkpoint job.{derivation_note}"]
             for col, value in enumerate(values, 1):
                 put(audit, ar, col, value)
             ar += 1

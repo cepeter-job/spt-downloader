@@ -18,7 +18,7 @@ _LABELS = FINANCIAL_LABELS
 
 _SCAN = r'''() => {
     const roots = document.querySelectorAll('.main-content');
-    if (roots.length !== 1) return [];
+    if (roots.length !== 1) return {controls: [], observations: []};
     const root = roots[0], labels = new Set(__LABELS__);
     const visible = el => !!el.getClientRects().length &&
         !['hidden','collapse'].includes(getComputedStyle(el).visibility) &&
@@ -28,11 +28,14 @@ _SCAN = r'''() => {
     const headings = 'label,legend,h1,h2,h3,h4,h5,h6,.p-panel-title,.p-accordion-header-text';
     const approved = el => el && visible(el) && typeof el.innerText==='string' &&
         labels.has(el.innerText.trim()) ? el.innerText : null;
+    const attachmentTable = table => {
+        const rows = table.tHead ? [...table.tHead.rows] : [];
+        return rows.length === 1 && JSON.stringify([...rows[0].cells].map(c=>c.innerText.trim())) ===
+            JSON.stringify(['NO.','FILENAME','TINDAKAN']);
+    };
     const tableLabel = table => {
         // Bind only the observed attachment-table shape, never an arbitrary grid.
-        const rows = table.tHead ? [...table.tHead.rows] : [];
-        if (rows.length !== 1 || JSON.stringify([...rows[0].cells].map(c=>c.innerText.trim())) !==
-            JSON.stringify(['NO.','FILENAME','TINDAKAN'])) return null;
+        if (!attachmentTable(table)) return null;
         if (table.hasAttribute('aria-labelledby')) {
             const ids = table.getAttribute('aria-labelledby').trim().split(/\s+/);
             if (ids.length !== 1 || !ids[0]) return null;
@@ -58,7 +61,23 @@ _SCAN = r'''() => {
         }
         return null;
     };
-    return [...root.querySelectorAll('a, button, input')].filter(visible).map(el => {
+    // Structural observations never authorize a request. In particular, a
+    // filename button remains unsupported even when its table has a label.
+    const tables = [...root.querySelectorAll('table')].filter(visible).filter(attachmentTable);
+    const observations = [];
+    for (const table of tables) {
+        const candidates = [...table.querySelectorAll('a,button,input,[role="button"]')]
+            .filter(visible).filter(el=>el.closest('table')===table);
+        const bound = !!tableLabel(table);
+        for (const el of candidates.length ? candidates : [null]) {
+            observations.push({attachment_tables: tables.length, candidate_controls: candidates.length,
+                control_kind: el ? ({A:'anchor',BUTTON:'button',INPUT:'input'}[el.tagName]||'other') : 'none',
+                binding_state: !el ? 'no_control' : bound ? 'bound' : 'unbound',
+                href_present: !!el && el.hasAttribute('href'),
+                handler_present: !!el && ['onclick','onmousedown','onpointerdown'].some(name=>el.hasAttribute(name))});
+        }
+    }
+    const controls = [...root.querySelectorAll('a, button, input')].filter(visible).map(el => {
         const direct = el.innerText || el.value || el.getAttribute('aria-label') || '';
         const table = el.tagName==='A' ? el.closest('table') : null;
         const label = labels.has(direct.trim()) ? direct : table ? tableLabel(table) : null;
@@ -70,6 +89,10 @@ _SCAN = r'''() => {
                 unsafe: el.tagName !== 'A' || el.hasAttribute('onclick') ||
                         el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')};
     }).filter(Boolean);
+    if (!tables.length && !controls.length) observations.push({attachment_tables: 0,
+        candidate_controls: 0, control_kind: 'none', binding_state: 'no_control',
+        href_present: false, handler_present: false});
+    return {controls, observations};
 }'''.replace('__LABELS__', json.dumps(sorted(_LABELS)))
 
 _START = r'''async ({key, url, limit, timeout, document_url}) => {
@@ -223,8 +246,11 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
     results = []
     with DirectoryGuard() as guard:
         _include_folder(guard, folder)
-        controls = [item for item in page.evaluate(_SCAN) if item['label'].strip() in _LABELS]
+        scanned = page.evaluate(_SCAN)
         _cancel(check_cancel)
+        for observation in scanned['observations']:
+            diagnostics.record('pdf.discovery', phase='pdf', **observation)
+        controls = [item for item in scanned['controls'] if item['label'].strip() in _LABELS]
         if not controls:
             diagnostics.record('pdf.partial', phase='pdf', level='WARNING')
             return [_partial('', 'No supported financial PDF control was observed')]

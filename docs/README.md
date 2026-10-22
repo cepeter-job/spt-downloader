@@ -56,6 +56,7 @@ kontrak. URL/path lama dipertahankan; tidak ada penghapusan bukti.
 
 | Topik | Catatan yang dipertahankan |
 | --- | --- |
+| Konsolidasi seluruh branch | [Disposisi 22 Oktober](audits/2026-10-22-branch-consolidation.md); [investigasi runtime aksesibilitas yang ditutup](audits/2026-10-22-tk-accessibility-candidate.md). |
 | Penutupan temuan DevOps | [Peta remediasi 22 Oktober](audits/2026-10-22-devops-remediation.md); bukti head terbaru tetap pada PR #72. |
 | Audit dan optimasi CI | [Audit 12 Oktober](audit-2026-10-12.md); [evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md); [evaluasi dua shard Windows](audits/2026-10-21-windows-shard-evaluation.md); [pengukuran fixture browser](audits/2026-10-21-browser-fixture-performance.md); [penyelesaian reuse browser](audits/2026-10-21-browser-fixture-completion.md). |
 | Audit panduan kontributor | [Audit dokumentasi dan komentar 21 Oktober](audits/2026-10-21-developer-docs-comments.md). |

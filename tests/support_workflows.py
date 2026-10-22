@@ -145,6 +145,13 @@ def _windows_arguments(step):
     return arguments
 
 
+def _portable_arguments(step):
+    arguments = _single_command(step)
+    # Instrumentasi tidak boleh mengganti seleksi tes atau menutupi exit pytest.
+    assert arguments[:4] == ['-m', 'coverage', 'run', '--rcfile=.coveragerc']
+    return arguments[4:]
+
+
 def _inventory_command(step):
     # Keep the reviewed control flow fail-closed without pretending to interpret PowerShell.
     expected = """$inventoryArgs = @(
@@ -383,8 +390,15 @@ def validate_production(document):
     _success_only(fresh, "matrix.mode == 'serial' || matrix.mode == 'shard-0'")
     _single_command(fresh)
     assert fresh_i > test_i
-    _, portable_tests = _one(jobs['portable']['steps'], lambda s: s.get('id') == 'tests')
-    _complete_pytest_arguments(_single_command(portable_tests), 'portable')
+    portable_steps = jobs['portable']['steps']
+    portable_i, portable_tests = _one(portable_steps, lambda s: s.get('id') == 'tests')
+    _success_only(portable_tests)
+    _complete_pytest_arguments(_portable_arguments(portable_tests), 'portable')
+    lock_i, _ = _one(portable_steps, lambda s: _runs(s, '-m', 'scripts.update_locks', '--check'))
+    lint_i, lint = _one(portable_steps, lambda s: s.get('id') == 'lint')
+    _success_only(lint)
+    assert _single_command(lint) == ['-m', 'ruff', 'check', '--output-format', 'github', '.']
+    assert lock_i < lint_i < portable_i
     for step in windows['steps']:
         if _action(step, 'actions/upload-artifact'):
             prefix = 'test-inventory' if step['with']['path'].endswith('/test-inventory.json') else 'test-results'
@@ -400,7 +414,7 @@ def validate_measurements(document, job_names):
         tests_i, tests = _one(steps, lambda s: s.get('id') == 'tests')
         _success_only(tests)
         args = (_benchmark_arguments(tests) if name == 'benchmark' else
-                _windows_arguments(tests) if name == 'windows' else _single_command(tests))
+                _windows_arguments(tests) if name == 'windows' else _portable_arguments(tests))
         _complete_pytest_arguments(args, 'portable' if name == 'portable' else 'windows',
                                    benchmark=name == 'benchmark')
         assert args[:3] == ['-m', 'pytest', 'tests']
@@ -408,6 +422,19 @@ def validate_measurements(document, job_names):
         report_i, report = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_report', 'report'))
         assert _expression(report.get('if')) == expected_guard
         _single_command(report)
+        result_files = {'test-results.xml', 'test-measurements.json'}
+        coverage_indices = []
+        if name == 'portable':
+            for format_name in ('xml', 'json'):
+                coverage_i, coverage = _one(steps, lambda s: _runs(s, '-m', 'coverage', format_name))
+                _success_only(coverage, expected_guard)
+                filename = f'coverage-portable.{format_name}'
+                assert _single_command(coverage) == [
+                    '-m', 'coverage', format_name, '--rcfile=.coveragerc',
+                    '-o', '$RUNNER_TEMP/' + filename]
+                assert report_i < coverage_i
+                coverage_indices.append(coverage_i)
+                result_files.add(filename)
         uploads = [(i, s) for i, s in enumerate(steps) if _action(s, 'actions/upload-artifact')]
         assert len(uploads) == 2
         paths = []
@@ -415,9 +442,16 @@ def validate_measurements(document, job_names):
             assert _expression(step.get('if')) == expected_guard
             assert step.get('continue-on-error', False) is False
             assert step['with']['if-no-files-found'] == 'error'
-            paths.append({line.rsplit('/', 1)[-1] for line in step['with']['path'].splitlines() if line})
+            lines = [line.strip() for line in step['with']['path'].splitlines() if line.strip()]
+            filenames = {line.rsplit('/', 1)[-1] for line in lines}
+            if name == 'portable':
+                assert len(lines) == len(filenames)
+                assert set(lines) == {'${{ runner.temp }}/' + filename for filename in filenames}
+                if filenames == result_files:
+                    assert all(coverage_i < i for coverage_i in coverage_indices)
+            paths.append(filenames)
             assert report_i < i
-        assert {'test-inventory.json'} in paths and {'test-results.xml', 'test-measurements.json'} in paths
+        assert {'test-inventory.json'} in paths and result_files in paths
         assert start_i < uv_i < tests_i < report_i
 
 
