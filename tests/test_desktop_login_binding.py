@@ -12,6 +12,22 @@ from spt_desktop.credentials import Login
 ORIGIN = 'https://satu.intranet.pajak.go.id'
 
 
+def test_owned_download_context_blocks_service_worker_route_bypass(monkeypatch, tmp_path):
+    launches = []
+    page = SimpleNamespace(goto=lambda *args, **kwargs: None)
+    context = SimpleNamespace(pages=[page], close=lambda: None)
+    def launch(profile, **options):
+        launches.append(options)
+        return context
+    engine = SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=launch))
+    monkeypatch.setattr(auth, 'authenticated', lambda current: current is page)
+    actual, selected = auth.authenticate_owned(engine, tmp_path / 'owned-profile', 'msedge', True,
+        lambda *args: None, lambda: None)
+    assert actual is context and selected is page
+    assert len(launches) == 1 and launches[0].get('service_workers') == 'block'
+    assert getattr(context, '_spt_financial_route_policy', None) == 'service_workers_blocked'
+
+
 class Form:
     def __init__(self, page):
         self.page = page
