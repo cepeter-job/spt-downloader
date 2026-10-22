@@ -35,6 +35,19 @@ def window(tmp_path,monkeypatch):
     gc.collect()  # Tk variable disposal stays on the UI test thread.
 
 
+def test_settings_has_no_login_check_controls_or_shortcut(window):
+    root, app, ctl, path = window
+    app.settings(); root.update_idletasks()
+    labels = [widget.cget('text') for widget in descendants(root)
+              if widget.winfo_class() == 'TButton']
+    assert 'Cek login' not in labels
+    assert 'Batalkan cek' not in labels
+    assert {'Simpan', 'Hapus login', 'Tutup'} <= set(labels)
+    assert not app._settings_dialog.bind('<Alt-c>')
+    assert not ctl.exports and not ctl.checks
+    assert not (path / 'jobs').exists()
+
+
 def test_check_button_launches_only_saved_account_no_npwp_no_password(window):
     root,app,ctl,path=window
     app.settings();root.update_idletasks()

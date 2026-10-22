@@ -31,6 +31,14 @@ def test_frozen_gate_accepts_complete_observed_chronological_sorting():
     builder().validate_report(report())
 
 
+def test_frozen_gate_rejects_the_removed_login_check_controls():
+    data = report()
+    data['credential_check_controls'] = True
+    data['gui_controls'] = ['Cek login', 'Batalkan cek', 'Simpan', 'Tutup']
+    with pytest.raises(RuntimeError, match='self-test'):
+        builder().validate_report(data)
+
+
 @pytest.mark.parametrize('mutation', ['missing', 'empty', 'hierarchy', 'ascending',
     'descending', 'missing_row', 'selection', 'reply', 'directions'])
 def test_frozen_gate_rejects_missing_or_wrong_chronological_evidence(mutation):
