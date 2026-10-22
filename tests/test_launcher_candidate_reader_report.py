@@ -150,3 +150,61 @@ def test_owned_cleanup_unavailable_handle_fails_closed():
     assert job.closed
     assert result['cleanup_complete'] is False
     assert result['unverified_processes'] == [{'pid': 321, 'operation': 'OpenProcess', 'winerror': 5}]
+
+
+def test_snapshot_replace_retries_windows_sharing_violation(tmp_path):
+    import ctypes
+    from ctypes import wintypes
+    from scripts.launcher_candidate import reader_host
+    replace_snapshot = getattr(reader_host, 'replace_snapshot', None)
+    assert replace_snapshot is not None, 'bounded fixture replacement missing'
+    target, pending = tmp_path / 'ready.json', tmp_path / 'ready.pending'
+    target.write_text('old')
+    pending.write_text('new')
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel.CreateFileW(str(target), 0x80000000, 1, None, 3, 0, None)
+    assert handle != wintypes.HANDLE(-1).value
+    waits = []
+    def release(delay):
+        waits.append(delay)
+        kernel.CloseHandle(handle)
+    try:
+        replace_snapshot(pending, target, sleep=release)
+        assert waits == [0.02]
+        assert target.read_text() == 'new'
+    finally:
+        if not waits: kernel.CloseHandle(handle)
+
+
+@pytest.mark.parametrize('winerror,attempts', [(32, 5), (5, 1)])
+def test_snapshot_replace_is_bounded_and_does_not_swallow_other_errors(winerror, attempts):
+    from scripts.launcher_candidate import reader_host
+    replace_snapshot = getattr(reader_host, 'replace_snapshot', None)
+    assert replace_snapshot is not None, 'bounded fixture replacement missing'
+    class Pending:
+        calls = 0
+        def replace(self, target):
+            self.calls += 1
+            error = PermissionError('synthetic detail must not be recorded')
+            error.winerror = winerror
+            raise error
+    pending = Pending()
+    waits = []
+    with pytest.raises(PermissionError): replace_snapshot(pending, None, sleep=waits.append)
+    assert pending.calls == attempts
+    assert len(waits) == attempts - 1
+
+
+def test_wrapper_records_sanitized_early_probe_exit(tmp_path):
+    import json
+    from scripts.launcher_candidate import reader_runner
+    record = getattr(reader_runner, 'record_probe_exit', None)
+    assert record is not None, 'early exit evidence missing'
+    directory = tmp_path / 'owned-new'
+    record(directory, 1, timed_out=False)
+    value = json.loads((directory / 'probe-exit.json').read_text())
+    assert value == {'schema': 1, 'exit_code': 1, 'timed_out': False,
+                     'phase_retained': False, 'report_retained': False, 'failure_retained': False}
