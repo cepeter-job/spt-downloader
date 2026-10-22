@@ -101,7 +101,8 @@ def package(runtime, output):
         subprocess.run(['uv', 'pip', 'sync', '--python', str(python), '--require-hashes', '--only-binary', ':all:', str(ROOT / 'locks/test.txt')], env=env, check=True)
         subprocess.run([str(python), '-B', '-m', 'pytest',
                         str(ROOT / 'tests/test_launcher_candidate_inventory.py'),
-                        str(ROOT / 'tests/test_launcher_candidate_package.py'), '-q',
+                        str(ROOT / 'tests/test_launcher_candidate_package.py'),
+                        str(ROOT / 'tests/test_launcher_candidate_reader_report.py'), '-q',
                         '--basetemp', str(scratch / 'candidate-contract-tests')],
                        cwd=ROOT, env=env, check=True, timeout=120)
         subprocess.run(['uv', 'pip', 'sync', '--python', str(python), '--require-hashes', '--only-binary', ':all:', str(ROOT / 'locks/build.txt')], env=env, check=True)
