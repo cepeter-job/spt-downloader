@@ -13,6 +13,10 @@ from support_runs import (
 
 def test_save_output_separates_resume_and_period_files(tmp_path):
     run = fixture_run()
+    # Clean Unifikasi uses a supported period slot for its isolation marker;
+    # an unsupported field must not require a redundant raw display block.
+    visible_markers = {r['key']: 'Januari' if r['meta']['Jenis Pajak'] == 'PPh Unifikasi'
+                       else r['key'] for r in run['records']}
     path = coretax.save_output(run, tmp_path)
     assert path.name == 'resume.xlsx', 'Separate resume workbook not implemented'
     assert {p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob('*.xlsx')} == {'resume.xlsx', 'SPT_Badan_Januari - Desember 2025_Normal.xlsx',
@@ -38,8 +42,9 @@ def test_save_output_separates_resume_and_period_files(tmp_path):
         assert [r['record_id'] for r in proof['records']] == [r['record_id'] for r in records]
         assert [r['meta']['Masa Pajak'] for r in proof['records']] == [r['meta']['Masa Pajak'] for r in records]
         assert [r['meta']['Model SPT'] for r in proof['records']] == [r['meta']['Model SPT'] for r in records]
-        markers = [cell.value for ws in wb.worksheets for row in ws for cell in row if cell.value in {r['key'] for r in run['records']}]
-        assert markers == [r['key'] for r in records], 'Another tax type leaked into this workbook'
+        markers = [cell.value for ws in wb.worksheets for row in ws for cell in row
+                   if cell.value in set(visible_markers.values())]
+        assert markers == [visible_markers[r['key']] for r in records], 'Another tax type leaked into this workbook'
         assert all(r['meta']['Jenis Pajak'] == records[0]['meta']['Jenis Pajak'] for r in proof['records'])
         wb.close()
     resume.close()

@@ -18,6 +18,8 @@ def fixture_run():
                                        'fields': [({'label': 'Status Penyampaian', 'field': 'SubmitInProgressStatus',
                                                     'group': 'HEADER', 'value': key}
                                                    if tax == 'PPh Pasal 21/26' else
+                                                   {'label': 'Masa Pajak', 'value': period}
+                                                   if tax == 'PPh Unifikasi' else
                                                    {'label': 'Record marker', 'field': 'Marker', 'value': key})]}]}
                         for key, tax, period, model in rows]}
 
