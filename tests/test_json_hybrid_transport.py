@@ -193,7 +193,7 @@ def test_saved_mode_does_not_become_a_credential_check_argument(window):
     widget.current(1)
     root.update_idletasks()
     button(app._settings_dialog, 'Simpan').invoke()
-    button(app._settings_dialog, 'Cek Kredensial').invoke()
+    button(app._settings_dialog, 'Cek login').invoke()
     assert controller.checks == [(app.preferences['login_origin'], 'SYNTHETIC ACCOUNT', 'msedge', True)]
     assert widget.instate(['disabled']) and controller.exports == []
     assert not (path / 'jobs').exists()

@@ -182,3 +182,32 @@ def test_login_captions_start_and_cancel_the_existing_check(settings):
     root.update()
     assert app._settings_dialog is None and root.grab_current() is None
     assert not ctl.exports and not writes and not errors
+
+
+def test_partial_delete_keeps_saved_preferences_honest_and_requires_retry(settings, monkeypatch):
+    root, app, ctl, dialog, path, writes, errors = settings
+    original = (path / 'preferences.json').read_bytes()
+    monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *args, **kwargs: True)
+    def fail(*args):
+        raise OSError('SYNTHETIC_DELETE_PREFERENCES_FAILURE')
+    monkeypatch.setattr(gui, 'save_preferences', fail)
+    button(dialog, 'Hapus login').invoke()
+    root.update()
+    assert app.preferences['identifier'] == 'SYNTHETIC_ACCOUNT'
+    assert (path / 'preferences.json').read_bytes() == original
+    assert errors and 'Login sudah dihapus' in app._credential_status.get()
+    assert button(dialog, 'Cek login').instate(['disabled'])
+    prompt = decision(root, app, dialog)
+    button(prompt, 'Kembali').invoke()
+
+
+def test_deleted_login_cannot_be_reselected_without_new_password(settings, monkeypatch):
+    root, app, ctl, dialog, path, writes, errors = settings
+    monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *args, **kwargs: True)
+    button(dialog, 'Hapus login').invoke()
+    account = next(w for w in widgets(dialog) if w.winfo_class() == 'TEntry' and not w.cget('show'))
+    account.insert(0, 'SYNTHETIC_ACCOUNT')
+    button(dialog, 'Simpan').invoke()
+    root.update()
+    assert errors and persisted(path)['identifier'] == ''
+    assert button(dialog, 'Cek login').instate(['disabled']) and not writes

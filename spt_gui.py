@@ -115,7 +115,7 @@ def self_test(report=None):
             assert not origin_selector
             assert 'Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
-            assert {'Cek Kredensial','Batalkan Cek','Simpan','Tutup','Buka folder log'}<=labels
+            assert {'Cek login','Batalkan cek','Simpan','Tutup','Buka folder log'}<=labels
             assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
             background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
             assert len(background)==1

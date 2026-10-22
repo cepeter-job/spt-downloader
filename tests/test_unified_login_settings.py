@@ -84,7 +84,7 @@ def test_save_and_check_use_satu_even_after_legacy_coretax_settings(settings):
     button(app._settings_dialog, 'Simpan').invoke(); root.update()
     assert writes == [(SATU, ACCOUNT, 'SYNTHETIC_PASSWORD_ONLY')]
     assert password.get() == '' and not deletes
-    button(app._settings_dialog, 'Cek Kredensial').invoke(); root.update()
+    button(app._settings_dialog, 'Cek login').invoke(); root.update()
     assert controller.checks == [(SATU, ACCOUNT, 'msedge', True)]
 
 
@@ -105,7 +105,7 @@ def test_switch_to_manual_mode_keeps_saved_secret_and_invalidates_check(settings
     assert 'Login berhasil' not in app._credential_status.get()
     button(app._settings_dialog, 'Simpan').invoke(); root.update()
     assert app.preferences['identifier'] == '' and not writes and not deletes
-    assert button(app._settings_dialog, 'Cek Kredensial').instate(['disabled'])
+    assert button(app._settings_dialog, 'Cek login').instate(['disabled'])
 
 
 
