@@ -72,6 +72,11 @@ Aturan jaringan tidak dilonggarkan: origin asing dan request non-GET/HEAD ke ori
 
 ## Snapshot setelah timeout panel
 
+Penantian panel membaca ulang `aria-controls` selama budget yang sama. Bila DOM
+mengganti binding, kolektor mengikuti kandidat terbaru yang tunggal, terlihat,
+dan dimiliki view yang sama. Panel tersembunyi, ambigu atau milik view lain tetap
+tidak ditangkap. Perubahan ini tidak menambah budget atau klik ulang tab.
+
 `capture.panel_timeout` dicatat pada WARNING sekali ketika budget tunggu panel habis, bukan pada setiap polling. Event ini tidak mengganti `capture.partial` atau mengubah hasil PARTIAL, selector, klik tab, retry, maupun budget tunggu. Durasi `duration_ms` hanya mencakup penantian panel sampai budget habis, tidak mencakup pembukaan detail, pekerjaan sebelumnya, atau pembacaan snapshot sesudahnya.
 
 Snapshot hanya berisi struktur: `panel_controlled` menyatakan penggunaan `aria-controls`; `panel_matches` menghitung kandidat dalam view yang sedang dipakai; `document_panel_matches` menghitung kecocokan ID yang sama di dokumen dan **tidak diisi** pada jalur fallback tanpa ID; `tab_views` menghitung `.p-tabview` di bawah `.main-content`. ID sebenarnya tidak pernah masuk log. `tab_state` adalah `selected`, `unselected`, atau `unknown`; yang terakhir dipakai bila asosiasi tab atau atribut pemilihannya tidak tunggal/teramati.
@@ -88,6 +93,12 @@ Snapshot hanya berisi struktur: `panel_controlled` menyatakan penggunaan `aria-c
 | `unavailable` | Snapshot gagal/tidak tersedia; counter yang tidak diketahui dihilangkan, bukan ditulis nol |
 
 State merupakan observasi struktur dan geometri saat snapshot, **bukan** salinan keputusan visibilitas internal Playwright atau bukti penyebab timeout. DOM dapat berubah antara kegagalan dan snapshot; `visible` setelah timeout bukan alasan mengulang atau mengesahkan capture. Tidak ada pembacaan nilai form, caption, HTML, URL, atau isi tabel untuk event ini. Logger tetap memfilter enum, tipe dan rentang counter; exception dari probe tidak mengganti timeout asli.
+
+Jika evaluasi probe gagal, `probe_failure=evaluation_error` dan ringkasan `error`
+mencatat tipe exception serta frame source yang diizinkan. Pesan exception, DOM,
+ID panel, dan nilai form tetap tidak dicatat. `unavailable` pada log lama tidak
+menentukan apakah kegagalan berasal dari pencarian view atau evaluasi browser;
+field baru hanya tersedia pada run yang memakai build ini.
 
 Probe melakukan satu evaluasi sinkron read-only setelah kegagalan. Batas 100 ms pada `Locator.evaluate` membatasi pencarian view, **bukan** seluruh eksekusi JavaScript atau respons browser yang macet. Ini bukan jaminan latensi keras; mekanisme Stop dan cleanup proses milik aplikasi tetap berlaku. Snapshot juga tidak menambah informasi pada log historis. Penggunaan build diagnostik dan reproduksi live memerlukan persetujuan terpisah; tes sintetis tidak membuktikan timeout live telah diperbaiki.
 

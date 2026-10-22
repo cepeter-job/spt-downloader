@@ -29,6 +29,11 @@ memerlukan pemeriksaan sesi, identitas dan byte pada setiap pengambilan.
 
 ## Batas adapter
 
+Kolektor harus lebih dahulu berhasil membaca panel Induk yang terlihat dan
+terikat ke tab/view saat ini. Jika penantian Induk gagal, Audit mencatat kegagalan
+panel dan lampiran PARTIAL; alur POST belum dijalankan. Bedakan kondisi ini dari
+penolakan kontrol/build atau respons PDF setelah discovery.
+
 Adapter hanya mengaktifkan tombol yang terikat ke tabel laporan keuangan pada
 Induk Badan yang sedang diverifikasi. Bundle yang digunakan halaman harus cocok
 dengan pin di atas. Kontrol atau build yang tidak didukung tetap PARTIAL.

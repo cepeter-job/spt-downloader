@@ -243,6 +243,7 @@ class InventoryFilterRoute:
         self.check_cancel = check_cancel
         self.error = None
         self._requests = {}
+        self._first_grid = True
         self._handler = self._handle
 
     def __enter__(self):
@@ -271,6 +272,11 @@ class InventoryFilterRoute:
                 route.fallback()
                 return
             effective = rewrite_inventory_request(original, self.condition, taxpayer_id=self.taxpayer_id)
+            if self._first_grid:
+                # A retained page can have disabled Prev on an empty partition.
+                # Validate the original request first; reset only this grid read.
+                effective['First'] = 0
+                self._first_grid = False
             encode = lambda body: json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
             evidence = {'original_sha256': hashlib.sha256(encode(original).encode()).hexdigest(),
                         'effective_sha256': hashlib.sha256(encode(effective).encode()).hexdigest()}
