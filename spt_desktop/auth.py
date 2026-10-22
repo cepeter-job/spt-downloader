@@ -216,7 +216,9 @@ def _exchange_transport_failure(error):
         ('tls', r'(?:self-signed certificate(?: in certificate chain)?|unable to (?:verify the first certificate|get local issuer certificate)|certificate (?:has expired|is not yet valid)|Hostname/IP does not match certificate\'s altnames: .+)'),
         ('dns', r'getaddrinfo (?:ENOTFOUND|EAI_AGAIN)(?: .+)?'),
         ('proxy', r'(?:net::ERR_(?:PROXY_CONNECTION_FAILED|TUNNEL_CONNECTION_FAILED|SOCKS_CONNECTION_FAILED)|Proxy connection timed out|Socks[45] (?:Authentication failed|proxy rejected connection))'),
-        ('connection', r'(?:(?:connect|read|write) (?:ECONNRESET|ECONNREFUSED|EPIPE|ENETUNREACH|EHOSTUNREACH)(?: .+)?|socket hang up|Socket closed)'),
+        # The pinned SDK appends a system code when the Node error headline
+        # does not already contain it, e.g. "socket hang up (ECONNRESET)".
+        ('connection', r'(?:(?:connect|read|write) (?:ECONNRESET|ECONNREFUSED|EPIPE|ENETUNREACH|EHOSTUNREACH)(?: .+)?|(?:socket hang up|Socket closed)(?: \(ECONNRESET\))?)'),
     )
     for category, pattern in patterns:
         if re.fullmatch(pattern, headline, flags=re.IGNORECASE):

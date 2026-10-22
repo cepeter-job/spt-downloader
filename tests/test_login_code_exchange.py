@@ -359,6 +359,7 @@ def test_failed_exchange_identifies_only_its_safe_transport_category(browser, tm
     (PlaywrightError, 'Route.fetch: net::ERR_PROXY_CONNECTION_FAILED', 'proxy'),
     (PlaywrightError, 'Route.fetch: Socks5 Authentication failed', 'proxy'),
     (PlaywrightError, 'Route.fetch: read ECONNRESET', 'connection'),
+    (PlaywrightError, 'Route.fetch: socket hang up (ECONNRESET)', 'connection'),
     (PlaywrightError, 'Route.fetch: Target page, context or browser has been closed', 'context_closed'),
     (PlaywrightError, 'Route.fetch: Request context disposed.', 'context_closed'),
     (PlaywrightError, 'Route.fetch: Unrecognized synthetic failure', 'unknown'),
@@ -367,9 +368,10 @@ def test_failed_exchange_identifies_only_its_safe_transport_category(browser, tm
     (PlaywrightError, 'Route.fetch: Unrecognized synthetic failure\nCall log:\n - getaddrinfo ENOTFOUND private', 'unknown'),
     (PlaywrightError, 'Route.fetch: getaddrinfo ENOTFOUNDX synthetic.invalid', 'unknown'),
     (PlaywrightError, 'Route.fetch: ' + 'x' * 1024 + ' getaddrinfo ENOTFOUND private', 'unknown'),
+    (PlaywrightError, 'Route.fetch: socket hang up https://synthetic.invalid/ECONNRESET', 'unknown'),
 ], ids=['typed-timeout', 'timeout', 'tls', 'dns', 'dns-transient', 'proxy', 'socks-proxy',
-        'connection', 'closed-page', 'disposed-context', 'unknown', 'non-playwright',
-        'url-is-not-error-code', 'ignore-call-log', 'error-code-boundary', 'bounded-headline'])
+        'connection', 'serialized-connection-code', 'closed-page', 'disposed-context', 'unknown', 'non-playwright',
+        'url-is-not-error-code', 'ignore-call-log', 'error-code-boundary', 'bounded-headline', 'socket-url-is-not-code'])
 def test_fetch_failure_reports_only_safe_transport_subcategory(browser, tmp_path, monkeypatch,
                                                                error_type, message, expected):
     private = 'SYNTHETIC_PRIVATE_FETCH_EXCEPTION ' + CODE + VERIFIER
