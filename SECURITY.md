@@ -32,6 +32,28 @@ operasional proyek, bukan layanan dukungan 24 jam atau bukti notifikasi telah di
 Catat status, penanggung jawab, revisi perbaikan, dan bukti verifikasi dalam laporan
 privat sampai koordinasi pengungkapan selesai.
 
+### Notifikasi dan bukti penerimaan
+
+Pengaturan repository dan preferensi notifikasi akun adalah kontrol yang berbeda.
+Maintainer memeriksa jalur penerimaan berikut pada akun yang bertugas:
+
+1. Pilih **Watch → Custom → Security alerts** atau **All Activity** pada repository.
+2. Pada [pengaturan notifikasi](https://github.com/settings/notifications), aktifkan
+   **Email** dan **On GitHub** untuk **Watching** sesuai kanal yang dipantau.
+3. Pada bagian **Actions**, aktifkan notifikasi dan pilih **Only notify for failed
+   workflows** bila hanya kegagalan yang perlu dikirim. Notifikasi bawaan Actions
+   mengikuti pemicu run; notifikasi schedule mengikuti pemilik jadwal. Preferensi
+   ini bukan bukti semua kegagalan `main` akan diterima oleh orang yang sama.
+4. Cocokkan satu kejadian yang benar-benar diterima dengan URL dan waktu run/laporan.
+   Catat penerima, waktu penerimaan, serta maintainer cadangan yang telah menyetujui
+   tanggung jawabnya. Jangan menaruh isi laporan privat atau alamat rahasia dalam
+   catatan publik, dan jangan menganggap pengaturan aktif sebagai bukti pengiriman.
+
+Panduan resmi: [notifikasi keamanan](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-security-notifications)
+dan [notifikasi Actions](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
+Jika belum ada maintainer cadangan atau bukti penerimaan, tandai keduanya belum
+terverifikasi; jangan mencantumkan orang lain tanpa persetujuan mereka.
+
 Saat menyiapkan distribusi, maintainer memeriksa advisory baru, commit yang
 didukung, checksum/provenance, serta ketersediaan build rollback. Jangan memakai
 hasil audit dependensi lama sebagai jaminan bebas kerentanan saat ini.

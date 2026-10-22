@@ -76,7 +76,7 @@ def self_test(report=None):
             for width,height in ((540,430),(800,620)):
                 root.geometry(f'{width}x{height}')
                 settled=tk.BooleanVar(root)
-                root.after(250,lambda:settled.set(True))
+                root.after(250,lambda s=settled:s.set(True))
                 root.wait_variable(settled)
                 root.update_idletasks()
                 left=contact.winfo_rootx()-root.winfo_rootx()
