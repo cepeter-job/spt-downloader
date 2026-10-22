@@ -87,7 +87,8 @@ def test_catalog_matches_approved_copy():
         'action.new': 'Unduh SPT lain',
         'action.details': 'Lihat rincian',
         'selection.title': 'Pilih SPT yang akan diunduh',
-        'selection.help': 'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.',
+        'selection.help': ('gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
+                           'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
         'selection.search.label': 'Cari jenis pajak, masa, pembetulan, atau ID SPT',
         'selection.empty': 'Daftar ini tidak memuat SPT yang bisa dipilih.',
         'selection.focused_id': 'ID SPT yang disorot',
@@ -143,7 +144,8 @@ def test_copy_module_has_only_standard_library_imports():
 
 
 @pytest.mark.parametrize('key,expected', [
-    ('selection.help', 'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
+    ('selection.help', 'gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
+                       'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
     ('selection.search.label', 'Cari jenis pajak, masa, pembetulan, atau ID SPT'),
     ('selection.empty', 'Daftar ini tidak memuat SPT yang bisa dipilih.'),
     ('selection.focused_id', 'ID SPT yang disorot'),

@@ -104,7 +104,7 @@ Baris berikut melengkapi katalog 54 ID, termasuk dialog yang sudah diimplementas
 | ID | Teks exact |
 | --- | --- |
 | `selection.title` | Pilih SPT yang akan diunduh |
-| `selection.help` | Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan. |
+| `selection.help` | gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT<br><br>Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan. |
 | `selection.search.label` | Cari jenis pajak, masa, pembetulan, atau ID SPT |
 | `selection.empty` | Daftar ini tidak memuat SPT yang bisa dipilih. |
 | `selection.focused_id` | ID SPT yang disorot |
