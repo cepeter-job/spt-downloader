@@ -31,6 +31,7 @@ public static class ReaderNative {
 }
 '@
 function Save($path,$data) {$data | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $path -Encoding UTF8}
+function Phase($name) {Save (Join-Path $output 'probe-phase.json') @{phase=$name;reader=$Reader;activation_timing=$ActivationTiming;utc=[DateTime]::UtcNow.ToString('o')}}
 function Owned([IntPtr]$handle,[int]$processId) {
  [uint32]$actual=0; [void][ReaderNative]::GetWindowThreadProcessId($handle,[ref]$actual)
  if ($actual -ne $processId) {throw 'Unowned native window'}
@@ -46,6 +47,7 @@ function EntryObservation($state) {
  Owned ([IntPtr]$state.password_hwnd) $state.pid
  $result=@{msaa_value=(Observation $false $false);uia_value=(Observation $false $false);msaa_selection=(Observation $false $false);uia_selection=(Observation $false $false)}
  try {
+  Phase 'msaa_password_value'
   $acc=[ReaderNative]::Accessible([IntPtr]$state.password_hwnd)
   $result.msaa_value=Observation $true (Exposed $acc.get_accValue(0))
   $selection=$acc.accSelection
@@ -54,6 +56,7 @@ function EntryObservation($state) {
   $selection=$null
  } catch {$result.msaa_error=$_.Exception.GetType().Name}
  try {
+  Phase 'uia_password_value'
   $element=[Windows.Automation.AutomationElement]::FromHandle([IntPtr]$state.password_hwnd)
   if ($element.Current.ProcessId -ne $state.pid) {throw 'Unowned UIA element'}
   $pattern=$null
@@ -77,6 +80,7 @@ function ReadState {
    $phase=if (Test-Path -LiteralPath $phaseFile) {Get-Content -LiteralPath $phaseFile -Raw | ConvertFrom-Json} else {$null}
    $failure=@{schema=1;kind='candidate_startup_failure';mode=$mode;reader=$Reader;activation_timing=$ActivationTiming;
     reader_running=$readerAvailable;reader_pid=if ($readerProcess) {$readerProcess.Id} else {$null};
+    reader_version=if ($readerExe -and (Test-Path -LiteralPath $readerExe)) {(Get-Item -LiteralPath $readerExe).VersionInfo.FileVersion} else {$null};
     host_pid=$hostProcess.Id;host_exited=$hostProcess.HasExited;phase=$phase;
     exit_code=if ($hostProcess.HasExited) {$hostProcess.ExitCode} else {$null};
     executable_sha256=(Get-FileHash -LiteralPath $Runtime).Hash.ToLowerInvariant();
@@ -138,9 +142,11 @@ $mode=if ((Split-Path -Leaf $Runtime) -eq 'python.exe') {'source'} else {'frozen
 $hostDirectory=Join-Path $output 'host'; $sentinel='QzvKjXwR947263'; $observations=@{}
 $native=@{reader=$Reader;activation_timing=$ActivationTiming;mode=$mode;observations=@();speech_observed=$false}
 try {
+ Phase 'before_reader_and_fixture'
  if ($ActivationTiming -eq 'before_tk') {StartReader}
  $hostArgs=if ($mode -eq 'source') {@('-B',('"'+$PSScriptRoot+'\reader_host.py"'),'--scenario','settings','--directory',('"'+$hostDirectory+'"'))} else {@('--candidate-scenario','settings','--candidate-directory',('"'+$hostDirectory+'"'))}
  $hostProcess=Start-Process -FilePath $Runtime -ArgumentList $hostArgs -WindowStyle Hidden -PassThru
+ Phase 'awaiting_fixture'
  $state=ReadState; $initialInitialized=$state.tk_initialized
  if ($ActivationTiming -eq 'late') {StartReader; Start-Sleep -Seconds 1; $state=ReadState}
  $native.initial_tk_initialized=$initialInitialized; $native.observed_tk_initialized=$state.tk_initialized
@@ -153,6 +159,7 @@ try {
   Owned ([ReaderNative]::GetForegroundWindow()) $state.pid
   $beforeSpeech=SpeechText
   $speechFacility=$null -ne $beforeSpeech
+  Phase 'typing_synthetic_password'
   [Windows.Forms.SendKeys]::SendWait($sentinel); Start-Sleep -Milliseconds 500
   $afterSpeech=SpeechText
   if ($null -ne $afterSpeech -and $speechFacility -and $afterSpeech.StartsWith([string]$beforeSpeech)) {
@@ -194,6 +201,7 @@ try {
   outcomes=$outcomes;password_observations=@{};speech=@{observed=$speechObserved;method='reader_output';evidence=@('native');reason='Only actual owned NVDA Speech Viewer text changes qualify; Narrator has no configured speech observer'}}
  foreach($key in @('msaa_value','uia_value','msaa_selection','uia_selection','remap','reopen','typing_echo')) {if ($observations.ContainsKey($key)) {$report.password_observations[$key]=$observations[$key]}}
  Save (Join-Path $output 'report.json') $report
+ Phase 'report_written'
  foreach($scenario in @('main','selection','overwrite','progress','result')) {
   Save (Join-Path $output ($scenario+'-blocked.json')) @{scenario=$scenario;reader=$Reader;mode=$mode;activation_timing=$ActivationTiming;status='blocked';reason='Password prerequisite not passed';settings_report='report.json'}
  }
