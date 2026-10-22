@@ -70,7 +70,11 @@ function EntryObservation($state) {
 function ReadState {
  $ready=Join-Path $hostDirectory 'ready.json'; $deadline=[DateTime]::UtcNow.AddSeconds(30)
  while (-not (Test-Path -LiteralPath $ready)) {
-  if ($hostProcess.HasExited -or [DateTime]::UtcNow -gt $deadline) {throw 'Fixture readiness unavailable'}
+  if ($hostProcess.HasExited -or [DateTime]::UtcNow -gt $deadline) {
+   $safeError=Join-Path $hostDirectory 'host-error.json'
+   if (Test-Path -LiteralPath $safeError) {Get-Content -LiteralPath $safeError -Raw | Write-Output}
+   throw 'Fixture readiness unavailable'
+  }
   Start-Sleep -Milliseconds 100
  }
  $state=Get-Content -LiteralPath $ready -Raw | ConvertFrom-Json

@@ -295,6 +295,7 @@ jobs:
             ${{ runner.temp }}/reader-evidence/*/report.json
             ${{ runner.temp }}/reader-evidence/*/native.json
             ${{ runner.temp }}/reader-evidence/*/cleanup.json
+            ${{ runner.temp }}/reader-evidence/*/host/host-error.json
             ${{ runner.temp }}/reader-evidence/*/*-blocked.json
           if-no-files-found: error
           retention-days: 14

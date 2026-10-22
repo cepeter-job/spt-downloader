@@ -60,6 +60,18 @@ def run(scenario, directory):
     if sys.platform != 'win32' or os.environ.get('GITHUB_ACTIONS') != 'true':
         raise RuntimeError('candidate fixture requires a GitHub Windows runner')
     directory = prepare_directory(directory)
+    try:
+        return _host(scenario, directory)
+    except Exception as error:
+        import traceback
+        safe = {'exception': type(error).__name__, 'frames': [
+            {'file': Path(frame.filename).name, 'line': frame.lineno, 'function': frame.name}
+            for frame in traceback.extract_tb(error.__traceback__)]}
+        (directory / 'host-error.json').write_text(json.dumps(safe), encoding='utf-8')
+        raise RuntimeError('candidate host failed; inspect sanitized host-error.json') from None
+
+
+def _host(scenario, directory):
     import ctypes
     from ctypes import wintypes
     import tkinter as tk
@@ -76,7 +88,14 @@ def run(scenario, directory):
     controller = SyntheticController()
     app = app_module.App(root, directory, controller=controller)
     errors = []
-    root.report_callback_exception = lambda kind, *args: errors.append(kind.__name__)
+    def callback_error(kind, error, trace):
+        import traceback
+        errors.append(kind.__name__)
+        safe = {'exception': kind.__name__, 'frames': [
+            {'file': Path(frame.filename).name, 'line': frame.lineno, 'function': frame.name}
+            for frame in traceback.extract_tb(trace)]}
+        (directory / 'host-error.json').write_text(json.dumps(safe), encoding='utf-8')
+    root.report_callback_exception = callback_error
     app.open_logs = lambda: None
     app.open_result = lambda: None
     app.open_button.configure(command=app.open_result)
