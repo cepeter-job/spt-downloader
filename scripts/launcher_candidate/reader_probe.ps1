@@ -18,6 +18,10 @@ public static class ReaderNative {
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+ [DllImport("user32.dll",EntryPoint="SystemParametersInfoW")] static extern bool GetSPI(uint action,uint param,ref int value,uint flags);
+ [DllImport("user32.dll",EntryPoint="SystemParametersInfoW")] static extern bool SetSPI(uint action,uint param,IntPtr value,uint flags);
+ public static bool ScreenReader() {int v=0;if(!GetSPI(0x0046,0,ref v,0))throw new Exception("SPI read failed");return v!=0;}
+ public static void RestoreScreenReader(bool value) {if(!SetSPI(0x0047,value?1u:0u,IntPtr.Zero,0))throw new Exception("SPI restore failed");}
  [DllImport("oleacc.dll")] static extern int AccessibleObjectFromWindow(IntPtr h,uint obj,ref Guid iid,[MarshalAs(UnmanagedType.Interface)] out object acc);
  public static IAccessible Accessible(IntPtr h) {
   object a; Guid id=new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");
@@ -78,14 +82,37 @@ function ReadState {
 function StartReader {
  if (-not $readerExe -or -not (Test-Path -LiteralPath $readerExe)) {return}
  if ($Reader -eq 'NVDA') {
+  $config=Join-Path $output 'nvda-config'
+  New-Item -ItemType Directory -Path $config | Out-Null
+  # Official pinned configSpec.py / speechViewer.py: built-in viewer, no add-on/hook.
+  "[general]`nlanguage = en`nshowWelcomeDialogAtStartup = False`nsaveConfigurationOnExit = False`nloggingLevel = OFF`n[speechViewer]`nshowSpeechViewerAtStartup = True`n[keyboard]`nspeakTypedCharacters = True`nspeakTypedWords = True" | Set-Content -LiteralPath (Join-Path $config 'nvda.ini') -Encoding UTF8
   $script:readerProcess=Start-Process -FilePath $readerExe -ArgumentList @('--minimal','--disable-addons','--log-level=100',('--config-path="'+$output+'\nvda-config"')) -WindowStyle Hidden -PassThru
  } else {$script:readerProcess=Start-Process -FilePath $readerExe -WindowStyle Hidden -PassThru}
  Start-Sleep -Seconds 4
  $script:readerAvailable=-not $readerProcess.HasExited
 }
+function SpeechText {
+ if ($Reader -ne 'NVDA' -or -not $readerAvailable) {return $null}
+ $condition=New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::ProcessIdProperty,$readerProcess.Id)
+ $windows=[Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children,$condition)
+ foreach($window in $windows) {
+  if ($window.Current.Name -ne 'NVDA Speech Viewer') {continue}
+  $controls=$window.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.Condition]::TrueCondition)
+  foreach($control in $controls) {
+   if ($control.Current.ProcessId -ne $readerProcess.Id) {continue}
+   $pattern=$null
+   if ($control.TryGetCurrentPattern([Windows.Automation.TextPattern]::Pattern,[ref]$pattern)) {return $pattern.DocumentRange.GetText(65536)}
+   $pattern=$null
+   if ($control.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern,[ref]$pattern)) {return $pattern.Current.Value}
+  }
+ }
+ return $null
+}
 $readerExe=if ($Reader -eq 'NVDA') {$NvdaPath} else {Join-Path $env:WINDIR 'System32/Narrator.exe'}
 if (Get-Process -Name $Reader -ErrorAction SilentlyContinue) {throw 'Preexisting reader; isolated runner required'}
 $readerProcess=$null; $hostProcess=$null; $state=$null; $readerAvailable=$false
+$originalScreenReader=[ReaderNative]::ScreenReader()
+$speechObserved=$false; $speechExposed=$false; $speechFacility=$false
 $mode=if ((Split-Path -Leaf $Runtime) -eq 'python.exe') {'source'} else {'frozen'}
 $hostDirectory=Join-Path $output 'host'; $sentinel='QzvKjXwR947263'; $observations=@{}
 $native=@{reader=$Reader;activation_timing=$ActivationTiming;mode=$mode;observations=@();speech_observed=$false}
@@ -102,9 +129,22 @@ try {
   'focus_password' | Set-Content -LiteralPath (Join-Path $hostDirectory 'command.txt') -Encoding UTF8
   Start-Sleep -Milliseconds 500
   Owned ([ReaderNative]::GetForegroundWindow()) $state.pid
+  $beforeSpeech=SpeechText
+  $speechFacility=$null -ne $beforeSpeech
   [Windows.Forms.SendKeys]::SendWait($sentinel); Start-Sleep -Milliseconds 500
+  $afterSpeech=SpeechText
+  if ($null -ne $afterSpeech -and $speechFacility -and $afterSpeech.StartsWith([string]$beforeSpeech)) {
+   $spoken=$afterSpeech.Substring(([string]$beforeSpeech).Length)
+   $speechObserved=$spoken.Length -gt 0
+   $speechExposed=Exposed $spoken
+   foreach($line in ($spoken -split "`n")) {
+    if ($line.Trim() -cmatch '^(?:cap |capital )?([QzvKjXwR947263])$') {$speechExposed=$true}
+   }
+  }
+  $beforeSpeech=$null; $afterSpeech=$null; $spoken=$null
   [Windows.Forms.SendKeys]::SendWait('^a'); Start-Sleep -Milliseconds 300
   $observations=EntryObservation $state; $native.observations+=@{phase='typed_selected';values=$observations.Clone()}
+  $observations.typing_echo=Observation $speechObserved $speechExposed
   foreach($action in @('remap','reopen')) {
    $action | Set-Content -LiteralPath (Join-Path $hostDirectory 'command.txt') -Encoding UTF8
    Start-Sleep -Milliseconds 600; $state=ReadState; $phase=EntryObservation $state
@@ -112,7 +152,9 @@ try {
    $observations[$action]=Observation ($phase.msaa_value.observed -or $phase.uia_value.observed) ($phase.msaa_value.exposed -or $phase.uia_value.exposed)
   }
  }
- $native.pid=$state.pid; $nativePath=Join-Path $output 'native.json'; Save $nativePath $native
+ $native.pid=$state.pid; $native.speech_viewer_available=$speechFacility; $native.speech_observed=$speechObserved
+ $native.speech_exposed=$speechExposed; $native.original_screenreader_flag=$originalScreenReader
+ $nativePath=Join-Path $output 'native.json'; Save $nativePath $native
  $reason=if (-not $readerAvailable) {'Actual reader could not run on disposable runner'} elseif (-not $state.tk_initialized) {'Actual reader running but Tk initialization unobserved'} else {'Speech, typing echo, focus notifications and reader inspection require actual output observation'}
  $outcomes=@{}
  foreach($gate in @('password','names_roles_values_states','focus','selection','speech_navigation')) {$outcomes[$gate]=@{status='blocked';reason=$reason;evidence=@('native')}}
@@ -127,8 +169,8 @@ try {
   activation=@{observed=($readerAvailable -and $state.tk_initialized);reader_running=$readerAvailable;tk_initialized=[bool]$state.tk_initialized;evidence=@('native')};
   evidence=@{native=@{path='native.json';sha256=(Get-FileHash $nativePath).Hash.ToLowerInvariant();mode=$mode;reader=$Reader;scenario='settings';activation_timing=$ActivationTiming;pid=$state.pid}};
   providers=@{MSAA=@{observed=[bool]$observations.msaa_value.observed;evidence=@('native')};UIA=@{observed=[bool]$observations.uia_value.observed;evidence=@('native')}};
-  outcomes=$outcomes;password_observations=@{};speech=@{observed=$false;reason='No actual speech output observer available'}}
- foreach($key in @('msaa_value','uia_value','msaa_selection','uia_selection','remap','reopen')) {if ($observations.ContainsKey($key)) {$report.password_observations[$key]=$observations[$key]}}
+  outcomes=$outcomes;password_observations=@{};speech=@{observed=$speechObserved;method='reader_output';evidence=@('native');reason='Only actual owned NVDA Speech Viewer text changes qualify; Narrator has no configured speech observer'}}
+ foreach($key in @('msaa_value','uia_value','msaa_selection','uia_selection','remap','reopen','typing_echo')) {if ($observations.ContainsKey($key)) {$report.password_observations[$key]=$observations[$key]}}
  Save (Join-Path $output 'report.json') $report
  foreach($scenario in @('main','selection','overwrite','progress','result')) {
   Save (Join-Path $output ($scenario+'-blocked.json')) @{scenario=$scenario;reader=$Reader;mode=$mode;activation_timing=$ActivationTiming;status='blocked';reason='Password prerequisite not passed';settings_report='report.json'}
@@ -142,6 +184,8 @@ try {
   }
  }
  if ($readerProcess -and -not $readerProcess.HasExited) {$readerProcess.Kill(); [void]$readerProcess.WaitForExit(5000)}
+ [ReaderNative]::RestoreScreenReader($originalScreenReader)
+ if ([ReaderNative]::ScreenReader() -ne $originalScreenReader) {throw 'Screen reader setting restoration failed'}
  Save (Join-Path $output 'cleanup.json') @{host_exited=($null -eq $hostProcess -or $hostProcess.HasExited);reader_exited=($null -eq $readerProcess -or $readerProcess.HasExited)}
  $sentinel=$null
 }
