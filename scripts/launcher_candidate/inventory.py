@@ -111,4 +111,38 @@ if __name__ == "__main__":
 
 def validate_candidate_report(report: dict, inventory: dict) -> None:
     """Require exact launcher proof independently of the worker profile."""
-    raise NotImplementedError('candidate report validation is not implemented')
+    if not isinstance(report, dict) or not isinstance(inventory, dict):
+        raise ValueError('invalid candidate report')
+    for key, expected in {'ok': True, 'credentials_accessed': False,
+                          'live_scrape': False, 'worker_python': '3.14.8'}.items():
+        if type(report.get(key)) is not type(expected) or report.get(key) != expected:
+            raise ValueError('unsafe or incomplete candidate self-test')
+    if type(report.get('frozen')) is not bool:
+        raise ValueError('missing source/frozen identity')
+    proof = report.get('launcher_candidate')
+    if not isinstance(proof, dict):
+        raise ValueError('missing actual launcher proof')
+    for key, expected in IDENTITY.items():
+        if (type(proof.get(key)) is not type(expected) or proof.get(key) != expected
+                or type(inventory.get(key)) is not type(expected) or inventory.get(key) != expected):
+            raise ValueError('unexpected exact launcher identity')
+    try:
+        expected_resources = candidate_resources(inventory)
+        loaded = inventory['loaded']
+        expected_hashes = {role: inventory['files'][name] for role, name in loaded.items()}
+    except (KeyError, TypeError, AttributeError) as error:
+        raise ValueError('incomplete reference inventory') from error
+    if (set(loaded) != {'python', '_tkinter', 'tcl', 'tk'}
+            or proof.get('loaded') != loaded
+            or proof.get('loaded_sha256') != expected_hashes
+            or proof.get('resources') != expected_resources):
+        raise ValueError('candidate native or script resource identity mismatch')
+
+
+def candidate_resources(inventory: dict) -> dict:
+    """Exact native roles and complete Tcl/Tk script trees requiring byte proof."""
+    files = inventory['files']
+    names = set(inventory['loaded'].values())
+    names.update(name for name in files if any(name.startswith(prefix + '/')
+                 for prefix in inventory['libraries'].values()))
+    return {name: files[name] for name in sorted(names)}

@@ -74,7 +74,7 @@ def validate_report(data, python_profile='production'):
         raise RuntimeError('Packaged application sorting self-test failed')
 
 
-def build(output, python_profile='production'):
+def build(output, python_profile='production', *, candidate_runtime=None):
     expected = python_version(python_profile)
     if (sys.platform != 'win32' or struct.calcsize('P') != 8
             or platform.python_implementation() != 'CPython'
@@ -90,13 +90,20 @@ def build(output, python_profile='production'):
     for name in WORKER_FILES+('LICENSE',):
         if not (ROOT/name).is_file():raise FileNotFoundError('Missing allowed build resource: '+name)
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
-    subprocess.run(build_command(ROOT,output,uv_binary),cwd=ROOT,check=True)
+    command = build_command(ROOT,output,uv_binary)
+    if candidate_runtime is not None:
+        runtime = Path(candidate_runtime).resolve(strict=True)
+        for source, destination in ((runtime/'tcl/tcl9.1', '_tcl_data'),
+                                    (runtime/'tcl/tk9.1', '_tk_data'),
+                                    (runtime/'licenses', 'candidate-licenses')):
+            command[-1:-1] = ['--add-data', str(source)+';'+destination]
+    subprocess.run(command,cwd=ROOT,check=True)
     executable=output/'SPTDownloader.exe'
     if not executable.is_file():raise FileNotFoundError('PyInstaller did not create the executable')
     report=output/'build-selftest.json'
     report.unlink(missing_ok=True)
     with ProcessJob() as owned:
-        process=owned.spawn([str(executable),'--self-test','--report',str(report)])
+        process=owned.spawn([str(executable),'--self-test','--report',str(report)] + (['--candidate-report'] if candidate_runtime is not None else []))
         try:
             code=process.wait(timeout=60)
             if code:raise subprocess.CalledProcessError(code,process.args)

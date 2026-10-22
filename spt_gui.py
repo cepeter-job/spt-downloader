@@ -16,7 +16,7 @@ from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
 from spt_desktop.windows import InstanceLock
 
 
-def self_test(report=None):
+def self_test(report=None, candidate_report=False):
     class SyntheticController:
         # Injection proves that constructing/rendering the GUI never prepares a worker.
         active = False
@@ -211,6 +211,9 @@ def self_test(report=None):
                   'credential_check_controls':True,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
                   'known_folder_resolution':bool(workspace_root() and downloads_folder()),
                   'live_scrape':False,'credentials_accessed':False}
+            if candidate_report:
+                from scripts.launcher_candidate.probe import application_probe
+                data['launcher_candidate'] = application_probe(root)
             if report:
                 report=Path(report);report.parent.mkdir(parents=True,exist_ok=True)
                 report.write_text(json.dumps(data,indent=2),encoding='utf-8')
@@ -227,8 +230,10 @@ def self_test(report=None):
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Simple authorized Coretax to Excel desktop app')
     parser.add_argument('--self-test',action='store_true');parser.add_argument('--report',type=Path)
+    parser.add_argument('--candidate-report',action='store_true',help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
-    if args.self_test:return self_test(args.report)
+    if args.candidate_report and not args.self_test:parser.error("--candidate-report requires --self-test")
+    if args.self_test:return self_test(args.report, args.candidate_report)
     with diagnostics.session(diagnostics.default_root(), 'gui'):
         return _run_gui()
 

@@ -66,3 +66,51 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.write_text(json.dumps(probe(), indent=2) + "\n", encoding="utf-8")
+
+
+def application_probe(window):
+    """Observe this source/frozen process without trusting attached inventory values."""
+    frozen = bool(getattr(sys, 'frozen', False))
+    root = Path(sys._MEIPASS if frozen else sys.base_prefix).resolve()
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    psapi = ctypes.WinDLL('psapi', use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    psapi.EnumProcessModules.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.HMODULE), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetModuleFileNameW.argtypes = [wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD]
+    modules = (wintypes.HMODULE * 2048)()
+    needed = wintypes.DWORD()
+    if not psapi.EnumProcessModules(kernel.GetCurrentProcess(), modules, ctypes.sizeof(modules), ctypes.byref(needed)) or needed.value > ctypes.sizeof(modules):
+        raise RuntimeError('cannot inventory candidate application modules')
+    paths = []
+    for module in modules[:needed.value // ctypes.sizeof(wintypes.HMODULE)]:
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not kernel.GetModuleFileNameW(module, buffer, len(buffer)):
+            raise RuntimeError('cannot identify application module')
+        paths.append(Path(buffer.value).resolve())
+    loaded, hashes, absolute, resources = {}, {}, {}, {}
+    names = {'python': 'python314.dll', '_tkinter': 'DLLs/_tkinter.pyd',
+             'tcl': 'DLLs/tcl91.dll', 'tk': 'DLLs/tcl9tk91.dll'}
+    for role, canonical in names.items():
+        matches = [path for path in paths if path.name.casefold() == Path(canonical).name.casefold()]
+        if len(matches) != 1 or not matches[0].is_relative_to(root):
+            raise RuntimeError('candidate application native resource is external or ambiguous')
+        path = matches[0]
+        loaded[role], absolute[role] = canonical, str(path)
+        hashes[role] = resources[canonical] = hashlib.sha256(path.read_bytes()).hexdigest()
+    libraries = {'tcl': Path(str(window.tk.call('info', 'library'))).resolve(),
+                 'tk': Path(str(window.tk.getvar('tk_library'))).resolve()}
+    for kind, library in libraries.items():
+        if not library.is_relative_to(root):
+            raise RuntimeError('candidate application script library is external')
+        canonical = 'tcl/' + ('tcl9.1' if kind == 'tcl' else 'tk9.1')
+        for path in library.rglob('*'):
+            if path.is_symlink() or path.is_junction():
+                raise RuntimeError('linked candidate application resource')
+            if path.is_file():
+                resources[canonical + '/' + path.relative_to(library).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {'schema': 1, 'python': platform.python_version(), 'architecture': 'x64' if struct.calcsize('P') == 8 else platform.machine(),
+            'gil': not bool(sysconfig.get_config_var('Py_GIL_DISABLED')), 'tcl': str(window.tk.call('info', 'patchlevel')),
+            'tk': str(window.tk.call('package', 'present', 'Tk')), 'loaded': loaded,
+            'loaded_sha256': hashes, 'loaded_absolute': absolute, 'resources': resources,
+            'library_absolute': {key: str(value) for key, value in libraries.items()},
+            'resource_root': str(root), 'executable': str(Path(sys.executable).resolve())}
