@@ -23,6 +23,37 @@ def records(root):
             for line in file.read_text(encoding='utf-8').splitlines()]
 
 
+@pytest.mark.parametrize('failure', [
+    'fetch_exception', 'http_rejected', 'redirect_rejected', 'response_url_changed',
+    'callback_changed', 'fulfill_exception',
+])
+def test_auth_exchange_failure_keeps_fixed_category_without_transport_secrets(tmp_path, failure):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_EXCHANGE_VALUE'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('auth.state', reason='code_exchange_failed', exchange_failure=failure,
+                 url=secret, body=secret, headers=secret, response=secret, message=secret)
+        assert log.flush()
+    rows = [row for row in records(tmp_path) if row['event'] == 'auth.state']
+    assert [row.get('exchange_failure') for row in rows] == [failure]
+    assert not {'url', 'body', 'headers', 'response', 'message'} & rows[0].keys()
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_auth_exchange_failure_rejects_arbitrary_values_without_stringifying(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Exchange diagnostics must not stringify transport exceptions')
+    with d.session(tmp_path, 'worker') as log:
+        for value in ('SYNTHETIC_PRIVATE_EXCHANGE_VALUE', Untrusted(), None, 500, True):
+            d.record('auth.state', reason='code_exchange_failed', exchange_failure=value)
+        assert log.flush()
+    rows = [row for row in records(tmp_path) if row['event'] == 'auth.state']
+    assert len(rows) == 5 and all('exchange_failure' not in row for row in rows)
+    assert 'SYNTHETIC_PRIVATE_EXCHANGE_VALUE' not in json.dumps(records(tmp_path))
+
+
 @pytest.mark.parametrize('state', ['missing', 'hidden', 'outside_view', 'visible', 'ambiguous', 'unavailable'])
 def test_panel_timeout_schema_keeps_only_safe_structural_metadata(tmp_path, state):
     d = diagnostics()

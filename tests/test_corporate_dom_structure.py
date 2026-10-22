@@ -204,6 +204,34 @@ def test_l9_corporate_tables_carry_exact_source_structure(routed, tmp_path):
         assert table['source_structure'] == expected
 
 
+@pytest.mark.parametrize('caption', ['LAINNYA', 'KELOMPOK LAINNYA'])
+def test_l9_other_groups_preserve_literal_caption_with_reordered_owners(routed, tmp_path, caption):
+    specs = [
+        ('rshshr-citr-l9-form-grid3', 'HARTA TIDAK BERWUJUD'),
+        ('rshshr-citr-l9-form-grid1', 'HARTA BERWUJUD'),
+    ]
+    page = routed(l1d_html([], [panel_block(component, owner, caption) for component, owner in specs]))
+    result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+    assert result['capture_complete'], result['errors']
+    tables = result['sections'][2]['tables']
+    assert len(tables) == 2
+    assert [table.get('source_structure') for table in tables] == [
+        {'form': 'L9', 'component': component, 'groups': [owner, caption]}
+        for component, owner in specs
+    ]
+
+
+@pytest.mark.parametrize('component,owner', [
+    ('rshshr-citr-l9-form-grid1', 'HARTA TIDAK BERWUJUD'),
+    ('rshshr-citr-l9-form-grid3', 'HARTA BERWUJUD'),
+    ('unknown-l9-grid', 'HARTA BERWUJUD'),
+])
+def test_l9_other_caption_does_not_override_missing_or_contradictory_owner(routed, tmp_path, component, owner):
+    page = routed(l1d_html([], [panel_block(component, owner, 'KELOMPOK LAINNYA')]))
+    result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
+    assert not result['sections'][2]['tables'][0].get('source_structure')
+
+
 def test_unknown_component_and_unowned_form_emit_no_identity(routed, tmp_path):
     html = '''<!doctype html><html><body>
 <main class="main-content"><div class="p-tabview">

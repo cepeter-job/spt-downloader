@@ -1,0 +1,70 @@
+"""New live inventory observes submitted returns only; fixtures are synthetic."""
+import json
+
+import pytest
+
+import coretax_browser as driver
+from support_isolated_browser import browser
+from test_json_inventory import synthetic_listing_browser
+
+
+@pytest.mark.parametrize('empty', [False, True])
+def test_dom_inventory_never_visits_discovered_archive_or_other_statuses(browser, tmp_path, monkeypatch, empty):
+    with synthetic_listing_browser(
+        browser, monkeypatch, unknown=True, empty=empty,
+        archive_period_conflict=True, extra_status_links=True,
+    ) as (page, metrics):
+        run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
+
+    assert metrics['list_navigations'] == [
+        '/returnsheets/id-ID/not-submitted-returnsheets/fixture-taxpayer',
+        '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer',
+    ], 'Taxpayer selection may land on draft; inventory must visit only submitted'
+    assert run['inventory_complete'], run['errors']
+    assert len(run['sources']) == len(run['audit']) == 1
+    assert run['sources'][0]['label'] == run['audit'][0]['status'] == 'SPT Dilaporkan'
+    assert run['audit'][0]['used_source'] == 'dom-fallback'
+    assert run['audit'][0]['scanned'] == (0 if empty else 3)
+    assert len(run['records']) == (0 if empty else 2)
+    assert all(record['source_status'] == 'SPT Dilaporkan' for record in run['records'])
+    assert all(len(record['source_occurrences']) == 1 for record in run['records'])
+    assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
+    assert json.loads((tmp_path / 'inventory.json').read_text(encoding='utf-8')) == run
+    batches = [json.loads(line) for line in (tmp_path / 'inventory-batches.jsonl').read_text(encoding='utf-8').splitlines()]
+    assert len(batches) == (0 if empty else 2)
+    assert 'Archieved Return Sheets' not in json.dumps(batches)
+
+
+def test_json_inventory_declares_same_submitted_only_scope(browser, tmp_path, monkeypatch):
+    with synthetic_listing_browser(browser, monkeypatch, extra_status_links=True) as (page, metrics):
+        run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
+
+    assert run['inventory_complete'], run['errors']
+    assert len(run['audit']) == len(run['sources']) == 1
+    assert run['audit'][0]['used_source'] == 'json'
+    assert metrics['submitted_full_grid_reads'] == 0
+    assert len(metrics['list_navigations']) == 2
+    assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
+
+
+@pytest.mark.parametrize('link', ['missing', 'foreign', 'wrong_label', 'ambiguous'])
+def test_no_unique_inspected_submitted_navigation_cannot_certify_inventory(browser, tmp_path, monkeypatch, link):
+    with synthetic_listing_browser(browser, monkeypatch, submitted_link=link) as (page, metrics):
+        try:
+            run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
+        except RuntimeError:
+            run = None
+    assert run is None or not run['inventory_complete']
+    assert metrics['list_navigations'] == ['/returnsheets/id-ID/not-submitted-returnsheets/fixture-taxpayer']
+    assert metrics['submitted_api_requests'] == metrics['detail_actions'] == metrics['unregistered_requests'] == 0
+
+
+def test_submitted_navigation_redirect_cannot_capture_foreign_taxpayer(browser, tmp_path, monkeypatch):
+    with synthetic_listing_browser(browser, monkeypatch, submitted_redirect=True) as (page, metrics):
+        try:
+            run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
+        except RuntimeError:
+            run = None
+    assert run is None or not run['inventory_complete']
+    assert run is None or not run['records']
+    assert metrics['submitted_api_requests'] == metrics['detail_actions'] == metrics['unregistered_requests'] == 0
