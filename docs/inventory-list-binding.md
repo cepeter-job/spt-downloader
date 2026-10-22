@@ -1,5 +1,7 @@
 # Inventory grid/auxiliary response isolation
 
+> Scope update, 22 October 2026: new live inventory reads only the uniquely inspected SPT Dilaporkan navigation. The all-status traversal below records the earlier contract and remains relevant to interpreting old captures; it is superseded for new collection by [the current provenance contract](arsitektur.md#identitas-scope-dan-provenance). Observer isolation, literal identity, cancellation, pagination reconciliation, and catalog validation still apply. Old evidence is not rewritten to claim the new scope.
+
 ## Evidence and scope
 
 A bounded authorized read-only inspection of the not-submitted page observed paginated POSTs to `/returnsheet/api/returnsheetsnotsubmitted/data` returning an empty grid, plus a separate POST to `/returnsheet/api/returnsheetssubmitted` whose body contains only `TaxpayerAggregateIdentifier`. The latter is not a paginated grid request. The existing observer accepts both, allowing the auxiliary response to replace the visible-grid result. Native acceptance also discovered the current route plus a trailing `#` as a second, empty-label status source; same-document navigation emits no fresh grid response.

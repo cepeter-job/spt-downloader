@@ -24,10 +24,11 @@ APPROVED_ACCOUNTING_RANGES = {
 }
 
 
-def export(tmp_path, sections, *, year=2025):
+def export(tmp_path, sections, *, year=2025, capture_complete=True):
     run = source_run('PPh Badan', sections)
     run['year'] = year
     run['records'][0]['meta']['Masa Pajak'] = f'Januari - Desember {year}'
+    run['records'][0]['capture_complete'] = capture_complete
     before = deepcopy(run)
     reports = []
     paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
@@ -185,7 +186,10 @@ def test_unique_scalar_labels_fill_their_numeric_slots(tmp_path, form, slots):
         for _, destination in slots:
             assert book[form][destination].value == 1234.5
             assert book[form][destination].data_type == 'n'
-        assert reports[0]['complete']
+        assert reports[0]['complete'] is (form != 'L11-B')
+        if form == 'L11-B':
+            assert reports[0]['derived_reason'] == 'missing_average'
+            assert reports[0]['unmapped_fields'] == reports[0]['unmapped_tables'] == 0
     finally:
         book.close()
 
@@ -736,6 +740,73 @@ def test_l11b_missing_capital_table_does_not_emit_der_formula(tmp_path):
         book.close()
 
 
+@pytest.mark.parametrize('content', ['borrowing_cost_only', 'scalar_only', 'empty'])
+def test_observed_l11b_without_either_average_reports_missing_der_without_source_inflation(tmp_path, content):
+    tables, fields = [], []
+    if content == 'borrowing_cost_only':
+        tables = [captured_table('L11-B', 30,
+            [['SYNTHETIC LENDER', '1.234,50', '12,50', '10,00', '2,50']],
+            [['JUMLAH', '9.000,00', '80,00', '50,00', '30,00']], [[1] * 5])]
+    elif content == 'scalar_only':
+        fields = [{'label': '1. PENGHASILAN NETO KOMERSIAL', 'value': '1.234,50'}]
+    book, reports = export(tmp_path, [section('L11-B', fields=fields, tables=tables)])
+    try:
+        assert book.sheetnames == ['L11-B']
+        for coord in ('C26', 'C27', 'D26'):
+            assert book['L11-B'][coord].value in (None, '')
+        if content == 'borrowing_cost_only':
+            assert book['L11-B']['B31'].value == 1234.5
+            assert book['L11-B']['B32'].value == 9000
+        elif content == 'scalar_only':
+            assert book['L11-B']['B2'].value == 1234.5
+        report = reports[0]
+        assert not report['complete'] and report['derived_complete'] is False
+        assert report['derived_reason'] == 'missing_average'
+        assert report['unmapped_fields'] == report['unmapped_tables'] == report['unmapped_rows'] == 0
+        resume = load_workbook(tmp_path / 'resume.xlsx')
+        try:
+            audit = [row for row in resume['Audit'].iter_rows(values_only=True)
+                     if row[0] == 'Pemetaan template']
+            assert len(audit) == 1 and audit[0][1:5] == (0, 0, 0, 'PARTIAL')
+            assert 'DER' in audit[0][5] and 'belum tersedia' in audit[0][5]
+        finally:
+            resume.close()
+    finally:
+        book.close()
+
+
+def test_absent_l11b_does_not_create_a_der_form_or_der_audit(tmp_path):
+    book, reports = export(tmp_path, [section('L6')])
+    try:
+        assert book.sheetnames == ['L6']
+        assert len(reports) == 1 and reports[0]['form'] == 'L6'
+        assert reports[0]['complete']
+        assert 'derived_complete' not in reports[0] and 'derived_reason' not in reports[0]
+    finally:
+        book.close()
+
+
+def test_l11b_zero_denominator_reports_der_partial_without_inventing_unmapped_source(tmp_path):
+    book, reports = export(tmp_path, [section('L11-B', tables=l11b_der_tables(capital='0'))])
+    try:
+        report = reports[0]
+        assert report['derived_complete'] is False
+        assert report['derived_reason'] == 'zero_capital_average'
+        assert report['unmapped_fields'] == report['unmapped_tables'] == report['unmapped_rows'] == 0
+        assert not report['complete']
+        assert book['L11-B']['D26'].value in (None, '')
+        resume = load_workbook(tmp_path / 'resume.xlsx')
+        try:
+            audit = [row for row in resume['Audit'].iter_rows(values_only=True)
+                     if row[0] == 'Pemetaan template']
+            assert len(audit) == 1 and audit[0][1:5] == (0, 0, 0, 'PARTIAL')
+            assert 'DER' in audit[0][5] and 'modal nol' in audit[0][5]
+        finally:
+            resume.close()
+    finally:
+        book.close()
+
+
 @pytest.mark.parametrize('owner', [True, False])
 def test_l9_inspected_kelompok_lainnya_alias_requires_source_owner(tmp_path, owner):
     tables = []
@@ -794,7 +865,8 @@ def test_l11b_borrowing_cost_binding_keeps_footer_and_completion_gates(tmp_path,
     elif fault == 'incomplete':
         table['complete'] = False
     tables = [table, deepcopy(table)] if fault == 'duplicate' else [table]
-    book, reports = export(tmp_path, [section('L11-B', tables=tables)])
+    book, reports = export(tmp_path, [section('L11-B', tables=tables)],
+                           capture_complete=fault != 'incomplete')
     try:
         assert book['L11-B']['B31'].value in (None, '')
         assert book['L11-B']['B32'].value in (None, '')

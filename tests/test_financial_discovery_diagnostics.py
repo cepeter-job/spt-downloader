@@ -14,6 +14,7 @@ from test_financial_discovery import CURRENT_LABEL, file_table
     ('button', '<button onclick="fetch(\'/synthetic-generation\',{method:\'POST\'})">SYNTHETIC_PRIVATE_FILE.pdf</button>', False, True),
     ('anchor', '<a>SYNTHETIC_PRIVATE_FILE.pdf</a>', False, False),
     ('input', '<input type="button" value="SYNTHETIC_PRIVATE_FILE.pdf">', False, False),
+    ('other', '<span role="button" onclick="fetch(\'/synthetic-generation\',{method:\'POST\'})">SYNTHETIC_PRIVATE_FILE.pdf</span>', False, True),
     ('none', 'SYNTHETIC_PRIVATE_FILE.pdf', False, False),
 ])
 def test_pdf_discovery_reports_control_shape_without_leaking_or_acting(routed, tmp_path, kind, control, href, handler):

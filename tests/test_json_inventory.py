@@ -605,6 +605,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
             submitted_navigation = submitted_navigation.replace('SPT Dilaporkan', 'SPT Tidak Dikenal')
         elif submitted_link == 'ambiguous':
             submitted_navigation += submitted_navigation.replace('fixture-taxpayer"', 'fixture-taxpayer?synthetic=other"')
+        elif submitted_link == 'duplicate':
+            submitted_navigation += submitted_navigation
         return submitted_navigation + archive_link + '''
         <div class="main-content"><p-table><table><thead><tr>''' + headers + '''</tr></thead><tbody></tbody></table>
         <div class="p-paginator"><button class="p-paginator-prev" onclick="first=0;load()">Previous</button>
@@ -665,15 +667,19 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                 elif url.path == '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer':
                     metrics['list_navigations'].append(url.path)
                     if submitted_redirect:
-                        route.fulfill(status=302, headers={'Location': '/returnsheets/id-ID/submitted-returnsheets/fixture-foreign-taxpayer'})
+                        target = ('/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer'
+                                  if submitted_redirect == 'archive' else
+                                  '/returnsheets/id-ID/submitted-returnsheets/fixture-foreign-taxpayer')
+                        route.fulfill(status=302, headers={'Location': target})
                     else:
                         route.fulfill(body=listing(True), content_type='text/html')
                 elif submitted_redirect and url.path == '/returnsheets/id-ID/submitted-returnsheets/fixture-foreign-taxpayer':
                     metrics['list_navigations'].append(url.path)
                     route.fulfill(body='<main class="main-content">Synthetic foreign scope</main>', content_type='text/html')
-                elif archive_period_conflict and url.path == '/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer':
+                elif (archive_period_conflict or submitted_redirect == 'archive') and url.path == '/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer':
                     metrics['list_navigations'].append(url.path)
-                    route.fulfill(body=listing(True, archived=True), content_type='text/html')
+                    body = '<main class="main-content">Synthetic wrong status</main>' if submitted_redirect == 'archive' else listing(True, archived=True)
+                    route.fulfill(body=body, content_type='text/html')
                 elif extra_status_links and url.path in {
                     '/returnsheets/id-ID/' + status + '/fixture-taxpayer'
                     for status in ('waiting-returnsheets', 'rejected-returnsheets', 'cancelled-returnsheets')

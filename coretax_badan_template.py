@@ -10,6 +10,7 @@ from coretax_template_cells import load_template_workbook, _write, _grow, _raw_e
 
 FORMS = ['L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9', 'L10-A', 'L10-C',
          'L11-A', 'L11-B', 'L11-C']
+ACCOUNTING = '_-[$Rp-421]* #,##0.00_-;\\-[$Rp-421]* #,##0.00_-;_-[$Rp-421]* "-"??_-;_-@_-'
 # Header and reserved body boundaries in the approved, sanitized reference.
 BLOCKS = {
     'l1-d': [(5, 6, 39), (42, 43, 68), (71, 72, 100)],
@@ -50,7 +51,7 @@ def _columns(table, sheet, header):
     return [targets[key] for key in keys]
 
 
-def _write_amount(sheet, row, column, value):
+def _write_amount(sheet, row, column, value, *, subtract=False):
     text = value
     if isinstance(text, str):
         if text in ('', 'Rp.', 'Rp'):
@@ -76,6 +77,35 @@ def _write_amount(sheet, row, column, value):
         return False
     converted = float(number)
     if not math.isfinite(converted):
+        _write(sheet, row, column, value)
+        return False
+    _write(sheet, row, column, -abs(converted) if subtract else converted)
+    return True
+
+
+def _write_percentage(sheet, row, column, value):
+    # Captured L2 values are percentage points, including four decimal places.
+    # Currency markers and malformed locale syntax are not percentage aliases.
+    if value is None or value == '':
+        _write(sheet, row, column, None)
+        return True
+    if isinstance(value, str):
+        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,4})?', value):
+            _write(sheet, row, column, value)
+            return False
+        number = Decimal(value.replace('.', '').replace(',', '.'))
+    elif type(value) in (int, float):
+        number = Decimal(str(value))
+    else:
+        _write(sheet, row, column, value)
+        return False
+    # Guard before division, so Decimal context cannot round a long source.
+    if not number.is_finite() or Decimal(format(number, '.15g')) != number:
+        _write(sheet, row, column, value)
+        return False
+    fraction = number / 100
+    converted = float(fraction)
+    if not math.isfinite(converted) or (converted == 0 and fraction != 0):
         _write(sheet, row, column, value)
         return False
     _write(sheet, row, column, converted)
@@ -108,8 +138,11 @@ def _l9_role(table):
     roles += [('grid2', 'BANGUNAN', 'PERMANEN'), ('grid2', 'BANGUNAN', 'TIDAK PERMANEN')]
     roles += [('grid3', 'HARTA TIDAK BERWUJUD', group) for group in groups]
     for index, (component, outer, inner) in enumerate(roles):
+        inspected_groups = [[outer, inner]]
+        if inner == 'LAINNYA':
+            inspected_groups.append([outer, 'KELOMPOK LAINNYA'])
         if (structure.get('component') == 'rshshr-citr-l9-form-' + component
-                and structure.get('groups') == [outer, inner]):
+                and structure.get('groups') in inspected_groups):
             return index
     return -1
 
@@ -143,11 +176,15 @@ def _scalar_fields(sheet, form, fields):
     return pending
 
 
-def _money_columns(sheet, form, header, columns):
+def _money_columns(sheet, form, header, columns, block):
     if form == 'l1-d':
         return {3, 4, 5, 6, 7, 8, 10} if sheet.cell(header, 4).value else {3}
-    return {column for column in columns
-            if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
+    # These approved captions omit a normal currency marker. This is reached
+    # only after exact template-header binding, never by fuzzy source aliases.
+    explicit = {('l11-a', 1): {5}, ('l11-b', 2): {2, 3, 4, 5}}
+    return explicit.get((form, block), set()) | {
+        column for column in columns
+        if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
 
 
 def _footer_plan(sheet, form, block, table, target, money, columns):
@@ -213,18 +250,48 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
 
 
 def _accounting_format(sheet, form):
-    ranges = {'l6': (2, 8, 2, 2), 'l7': (1, 13, 3, 9)}
-    if form not in ranges:
-        return
+    ranges = {
+        'l2': ['E13:E21', 'G13:G22', 'J13:J22', 'G3:G9', 'I3:I9'],
+        'l3': ['E8:E4662', 'F8:F4664'],
+        'l6': ['B2:B8'], 'l7': ['C1:I13'],
+        'l9': ['D5:E187', 'H5:H188', 'D193:E193', 'G193:H194',
+               'H226:H228', 'H259:H261'],
+        'l10-a': ['G3:G33'], 'l11-a': ['E8:E292'],
+        'l11-b': ['B2:B7', 'D12:P13', 'B18:N23'],
+    }
     # The approved reference's rupiah accounting display; only number format
-    # changes, leaving labels, styles, dimensions and merge geometry intact.
-    accounting = '_-[$Rp-421]* #,##0.00_-;\\-[$Rp-421]* #,##0.00_-;_-[$Rp-421]* "-"??_-;_-@_-'
-    first, last, left, right = ranges[form]
-    for row in range(first, last + 1):
-        for column in range(left, right + 1):
-            cell = sheet.cell(row, column)
-            if not isinstance(cell, MergedCell):
-                cell.number_format = accounting
+    # changes. Apply before growth so copied rows inherit these formats.
+    for area in ranges.get(form, []):
+        for row in sheet[area]:
+            for cell in row:
+                if not isinstance(cell, MergedCell):
+                    cell.number_format = ACCOUNTING
+    if form == 'l2':
+        for area in ('H3:H9', 'F1:F21'):
+            for row in sheet[area]:
+                for cell in row:
+                    if not isinstance(cell, MergedCell):
+                        cell.number_format = '0.00%'
+
+
+def _l11b_der(sheet, row, averages):
+    cells = [sheet[averages[index]] if index in averages else None for index in (0, 1)]
+    values = [cell.value if cell is not None else None for cell in cells]
+    if any(value in (None, '') for value in values):
+        reason = 'missing_average'
+    elif any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+        reason = 'unsafe_average'
+    elif values[1] == 0:
+        reason = 'zero_capital_average'
+    else:
+        # Formula references are generated only from verified captured footer
+        # cells, never source formula strings or recomputed body totals.
+        sheet.cell(row, 3).value = '=' + cells[0].coordinate
+        sheet.cell(row + 1, 3).value = '=' + cells[1].coordinate
+        sheet.cell(row, 4).value = f'=C{row}/C{row + 1}'
+        return {'derived_complete': True}
+    # Keep derivation availability separate from actual unmapped source counts.
+    return {'derived_complete': False, 'derived_reason': reason}
 
 
 def _body_plan(sheet, form, first, last, columns, rows):
@@ -275,6 +342,12 @@ def render_template_form(sheet, form, sections, *, period=None):
     _accounting_format(sheet, form)
     if form == 'l7':
         _current_l7_header(sheet, sections, period)
+    der_row, averages = 26, {}
+    if form == 'l11-b':
+        _write(sheet, der_row, 1, 'PERHITUNGAN DER')
+        _write(sheet, der_row, 2, 'Jumlah Saldo Rata-Rata Utang')
+        _write(sheet, der_row + 1, 2, 'Jumlah Saldo Rata-Rata Modal')
+        sheet.cell(der_row, 4).number_format = '0.00'
     blocks = BLOCKS[form]
     grouped = [[] for _ in blocks]
     fields = [field for section in sections for field in section.get('fields', [])]
@@ -308,10 +381,10 @@ def render_template_form(sheet, form, sections, *, period=None):
             continue
         table, columns, rows = items[0]
         header, first, last = header + offset, first + offset, last + offset
-        money = _money_columns(sheet, form, header, columns)
-        # Percent totals in L2 occupy numeric slots, but are not rupiah amounts.
-        footer_numbers = money | {column for column in columns
-                                 if form == 'l2' and '%' in str(sheet.cell(header, column).value)}
+        money = _money_columns(sheet, form, header, columns, block)
+        percentages = {column for column in columns
+                       if form == 'l2' and '%' in str(sheet.cell(header, column).value)}
+        footer_numbers = money | percentages
         foot = _footer_plan(sheet, form, block, table, last + 1, footer_numbers, columns)
         body, style_row = _body_plan(sheet, form, first, last, columns, rows)
         if foot is None or body is None:
@@ -319,11 +392,18 @@ def render_template_form(sheet, form, sections, *, period=None):
             continue
         extra = max(0, len(rows) - (last - first + 1))
         _grow(sheet, last + 1, extra, style_row)
+        if form == 'l11-b' and last + 1 <= der_row:
+            der_row += extra
         for index, cells in enumerate(body):
             row, safe = first + index, True
             for column, value in cells.items():
-                if column in money:
-                    safe = _write_amount(sheet, row, column, value) and safe
+                if column in percentages:
+                    safe = _write_percentage(sheet, row, column, value) and safe
+                elif column in money:
+                    subtract = (form == 'l1-d' and _l1d_role(table) == 1 and column == 3
+                                and _label(cells.get(2)) == _label(
+                                    'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
+                    safe = _write_amount(sheet, row, column, value, subtract=subtract) and safe
                 else:
                     _write(sheet, row, column, value)
             if not safe:
@@ -332,17 +412,28 @@ def render_template_form(sheet, form, sections, *, period=None):
         for row_offset, column, value, numeric in foot:
             row = last + extra + 1 + row_offset
             if numeric:
-                footer_safe = _write_amount(sheet, row, column, value) and footer_safe
+                writer = _write_percentage if column in percentages else _write_amount
+                footer_safe = writer(sheet, row, column, value) and footer_safe
+                if form == 'l11-b' and ((block, column) in ((0, 16), (1, 14))):
+                    averages[block] = sheet.cell(row, column).coordinate
             else:
                 _write(sheet, row, column, value)
         if not footer_safe:
             pending.append({**table, 'rows': table['footer'], 'complete': False})
+        if form == 'l1-d' and block == 0:
+            for cells in sheet.iter_rows(min_row=first + 1, max_row=last + extra + 1,
+                                         min_col=3, max_col=5):
+                for cell in cells:
+                    if cell.value not in (None, ''):
+                        cell.number_format = ACCOUNTING
         offset += extra
-    if form in ('l6', 'l7', 'l10-a', 'l10-c'):
+    derived = _l11b_der(sheet, der_row, averages) if form == 'l11-b' else {}
+    if form in ('l2', 'l3', 'l4', 'l6', 'l7', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
         unresolved = [table for table in pending if table.get('rows') or not table.get('complete', True)]
-        return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
+        return {'complete': not fields and not unresolved and derived.get('derived_complete', True),
+                'unmapped_fields': len(fields),
                 'unmapped_tables': len(unresolved),
-                'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
+                'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved), **derived}
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)
