@@ -350,6 +350,7 @@ def test_desktop_receives_only_the_owned_safe_search_hint(browser, monkeypatch, 
         error = captured.value
         # Even arbitrary exception args must never become the worker UI message.
         error.args = (SECRET + ' ' + NPWP,)
+        monkeypatch.setattr(type(error), '__str__', lambda self: SECRET + ' ' + NPWP)
         emitted = worker_failure(error, monkeypatch, tmp_path / 'worker')
         assert '403' in emitted[-1]['message']
         assert SECRET not in json.dumps(emitted) and NPWP not in json.dumps(emitted)
@@ -362,10 +363,14 @@ def test_owned_search_hint_validates_reason_and_flags_without_coercion():
         def __str__(self):
             raise AssertionError('Public search hints must not stringify arbitrary input')
 
+        def __bool__(self):
+            raise AssertionError('Public search flags must not coerce arbitrary input')
+
     error = driver.TaxpayerSearchTimeout(Untrusted(), limited=Untrusted())
     error.args = (SECRET,)
     assert SECRET not in error.public_message
     assert 'HTTP' not in error.public_message
+    assert 'Pengamatan terbatas' not in error.public_message
     assert SECRET not in driver.TaxpayerSearchTimeout(SECRET).public_message
 
 

@@ -804,6 +804,33 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
 SEARCH_RESULT_TIMEOUT_MS = 45000
 
 
+class TaxpayerSearchTimeout(PlaywrightTimeoutError):
+    """Owned desktop hint built only from fixed reasons, never exception text."""
+    _HINTS = {
+        'unavailable': 'Pengamatan jaringan tidak tersedia.',
+        'http_401': 'Teramati HTTP 401 pada aktivitas browser selama pencarian.',
+        'http_403': 'Teramati HTTP 403 pada aktivitas browser selama pencarian.',
+        'http_429': 'Teramati HTTP 429 pada aktivitas browser selama pencarian.',
+        'http_5xx': 'Teramati respons HTTP 5xx pada aktivitas browser selama pencarian.',
+        'transport': 'Teramati kegagalan transport jaringan selama pencarian.',
+        'no_traffic': 'Tidak ada XHR/fetch baru dalam scope pengamatan yang teramati.',
+        'unverified': 'Aktivitas browser teramati, tetapi hasil belum terverifikasi.',
+    }
+
+    def __init__(self, reason='unverified', *, limited=False):
+        self._reason = reason if type(reason) is str and reason in self._HINTS else 'unverified'
+        self._limited = limited if type(limited) is bool else False
+        super().__init__(self.public_message)
+
+    @property
+    def public_message(self):
+        hint = self._HINTS[self._reason]
+        if self._limited:
+            hint += ' Pengamatan terbatas.'
+        return ('Pencarian NPWP belum menghasilkan satu baris yang terverifikasi. ' + hint +
+                ' Periksa pesan portal; pengamatan ini belum menentukan penyebab kegagalan.')
+
+
 class _SearchDiagnostics:
     """Bounded passive metadata; never read request headers/body or response text."""
     def __init__(self, page):
@@ -882,25 +909,23 @@ class _SearchDiagnostics:
         except Exception:
             self.observation = 'unavailable'
 
-    def timeout_message(self):
+    def timeout_error(self):
         if self.observation == 'unavailable':
-            hint = 'Pengamatan jaringan tidak tersedia.'
+            reason = 'unavailable'
         else:
-            codes = [str(code) for code in (401, 403, 429) if self.counts[f'search_http_{code}']]
-            if codes:
-                hint = 'Teramati HTTP ' + ', '.join(codes) + ' pada aktivitas browser selama pencarian.'
+            # Prefer the most actionable hint; the event retains every count.
+            code = next((code for code in (429, 403, 401) if self.counts[f'search_http_{code}']), None)
+            if code is not None:
+                reason = f'http_{code}'
             elif self.counts['search_http_5xx']:
-                hint = 'Teramati respons HTTP 5xx pada aktivitas browser selama pencarian.'
+                reason = 'http_5xx'
             elif self.counts['search_failed']:
-                hint = 'Teramati kegagalan transport jaringan selama pencarian.'
+                reason = 'transport'
             elif not self.counts['search_requests']:
-                hint = 'Tidak ada XHR/fetch baru dalam scope pengamatan yang teramati.'
+                reason = 'no_traffic'
             else:
-                hint = 'Aktivitas browser teramati, tetapi hasil belum terverifikasi.'
-            if self.observation == 'limited':
-                hint += ' Pengamatan terbatas.'
-        return ('Pencarian NPWP belum menghasilkan satu baris yang terverifikasi. ' + hint +
-                ' Periksa pesan portal; pengamatan ini belum menentukan penyebab penolakan.')
+                reason = 'unverified'
+        return TaxpayerSearchTimeout(reason, limited=self.observation == 'limited')
 
     def __exit__(self, exc_type, exc, traceback):
         self.active = False
@@ -955,7 +980,7 @@ def _find_taxpayer_row(page, npwp, check_cancel):
             _check_cancel(check_cancel)
             remaining = (deadline - time.monotonic()) * 1000
             if remaining <= 0:
-                raise PlaywrightTimeoutError(probe.timeout_message()) from None
+                raise probe.timeout_error() from None
             try:
                 row.first.wait_for(state='visible', timeout=min(100, remaining))
                 break

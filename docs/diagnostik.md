@@ -102,7 +102,11 @@ memberi petunjuk untuk memeriksa pesan portal; pengamatan ini belum mengikat
 respons ke endpoint pencarian tertentu atau membuktikan deteksi bot. Baris yang
 sudah cocok tetap dapat diverifikasi meski ada respons latar belakang 403.
 
-Pesan timeout menyebut petunjuk teramati secara terbatas. Header/identitas browser
+Pesan timeout menyebut petunjuk teramati secara terbatas. Worker meneruskan hanya
+pesan `TaxpayerSearchTimeout` yang dibangun dari kategori dan template tetap ke
+desktop; pesan exception browser umum tetap diganti pesan generik. Jika beberapa
+status teramati, petunjuk mengutamakan 429, lalu 403 dan 401; seluruh hitungan
+tetap disimpan dalam event. Header/identitas browser
 tetap berasal dari browser yang digunakan. Listener dilepas pada semua jalur,
 dan Stop melewati snapshot DOM. Budget penantian baris tetap 45 detik dengan
 pemeriksaan Stop di antaranya; tidak ada klik atau request ulang tambahan.

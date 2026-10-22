@@ -81,7 +81,7 @@ COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'per
     'search_requests', 'search_responses', 'search_failed', 'search_http_1xx', 'search_http_2xx',
     'search_http_3xx', 'search_http_4xx', 'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
-    'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
+    'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TaxpayerSearchTimeout', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
     'JSONDecodeError', 'TclError', 'AuthBlocked', 'SetupCancelled', 'CaptureCancelled',
     'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', '_RecoveryRequired'})
