@@ -16,7 +16,7 @@ def proof():
     inventory = {**identity, 'files': files,
         'loaded': dict(zip(('python', '_tkinter', 'tcl', 'tk'), list(files)[:4])),
         'libraries': {'tcl': 'tcl/tcl9.1', 'tk': 'tcl/tk9.1'}}
-    report = {'ok': True, 'frozen': True, 'credentials_accessed': False,
+    report = {'python': '3.14.8', 'tcl': '9.1.0', 'tk': '9.1.0', 'ok': True, 'frozen': True, 'credentials_accessed': False,
               'live_scrape': False, 'worker_python': '3.14.8',
               'launcher_candidate': {**identity, 'loaded': inventory['loaded'].copy(),
                   'loaded_sha256': {role: files[name] for role, name in inventory['loaded'].items()},
@@ -74,3 +74,10 @@ def test_accept_source_candidate_independently_of_freezing(proof):
     report, inventory = proof
     report['frozen'] = False
     validate_candidate_report(report, inventory)
+
+@pytest.mark.parametrize('key,value', [('python', '3.14.7'), ('tcl', '9.0.4'), ('tk', '9.0.4')])
+def test_reject_old_selftest_fields_attached_to_correct_candidate_proof(proof, key, value):
+    report, inventory = proof
+    report[key] = value
+    with pytest.raises(ValueError):
+        validate_candidate_report(report, inventory)
