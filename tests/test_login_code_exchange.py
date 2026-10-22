@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlencode
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 from coretax_browser import CaptureCancelled
 from spt_desktop import auth, diagnostics
@@ -151,6 +152,10 @@ class Engine:
                 return getattr(self.raw, name)
 
             def fetch(self, **options):
+                if isinstance(engine.route_fault, Exception):
+                    # TLS/DNS/proxy failures are injected only at the external
+                    # transport boundary; the owned browser and checker stay real.
+                    raise engine.route_fault
                 response = self.raw.fetch(**options)
                 if engine.route_fault == 'response_url_changed':
                     class ChangedResponse:
@@ -339,6 +344,46 @@ def test_failed_exchange_identifies_only_its_safe_transport_category(browser, tm
                 and row.get('reason') == 'code_exchange_failed']
     assert [row.get('exchange_failure') for row in failures] == [expected]
     assert 'SYNTHETIC_PRIVATE_FULFILL_EXCEPTION' not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('error_type,message,expected', [
+    (PlaywrightTimeoutError, 'Synthetic timeout without transport text', 'timeout'),
+    (PlaywrightError, 'Route.fetch: Timeout 4321ms exceeded.', 'timeout'),
+    (PlaywrightError, 'Route.fetch: self-signed certificate in certificate chain', 'tls'),
+    (PlaywrightError, 'Route.fetch: getaddrinfo ENOTFOUND synthetic.invalid', 'dns'),
+    (PlaywrightError, 'Route.fetch: net::ERR_PROXY_CONNECTION_FAILED', 'proxy'),
+    (PlaywrightError, 'Route.fetch: read ECONNRESET', 'connection'),
+    (PlaywrightError, 'Route.fetch: Target page, context or browser has been closed', 'context_closed'),
+    (PlaywrightError, 'Route.fetch: Request context disposed.', 'context_closed'),
+    (PlaywrightError, 'Route.fetch: Unrecognized synthetic failure', 'unknown'),
+    (RuntimeError, 'Route.fetch: read ECONNRESET', 'unknown'),
+    (PlaywrightError, 'Route.fetch: https://synthetic.invalid/ECONNRESET?token=private', 'unknown'),
+    (PlaywrightError, 'Route.fetch: Unrecognized synthetic failure\nCall log:\n - getaddrinfo ENOTFOUND private', 'unknown'),
+], ids=['typed-timeout', 'timeout', 'tls', 'dns', 'proxy', 'connection', 'closed-page',
+        'disposed-context', 'unknown', 'non-playwright', 'url-is-not-error-code', 'ignore-call-log'])
+def test_fetch_failure_reports_only_safe_transport_subcategory(browser, tmp_path, monkeypatch,
+                                                               error_type, message, expected):
+    private = 'SYNTHETIC_PRIVATE_FETCH_EXCEPTION ' + CODE + VERIFIER
+    error = error_type(message + '\n' + private)
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, route_fault=error)
+    assert result[0] == 'LOGIN_UNVERIFIED'
+    assert len(engine.posts) == 1 and engine.tokens == engine.redirected == []
+    failures = [row for row in rows if row.get('event') == 'auth.state'
+                and row.get('reason') == 'code_exchange_failed']
+    assert [row.get('exchange_failure') for row in failures] == ['fetch_exception']
+    assert [row.get('transport_failure') for row in failures] == [expected]
+    assert private not in json.dumps(rows) and message not in json.dumps(rows)
+    outcomes = [row for row in rows if row.get('event') == 'auth.result']
+    assert [row.get('reason') for row in outcomes] == ['code_exchange_failed']
+    assert outcomes[0]['blocked_requests'] == 0
+
+
+def test_real_connection_close_reports_connection_subcategory(browser, tmp_path, monkeypatch):
+    engine, reads, result, rows = check(browser, tmp_path, monkeypatch, 'network_failure')
+    assert_transport_failure(engine, result, rows)
+    failures = [row for row in rows if row.get('event') == 'auth.state'
+                and row.get('reason') == 'code_exchange_failed']
+    assert [row.get('transport_failure') for row in failures] == ['connection']
 
 
 def test_failed_exchange_finishes_without_waiting_for_more_callback_attempts(browser, tmp_path, monkeypatch):

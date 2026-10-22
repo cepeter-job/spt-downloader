@@ -54,6 +54,33 @@ def test_auth_exchange_failure_rejects_arbitrary_values_without_stringifying(tmp
     assert 'SYNTHETIC_PRIVATE_EXCHANGE_VALUE' not in json.dumps(records(tmp_path))
 
 
+@pytest.mark.parametrize('category', ['timeout', 'tls', 'dns', 'proxy', 'connection', 'context_closed', 'unknown'])
+def test_auth_transport_failure_keeps_only_fixed_subcategory(tmp_path, category):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_TRANSPORT_VALUE'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('auth.state', reason='code_exchange_failed', exchange_failure='fetch_exception',
+                 transport_failure=category, message=secret, url=secret, headers=secret, body=secret)
+        assert log.flush()
+    rows = [row for row in records(tmp_path) if row['event'] == 'auth.state']
+    assert [row.get('transport_failure') for row in rows] == [category]
+    assert not {'message', 'url', 'headers', 'body'} & rows[0].keys()
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_auth_transport_failure_discards_untrusted_values_without_stringifying(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Transport subcategories must not stringify arbitrary values')
+    with d.session(tmp_path, 'worker') as log:
+        for value in ('SYNTHETIC_PRIVATE_TRANSPORT_VALUE', Untrusted(), None, 500, True):
+            d.record('auth.state', transport_failure=value)
+        assert log.flush()
+    rows = [row for row in records(tmp_path) if row['event'] == 'auth.state']
+    assert len(rows) == 5 and all('transport_failure' not in row for row in rows)
+
+
 @pytest.mark.parametrize('state', ['missing', 'hidden', 'outside_view', 'visible', 'ambiguous', 'unavailable'])
 def test_panel_timeout_schema_keeps_only_safe_structural_metadata(tmp_path, state):
     d = diagnostics()
