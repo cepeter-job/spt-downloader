@@ -277,13 +277,15 @@ jobs:
           Copy-Item scripts/launcher_candidate/reader_inputs.json "$root/reader-inputs.json"
           $custody = @{head=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;attempt=$env:GITHUB_RUN_ATTEMPT;application_artifact='${{ needs.package.outputs.application-artifact-id }}';application_sha256=(Get-FileHash "$env:RUNNER_TEMP/reader-application/SPTDownloader.exe").Hash.ToLowerInvariant()}
           $custody | ConvertTo-Json | Set-Content "$root/custody.json"
+          $probeFailures = @()
           foreach ($mode in @('source','frozen')) {
             $runtime = if ($mode -eq 'source') {"$env:RUNNER_TEMP/reader-runtime/python.exe"} else {"$env:RUNNER_TEMP/reader-application/SPTDownloader.exe"}
             & "$env:RUNNER_TEMP/reader-runtime/python.exe" -B scripts/launcher_candidate/reader_runner.py -Runtime $runtime -Reader '${{ matrix.reader }}' -ActivationTiming '${{ matrix.activation }}' -NvdaPath "$env:RUNNER_TEMP/nvda-portable/nvda.exe" -OutputDirectory "$root/$mode"
-            if ($LASTEXITCODE -ne 0) { throw 'Reader probe failed before validated evidence' }
+            if ($LASTEXITCODE -ne 0) { $probeFailures += $mode; continue }
             & "$env:RUNNER_TEMP/reader-runtime/python.exe" -B scripts/launcher_candidate/reader_report.py --directory "$root/$mode" --inventory "$env:RUNNER_TEMP/reader-runtime/inventory.json"
             if ($LASTEXITCODE -ne 0) { throw 'Reader evidence contract failed' }
           }
+          if ($probeFailures.Count) { throw ('Candidate reader scenarios failed: ' + ($probeFailures -join ',')) }
       - name: Retain only sanitized synthetic reader evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -296,6 +298,8 @@ jobs:
             ${{ runner.temp }}/reader-evidence/*/native.json
             ${{ runner.temp }}/reader-evidence/*/cleanup.json
             ${{ runner.temp }}/reader-evidence/*/owned-tree.json
+            ${{ runner.temp }}/reader-evidence/*/startup-failure.json
+            ${{ runner.temp }}/reader-evidence/*/host/host-phase.json
             ${{ runner.temp }}/reader-evidence/*/host/host-error.json
             ${{ runner.temp }}/reader-evidence/*/*-blocked.json
           if-no-files-found: error

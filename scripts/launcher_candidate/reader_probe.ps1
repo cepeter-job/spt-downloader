@@ -73,6 +73,16 @@ function ReadState {
   if ($hostProcess.HasExited -or [DateTime]::UtcNow -gt $deadline) {
    $safeError=Join-Path $hostDirectory 'host-error.json'
    if (Test-Path -LiteralPath $safeError) {Get-Content -LiteralPath $safeError -Raw | Write-Output}
+   $phaseFile=Join-Path $hostDirectory 'host-phase.json'
+   $phase=if (Test-Path -LiteralPath $phaseFile) {Get-Content -LiteralPath $phaseFile -Raw | ConvertFrom-Json} else {$null}
+   $failure=@{schema=1;kind='candidate_startup_failure';mode=$mode;reader=$Reader;activation_timing=$ActivationTiming;
+    reader_running=$readerAvailable;reader_pid=if ($readerProcess) {$readerProcess.Id} else {$null};
+    host_pid=$hostProcess.Id;host_exited=$hostProcess.HasExited;phase=$phase;
+    exit_code=if ($hostProcess.HasExited) {$hostProcess.ExitCode} else {$null};
+    executable_sha256=(Get-FileHash -LiteralPath $Runtime).Hash.ToLowerInvariant();
+    password='not_tested';names_roles_values_states='blocked';focus='blocked';selection='blocked';speech_navigation='blocked'}
+   Save (Join-Path $output 'startup-failure.json') $failure
+   $failure | ConvertTo-Json -Depth 5 | Write-Output
    throw 'Fixture readiness unavailable'
   }
   Start-Sleep -Milliseconds 100

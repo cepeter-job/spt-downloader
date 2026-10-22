@@ -72,6 +72,10 @@ def run(scenario, directory):
 
 
 def _host(scenario, directory):
+    def phase(name):
+        (directory / 'host-phase.json').write_text(json.dumps({'phase': name, 'pid': os.getpid(),
+            'frozen': bool(getattr(sys, 'frozen', False)), 'scenario': scenario}), encoding='utf-8')
+    phase('before_imports')
     import ctypes
     from ctypes import wintypes
     import tkinter as tk
@@ -84,9 +88,12 @@ def _host(scenario, directory):
     api = ctypes.WinDLL('user32', use_last_error=True)
     api.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
     api.GetAncestor.restype = wintypes.HWND
+    phase('before_tk')
     root = tk.Tk()
+    phase('after_tk_before_app')
     controller = SyntheticController()
     app = app_module.App(root, directory, controller=controller)
+    phase('after_app')
     errors = []
     def callback_error(kind, error, trace):
         import traceback
@@ -117,7 +124,9 @@ def _host(scenario, directory):
         password.focus_set()
 
     if scenario == 'settings':
+        phase('before_settings')
         settings()
+        phase('after_settings')
     elif scenario in ('selection', 'overwrite', 'progress', 'result'):
         app.start()
         if scenario in ('selection', 'overwrite'):
@@ -140,6 +149,7 @@ def _host(scenario, directory):
     target.focus_force()
     if password is not None: password.focus_set()
     candidate = application_probe(root)
+    phase('after_identity')
     began = time.monotonic()
     sequence = 0
 
