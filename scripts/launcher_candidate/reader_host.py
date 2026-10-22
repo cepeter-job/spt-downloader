@@ -9,16 +9,27 @@ import time
 SCENARIOS = ('main', 'settings', 'selection', 'overwrite', 'progress', 'result')
 
 
-def replace_snapshot(pending, target, *, sleep=time.sleep):
-    """Windows readers can briefly deny delete-sharing of the ready snapshot."""
-    for attempt in range(5):
-        try:
-            pending.replace(target)
-            return
-        except PermissionError as error:
-            if getattr(error, 'winerror', None) not in (32, 33) or attempt == 4:
-                raise
-            sleep(0.02)
+class SnapshotPublisher:
+    """Publish at most 128 immutable, complete snapshots in the owned directory."""
+    def __init__(self, directory):
+        self.directory = directory
+        self.count = 0
+
+    def publish(self, data):
+        if self.count >= 128:
+            raise ValueError('fixture snapshot limit reached')
+        target = self.directory / f'ready-{self.count:03d}.json'
+        pending = self.directory / 'ready.pending'
+        if target.exists():
+            raise ValueError('published fixture snapshot already exists')
+        encoded = json.dumps(data).encode('utf-8')
+        if len(encoded) > 1048576:
+            raise ValueError('fixture snapshot size limit reached')
+        with pending.open('xb') as stream:
+            stream.write(encoded)
+        pending.rename(target)
+        self.count += 1
+        return target
 
 
 def prepare_directory(directory):
@@ -164,19 +175,24 @@ def _host(scenario, directory):
     phase('after_identity')
     began = time.monotonic()
     sequence = 0
+    publisher = SnapshotPublisher(directory)
+    last_snapshot_state = None
 
     def snapshot():
+        nonlocal last_snapshot_state
         root.update_idletasks()
         # Read installed callback state; never install, reload, or patch accessibility.
         installed = bool(root.tk.call('info', 'commands', '::tk::accessible::_getentrytext'))
+        current_state = (sequence, installed)
+        if current_state == last_snapshot_state:
+            return
         data = {'pid': os.getpid(), 'hwnd': int(api.GetAncestor(target.winfo_id(), 2)),
                 'password_hwnd': int(password.winfo_id()) if password is not None else None,
                 'candidate': candidate, 'frozen': bool(getattr(sys, 'frozen', False)), 'scenario': scenario,
                 'tk_initialized': installed, 'sequence': sequence, 'callback_errors': errors,
                 'credentials_accessed': False, 'live_scrape': False, 'stopped': controller.stopped}
-        temp = directory / 'ready.pending'
-        temp.write_text(json.dumps(data), encoding='utf-8')
-        replace_snapshot(temp, directory / 'ready.json')
+        publisher.publish(data)
+        last_snapshot_state = current_state
 
     def poll():
         nonlocal sequence

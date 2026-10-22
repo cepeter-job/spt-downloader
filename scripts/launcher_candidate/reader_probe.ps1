@@ -90,13 +90,26 @@ function EntryObservation($state) {
  } catch {$result.uia_error=$_.Exception.GetType().Name}
  return $result
 }
-function OpenSnapshot($path) {
- # The writer atomically replaces ready.json; readers must allow delete-sharing.
- return [IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+function ReadSnapshot($directory) {
+ # Only complete immutable publications are visible; ready.pending is never read.
+ $files=@(Get-ChildItem -LiteralPath $directory -File -Filter 'ready*.json' -ErrorAction Stop | Sort-Object Name)
+ if ($files.Count -gt 128) {throw 'Fixture snapshot limit exceeded'}
+ if ($files.Count -eq 0) {return $null}
+ for ($i=0;$i -lt $files.Count;$i++) {
+  if ($files[$i].Name -cne ('ready-{0:D3}.json' -f $i)) {throw 'Malformed fixture snapshot sequence'}
+ }
+ $latest=$files[-1]
+ if ($latest.Length -gt 1048576) {throw 'Fixture snapshot size limit exceeded'}
+ $value=[IO.File]::ReadAllText($latest.FullName) | ConvertFrom-Json -ErrorAction Stop
+ foreach($required in @('pid','hwnd','sequence','tk_initialized','candidate')) {
+  if ($null -eq $value -or $value.PSObject.Properties.Name -notcontains $required) {throw 'Incomplete fixture snapshot'}
+ }
+ return $value
 }
 function ReadState {
- $ready=Join-Path $hostDirectory 'ready.json'; $deadline=[DateTime]::UtcNow.AddSeconds(30)
- while (-not (Test-Path -LiteralPath $ready)) {
+ $deadline=[DateTime]::UtcNow.AddSeconds(30)
+ $state=if (Test-Path -LiteralPath $hostDirectory) {ReadSnapshot $hostDirectory} else {$null}
+ while ($null -eq $state) {
   if ($hostProcess.HasExited -or [DateTime]::UtcNow -gt $deadline) {
    $safeError=Join-Path $hostDirectory 'host-error.json'
    if (Test-Path -LiteralPath $safeError) {Get-Content -LiteralPath $safeError -Raw | Write-Output}
@@ -114,12 +127,8 @@ function ReadState {
    throw 'Fixture readiness unavailable'
   }
   Start-Sleep -Milliseconds 100
+  if (Test-Path -LiteralPath $hostDirectory) {$state=ReadSnapshot $hostDirectory}
  }
- $stream=OpenSnapshot $ready
- try {
-  $snapshotReader=New-Object IO.StreamReader($stream)
-  try {$state=$snapshotReader.ReadToEnd() | ConvertFrom-Json} finally {$snapshotReader.Dispose()}
- } finally {$stream.Dispose()}
  $nativeProcess=Get-CimInstance Win32_Process -Filter "ProcessId=$($state.pid)"
  if ($state.pid -ne $hostProcess.Id -and $nativeProcess.ParentProcessId -ne $hostProcess.Id) {throw 'Fixture ancestry unverified'}
  Owned ([IntPtr]$state.hwnd) $state.pid
