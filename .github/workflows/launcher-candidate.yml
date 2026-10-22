@@ -1,0 +1,28 @@
+name: Isolated launcher candidate
+on:
+  push:
+    branches: [feat/tk-accessibility-candidate]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Install locked test environment
+        shell: pwsh
+        run: |
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          uv venv --python 3.14.8 .venv
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+      - name: Synthetic inventory contract
+        shell: pwsh
+        run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
