@@ -191,6 +191,116 @@ def test_missing_python_and_uv_use_only_bundled_and_managed_tools(setup, monkeyp
     assert any(c[1:3] == ['python', 'install'] for c in commands.calls)
 
 
+def test_frozen_bootstrap_never_executes_matching_path_uv(setup, monkeypatch):
+    runtime, root, source, commands = setup
+    monkeypatch.setattr(runtime.sys, 'frozen', True, raising=False)
+
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    assert commands.calls
+    assert not any(Path(call[0]) == commands.uv for call in commands.calls), \
+        'A frozen application must not execute the unverified PATH tool, even for --version.'
+    assert any(Path(call[0]) == root / 'tools' / 'uv.exe' for call in commands.calls)
+    assert (root / 'tools' / 'uv.exe').read_bytes() == (source / 'tools' / 'uv.exe').read_bytes()
+
+
+def test_frozen_bootstrap_rejects_missing_bundle_without_path_fallback(setup, monkeypatch):
+    runtime, root, source, commands = setup
+    monkeypatch.setattr(runtime.sys, 'frozen', True, raising=False)
+    (source / 'tools' / 'uv.exe').unlink()
+
+    with pytest.raises(RuntimeError, match='uv|resource'):
+        runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    assert not any(Path(call[0]) == commands.uv for call in commands.calls)
+    assert not (root / 'runtime-ready.txt').exists()
+
+
+def test_frozen_bootstrap_rejects_wrong_bundle_without_path_fallback(setup, monkeypatch):
+    runtime, root, _, commands = setup
+    monkeypatch.setattr(runtime.sys, 'frozen', True, raising=False)
+
+    def wrong_bundle(argv, env, cancelled, timeout=900):
+        result = commands.run(argv, env, cancelled, timeout)
+        if Path(argv[0]) == root / 'tools' / 'uv.exe' and '--version' in argv:
+            return subprocess.CompletedProcess(argv, 0, 'uv 0.0.0 (synthetic wrong bundle)\n', '')
+        return result
+
+    monkeypatch.setattr(runtime, '_run', wrong_bundle)
+    with pytest.raises(RuntimeError, match='uv'):
+        runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    assert not any(Path(call[0]) == commands.uv for call in commands.calls)
+    assert not (root / 'runtime-ready.txt').exists()
+
+
+def test_bootstrap_ignores_external_uv_policy_but_preserves_proxy_and_certificates(setup, monkeypatch):
+    runtime, root, _, commands = setup
+    blocked = {
+        'UV_PYTHON_DOWNLOADS_JSON_URL': 'https://catalog.invalid/python.json',
+        'UV_PYTHON_INSTALL_MIRROR': 'https://mirror.invalid/python',
+        'UV_CONFIG_FILE': str(root.parent / 'unrelated-uv.toml'),
+        'UV_INDEX_URL': 'https://index.invalid/simple',
+        'UV_INSECURE_HOST': 'mirror.invalid',
+        'UV_NO_VERIFY_HASHES': '1',
+        'UV_FUTURE_POLICY_OVERRIDE': 'unreviewed',
+    }
+    preserved = {
+        'HTTPS_PROXY': 'http://proxy.invalid:8080',
+        'HTTP_PROXY': 'http://proxy.invalid:8080',
+        'ALL_PROXY': 'http://proxy.invalid:8080',
+        'NO_PROXY': 'localhost,127.0.0.1',
+        'SSL_CERT_FILE': str(root.parent / 'corporate-ca.pem'),
+        'SSL_CERT_DIR': str(root.parent / 'corporate-ca'),
+        'REQUESTS_CA_BUNDLE': str(root.parent / 'requests-ca.pem'),
+        'UV_NATIVE_TLS': 'true',
+        'UV_SYSTEM_CERTS': 'true',
+    }
+    for name, value in (blocked | preserved).items():
+        monkeypatch.setenv(name, value)
+    observed = []
+
+    def capture_environment(argv, env, cancelled, timeout=900):
+        observed.append(dict(env))
+        return commands.run(argv, env, cancelled, timeout)
+
+    monkeypatch.setattr(runtime, '_run', capture_environment)
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    assert observed
+    for environment in observed:
+        assert not set(blocked).intersection(environment), 'Inherited uv policy reached the owned bootstrap.'
+        assert environment.get('UV_NO_CONFIG') == '1', 'User/project uv configuration discovery remains enabled.'
+        assert environment['UV_PYTHON_INSTALL_DIR'] == str(root / 'python')
+        assert environment['UV_CACHE_DIR'] == str(root / 'cache')
+        assert all(environment.get(name) == value for name, value in preserved.items())
+    assert all(os.environ.get(name) == value for name, value in (blocked | preserved).items())
+
+
+def test_optional_build_identity_is_copied_to_the_owned_worker(setup):
+    runtime, root, source, _ = setup
+    identity = {'schema': 1, 'commit': 'a' * 40, 'run_id': '123', 'run_attempt': 1}
+    (source / 'build-info.json').write_text(json.dumps(identity), encoding='utf-8')
+
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    copied = root / 'app' / 'build-info.json'
+    assert copied.is_file(), 'The worker cannot report the identity of its bundled source.'
+    assert json.loads(copied.read_text(encoding='utf-8')) == identity
+
+
+def test_source_runtime_does_not_keep_an_old_frozen_build_identity(setup):
+    runtime, root, _, _ = setup
+    stale = root / 'app' / 'build-info.json'
+    stale.parent.mkdir(parents=True)
+    stale.write_text(json.dumps({'schema': 1, 'commit': 'b' * 40, 'run_id': '1', 'run_attempt': 1}),
+                     encoding='utf-8')
+
+    runtime.ensure_runtime(root, lambda _: None, lambda: False)
+
+    assert not stale.exists(), 'A source worker must not inherit the identity of an older frozen build.'
+
+
 def test_inherited_python_preference_cannot_conflict_with_owned_selection(setup, monkeypatch):
     runtime, root, _, commands = setup
     monkeypatch.setenv('UV_PYTHON_PREFERENCE', 'only-managed')
