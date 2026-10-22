@@ -49,6 +49,7 @@ ke job yang sudah berakhir.
 | Gejala | Pemeriksaan dan tindakan |
 | --- | --- |
 | NPWP tidak ditemukan atau ambigu | Periksa 16 digit persis dan kewenangan akun. Jangan memilih kecocokan sebagian atau menghapus nol awal. |
+| Pencarian NPWP timeout atau portal menampilkan penolakan | Periksa `search.result` pada [diagnostik pencarian](diagnostik.md#diagnostik-pencarian-wajib-pajak): request/respons/kegagalan teramati, status HTTP dan keadaan tabel. Respons 403/429 dalam jendela pencarian belum membuktikan sumber penolakan atau deteksi bot. Ikuti pesan portal dan selesaikan challenge secara manual pada akses yang berizin; header masking tidak menjadi perbaikan yang terverifikasi. |
 | Tahun tidak dapat ditentukan | Lihat metadata pada checkpoint privat. Pola sumber baru harus dipahami dan diuji; jangan mengecualikan record diam-diam. |
 | Jumlah sumber berubah atau tidak cocok | Mulai inventaris baru di folder baru dan periksa Audit. Resume memakai inventaris yang sama, sehingga bukan pengganti rekonsiliasi daftar yang berubah. |
 | Checkpoint berbeda scope/provenance | Pilih checkpoint yang benar atau buat run baru. Jangan mengedit ID/scope checkpoint atau menggabungkan data antar-wajib-pajak. |

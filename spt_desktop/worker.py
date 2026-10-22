@@ -10,7 +10,7 @@ import threading
 import coretax
 from coretax_exporter import validate_scope
 from coretax_json import validate_detail_source
-from coretax_browser import CaptureCancelled,collect_inventory,collect_details,_atomic_checkpoint
+from coretax_browser import CaptureCancelled,TaxpayerSearchTimeout,collect_inventory,collect_details,_atomic_checkpoint
 from coretax_resume import persist_selection
 from .auth import AuthBlocked,authenticate_owned
 from .events import Progress
@@ -133,6 +133,10 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         diagnostics.record('operation.failed', job_id=job_id, level='WARNING', error=error, status='BLOCKED')
         progress.finished(False,None,status='BLOCKED',message=str(error))
         return 3
+    except TaxpayerSearchTimeout as error:
+        diagnostics.record('operation.failed', job_id=job_id, level='ERROR', error=error, status='ERROR')
+        progress.finished(False,None,status='ERROR',message=error.public_message)
+        return 1
     except Exception as error:
         diagnostics.record('operation.failed', job_id=job_id, level='ERROR', error=error, status='ERROR')
         # Jangan kirim trace browser/kredensial atau data pajak ke log GUI.
