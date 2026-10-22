@@ -79,3 +79,24 @@ def test_reject_general_pass_after_password_failure(evidence):
     report['outcomes']['password']['status'] = 'failed'
     report['password_observations']['msaa_value']['exposed'] = True
     with pytest.raises(ValueError): validate(report, inventory)
+
+
+def test_host_refuses_existing_directory_before_loading_tk(tmp_path):
+    import importlib.util
+    spec = importlib.util.find_spec('scripts.launcher_candidate.reader_host')
+    assert spec is not None, 'candidate fixture host missing'
+    from scripts.launcher_candidate.reader_host import prepare_directory
+    marker = tmp_path / 'owner.txt'
+    marker.write_text('unrelated synthetic owner')
+    with pytest.raises(ValueError): prepare_directory(tmp_path)
+    assert marker.read_text() == 'unrelated synthetic owner'
+
+
+def test_host_refuses_invalid_scenario_before_loading_tk(tmp_path):
+    import importlib.util
+    spec = importlib.util.find_spec('scripts.launcher_candidate.reader_host')
+    assert spec is not None, 'candidate fixture host missing'
+    from scripts.launcher_candidate.reader_host import run
+    output = tmp_path / 'new'
+    with pytest.raises(ValueError): run('arbitrary-code', output)
+    assert not output.exists()

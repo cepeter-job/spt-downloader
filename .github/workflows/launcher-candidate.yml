@@ -23,11 +23,22 @@ jobs:
         with:
           version: '0.13.4'
           enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: '12400037968'
+          run-id: '39718421643'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/contract-runtime
+          merge-multiple: true
       - name: Install locked test environment
         shell: pwsh
         run: |
           uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
-          uv venv --python 3.14.8 .venv
+          $runtime = "$env:RUNNER_TEMP/contract-runtime"
+          if ((Get-FileHash "$runtime/inventory.json").Hash.ToLowerInvariant() -ne '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239') { throw 'Unverified native inventory' }
+          & "$runtime/python.exe" -I -B scripts/launcher_candidate/inventory.py --root $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Native runtime custody failed' }
+          uv venv --python "$runtime/python.exe" .venv
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
       - name: Synthetic inventory contract
         shell: pwsh
