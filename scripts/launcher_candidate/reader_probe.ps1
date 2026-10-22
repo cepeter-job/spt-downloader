@@ -92,7 +92,13 @@ function StartReader {
   "[general]`nlanguage = en`nshowWelcomeDialogAtStartup = False`nsaveConfigurationOnExit = False`nloggingLevel = OFF`n[speechViewer]`nshowSpeechViewerAtStartup = True`n[keyboard]`nspeakTypedCharacters = True`nspeakTypedWords = True" | Set-Content -LiteralPath (Join-Path $config 'nvda.ini') -Encoding UTF8
   $script:readerProcess=Start-Process -FilePath $readerExe -ArgumentList @('--minimal','--disable-addons','--log-level=100',('--config-path="'+$output+'\nvda-config"')) -WindowStyle Hidden -PassThru
  } else {$script:readerProcess=Start-Process -FilePath $readerExe -WindowStyle Hidden -PassThru}
+ $script:readerLauncherId=$readerProcess.Id
  Start-Sleep -Seconds 4
+ $matches=@(Get-CimInstance Win32_Process -Filter "Name='$Reader.exe'" | Where-Object {
+  ($_.ProcessId -eq $readerLauncherId -or $_.ParentProcessId -eq $readerLauncherId) -and
+  $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq [IO.Path]::GetFullPath($readerExe)
+ })
+ if ($matches.Count -eq 1) {$script:readerProcess=Get-Process -Id $matches[0].ProcessId}
  $script:readerAvailable=-not $readerProcess.HasExited
 }
 function SpeechText {
@@ -115,6 +121,7 @@ function SpeechText {
 $readerExe=if ($Reader -eq 'NVDA') {$NvdaPath} else {Join-Path $env:WINDIR 'System32/Narrator.exe'}
 if (Get-Process -Name $Reader -ErrorAction SilentlyContinue) {throw 'Preexisting reader; isolated runner required'}
 $readerProcess=$null; $hostProcess=$null; $state=$null; $readerAvailable=$false
+$readerLauncherId=$null
 $originalScreenReader=[ReaderNative]::ScreenReader()
 $speechObserved=$false; $speechExposed=$false; $speechFacility=$false
 $mode=if ((Split-Path -Leaf $Runtime) -eq 'python.exe') {'source'} else {'frozen'}
@@ -127,7 +134,8 @@ try {
  $state=ReadState; $initialInitialized=$state.tk_initialized
  if ($ActivationTiming -eq 'late') {StartReader; Start-Sleep -Seconds 1; $state=ReadState}
  $native.initial_tk_initialized=$initialInitialized; $native.observed_tk_initialized=$state.tk_initialized
- $native.reader_available=$readerAvailable; $native.reader_pid=if ($readerProcess) {$readerProcess.Id} else {$null}
+ $native.reader_available=$readerAvailable; $native.reader_launcher_pid=$readerLauncherId
+ $native.reader_pid=if ($readerProcess) {$readerProcess.Id} else {$null}
  if ($readerAvailable) {
   [void][ReaderNative]::SetForegroundWindow([IntPtr]$state.hwnd)
   'focus_password' | Set-Content -LiteralPath (Join-Path $hostDirectory 'command.txt') -Encoding UTF8
