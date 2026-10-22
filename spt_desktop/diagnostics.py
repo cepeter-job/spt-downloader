@@ -26,9 +26,12 @@ EVENTS = frozenset({
     'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
-    'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout',
+    'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'search_result': frozenset({'matched', 'timeout', 'error', 'cancelled'}),
+    'search_observation': frozenset({'complete', 'limited', 'unavailable'}),
+    'search_table': frozenset({'missing', 'hidden', 'empty', 'rows_present', 'unavailable'}),
     'panel_state': frozenset({'missing', 'hidden', 'outside_view', 'visible', 'ambiguous', 'unavailable'}),
     'tab_state': frozenset({'selected', 'unselected', 'unknown'}),
     'probe_failure': frozenset({'evaluation_error'}),
@@ -74,7 +77,9 @@ ENUMS = {
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed',
         'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls'})
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls',
+    'search_requests', 'search_responses', 'search_failed', 'search_http_1xx', 'search_http_2xx',
+    'search_http_3xx', 'search_http_4xx', 'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
@@ -91,7 +96,7 @@ FUNCTIONS = frozenset({'main', '_main', 'run_job', 'run_login_check', 'prepare',
     'ensure_runtime', '_probe_python', '_resources', '_uv', 'worker_source',
     'authenticate_owned', 'try_saved_login', 'check_saved_credentials', '_bind_login_fields',
     'collect_inventory', 'collect_details', 'capture_detail', 'capture_panel', 'capture_table',
-    '_wait_tab_panel', '_record_panel_timeout',
+    '_wait_tab_panel', '_record_panel_timeout', '_find_taxpayer_row',
     'download_financial_attachments', '_read_pdf', '_verify_page', '_financial_url',
     'save_output', 'verify_outputs', '_publish_output', '_check_output_scope',
     'validate_export_run', 'export_workbook', 'export_split_workbooks',
