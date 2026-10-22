@@ -24,6 +24,8 @@ def candidate(tmp_path):
         "libraries": {"tcl": "tcl/tcl9.1", "tk": "tcl/tk9.1"},
         "licenses": ["licenses/python.txt", "licenses/tcl.txt", "licenses/tk.txt"],
     }
+    document["loaded_sha256"] = {role: files[name] for role, name in document["loaded"].items()}
+    document["native_modules"] = {name: files[name] for name in ["python.exe", *document["loaded"].values()]}
     return document, tmp_path
 
 
@@ -86,3 +88,74 @@ def test_reject_symlink(candidate):
         pytest.skip("Runner does not permit symlink creation")
     with pytest.raises(ValueError):
         validate_inventory(document, root)
+
+@pytest.mark.parametrize("field", ["loaded_sha256", "native_modules"])
+@pytest.mark.parametrize("value", [None, [], {}, "malformed"])
+def test_reject_missing_or_malformed_loaded_proof(candidate, field, value):
+    document, root = candidate
+    document[field] = value
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+@pytest.mark.parametrize("field", ["loaded_sha256", "native_modules"])
+def test_reject_absent_loaded_proof(candidate, field):
+    document, root = candidate
+    del document[field]
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+@pytest.mark.parametrize("role", ["python", "_tkinter", "tcl", "tk"])
+def test_reject_probe_role_hash_disagreement(candidate, role):
+    document, root = candidate
+    document["loaded_sha256"][role] = "0" * 64
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+@pytest.mark.parametrize("digest", [None, 42, "not-a-sha256", "A" * 64])
+def test_reject_malformed_role_hash(candidate, digest):
+    document, root = candidate
+    document["loaded_sha256"]["tk"] = digest
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+@pytest.mark.parametrize("role", ["python", "_tkinter", "tcl", "tk"])
+def test_reject_role_absent_from_module_proof(candidate, role):
+    document, root = candidate
+    del document["native_modules"][document["loaded"][role]]
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+@pytest.mark.parametrize("name", ["python.exe", "DLLs/_tkinter.pyd"])
+def test_reject_candidate_module_hash_disagreement(candidate, name):
+    document, root = candidate
+    document["native_modules"][name] = "0" * 64
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+@pytest.mark.parametrize("name,digest", [("python.exe", None), ("python.exe", "bad"), ("../external.dll", "0" * 64), ("DLLs/unlisted.dll", "0" * 64)])
+def test_reject_malformed_or_uninventoried_module_proof(candidate, name, digest):
+    document, root = candidate
+    document["native_modules"][name] = digest
+    with pytest.raises(ValueError):
+        validate_inventory(document, root)
+
+
+def test_probe_mode_rejects_recorded_hash_disagreement(candidate, monkeypatch):
+    import json
+    import sys
+    from scripts.launcher_candidate.inventory import main
+
+    document, root = candidate
+    document["loaded_sha256"]["tk"] = "0" * 64
+    probe_path = root.with_suffix(".json")
+    probe_path.write_text(json.dumps(document), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["inventory", "--root", str(root), "--probe", str(probe_path)])
+    with pytest.raises(ValueError):
+        main()
+    assert not (root / "inventory.json").exists()
