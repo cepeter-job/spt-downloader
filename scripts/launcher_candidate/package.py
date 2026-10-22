@@ -18,6 +18,13 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def production_snapshot():
+    from spt_desktop.paths import workspace_root
+    root = workspace_root()
+    return {'exists': root.exists(), 'files': {
+        path.relative_to(root).as_posix(): digest(path) for path in root.rglob('*') if path.is_file()}}
+
+
 def run_selftest(command, report):
     from spt_desktop.windows import ProcessJob
     with ProcessJob() as owned:
@@ -42,6 +49,7 @@ def package(runtime, output):
     validate_inventory(inventory, runtime)
     if Path(sys.base_prefix).resolve() != runtime:
         raise ValueError('packaging interpreter must use the exact candidate runtime')
+    production_before = production_snapshot()
     # All setup/cache state belongs to this new output workspace, never the worker.
     output.mkdir(parents=True)
     with tempfile.TemporaryDirectory(prefix='spt-candidate-package-') as scratch_name:
@@ -78,7 +86,13 @@ def package(runtime, output):
         after = {path.relative_to(production).as_posix(): digest(path) for path in production.rglob('*') if path.is_file()}
         if before != after:
             raise RuntimeError('candidate preparation/startup changed synthetic production state')
-        (output / 'worker-independence.json').write_text(json.dumps({'unchanged': True, 'before': before, 'after': after}, indent=2), encoding='utf-8')
+        production_after = production_snapshot()
+        if production_before != production_after:
+            raise RuntimeError('candidate changed actual Known Folder production state')
+        (output / 'worker-independence.json').write_text(json.dumps({
+            'unchanged': True, 'before': before, 'after': after,
+            'known_folder_unchanged': True, 'known_folder_before': production_before,
+            'known_folder_after': production_after}, indent=2), encoding='utf-8')
     shutil.copytree(runtime / 'licenses', output / 'licenses')
     shutil.copy2(runtime / 'inventory.json', output / 'runtime-inventory.json')
     validate_inventory(inventory, runtime)
@@ -96,10 +110,17 @@ def package(runtime, output):
 
 def verify(output, report):
     """Validate exact read-back payload then run its bytes from outside the checkout."""
+    if output.is_symlink() or output.is_junction():
+        raise ValueError('linked candidate application directory')
+    for path in output.rglob('*'):
+        if path.is_symlink() or path.is_junction():
+            raise ValueError('linked candidate application member')
+    if report.is_relative_to(output):
+        raise ValueError('read-back report must be outside immutable candidate')
     manifest = json.loads((output / 'candidate-manifest.json').read_text(encoding='utf-8'))
     expected = manifest['files']
     actual = {path.relative_to(output).as_posix(): digest(path) for path in output.rglob('*')
-              if path.is_file() and path.name != 'candidate-manifest.json'}
+              if path.is_file() and path.relative_to(output).as_posix() != 'candidate-manifest.json'}
     if expected != actual or len({name.casefold() for name in actual}) != len(actual):
         raise ValueError('read-back application file set or hash mismatch')
     allowed = {'SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
@@ -113,6 +134,7 @@ def verify(output, report):
     for name in inventory['licenses']:
         if actual[name] != inventory['files'][name]:
             raise ValueError('runtime license bytes changed')
+    production_before = production_snapshot()
     with tempfile.TemporaryDirectory(prefix='spt-candidate-readback-') as folder:
         previous = Path.cwd()
         try:
@@ -120,6 +142,8 @@ def verify(output, report):
             result = run_selftest([output / 'SPTDownloader.exe'], report)
         finally:
             os.chdir(previous)
+    if production_before != production_snapshot():
+        raise RuntimeError('frozen readback changed production state')
     from build_desktop import validate_report
     validate_report(result)
     validate_candidate_report(result, inventory)
