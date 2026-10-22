@@ -395,28 +395,39 @@ def _wait_tab_panel(view, tab, caption, check_cancel):
     started = time.monotonic()
     deadline = started + DETAIL_PANEL_TIMEOUT
     panel_id = None
+    controlled = False
     while True:
         _check_cancel(check_cancel)
         try:
             if tab.inner_text(timeout=100).strip() != caption:
                 raise RuntimeError('Tab identity changed while waiting for its panel')
-            panel_id = tab.get_attribute('aria-controls', timeout=100)
+            current_id = tab.get_attribute('aria-controls', timeout=100)
+            if controlled and not current_id:
+                # A rebinding gap must never authorize the previous form.
+                raise PlaywrightTimeoutError('Controlled tab has no current panel binding')
+            panel_id = current_id
             if panel_id:
+                controlled = True
                 panel = view.locator('[id=' + repr(panel_id) + ']')
             else:
-                panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]), :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden])')
+                panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]):visible, :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden]):visible')
             panel.wait_for(state='visible', timeout=100)
             _check_cancel(check_cancel)
             owner = view.element_handle(timeout=100)
             try:
                 belongs = '(e, owner) => e.isConnected && owner.isConnected && e.closest(".p-tabview") === owner'
-                if (not panel.evaluate(belongs, owner, timeout=100)
-                        or not tab.evaluate(belongs, owner, timeout=100)):
+                if not panel.evaluate(belongs, owner, timeout=100):
                     raise PlaywrightTimeoutError('Controlled panel is outside its owning tab view')
+                # nth() is live: validate its caption, owner and binding together
+                # after readiness so a reordered tab cannot relabel this panel.
+                if not tab.evaluate('''(e, expected) => e.isConnected && expected.owner.isConnected &&
+                        e.closest('.p-tabview') === expected.owner &&
+                        e.innerText.trim() === expected.caption &&
+                        e.getAttribute('aria-controls') === expected.panel_id''',
+                        {'owner': owner, 'caption': caption, 'panel_id': panel_id}, timeout=100):
+                    raise PlaywrightTimeoutError('Tab identity or panel binding did not stabilize')
             finally:
                 owner.dispose()
-            if tab.get_attribute('aria-controls', timeout=100) != panel_id:
-                raise PlaywrightTimeoutError('Tab panel binding did not stabilize')
             return panel
         except PlaywrightTimeoutError:
             if time.monotonic() >= deadline:

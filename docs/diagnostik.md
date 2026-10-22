@@ -76,10 +76,15 @@ Penantian panel membaca ulang `aria-controls` selama budget yang sama. Bila DOM
 mengganti binding, kolektor mengikuti kandidat terbaru yang tunggal, terlihat,
 dan dimiliki view yang sama. Panel tersembunyi, ambigu atau milik view lain tetap
 tidak ditangkap. Perubahan ini tidak menambah budget atau klik ulang tab.
+Setelah binding pernah teramati, atribut yang hilang sementara harus kembali
+valid; kolektor tidak beralih ke panel lain yang kebetulan terlihat. Fallback
+tanpa ID hanya berlaku untuk tab yang belum pernah memiliki binding dan harus
+menemukan tepat satu panel yang benar-benar terlihat, termasuk visibilitas
+ancestor. Caption, view pemilik dan binding diperiksa bersama sebelum capture.
 
 `capture.panel_timeout` dicatat pada WARNING sekali ketika budget tunggu panel habis, bukan pada setiap polling. Event ini tidak mengganti `capture.partial` atau mengubah hasil PARTIAL, selector, klik tab, retry, maupun budget tunggu. Durasi `duration_ms` hanya mencakup penantian panel sampai budget habis, tidak mencakup pembukaan detail, pekerjaan sebelumnya, atau pembacaan snapshot sesudahnya.
 
-Snapshot hanya berisi struktur: `panel_controlled` menyatakan penggunaan `aria-controls`; `panel_matches` menghitung kandidat dalam view yang sedang dipakai; `document_panel_matches` menghitung kecocokan ID yang sama di dokumen dan **tidak diisi** pada jalur fallback tanpa ID; `tab_views` menghitung `.p-tabview` di bawah `.main-content`. ID sebenarnya tidak pernah masuk log. `tab_state` adalah `selected`, `unselected`, atau `unknown`; yang terakhir dipakai bila asosiasi tab atau atribut pemilihannya tidak tunggal/teramati.
+Snapshot hanya berisi struktur: `panel_controlled` menyatakan bahwa binding `aria-controls` pernah teramati; saat binding hilang sementara, probe memakai ID terakhir yang teramati. `panel_matches` menghitung kandidat dalam view yang sedang dipakai; `document_panel_matches` menghitung kecocokan ID yang sama di dokumen dan **tidak diisi** pada jalur fallback tanpa ID; `tab_views` menghitung `.p-tabview` di bawah `.main-content`. ID sebenarnya tidak pernah masuk log. `tab_state` adalah `selected`, `unselected`, atau `unknown`; yang terakhir dipakai bila asosiasi tab atau atribut pemilihannya tidak tunggal/teramati.
 
 `panel_state` memakai kategori tetap:
 
