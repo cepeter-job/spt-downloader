@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import sys
 
+import pytest
+
 from support_isolated_browser import browser, isolated_context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -83,6 +85,49 @@ def test_filter_route_blocks_foreign_taxpayer_before_transport(browser):
     with synthetic_browser(browser) as (page, metrics):
         with module.InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
             assert send(page, TaxpayerAggregateIdentifier='different-taxpayer') == 'blocked'
+            assert guard.error is not None
+            assert metrics['requests'] == []
+
+
+@pytest.mark.parametrize('auxiliary', [False, True])
+def test_owned_filter_starts_at_zero_then_preserves_requested_pages(browser, auxiliary):
+    module = feature()
+    from coretax_browser import ListObserver
+    with synthetic_browser(browser) as (page, metrics):
+        observer = ListObserver(page)
+        try:
+            with module.InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
+                observer.request_filter = guard
+                if auxiliary:
+                    assert page.evaluate('''async url => (await fetch(url, {method:'POST',
+                        body:JSON.stringify({TaxpayerAggregateIdentifier:'synthetic-taxpayer'})})).status
+                    ''', ENDPOINT) == 200
+                before = observer.sequence
+                assert send(page, First=50) == 200
+                initial = observer.wait(before)
+                assert initial['first'] == initial['binding']['request']['First'] == 0
+                before = observer.sequence
+                assert send(page, First=50) == 200
+                following = observer.wait(before)
+                assert following['first'] == following['binding']['request']['First'] == 50
+                grid = [r for r in metrics['requests'] if 'First' in r]
+                assert [r['First'] for r in grid] == [0, 50]
+                assert all(r['Filters'] == [FILTER] for r in grid)
+            observer.request_filter = None
+            assert send(page, First=100) == 200
+            assert metrics['requests'][-1]['First'] == 100
+            assert metrics['requests'][-1]['Filters'] == []
+            assert metrics['unknown'] == 0
+        finally:
+            observer.close()
+
+
+@pytest.mark.parametrize('first', [-1, 1, True])
+def test_initial_filter_reset_never_qualifies_malformed_pagination(browser, first):
+    module = feature()
+    with synthetic_browser(browser) as (page, metrics):
+        with module.InventoryFilterRoute(page, 'synthetic-taxpayer', FILTER) as guard:
+            assert send(page, First=first) == 'blocked'
             assert guard.error is not None
             assert metrics['requests'] == []
 

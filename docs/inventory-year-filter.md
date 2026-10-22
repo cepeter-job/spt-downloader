@@ -27,6 +27,16 @@ This establishes a request capability, not complete year coverage. Full referenc
 3. Add browser integration with read-only PERIOD-cache evidence, a narrowly guarded submitted-request route, effective-request provenance, fixed filters across pagination, per-partition totals and cancellation cleanup. Unknown endpoints retain existing collection. Persist and restore the exact filter and page size before selected-row navigation; include filter identity in the active group key.
 4. Exercise synthetic browser contracts on runners: rewritten-body binding, empty partitions, changing totals/filters/catalog, stale offsets, catalog failures, cancellation, amendment/deduplication, and detail restoration. Verify the managed-worker allowlist includes the new module. Close the live acceptance and review gates below before marking ready.
 
+## Retained pagination
+
+Each owned filter route starts its first validated grid request at `First: 0`,
+including a partition whose total is zero while the portal retains an old page.
+Auxiliary identity reads do not consume this reset. Later grid requests retain
+their requested offsets. Both original and effective request digests remain in
+the binding; malformed original pagination is rejected before rewriting. The
+collector still requires a verified first page, unchanged filter/identity and
+reconciled source totals before declaring an empty partition complete.
+
 ## Verification and merge gates
 
 - Publish synthetic RED contracts and verify their failures on GitHub runners before implementing the corresponding production changes.
