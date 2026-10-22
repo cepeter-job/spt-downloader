@@ -55,6 +55,9 @@ def approved_reference(tax):
             sheet[coordinate].number_format = '0.00%'
         sheet['J14'].border = copy(sheet['I14'].border)
         sheet.insert_rows(9)
+        # The new separator inherits the approved template's blank-row style.
+        for column in range(1, 17):
+            sheet.cell(9, column)._style = copy(sheet.cell(2, column)._style)
         for row in sorted(list(sheet.row_dimensions), reverse=True):
             if row >= 9:
                 dimension = sheet.row_dimensions.pop(row)

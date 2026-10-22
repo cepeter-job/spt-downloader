@@ -70,14 +70,18 @@ def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, pe
             values = sheet_values(workbook)
             markers = [value for value in values
                        if isinstance(value, str) and value.startswith('SYNTHETIC synthetic-model-return-')]
-            expected_forms = ['L-Z'] if tax == 'PPN' else ['Induk', 'L-Z']
+            expected_forms = ['L-Z'] if tax in ('PPN', 'PPh Unifikasi') else ['Induk', 'L-Z']
             assert markers == [f'SYNTHETIC {identifier} / {form}' for form in expected_forms]
-            # Unsupported Induk rows are source-only for clean PPN/PPh21 forms;
+            # Unsupported Induk rows are source-only for approved clean forms;
             # the generic L-Z still displays both duplicate rows unchanged.
-            copies = 2 if tax in ('PPN', 'PPh Pasal 21/26') else 4
+            copies = 2 if tax in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi') else 4
             assert values.count('00007') == copies and values.count('1.234,50') == copies
             if tax == 'PPN':
                 assert workbook['Induk']['E45'].value == int(expected[identifier]['sections'][0]['fields'][-1]['value'])
+            if tax == 'PPh Unifikasi':
+                amount = int(expected[identifier]['sections'][0]['tables'][-1]['rows'][0][2])
+                assert workbook['Induk']['C10'].value == amount
+                assert [v for v in values if v in (101, 102, 103)] == [amount]
             cells = [cell for sheet in workbook for row in sheet for cell in row]
             assert all(cell.data_type == 's' for cell in cells if cell.value in ('00007', '1.234,50'))
             assert all(not any((getattr(sheet, item).center.text,
@@ -114,6 +118,9 @@ def test_resume_links_to_the_correct_model_file_and_first_form(tmp_path, tax, pe
                 if tax == 'PPN':
                     assert marker not in values
                     assert workbook['Induk']['E45'].value == int(expected['sections'][0]['fields'][-1]['value'])
+                elif tax == 'PPh Unifikasi':
+                    assert marker not in values
+                    assert workbook['Induk']['C10'].value == int(expected['sections'][0]['tables'][-1]['rows'][0][2])
                 else:
                     assert marker in values
             finally:

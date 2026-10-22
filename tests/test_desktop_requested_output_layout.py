@@ -12,7 +12,7 @@ import coretax_exporter as exporter
 from spt_desktop import output
 from support_selected_capture import selected_job
 from support_financial_publication import PDF, financial_run
-from support_runs import fixture_run
+from support_runs import fixture_run, unifikasi_induk_table
 
 
 ADMIN = {'Ringkasan', 'Daftar SPT', 'Audit'}
@@ -90,7 +90,12 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
         for field in section['fields']:
             field['value'] = field['value'].replace('NORMAL', 'AMENDMENT')
     run['records'].append(amendment)
+    if tax == 'PPh Unifikasi':
+        for ordinal, record in enumerate(run['records'], 1):
+            record['sections'][0]['tables'] = [unifikasi_induk_table(100 + ordinal)]
+    before = deepcopy(run)
     files = exporter.export_split_workbooks(run, tmp_path)
+    assert run == before
     expected = [f'{directory}/{prefix}_Januari 2025_Normal.xlsx',
                 f'{directory}/{prefix}_Januari 2025_Amendment 002.xlsx']
     assert set(files) == {'resume.xlsx', *expected}
@@ -105,12 +110,16 @@ def test_every_observed_periodic_tab_and_amendment_has_its_own_sheet(tmp_path, t
             proof = exporter.read_workbook_proof(workbook)
             assert [item['meta']['Model SPT'] for item in proof['records']] == [record['meta']['Model SPT']]
             expected_values = Counter(field['value'] for section in record['sections']
-                                      if tax != 'PPN' or section['name'] != 'Induk'
+                                      if tax not in ('PPN', 'PPh Unifikasi') or section['name'] != 'Induk'
                                       for field in section['fields'])
             observed = Counter(cell.value for sheet in workbook for row in sheet for cell in row
                                if isinstance(cell.value, str) and cell.value.startswith('SYNTHETIC ')
                                and 'SOURCE CONTEXT' not in cell.value)
             assert observed == expected_values
+            if tax == 'PPh Unifikasi':
+                amount = int(record['sections'][0]['tables'][0]['rows'][0][2])
+                assert workbook['Induk']['C10'].value == amount
+                assert [v for v in values(workbook) if v in (101, 102)] == [amount]
         finally:
             workbook.close()
 
