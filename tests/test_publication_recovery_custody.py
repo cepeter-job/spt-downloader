@@ -163,7 +163,7 @@ def test_shared_hardlink_is_retained_without_removing_either_name(tmp_path):
     path, expected = sample(tmp_path)
     alias = tmp_path / 'outside-copy'
     os.link(path, alias)
-    with pytest.raises(ValueError, match='shared|link|ordinary'):
+    with pytest.raises(ValueError, match='[Ss]hared|link|ordinary'):
         remove(path, expected)
     assert path.read_bytes() == alias.read_bytes() == b'SYNTHETIC RECOVERY BYTES A'
 
