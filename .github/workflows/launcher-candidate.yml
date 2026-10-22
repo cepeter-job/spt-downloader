@@ -26,3 +26,39 @@ jobs:
       - name: Synthetic inventory contract
         shell: pwsh
         run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
+  native:
+    needs: inventory
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Install exact bootstrap interpreter
+        shell: pwsh
+        run: |
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          $bootstrap = uv python find 3.14.8
+          Split-Path -Parent $bootstrap | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Build matching isolated CPython Tcl Tk
+        shell: pwsh
+        run: scripts/launcher_candidate/build.ps1 -Sources scripts/launcher_candidate/sources.json -OutputDirectory "$env:RUNNER_TEMP/launcher-candidate"
+      - name: Upload declared runtime only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: launcher-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/launcher-candidate/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload synthetic build and probe evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: launcher-candidate-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/launcher-candidate-evidence/
+          if-no-files-found: error
+          retention-days: 14

@@ -10,7 +10,7 @@ from scripts.launcher_candidate.inventory import validate_inventory
 
 @pytest.fixture
 def candidate(tmp_path):
-    names = ["python.exe", "python314.dll", "DLLs/_tkinter.pyd", "DLLs/tcl91t.dll", "DLLs/tk91t.dll", "tcl/tcl9.1/init.tcl", "tcl/tk9.1/tk.tcl", "licenses/python.txt", "licenses/tcl.txt", "licenses/tk.txt"]
+    names = ["python.exe", "python314.dll", "DLLs/_tkinter.pyd", "DLLs/tcl91.dll", "DLLs/tcl9tk91.dll", "tcl/tcl9.1/init.tcl", "tcl/tk9.1/tk.tcl", "licenses/python.txt", "licenses/tcl.txt", "licenses/tk.txt"]
     files = {}
     for name in names:
         path = tmp_path / name
@@ -20,7 +20,7 @@ def candidate(tmp_path):
     document = {
         "schema": 1, "python": "3.14.8", "architecture": "x64", "gil": True,
         "tcl": "9.1.0", "tk": "9.1.0", "files": files,
-        "loaded": {"python": "python314.dll", "_tkinter": "DLLs/_tkinter.pyd", "tcl": "DLLs/tcl91t.dll", "tk": "DLLs/tk91t.dll"},
+        "loaded": {"python": "python314.dll", "_tkinter": "DLLs/_tkinter.pyd", "tcl": "DLLs/tcl91.dll", "tk": "DLLs/tcl9tk91.dll"},
         "libraries": {"tcl": "tcl/tcl9.1", "tk": "tcl/tk9.1"},
         "licenses": ["licenses/python.txt", "licenses/tcl.txt", "licenses/tk.txt"],
     }
@@ -39,7 +39,7 @@ def test_reject_runtime_identity(candidate, key, value):
         validate_inventory(document, root)
 
 
-@pytest.mark.parametrize("name", ["DLLs/_tkinter.pyd", "DLLs/tcl91t.dll", "DLLs/tk91t.dll"])
+@pytest.mark.parametrize("name", ["DLLs/_tkinter.pyd", "DLLs/tcl91.dll", "DLLs/tcl9tk91.dll"])
 def test_reject_wrong_native_hash(candidate, name):
     document, root = candidate
     (root / name).write_bytes(b"different synthetic library")

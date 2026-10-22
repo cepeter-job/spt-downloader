@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "sources": [
+    {
+      "name": "cpython",
+      "repo": "python/cpython",
+      "revision": "8e6e75d9102e39bed2a2b279203a396741180f12",
+      "sha256": "3df8b3ac7549eb32c91828c2afaf000bd04df6c935181b6bd4e8e9f01ad99984",
+      "version": "3.14.8",
+      "license": "LICENSE"
+    },
+    {
+      "name": "tcl",
+      "repo": "tcltk/tcl",
+      "revision": "0c6bad08d91fa2ad51f05a50a41f8c1ea82ce985",
+      "sha256": "a67d45904873101de2a8981d8b498079157d627e0eebc9dafb844eaec9d7018e",
+      "version": "9.1.0",
+      "license": "license.terms"
+    },
+    {
+      "name": "tk",
+      "repo": "tcltk/tk",
+      "revision": "3f45110c0a568b70f2ebd5412f215e87d199bc7d",
+      "sha256": "28a01a05c401bd02a89133df4a57b077e487d8578ac3c7413fb5cea8af7eeca8",
+      "version": "9.1.0",
+      "license": "license.terms"
+    },
+    {
+      "name": "zlib-ng",
+      "repo": "python/cpython-source-deps",
+      "revision": "a502e047655c31db29601def76ad6539acacf43d",
+      "sha256": "79f96b877b1539cf6fe2eeff2a03a04e1accbec07b06c48fcd0bebaec97f76aa",
+      "version": "2.2.4",
+      "license": "LICENSE.md"
+    },
+    {
+      "name": "libffi",
+      "repo": "python/cpython-bin-deps",
+      "revision": "94cb9a1c7feb608adf2b9f8fe2dbd6925ffbf90d",
+      "sha256": "6b0f53490e0dd958708bff32df689cf2163c214147fcb8edb76a403fa6a877ca",
+      "version": "3.4.4",
+      "license": "LICENSE",
+      "kind": "prebuilt"
+    },
+    {
+      "name": "bzip2",
+      "repo": "python/cpython-source-deps",
+      "revision": "05301997b2f9590f49c672cf3dfd3d3dfa7ad521",
+      "sha256": "44b15bede52b32f8673a2976621a847258b041243c003e30f4d9a05214785fe5",
+      "version": "bzip2-1.0.8",
+      "license": "LICENSE",
+      "kind": "source"
+    },
+    {
+      "name": "mpdecimal",
+      "repo": "python/cpython-source-deps",
+      "revision": "48316ec025c1ebe500854c332be0a12c640c7301",
+      "sha256": "83d632cd1eb511eba6fdbd4a2f17ad16ca34c8e04558a4ca4e4d460d56471c22",
+      "version": "mpdecimal-4.0.0",
+      "license": "COPYRIGHT.txt",
+      "kind": "source"
+    },
+    {
+      "name": "sqlite",
+      "repo": "python/cpython-source-deps",
+      "revision": "ef547e549b49a2822214ef7880c0ca212b32929e",
+      "sha256": "6dc74c466f2b8d558307fdb1c8b30e10973983c869e650a71aad4b34d929d05a",
+      "version": "sqlite-3.50.4.0",
+      "license": "sqlite3.h",
+      "kind": "source"
+    },
+    {
+      "name": "xz",
+      "repo": "python/cpython-source-deps",
+      "revision": "c6bc0c612605622aaef101a33a751f9de2ecc193",
+      "sha256": "d99882a8f9fd48be0e605e27e3c077e5eaab370f6f52ebcc8ff754480ffdf0bc",
+      "version": "xz-5.2.5",
+      "license": "COPYING",
+      "kind": "source"
+    },
+    {
+      "name": "zstd",
+      "repo": "python/cpython-source-deps",
+      "revision": "eef946ae8cf1591c0e5cc5f43486210768647c2e",
+      "sha256": "6c5bb4e9571fe5c7c1c368caa37b08845e6119eccd413d533b4bfa6622e59559",
+      "version": "zstd-1.5.7",
+      "license": "LICENSE",
+      "kind": "source"
+    },
+    {
+      "name": "openssl",
+      "repo": "python/cpython-source-deps",
+      "revision": "9781f5eb703412922b70d69b4f1e10e54e1bd303",
+      "sha256": "beb9f32ccebbe4ba58a2d72d26b8a5217a75f542217746acfc6f2b10a698377e",
+      "version": "openssl-3.5.9",
+      "license": "LICENSE.txt",
+      "kind": "source"
+    },
+    {
+      "name": "openssl-bin",
+      "repo": "python/cpython-bin-deps",
+      "revision": "ddb46a415b4995440723183e644f8d2c346567a2",
+      "sha256": "0dbf56dcce0ab4054e6192ae488d7d439f678cceca858810de990be51bb80335",
+      "version": "openssl-bin-3.5.9",
+      "license": null,
+      "kind": "prebuilt"
+    }
+  ],
+  "notes": [
+    "Tcl source archive includes Windows x64 zlib1.dll and libtommath.dll; their exact bytes and licenses are retained in the output inventory.",
+    "SQLite copyright blessing is preserved from its source header.",
+    "OpenSSL prebuilt license is provided by the separately pinned matching openssl source archive."
+  ]
+}
+
