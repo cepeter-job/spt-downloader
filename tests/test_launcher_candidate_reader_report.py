@@ -100,3 +100,53 @@ def test_host_refuses_invalid_scenario_before_loading_tk(tmp_path):
     output = tmp_path / 'new'
     with pytest.raises(ValueError): run('arbitrary-code', output)
     assert not output.exists()
+
+
+def test_exposure_without_activation_is_owned_evidenced_failure(evidence):
+    report, inventory = evidence
+    report['activation'] = {'observed': False, 'reader_running': True, 'tk_initialized': False}
+    report['password_observations']['remap'].update(exposed=True)
+    report['outcomes']['password']['status'] = 'failed'
+    for key, outcome in report['outcomes'].items():
+        if key != 'password': outcome.update(status='blocked', reason='Password exposure')
+    validate(report, inventory)
+    report['password_observations']['remap']['evidence'] = []
+    with pytest.raises(ValueError): validate(report, inventory)
+
+
+def test_selection_only_remap_exposure_is_reduced_with_refs():
+    import subprocess
+    from pathlib import Path
+    probe = Path(contracts.__file__).with_name('reader_probe.ps1')
+    script = r'''
+    $tokens=$null; $errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseFile($args[0], [ref]$tokens, [ref]$errors)
+    $fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ReducePhase'}, $true)
+    if (-not $fn) { throw 'ReducePhase missing' }
+    Invoke-Expression $fn.Extent.Text
+    $result=ReducePhase @{msaa_value=@{observed=$true;exposed=$false};uia_selection=@{observed=$true;exposed=$true}}
+    if (-not $result.exposed -or -not $result.observed -or $result.evidence[0] -ne 'native') {throw 'selection exposure lost'}
+    '''
+    # Encoded source avoids path quoting and invokes only this pure reducer.
+    import base64
+    script = script.replace('$args[0]', "'" + str(probe).replace("'", "''") + "'")
+    result = subprocess.run(['powershell', '-NoProfile', '-EncodedCommand', base64.b64encode(script.encode('utf-16-le')).decode()], capture_output=True)
+    assert result.returncode == 0, result.stderr.decode(errors='replace')
+
+
+def test_owned_cleanup_unavailable_handle_fails_closed():
+    from scripts.launcher_candidate import reader_runner
+    close_owned = getattr(reader_runner, 'close_owned', None)
+    assert close_owned is not None, 'owned cleanup helper missing'
+    class Kernel:
+        def OpenProcess(self, *args): return None
+        def WaitForSingleObject(self, *args): raise AssertionError('no handle')
+        def CloseHandle(self, *args): raise AssertionError('no handle')
+    class Job:
+        closed = False
+        def close(self): self.closed = True
+    job = Job()
+    result = close_owned(Kernel(), job, [321], lambda: 5)
+    assert job.closed
+    assert result['cleanup_complete'] is False
+    assert result['unverified_processes'] == [{'pid': 321, 'operation': 'OpenProcess', 'winerror': 5}]
