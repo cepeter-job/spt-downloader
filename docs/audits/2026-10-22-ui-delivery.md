@@ -38,6 +38,8 @@ mock the credential-store boundary, never use a real saved account.
 | `503dacebba7f4f81af79eada4c1b420beff95bd0` | [39711230214](https://github.com/cepeter-job/spt-downloader/actions/runs/39711230214), artifact `12397526850` | 121 focused checks passed. Removing panel unmapping did not improve settled opening; the accessibility probe still failed before its final report. |
 | `168efb294aafe25129bbe01f1118789cc3194b9f` | [39711985686](https://github.com/cepeter-job/spt-downloader/actions/runs/39711985686), artifact `12398025428` | 273 focused checks passed. Moving initial dialog sizing before child creation improved opening, but the target remains unmet. Native probe completed 72 observations; see limitations below. |
 | `3be932df738c0e11a1ead5de0d28417b48cdc095` | [39712931044](https://github.com/cepeter-job/spt-downloader/actions/runs/39712931044), artifact `12398150182` | New scheduling RED: 4 failed, 100 passed. Explicit content changes wait for resize timers and duplicate Configure events queue redundant layout. The real-resize control passes. Counts differ because this run uses a smaller focused selection. |
+| `0af4d9aa4d29744d1320e7072c5cc10bbdb44739` | [39713677015](https://github.com/cepeter-job/spt-downloader/actions/runs/39713677015), artifact `12397828160` | 2 failed, 102 passed. Content-driven viewport changes still queued a resize timer; genuine resizing remained covered by the passing control. |
+| `cfa30a41e1106b8b0565c44b46da6b4ffdba0b4d` | [39714538544](https://github.com/cepeter-job/spt-downloader/actions/runs/39714538544), artifact `12398243597` | 104 focused checks passed. Content-driven viewport continuation now settles at idle. Three of four opening medians still exceed 100 ms; native diagnostic still retains the High Contrast restoration failure. |
 
 Downloaded archive SHA-256 values, matched to GitHub artifact metadata/upload:
 
@@ -49,6 +51,8 @@ Downloaded archive SHA-256 values, matched to GitHub artifact metadata/upload:
 | `12397526850` | `03335754a9addf32e17573444684e353c95d24c9578b3e70806b560f7d1dde47` |
 | `12398025428` | `d17dc41b822c60f8ccf286550e531ce4ab773074d4f14fdf2ce3f052a6eb8464` |
 | `12398150182` | `68d696af1327974bf22d8b95b63a3e8b9766df628a7970ff0592c7fe35e1b41d` |
+| `12397828160` | `5516d418886a557b2b521a7b6d73e0ff88f0c418280db05d44ce74ac34afc312` |
+| `12398243597` | `634b90df213dc22b79f4d008c3d135e81c280c88b1ce4ddfb8ff5c7429ae1b17` |
 
 ## Measurement method and initial diagnosis
 
@@ -76,6 +80,29 @@ sort costs increased in the larger selection scenarios. The trace still shows
 delayed owner-window reflows. The next hypothesis distinguishes explicit content
 invalidation from real resize debounce; its four intended failures are recorded
 above. No below-100-ms claim is supported yet.
+
+At `cfa30a4`, the unchanged observer measured:
+
+| Settled opening | Baseline median (ms) | Candidate median (ms) | Below 100 ms |
+| --- | ---: | ---: | --- |
+| Selection, 1 item | 128.06 | 94.63 | Yes |
+| Selection, 100 items | 147.73 | 109.02 | No |
+| Selection, 1,000 items | 160.82 | 127.73 | No |
+| Overwrite, 101 paths | 178.93 | 143.71 | No |
+
+Filter/sort medians returned broadly near baseline (1,000-item filter 15.52 vs
+15.68 ms; sort 14.52 vs 14.42 ms). This completes the third bounded scheduling
+hypothesis, but not the overall opening target. Further changes require evidence
+about the remaining layout/construction costs; the observer and target stay fixed.
+
+The final trace has one owner reflow per opening, at roughly 6–24 ms, with no
+late second owner reflow. Remaining costs include native mapping/layout and
+count-dependent row construction. The 1,000-row instrumented insertion total was
+47.8 ms, versus 5 ms for 100 rows; overlapping trace durations are not a partition
+of the primary measurement. Re-measure the approved runtime candidate first.
+If the target remains unmet, review modal preparation/presentation and isolate
+table/font costs before further changes. Keep measurement start before all work;
+hidden prewarming or relabeling first paint cannot satisfy settled opening.
 
 ## Display and accessibility limits
 
@@ -113,11 +140,34 @@ establish Narrator/UIA acceptance.
 
 ## Delivery status
 
-Settings and caption behavior have runner evidence. Final scheduling GREEN,
-below-100-ms performance, full CI and exact unsigned artifact readback remain
-pending. Full-size 200% and Windows accessibility remain open. The owner approved
-a separate desktop-only runtime candidate design and requested its implementation
-plan; production adoption still requires exact source/frozen identity, password
+Settings, caption and scheduling behavior have runner evidence. Fresh independent
+source review at `cfa30a4` found no concrete production regression; that review
+does not substitute for runtime verification. Overall below-100-ms performance
+remains open. Full-size 200% and Windows accessibility also remain open. The owner approved
+a separate desktop-only runtime candidate design and implementation plan;
+production adoption still requires exact source/frozen identity, password
 privacy and actual NVDA/Narrator qualification.
 Live acceptance remains pending the owner's checks using
 [the manual checklist](../penerimaan-manual.md); synthetic tests cannot replace it.
+
+## Verified unsigned acceptance build
+
+[Build run 39714542841](https://github.com/cepeter-job/spt-downloader/actions/runs/39714542841),
+attempt 1, passed 3,624 Windows tests (1,838 + 1,786; no skips), 568 portable
+tests, dependency audit, source/frozen self-tests, packaging and uploaded-artifact
+readback. The PR head was `cfa30a41e1106b8b0565c44b46da6b4ffdba0b4d`; the
+tested merge commit was `897c975953b15bd2e23f3cf1c639d8015b7cf2f8`, with tree
+`1a0e29ac157d4d4a661cbcde49df227b412019ab` (the same tree as the PR head).
+
+Artifact `12399101453` contains exactly `SPTDownloader.exe`, `LICENSE.txt`,
+`README.txt`, `build-selftest.json`, and `SHA256SUMS.txt`. The archive was downloaded
+by that exact ID and its manifest, file hashes, report metadata and preserved
+license checked without local execution. It reports CPython 3.14.8 x64/GIL,
+Tcl/Tk 9.0.4, the unchanged explicit worker resource list, and no live scrape or
+credential access during self-tests.
+
+- ZIP SHA-256: `c037d1f18a7856ad64fd6818898ce33a93b7bd9cd61a0068295ddf3608078495`
+- EXE SHA-256: `fcfe3a9099bde389569cf53ff48a16000c9347d7479fcf3bdc83805ac89b50ee`
+
+This is the unsigned existing-runtime acceptance build. It does not complete
+the outstanding performance, actual-200%, screen-reader or live-portal gates.
