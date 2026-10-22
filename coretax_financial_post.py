@@ -228,7 +228,19 @@ class FinancialPost:
             self.page.route('**/*', self.handler)
             self.armed = True
             self.check()
-            self.button.evaluate('(button)=>button.click()')
+            # Pemeriksaan terakhir dan click berbagi satu evaluasi dokumen.
+            click = '''(button, control) => {
+                const scan = (''' + self.scan + ''');
+                const matches = scan().controls.filter(item=>
+                    Object.keys(item).length === Object.keys(control).length &&
+                    Object.keys(control).every(key=>item[key]===control[key]));
+                if (matches.length !== 1 || !button.isConnected ||
+                    window.location.href !== control.document_url ||
+                    window._spt_financial_nodes?.get(button) !== control.identity)
+                    throw new Error('Inspected financial button changed before click');
+                button.click();
+            }'''
+            self.button.evaluate(click, self.control)
             deadline = time.monotonic() + 2
             while not self.count and not self.invalid and time.monotonic() < deadline:
                 _cancel(self.check_cancel)
