@@ -141,14 +141,20 @@ def package(runtime, output):
         code = ('import sys; sys.path.insert(0,sys.argv[1]); import build_desktop; '
                 'build_desktop.build(sys.argv[2],candidate_runtime=sys.argv[3])')
         source_report = output / 'source-selftest.json'
+        subprocess.run([str(python), '-B', '-m', 'scripts.ci_artifact', 'build-info',
+                        str(ROOT), '--python-version', '3.14.8'], cwd=ROOT, env=env, check=True)
         subprocess.run([str(python), '-B', str(ROOT / 'spt_gui.py'), '--self-test', '--candidate-report', '--report', str(source_report)], cwd=scratch, env=env, check=True, timeout=90)
         validate_candidate_report(json.loads(source_report.read_text(encoding='utf-8')), inventory)
         run_regression([python, ROOT / 'spt_gui.py'], output / 'source-regression.json', inventory, frozen=False)
         subprocess.run([str(python), '-I', '-B', '-c', code, str(ROOT), str(scratch / 'build'), str(runtime)], cwd=scratch, env=env, check=True, timeout=600)
+        subprocess.run([str(python), '-B', '-m', 'scripts.ci_sbom', 'create',
+                        str(scratch / 'build'), '--python-version', '3.14.8'],
+                       cwd=ROOT, env=env, check=True, timeout=90)
         subprocess.run([str(python), '-B', str(ROOT / 'scripts/launcher_candidate/inspect_archive.py'),
                         str(scratch / 'build/SPTDownloader.exe'), str(runtime), str(output / 'embedded-payload.json')],
                        cwd=scratch, env=env, check=True, timeout=90)
-        for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json'):
+        for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
+                     'build-info.json', 'distribution-sbom.json'):
             shutil.copy2(scratch / 'build' / name, output / name)
         validate_candidate_report(json.loads((output / 'build-selftest.json').read_text(encoding='utf-8')), inventory)
         run_regression([output / 'SPTDownloader.exe'], output / 'frozen-regression.json', inventory, frozen=True)
@@ -184,6 +190,7 @@ def verify(output, report):
     if expected != actual or len({name.casefold() for name in actual}) != len(actual):
         raise ValueError('read-back application file set or hash mismatch')
     allowed = {'SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
+               'build-info.json', 'distribution-sbom.json',
                'source-selftest.json', 'source-regression.json', 'frozen-regression.json',
                'worker-independence.json', 'runtime-inventory.json', 'embedded-payload.json'}
     if digest(output / 'runtime-inventory.json') != '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239':
@@ -192,6 +199,11 @@ def verify(output, report):
     allowed.update(inventory['licenses'])
     if set(actual) != allowed:
         raise ValueError('read-back application allowlist mismatch')
+    from scripts.ci_artifact import checked_distribution
+    identity = checked_distribution(output)
+    if (identity['commit'] != manifest['head'] or identity['run_id'] != manifest['run_id']
+            or str(identity['run_attempt']) != manifest['attempt']):
+        raise ValueError('candidate manifest and distribution identity differ')
     for name in inventory['licenses']:
         if actual[name] != inventory['files'][name]:
             raise ValueError('runtime license bytes changed')

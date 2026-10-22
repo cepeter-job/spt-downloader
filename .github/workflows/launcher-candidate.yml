@@ -193,7 +193,7 @@ jobs:
   application-readback:
     needs: package
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -214,6 +214,14 @@ jobs:
           foreach ($name in @('PYTHONHOME', 'PYTHONPATH', 'TCL_LIBRARY', 'TK_LIBRARY', 'TCLLIBPATH')) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
           uv run --no-project --python 3.14.8 scripts/launcher_candidate/package.py --verify --output "$env:RUNNER_TEMP/readback-application" --report "$env:RUNNER_TEMP/readback-selftest.json"
           if ($LASTEXITCODE -ne 0) { throw 'Exact frozen application readback failed' }
+      - name: Verify managed worker bootstrap reuse and owned cancellation from exact candidate bytes
+        shell: pwsh
+        env:
+          ARTIFACT_ID: ${{ needs.package.outputs.application-artifact-id }}
+        run: >-
+          uv run --no-project --python 3.14.8 -m scripts.ci_runtime --profile production
+          --executable "$env:RUNNER_TEMP/readback-application/SPTDownloader.exe"
+          --artifact-id "$env:ARTIFACT_ID" --report "$env:RUNNER_TEMP/candidate-packaged-bootstrap.json"
       - name: Retain synthetic read-back proof
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -221,6 +229,7 @@ jobs:
           path: |
             ${{ runner.temp }}/readback-selftest.json
             ${{ runner.temp }}/readback-selftest.regression.json
+            ${{ runner.temp }}/candidate-packaged-bootstrap.json
           if-no-files-found: error
           retention-days: 14
 
@@ -317,6 +326,11 @@ jobs:
     # Reader qualification failures must not suppress independent safety evidence.
     runs-on: windows-2025
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [0, 1]
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       PYTHONUTF8: '1'
@@ -356,10 +370,25 @@ jobs:
           .venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q
           --basetemp "$env:RUNNER_TEMP/candidate-full-tests"
           --ci-manifest "$env:RUNNER_TEMP/candidate-test-inventory.json"
+          --ci-shard ${{ matrix.shard }}/2
           --junitxml "$env:RUNNER_TEMP/candidate-test-results.xml"
           -o junit_logging=no -o junit_log_passing_tests=false --durations=10
-      - name: Unchanged managed worker bootstrap and verified reuse
+      - name: Retain exact native inventory status after suite completion or failure
         if: always() && steps.tests.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          $runtime = "$env:RUNNER_TEMP/regression-runtime"
+          $inventory = Get-Content "$runtime/inventory.json" -Raw | ConvertFrom-Json
+          $checks = @{}
+          foreach ($entry in $inventory.files.PSObject.Properties) {
+            $path = Join-Path $runtime $entry.Name
+            $actual = if (Test-Path -LiteralPath $path -PathType Leaf) { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            $checks[$entry.Name] = @{expected=$entry.Value;actual=$actual;matches=($actual -eq $entry.Value)}
+          }
+          @{head=$env:GITHUB_SHA;run=$env:GITHUB_RUN_ID;attempt=$env:GITHUB_RUN_ATTEMPT;shard=${{ matrix.shard }};files=$checks} | ConvertTo-Json -Depth 6 | Set-Content "$env:RUNNER_TEMP/post-suite-runtime.json"
+          if (@($checks.Values | Where-Object { -not $_.matches }).Count) { throw 'Native runtime inventory changed during suite; retained exact member evidence' }
+      - name: Reviewed managed worker bootstrap and verified reuse
+        if: always() && steps.tests.outcome != 'skipped' && matrix.shard == 0
         shell: pwsh
         run: |
           .venv/Scripts/python.exe -m scripts.ci_runtime --profile production 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/worker-bootstrap.txt"
@@ -368,11 +397,12 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: launcher-regression-${{ github.sha }}-attempt${{ github.run_attempt }}
+          name: launcher-regression-shard${{ matrix.shard }}-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/candidate-test-inventory.json
             ${{ runner.temp }}/candidate-test-results.xml
             ${{ runner.temp }}/worker-bootstrap.txt
+            ${{ runner.temp }}/post-suite-runtime.json
           if-no-files-found: error
           retention-days: 14
 
@@ -412,6 +442,35 @@ jobs:
             ${{ runner.temp }}/portable-test-results.xml
           if-no-files-found: error
           retention-days: 14
+
+  regression-coverage:
+    needs: [regression, portable]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: launcher-regression-shard*-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: launcher-portable-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: portable
+      - name: Require exact full inventory and successful outcomes without gaps skips or duplicates
+        env:
+          REGRESSION_RESULT: ${{ needs.regression.result }}
+          PORTABLE_RESULT: ${{ needs.portable.result }}
+        run: |
+          test "$REGRESSION_RESULT" = success
+          test "$PORTABLE_RESULT" = success
+          python3 -m scripts.ci_tests portable/portable-test-inventory.json \
+            "evidence/launcher-regression-shard0-${GITHUB_SHA}-attempt${GITHUB_RUN_ATTEMPT}/candidate-test-inventory.json" \
+            "evidence/launcher-regression-shard1-${GITHUB_SHA}-attempt${GITHUB_RUN_ATTEMPT}/candidate-test-inventory.json" \
+            --python-version 3.14.8 --commit "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
 
   dependency-audit:
     runs-on: windows-2025
@@ -536,6 +595,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Build environment failed' }
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
           if ($LASTEXITCODE -ne 0) { throw 'Locked build installation failed' }
+          .venv/Scripts/python.exe -m scripts.ci_artifact build-info . --python-version 3.14.8
+          if ($LASTEXITCODE -ne 0) { throw 'Build identity failed' }
           .venv/Scripts/python.exe build_desktop.py --python-profile production --output "$env:RUNNER_TEMP/production-exclusion"
           if ($LASTEXITCODE -ne 0) { throw 'Normal production mode build failed' }
       - name: Inspect actual CArchive and PYZ for candidate fixture exclusion
