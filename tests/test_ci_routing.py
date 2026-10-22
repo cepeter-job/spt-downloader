@@ -307,6 +307,10 @@ def test_inventory_check_rejects_incomplete_windows_tests_and_mixed_commit_evide
                 'python': '3.14.8', 'commit': 'a' * 40, 'platform': 'linux',
                 'run_id': '123', 'run_attempt': '1', 'exitstatus': 0}
     windows = dict(portable, selected=all_nodes, workload='windows', platform='win32')
+    for report in (portable, windows):
+        report['outcomes'] = {
+            node: {phase: ['passed'] for phase in ('setup', 'call', 'teardown')}
+            for node in report['selected']}
     assert module.check_inventories(portable, windows, '3.14.8', 'a' * 40,
                                     run_id='123', run_attempt='1') == 2
     for key, value in [('selected', []), ('selected', all_nodes[1:]), ('all', all_nodes[1:]),

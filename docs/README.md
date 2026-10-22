@@ -16,6 +16,10 @@ privasi dan lingkungan eksekusi di AGENTS tetap berlaku; dokumentasi tidak mempe
 | Pipeline dan distribusi | [CI dan rilis](ci-dan-rilis.md) | Routing, cache, gate, artifact, provenance dan branch cleanup. |
 | Error yang sedang terjadi | [Pemecahan masalah](pemecahan-masalah.md) | Gejala, tindakan aman, dan arah ke panduan rinci. |
 | Mengambil log dan melaporkan bug | [Diagnostik](diagnostik.md) | Cara mengambil bukti, schema, retensi dan batas privasi. |
+| Merawat data privat dan backup | [Pemeliharaan privat](pemeliharaan-privat.md) | Inventaris ruang, kepemilikan profil, retensi yang disetujui dan bukti restore. |
+| Mengatasi publikasi yang terputus | [Pemulihan publikasi](pemulihan-publikasi.md) | Journal privat, pemulihan eksplisit dan penolakan file yang berubah. |
+| Menyimpan release dan rollback | [Promosi dan rollback](promosi-dan-rollback.md) | Artifact main terverifikasi, provenance dan aset yang dipertahankan. |
+| Melaporkan masalah keamanan | [Pelaporan privat](../SECURITY.md) | Kanal privat, tanggung jawab maintainer dan batas kontrol administratif. |
 | Memeriksa portal/Excel nyata | [Penerimaan manual](penerimaan-manual.md) | Checklist operator berizin; bukan hasil acceptance yang sudah dilakukan. |
 
 Urutan kontributor baru: pengembangan → peta kode → arsitektur area yang diubah →
@@ -54,6 +58,7 @@ kontrak. URL/path lama dipertahankan; tidak ada penghapusan bukti.
 | --- | --- |
 | Audit dan optimasi CI | [Audit 12 Oktober](audit-2026-10-12.md); [evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md); [evaluasi dua shard Windows](audits/2026-10-21-windows-shard-evaluation.md); [pengukuran fixture browser](audits/2026-10-21-browser-fixture-performance.md); [penyelesaian reuse browser](audits/2026-10-21-browser-fixture-completion.md). |
 | Audit panduan kontributor | [Audit dokumentasi dan komentar 21 Oktober](audits/2026-10-21-developer-docs-comments.md). |
+| Audit DevOps dan tindak lanjut | [Audit 22 Oktober](audits/2026-10-22-devops-audit.md); [rencana perbaikan](superpowers/plans/2026-10-22-devops-audit-repairs.md). |
 | Inventaris dan period-year | [Filter sumber](inventory-year-filter.md); [acceptance filter](inventory-year-filter-acceptance.md); [grid vs auxiliary](inventory-list-binding.md). |
 | Metadata periode | [Diagnostik cache](period-cache-diagnostics.md); [readiness terbatas](period-cache-readiness.md); [alias kode/label terverifikasi](period-metadata-conflict.md). |
 | PPN | [Tahap DOM](ppn-dom-release.md); [integrasi native PR30](ppn-native-integration.md). |

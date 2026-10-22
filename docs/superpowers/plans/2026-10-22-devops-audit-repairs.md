@@ -32,9 +32,9 @@
 
 **Interfaces:** `temporary_profile(root, kind)` owns a validated temporary session directory and a held lease; `reap_profiles(root)` inspects only owned inactive entries. Cancellation uses the existing atomic JSON checkpoint primitive.
 
-- [ ] Add behavior tests for partial write, ENOSPC, replacement failure, cancelled terminal delivery, ordinary profile cleanup, actual process death, active leases, malformed ownership and redirected paths.
-- [ ] Observe the regression tests fail on the unchanged implementation in GitHub Actions.
-- [ ] Implement bounded lifecycle reconciliation before setup and after owned process termination; keep cleanup outside the UI thread.
+- [x] Add behavior tests for partial write, ENOSPC, replacement failure, cancelled terminal delivery, ordinary profile cleanup, actual process death, active leases, malformed ownership and redirected paths.
+- [x] Observe the regression tests fail on the unchanged implementation in GitHub Actions.
+- [x] Implement bounded lifecycle reconciliation before setup and after owned process termination; keep cleanup outside the UI thread.
 - [ ] Verify native Windows tests plus the complete existing workflow; record exact commit/run.
 
 ## 2. Durable selection and publication recovery — F6/F8
@@ -43,9 +43,9 @@
 
 **Interfaces:** `persist_selection(run, folder, *, detail_source='dom')` writes a guarded atomic manifest bound to the original inventory. `load_resume_inventory(folder, *, detail_source=None)` returns `(selected_run, effective_detail_source)`. `recover_publication(source, downloads)` performs explicit guarded restoration from the private durable journal and is repeatable.
 
-- [ ] Test non-prefix/prefix/reordered selections, changed inventory/mode, legacy desktop rejection and persistence before first detail.
-- [ ] Test actual child-process death after displacement, installation and index installation; verify durable private journal, exact old bytes, repeatability and preservation of concurrent/unrelated data.
-- [ ] Observe runner failures, then implement write-ahead publication records and explicit recovery with conservative identity/path/hash validation.
+- [x] Test non-prefix/prefix/reordered selections, changed inventory/mode, legacy desktop rejection and persistence before first detail.
+- [x] Test actual child-process death after displacement, installation and index installation; verify durable private journal, exact old bytes, repeatability and preservation of concurrent/unrelated data.
+- [x] Observe runner failures, then implement write-ahead publication records and explicit recovery with conservative identity/path/hash validation.
 - [ ] Document recovery invocation and retained evidence; prove the changed behavior on Windows without any real taxpayer inputs.
 
 ## 3. Deterministic packaged worker — F3/F7
@@ -54,10 +54,10 @@
 
 **Interfaces:** bootstrap environment disables uv configuration discovery and unrelated policy overrides while preserving reviewed proxy/CA settings. Packaged mode chooses its bundled pinned uv. The explicit account-free runtime self-test exercises the downloaded EXE with a fresh runner-owned workspace.
 
-- [ ] Test bundled-tool preference, environment/config contamination, legitimate network settings, missing bundle failure and packaged smoke report identity.
-- [ ] Observe runner failures, then implement the isolated bootstrap and actual EXE cold/reuse/owned-cancellation path.
-- [ ] Update the explicit worker-file allowlist for new recovery/lifecycle/build modules and optional build metadata.
-- [ ] Bind smoke evidence to the downloaded artifact, SHA, run, attempt and executable digest; retain source and frozen GUI checks.
+- [x] Test bundled-tool preference, environment/config contamination, legitimate network settings, missing bundle failure and packaged smoke report identity.
+- [x] Observe runner failures, then implement the isolated bootstrap and actual EXE cold/reuse/owned-cancellation path.
+- [x] Update the explicit worker-file allowlist for new recovery/lifecycle/build modules and optional build metadata.
+- [x] Bind smoke evidence to the downloaded artifact, SHA, run, attempt and executable digest; retain source and frozen GUI checks.
 
 ## 4. CI, package identity and release promotion — F4/F5 and maturity controls
 
@@ -65,9 +65,9 @@
 
 **Interfaces:** seven-file distribution includes the five existing payload files plus `build-info.json` and `distribution-sbom.json`. Build metadata has `schema=1`, full 40-hex `commit`, decimal-string `run_id`, positive integer `run_attempt`. Promotion accepts only a successful trusted-main run and exact verified artifact, with explicit version and dry validation before publication.
 
-- [ ] Test running/pending code→docs preservation, unexpected skip rejection, immutable platform uv digests, artifact payload identity and untrusted/mismatched promotion inputs.
-- [ ] Observe runner failures, then implement policy without relaxing required checks or reducing inventory.
-- [ ] Generate component inventory with honest audit-coverage boundaries and immutable build identity; include both in checksum/provenance contracts.
+- [x] Test running/pending code→docs preservation, unexpected skip rejection, immutable platform uv digests, artifact payload identity and untrusted/mismatched promotion inputs.
+- [x] Observe runner failures, then implement policy without relaxing required checks or reducing inventory.
+- [x] Generate component inventory with honest audit-coverage boundaries and immutable build identity; include both in checksum/provenance contracts.
 - [ ] Verify promotion preparation and rollback procedure using synthetic/existing verified artifacts; do not publish a release during PR preparation.
 
 ## 5. Diagnostics, operations guidance and integration
@@ -76,12 +76,14 @@
 
 **Interfaces:** build identity reads a bounded strict metadata file from the resource root; unknown source identity is explicit and cannot be supplied through arbitrary environment values. Diagnostics include only public immutable build coordinates.
 
-- [ ] Test validated build coordinates and rejection of malformed/private metadata before implementation.
-- [ ] Add a concrete private-disclosure procedure, notification ownership guidance and safe private-storage inventory/maintenance instructions that preserve active jobs and unresolved recovery.
-- [ ] Update superseded recovery/distribution statements and list external certificate, administrative-security, endpoint and live-acceptance prerequisites honestly.
+- [x] Test validated build coordinates and rejection of malformed/private metadata before implementation.
+- [x] Add a concrete private-disclosure procedure, notification ownership guidance and safe private-storage inventory/maintenance instructions that preserve active jobs and unresolved recovery.
+- [x] Update superseded recovery/distribution statements and list external certificate, administrative-security, endpoint and live-acceptance prerequisites honestly.
 - [ ] Review the complete diff independently, repair findings, obtain exact-head required checks and inspect the resulting package by artifact ID.
 - [ ] Mark the PR ready only after all blocking review findings and required checks are resolved; report remaining external prerequisites without presenting them as fixed.
 
 ## Execution record
 
 Baseline: `d402b98a1a534f761e60500fc1cc17f367461298`, main run `39629732190`; Windows 3,596 passed, portable overlapping subset 568 passed, zero skips. Implementation, runner regression evidence and final acceptance are recorded in the PR and closure report as they become available.
+
+Regression baseline: PR #72, head `ed1df6cd494ee84f49118eabf4845aa6f81f1f4b`, run `39712684141`. Portable: 45 expected regression failures / 567 passes; Windows shard 0: 65 regression failures / 1,826 passes; Windows shard 1: 43 regression failures / 1,772 passes. Missing recovery/lifecycle/identity functions, contaminated frozen bootstrap, incomplete test outcomes and promotion contracts were observed on runners before production implementation. Independent source review added protection for malformed nested metadata, concurrent selection creation and a second crash during restoration. Implementation GREEN and native cleanup-custody evidence remain pending.

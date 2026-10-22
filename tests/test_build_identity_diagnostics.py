@@ -42,3 +42,13 @@ def test_invalid_or_missing_build_metadata_never_enters_diagnostics(tmp_path, mo
     assert rows and all(row.get('build_commit') == 'unknown' for row in rows)
     assert 'PRIVATE' not in json.dumps(rows)
     assert all('build_run_id' not in row for row in rows)
+
+
+def test_deeply_nested_metadata_is_unknown_without_disabling_diagnostics(tmp_path, monkeypatch):
+    module = build_info()
+    (tmp_path / 'build-info.json').write_text('[' * 1500 + '0' + ']' * 1500, encoding='utf-8')
+    monkeypatch.setattr(module, 'resource_root', lambda: tmp_path)
+    assert module.read_build_info() is None
+    with diagnostics.session(tmp_path, 'worker') as log:
+        assert log.flush()
+    assert all(row['build_commit'] == 'unknown' for row in records(tmp_path))

@@ -1,8 +1,10 @@
 """Selected desktop recovery must never widen the user's synthetic scope."""
 from copy import deepcopy
+from contextlib import nullcontext
 import importlib
 import importlib.util
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,6 +79,20 @@ def test_saved_selection_cannot_be_replaced_with_a_wider_selection(tmp_path):
     assert [record['record_id'] for record in loaded['records']] == ['21-january']
 
 
+def test_selection_appearing_at_commit_boundary_is_never_overwritten(tmp_path, monkeypatch):
+    module = recovery()
+    _, selected, folder = selected_inventory(tmp_path, ['21-january'])
+    real_write = module._atomic_checkpoint
+    concurrent = b'{"synthetic": "UNAPPROVED CONCURRENT SELECTION"}'
+    def write_then_race(path, value):
+        real_write(path, value)
+        (folder / 'selection.json').write_bytes(concurrent)
+    monkeypatch.setattr(module, '_atomic_checkpoint', write_then_race)
+    with pytest.raises(ValueError, match='selection scope'):
+        module.persist_selection(selected, folder)
+    assert (folder / 'selection.json').read_bytes() == concurrent
+
+
 def test_legacy_cli_inventory_remains_supported_without_desktop_selection(tmp_path):
     module = recovery()
     inventory, _, folder = selected_inventory(tmp_path, ['21-january'])
@@ -101,3 +117,28 @@ def test_worker_persists_selected_scope_before_starting_detail_capture(tmp_path,
         tmp_path, monkeypatch, ['21-january'], before_capture=before_capture)
     assert observed == [True], 'Selected scope must survive before the first detail opens'
     assert status == 0 and state['captured'] == ['21-january']
+
+
+def test_cli_continuation_consumes_saved_desktop_selection_and_mode(tmp_path, monkeypatch):
+    module = recovery()
+    import coretax
+    _, selected, folder = selected_inventory(tmp_path, ['21-january'])
+    module.persist_selection(selected, folder, detail_source='json-first')
+    page = SimpleNamespace(set_viewport_size=lambda value: None, is_closed=lambda: False,
+                           close=lambda: None)
+    context = SimpleNamespace(new_page=lambda: page, close=lambda: None)
+    browser = SimpleNamespace(launch_persistent_context=lambda *args, **kwargs: context)
+    monkeypatch.setattr(coretax, 'sync_playwright', lambda: nullcontext(SimpleNamespace(chromium=browser)))
+    monkeypatch.setattr(coretax, 'authenticate', lambda *args: None)
+    observed = []
+    def capture(page, run, folder, **kwargs):
+        observed.append(([record['record_id'] for record in run['records']], kwargs['detail_source']))
+        run['complete'] = True
+        return run
+    def save(run, destination):
+        run['output_files'] = ['resume.xlsx']
+        return destination / 'resume.xlsx'
+    monkeypatch.setattr(coretax, 'collect_details', capture)
+    monkeypatch.setattr(coretax, 'save_output', save)
+    assert coretax._main(['--resume', str(folder), '--non-interactive']) == 0
+    assert observed == [(['21-january'], 'json-first')]

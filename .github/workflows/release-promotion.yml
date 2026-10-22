@@ -1,0 +1,118 @@
+name: Verify or promote a retained Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Exact successful trusted-main build run ID
+        required: true
+        type: string
+      source_run_attempt:
+        description: Exact successful build attempt
+        required: true
+        type: string
+      source_commit:
+        description: Full 40-character commit SHA from that main build
+        required: true
+        type: string
+      artifact_id:
+        description: Exact seven-file Windows artifact ID from that build
+        required: true
+        type: string
+      tag:
+        description: New release tag; an existing tag or release is never overwritten
+        required: true
+        type: string
+      rollback_tag:
+        description: Optional published release to verify or repromote from retained assets
+        default: ''
+        type: string
+      publish:
+        description: Explicitly publish the verified candidate as a new release from main
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+concurrency:
+  group: release-promotion-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUTF8: '1'
+  SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+  SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+  SOURCE_COMMIT: ${{ inputs.source_commit }}
+  SOURCE_ARTIFACT_ID: ${{ inputs.artifact_id }}
+  RELEASE_TAG: ${{ inputs.tag }}
+  ROLLBACK_TAG: ${{ inputs.rollback_tag }}
+
+jobs:
+  verify:
+    name: Verify exact source, retained bytes and signed provenance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    outputs:
+      candidate_artifact_id: ${{ steps.candidate.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare a verified candidate without writing a release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 -m scripts.ci_release prepare --repository "$GITHUB_REPOSITORY"
+          --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT"
+          --commit "$SOURCE_COMMIT" --artifact-id "$SOURCE_ARTIFACT_ID"
+          --output "$RUNNER_TEMP/release-candidate" --tag "$RELEASE_TAG"
+          --rollback-tag "$ROLLBACK_TAG"
+      - name: Retain the reviewable candidate and its verification evidence
+        id: candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-candidate-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-candidate/assets/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Record verification coordinates
+        run: |
+          printf 'Verified source commit `%s`, run `%s`, attempt `%s`, artifact `%s`.\n' \
+            "$SOURCE_COMMIT" "$SOURCE_RUN_ID" "$SOURCE_RUN_ATTEMPT" "$SOURCE_ARTIFACT_ID" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Publication requires the explicit publish input on main.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish a new release after candidate readback
+    needs: [verify]
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read the exact candidate artifact produced by this verification job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.verify.outputs.candidate_artifact_id }}
+          path: ${{ runner.temp }}/release-candidate/assets
+          merge-multiple: true
+      - name: Reverify signatures, publish a new draft and read back before final publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 -m scripts.ci_release publish --repository "$GITHUB_REPOSITORY"
+          --run-id "$SOURCE_RUN_ID" --run-attempt "$SOURCE_RUN_ATTEMPT"
+          --commit "$SOURCE_COMMIT" --artifact-id "$SOURCE_ARTIFACT_ID"
+          --output "$RUNNER_TEMP/release-candidate" --tag "$RELEASE_TAG"

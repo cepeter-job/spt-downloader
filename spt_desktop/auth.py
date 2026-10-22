@@ -2,10 +2,9 @@
 from spt_desktop import diagnostics
 import re
 import time
-import tempfile
-from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 from .credentials import ALLOWED_ORIGINS,LOGIN_ORIGIN,read_login
+from .profile_lifecycle import temporary_profile
 
 SEARCH_URL = 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/taxpayer-search'
 CORETAX_ORIGIN = 'https://coretax.intranet.pajak.go.id'
@@ -343,12 +342,10 @@ def check_saved_credentials(playwright,root,origin,account,browser,headless,chec
     def finish(status, message, reason):
         diagnostic('auth.result', reason, status=status, submitted=submitted, blocked_requests=blocked_requests)
         return status, message
-    cache=Path(root)/'cache'
-    cache.mkdir(parents=True,exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='login-check-',dir=cache) as fresh:
+    with temporary_profile(root,'login-check') as fresh:
         context=None
         try:
-            context=playwright.chromium.launch_persistent_context(fresh,channel=browser,headless=headless,
+            context=playwright.chromium.launch_persistent_context(str(fresh),channel=browser,headless=headless,
                                                                  service_workers='block')
             def guard(route):
                 nonlocal blocked_requests, coretax_blocked_after_submit, exchange_failed

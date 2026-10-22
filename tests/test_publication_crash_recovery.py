@@ -2,7 +2,6 @@
 import importlib
 import importlib.util
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -108,3 +107,82 @@ def test_restart_rejects_target_redirect_without_touching_outside_files(tmp_path
         module.recover_publication(source, downloads)
     assert marker.read_bytes() == b'SYNTHETIC UNRELATED DATA'
     assert list(outside.iterdir()) == [marker]
+
+
+def test_changed_recovery_manifest_cannot_redirect_restoration(tmp_path):
+    module = recovery()
+    source, downloads, final, _ = crash_publication(tmp_path, 'installed')
+    before = workbook_bytes(final)
+    notice, = source.glob('publication-recovery-*.json')
+    manifest = Path(json.loads(notice.read_text(encoding='utf-8'))['manifest'])
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    marker = outside / 'keep.xlsx'
+    marker.write_bytes(b'SYNTHETIC UNRELATED FILE')
+    data['target'] = str(outside)
+    manifest.write_text(json.dumps(data), encoding='utf-8')
+    with pytest.raises((ValueError, RuntimeError), match='scope|target|recovery|path'):
+        module.recover_publication(source, downloads)
+    assert workbook_bytes(final) == before
+    assert marker.read_bytes() == b'SYNTHETIC UNRELATED FILE'
+
+
+def test_journal_write_failure_prevents_any_original_output_move(tmp_path, monkeypatch):
+    module = recovery()
+    from spt_desktop import output
+    run, source, downloads, final = previous_and_selected(tmp_path)
+    before = workbook_bytes(final)
+    real_write = module._write
+    def fail_journal(path, value):
+        if Path(path).name == 'manifest.json' and value.get('entries'):
+            raise OSError('Synthetic recovery volume full before first replacement')
+        return real_write(path, value)
+    monkeypatch.setattr(module, '_write', fail_journal)
+    with pytest.raises(OSError, match='Synthetic recovery volume full'):
+        output.publish_workbooks(run, source, downloads, 'journal-full', overwrite=True)
+    assert workbook_bytes(final) == before
+    assert not list(final.rglob('*.recovery'))
+
+
+def test_changed_private_backup_refuses_recovery_before_modifying_public_files(tmp_path):
+    module = recovery()
+    source, downloads, final, _ = crash_publication(tmp_path, 'installed')
+    before = workbook_bytes(final)
+    notice, = source.glob('publication-recovery-*.json')
+    manifest = Path(json.loads(notice.read_text(encoding='utf-8'))['manifest'])
+    backup = manifest.parent / 'backup' / 'SPT Masa 21' / 'SPT_21_Januari 2025_Normal.xlsx'
+    backup.write_bytes(b'SYNTHETIC CHANGED PRIVATE BACKUP')
+    with pytest.raises(ValueError, match='backup changed'):
+        module.recover_publication(source, downloads)
+    assert workbook_bytes(final) == before
+
+
+def test_second_process_death_during_backup_copy_can_be_retried(tmp_path):
+    module = recovery()
+    source, downloads, final, before = crash_publication(tmp_path, 'installed')
+    notice, = source.glob('publication-recovery-*.json')
+    manifest = Path(json.loads(notice.read_text(encoding='utf-8'))['manifest'])
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    # A prior blocked rollback may have retained the verified private backup
+    # while cleaning its same-volume original. Exercise that actual fallback.
+    for entry in data['entries']:
+        if entry['original']:
+            (final / entry['original']).unlink(missing_ok=True)
+    child_code = r'''
+import os, sys
+from pathlib import Path
+from spt_desktop import publication_recovery as recovery
+def interrupted_copy(source, destination, *args):
+    destination.write(source.read(128))
+    destination.flush()
+    os._exit(79)
+recovery.shutil.copyfileobj = interrupted_copy
+recovery.recover_publication(Path(sys.argv[1]), Path(sys.argv[2]))
+'''
+    child = subprocess.run([sys.executable, '-c', child_code, str(source), str(downloads)],
+                           capture_output=True, text=True, timeout=90)
+    assert child.returncode == 79, child.stderr
+    assert module.recover_publication(source, downloads) == final
+    assert workbook_bytes(final) == before
+    assert not list(final.rglob('*.recovery'))

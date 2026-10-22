@@ -1,5 +1,6 @@
 """Artifact verification rejects extra files, altered bytes and wrong build reports."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 
@@ -39,6 +40,19 @@ def artifact(tmp_path):
             'background': 'jalankan proses sedot di background',
             'results': 'Hasil Sedot berada di folder Downloads Windows'},
     }))
+    identity = {'schema': 1, 'commit': 'a' * 40, 'run_id': '123', 'run_attempt': 2}
+    (tmp_path / 'build-info.json').write_text(json.dumps(identity), encoding='utf-8')
+    sbom = delivery_module('ci_sbom').make_sbom(
+        build_info=identity,
+        executable_digest=hashlib.sha256((tmp_path / 'SPTDownloader.exe').read_bytes()).hexdigest(),
+        native_files=[{'path': path, 'sha256': str(index) * 64, 'size_bytes': 100 + index}
+                      for index, path in enumerate(
+                          ('python314.dll', 'tcl86t.dll', 'tk86t.dll', 'tools/uv.exe'), 1)],
+        runtime_packages={'playwright': '1.64.0', 'openpyxl': '3.1.5'},
+        runtime_lock_digest='f' * 64,
+        versions={'python': '3.14.8', 'tcl': '8.6.15', 'tk': '8.6.15',
+                  'uv': '0.13.4', 'pyinstaller': '6.22.3'})
+    (tmp_path / 'distribution-sbom.json').write_text(json.dumps(sbom), encoding='utf-8')
     return tmp_path
 
 
@@ -46,7 +60,7 @@ def test_readback_checks_each_allowed_file_and_actual_selftest_version(artifact)
     module = verifier()
     module.write_checksums(artifact, '3.14.8')
     module.verify(artifact, '3.14.8')
-    assert len((artifact / 'SHA256SUMS.txt').read_text().splitlines()) == 4
+    assert len((artifact / 'SHA256SUMS.txt').read_text().splitlines()) == 6
     with pytest.raises(ValueError, match='Python'):
         module.verify(artifact, '3.11.17')
 
@@ -238,9 +252,56 @@ def test_provenance_verification_binds_repository_workflow_main_sha_and_hosted_r
     assert '--deny-self-hosted-runners' in command
 
 
+def test_durable_rollback_retains_provenance_for_the_original_archive_digest():
+    module = delivery_module('ci_release')
+    assert module.ARCHIVE in module.SUBJECTS
+    from support_workflows import load_workflow
+    workflow = load_workflow(Path(__file__).resolve().parents[1] / '.github/workflows/windows-build.yml')
+    assert workflow['jobs']['package']['outputs']['artifact_digest'] == '${{ steps.upload.outputs.artifact-digest }}'
+    steps = [step for step in workflow['jobs']['attest']['steps']
+             if step.get('with', {}).get('subject-name') == module.ARCHIVE]
+    assert len(steps) == 1
+    assert steps[0]['with']['subject-digest'] == 'sha256:${{ needs.package.outputs.artifact_digest }}'
+
+
 def test_seven_file_distribution_requires_build_identity_and_sbom_before_checksums(artifact):
+    (artifact / 'build-info.json').unlink()
+    (artifact / 'distribution-sbom.json').unlink()
     with pytest.raises(ValueError, match='build-info|SBOM|sbom|distribution'):
         verifier().write_checksums(artifact, '3.14.8')
+
+
+@pytest.mark.parametrize('damage', ['commit', 'run_id', 'exe_digest', 'native_missing', 'coverage'])
+def test_recomputed_checksums_do_not_authorize_mismatched_distribution_metadata(artifact, damage):
+    path = artifact / 'distribution-sbom.json'
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if damage == 'commit':
+        data['metadata']['component']['version'] = 'c' * 40
+    elif damage == 'exe_digest':
+        data['metadata']['component']['hashes'][0]['content'] = 'c' * 64
+    elif damage == 'native_missing':
+        data['components'] = [item for item in data['components']
+                              if item['bom-ref'] != 'native:tools/uv.exe']
+    else:
+        name = 'spt:run_id' if damage == 'run_id' else 'spt:native_audit_coverage'
+        next(item for item in data['metadata']['properties'] if item['name'] == name)['value'] = 'wrong'
+    path.write_text(json.dumps(data), encoding='utf-8')
+    with pytest.raises(ValueError, match='SBOM'):
+        verifier().write_checksums(artifact, '3.14.8')
+
+
+def test_build_info_uses_exact_github_identity_and_rejects_absent_or_invalid_values(tmp_path, monkeypatch):
+    module = verifier()
+    for key, value in {'GITHUB_SHA': 'a' * 40, 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '2'}.items():
+        monkeypatch.setenv(key, value)
+    module.main(['build-info', str(tmp_path), '--python-version', '3.14.8'])
+    assert json.loads((tmp_path / 'build-info.json').read_text(encoding='utf-8')) == {
+        'schema': 1, 'commit': 'a' * 40, 'run_id': '123', 'run_attempt': 2}
+    for key, invalid in [('GITHUB_SHA', 'main'), ('GITHUB_RUN_ID', ''), ('GITHUB_RUN_ATTEMPT', '0')]:
+        with monkeypatch.context() as context:
+            context.setenv(key, invalid)
+            with pytest.raises(ValueError, match='build-info'):
+                module.write_build_info(tmp_path, '3.14.8')
 
 
 def test_native_sbom_records_observed_bytes_and_worker_delivery_scope():
@@ -278,12 +339,204 @@ def test_release_promotion_workflow_is_opt_in_read_only_until_explicit_publish()
     assert path.is_file(), 'Durable verified release promotion workflow is missing'
     workflow = load_workflow(path)
     assert set(workflow['on']) == {'workflow_dispatch'}
-    assert workflow['permissions'] == {'contents': 'read', 'attestations': 'read'}
+    read_permissions = {'contents': 'read', 'actions': 'read', 'attestations': 'read'}
+    assert workflow['permissions'] == read_permissions
     inputs = workflow['on']['workflow_dispatch']['inputs']
     assert inputs['publish']['type'] == 'boolean' and inputs['publish']['default'] is False
     assert {'source_run_id', 'source_run_attempt', 'source_commit', 'artifact_id', 'tag'} <= inputs.keys()
-    assert workflow['jobs']['verify']['permissions'] == {'contents': 'read', 'attestations': 'read'}
+    assert workflow['jobs']['verify']['permissions'] == read_permissions
     publish = workflow['jobs']['publish']
     assert publish['needs'] == ['verify']
     assert _expression(publish['if']) == "inputs.publish&&github.ref=='refs/heads/main'"
     assert publish['permissions'] == {'contents': 'write', 'attestations': 'read'}
+
+
+@pytest.fixture
+def prepared_release(artifact, tmp_path, monkeypatch):
+    """Exercise real delivery code with an explicitly synthetic GitHub adapter."""
+    import zipfile
+
+    module = delivery_module('ci_release')
+    verifier().write_checksums(artifact, '3.14.8')
+    archive = tmp_path / 'original.zip'
+    with zipfile.ZipFile(archive, 'w') as output:
+        for name in module.DISTRIBUTION_FILES:
+            output.write(artifact / name, name)
+    run, jobs, remote_artifact, identity = source_evidence()
+    remote_artifact.update(size_in_bytes=archive.stat().st_size,
+                           digest='sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest())
+    commands = []
+
+    def api(endpoint, **kwargs):
+        assert kwargs == {}
+        responses = {
+            'repos/synthetic-owner/spt-downloader/actions/runs/123/attempts/2': run,
+            'repos/synthetic-owner/spt-downloader/actions/artifacts/456': remote_artifact,
+        }
+        assert endpoint in responses, 'Preparation must not mutate GitHub'
+        return responses[endpoint]
+
+    def download(endpoint, path):
+        assert endpoint == 'repos/synthetic-owner/spt-downloader/actions/artifacts/456/zip'
+        Path(path).write_bytes(archive.read_bytes())
+
+    def command(argv, *, cwd=None, **kwargs):
+        assert not kwargs, 'Signature adapter cannot write through GitHub API'
+        commands.append(list(argv))
+        assert argv[:2] == ['gh', 'attestation']
+        subject = Path(argv[3])
+        digest = hashlib.sha256(subject.read_bytes()).hexdigest()
+        if argv[2] == 'download':
+            Path(cwd, 'sha256:' + digest + '.jsonl').write_text(
+                json.dumps({'synthetic': True, 'digest': digest}), encoding='utf-8')
+            return b''
+        assert argv[2] == 'verify' and '--deny-self-hosted-runners' in argv
+        bundle = json.loads(Path(argv[argv.index('--bundle') + 1]).read_text(encoding='utf-8'))
+        if bundle != {'synthetic': True, 'digest': digest}:
+            raise ValueError('Synthetic signature adapter rejected changed subject/bundle bytes')
+        return b'[{"verificationResult": {"synthetic": true}}]'
+
+    monkeypatch.setattr(module, '_api', api)
+    monkeypatch.setattr(module, '_jobs', lambda *args: jobs)
+    monkeypatch.setattr(module, '_download', download)
+    monkeypatch.setattr(module, '_command', command)
+    assets = module.prepare(tmp_path / 'candidate', **identity)
+    return module, assets, identity, commands, command
+
+
+def release_metadata(module, assets, identity, *, draft=False):
+    return {'id': 321, 'tag_name': 'v2026.10.22', 'target_commitish': identity['commit'],
+            'draft': draft, 'html_url': 'https://example.invalid/synthetic-release',
+            'assets': [
+                {'id': 1000 + index, 'name': path.name, 'size': path.stat().st_size,
+                 'digest': 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()}
+                for index, path in enumerate(sorted(assets.iterdir()))]}
+
+
+def test_prepare_reverifies_every_retained_subject_without_publishing(prepared_release):
+    module, assets, identity, commands, _ = prepared_release
+    assert {path.name for path in assets.iterdir()} == set(module.ASSETS) | {module.RELEASE_MANIFEST}
+    assert len([argv for argv in commands if argv[2] == 'download']) == 5
+    assert len([argv for argv in commands if argv[2] == 'verify']) == 10
+    assert all(argv[:2] == ['gh', 'attestation'] for argv in commands)
+    receipt = json.loads((assets / module.RECEIPT).read_text(encoding='utf-8'))
+    assert all(receipt['source'][key] == value for key, value in identity.items())
+
+
+def test_rollback_uses_retained_assets_after_actions_artifact_expiry(prepared_release, tmp_path, monkeypatch):
+    module, assets, identity, commands, _ = prepared_release
+    release = release_metadata(module, assets, identity)
+    endpoints = []
+
+    def api(endpoint, **kwargs):
+        endpoints.append(endpoint)
+        assert '/actions/' not in endpoint, 'Rollback must survive Actions artifact/run expiry'
+        if '/releases/tags/' in endpoint:
+            return release
+        assert '/git/ref/tags/' in endpoint
+        return {'object': {'type': 'commit', 'sha': identity['commit']}}
+
+    by_id = {entry['id']: entry for entry in release['assets']}
+    monkeypatch.setattr(module, '_api', api)
+    monkeypatch.setattr(module, '_download', lambda endpoint, path: Path(path).write_bytes(
+        (assets / by_id[int(endpoint.rsplit('/', 1)[1])]['name']).read_bytes()))
+    before = len(commands)
+    restored = module.restore_release(tmp_path / 'rollback', 'v2026.10.22', **identity)
+    assert {path.name for path in restored.iterdir()} == {path.name for path in assets.iterdir()}
+    assert len(commands[before:]) == 5
+    assert all(argv[2] == 'verify' for argv in commands[before:])
+    assert endpoints and all('/actions/' not in endpoint for endpoint in endpoints)
+
+
+@pytest.mark.parametrize('damage', ['archive', 'receipt', 'bundle'])
+def test_publish_rejects_tampering_even_when_outer_checksums_are_recomputed(
+        prepared_release, monkeypatch, damage):
+    module, assets, identity, commands, _ = prepared_release
+    for key, value in {'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                       'GITHUB_REF': 'refs/heads/main', 'GITHUB_REPOSITORY': identity['repository']}.items():
+        monkeypatch.setenv(key, value)
+    if damage == 'archive':
+        with (assets / module.ARCHIVE).open('ab') as output:
+            output.write(b'SYNTHETIC CHANGED ZIP')
+    elif damage == 'receipt':
+        path = assets / module.RECEIPT
+        data = json.loads(path.read_text(encoding='utf-8'))
+        data['source']['artifact_id'] += 1
+        path.write_text(json.dumps(data), encoding='utf-8')
+    else:
+        (assets / (module.ARCHIVE + '.sigstore.jsonl')).write_text('{}', encoding='utf-8')
+    (assets / module.RELEASE_MANIFEST).write_text(''.join(
+        hashlib.sha256((assets / name).read_bytes()).hexdigest() + '  ' + name + '\n'
+        for name in module.ASSETS), encoding='ascii')
+    monkeypatch.setattr(module, '_api', lambda *args, **kwargs: pytest.fail('Tampered candidate reached release API'))
+    with pytest.raises(ValueError):
+        module.publish(assets, 'v2026.10.22', **identity)
+    assert all(argv[:2] == ['gh', 'attestation'] for argv in commands)
+
+
+@pytest.mark.parametrize('corrupt_draft', [False, True])
+def test_publish_checks_draft_readback_before_publication_and_never_clobbers(
+        prepared_release, monkeypatch, corrupt_draft):
+    module, assets, identity, commands, signature_command = prepared_release
+    for key, value in {'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'workflow_dispatch',
+                       'GITHUB_REF': 'refs/heads/main', 'GITHUB_REPOSITORY': identity['repository']}.items():
+        monkeypatch.setenv(key, value)
+    state = {'created': False, 'published': False}
+    release = release_metadata(module, assets, identity)
+    by_id = {entry['id']: entry for entry in release['assets']}
+    mutations = []
+
+    def api(endpoint, *, missing=False):
+        if missing:
+            assert not state['created']
+            return None
+        if '/git/ref/tags/' in endpoint:
+            return {'object': {'type': 'commit', 'sha': identity['commit']}}
+        assert state['created'] and '/releases/tags/' in endpoint
+        return dict(release, draft=not state['published'])
+
+    def command(argv, **kwargs):
+        if argv[:2] == ['gh', 'attestation']:
+            return signature_command(argv, **kwargs)
+        assert '--clobber' not in argv and 'delete' not in argv
+        mutations.append(list(argv))
+        if argv[:2] == ['gh', 'api']:
+            assert argv[argv.index('--method') + 1] == 'POST'
+            assert json.loads(kwargs['input_data']) == {
+                'ref': 'refs/tags/v2026.10.22', 'sha': identity['commit']}
+        elif argv[:3] == ['gh', 'release', 'create']:
+            assert '--draft' in argv and '--verify-tag' in argv
+            state['created'] = True
+        else:
+            assert argv[:3] == ['gh', 'release', 'edit']
+            assert state['created'] and not corrupt_draft
+            assert '--draft=false' in argv
+            state['published'] = True
+        return b''
+
+    def download(endpoint, path):
+        name = by_id[int(endpoint.rsplit('/', 1)[1])]['name']
+        content = (assets / name).read_bytes()
+        if corrupt_draft and name == module.ARCHIVE:
+            content += b'SYNTHETIC DRAFT DAMAGE'
+        Path(path).write_bytes(content)
+
+    monkeypatch.setattr(module, '_api', api)
+    monkeypatch.setattr(module, '_command', command)
+    monkeypatch.setattr(module, '_download', download)
+    if corrupt_draft:
+        with pytest.raises(ValueError, match='digest|size'):
+            module.publish(assets, 'v2026.10.22', **identity)
+        assert not state['published']
+    else:
+        assert module.publish(assets, 'v2026.10.22', **identity) == release['html_url']
+        assert state['published']
+    assert len(mutations) == (2 if corrupt_draft else 3)
+
+
+def test_publish_refuses_non_main_dispatch_before_any_external_command(prepared_release, monkeypatch):
+    module, assets, identity, _, _ = prepared_release
+    monkeypatch.setenv('GITHUB_REF', 'refs/heads/synthetic-feature')
+    monkeypatch.setattr(module, '_command', lambda *args, **kwargs: pytest.fail('Untrusted publish invoked gh'))
+    with pytest.raises(ValueError, match='trusted-main'):
+        module.publish(assets, 'v2026.10.22', **identity)

@@ -27,6 +27,8 @@ def evidence():
                    shard={'index': index, 'count': 2},
                    elapsed_seconds=75.0 + index)
               for index in (0, 1)]
+    for report in (baseline, *shards):
+        report['outcomes'] = completed_outcomes(report)
     return baseline, shards
 
 
@@ -96,6 +98,8 @@ def production_evidence():
         for index, report in enumerate(shards)]
     portable = dict(baseline, workload='portable', platform='linux',
                     all=list(nodes), selected=portable_nodes)
+    for report in (portable, baseline, *shards):
+        report['outcomes'] = completed_outcomes(report)
     return portable, baseline, shards
 
 

@@ -36,7 +36,10 @@ def test_worker_selected_scope_forwards_literal_mode_to_collector(tmp_path, monk
     monkeypatch.setattr(worker, 'playwright_factory', lambda: nullcontext(object()))
     monkeypatch.setattr(worker, 'authenticate_owned', lambda *args: (
         SimpleNamespace(close=lambda: closed.append(True)), object()))
-    monkeypatch.setattr(worker, 'collect_inventory', lambda *args, **kwargs: run)
+    def inventory(page, npwp, year, basis, folder, **kwargs):
+        (folder / 'inventory.json').write_text(json.dumps(run), encoding='utf-8')
+        return run
+    monkeypatch.setattr(worker, 'collect_inventory', inventory)
     def collect(page, selected, folder, **kwargs):
         assert [r['record_id'] for r in selected['records']] == expected_ids
         captured.append(kwargs.get('detail_source', 'dom'))

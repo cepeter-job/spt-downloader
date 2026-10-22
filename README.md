@@ -10,6 +10,8 @@ Aplikasi lokal untuk mengambil SPT Coretax melalui akses yang diizinkan dan meng
 
 Unduh artifact produksi `SPTDownloader-Windows-x64-<commit>-python3.14.8-attempt<nomor>` dari run `main` yang berhasil pada [Build Windows app](https://github.com/cepeter-job/spt-downloader/actions/workflows/windows-build.yml). Cocokkan commit, run/attempt, artifact ID, dan profil Python, ekstrak seluruh isinya, lalu jalankan **SPTDownloader.exe**. GUI dan worker memakai CPython 3.14.8 x64/GIL yang sama. Lihat [cara memverifikasi artifact](docs/ci-dan-rilis.md#memverifikasi-artifact).
 
+Distribusi baru menyertakan `build-info.json` dan `distribution-sbom.json` bersama executable, lisensi, petunjuk, laporan self-test, dan checksum. Maintainer dapat mempromosikan artifact `main` yang terverifikasi menjadi release tersimpan melalui [prosedur promosi dan rollback](docs/promosi-dan-rollback.md); keberadaan prosedur bukan bukti sebuah release sudah diterbitkan.
+
 Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan administrator atau Python pada PATH. Lokasi portable yang dapat dipakai adalah `%LOCALAPPDATA%\Programs\SPTDownloader`. Executable belum memiliki tanda tangan Authenticode dari penerbit; checksum dan provenance build memiliki fungsi berbeda dari tanda tangan penerbit.
 
 1. Buka **Pengaturan** bila perlu. Pilih browser `msedge` atau `chrome`, **Sumber detail SPT**, dan preferensi background. Login selalu melalui Coretax → Satu; tidak ada pilihan origin. Masukkan akun/password pada dialog Windows untuk login tersimpan, atau biarkan akun kosong untuk login manual.
@@ -21,6 +23,8 @@ Aplikasi ditujukan untuk Windows 10/11 x64. Membuka GUI tidak memerlukan adminis
 7. Tunggu status terminal. **100% berarti COMPLETE untuk pilihan yang dikonfirmasi, setelah verifikasi workbook, publikasi, dan pembersihan proses milik aplikasi.** Klik **Buka folder hasil** (atau **Buka hasil sementara** untuk PARTIAL) hanya jika lokasi hasil telah disahkan controller.
 
 **Stop** meminta pembatalan pekerjaan; checkpoint yang tersedia tetap disimpan sebagai data belum lengkap. Aplikasi menutup proses worker/browser yang dimilikinya; worker yang tidak berhenti diterminasi setelah 15 detik. Menutup jendela utama saat pekerjaan berjalan meminta konfirmasi. Permintaan atau jawaban lama tidak melanjutkan pekerjaan yang sudah dihentikan. File SPT/PDF hasil terdahulu tidak diganti tanpa persetujuan; pembaruan resume otomatis tetap melewati pemeriksaan scope dan race.
+
+Penulisan checkpoint saat Stop menggunakan file sementara yang di-flush sebelum penggantian atomik. Bila disk penuh atau penggantian gagal, checkpoint lama tetap dipertahankan dan hasil job tetap CANCELLED. Profil login sementara yang kepemilikannya dapat diverifikasi dibersihkan setelah proses milik aplikasi berakhir atau pada persiapan berikutnya. Profil aktif, profil utama, folder lama tanpa penanda, dan path yang berubah tetap dipertahankan; lihat [pemeliharaan data privat](docs/pemeliharaan-privat.md).
 
 ### Log diagnostik untuk bugfixing
 
@@ -116,7 +120,7 @@ Endpoint harus berupa origin HTTP/HTTPS loopback tanpa kredensial, path, query, 
 
 ### Checkpoint dan pemulihan CLI
 
-`--resume` melanjutkan pengambilan data dari `inventory.json` dan checkpoint detail yang cocok. Opsi tersebut berbeda dengan nama workbook `resume.xlsx`. Detail lengkap yang valid dilewati, detail yang belum lengkap dicoba kembali.
+`--resume` melanjutkan pengambilan data dari `inventory.json` dan checkpoint detail yang cocok. Untuk job desktop baru, `selection.json` mengikat hash inventaris, scope, urutan ID terpilih, dan mode DOM/JSON-hybrid sebelum detail pertama dibuka. CLI memulihkan pilihan serta mode tersebut; `--detail-source` yang bertentangan ditolak. Inventaris yang berubah dan job desktop lama tanpa manifest ditolak agar pilihan tidak meluas. Job CLI lama tanpa penanda desktop tetap didukung. Opsi tersebut berbeda dengan nama workbook `resume.xlsx`. Detail lengkap yang valid dilewati, detail yang belum lengkap dicoba kembali.
 
 ```bat
 .venv\Scripts\python.exe coretax.py --resume "%LOCALAPPDATA%\SPTDownloader-CLI\run-sebelumnya" --reuse-browser http://127.0.0.1:9235
@@ -129,6 +133,10 @@ Endpoint harus berupa origin HTTP/HTTPS loopback tanpa kredensial, path, query, 
 ```
 
 `--inventory-only` mengambil daftar saja sehingga statusnya PARTIAL untuk cakupan detail penuh. `--detail-limit N` membatasi jumlah detail untuk pengujian; sisa SPT yang belum diambil membuat run tetap PARTIAL. `--max-pages` memiliki batas bawaan 1000 per daftar/tabel; batas yang menghalangi kelengkapan dilaporkan sebagai PARTIAL. Jangan mengedit checkpoint secara manual.
+
+### Publikasi desktop yang terputus
+
+Sebelum file lama pertama dipindahkan, desktop menyimpan backup yang di-flush, journal privat, dan notice `publication-recovery-*.json` di job asal. Bila proses mati, hentikan aplikasi lalu ikuti [pemulihan publikasi](docs/pemulihan-publikasi.md). Pemulihan memeriksa scope, identitas direktori, dan byte seluruh file sebelum mengubah hasil; file yang diedit setelah crash atau path yang dialihkan menyebabkan penolakan sambil mempertahankan bahan pemulihan. Penggantian beberapa file tetap bukan transaksi atomik terhadap listrik padam atau kegagalan media penyimpanan.
 
 | Exit code CLI | Arti |
 | --- | --- |

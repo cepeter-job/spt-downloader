@@ -14,6 +14,7 @@ from .windows import ProcessJob
 from .paths import downloads_folder
 from .credentials import ALLOWED_ORIGINS
 from .interaction import read_message, select_records, write_reply
+from .profile_lifecycle import reap_profiles
 from coretax_json import validate_detail_source
 
 
@@ -76,6 +77,7 @@ class JobController:
         self._cancel=threading.Event()
         self._preparing=False
         self._prepare_thread=None
+        self._profile_cleanup_thread=None
         self._readers=[]
         self._terminal=None
         self._stop_at=None
@@ -119,6 +121,7 @@ class JobController:
         self._percent=0
         self._readers=[]
         self._cancel.clear()
+        self._profile_cleanup_thread=None
         self._pending_request=None
         self._seen_requests.clear()
         job_id=self.job_id
@@ -128,6 +131,7 @@ class JobController:
         def prepare():
             try:
                 with diagnostics.job_context(job_id):
+                    reap_profiles(self.root)
                     python=ensure_runtime(self.root,status,self._cancel.is_set)
                 if self._cancel.is_set():raise SetupCancelled('Persiapan dibatalkan.')
                 environment=os.environ.copy()
@@ -272,6 +276,14 @@ class JobController:
         # sebelum menunggu EOF melalui poll; jangan tutup pipe yang masih
         # dimiliki thread pembaca.
         if any(reader.is_alive() for reader in self._readers):return
+        # The owned tree has exited. Recover any temporary login profiles left
+        # by forced termination before reporting terminal state. Filesystem work
+        # runs off the UI thread; unverifiable/locked profiles retry next start.
+        if self._profile_cleanup_thread is None and (self.root/'cache').is_dir():
+            self._profile_cleanup_thread=threading.Thread(
+                target=reap_profiles,args=(self.root,),daemon=True)
+            self._profile_cleanup_thread.start()
+        if self._profile_cleanup_thread is not None and self._profile_cleanup_thread.is_alive():return
         self._drain()
         if self.process:
             for stream in (self.process.stdin,self.process.stdout,self.process.stderr):

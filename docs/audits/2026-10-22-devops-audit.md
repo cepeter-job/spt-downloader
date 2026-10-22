@@ -1,9 +1,9 @@
 # SPT Downloader — Full DevOps Audit and Completed Checklist
 
-**Audit date:** 22 October 2026 (WIB / Asia–Jakarta)  
-**Repository:** [cepeter-job/spt-downloader](https://github.com/cepeter-job/spt-downloader)  
-**Audited main:** [`d402b98a1a534f761e60500fc1cc17f367461298`](https://github.com/cepeter-job/spt-downloader/commit/d402b98a1a534f761e60500fc1cc17f367461298)  
-**Primary execution evidence:** [run 39629732190, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/39629732190)  
+**Audit date:** 22 October 2026 (WIB / Asia–Jakarta)
+**Repository:** [cepeter-job/spt-downloader](https://github.com/cepeter-job/spt-downloader)
+**Audited main:** [`d402b98a1a534f761e60500fc1cc17f367461298`](https://github.com/cepeter-job/spt-downloader/commit/d402b98a1a534f761e60500fc1cc17f367461298)
+**Primary execution evidence:** [run 39629732190, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/39629732190)
 **Audit completion:** 5/5 work stages completed. All 60 checklist items assessed; unresolved controls retain their actual status.
 
 ## Verdict
@@ -320,4 +320,3 @@ A successful CodeQL job proves the analysis ran; it does not by itself prove all
 | Historical optimization scope | [docs/audits/2026-10-21-windows-shard-evaluation.md](https://github.com/cepeter-job/spt-downloader/blob/d402b98a1a534f761e60500fc1cc17f367461298/docs/audits/2026-10-21-windows-shard-evaluation.md); [docs/audits/2026-10-21-browser-fixture-completion.md](https://github.com/cepeter-job/spt-downloader/blob/d402b98a1a534f761e60500fc1cc17f367461298/docs/audits/2026-10-21-browser-fixture-completion.md) |
 
 **Recommended next action:** review remediation order 1 and use its two acceptance contracts as the scope for the first repair PR.
-
