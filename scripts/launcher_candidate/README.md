@@ -9,7 +9,8 @@ separates behavior, accessibility, display and custody evidence.
 ## Scope and execution
 
 All product imports, pytest, native/Tk/browser probes, builds and EXE execution run
-only on GitHub Windows runners. Local work is limited to source/AST review and
+only on GitHub runners: Windows for native qualification and packaging, Ubuntu
+for the reviewed portable subset. Local work is limited to source/AST review and
 artifact hash/metadata inspection. Use only the supplied synthetic fixtures; do
 not provide accounts, taxpayer records, browser profiles, saved captures or real
 outputs. Signing and owner live acceptance are deferred.

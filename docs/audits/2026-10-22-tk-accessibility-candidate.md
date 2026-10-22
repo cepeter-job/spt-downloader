@@ -6,6 +6,7 @@ read back the frozen application, and measured compatibility. Actual reader
 activation before Tk fails during Settings construction. Late reader activation
 has not established the required provider/speech behavior. Password accessibility
 safety, full 200% display geometry and distinct-DPI monitor movement remain gates.
+The combined Windows suite also fails two Tk setup cases; production adoption is blocked.
 
 The normal distributed launcher, managed worker/CLI CPython 3.14.8, uv 0.13.4,
 locks remain pinned. The worker resource allowlist now includes the reviewed main recovery modules. This branch is an unsigned
@@ -13,7 +14,7 @@ candidate for a separate adoption decision. Signing is deferred; the owner said
 “I will test it later” for live Coretax/Excel acceptance. No real account or tax
 data was used. Runtime execution took place only on GitHub runners.
 
-## Latest main integration — verification pending
+## Latest main integration
 
 The user authorized integration of all reviewed main changes, including PR #72,
 into both working branches. Main `44969fcd73534153f5b656ec5ee9f5c8f11f42f4`
@@ -26,7 +27,7 @@ manual-only benchmark and two-shard normal CI. Runtime pins remain unchanged.
 
 **All evidence below for `e9391eb` and earlier is historical pre-integration
 qualification. It does not qualify the combined tree.** Fresh combined candidate
-runner verification is pending. Candidate Windows execution now uses main's two
+runner results are recorded in the combined-tree section below. Candidate Windows execution now uses main's two
 shards and strict inventory/outcome gate; no test skips or failures count as
 successful coverage. A post-suite native hash inventory records whether the
 pinned runtime files remain present and unchanged after tests.
@@ -308,7 +309,7 @@ CAPTURED**. Complete layout acceptance remains unestablished, alongside actual
 200% and distinct-DPI monitor movement. Missing coverage must be supplied before
 future adoption; it is not converted to a pass by this failed investigation.
 
-## Adoption gate summary
+## Historical adoption gate summary (e9391eb)
 
 | Gate | Status for the measured candidate | Evidence / limit |
 | --- | --- | --- |
@@ -337,3 +338,171 @@ and is explicitly mandatory in candidate inventory and package verification,
 with no environment skip. The combined shared collection is 3925 tests plus one
 separate candidate-native qualification case. Source/frozen/readback behavioral
 execution remains required. No production gate or native assertion was weakened.
+
+## Combined-tree verification: 98461b6
+
+Measured code `98461b655f672cc500593bfd875c6e5c1341e2f2`, tree
+`3f35a8b1a412e9966f6b6173a658b452f51ff21a`, run `39731378364`, attempt 1,
+includes the latest reviewed main and primary checksum repair `dd3407b`.
+The mandatory four-file candidate contract command passed 113 tests in 10.37s
+(job `119666961986`), including the explicitly separate native case.
+
+| Proof | Exact artifact ID | ZIP SHA-256 |
+| --- | --- | --- |
+| Portable inventory/JUnit | 12405445750 | `2a084b080dbaf1b7bbf0a42340faf97374e0dd43fd2c6cf55d2c04656dc07d0d` |
+| Production bundle exclusion | 12405308548 | `42f36a87638996ab5cba69b4961e663ba9d258dd286c671ffe74facdd5ec0fe9` |
+| Dependency audit | 12404874276 | `c2192805427b10a6f0dffe99ec35be2dad5e308c35b0477fb18a984273f4d2f1` |
+
+Exact readback metadata confirms 3925 shared tests collected, 670 portable tests
+selected and passed, zero failures/errors/skips, JUnit 40.256s. The audit reports
+46 packages and zero vulnerabilities. The normal production-mode EXE hash is
+`e9d63c461764eca7683c7e01b5dda59c49cb3edf74befa7a61b45d45a60bff53`;
+actual CArchive/PYZ inspection excludes candidate modules and its frozen self-test
+passes with managed worker pin 3.14.8 and 43 worker resources. Subsequent combined
+frozen readback, reader, observer and full Windows results follow below.
+
+Combined application artifact `12405139152` has ZIP SHA-256
+`f5b3f0348d65be1fe16718d2a51254dccf69aeb632c8ced4b36c1651288d9e21`;
+readback artifact `12404854805` has ZIP SHA-256
+`2cd05c07b5db20477d0ce8e15f411f0725695962be13104add7de897b9791b42`.
+All 26 declared application members match their hashes and exact file set, with
+27 case-insensitively unique files including the manifest. The executable hash
+is `d8afdfda0024c2db7d8e750e3b3fe3b55ca3830a07a6ff8aa53de666c107e522`.
+Build identity and the 1161-component SBOM bind that executable to the measured
+commit/run/attempt. Native hashing is not a native vulnerability assessment.
+
+Source, frozen and exact-readback behavioral reports each pass all six checks,
+with correct source/frozen mode, no credentials/live scrape/accessibility
+acceptance claim, and all 1025 candidate resource hashes matching the pinned
+inventory. The actual existing-workspace fixture remains connected and unchanged
+and its owned synthetic state is cleaned. The exact readback self-test passes.
+Main's unchanged packaged-bootstrap validator confirms artifact `12405139152`,
+matching executable/build identity, managed CPython 3.14.8 x64/GIL, bundled uv
+0.13.4 with PATH uv absent, all 43 worker resources and six pinned worker packages.
+Cold installation, ready-state reuse, cancellation and owned cleanup all pass;
+foreign uv policy is ignored. These passes do not establish reader acceptance.
+
+Combined reader custody binds the same head/run/attempt, application artifact
+`12405139152` and executable hash above:
+
+| Reader / timing | Exact artifact | ZIP SHA-256 |
+| --- | --- | --- |
+| Narrator before Tk | 12405895157 | `79b307df1f24f46bb9681bf4e8a08025288ea4b26efb9983dbbb90b43de0cd30` |
+| NVDA before Tk | 12405586064 | `7a8dedd4171b163f5831d82c9d75993f614ccbd554ca0bf2c25b2756b4b9e92a` |
+| NVDA late | 12405780584 | `5ee1c6691a521bf92900e3bfd562f34670fca7c15c24759a25dd21b26d90d7cb` |
+| Narrator late | 12404974928 | `9ece5d3213b731e0b2e0e2cd8982cfacaf6b5f86126a0756a19bb5b1b560764e` |
+
+Both readers before Tk still fail source and frozen Settings construction at
+`app.py:1115` → `app.py:961` → `ttk.py:572`. The password gate is not reached.
+NVDA late source/frozen and Narrator late source each retain five blocked outcomes
+because Tk reader initialization/provider/speech acceptance was not established.
+Narrator late frozen fails earlier: `checking_preexisting_reader`, RuntimeException,
+HResult `-2146233087`, exit 1 without timeout or reader report. At that phase the
+probe refuses a preexisting Narrator process. Its origin/ownership is not known
+from retained evidence; it must not be inferred from the preceding source run.
+That source run reports its direct host/reader exited. All eight outer owned-tree
+reports confirm containment before resume and completed owned cleanup with no
+unverified owned processes; seven reached direct host/reader cleanup and report
+both exited. Frozen Narrator's refused prerequisite is not an accessibility or
+password-safety pass. No speculative product fix or repeat was made.
+
+Combined observer artifact `12405711442` ZIP SHA-256 is
+`9cddebffdc34a9c45abcf2c91fb3b6617b3f14826ac1c602ec0f5fefa68d562e`.
+Custody matches the measured head/tree/run/attempt and unchanged observer SHA-256
+`ce7f1f8ce6db98c0a452cd576e541ba5e33d08bf9eff72d9fd0bec3871db20c9`.
+Both paired runs completed and are internally comparable; corresponding runtime
+samples also match payload bytes/hashes, dialog geometry, work area, DPI 96,
+awareness 0, monitor scale 100%, Tk scaling 1.3330053300533005 and effective scale
+0.9997539975399753. Managed Python uses MSC 1944/Tcl-Tk 9.0.4; candidate uses
+MSC 1951/Tcl-Tk 9.1.0. This compares whole runtime builds, not an isolated Tk cause.
+
+| Opening case | Managed baseline / combined median ms | Candidate baseline / combined median ms | Candidate p95 / max ms |
+| --- | --- | --- | --- |
+| Selection 1 | 87.5791 / 85.3621 | 98.0309 / 104.0711 | 109.4279 / 109.4279 |
+| Selection 100 | 97.43425 / 97.1402 | 119.06085 / 123.13575 | 131.961 / 131.961 |
+| Selection 1000 | 114.6944 / 114.6401 | 140.8942 / 150.3073 | 189.0544 / 189.0544 |
+| Overwrite 101 | 126.0791 / 125.7377 | 161.65825 / 187.9517 | 221.5471 / 221.5471 |
+
+Both current pairs fail the unchanged median-below-100-ms opening target.
+Candidate opening is about 22%, 27%, 31% and 49% slower than the corresponding
+managed measurements. All cancel samples remain below 100 ms; candidate maximum
+is 76.2643 ms. All ten operations' raw samples and payload identities are retained.
+
+The combined display run completed all 12 scenario/layout/contrast cases with
+exit 0 and 72 screenshots; every frame's exact path hash matches its report.
+The historical stream error did not recur and remains unexplained, not erased.
+The combined job still fails exact High Contrast restoration: original flags
+126/scheme empty, enabled flags 127/High Contrast Black, restored flags 126 but
+scheme still High Contrast Black. Display mode restored to 1024×768/32-bit/64 Hz,
+orientation 0 with native return code 0. The observed enlarged display is one
+1920×1080 monitor, work area 1920×1032, at 100%; no actual 200% or distinct-DPI
+movement was qualified. UIA expected input/table role exposure remains absent.
+
+Static image inspection covered combined `original-main-compact/frame-0.png`,
+`original-selection-normal/frame-5.png`, `original-selection-compact/frame-0.png`,
+`original-overwrite-compact/frame-5.png`,
+`high-contrast-selection-compact/frame-3.png` and
+`high-contrast-overwrite-normal/frame-0.png`. Footer actions remain visible;
+compact selection cells truncate long period/ID strings with horizontal scrolling,
+and lower details use the vertical scroll area. The search caret and selected
+folder text are visible after fixture-generated actions. High Contrast shows dark
+surfaces, light borders/text and yellow chrome, without a contrast-ratio or reader
+focus acceptance claim. Settings remains uncaptured; 100% screenshots cannot
+establish 200% layout acceptance.
+
+Combined Windows shard artifacts are:
+
+| Shard / job | Artifact | ZIP SHA-256 | JUnit outcome |
+| --- | --- | --- | --- |
+| 0/2 / 119666961917 | 12406325059 | `9a93ea89ced3c885be783e2b60b839d8f26c0a3c00511623f9e596e0e28a4c11` | 2008 passed, one setup error; 574.361s |
+| 1/2 / 119666961879 | 12405113701 | `dfdcb6754c9782e178f5d96be308087443e09dcf8b7f099c1b051a99c6158eec` | 1915 passed, one setup error; 575.413s |
+
+Both inventories bind the measured head/run/attempt, agree on 3925 collected
+shared tests, select disjoint partitions with union exactly 3925, and report exit
+status 1 with no skips. Thus the suite records **3923 passed and two setup errors**;
+complete successful coverage is FAILED. The strict aggregate job `119670224595`
+failed its `REGRESSION_RESULT=failure` prerequisite before invoking the inventory
+verifier. The independent inventory inspection above is not a passed coverage gate. Shard 0's
+`test_selection_context_uses_matching_job_snapshot` reports unreadable `init.tcl`;
+shard 1's `test_selection_empty_and_no_match_keep_exact_counts[False]` reports
+unreadable `auto.tcl`. Both originate in Tk initialization in the real dialog
+fixture. No tests, thresholds or product/runtime behavior were weakened.
+
+Both post-suite inventories show all 1859 pinned runtime files present with their
+expected hashes. In particular `init.tcl` is
+`636818d3e4071d28ffb610c86d895cb4f0cff57ddf7d8523dabf1feed821ca9f`
+and `auto.tcl` is
+`1953e3830f90106aa322cfc66644cc36ae39f8350bf214f07fa4d75afd80da02`
+on both runners after their suites. This establishes intact bytes at the later
+checkpoint, not the cause of the earlier read failures or continuous availability.
+It does not support a permanent deletion claim. Managed worker fresh bootstrap
+and verified reuse subsequently passed with CPython 3.14.8. No speculative
+runtime fix or extra rerun was used to turn these failures green.
+
+## Combined adoption decision and handoff
+
+| Gate for measured code 98461b6 | Result |
+| --- | --- |
+| Exact native inventory / retained controlled build comparison | Identity verified; byte reproducibility not established |
+| Mandatory candidate contracts, including separate native case | 113 passed |
+| Source/frozen/exact-readback behavioral safety | Six checks passed per mode; scope excludes reader acceptance and real export verification |
+| Full shared Windows suite / strict coverage | FAILED: 3923 passed, two Tk setup errors; no skips or inventory gaps |
+| Managed source worker bootstrap / reuse | PASSED, production CPython 3.14.8 |
+| Exact frozen managed bootstrap / reuse / cancellation / owned cleanup | PASSED with exact artifact/executable/build identity |
+| Portable suite / Python dependency audit | 670 passed; 46 packages, zero reported vulnerabilities |
+| Normal-mode candidate fixture exclusion | PASSED on actual current-source CArchive/PYZ |
+| Before-Tk reader compatibility | FAILED for both readers in source/frozen Settings |
+| Late reader/provider/password/speech qualification | BLOCKED; Narrator frozen additionally refused a preexisting reader |
+| Settled-opening performance | FAILED; candidate medians 104.07–187.95 ms, unchanged target below 100 ms |
+| Normal/compact observed display cases | 12 cases exited 0, 72 frame hashes verified; limited representative visual inspection |
+| Exact High Contrast restoration | FAILED; scheme mismatch persists |
+| Settings visual / actual 200% / distinct-DPI movement | NOT CAPTURED / BLOCKED / BLOCKED |
+| Signing / owner live acceptance | DEFERRED |
+| Production adoption | BLOCKED; no runtime upgrade, release or merge authorization implied |
+
+Task 4 source/spec review on `3beda5b..98461b6` found no Critical or Important
+implementation findings. Its README platform-wording Minor is corrected. The
+controller still owns the final evidence/documentation review, fresh whole-change
+review and separate draft PR. This documents a failed qualification candidate,
+not a completed production accessibility upgrade. The diagnostic branch and all
+recovery/SDD material remain preserved.
