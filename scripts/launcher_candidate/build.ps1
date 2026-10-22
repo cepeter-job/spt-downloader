@@ -54,6 +54,17 @@ $nativeEvidence = [ordered]@{
     msbuild_file_version = (Get-Item -LiteralPath $msbuild).VersionInfo.FileVersion
     sources = $manifest.sources; configuration = 'Release/x64/GIL/BuildForRelease'; patches = @()
 }
+# Upstream nmake generates manifest.uuid with git when it is absent. ZIP inputs
+# have no .git; reproduce that generated input from the verified source revision.
+$generatedInputs = @{}
+foreach ($kind in @('tcl', 'tk')) {
+    $source = $manifest.sources | Where-Object name -EQ $kind
+    $template = [IO.File]::ReadAllText("$($roots[$kind])/win/gitmanifest.in")
+    $uuidFile = "$($roots[$kind])/manifest.uuid"
+    [IO.File]::WriteAllText($uuidFile, $template + $source.revision + "`n", [Text.UTF8Encoding]::new($false))
+    $generatedInputs["$kind/manifest.uuid"] = (Get-FileHash -LiteralPath $uuidFile).Hash.ToLowerInvariant()
+}
+$nativeEvidence.generated_inputs = $generatedInputs
 $nativeEvidence | ConvertTo-Json -Depth 12 | Set-Content "$evidence/build.json" -Encoding utf8
 Get-Content "$evidence/build.json"
 function Invoke-Native([string]$Name, [string]$Executable, [string[]]$Arguments) {
