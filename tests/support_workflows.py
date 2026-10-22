@@ -257,8 +257,8 @@ def validate_production(document):
         assert inputs[name]['type'] == 'choice' and inputs[name]['default'] == default
         assert inputs[name]['options'] == options
     assert _expression(document['concurrency']['group']) == _expression(
-        "windows-build-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}")
-    assert _expression(document['concurrency']['cancel-in-progress']) == "github.event_name!='schedule'"
+        "windows-build-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}")
+    assert _expression(document['concurrency']['cancel-in-progress']) == "github.event_name=='pull_request'"
     _permissions(document, {
         'attest': {'contents': 'read', 'id-token': 'write', 'attestations': 'write'},
         'cleanup': {'contents': 'write', 'pull-requests': 'read'},
@@ -321,26 +321,48 @@ def validate_production(document):
     assert _expression(package['env']['WINDOWS_MODE']) == 'needs.route.outputs.windows_mode'
     inventory_i, inventory = _one(steps, lambda s: s.get('id') == 'inventory')
     _inventory_command(inventory)
+    identity_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'build-info'))
     source_i, _ = _one(steps, lambda s: _runs(s, 'spt_gui.py', '--self-test'))
     build_i, _ = _one(steps, lambda s: _runs(s, 'build_desktop.py'))
+    sbom_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_sbom', 'create'))
     checksum_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'write-checksums'))
-    upload_i, upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact'))
+    upload_i, upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact') and s.get('id') == 'upload')
     assert upload.get('id') == 'upload'
     assert upload['with']['name'] == 'SPTDownloader-Windows-x64-${{ github.sha }}-python${{ matrix.python }}-attempt${{ github.run_attempt }}'
     assert upload['with']['if-no-files-found'] == 'error'
     assert set(upload['with']['path'].split()) == {
         'dist/SPTDownloader.exe', 'dist/LICENSE.txt', 'dist/README.txt',
-        'dist/build-selftest.json', 'dist/SHA256SUMS.txt'}
+        'dist/build-selftest.json', 'dist/build-info.json', 'dist/distribution-sbom.json',
+        'dist/SHA256SUMS.txt'}
     readback_i, readback = _one(steps, lambda s: _action(s, 'actions/download-artifact')
                               and 'artifact-ids' in s.get('with', {}))
     assert _expression(readback['with']['artifact-ids']) == 'steps.upload.outputs.artifact-id'
     assert 'name' not in readback['with']
     verify_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'verify'))
-    for index in (source_i, build_i, checksum_i, verify_i):
+    smoke_i, smoke = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_runtime'))
+    assert _expression(smoke['env']['ARTIFACT_ID']) == 'steps.upload.outputs.artifact-id'
+    assert _single_command(smoke) == [
+        '-m', 'scripts.ci_runtime', '--profile', '$env:PYTHON_PROFILE',
+        '--executable', '$env:RUNNER_TEMP/artifact-readback/SPTDownloader.exe',
+        '--artifact-id', '$env:ARTIFACT_ID', '--report', '$env:RUNNER_TEMP/packaged-bootstrap.json']
+    smoke_upload_i, smoke_upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact')
+                                       and s.get('id') != 'upload')
+    assert smoke_upload['with']['path'] == '${{ runner.temp }}/packaged-bootstrap.json'
+    assert smoke_upload['with']['name'] == 'packaged-bootstrap-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
+    assert smoke_upload['with']['if-no-files-found'] == 'error'
+    for index in (identity_i, source_i, build_i, sbom_i, checksum_i, verify_i):
         _single_command(steps[index])
-    assert max(i for i, _ in downloads) < inventory_i < source_i < build_i < checksum_i < upload_i < readback_i < verify_i
+    assert max(i for i, _ in downloads) < inventory_i < identity_i < source_i < build_i < sbom_i < checksum_i < upload_i < readback_i < verify_i < smoke_i < smoke_upload_i
     _, attest_download = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/download-artifact'))
     assert attest_download['with']['name'] == upload['with']['name']
+    _, attest = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/attest') and 'subject-path' in s.get('with', {}))
+    assert set(attest['with']['subject-path'].split()) == {
+        'verified-artifact/SPTDownloader.exe', 'verified-artifact/SHA256SUMS.txt',
+        'verified-artifact/build-info.json', 'verified-artifact/distribution-sbom.json'}
+    _, archive_attest = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/attest') and 'subject-digest' in s.get('with', {}))
+    assert archive_attest['with']['subject-name'] == 'SPTDownloader-Windows-x64.zip'
+    assert archive_attest['with']['subject-digest'] == 'sha256:${{ needs.package.outputs.artifact_digest }}'
+    assert package['outputs']['artifact_digest'] == '${{ steps.upload.outputs.artifact-digest }}'
 
     windows = jobs['windows']
     assert windows['runs-on'] == 'windows-2022' and _needs(windows) == {'route'}
@@ -401,11 +423,7 @@ def validate_measurements(document, job_names):
 
 def validate_benchmark(document):
     _permissions(document)
-    assert set(document['on']) == {'workflow_dispatch', 'pull_request'}
-    assert document['on']['pull_request']['branches'] == ['main']
-    paths = document['on']['pull_request']['paths']
-    assert isinstance(paths, list) and 'spt_desktop/runtime.py' in paths
-    assert '*' not in paths and '**' not in paths
+    assert set(document['on']) == {'workflow_dispatch'}
     jobs = document['jobs']
     assert _needs(jobs['benchmark']) == {'profile'}
     assert jobs['benchmark']['runs-on'] == 'windows-2022'

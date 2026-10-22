@@ -584,7 +584,8 @@ def _clean_displaced(entries, guard, directories):
     return retained
 
 
-def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel, guard, directories):
+def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel, guard, directories, *, source):
+    from .publication_recovery import PublicationJournal
     target = Path(snapshot['target'])
     names = snapshot['selected_files']
     states = {**snapshot['workbooks'], **snapshot['attachments']}
@@ -601,6 +602,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
                 raise ValueError('Output changed before its recovery copy was made')
     _revalidate(run, downloads, snapshot)
     new_states = {name: _fingerprint(coretax.output_path(staging, name)) for name in names}
+    journal = PublicationJournal(source, downloads, snapshot, recovery, directories)
     entries = []
     pdf_locks = ExitStack()
     pdf_names = {item['relative_path'] for item in verified_declarations(run)}
@@ -627,6 +629,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
             # Catat entri sebelum pemindahan pertama agar rollback mengetahui
             # file yang mungkin sudah berpindah ketika interupsi terjadi.
             entries.append(entry)
+            journal.record(name, entry, states.get(name), directories)
             if entry.original is not None:
                 entry.original.capture(destination)
                 if entry.original.preserve(guard, directories) != states[name]:
@@ -644,6 +647,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
         _check_files(target, states)
         coretax.verify_outputs(run, target, allow_extra=True)
         _cancel(check_cancel)
+        journal.finish('committed')
     except BaseException as failure:
         diagnostics.record('publish.rollback', phase='rollback', level='WARNING', error=failure)
         # Deny-delete PDF readers must close before the native rollback moves.
@@ -651,11 +655,21 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
         errors = _rollback(entries, guard, directories)
         retained = _clean_displaced(entries, guard, directories)
         if errors or retained:
-            raise _RecoveryRequired(recovery, retained) from (errors[0] if errors else failure)
+            recovery_error = _RecoveryRequired(recovery, retained)
+            try:
+                journal.retain(retained)
+            except OSError:
+                recovery_error.add_note('The existing private recovery notice could not be refreshed')
+            raise recovery_error from (errors[0] if errors else failure)
+        try:
+            journal.finish('restored')
+        except OSError:
+            failure.add_note('Prior output was restored; the private recovery journal remains pending')
         raise
     else:
         retained = _clean_displaced(entries, guard, directories)
         if retained:
+            journal.retain(retained)
             raise _RecoveryRequired(recovery, retained)
     finally:
         pdf_locks.close()
@@ -663,7 +677,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
             for item in (entry.original, entry.removed):
                 if item is not None:
                     item.close()
-    return target
+    return target, journal.notice
 
 
 @diagnostics.traced('publish')
@@ -696,6 +710,7 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
         staging = Path(tempfile.mkdtemp(prefix='.spt-', dir=parent))
         staging_identity = _identity(staging.lstat())
         recovery = None
+        recovery_notice = None
         retain_recovery = False
         retain_staging = False
         try:
@@ -734,20 +749,8 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                 retain_recovery = True
                 _include_directories(directories, recovery)
                 guard.include(directories)
-                try:
-                    result = _replace_selected(run, downloads, snapshot, staging, recovery,
-                                               check_cancel, guard, directories)
-                except _RecoveryRequired as error:
-                    # Public worker errors are deliberately generic. Keep the locations
-                    # discoverable in this private job, without adding JSON to Downloads.
-                    try:
-                        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
-                                prefix='publication-recovery-', suffix='.json', dir=source, delete=False) as notice:
-                            json.dump({'recovery_files': [str(error.recovery), *map(str, error.retained)]}, notice)
-                            notice.write('\n')
-                    except OSError:
-                        error.add_note('The private job recovery location note could not be written')
-                    raise
+                result, recovery_notice = _replace_selected(run, downloads, snapshot, staging, recovery,
+                    check_cancel, guard, directories, source=source)
                 retain_recovery = False
                 return result
             if existing_outputs(run, downloads) is not None:
@@ -800,4 +803,9 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
             if not retain_staging:
                 _remove_owned(staging, staging_identity, guard, directories)
             if recovery is not None and not retain_recovery:
+                if recovery_notice is not None:
+                    _safe_path(recovery_notice).unlink()
+                # The journal is already committed and all public versions
+                # verified. Remove its notice before retiring private copies so
+                # death during cleanup cannot leave a dangling recovery pointer.
                 _remove_owned(recovery, recovery_identity, guard, directories)

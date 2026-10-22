@@ -13,6 +13,7 @@ Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontra
 | --- | --- |
 | `coretax.py` | Entry point CLI, autentikasi manual CLI, orkestrasi, verifikasi set workbook, staging, dan rollback publikasi lokal. |
 | `coretax_browser.py` | Inventaris daftar, pengamatan respons UI, pemeriksaan origin/identitas, navigasi View, paginasi, serta checkpoint detail. |
+| `coretax_resume.py` | Manifest pilihan desktop terikat hash inventaris/scope/urutan/mode; pemulihan CLI tanpa memperluas pilihan. |
 | `coretax_inventory.py`, `coretax_json_capture.py` | Bukti filter periode dan katalog, serta pengamatan/penyimpanan respons JSON yang terikat pada record dan percobaan capture. |
 | `coretax_exporter.py` | Validasi scope dan nilai, deduplikasi ID, susunan workbook, serta tautan relatif. Tidak membuka browser. |
 | `coretax_json.py`, `coretax_masa_json.py` dan modul observer/projection terkait | Binding respons native ke identitas/scope dan proyeksi form; kelayakan diperiksa terpisah dari pilihan mode. |
@@ -25,8 +26,10 @@ Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontra
 | `spt_desktop/worker.py` | Proses terisolasi untuk capture/export atau pemeriksaan kredensial. |
 | `spt_desktop/auth.py`, `credentials.py` | Login pada form yang diperiksa, challenge manual, serta Windows Credential Manager berbasis origin. |
 | `spt_desktop/windows.py` | Instance lock dan Windows Job Object untuk kepemilikan pohon proses. |
+| `spt_desktop/profile_lifecycle.py` | Profil login sementara dengan penanda identitas dan lease proses; pembersihan konservatif setelah proses berakhir. |
 | `spt_desktop/paths.py`, `output.py`, `output_windows.py` | Known Folders, pemeriksaan folder/handle native, verifikasi salinan, serta publikasi Excel dan PDF ke Downloads. |
 | `spt_desktop/diagnostics.py`, `diagnostic_store.py` | Event diagnostik dengan field yang diizinkan, antrean terbatas, serta berkas log berotasi. |
+| `spt_desktop/build_info.py`, `publication_recovery.py` | Identitas build publik yang divalidasi dan journal pemulihan publikasi privat sebelum pemindahan output. |
 | `scripts/ci_route.py`, `ci_tests.py`, `ci_artifact.py` | Routing CI, bukti cakupan tes per runner/shard, dan pemeriksaan isi/hash artifact distribusi. |
 | `build_desktop.py` | Paket GUI tipis, bundel `uv`, allowlist resource, dan pemeriksaan executable hasil build. |
 
@@ -139,7 +142,9 @@ Desktop menyalin set Excel serta PDF COMPLETE yang dideklarasikan ke staging di 
 
 Hasil gabungan lama tetap dibaca melalui proof/header/index/Audit fisik serta tautan resume yang cocok; scope yang salah ditolak. Untuk layout lama yang terverifikasi, desktop memilih folder baru tanpa mengganti workbook/PDF lama; CLI meminta folder baru bila set nama berbeda. Pada target dengan layout terpisah yang lolos pemeriksaan, resume mengindeks workbook lama yang sah bersama hasil baru; COMPLETE job tetap hanya untuk pilihan saat ini, bukan bukti file lama diunduh ulang. Penggantian resume saja tidak meminta consent. Penggantian file SPT/PDF terpilih tetap meminta consent; worker tidak mencantumkan resume pada daftar consent tersebut. Snapshot folder/file, fingerprint, revalidation, native directory guards, Stop dan rollback tetap berlaku pada jalur otomatis. Penolakan consent membatalkan seluruh publikasi dan tidak memperbarui resume.
 
-Rollback menangani kegagalan penggantian biasa dan exception. Penggantian beberapa berkas bukan transaksi filesystem atomik saat process kill atau listrik padam. Jangan menghapus data pemulihan untuk membuat direktori terlihat bersih. Pulihkan ke folder baru dan periksa hasilnya.
+Rollback menangani kegagalan penggantian biasa dan exception. Sebelum pemindahan pertama, backup privat di-flush dan journal serta notice ditulis atomik. Setiap entri dengan fingerprint lama/baru dan nama pemulihan satu volume disimpan sebelum file dipindahkan; index dipublikasikan terakhir. `recover_publication` dapat memulihkan journal `pending` setelah proses mati, hanya bila scope, direktori, file lama, backup dan file terpasang tetap cocok. Perubahan bersamaan menyebabkan penolakan dan seluruh bukti dipertahankan. Journal `committed` memverifikasi hasil yang sudah selesai, tanpa menggantinya dengan versi lama. Journal `restored` dapat diverifikasi ulang. Lihat [prosedur pemulihan](pemulihan-publikasi.md).
+
+Penggantian beberapa berkas tetap bukan transaksi filesystem atomik saat listrik padam atau kegagalan penyimpanan. Journal membantu pemulihan process death yang diuji; ia tidak mengautentikasi private state terhadap administrator yang menguasai akun. Jangan menghapus data pemulihan untuk membuat direktori terlihat bersih. Bila pemeriksaan menolak, pertahankan semua versi, rebuild capture ke folder baru dan lakukan pemeriksaan privat.
 
 ## Saat mengubah perilaku
 

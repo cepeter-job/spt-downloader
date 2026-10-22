@@ -12,6 +12,7 @@ import time
 
 from .windows import ProcessJob
 from . import diagnostics
+from .build_info import read_build_info
 
 UV_VERSION = '0.13.4'
 PYTHON_PROFILES = {'production': '3.14.8'}
@@ -20,6 +21,7 @@ RUNTIME_LOCK = 'locks/runtime.txt'
 # secara rekursif karena profil, checkpoint, dan hasil pajak bersifat privat.
 WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py', 'coretax_inventory.py',
+    'coretax_resume.py',
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
     'coretax_pph21_json_bindings.py', 'coretax_pph21_observer.py', 'coretax_pph21_projection.py',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
@@ -34,6 +36,8 @@ WORKER_FILES = (
     'spt_desktop/events.py', 'spt_desktop/auth.py', 'spt_desktop/output.py',
     'spt_desktop/worker.py', 'spt_desktop/interaction.py', 'spt_desktop/output_windows.py',
     'spt_desktop/diagnostics.py', 'spt_desktop/diagnostic_store.py',
+    'spt_desktop/build_info.py', 'spt_desktop/publication_recovery.py',
+    'spt_desktop/profile_lifecycle.py',
 )
 
 
@@ -52,6 +56,21 @@ def worker_source(root: Path) -> Path:
     if not all((source / name).is_file() for name in WORKER_FILES):
         raise RuntimeError('Sumber worker belum lengkap. Jalankan persiapan ulang.')
     return source
+
+
+def bootstrap_environment(root: Path):
+    """Keep network trust/proxy settings while owning uv policy and storage."""
+    root = Path(root).resolve()
+    network_tls = {'UV_NATIVE_TLS', 'UV_SYSTEM_CERTS'}
+    environment = {name: value for name, value in os.environ.items()
+                   if not name.upper().startswith('UV_') or name in network_tls}
+    environment.update({'UV_NO_CONFIG': '1',
+                        'UV_PYTHON_INSTALL_DIR': str(root / 'python'),
+                        'UV_CACHE_DIR': str(root / 'cache'), 'PYTHONUTF8': '1',
+                        'PYTHONIOENCODING': 'utf-8'})
+    for name in ('PYTHONHOME', 'PYTHONPATH', 'VIRTUAL_ENV'):
+        environment.pop(name, None)
+    return environment
 
 
 def _cancel(cancelled):
@@ -164,7 +183,8 @@ def locked_requirements(path):
 
 
 def _uv(root, source, env, cancelled):
-    installed = shutil.which('uv')
+    # Frozen builds own their verified tool; even --version must not execute PATH uv.
+    installed = None if getattr(sys, 'frozen', False) else shutil.which('uv')
     candidates = [Path(installed)] if installed else []
     bundled = source / 'tools' / 'uv.exe'
     if bundled.is_file():
@@ -196,6 +216,19 @@ def _resources(source, root):
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.is_file() or destination.read_bytes() != data:
             destination.write_bytes(data)
+    identity = source / 'build-info.json'
+    destination = app / 'build-info.json'
+    if identity.is_file():
+        metadata = read_build_info(source)
+        if metadata is None:
+            raise RuntimeError('Metadata build aplikasi tidak valid.')
+        data = json.dumps(metadata, sort_keys=True).encode('ascii')
+        digest.update(b'build-info.json\0' + data)
+        if not destination.is_file() or destination.read_bytes() != data:
+            destination.write_bytes(data)
+    else:
+        # A source checkout must not inherit the identity of an older frozen build.
+        destination.unlink(missing_ok=True)
     expected = locked_requirements(app / RUNTIME_LOCK)
     direct = {}
     for line in (app / 'requirements.txt').read_text(encoding='utf-8').splitlines():
@@ -223,15 +256,7 @@ def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='producti
     on_status('Memeriksa resource dan Python worker…')
     fingerprint, expected = _resources(source, root)
     fingerprint = hashlib.sha256(f'{fingerprint}\0{version}\0{UV_VERSION}'.encode('ascii')).hexdigest()
-    environment = os.environ.copy()
-    environment.update({'UV_PYTHON_INSTALL_DIR': str(root / 'python'),
-                        'UV_CACHE_DIR': str(root / 'cache'), 'PYTHONUTF8': '1',
-                        'PYTHONIOENCODING': 'utf-8'})
-    environment.pop('UV_INSECURE_HOST', None)
-    # Worker memilih interpreter sendiri; preferensi shell bertabrakan dengan --managed-python.
-    environment.pop('UV_PYTHON_PREFERENCE', None)
-    environment.pop('PYTHONHOME', None)
-    environment.pop('PYTHONPATH', None)
+    environment = bootstrap_environment(root)
     python = root / 'runtime' / 'Scripts' / 'python.exe'
     ready = root / 'runtime-ready.txt'
     info = _probe_python(python, expected, environment, cancelled, packages=True)

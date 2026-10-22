@@ -258,17 +258,24 @@ def self_test(report=None, candidate_report=False):
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description='Simple authorized Coretax to Excel desktop app')
-    parser.add_argument('--self-test',action='store_true');parser.add_argument('--report',type=Path)
+    modes=parser.add_mutually_exclusive_group()
+    modes.add_argument('--self-test',action='store_true')
+    modes.add_argument('--runtime-self-test',action='store_true')
+    modes.add_argument('--candidate-scenario', choices=('main', 'settings', 'selection', 'overwrite', 'progress', 'result', 'regression'), help=argparse.SUPPRESS)
+    parser.add_argument('--report',type=Path)
     parser.add_argument('--candidate-report',action='store_true',help=argparse.SUPPRESS)
-    parser.add_argument('--candidate-scenario', choices=('main', 'settings', 'selection', 'overwrite', 'progress', 'result', 'regression'), help=argparse.SUPPRESS)
     parser.add_argument('--candidate-directory', type=Path, help=argparse.SUPPRESS)
     args=parser.parse_args(argv)
+    if args.candidate_report and not args.self_test:parser.error('--candidate-report requires --self-test')
     if args.candidate_scenario or args.candidate_directory:
-        if not args.candidate_scenario or not args.candidate_directory or args.self_test or args.candidate_report:
+        if not args.candidate_scenario or not args.candidate_directory:
             parser.error('candidate scenario requires only a new candidate directory')
         import importlib
         return importlib.import_module('scripts.launcher_candidate.reader_host').run(args.candidate_scenario, args.candidate_directory)
-    if args.candidate_report and not args.self_test:parser.error("--candidate-report requires --self-test")
+    if args.runtime_self_test:
+        if args.report is None:parser.error('--runtime-self-test requires --report')
+        from scripts.ci_runtime import packaged_self_test
+        return packaged_self_test(args.report)
     if args.self_test:return self_test(args.report, args.candidate_report)
     with diagnostics.session(diagnostics.default_root(), 'gui'):
         return _run_gui()

@@ -27,6 +27,8 @@ def evidence():
                    shard={'index': index, 'count': 2},
                    elapsed_seconds=75.0 + index)
               for index in (0, 1)]
+    for report in (baseline, *shards):
+        report['outcomes'] = completed_outcomes(report)
     return baseline, shards
 
 
@@ -96,6 +98,8 @@ def production_evidence():
         for index, report in enumerate(shards)]
     portable = dict(baseline, workload='portable', platform='linux',
                     all=list(nodes), selected=portable_nodes)
+    for report in (portable, baseline, *shards):
+        report['outcomes'] = completed_outcomes(report)
     return portable, baseline, shards
 
 
@@ -483,3 +487,55 @@ def test_runner_bootstrap_python_and_managed_python_share_setup_epoch(tmp_path):
     data = json.loads(manifest.read_text(encoding='utf-8'))
     assert 0 <= data['setup_seconds'] < 30
     assert data['exitstatus'] == 0
+
+
+def completed_outcomes(report):
+    return {node: {phase: ['passed'] for phase in ('setup', 'call', 'teardown')}
+            for node in report['selected']}
+
+
+@pytest.mark.parametrize('damage', ['absent', 'skipped', 'xfail', 'missing-call',
+                                  'duplicate-call', 'extra-node'])
+def test_completed_inventory_rejects_unexecuted_or_unexpected_skipped_nodes(damage):
+    portable, baseline, _ = production_evidence()
+    for report in (portable, baseline):
+        report['outcomes'] = completed_outcomes(report)
+    node = baseline['selected'][0]
+    if damage == 'absent':
+        del baseline['outcomes']
+    elif damage == 'skipped':
+        baseline['outcomes'][node] = {'setup': ['skipped'], 'teardown': ['passed']}
+    elif damage == 'xfail':
+        baseline['outcomes'][node]['call'] = ['xfailed']
+    elif damage == 'missing-call':
+        del baseline['outcomes'][node]['call']
+    elif damage == 'duplicate-call':
+        baseline['outcomes'][node]['call'] = ['passed', 'passed']
+    else:
+        baseline['outcomes']['tests/test_unselected.py::test_unknown'] = {
+            phase: ['passed'] for phase in ('setup', 'call', 'teardown')}
+    with pytest.raises(ValueError, match='outcome|phase|completed|skip'):
+        ci_tests.check_inventories(portable, baseline, VERSION, COMMIT,
+                                  run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
+
+
+def test_inventory_records_real_terminal_phases_without_failure_messages(tmp_path):
+    (tmp_path / 'test_sample.py').write_text(
+        'import pytest\n'
+        'def test_pass():\n    assert True\n'
+        'def test_skip():\n    pytest.skip("DO_NOT_RECORD_PRIVATE_REASON")\n', encoding='utf-8')
+    (tmp_path / 'conftest.py').write_text(
+        (ROOT / 'scripts/ci_tests.py').read_text(encoding='utf-8'), encoding='utf-8')
+    manifest = tmp_path / 'inventory.json'
+    result = subprocess.run([
+        sys.executable, '-m', 'pytest', 'test_sample.py', '-q',
+        '--ci-workload', 'windows', '--ci-manifest', str(manifest),
+        '--basetemp', str(tmp_path / 'scratch'),
+    ], cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    assert data.get('outcomes') == {
+        'test_sample.py::test_pass': {'setup': ['passed'], 'call': ['passed'], 'teardown': ['passed']},
+        'test_sample.py::test_skip': {'setup': ['passed'], 'call': ['skipped'], 'teardown': ['passed']},
+    }
+    assert 'DO_NOT_RECORD' not in json.dumps(data)
