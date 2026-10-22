@@ -3,7 +3,7 @@ import json
 import re
 
 from coretax_json import ORIGIN, JsonSafetyError
-from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid
+from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
 from coretax_masa_json import check_masa_request_identities
 
 from coretax_masa_bindings import MAIN_SOURCE, TAX_SOURCES, BUILD_DIGESTS, FORMS
@@ -242,7 +242,7 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
     Successful observation is not native eligibility: the adapter must still
     verify packet custody, source columns, reference data and every projection.
     """
-    from coretax_browser import GROUP_JS, _check_cancel, list_taxpayer_id, verify_detail_url, wait_idle
+    from coretax_browser import GROUP_JS, _check_cancel, list_taxpayer_id, verify_detail_url
     _check_cancel(check_cancel)
     _observations(capture, record, scope)
     try:
@@ -273,23 +273,9 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
                 return None
-            panel_id = tab.get_attribute('aria-controls')
-            if not panel_id or tab.get_attribute('href') not in (None, '', '#', '#' + panel_id):
+            panel = _native_panel(page, view, tab, name, record, check_cancel)
+            if panel is None:
                 return None
-            target = '[id=' + json.dumps(panel_id) + ']'
-            # aria-controls must identify one element, including when a nested
-            # view contains a duplicate ID. Nested tabs themselves are allowed.
-            if view.locator(target).count() != 1:
-                return None
-            panel = view.locator(
-                ':scope > .p-tabview-panels > .p-tabview-panel' + target + ', '
-                ':scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel' + target)
-            if panel.count() != 1:
-                return None
-            tab.click()
-            wait_idle(page)
-            verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
-            panel.wait_for(state='visible', timeout=30000)
             selector, roles = FORMS[tax][name]
             form = panel.locator(selector) if selector else panel
             if form.count() != 1 or not form.is_visible():

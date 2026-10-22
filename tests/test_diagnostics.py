@@ -23,6 +23,39 @@ def records(root):
             for line in file.read_text(encoding='utf-8').splitlines()]
 
 
+def test_search_schema_keeps_bounded_metadata_and_discards_request_material(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_SEARCH_VALUE'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('search.result', search_result='timeout', search_observation='limited',
+                 search_table='empty', search_requests=128, search_responses=127,
+                 search_failed=1, search_http_2xx=125, search_http_4xx=2,
+                 search_http_403=1, search_http_429=1, duration_ms=1250,
+                 url=secret, headers=secret, body=secret, npwp=secret, message=secret)
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'search.result']
+    assert event['search_result'] == 'timeout' and event['search_observation'] == 'limited'
+    assert event['search_table'] == 'empty' and event['search_requests'] == 128
+    assert event['search_responses'] == 127 and event['search_failed'] == 1
+    assert event['search_http_403'] == event['search_http_429'] == 1
+    assert event['duration_ms'] == 1250
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_search_schema_rejects_private_or_malformed_categories_without_coercion(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Diagnostic categories must never stringify arbitrary values')
+    with d.session(tmp_path, 'worker') as log:
+        d.record('search.result', search_result=Untrusted(), search_observation='PRIVATE',
+                 search_table=True, search_requests=True, search_responses=-1,
+                 search_http_403=10_000_001, search_http_429=Untrusted())
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'search.result']
+    assert not any(k.startswith('search_') for k in event)
+
+
 @pytest.mark.parametrize('failure', [
     'fetch_exception', 'http_rejected', 'redirect_rejected', 'response_url_changed',
     'callback_changed', 'fulfill_exception',

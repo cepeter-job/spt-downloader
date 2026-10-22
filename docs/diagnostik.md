@@ -70,6 +70,53 @@ Aplikasi desktop memakai `LOGIN_ORIGIN` Satu yang tetap: tidak ada pilihan origi
 
 Aturan jaringan tidak dilonggarkan: origin asing dan request non-GET/HEAD ke origin selain origin kredensial tetap ditolak. Counter bukan bukti bahwa request yang diblokir menyebabkan reload loop, dan timeout bukan diagnosis password salah. Gunakan urutan state dan kategori blocking untuk menentukan observasi lanjutan; jangan mengirim HAR mentah atau kredensial.
 
+## Diagnostik pencarian wajib pajak
+
+`search.result` merangkum pengamatan pasif sejak sebelum Enter pada pencarian
+sampai baris diverifikasi, timeout, error, atau Stop. Pengamatan hanya mencakup
+XHR/fetch baru dari frame utama, ke origin Coretax yang disetujui, ketika dokumen
+pencarian terverifikasi masih aktif. Identitas request mengikat respons dan
+kegagalan ke jendela tersebut; respons request yang dimulai lebih awal, iframe,
+origin lain, gambar dan navigasi dokumen tidak masuk hitungan.
+
+- `search_result`: `matched`, `timeout`, `error`, atau `cancelled`. `matched`
+  memerlukan satu baris dengan NPWP literal yang cocok; kecocokan sebagian dan
+  duplikat tetap ditolak sebelum Pilih.
+- `search_observation`: `complete` bila listener dapat mengamati scope tersebut;
+  `limited` bila batas 128 identitas request tercapai dan trafik tambahan
+  teramati; `unavailable` bila pengamatan gagal. Pada `limited`, hitungan adalah
+  batas bawah. Pada `unavailable`, hitungan yang tidak dapat dijamin dihilangkan.
+- `search_requests`, `search_responses`, `search_failed`: jumlah request,
+  respons ber-header, dan kegagalan transport yang terikat. Request dapat masih
+  menunggu respons saat ringkasan dibuat; respons ber-header juga dapat diikuti
+  kegagalan transport. Ketiga hitungan bukan persamaan jumlah yang selalu sama.
+- `search_http_1xx` sampai `search_http_5xx`, serta `search_http_401`,
+  `search_http_403` dan `search_http_429`: kategori status yang teramati.
+- `search_table`: `missing`, `hidden`, `empty`, `rows_present`, atau `unavailable`
+  dari struktur tabel pada `.main-content`. Keberadaan baris saja belum
+  memverifikasi kecocokan wajib pajak.
+- `duration_ms`: durasi jendela pengamatan sebelum snapshot struktur.
+
+Trafik pada jendela ini dapat mencakup aktivitas latar belakang. Status 403/429
+memberi petunjuk untuk memeriksa pesan portal; pengamatan ini belum mengikat
+respons ke endpoint pencarian tertentu atau membuktikan deteksi bot. Baris yang
+sudah cocok tetap dapat diverifikasi meski ada respons latar belakang 403.
+
+Pesan timeout menyebut petunjuk teramati secara terbatas. Worker meneruskan hanya
+pesan `TaxpayerSearchTimeout` yang dibangun dari kategori dan template tetap ke
+desktop; pesan exception browser umum tetap diganti pesan generik. Jika beberapa
+status teramati, petunjuk mengutamakan 429, lalu 403 dan 401; seluruh hitungan
+tetap disimpan dalam event. Header/identitas browser
+tetap berasal dari browser yang digunakan. Listener dilepas pada semua jalur,
+dan Stop melewati snapshot DOM. Budget penantian baris tetap 45 detik dengan
+pemeriksaan Stop di antaranya; tidak ada klik atau request ulang tambahan.
+Snapshot memakai pembacaan struktur singkat seperti probe panel, sehingga batas
+locator bukan jaminan latensi JavaScript/browser yang macet.
+
+Log hanya menyimpan enum, hitungan dan durasi. URL/path/query, NPWP, header,
+cookie, token, request/response body, nilai form, teks tabel, pesan exception
+dan pesan portal tidak disalin. Hasil pengujian sintetis bukan penerimaan live.
+
 ## Snapshot setelah timeout panel
 
 Penantian panel membaca ulang `aria-controls` selama budget yang sama. Bila DOM

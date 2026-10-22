@@ -1,5 +1,9 @@
 # Unifikasi native JSON: reviewed public-source ledger
 
+The four-form/five-grid implementation was merged in [PR #40](https://github.com/cepeter-job/spt-downloader/pull/40), merge `af3f1bf60198cc007055825b82ed8b11b02f2905`. Final head `f338f4d3063aaa425a79ff5a780cec4c3f180515` passed run `39198343837`: 3,103 Windows cases and 442 portable cases, reported separately because they overlap. Package artifact `12163381601` was read back with its manifest, frozen metadata and 37 embedded resources checked against the identical tested tree. These are historical runner/package results, not current-build live acceptance.
+
+Native observation, reference custody, projection and connected synthetic Edge-to-Excel already exist. Dated reference branches and later acceptance remain bounded by the [approved completion design](superpowers/specs/2026-10-23-json-mode-completion-design.md); unsupported cases continue to fall back explicitly.
+
 This is static evidence, not live acceptance. Offsets are character offsets in
 UTF-8-decoded public JavaScript. No taxpayer response is included.
 

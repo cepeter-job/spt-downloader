@@ -93,28 +93,6 @@ def _bind_login_fields(page,fields):
     return (origin,*controls),current
 
 
-def _wait_login_fields(page,expected_origin,check_cancel,timeout=5):
-    # Only an empty async shell is pending. An inspected unsafe form/challenge
-    # stays manual; polling never broadens recognition or authorizes a retry.
-    deadline=time.monotonic()+timeout
-    while True:
-        check_cancel()
-        if expected_origin not in ALLOWED_ORIGINS or _origin(page.url)!=expected_origin:
-            return None
-        if _has_challenge(page):return None
-        fields=_login_fields(page)
-        if fields is not None:
-            return fields if fields[0]==expected_origin else None
-        if page.locator('form').count():
-            # A form may render between the two read-only observations.
-            check_cancel()
-            fields=_login_fields(page)
-            return fields if fields is not None and fields[0]==expected_origin else None
-        remaining=deadline-time.monotonic()
-        if remaining<=0:return None
-        page.wait_for_timeout(min(200,max(1,int(remaining*1000))))
-
-
 def try_saved_login(page,check_cancel,*,account=None):
     check_cancel()
     if account=='':return False

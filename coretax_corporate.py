@@ -48,32 +48,67 @@ def _tabs(page):
     return view, tabs
 
 
+def _native_panel(page, view, tab, caption, record, check_cancel):
+    """Tunggu binding tab terbaru, lalu pertahankan batas struktur native."""
+    from coretax_browser import (_check_cancel, _wait_tab_panel, wait_idle,
+                                 verify_detail_url, list_taxpayer_id)
+    _check_cancel(check_cancel)
+    initial_id = tab.get_attribute('aria-controls')
+    allowed_href = (None, '', '#') + (('#' + initial_id,) if initial_id else ())
+    if tab.get_attribute('href') not in allowed_href:
+        return None
+    if tab.inner_text().strip() != caption:
+        return None
+    tab.click()
+    wait_idle(page)
+    verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
+    panel = _wait_tab_panel(view, tab, caption, check_cancel,
+                            initial_panel_id=initial_id or None)
+    _check_cancel(check_cancel)
+    current_id = tab.get_attribute('aria-controls')
+    allowed_href = (None, '', '#') + (('#' + current_id,) if current_id else ())
+    if tab.get_attribute('href') not in allowed_href:
+        return None
+    # Native bindings still reject duplicate IDs, including nested targets.
+    if current_id and view.locator('[id=' + json.dumps(current_id) + ']').count() != 1:
+        return None
+    owner = view.element_handle()
+    try:
+        direct = panel.evaluate('''(e, owner) => {
+            const parent = e.parentElement;
+            const panels = parent.matches('p-tabpanel') ? parent.parentElement : parent;
+            return e.matches('.p-tabview-panel') && panels.matches('.p-tabview-panels') &&
+                panels.parentElement === owner && e.closest('.p-tabview') === owner;
+        }''', owner)
+        if direct is not True:
+            return None
+    finally:
+        owner.dispose()
+    verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
+    return panel
+
+
 def _turn_grid(page, table, max_pages, check_cancel):
-    from coretax_browser import _check_cancel, wait_idle
-    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
-    for _ in range(max_pages):
-        _check_cancel(check_cancel)
-        previous = table.locator(previous_selector)
-        if not previous.count():
-            break
-        previous.click()
-        wait_idle(page)
-    if table.locator(previous_selector).count():
+    from coretax_browser import _check_cancel, _click_table_paginator, wait_idle
+    if type(max_pages) is not int or max_pages <= 0:
         return False
-    seen = set()
-    for _ in range(max_pages):
-        _check_cancel(check_cancel)
-        marker = table.locator('.p-paginator-current')
-        if marker.count() != 1:
+    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+    next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
+    marker = table.locator('.p-paginator-current')
+    owner = table.element_handle()
+    if owner is None:
+        return False
+
+    def advance(control, state):
+        if control.count() != 1:
             return False
-        state = marker.inner_text()
-        if state in seen:
+        handle = control.element_handle()
+        try:
+            _click_table_paginator(handle, owner, check_cancel)
+        except RuntimeError:
             return False
-        seen.add(state)
-        next_button = table.locator('.p-paginator-next:not([disabled]):not(.p-disabled)')
-        if not next_button.count():
-            return True
-        next_button.click()
+        finally:
+            handle.dispose()
         deadline = time.monotonic() + 30
         while marker.inner_text() == state:
             _check_cancel(check_cancel)
@@ -81,11 +116,42 @@ def _turn_grid(page, table, max_pages, check_cancel):
                 return False
             page.wait_for_timeout(100)
         wait_idle(page)
-    return False
+        return True
+
+    try:
+        if marker.count() != 1:
+            return False
+        resets = set()
+        for _ in range(max_pages):
+            _check_cancel(check_cancel)
+            previous = table.locator(previous_selector)
+            if not previous.count():
+                break
+            state = marker.inner_text()
+            if state in resets or not advance(previous, state):
+                return False
+            resets.add(state)
+        if table.locator(previous_selector).count():
+            return False
+        seen = set()
+        for ordinal in range(max_pages):
+            _check_cancel(check_cancel)
+            state = marker.inner_text()
+            if state in seen:
+                return False
+            seen.add(state)
+            next_button = table.locator(next_selector)
+            if not next_button.count():
+                return True
+            if ordinal + 1 >= max_pages or not advance(next_button, state):
+                return False
+        return False
+    finally:
+        owner.dispose()
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
-    from coretax_browser import _check_cancel, wait_idle, verify_detail_url, list_taxpayer_id
+    from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
     try:
@@ -106,13 +172,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name not in FORMS or name in names:
                 return None
             names.add(name)
-            tab.click()
-            wait_idle(page)
-            panel_id = tab.get_attribute('aria-controls')
-            if not panel_id:
+            panel = _native_panel(page, view, tab, name, record, check_cancel)
+            if panel is None:
                 return None
-            panel = view.locator('[id=' + json.dumps(panel_id) + ']')
-            panel.wait_for(state='visible', timeout=30000)
             selector, root = FORMS[name]
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():

@@ -390,12 +390,12 @@ def _record_panel_timeout(view, panel_id, duration_ms):
                        duration_ms=duration_ms, **fields)
 
 
-def _wait_tab_panel(view, tab, caption, check_cancel):
+def _wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None):
     """Follow a changing control binding without extending the panel budget."""
     started = time.monotonic()
     deadline = started + DETAIL_PANEL_TIMEOUT
-    panel_id = None
-    controlled = False
+    panel_id = initial_panel_id
+    controlled = initial_panel_id is not None
     while True:
         _check_cancel(check_cancel)
         try:
@@ -801,6 +801,204 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
     return result
 
 
+SEARCH_RESULT_TIMEOUT_MS = 45000
+
+
+class TaxpayerSearchTimeout(PlaywrightTimeoutError):
+    """Owned desktop hint built only from fixed reasons, never exception text."""
+    _HINTS = {
+        'unavailable': 'Pengamatan jaringan tidak tersedia.',
+        'http_401': 'Teramati HTTP 401 pada aktivitas browser selama pencarian.',
+        'http_403': 'Teramati HTTP 403 pada aktivitas browser selama pencarian.',
+        'http_429': 'Teramati HTTP 429 pada aktivitas browser selama pencarian.',
+        'http_5xx': 'Teramati respons HTTP 5xx pada aktivitas browser selama pencarian.',
+        'transport': 'Teramati kegagalan transport jaringan selama pencarian.',
+        'no_traffic': 'Tidak ada XHR/fetch baru dalam scope pengamatan yang teramati.',
+        'unverified': 'Aktivitas browser teramati, tetapi hasil belum terverifikasi.',
+    }
+
+    def __init__(self, reason='unverified', *, limited=False):
+        self._reason = reason if type(reason) is str and reason in self._HINTS else 'unverified'
+        self._limited = limited if type(limited) is bool else False
+        super().__init__(self.public_message)
+
+    @property
+    def public_message(self):
+        hint = self._HINTS[self._reason]
+        if self._limited:
+            hint += ' Pengamatan terbatas.'
+        return ('Pencarian NPWP belum menghasilkan satu baris yang terverifikasi. ' + hint +
+                ' Periksa pesan portal; pengamatan ini belum menentukan penyebab kegagalan.')
+
+
+class _SearchDiagnostics:
+    """Bounded passive metadata; never read request headers/body or response text."""
+    def __init__(self, page):
+        self.page = page
+        self.started = time.monotonic()
+        self.observation = 'complete'
+        self.active = True
+        self.tracked = {}
+        self.listeners = []
+        self.counts = dict.fromkeys(('search_requests', 'search_responses', 'search_failed',
+            'search_http_1xx', 'search_http_2xx', 'search_http_3xx', 'search_http_4xx',
+            'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'), 0)
+
+    def __enter__(self):
+        for event, handler in (('request', self._request), ('response', self._response),
+                               ('requestfailed', self._failed)):
+            try:
+                self.page.on(event, handler)
+                self.listeners.append((event, handler))
+            except Exception:
+                self.observation = 'unavailable'
+        return self
+
+    def _request(self, request):
+        if not self.active:
+            return
+        try:
+            if (request.resource_type not in ('xhr', 'fetch')
+                    or request.frame != self.page.main_frame
+                    or not trusted_origin(request.url)
+                    or not trusted_origin(self.page.url)
+                    or urlparse(self.page.url).path != urlparse(SEARCH_URL).path):
+                return
+            key = id(request)
+            if key in self.tracked:
+                return
+            if len(self.tracked) >= 128:
+                if self.observation != 'unavailable':
+                    self.observation = 'limited'
+                return
+            # Retain only bounded handles/flags for event identity, never copies
+            # of their private request material. Clear them on every exit.
+            self.tracked[key] = [request, 0]
+            self.counts['search_requests'] += 1
+        except Exception:
+            self.observation = 'unavailable'
+
+    def _response(self, response):
+        if not self.active:
+            return
+        try:
+            request = response.request
+            entry = self.tracked.get(id(request))
+            if entry is None or entry[0] is not request or entry[1] & 1:
+                return
+            status = response.status
+            if type(status) is not int or not 100 <= status <= 599:
+                self.observation = 'unavailable'
+                return
+            entry[1] |= 1
+            self.counts['search_responses'] += 1
+            self.counts[f'search_http_{status // 100}xx'] += 1
+            if status in (401, 403, 429):
+                self.counts[f'search_http_{status}'] += 1
+        except Exception:
+            self.observation = 'unavailable'
+
+    def _failed(self, request):
+        if not self.active:
+            return
+        try:
+            entry = self.tracked.get(id(request))
+            if entry is not None and entry[0] is request and not entry[1] & 2:
+                entry[1] |= 2
+                self.counts['search_failed'] += 1
+        except Exception:
+            self.observation = 'unavailable'
+
+    def timeout_error(self):
+        if self.observation == 'unavailable':
+            reason = 'unavailable'
+        else:
+            # Prefer the most actionable hint; the event retains every count.
+            code = next((code for code in (429, 403, 401) if self.counts[f'search_http_{code}']), None)
+            if code is not None:
+                reason = f'http_{code}'
+            elif self.counts['search_http_5xx']:
+                reason = 'http_5xx'
+            elif self.counts['search_failed']:
+                reason = 'transport'
+            elif not self.counts['search_requests']:
+                reason = 'no_traffic'
+            else:
+                reason = 'unverified'
+        return TaxpayerSearchTimeout(reason, limited=self.observation == 'limited')
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.active = False
+        duration = (time.monotonic() - self.started) * 1000
+        for event, handler in self.listeners:
+            try:
+                self.page.remove_listener(event, handler)
+            except Exception:
+                self.observation = 'unavailable'
+        cancelled = exc_type is not None and not issubclass(exc_type, Exception)
+        result = ('cancelled' if cancelled else 'matched' if exc_type is None else
+                  'timeout' if isinstance(exc, PlaywrightTimeoutError) else 'error')
+        table = 'unavailable'
+        try:
+            if not cancelled:
+                try:
+                    observed_table = self.page.locator('.main-content').first.evaluate('''root => {
+                        const tables = root.getElementsByTagName('table');
+                        if (!tables.length) return 'missing';
+                        if (tables.length > 32) return 'unavailable';
+                        let visible = false;
+                        for (const t of tables) {
+                            const style = getComputedStyle(t);
+                            if (!t.getClientRects().length || style.visibility === 'hidden' || style.visibility === 'collapse') continue;
+                            visible = true;
+                            if (t.querySelector('tbody tr')) return 'rows_present';
+                        }
+                        return visible ? 'empty' : 'hidden';
+                    }''', timeout=100)
+                    if type(observed_table) is str and observed_table in {'missing', 'hidden', 'empty', 'rows_present', 'unavailable'}:
+                        table = observed_table
+                except Exception:
+                    pass
+            fields = self.counts if self.observation != 'unavailable' else {}
+            diagnostics.record('search.result', level='INFO' if result == 'matched' else 'WARNING',
+                               search_result=result, search_observation=self.observation,
+                               search_table=table, duration_ms=duration, **fields)
+        finally:
+            self.tracked.clear()
+        return False
+
+
+def _find_taxpayer_row(page, npwp, check_cancel):
+    page.locator('#ObjectPermitNumber').wait_for(state='visible', timeout=45000)
+    page.locator('#ObjectPermitNumber').fill(npwp)
+    with _SearchDiagnostics(page) as probe:
+        _check_cancel(check_cancel)
+        page.locator('#ObjectPermitNumber').press('Enter')
+        deadline = time.monotonic() + SEARCH_RESULT_TIMEOUT_MS / 1000
+        row = page.locator('table tbody tr').filter(has_text=npwp)
+        while True:
+            _check_cancel(check_cancel)
+            remaining = (deadline - time.monotonic()) * 1000
+            if remaining <= 0:
+                raise probe.timeout_error() from None
+            try:
+                row.first.wait_for(state='visible', timeout=min(100, remaining))
+                break
+            except PlaywrightTimeoutError:
+                continue
+        _check_cancel(check_cancel)
+        wait_idle(page)
+        _check_cancel(check_cancel)
+        if row.count() != 1:
+            raise RuntimeError('NPWP search was ambiguous; refusing to select a different taxpayer')
+        cells = [s.strip() for s in row.locator('td').all_inner_texts()]
+        exact = next((i for i, s in enumerate(cells) if s == npwp), None)
+        if exact is None:
+            raise RuntimeError('NPWP search returned no exact NPWP match; input is not normalized')
+        taxpayer_name = cells[exact + 1] if exact + 1 < len(cells) else ''
+        return row, taxpayer_name
+
+
 @diagnostics.traced('inventory')
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
     """Temukan NPWP persis, simpan batch daftar, lalu rekonsiliasi inventaris."""
@@ -815,19 +1013,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     page.goto(SEARCH_URL, wait_until='domcontentloaded', timeout=60000)
     if not trusted_origin(page.url) or urlparse(page.url).path != urlparse(SEARCH_URL).path:
         raise RuntimeError('Taxpayer search redirected outside the authorized search page; sign in again')
-    page.locator('#ObjectPermitNumber').wait_for(state='visible', timeout=45000)
-    page.locator('#ObjectPermitNumber').fill(npwp)
-    page.locator('#ObjectPermitNumber').press('Enter')
-    row = page.locator('table tbody tr').filter(has_text=npwp)
-    row.first.wait_for(state='visible', timeout=45000)
-    wait_idle(page)
-    if row.count() != 1:
-        raise RuntimeError('NPWP search was ambiguous; refusing to select a different taxpayer')
-    cells = [s.strip() for s in row.locator('td').all_inner_texts()]
-    exact = next((i for i, s in enumerate(cells) if s == npwp), None)
-    if exact is None:
-        raise RuntimeError('NPWP search returned no exact NPWP match; input is not normalized')
-    taxpayer_name = cells[exact + 1] if exact + 1 < len(cells) else ''
+    row, taxpayer_name = _find_taxpayer_row(page, npwp, check_cancel)
     observer = ListObserver(page, check_cancel=check_cancel)
     errors, audit, sources = [], [], []
     try:
