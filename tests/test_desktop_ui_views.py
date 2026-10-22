@@ -113,6 +113,27 @@ def test_reflow_has_one_pending_callback_and_dispose_cancels_only_its_own(shell)
     assert unrelated in remaining and not (after - before) & remaining
 
 
+@pytest.mark.parametrize('geometry', ['1120x800', '640x560'])
+def test_unchanged_shell_reflow_keeps_visible_panels_mapped(shell, geometry):
+    """A redundant layout must not hide/remap the form and summary native windows."""
+    root, view, _ = shell
+    root.geometry(geometry)
+    settle(root)
+    panels = (view.content_slot, view.scope_panel)
+    assert all(panel.winfo_ismapped() for panel in panels)
+    unmaps = []
+    bindings = [(panel, panel.bind('<Unmap>', lambda event: unmaps.append(str(event.widget)), add='+'))
+                for panel in panels]
+    try:
+        view.request_reflow()
+        settle(root)
+        assert all(panel.winfo_ismapped() for panel in panels)
+        assert unmaps == [], 'Unchanged shell reflow hid visible panels before mapping them again'
+    finally:
+        for panel, token in bindings:
+            panel.unbind('<Unmap>', token)
+
+
 @pytest.mark.parametrize('width,height', [(540, 390), (640, 560), (900, 700), (1120, 800)])
 def test_error_labels_wrap_without_overlapping_action_bar(shell, width, height):
     root, view, _ = shell

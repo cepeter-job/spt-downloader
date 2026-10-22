@@ -45,7 +45,7 @@ jobs:
         id: settings
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe -m pytest tests/test_desktop_settings_decisions.py tests/test_desktop_login_check_gui.py tests/test_unified_login_settings.py tests/test_desktop_ui_integration.py tests/test_desktop_ui_copy.py tests/test_json_hybrid_transport.py -q --basetemp "$env:RUNNER_TEMP/ui-settings-tests" --junitxml "$env:RUNNER_TEMP/ui-settings-results.xml" -o junit_logging=no -o junit_log_passing_tests=false
+          .venv/Scripts/python.exe -m pytest tests/test_desktop_settings_decisions.py tests/test_desktop_login_check_gui.py tests/test_unified_login_settings.py tests/test_desktop_ui_integration.py tests/test_desktop_ui_copy.py tests/test_desktop_ui_views.py tests/test_json_hybrid_transport.py -q --basetemp "$env:RUNNER_TEMP/ui-settings-tests" --junitxml "$env:RUNNER_TEMP/ui-settings-results.xml" -o junit_logging=no -o junit_log_passing_tests=false
           exit $LASTEXITCODE
       - name: Measure matched dialog baseline and candidate
         if: always() && steps.settings.outcome != 'skipped'
@@ -55,6 +55,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           .venv/Scripts/python.exe scripts/ui_delivery_performance.py --baseline "$env:RUNNER_TEMP/ui-baseline" --baseline-revision d402b98a1a534f761e60500fc1cc17f367461298 --candidate "$env:GITHUB_WORKSPACE" --candidate-revision "$env:GITHUB_SHA" --trace --out "$env:RUNNER_TEMP/ui-performance"
           exit $LASTEXITCODE
+      - name: Inspect native display and accessibility
+        if: always() && steps.settings.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -STA -File scripts/ui_delivery_accessibility.ps1 -Python .venv/Scripts/python.exe -OutputDirectory "$env:RUNNER_TEMP/ui-accessibility" -RequestLargeDisplay -IncludeHighContrast
+          exit $LASTEXITCODE
       - name: Preserve synthetic results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -63,5 +69,6 @@ jobs:
           path: |
             ${{ runner.temp }}/ui-settings-results.xml
             ${{ runner.temp }}/ui-performance
+            ${{ runner.temp }}/ui-accessibility
           if-no-files-found: error
           retention-days: 14

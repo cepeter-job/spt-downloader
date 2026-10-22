@@ -20,17 +20,31 @@ def settings(tmp_path, monkeypatch):
     root.report_callback_exception = lambda *args: callbacks.append(args)
     controller = Controller()
     app = gui.App(root, tmp_path, controller)
+    root.update()
+    # A runner may leave the previous test's window foreground. Establish only
+    # the initial application's OS focus; every modal must manage its own focus.
+    root.focus_force()
+    root.update()
     dialog = app.settings()
     root.update()
     yield root, app, controller, dialog, tmp_path, writes, errors
     controller.active = False
-    app._dispose()
-    for token in root.tk.splitlist(root.tk.call('after', 'info')):
-        root.after_cancel(token)
-    root.destroy()
+    if window_exists(root):
+        app._dispose()
+        for token in root.tk.splitlist(root.tk.call('after', 'info')):
+            root.after_cancel(token)
+        root.destroy()
     del app
     gc.collect()
     assert not callbacks
+
+
+def window_exists(widget):
+    try:
+        return bool(widget.winfo_exists())
+    except tk.TclError:
+        # Closing the root removes Tk's winfo command as well as its windows.
+        return False
 
 
 def change_browser(dialog):
@@ -46,6 +60,11 @@ def password_entry(dialog):
 def decision(root, app, dialog):
     app._settings_close()
     root.update()
+    return current_decision(root, app, dialog)
+
+
+def current_decision(root, app, dialog):
+    assert window_exists(root), 'Unsaved settings must prevent immediate application shutdown'
     assert app._settings_dialog is dialog, 'Unsaved settings must remain open for a decision'
     matches = [w for w in widgets(root)
                if isinstance(w, tk.Toplevel) and w.title() == 'Perubahan belum disimpan']
@@ -211,3 +230,150 @@ def test_deleted_login_cannot_be_reselected_without_new_password(settings, monke
     root.update()
     assert errors and persisted(path)['identifier'] == ''
     assert button(dialog, 'Cek login').instate(['disabled']) and not writes
+
+
+@pytest.mark.parametrize('close_method', ['escape', 'window'])
+def test_settings_escape_and_window_close_offer_one_dirty_decision(settings, close_method):
+    root, app, ctl, dialog, path, writes, errors = settings
+    password_entry(dialog).insert(0, 'SYNTHETIC_NEW_PASSWORD_ONLY')
+    if close_method == 'escape':
+        dialog.event_generate('<Escape>')
+    else:
+        dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
+    root.update()
+    prompt = current_decision(root, app, dialog)
+    assert root.focus_get() is button(prompt, 'Kembali')
+    assert root.grab_current() is prompt
+    button(prompt, 'Kembali').invoke()
+    root.update()
+    assert password_entry(dialog).get() == 'SYNTHETIC_NEW_PASSWORD_ONLY'
+    assert root.grab_current() is dialog and not writes and not errors
+
+
+@pytest.mark.parametrize('prompt_already_open', [False, True])
+def test_root_close_return_preserves_settings_and_cancels_shutdown(settings, prompt_already_open):
+    root, app, ctl, dialog, path, writes, errors = settings
+    change_browser(dialog)
+    previous_prompt = decision(root, app, dialog) if prompt_already_open else None
+    root.tk.call(root.protocol('WM_DELETE_WINDOW'))
+    prompt = current_decision(root, app, dialog)
+    root.update()
+    if previous_prompt is not None:
+        assert prompt is previous_prompt
+    assert root.grab_current() is prompt
+    button(prompt, 'Kembali').invoke()
+    root.update()
+    assert window_exists(root) and dialog.winfo_exists()
+    assert root.grab_current() is dialog
+    assert persisted(path)['browser'] == 'msedge' and not writes and not errors
+    # Returning must clear the application-close intent: a later Settings-only
+    # discard should close just Settings, leaving the application running.
+    prompt = decision(root, app, dialog)
+    button(prompt, 'Abaikan').invoke()
+    assert window_exists(root)
+    root.update()
+    assert app._settings_dialog is None and root.grab_current() is None
+
+
+@pytest.mark.parametrize('choice', ['Simpan', 'Abaikan'])
+def test_root_close_waits_for_settings_save_or_discard(settings, choice):
+    root, app, ctl, dialog, path, writes, errors = settings
+    original = (path / 'preferences.json').read_bytes()
+    change_browser(dialog)
+    root.tk.call(root.protocol('WM_DELETE_WINDOW'))
+    prompt = current_decision(root, app, dialog)
+    root.update()
+    button(prompt, choice).invoke()
+    assert not window_exists(root), 'An accepted application-close decision must finish shutdown'
+    if choice == 'Simpan':
+        assert persisted(path)['browser'] == 'chrome'
+    else:
+        assert (path / 'preferences.json').read_bytes() == original
+    assert not writes and not errors
+
+
+def test_root_close_failed_save_keeps_settings_open_and_cancels_shutdown(settings, monkeypatch):
+    root, app, ctl, dialog, path, writes, errors = settings
+    original = (path / 'preferences.json').read_bytes()
+    change_browser(dialog)
+    def fail(*args):
+        raise OSError('SYNTHETIC_ROOT_CLOSE_PREFERENCES_FAILURE')
+    monkeypatch.setattr(gui, 'save_preferences', fail)
+    root.tk.call(root.protocol('WM_DELETE_WINDOW'))
+    prompt = current_decision(root, app, dialog)
+    root.update()
+    button(prompt, 'Simpan').invoke()
+    assert window_exists(root)
+    root.update()
+    assert dialog.winfo_exists() and root.grab_current() is dialog
+    assert errors and (path / 'preferences.json').read_bytes() == original
+    assert 'Pengaturan disimpan.' not in app._credential_status.get()
+    prompt = decision(root, app, dialog)
+    button(prompt, 'Abaikan').invoke()
+    assert window_exists(root), 'A failed save must cancel the earlier application-close intent'
+    root.update()
+    assert app._settings_dialog is None and not writes
+
+
+def test_changed_account_partial_save_retries_once_and_rejects_old_account_without_password(settings, monkeypatch):
+    root, app, ctl, dialog, path, writes, errors = settings
+    account = next(w for w in widgets(dialog) if w.winfo_class() == 'TEntry' and not w.cget('show'))
+    account.delete(0, 'end')
+    account.insert(0, 'SYNTHETIC_SECOND_ACCOUNT')
+    password_entry(dialog).insert(0, 'SYNTHETIC_NEW_PASSWORD_ONLY')
+    real_save = gui.save_preferences
+    def fail(*args):
+        raise OSError('SYNTHETIC_CHANGED_ACCOUNT_PREFERENCES_FAILURE')
+    monkeypatch.setattr(gui, 'save_preferences', fail)
+    button(dialog, 'Simpan').invoke()
+    root.update()
+    assert writes == [(gui.LOGIN_ORIGIN, 'SYNTHETIC_SECOND_ACCOUNT', 'SYNTHETIC_NEW_PASSWORD_ONLY')]
+    assert password_entry(dialog).get() == ''
+    assert persisted(path)['identifier'] == 'SYNTHETIC_ACCOUNT'
+    assert app.preferences['identifier'] == 'SYNTHETIC_ACCOUNT'
+    assert button(dialog, 'Cek login').instate(['disabled'])
+    monkeypatch.setattr(gui, 'save_preferences', real_save)
+    account.delete(0, 'end')
+    account.insert(0, 'SYNTHETIC_ACCOUNT')
+    error_count = len(errors)
+    button(dialog, 'Simpan').invoke()
+    root.update()
+    assert len(errors) == error_count + 1
+    assert button(dialog, 'Cek login').instate(['disabled'])
+    account.delete(0, 'end')
+    account.insert(0, 'SYNTHETIC_SECOND_ACCOUNT')
+    button(dialog, 'Simpan').invoke()
+    root.update()
+    assert len(writes) == 1
+    assert persisted(path)['identifier'] == 'SYNTHETIC_SECOND_ACCOUNT'
+    assert app.preferences['identifier'] == 'SYNTHETIC_SECOND_ACCOUNT'
+    assert button(dialog, 'Cek login').instate(['!disabled'])
+    assert 'password' not in persisted(path)
+
+
+def test_return_discard_reopen_and_save_retire_old_dialog_callbacks(settings):
+    root, app, ctl, dialog, path, writes, errors = settings
+    original = (path / 'preferences.json').read_bytes()
+    change_browser(dialog)
+    first_prompt = decision(root, app, dialog)
+    button(first_prompt, 'Kembali').invoke()
+    root.update()
+    assert not first_prompt.winfo_exists() and root.grab_current() is dialog
+    second_prompt = decision(root, app, dialog)
+    assert second_prompt is not first_prompt
+    button(second_prompt, 'Abaikan').invoke()
+    root.update()
+    assert not dialog.winfo_exists() and not second_prompt.winfo_exists()
+    assert (path / 'preferences.json').read_bytes() == original
+    assert root.grab_current() is None and root.focus_get() is app.settings_button
+    reopened = app.settings()
+    root.update()
+    assert reopened is not dialog and root.grab_current() is reopened
+    change_browser(reopened)
+    final_prompt = decision(root, app, reopened)
+    assert root.focus_get() is button(final_prompt, 'Kembali')
+    button(final_prompt, 'Simpan').invoke()
+    root.update()
+    assert app._settings_dialog is None and root.grab_current() is None
+    assert root.focus_get() is app.settings_button
+    assert persisted(path)['browser'] == 'chrome' and not writes and not errors

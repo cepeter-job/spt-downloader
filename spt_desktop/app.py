@@ -942,6 +942,7 @@ class App:
         pending_preferences = False
         credential_account = self.preferences['identifier']
         credential_changed = False
+        credential_action = None
         def selected():
             mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
             return {'browser':browser.get(),'headless':hidden.get(),'login_origin':LOGIN_ORIGIN,
@@ -1014,7 +1015,7 @@ class App:
             prompt.grab_set()
             return_button.focus_set()
         def save():
-            nonlocal pending_preferences, credential_account, credential_changed
+            nonlocal pending_preferences, credential_account, credential_changed, credential_action
             if self.controller.active:return False
             try:
                 if password.get():
@@ -1024,6 +1025,7 @@ class App:
                     # repeat the successful secret write or pretend it rolled back.
                     credential_account = identifier.get()
                     credential_changed = pending_preferences = True
+                    credential_action = 'saved'
                     password.set('')
                 elif identifier.get() and identifier.get()!=credential_account:
                     raise ValueError('Isi password baru ketika mengganti akun; atau pertahankan akun kosong untuk login manual.')
@@ -1035,7 +1037,8 @@ class App:
                 return False
             except OSError as error:
                 diagnostics.record('settings.failed', error=error, level='ERROR')
-                message = ('Password sudah disimpan, tetapi pengaturan belum tersimpan. Coba Simpan lagi.'
+                change = 'Login sudah dihapus' if credential_action == 'deleted' else 'Password sudah disimpan'
+                message = (change + ', tetapi pengaturan belum tersimpan. Coba Simpan lagi.'
                            if pending_preferences else
                            'Pengaturan belum disimpan. Windows menolak penyimpanan login atau preferensi.')
                 self._credential_status.set(message)
@@ -1048,12 +1051,28 @@ class App:
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
             return True
         def remove():
+            nonlocal pending_preferences, credential_account, credential_changed, credential_action
             if self.controller.active:return
             if not messagebox.askyesno('Hapus login yang disimpan?','Hapus login Satu yang disimpan oleh aplikasi ini?',parent=dialog,default='no'):return
             try:delete_login(LOGIN_ORIGIN)
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
-            password.set('');identifier.set('');self.preferences['identifier']=''
-            save_preferences(self.workspace,self.preferences)
+            credential_account = ''
+            credential_changed = pending_preferences = True
+            credential_action = 'deleted'
+            password.set('');identifier.set('')
+            preferences = dict(self.preferences, identifier='')
+            try:
+                save_preferences(self.workspace,preferences)
+            except OSError as error:
+                diagnostics.record('settings.failed', error=error, level='ERROR')
+                message = 'Login sudah dihapus, tetapi pengaturan belum tersimpan. Coba Simpan lagi.'
+                self._credential_status.set(message)
+                refresh(preserve_status=True)
+                messagebox.showerror('Pengaturan belum disimpan',message,parent=dialog)
+                return
+            self.preferences = preferences
+            pending_preferences = False
+            refresh()
             self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk mengecek lagi.')
         def check():
             if self.controller.active:return
