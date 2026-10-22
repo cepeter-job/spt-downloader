@@ -212,6 +212,35 @@ Jika verifikasi inventory perlu diulang, jalankan ulang seluruh workflow atau
 buat dispatch baru. Rerun sebagian yang mencampur manifest dari attempt lama dan
 baru akan ditolak oleh pemeriksaan provenance.
 
+## Lint Python dan coverage subset portable
+
+Job `portable` menjalankan Ruff yang dipin dalam `requirements-test.txt` dan lock
+test/build setelah pemeriksaan kesegaran lock. Aturan dalam `ruff.toml` hanya
+menolak nama, ekspor, atau variabel lokal yang tidak terdefinisi (`F821`, `F822`,
+`F823`). Pelanggaran membuat job dan gate gabungan gagal. Gate ini tidak
+memformat ulang kode atau memaksakan anotasi tipe dan batas kompleksitas.
+
+Pemanggilan pytest portable dibungkus `coverage run` dengan `.coveragerc`; pilihan
+tes, inventory, JUnit, serta propagasi kegagalan pytest tetap sama. Coverage
+mengukur baris dan cabang kode aplikasi dalam proses tes Linux beserta thread yang
+diukur. Ia tidak otomatis mencakup proses worker terpisah, browser, atau seluruh
+perilaku native Windows. Angka yang rendah pada laporan ini bukan ukuran coverage
+suite Windows lengkap. Jumlah tes yang benar-benar dijalankan tetap dibuktikan
+oleh inventory dan outcome per fase, bukan oleh persentase coverage.
+
+Artifact `test-results-portable-python<versi>-<commit>-attempt<nomor>` juga menyimpan
+`coverage-portable.xml` dan `coverage-portable.json`. Pembuatan dan upload laporan
+tetap dicoba jika pytest gagal. Kedua laporan bersifat informasional tanpa ambang
+persentase; kegagalan menghasilkan laporan tetap terlihat sebagai kegagalan job.
+Data pengukuran sementara berada di `RUNNER_TEMP`, sedangkan kode tes dan virtual
+environment dikecualikan dari laporan. Tidak ada telemetry atau upload ke layanan
+coverage lain.
+
+Ruff dan coverage hanya dependensi pengembangan yang terkunci dan ikut audit
+dependensi; keduanya bukan dependensi runtime worker. Perubahan ini tidak
+menjalankan benchmark, mengubah pemilihan suite Windows, atau mengganti fixture workbook
+yang menjadi referensi independen.
+
 ## Bukti waktu dan kegagalan tes
 
 Job portable, Windows produksi, serta setiap varian benchmark menyimpan JUnit

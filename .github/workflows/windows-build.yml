@@ -117,13 +117,17 @@ jobs:
       - name: Verify lock freshness and hashes against the reviewed manifests
         if: matrix.profile == 'production'
         run: .venv/bin/python -m scripts.update_locks --check
+      - name: Check undefined Python names with pinned Ruff
+        id: lint
+        run: .venv/bin/python -m ruff check --output-format github .
       - name: Run portable synthetic tests serially
         id: tests
         env:
           CI_UV_CACHE_HIT: ${{ steps.uv.outputs.cache-hit }}
           CI_PYTHON_CACHE_HIT: ${{ steps.uv.outputs.python-cache-hit }}
         run: >-
-          .venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q
+          .venv/bin/python -m coverage run --rcfile=.coveragerc -m pytest tests
+          -p scripts.ci_tests --ci-workload portable -q
           --basetemp "$RUNNER_TEMP/spt-pytest-portable"
           --ci-manifest "$RUNNER_TEMP/test-inventory.json" --durations=10
           --junitxml "$RUNNER_TEMP/test-results.xml"
@@ -131,6 +135,14 @@ jobs:
       - name: Summarize synthetic test timing and outcomes
         if: always() && steps.tests.outcome != 'skipped'
         run: python -m scripts.ci_report report
+      - name: Write portable subset coverage XML
+        id: coverage-xml
+        if: always() && steps.tests.outcome != 'skipped'
+        run: .venv/bin/python -m coverage xml --rcfile=.coveragerc -o "$RUNNER_TEMP/coverage-portable.xml"
+      - name: Write portable subset coverage JSON
+        id: coverage-json
+        if: always() && steps.tests.outcome != 'skipped'
+        run: .venv/bin/python -m coverage json --rcfile=.coveragerc -o "$RUNNER_TEMP/coverage-portable.json"
       - name: Publish synthetic collection evidence
         if: always() && steps.tests.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -147,6 +159,8 @@ jobs:
           path: |
             ${{ runner.temp }}/test-results.xml
             ${{ runner.temp }}/test-measurements.json
+            ${{ runner.temp }}/coverage-portable.xml
+            ${{ runner.temp }}/coverage-portable.json
           if-no-files-found: error
           retention-days: 14
 

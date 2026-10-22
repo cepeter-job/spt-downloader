@@ -95,6 +95,91 @@ def test_production_contract_rejects_broken_pipeline(mutation):
 
 
 @pytest.mark.parametrize('mutation', [
+    'missing-lint', 'comment-only-lint', 'masked-lint-exit', 'ignored-lint-failure',
+    'skipped-lint', 'narrowed-lint', 'lint-after-tests', 'missing-coverage-wrapper',
+    'different-coverage-config', 'extra-coverage-selection', 'masked-portable-exit',
+    'ignored-portable-failure',
+])
+def test_portable_quality_cannot_bypass_lint_or_change_test_execution(mutation):
+    document = deepcopy(production())
+    steps = document['jobs']['portable']['steps']
+    lint = next(s for s in steps if s.get('id') == 'lint')
+    tests = next(s for s in steps if s.get('id') == 'tests')
+    if mutation == 'missing-lint':
+        steps.remove(lint)
+    elif mutation == 'comment-only-lint':
+        lint['run'] = '# ' + lint['run']
+    elif mutation == 'masked-lint-exit':
+        lint['run'] += ' || true'
+    elif mutation == 'ignored-lint-failure':
+        lint['continue-on-error'] = True
+    elif mutation == 'skipped-lint':
+        lint['if'] = 'false'
+    elif mutation == 'narrowed-lint':
+        lint['run'] = lint['run'].rstrip().removesuffix('.') + 'scripts/'
+    elif mutation == 'lint-after-tests':
+        steps.remove(lint)
+        steps.insert(steps.index(tests) + 1, lint)
+    elif mutation == 'missing-coverage-wrapper':
+        tests['run'] = tests['run'].replace('-m coverage run --rcfile=.coveragerc ', '')
+    elif mutation == 'different-coverage-config':
+        tests['run'] = tests['run'].replace('--rcfile=.coveragerc', '--rcfile=/dev/null')
+    elif mutation == 'extra-coverage-selection':
+        tests['run'] = tests['run'].replace('--rcfile=.coveragerc', '--rcfile=.coveragerc --include=scripts/*')
+    elif mutation == 'masked-portable-exit':
+        tests['run'] += ' || true'
+    else:
+        tests['continue-on-error'] = True
+    with pytest.raises(AssertionError):
+        contract().validate_production(document)
+
+
+@pytest.mark.parametrize('format_name', ['xml', 'json'])
+@pytest.mark.parametrize('mutation', [
+    'missing-report', 'missing-failure-guard', 'ignored-report-failure',
+    'masked-report-exit', 'wrong-output-directory', 'upload-before-report',
+])
+def test_portable_coverage_reports_must_survive_failure_and_precede_upload(format_name, mutation):
+    document = deepcopy(production())
+    steps = document['jobs']['portable']['steps']
+    report = next(s for s in steps if s.get('id') == 'coverage-' + format_name)
+    upload = next(s for s in steps if 'test-results-portable-' in s.get('with', {}).get('name', ''))
+    if mutation == 'missing-report':
+        steps.remove(report)
+    elif mutation == 'missing-failure-guard':
+        report.pop('if')
+    elif mutation == 'ignored-report-failure':
+        report['continue-on-error'] = True
+    elif mutation == 'masked-report-exit':
+        report['run'] += ' || true'
+    elif mutation == 'wrong-output-directory':
+        report['run'] = report['run'].replace('$RUNNER_TEMP/', './')
+    else:
+        steps.remove(report)
+        steps.insert(steps.index(upload) + 1, report)
+    with pytest.raises(AssertionError):
+        contract().validate_measurements(document, ('portable',))
+
+
+@pytest.mark.parametrize('mutation', ['missing-xml', 'missing-json', 'wildcard', 'wrong-directory'])
+def test_portable_coverage_artifact_keeps_only_the_declared_report_paths(mutation):
+    document = deepcopy(production())
+    upload = next(s for s in document['jobs']['portable']['steps']
+                  if 'test-results-portable-' in s.get('with', {}).get('name', ''))
+    lines = upload['with']['path'].splitlines()
+    if mutation in {'missing-xml', 'missing-json'}:
+        suffix = mutation.removeprefix('missing-')
+        lines = [line for line in lines if not line.endswith('coverage-portable.' + suffix)]
+    elif mutation == 'wildcard':
+        lines.append('${{ runner.temp }}/**')
+    else:
+        lines = [line.replace('${{ runner.temp }}/coverage-', 'private-output/coverage-') for line in lines]
+    upload['with']['path'] = '\n'.join(lines)
+    with pytest.raises(AssertionError):
+        contract().validate_measurements(document, ('portable',))
+
+
+@pytest.mark.parametrize('mutation', [
     'serial-default', 'repository-variable-mode', 'shared-dispatch-concurrency',
     'disabled-pr-supersession', 'unbound-windows-matrix', 'missing-shard-download',
     'colliding-shard-directories', 'wrong-shard-download-condition',
