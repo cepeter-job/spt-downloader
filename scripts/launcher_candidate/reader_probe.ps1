@@ -90,6 +90,10 @@ function EntryObservation($state) {
  } catch {$result.uia_error=$_.Exception.GetType().Name}
  return $result
 }
+function OpenSnapshot($path) {
+ # The writer atomically replaces ready.json; readers must allow delete-sharing.
+ return [IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+}
 function ReadState {
  $ready=Join-Path $hostDirectory 'ready.json'; $deadline=[DateTime]::UtcNow.AddSeconds(30)
  while (-not (Test-Path -LiteralPath $ready)) {
@@ -111,7 +115,11 @@ function ReadState {
   }
   Start-Sleep -Milliseconds 100
  }
- $state=Get-Content -LiteralPath $ready -Raw | ConvertFrom-Json
+ $stream=OpenSnapshot $ready
+ try {
+  $snapshotReader=New-Object IO.StreamReader($stream)
+  try {$state=$snapshotReader.ReadToEnd() | ConvertFrom-Json} finally {$snapshotReader.Dispose()}
+ } finally {$stream.Dispose()}
  $nativeProcess=Get-CimInstance Win32_Process -Filter "ProcessId=$($state.pid)"
  if ($state.pid -ne $hostProcess.Id -and $nativeProcess.ParentProcessId -ne $hostProcess.Id) {throw 'Fixture ancestry unverified'}
  Owned ([IntPtr]$state.hwnd) $state.pid
