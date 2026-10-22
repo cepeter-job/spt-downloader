@@ -53,12 +53,24 @@ def validate_inventory(document: dict, root: Path) -> None:
             raise ValueError("invalid candidate digest")
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise ValueError(f"candidate hash mismatch: {name}")
-    loaded = document.get("loaded", {})
-    if set(loaded) != {"python", "_tkinter", "tcl", "tk"}:
+    loaded = document.get("loaded")
+    roles = {"python", "_tkinter", "tcl", "tk"}
+    if not isinstance(loaded, dict) or set(loaded) != roles:
         raise ValueError("incomplete native resources")
-    for name in loaded.values():
-        if name not in files or not _local(root, name).is_file():
+    role_hashes = document.get("loaded_sha256")
+    modules = document.get("native_modules")
+    if not isinstance(role_hashes, dict) or set(role_hashes) != roles:
+        raise ValueError("incomplete native role hash proof")
+    if not isinstance(modules, dict) or not modules:
+        raise ValueError("missing native module proof")
+    for name, digest in modules.items():
+        if not isinstance(name, str) or name not in files or digest != files[name]:
+            raise ValueError("native module proof disagrees with candidate files")
+    for role, name in loaded.items():
+        if not isinstance(name, str) or name not in files or not _local(root, name).is_file():
             raise ValueError("unverified native resource")
+        if role_hashes[role] != files[name] or modules.get(name) != files[name]:
+            raise ValueError("native role proof disagrees with candidate files")
     libraries = document.get("libraries", {})
     if set(libraries) != {"tcl", "tk"}:
         raise ValueError("incomplete script resources")
