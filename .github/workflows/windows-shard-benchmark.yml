@@ -8,27 +8,14 @@ on:
         type: choice
         default: restore
         options: [restore, cold]
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/windows-build.yml'
-      - '.github/workflows/windows-shard-benchmark.yml'
-      - 'scripts/ci_tests.py'
-      - 'scripts/ci_report.py'
-      - 'scripts/ci_python_cache.py'
-      - 'spt_desktop/runtime.py'
-      - 'requirements*.txt'
-      - 'locks/*.txt'
-      - 'scripts/ci_shard_benchmark.py'
-      - 'tests/test_ci_sharding.py'
 
 permissions:
   contents: read
 
 # Isolated from the production build and from its required branch check.
 concurrency:
-  group: windows-shard-benchmark-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: windows-shard-benchmark-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   PYTHONUTF8: '1'

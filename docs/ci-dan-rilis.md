@@ -148,7 +148,11 @@ untuk mencari penyebabnya; jangan menaikkan batas terus-menerus tanpa bukti.
 ## Benchmark opsional pembagian tes Windows
 
 [windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml)
-berjalan lewat dispatch atau perubahan PR yang cocok dengan trigger-nya. Benchmark
+berjalan hanya melalui `workflow_dispatch`: buka **Actions → Benchmark Windows
+test sharding → Run workflow**. PR, push, dan jadwal tidak menjalankan benchmark.
+Gunakan saat menyelidiki perubahan Python/runner, cache, atau pembagian shard,
+serta ketika membutuhkan perbandingan performa yang terukur. Validasi PR rutin
+tetap memakai workflow build produksi. Benchmark
 tidak mengganti job `windows`, check gabungan, packaging
 atau artifact readback. Profil Python dibaca dari sumber yang sama dengan CI utama.
 

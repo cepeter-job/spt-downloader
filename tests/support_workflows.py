@@ -423,11 +423,7 @@ def validate_measurements(document, job_names):
 
 def validate_benchmark(document):
     _permissions(document)
-    assert set(document['on']) == {'workflow_dispatch', 'pull_request'}
-    assert document['on']['pull_request']['branches'] == ['main']
-    paths = document['on']['pull_request']['paths']
-    assert isinstance(paths, list) and 'spt_desktop/runtime.py' in paths
-    assert '*' not in paths and '**' not in paths
+    assert set(document['on']) == {'workflow_dispatch'}
     jobs = document['jobs']
     assert _needs(jobs['benchmark']) == {'profile'}
     assert jobs['benchmark']['runs-on'] == 'windows-2022'
