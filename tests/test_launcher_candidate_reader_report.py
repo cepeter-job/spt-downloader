@@ -157,6 +157,7 @@ def test_snapshot_reader_allows_atomic_windows_replace(tmp_path):
     from ctypes import wintypes
     import base64
     import subprocess
+    import sys
     from pathlib import Path
     target, pending = tmp_path / 'ready.json', tmp_path / 'ready.pending'
     target.write_text('old')
@@ -182,8 +183,11 @@ def test_snapshot_reader_allows_atomic_windows_replace(tmp_path):
     if (-not $fn) {throw 'OpenSnapshot missing'}
     Invoke-Expression $fn.Extent.Text
     $stream=OpenSnapshot TARGET
-    try {[IO.File]::Replace(PENDING,TARGET,$null)} finally {$stream.Dispose()}
-    '''.replace('PROBE', quoted(probe)).replace('TARGET', quoted(target)).replace('PENDING', quoted(pending))
+    try {
+        & PYTHON -c 'from pathlib import Path; import sys; Path(sys.argv[1]).replace(sys.argv[2])' PENDING TARGET
+        if ($LASTEXITCODE -ne 0) {throw 'candidate Path.replace failed with shared reader held'}
+    } finally {$stream.Dispose()}
+    '''.replace('PROBE', quoted(probe)).replace('TARGET', quoted(target)).replace('PENDING', quoted(pending)).replace('PYTHON', quoted(sys.executable))
     result = subprocess.run(['powershell', '-NoProfile', '-EncodedCommand', base64.b64encode(script.encode('utf-16-le')).decode()], capture_output=True)
     assert result.returncode == 0, result.stderr.decode(errors='replace')
     assert target.read_text() == 'new'
