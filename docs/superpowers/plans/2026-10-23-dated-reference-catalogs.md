@@ -1,0 +1,39 @@
+# Dated reference catalog implementation plan
+
+> Use superpowers:executing-plans inline. Autonomous implementation was approved on 2026-10-23. All product execution stays on GitHub runners.
+
+**Goal:** Reproduce the pinned grid active-version selector for PPh21 and Unifikasi when custody-checked browser clock evidence proves one selection throughout the capture interval. Preserve old captures and stricter model/PERIOD dropdown rules.
+
+**Spec:** `docs/superpowers/specs/2026-10-23-json-mode-completion-design.md`, section 5.
+
+**Source proof:** unauthenticated pinned `main.cccfdb820c20596c.js`, SHA256 `696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd`, `getActiveReferenceDataValue` at UTF-16 offset 3017141: filter literal Code; first own null/empty ValidTo; first truthy valid ValidTo strictly greater than new Date(); latest valid truthy ValidFrom (stable ties); otherwise first candidate. A generic latest version heuristic is incorrect. Static source inspection is not runtime execution evidence.
+
+## Constraints
+
+- No workstation clock, DOM business values, new requests, endpoint permissions, template changes, dependencies or CI edits.
+- Add only optional metadata to version-1 private captures. Original response bytes and descriptor hashes remain unchanged.
+- Malformed or mixed clock evidence is a safety failure even without eligible form metadata. Missing evidence keeps new calendar-dependent branches unsupported.
+- Evaluate interval endpoints and every ValidTo cutoff within it. Endpoints alone miss a first/future/fallback selection that changes and returns to the original row.
+- Support a deliberately bounded ISO date grammar with exact millisecond arithmetic, UTC date-only and Asia/Jakarta local datetime semantics. Unknown/malformed dates remain unsupported.
+- Preserve strict distinct-code requirements for model and PERIOD dropdowns.
+
+## Task 1: Regression contracts and runner RED
+
+- [ ] Add pure projection tests for first-future order, latest ValidFrom/stable ties, first fallback, strict cutoff, UTC/offset/local dates, unchanged sources and candidate-path provenance.
+- [ ] Add interval crossing (including A -> B -> A), absent clock, malformed dates, and invalid clock types/order/timezone/attempt tests; retain old clock-independent behavior.
+- [ ] Add whole-attempt tests for unchanged packet bytes, captured clock provenance, fatal mixed/malformed evidence, and unrelated reference sequences.
+- [ ] Add owned-capture and checkpoint replay tests for before-View/after-drain samples, optional unavailable clocks, invalid samples, Stop, tampered metadata, and identical replay without reading present time.
+- [ ] Publish tests only and record exact-tree GitHub RED before product edits.
+
+## Task 2: Minimal source-bound implementation
+
+- [ ] Add clock validation and reviewed version-selection primitives to existing `coretax_json.py`; avoid a new worker module.
+- [ ] Sample browser clock/timezone at capture enter and after final drain, validate the owned attempt interval, and bind optional metadata through the manifest, live packets and checkpoint packets.
+- [ ] Validate optional packet clocks and whole-attempt consistency before projection or fallback; copy only validated clock metadata into bounded provenance.
+- [ ] Wire only the two reviewed grid catalog consumers. Retain candidate validity paths and selection rule in provenance and leave model/PERIOD uniqueness unchanged.
+
+## Task 3: Verification and delivery
+
+- [ ] Read exact final Windows/portable JUnit and package/bootstrap artifacts, verify hashes/build/tree/allowlist identities, and reconcile every new RED node with a passing successor.
+- [ ] Obtain fresh-context source review; address concrete findings with runner evidence.
+- [ ] Document supported date grammar, source coordinates, exact evidence and remaining live acceptance. Keep corporate semantic and PPN final-lifecycle work explicitly open.
