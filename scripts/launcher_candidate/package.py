@@ -165,3 +165,7 @@ if __name__ == '__main__':
         parser.error('--runtime is required for packaging')
     else:
         package(args.runtime, args.output)
+
+
+def existing_workspace_fixture(root):
+    raise NotImplementedError('connected existing workspace fixture is not implemented')

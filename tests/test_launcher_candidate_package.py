@@ -81,3 +81,47 @@ def test_reject_old_selftest_fields_attached_to_correct_candidate_proof(proof, k
     report[key] = value
     with pytest.raises(ValueError):
         validate_candidate_report(report, inventory)
+
+@pytest.mark.parametrize('observation', [None, {}, {'preferences_loaded': False},
+    {'preferences_loaded': True, 'controller_idle': False, 'workspace_matches': True},
+    {'preferences_loaded': True, 'controller_idle': True, 'workspace_matches': False}])
+def test_reject_disconnected_existing_workspace_preservation(proof, observation):
+    report, inventory = proof
+    report['candidate_existing_state'] = observation
+    with pytest.raises(ValueError):
+        validate_candidate_report(report, inventory)
+
+
+def test_existing_workspace_fixture_seeds_actual_target_and_cleans_own_state(tmp_path):
+    from scripts.launcher_candidate.package import existing_workspace_fixture
+    root = tmp_path / 'resolved-workspace'
+    with existing_workspace_fixture(root) as evidence:
+        assert (root / 'preferences.json').read_text(encoding='utf-8') == (
+            '{"browser":"chrome","headless":false,"identifier":"SYNTHETIC_PRESERVED","detail_source":"dom"}')
+        assert (root / 'runtime-ready.txt').read_text(encoding='utf-8') == 'SYNTHETIC_WORKER_IDENTITY_NOT_EXECUTABLE'
+        assert (root / 'cache/synthetic-marker').read_text(encoding='utf-8') == 'preserve synthetic production cache'
+        assert evidence['before']['exists'] is True
+    assert not root.exists()
+    assert evidence['before'] == evidence['after']
+    assert evidence['cleaned'] is True
+
+
+def test_existing_workspace_fixture_refuses_preexisting_directory(tmp_path):
+    from scripts.launcher_candidate.package import existing_workspace_fixture
+    root = tmp_path / 'owned-by-someone-else'
+    root.mkdir()
+    marker = root / 'existing-preferences'
+    marker.write_bytes(b'preserve existing unrelated state')
+    with pytest.raises(ValueError):
+        with existing_workspace_fixture(root):
+            pytest.fail('must not enter a preexisting workspace')
+    assert marker.read_bytes() == b'preserve existing unrelated state'
+
+
+def test_existing_workspace_fixture_cleanup_on_failure(tmp_path):
+    from scripts.launcher_candidate.package import existing_workspace_fixture
+    root = tmp_path / 'resolved-workspace'
+    with pytest.raises(RuntimeError, match='synthetic startup failure'):
+        with existing_workspace_fixture(root):
+            raise RuntimeError('synthetic startup failure')
+    assert not root.exists()
