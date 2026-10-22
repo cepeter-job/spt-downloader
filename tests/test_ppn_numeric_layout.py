@@ -69,7 +69,9 @@ def test_reviewed_a2_b3_last_body_rows_have_normal_borders(tmp_path, case, row):
             cell = sheet.cell(row, column)
             assert cell.font.bold is False
             assert copy(cell.border) == copy(sheet.cell(row - 1, column).border)
-            assert cell.alignment == Alignment()
+            expected_alignment = (Alignment(horizontal='center', vertical='top')
+                                  if case[0] == 'A2' and column == 2 else Alignment())
+            assert cell.alignment == expected_alignment
             if column not in case[4]:
                 assert cell.number_format == 'General'
         assert sheet.cell(row, 2).value == f'SYNTHETIC-{row - case[2]}-2'

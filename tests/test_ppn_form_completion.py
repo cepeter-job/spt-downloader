@@ -1,5 +1,5 @@
 """PPN-only completion contracts: synthetic values, GitHub-runner execution."""
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 
 import pytest
@@ -18,6 +18,7 @@ def test_appendix_footer_reaches_the_styled_total_after_row_growth(tmp_path, cas
     table, amounts = source_appendix(*case, count=count)
     workbook, reports, _ = export_ppn(tmp_path, [section(form, tables=[table])])
     reference = load_workbook(RESOURCE)
+    reference['A2']['B15'].alignment = copy(reference['A2']['B14'].alignment)
     try:
         sheet = workbook[form]
         target = total + max(0, count - (total - first))

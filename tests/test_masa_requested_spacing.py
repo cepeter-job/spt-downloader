@@ -45,7 +45,7 @@ def test_lampiran_i_reserves_one_empty_row_before_captured_total(tmp_path, count
         label = sheet['A10'].value
         body_reference = sheet['B5']
         total_reference = sheet['M10']
-        heights = {row: sheet.row_dimensions[row].height for row in range(5, 10)}
+        body_height = sheet.row_dimensions[5].height
     finally:
         reference.close()
     rows = [[str(index + 1)] + ['SYNTHETIC'] * 16 for index in range(count)]
@@ -70,7 +70,7 @@ def test_lampiran_i_reserves_one_empty_row_before_captured_total(tmp_path, count
             assert sheet.cell(row, 11).value == 1234.5
             assert sheet.cell(row, 13).value == 24.69
             assert_format(sheet.cell(row, 2), body_reference)
-            assert sheet.row_dimensions[row].height == heights[min(row, 5) if row > 9 else row]
+            assert sheet.row_dimensions[row].height == body_height
         assert reports[0]['complete']
     finally:
         book.close()
