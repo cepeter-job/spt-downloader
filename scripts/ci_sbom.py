@@ -13,6 +13,8 @@ NATIVE_COVERAGE = (
     'user-managed prerequisite and is not bundled. The application hash covers the '
     'PyInstaller bootloader; it is not a separate native vulnerability assessment.'
 )
+# Tcl/Tk 9 on Windows prefixes the Tk library with its Tcl major version.
+_TK_LIBRARY = re.compile(r'(?:tk[0-9]+t?|tcl9tk[0-9]+t?)\.dll', re.IGNORECASE)
 
 
 def _digest(value):
@@ -75,7 +77,7 @@ def make_sbom(*, build_info, executable_digest, native_files, runtime_packages,
         elif re.fullmatch(r'tcl\d+t?\.dll', name, re.IGNORECASE):
             version, source = versions['tcl'], 'validated frozen Tcl self-test'
             principals.add('tcl')
-        elif re.fullmatch(r'tk\d+t?\.dll', name, re.IGNORECASE):
+        elif _TK_LIBRARY.fullmatch(name):
             version, source = versions['tk'], 'validated frozen Tk self-test'
             principals.add('tk')
         elif path.casefold() == 'tools/uv.exe':
@@ -182,7 +184,7 @@ def validate_sbom(data, *, build_info, executable_digest):
     if (len(native) != len(set(native)) or 'tools/uv.exe' not in native
             or not any(re.fullmatch(r'python\d+\.dll', name) for name in names)
             or not any(re.fullmatch(r'tcl\d+t?\.dll', name) for name in names)
-            or not any(re.fullmatch(r'tk\d+t?\.dll', name) for name in names)
+            or not any(_TK_LIBRARY.fullmatch(name) for name in names)
             or not {'playwright', 'openpyxl'} <= worker.keys()):
         raise ValueError('Distribution SBOM lacks its required native and worker inventory.')
 

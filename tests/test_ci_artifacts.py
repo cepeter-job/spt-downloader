@@ -304,17 +304,23 @@ def test_build_info_uses_exact_github_identity_and_rejects_absent_or_invalid_val
                 module.write_build_info(tmp_path, '3.14.8')
 
 
-def test_native_sbom_records_observed_bytes_and_worker_delivery_scope():
+@pytest.mark.parametrize('tcl_name,tk_name,tcl_tk_version', [
+    ('tcl86t.dll', 'tk86t.dll', '8.6.15'),
+    ('tcl90.dll', 'tcl9tk90.dll', '9.0.2'),
+    ('TCL90.DLL', 'TCL9TK90.DLL', '9.0.2'),
+])
+def test_native_sbom_records_observed_bytes_and_worker_delivery_scope(
+        tcl_name, tk_name, tcl_tk_version):
     module = delivery_module('ci_sbom')
     identity = {'schema': 1, 'commit': 'a' * 40, 'run_id': '123', 'run_attempt': 2}
     native = [
         {'path': path, 'sha256': str(index) * 64, 'size_bytes': 100 + index}
-        for index, path in enumerate(('python314.dll', 'tcl86t.dll', 'tk86t.dll', 'tools/uv.exe'), 1)]
+        for index, path in enumerate(('python314.dll', tcl_name, tk_name, 'tools/uv.exe'), 1)]
     data = module.make_sbom(
         build_info=identity, executable_digest='e' * 64, native_files=native,
         runtime_packages={'playwright': '1.64.0', 'openpyxl': '3.1.5'},
         runtime_lock_digest='f' * 64,
-        versions={'python': '3.14.8', 'tcl': '8.6.15', 'tk': '8.6.15',
+        versions={'python': '3.14.8', 'tcl': tcl_tk_version, 'tk': tcl_tk_version,
                   'uv': '0.13.4', 'pyinstaller': '6.22.3'})
     assert data['bomFormat'] == 'CycloneDX' and data['specVersion'] == '1.6'
     assert data['metadata']['component']['version'] == identity['commit']
@@ -322,6 +328,9 @@ def test_native_sbom_records_observed_bytes_and_worker_delivery_scope():
     components = {item['bom-ref']: item for item in data['components']}
     assert components['native:tools/uv.exe']['version'] == '0.13.4'
     assert components['native:python314.dll']['version'] == '3.14.8'
+    assert components['native:' + tk_name]['version'] == tcl_tk_version
+    assert {'name': 'spt:version_evidence', 'value': 'validated frozen Tk self-test'} in (
+        components['native:' + tk_name]['properties'])
     assert components['native:tools/uv.exe']['hashes'] == [{'alg': 'SHA-256', 'content': '4' * 64}]
     worker = components['pkg:pypi/playwright@1.64.0']
     assert {'name': 'spt:delivery', 'value': 'managed-worker-download'} in worker['properties']
@@ -330,6 +339,29 @@ def test_native_sbom_records_observed_bytes_and_worker_delivery_scope():
     assert properties['spt:runtime_lock_sha256'] == 'f' * 64
     assert 'not vulnerability-audited' in properties['spt:native_audit_coverage']
     assert 'PRIVATE' not in json.dumps(data)
+    module.validate_sbom(data, build_info=identity, executable_digest='e' * 64)
+
+
+@pytest.mark.parametrize('tk_name,accepted', [
+    ('tcl9tk90.dll', True),
+    ('TCL9TK90.DLL', True),
+    ('tcl9tk90.dll.backup', False),
+    ('prefix-tcl9tk90.dll', False),
+])
+def test_native_sbom_validation_recognizes_exact_tcl9_tk_library(artifact, tk_name, accepted):
+    module = delivery_module('ci_sbom')
+    data = json.loads((artifact / 'distribution-sbom.json').read_text(encoding='utf-8'))
+    identity = json.loads((artifact / 'build-info.json').read_text(encoding='utf-8'))
+    digest = hashlib.sha256((artifact / 'SPTDownloader.exe').read_bytes()).hexdigest()
+    tk_component = next(item for item in data['components'] if item['bom-ref'] == 'native:tk86t.dll')
+    tk_component.update({'bom-ref': 'native:' + tk_name, 'name': tk_name, 'version': '9.0.2'})
+    next(item for item in tk_component['properties'] if item['name'] == 'spt:archive_path')['value'] = tk_name
+    data['dependencies'][0]['dependsOn'] = [item['bom-ref'] for item in data['components']]
+    if accepted:
+        module.validate_sbom(data, build_info=identity, executable_digest=digest)
+    else:
+        with pytest.raises(ValueError, match='required native'):
+            module.validate_sbom(data, build_info=identity, executable_digest=digest)
 
 
 def test_release_promotion_workflow_is_opt_in_read_only_until_explicit_publish():
