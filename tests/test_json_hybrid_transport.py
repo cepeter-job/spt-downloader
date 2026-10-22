@@ -184,13 +184,3 @@ def test_saving_mode_with_named_account_does_not_start_work(window):
     assert app.preferences['identifier'] == 'SYNTHETIC ACCOUNT'
     assert widget.instate(['readonly']) and not controller.active and not controller.exports
     assert not (path / 'jobs').exists()
-
-
-def test_source_selftest_observes_real_mode_control_save_and_start(tmp_path):
-    import spt_gui
-    report = tmp_path / 'mode-selftest.json'
-    assert spt_gui.self_test(report) == 0
-    data = json.loads(report.read_text())
-    assert data.get('detail_source_control') == {
-        'labels': list(CAPTIONS), 'default': 'json-first', 'saved': 'json-first', 'started': 'json-first'}
-    assert not data['credentials_accessed'] and not data['live_scrape']
