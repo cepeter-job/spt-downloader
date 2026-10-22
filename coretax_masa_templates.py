@@ -6,7 +6,7 @@ import math
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
-                                    _grow, _raw_evidence, _body_rows, _header_key, _table_projection)
+                                    _grow, _body_rows, _header_key, _table_projection)
 
 
 def canonical_form(tax, form):
@@ -32,7 +32,7 @@ PPN_BLOCKS = {
 UNIFIKASI_BLOCKS = {
     'daftar i': [('B3', 4, 5, 8), ('B9', 10, 11, 14)],
     'daftar ii': [('B3', 4, 5, 8), ('B12', 13, 14, 17)],
-    'lampiran i': [(None, 4, 5, 9)],
+    'lampiran i': [(None, 4, 5, 7)],
 }
 # Group, amount-header and body positions are structural reference coordinates.
 PPN_INDUK = [(9, 10, 11, 23), (26, 27, 28, 37), (39, 40, 41, 48),
@@ -431,8 +431,11 @@ def _unifikasi_appendix(sheet, blocks, sections, form):
             pending.extend({**t, 'complete': False} for t, _, _, _ in items)
             grouped[index] = []
     offset = 0
-    for (_, _, first, last), items in zip(blocks, grouped):
+    for index, ((_, _, first, last), items) in enumerate(zip(blocks, grouped)):
         if not items:
+            if form == 'daftar i' and index == 0:
+                _grow(sheet, last + offset + 1, 1, 2)
+                offset += 1
             continue
         table, rows, mapping, totals = items[0]
         first, last = first + offset, last + offset
@@ -463,7 +466,40 @@ def _unifikasi_appendix(sheet, blocks, sections, form):
         for row, value in totals:
             if not _write_unifikasi_amount(sheet, row + offset, money[-1], value):
                 pending.append({**table, 'rows': table['footer']})
+        if form == 'daftar i' and index == 0:
+            # Row 8 is a writable BPPU slot, so growth may fill it. Insert
+            # a separate blank before BPNR rather than consuming a data row.
+            _grow(sheet, last + extra + 1, 1, 2)
+            offset += 1
+    if form == 'lampiran i':
+        count = len(grouped[0][0][1]) if grouped[0] else 0
+        _compact_unifikasi_lampiran(sheet, 10 + offset, 6 + count)
     return fields, pending, evidence
+
+
+def _compact_unifikasi_lampiran(sheet, current_total, target_total):
+    """Keep the captured footer and exactly one unused row after the body."""
+    if current_total == target_total:
+        return
+    if target_total > current_total:
+        _grow(sheet, current_total, target_total - current_total, 2)
+        return
+    if any(cell.value is not None for row in sheet.iter_rows(
+            min_row=target_total, max_row=current_total - 1) for cell in row):
+        raise ValueError('Baris kosong LAMPIRAN-I memuat data yang tidak boleh dihapus.')
+    if any(region.min_row < current_total and region.max_row >= target_total
+           for region in sheet.merged_cells.ranges):
+        raise ValueError('Baris kosong LAMPIRAN-I memotong merge template.')
+    # delete_rows shifts cells but does not move or remove row dimensions.
+    moving = {row: sheet.row_dimensions.pop(row) for row in list(sheet.row_dimensions)
+              if row >= target_total}
+    removed = current_total - target_total
+    sheet.delete_rows(target_total, removed)
+    for row, dimension in moving.items():
+        if row >= current_total:
+            dimension.index = row - removed
+            sheet.row_dimensions[row - removed] = dimension
+
 
 PPN_TOTAL_COLUMNS = {'a1': (5,), 'a2': (6, 7, 8, 9), 'b1': (6, 7, 8),
                      'b2': (6, 7, 8, 9), 'b3': (6, 7, 8, 9), 'c': (10, 11, 12, 13)}
@@ -553,63 +589,23 @@ def _ppn_appendix(sheet, blocks, sections, form):
         pending.extend({**table, 'rows': table['footer']} for table, _ in totals)
     return fields, pending
 
-def _redundant_unifikasi_identity(field):
-    # Presentation only: these controls stay in checkpoint and mapping counts.
-    groups = {
-        'A. IDENTITAS PEMOTONG': {
-            'TaxIdentificationNumber': 'NPWP', 'FullName': 'Nama Lengkap',
-            'Address': 'Alamat', 'PhoneNumber': 'Nomor Telepon',
-            'SubmitInProgressStatus': 'Status Penyampaian',
-        },
-        'C. PERNYATAAN DAN TANDA TANGAN': {
-            'StatementTIN': 'NPWP', 'StatementFullName': 'Nama Tanda Tangan',
-            'MyCheckBox': 'Penandatangan / Wajib Pajak / Kuasa Wajib Pajak / NPWP / Nama Tanda Tangan / Tanda Tangan',
-        },
-    }
-    expected = groups.get(field.get('group'), {}).get(field.get('field'))
-    return (expected is not None and field.get('label') == expected
-            and not field.get('column_label')
-            and (field.get('field') != 'MyCheckBox'
-                 or field.get('value') in ('true', 'false', True, False)))
-
-
 def render_template_form(sheet, tax, form, sections):
     form = canonical_form(tax, form)
-    evidence = []
     if form == 'induk':
         fields = _identity_fields(sheet, sections, tax)
         tables = _ppn_induk(sheet, sections) if tax == 'PPN' else _unifikasi_induk(sheet, sections)
         if tax == 'PPN':
             fields = _ppn_fields(sheet, fields)
-        style_row = 4
     else:
         blocks = (PPN_BLOCKS if tax == 'PPN' else UNIFIKASI_BLOCKS)[form.casefold()]
         if tax == 'PPN':
+            if form == 'a2':
+                sheet['B15'].alignment = copy(sheet['B14'].alignment)
             fields, tables = _ppn_appendix(sheet, blocks, sections, form)
         else:
-            fields, tables, evidence = _unifikasi_appendix(sheet, blocks, sections, form)
-        style_row = blocks[0][2]
-    if tax == 'PPN':
-        # The user requests clean PPN forms, not a second copy of raw capture.
-        # Omission is presentation only: unresolved bindings remain in Audit
-        # and the unchanged private checkpoint, never a fabricated COMPLETE.
-        unresolved = [table for table in tables if table.get('rows') or not table.get('complete', True)]
-        return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
-                'unmapped_tables': len(unresolved),
-                'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved)}
-    if tax == 'PPh Unifikasi' and form != 'induk':
-        # Clean appendix omission: do not append raw evidence to the sheet.
-        # Unresolved bindings remain truthful in the report; raw checkpoint
-        # immutable. Identity-only omissions apply to Induk forms only.
-        unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
-        return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
-                'unmapped_tables': len(unresolved),
-                'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved)}
-    display_fields = ([field for field in fields if not _redundant_unifikasi_identity(field)]
-                      if form == 'induk' else fields)
-    display_sections = ([{**section, 'text': ''} for section in sections]
-                        if form == 'induk' else sections)
-    _raw_evidence(sheet, display_sections, display_fields, tables + evidence, style_row)
+            fields, tables, _ = _unifikasi_appendix(sheet, blocks, sections, form)
+    # Approved PPN and Unifikasi forms, including Induk, omit raw appendices.
+    # Checkpoints stay unchanged and mapping reports still expose every gap.
     unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
     return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
             'unmapped_tables': len(unresolved),

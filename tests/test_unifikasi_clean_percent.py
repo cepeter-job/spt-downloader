@@ -30,7 +30,7 @@ def table(group='BPPU', rate='2,50', count=1):
             'complete':True, 'footer':[], 'footer_spans':[]}
 
 
-@pytest.mark.parametrize('group,first', [('BPPU',5),('BPNR',11)])
+@pytest.mark.parametrize('group,first', [('BPPU',5),('BPNR',12)])
 @pytest.mark.parametrize('literal,expected', [('2,00','0.02'),('2,50','0.025'),('0','0'),('100','1'),
                                              ('12,3456789012345','0.123456789012345')])
 def test_numeric_percent_scale_and_unchanged_adjacent_values(tmp_path,group,first,literal,expected):
@@ -70,21 +70,21 @@ def test_grown_rates_and_blank_spacer_border(tmp_path,count):
     book,reports=export(tmp_path,[section('DAFTAR-I',tables=[table(count=count),table('BPNR',count=0)])])
     try:
         sheet=book['DAFTAR-I']; offset=max(0,count-4)
-        for row in list(range(5,9+offset))+list(range(11+offset,14+offset)):
+        for row in list(range(5,9+offset))+list(range(12+offset,15+offset)):
             assert sheet.cell(row,10).number_format=='0.00%'
         for row in range(5,count+5):
             assert sheet.cell(row,10).value==0.025
             assert sheet.cell(row,11).value==30.86
-        spacer=sheet.cell(14+offset,10)
+        spacer=sheet.cell(15+offset,10)
         assert spacer.value is None
-        assert copy(spacer.border)==copy(sheet.cell(14+offset,9).border)
+        assert copy(spacer.border)==copy(sheet.cell(15+offset,9).border)
         assert all(getattr(spacer.border,e).style is None for e in ('left','right','top','bottom'))
-        assert sheet.max_row==18+offset
+        assert sheet.max_row==19+offset
         assert reports[0]['complete']
     finally:book.close()
 
 
-@pytest.mark.parametrize('name,last',[('DAFTAR-I',18),('DAFTAR-II',18),('LAMPIRAN-I',10)])
+@pytest.mark.parametrize('name,last',[('INDUK',25),('DAFTAR-I',19),('DAFTAR-II',18),('LAMPIRAN-I',6)])
 @pytest.mark.parametrize('populated',[False,True])
 def test_clean_appendices_preserve_unresolved_audit(tmp_path,name,last,populated):
     source=section(name,fields=[{'field':'SyntheticUnknown','label':'Unbound','value':'SYNTHETIC FIELD'}],

@@ -31,27 +31,43 @@ BLOCKS = [
     ('PPN', 'B3', 3, 4, 7, ''),
     ('PPN', 'C', 3, 4, 6, ''),
     ('PPh Unifikasi', 'Daftar I', 4, 5, 8, 'B3'),
-    ('PPh Unifikasi', 'Daftar I', 10, 11, 14, 'B9'),
+    ('PPh Unifikasi', 'Daftar I', 11, 12, 15, 'B10'),
     ('PPh Unifikasi', 'Daftar II', 4, 5, 8, 'B3'),
     ('PPh Unifikasi', 'Daftar II', 13, 14, 17, 'B12'),
-    ('PPh Unifikasi', 'Lampiran I', 4, 5, 9, 'B3'),
+    ('PPh Unifikasi', 'Lampiran I', 4, 5, 5, 'B3'),
 ]
 BLANK_REGIONS = {
     'PPN': {'A1': [(4, 6)], 'A2': [(5, 15)], 'B1': [(5, 5)],
             'B2': [(4, 7)], 'B3': [(4, 7)], 'C': [(4, 6)]},
-    'PPh Unifikasi': {'Daftar I': [(5, 8), (11, 14)],
-                     'Daftar II': [(5, 8), (14, 17)], 'Lampiran I': [(5, 9)]},
+    'PPh Unifikasi': {'Daftar I': [(5, 8), (12, 15)],
+                     'Daftar II': [(5, 8), (14, 17)], 'Lampiran I': [(5, 5)]},
 }
 
 
 def approved_reference(tax):
     book = load_workbook(FIXTURES / TYPES[tax]['reference'])
+    if tax == 'PPN':
+        book['A2']['B15'].alignment = copy(book['A2']['B14'].alignment)
     if tax == 'PPh Unifikasi':
         # Only the user-approved rate/spacer deltas change the legacy layout.
         sheet = book['Daftar I']
         for coordinate in ('J5', 'J6', 'J7', 'J8', 'J11', 'J12', 'J13'):
             sheet[coordinate].number_format = '0.00%'
         sheet['J14'].border = copy(sheet['I14'].border)
+        sheet.insert_rows(9)
+        # The new separator inherits the approved template's blank-row style.
+        for column in range(1, 17):
+            sheet.cell(9, column)._style = copy(sheet.cell(2, column)._style)
+        for row in sorted(list(sheet.row_dimensions), reverse=True):
+            if row >= 9:
+                dimension = sheet.row_dimensions.pop(row)
+                dimension.index = row + 1
+                sheet.row_dimensions[row + 1] = dimension
+        sheet = book['Lampiran I']
+        sheet.delete_rows(6, 4)
+        for row in list(sheet.row_dimensions):
+            if 6 <= row <= 9:
+                del sheet.row_dimensions[row]
     return book
 
 
@@ -245,6 +261,12 @@ def test_appendix_columns_reorder_without_losing_ids_dates_or_duplicate_rows(tmp
                 for cell in cells:
                     target_row = cell.row + 1 if cell.row > last else cell.row
                     assert_format(workbook[form].cell(target_row, cell.column), cell)
+        elif tax == 'PPh Unifikasi' and form == 'Lampiran I':
+            assert workbook[form]['A8'].value == ref['A6'].value
+            for column in range(1, ref.max_column + 1):
+                assert_format(workbook[form].cell(6, column), ref.cell(5, column))
+                assert workbook[form].cell(7, column).value is None
+                assert_format(workbook[form].cell(8, column), ref.cell(6, column))
         else:
             assert_layout(workbook[form], ref)
     finally:
@@ -363,7 +385,7 @@ def test_each_amendment_uses_independent_templates_and_exact_resume_links(tmp_pa
         for item, other, model in [(workbook, amended, 'NORMAL'), (amended, workbook, 'AMENDMENT')]:
             for form in forms:
                 marker = 'SYNTHETIC ' + model + ' ' + form
-                assert len(cells_with(item, marker)) == (1 if tax == 'PPh Unifikasi' and form == 'Induk' else 0)
+                assert len(cells_with(item, marker)) == 0
                 assert not cells_with(other, marker)
                 assert_layout(item[form], reference[form])
         links = [cell.hyperlink for sheet in resume for row in sheet for cell in row if cell.hyperlink]

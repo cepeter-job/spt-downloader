@@ -18,11 +18,22 @@ def fixture_run():
                                        'fields': [({'label': 'Status Penyampaian', 'field': 'SubmitInProgressStatus',
                                                     'group': 'HEADER', 'value': key}
                                                    if tax == 'PPh Pasal 21/26' else
+                                                   {'label': 'Masa Pajak', 'value': period}
+                                                   if tax == 'PPh Unifikasi' else
                                                    {'label': 'Record marker', 'field': 'Marker', 'value': key})]}]}
                         for key, tax, period, model in rows]}
 
 
 MODELS = ('Normal', 'Pembetulan 1', 'Pembetulan 2')
+
+
+def unifikasi_induk_table(amount):
+    """Put an isolation sentinel in an inspected writable amount slot."""
+    return {'name': 'PAJAK PENGHASILAN', 'group': 'B. PAJAK PENGHASILAN',
+            'headers': ['NO', 'DETIL', 'SETOR SENDIRI'],
+            'rows': [['1', 'Pasal 4 Ayat 2', str(amount)]],
+            'body_row_count': 1, 'source_total': 1, 'complete': True,
+            'footer': [], 'footer_spans': []}
 
 
 def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
@@ -47,6 +58,8 @@ def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
         if tax == 'PPh Pasal 21/26':
             record['sections'][0]['fields'][0].update(
                 label='Status Penyampaian', field='SubmitInProgressStatus', group='HEADER')
+        if tax == 'PPh Unifikasi':
+            record['sections'][0]['tables'].append(unifikasi_induk_table(100 + ordinal))
         if tax == 'PPN':
             record['sections'][0]['fields'].append({
                 'label': 'PPN kurang atau (lebih) bayar (III.A - III.B - III.C - III.D)',

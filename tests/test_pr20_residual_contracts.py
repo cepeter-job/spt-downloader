@@ -57,7 +57,9 @@ def test_unifikasi_induk_wrong_footer_spans_remain_unmapped(tmp_path):
         assert all(book['INDUK'].cell(25, column).value is None
                    for column in range(3, 9))
         assert reports and not reports[0]['complete']
-        assert any(cell.value == '53' for cells in book['INDUK'] for cell in cells)
+        assert reports[0]['unmapped_tables'] == 1
+        assert reports[0]['unmapped_rows'] == 1
+        assert not any(cell.value == '53' for cells in book['INDUK'] for cell in cells)
         assert table == original
     finally:
         book.close()
