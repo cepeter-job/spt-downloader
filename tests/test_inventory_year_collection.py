@@ -68,6 +68,20 @@ def test_changed_filtered_total_stays_partial(browser, monkeypatch, tmp_path):
     assert any(a.get('list_filter') and a['result'] == 'PARTIAL' for a in run['audit'])
 
 
+def test_empty_filtered_partitions_reset_retained_offset_before_request(browser, monkeypatch, tmp_path):
+    import coretax_browser as driver
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, empty=True,
+                                   start=2, auxiliary_request=True) as (page, metrics):
+        run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
+    assert run['inventory_complete'] is True, run['errors']
+    assert run['records'] == [] and run['errors'] == []
+    assert [(a['total'], a['scanned'], a['result']) for a in run['audit']] == [
+        (0, 0, 'RECONCILED'), (0, 0, 'RECONCILED')]
+    assert [request['First'] for request in metrics['submitted_requests']] == [0, 0]
+    assert all(request['Filters'] for request in metrics['submitted_requests'])
+    assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
+
+
 def test_selected_record_restores_persisted_filter_before_readonly_view(browser, monkeypatch, tmp_path):
     import coretax_browser as driver
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True) as (page, metrics):

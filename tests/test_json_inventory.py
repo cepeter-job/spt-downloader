@@ -637,7 +637,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
               });tbody.appendChild(row);
             });
             document.querySelector('.p-highlight').textContent=String(first/2+1);
-            document.querySelector('.p-paginator-prev').disabled=first===0;
+            document.querySelector('.p-paginator-prev').disabled=first===0||body.Payload.TotalRecords===0;
             document.querySelector('.p-paginator-next').disabled=first+received.length>=body.Payload.TotalRecords;
             if(config.auxiliary)fetch('/returnsheet/api/returnsheetssubmitted',{
               method:'POST',body:JSON.stringify({TaxpayerAggregateIdentifier:'fixture-taxpayer'})}).catch(()=>{});
