@@ -87,3 +87,13 @@ comparison. Do not call the runtime byte-reproducible or suppress new warnings.
 A fresh whole-change review and a separate adoption decision are still required.
 The candidate draft PR is for review and recovery; normal distribution remains
 unchanged. Keep the recovery worktree and SDD reports.
+
+The shared `tests/` collection contains 3925 combined tests. The candidate-only
+native behavioral case is explicitly invoked from
+`scripts/launcher_candidate/test_native_regression.py` in the required inventory
+and package checks. Its six assertions are unchanged; it has no skip condition.
+The candidate's normal two-shard suite must satisfy the same complete-outcome
+gate as production. Qualification therefore records shared coverage and the
+separate mandatory native case, without counting a production skip as coverage.
+Pushes coalesce only this candidate workflow/branch; manual native build runs
+retain separate run identities. Normal production workflow concurrency is intact.

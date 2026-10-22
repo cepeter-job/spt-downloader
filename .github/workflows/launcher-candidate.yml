@@ -9,11 +9,12 @@ on:
         description: Rebuild native runtime for controlled comparison
         type: boolean
         default: false
-env:
-  SPT_CANDIDATE_REGRESSION: '1'
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: launcher-candidate-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
   inventory:
     runs-on: windows-2025
@@ -46,7 +47,7 @@ jobs:
           uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
       - name: Synthetic inventory contract
         shell: pwsh
-        run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py tests/test_launcher_candidate_package.py tests/test_launcher_candidate_reader_report.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
+        run: .venv/Scripts/python.exe -m pytest tests/test_launcher_candidate_inventory.py tests/test_launcher_candidate_package.py tests/test_launcher_candidate_reader_report.py scripts/launcher_candidate/test_native_regression.py -q --basetemp "$env:RUNNER_TEMP/candidate-inventory-tests"
   native:
     if: github.event_name == 'workflow_dispatch' && inputs.build_native
     needs: inventory
@@ -133,7 +134,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'uv candidate environment failed' }
           uv pip sync --python "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" --require-hashes --only-binary :all: locks/build.txt
           if ($LASTEXITCODE -ne 0) { throw 'Locked candidate build environment failed' }
-          & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -B -m pytest tests/test_launcher_candidate_inventory.py tests/test_launcher_candidate_package.py tests/test_launcher_candidate_reader_report.py -q --basetemp "$env:RUNNER_TEMP/standalone-inventory-tests"
+          & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -B -m pytest tests/test_launcher_candidate_inventory.py tests/test_launcher_candidate_package.py tests/test_launcher_candidate_reader_report.py scripts/launcher_candidate/test_native_regression.py -q --basetemp "$env:RUNNER_TEMP/standalone-inventory-tests"
           if ($LASTEXITCODE -ne 0) { throw 'Candidate interpreter inventory tests failed' }
           & "$env:RUNNER_TEMP/locked-candidate-env/Scripts/python.exe" -I -B -m PyInstaller --version
           if ($LASTEXITCODE -ne 0) { throw 'Candidate PyInstaller import failed' }

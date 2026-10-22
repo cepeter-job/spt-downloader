@@ -37,7 +37,14 @@ and two setup errors in 1123.16 seconds. Both were `tk.Tk()` fixture failures at
 `init.tcl` path could not be read because it did not exist. The affected cases
 were `selection_empty...[False]` and `overwrite_response...[switched-io]`.
 Without a post-failure inventory this does not establish permanent file deletion
-or a root cause. The later old-head full-suite result is still pending.
+or a root cause. Later old-head run `39728690587`, job `119658463630`, finished
+with 3735 passed, one failure and one setup error (pytest 1428.72 seconds;
+JUnit 1428.410 seconds). Its exact 3737-test inventory records exit status 1.
+The selection-context setup reported the same unreadable `init.tcl`; the compact
+bugreport-footer case `[540-430-1.5]` reported `invalid command name tcl_findLibrary`.
+Managed worker fresh bootstrap/reuse subsequently passed with CPython 3.14.8.
+Artifact `12405267796` ZIP SHA-256 is
+`03a392418a5fd264d49bb6ffd73e8c7cac20dda9cc1cdad50140c243dc204273`.
 ## Historical evidence boundary
 
 Task 4 began at `3beda5b8500eb9cf703c344654cc11dac2f13a60` and merged reviewed
@@ -305,6 +312,7 @@ future adoption; it is not converted to a pass by this failed investigation.
 
 | Gate | Status for the measured candidate | Evidence / limit |
 | --- | --- | --- |
+| Historical full Windows suite | FAILED | 3735 passed, one failure, one setup error; Tcl initialization failures; managed worker bootstrap/reuse passed |
 | Native identity, loaded resources, relocated runtime | PASSED | Exact pinned inventory and earlier fresh-runner relocation/venv readback |
 | Source/frozen/read-back behavioral safety fixture | PASSED for its stated scope | Six actual UI/native checks per mode; full controller/output gates additionally exercised by Windows suite |
 | Portable tests and locked Python dependency audit | PASSED | 568 tests; 46 packages, zero reported vulnerabilities |
@@ -319,3 +327,13 @@ future adoption; it is not converted to a pass by this failed investigation.
 | Native byte reproducibility | NOT ESTABLISHED | 34 same-size native PE files differ; timestamps/debug paths differ |
 | Signing and owner live acceptance | DEFERRED | Separate owner decision; no release/publishing claim |
 | Fresh whole-change review / draft PR | CONTROLLER HANDOFF | Required before candidate handoff is closed; no production adoption |
+
+## Combined collection boundary
+
+Review identified that a candidate-only native test under `tests/` would skip
+under normal production CI, violating main's strict completed-outcome gate.
+The unchanged test now lives at `scripts/launcher_candidate/test_native_regression.py`
+and is explicitly mandatory in candidate inventory and package verification,
+with no environment skip. The combined shared collection is 3925 tests plus one
+separate candidate-native qualification case. Source/frozen/readback behavioral
+execution remains required. No production gate or native assertion was weakened.
