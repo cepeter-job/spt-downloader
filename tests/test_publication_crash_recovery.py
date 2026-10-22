@@ -2,9 +2,11 @@
 import importlib
 import importlib.util
 import json
+import errno
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -186,3 +188,34 @@ recovery.recover_publication(Path(sys.argv[1]), Path(sys.argv[2]))
     assert module.recover_publication(source, downloads) == final
     assert workbook_bytes(final) == before
     assert not list(final.rglob('*.recovery'))
+
+
+def test_recovery_requires_native_custody_before_any_output_change(tmp_path, monkeypatch):
+    module = recovery()
+    source, downloads, final, _ = crash_publication(tmp_path, 'installed')
+    before = workbook_bytes(final)
+    monkeypatch.setattr(module, 'sys', SimpleNamespace(platform='unsupported'), raising=False)
+    with pytest.raises(OSError) as failure:
+        module.recover_publication(source, downloads)
+    assert failure.value.errno == errno.ENOTSUP
+    assert workbook_bytes(final) == before
+
+
+def test_changed_displaced_file_at_final_cleanup_is_retained(tmp_path, monkeypatch):
+    module = recovery()
+    from spt_desktop import output_windows
+    remove = getattr(output_windows, 'delete_verified', None)
+    assert callable(remove), 'Recovery cleanup needs held native file custody'
+    source, downloads, final, before = crash_publication(tmp_path, 'installed')
+    raced = []
+    changed = b'SYNTHETIC UNAPPROVED CHANGE AT RECOVERY CLEANUP'
+    def change_before_delete(path, expected):
+        path.write_bytes(changed)
+        raced.append(path)
+        return remove(path, expected)
+    monkeypatch.setattr(module, 'delete_verified', change_before_delete, raising=False)
+    with pytest.raises(ValueError, match='changed|state|fingerprint|bytes'):
+        module.recover_publication(source, downloads)
+    assert raced and all(path.read_bytes() == changed for path in raced)
+    assert workbook_bytes(final) == before
+    assert list(source.glob('publication-recovery-*.json'))

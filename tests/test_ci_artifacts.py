@@ -351,6 +351,65 @@ def test_release_promotion_workflow_is_opt_in_read_only_until_explicit_publish()
     assert publish['permissions'] == {'contents': 'write', 'attestations': 'read'}
 
 
+def test_release_dispatch_threads_the_exact_source_python_version_through_both_jobs():
+    import shlex
+    from support_workflows import load_workflow, _expression
+
+    path = Path(__file__).resolve().parents[1] / '.github/workflows/release-promotion.yml'
+    workflow = load_workflow(path)
+    inputs = workflow['on']['workflow_dispatch']['inputs']
+    assert 'source_python_version' in inputs, 'Release dispatch cannot select a historical source Python version'
+    version = inputs['source_python_version']
+    assert version['required'] is True and version['type'] == 'string'
+    assert 'default' not in version, 'The source version must not silently default to the current build pin'
+    assert _expression(workflow['env']['SOURCE_PYTHON_VERSION']) == 'inputs.source_python_version'
+    for job in ('verify', 'publish'):
+        commands = [shlex.split(step['run']) for step in workflow['jobs'][job]['steps']
+                    if 'scripts.ci_release' in step.get('run', '')]
+        assert len(commands) == 1
+        argv = commands[0]
+        assert argv.count('--python-version') == 1
+        assert argv[argv.index('--python-version') + 1] == '$SOURCE_PYTHON_VERSION'
+
+
+def release_cli_arguments(tmp_path, command='prepare'):
+    return [command, '--repository', 'synthetic-owner/spt-downloader', '--run-id', '123',
+            '--run-attempt', '2', '--commit', 'a' * 40, '--artifact-id', '456',
+            '--output', str(tmp_path / 'candidate'), '--tag', 'v2026.10.22']
+
+
+def test_release_cli_requires_an_explicit_source_python_version_before_external_work(tmp_path, monkeypatch):
+    module = delivery_module('ci_release')
+    monkeypatch.setattr(module, 'prepare', lambda *args, **kwargs: pytest.fail('Missing source version reached preparation'))
+    with pytest.raises(SystemExit) as failure:
+        module.main(release_cli_arguments(tmp_path))
+    assert failure.value.code == 2
+
+
+@pytest.mark.parametrize('command,rollback', [('prepare', False), ('prepare', True),
+                                             ('verify', False), ('publish', False)])
+def test_release_cli_preserves_a_source_version_different_from_todays_pin(
+        tmp_path, monkeypatch, command, rollback):
+    module = delivery_module('ci_release')
+    observed = []
+    target = 'restore_release' if rollback else {'verify': 'verify_candidate'}.get(command, command)
+    monkeypatch.setattr(module, target, lambda *args, **kwargs: observed.append(kwargs))
+    argv = release_cli_arguments(tmp_path, command) + ['--python-version', '3.13.9']
+    if rollback:
+        argv += ['--rollback-tag', 'v2026.01.01']
+    module.main(argv)
+    assert len(observed) == 1 and observed[0]['python_version'] == '3.13.9'
+
+
+@pytest.mark.parametrize('version', ['03.14.8', '3.014.8', '3.14.08', '\u0663.14.8',
+                                    '3.14', '3.14.8+gil', '3.14.8;unused', '', None])
+def test_release_source_python_version_requires_canonical_ascii_release_syntax(version):
+    module = delivery_module('ci_release')
+    _, _, _, identity = source_evidence()
+    with pytest.raises(ValueError, match='Python|identity|version'):
+        module._identity(**dict(identity, python_version=version))
+
+
 @pytest.fixture
 def prepared_release(artifact, tmp_path, monkeypatch):
     """Exercise real delivery code with an explicitly synthetic GitHub adapter."""
@@ -387,7 +446,8 @@ def prepared_release(artifact, tmp_path, monkeypatch):
         subject = Path(argv[3])
         digest = hashlib.sha256(subject.read_bytes()).hexdigest()
         if argv[2] == 'download':
-            Path(cwd, 'sha256:' + digest + '.jsonl').write_text(
+            # gh uses a hyphen on Windows, where ':' is not a valid filename.
+            Path(cwd, 'sha256-' + digest + '.jsonl').write_text(
                 json.dumps({'synthetic': True, 'digest': digest}), encoding='utf-8')
             return b''
         assert argv[2] == 'verify' and '--deny-self-hosted-runners' in argv
@@ -474,64 +534,134 @@ def test_publish_rejects_tampering_even_when_outer_checksums_are_recomputed(
     assert all(argv[:2] == ['gh', 'attestation'] for argv in commands)
 
 
-@pytest.mark.parametrize('corrupt_draft', [False, True])
-def test_publish_checks_draft_readback_before_publication_and_never_clobbers(
-        prepared_release, monkeypatch, corrupt_draft):
-    module, assets, identity, commands, signature_command = prepared_release
+@pytest.fixture
+def publishing_release(prepared_release, monkeypatch):
+    """Model draft visibility and numeric-ID mutations at the documented REST boundary."""
+    from urllib.parse import parse_qs, urlparse
+
+    module, assets, identity, _, signature_command = prepared_release
     for key, value in {'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'workflow_dispatch',
                        'GITHUB_REF': 'refs/heads/main', 'GITHUB_REPOSITORY': identity['repository']}.items():
         monkeypatch.setenv(key, value)
-    state = {'created': False, 'published': False}
+    state = {'created': False, 'published': False, 'tag_created': False,
+             'tag': {'type': 'commit', 'sha': identity['commit']}, 'damage': None,
+             'downloaded': 0, 'reads': [], 'mutations': [], 'uploaded': {}}
     release = release_metadata(module, assets, identity)
     by_id = {entry['id']: entry for entry in release['assets']}
-    mutations = []
+    by_name = {entry['name']: entry for entry in release['assets']}
+    base = 'repos/' + identity['repository']
+
+    def current_release():
+        return dict(release, draft=not state['published'],
+                    assets=[by_name[name] for name in state['uploaded']])
 
     def api(endpoint, *, missing=False):
-        if missing:
-            assert not state['created']
-            return None
+        state['reads'].append(endpoint)
         if '/git/ref/tags/' in endpoint:
-            return {'object': {'type': 'commit', 'sha': identity['commit']}}
-        assert state['created'] and '/releases/tags/' in endpoint
-        return dict(release, draft=not state['published'])
+            if missing and not state['tag_created']:
+                return None
+            assert state['tag_created']
+            return {'object': dict(state['tag'])}
+        if '/releases/tags/' in endpoint:
+            if missing and not state['created']:
+                return None
+            if not state['published']:
+                raise RuntimeError('Published-release endpoint returned HTTP 404 for draft')
+            return current_release()
+        assert endpoint == base + '/releases/321', 'Readback must retain the created release ID'
+        assert state['created']
+        return current_release()
 
     def command(argv, **kwargs):
         if argv[:2] == ['gh', 'attestation']:
             return signature_command(argv, **kwargs)
         assert '--clobber' not in argv and 'delete' not in argv
-        mutations.append(list(argv))
+        state['mutations'].append(list(argv))
         if argv[:2] == ['gh', 'api']:
-            assert argv[argv.index('--method') + 1] == 'POST'
-            assert json.loads(kwargs['input_data']) == {
-                'ref': 'refs/tags/v2026.10.22', 'sha': identity['commit']}
-        elif argv[:3] == ['gh', 'release', 'create']:
+            method = argv[argv.index('--method') + 1]
+            endpoint = next(value for value in argv if value.startswith(('repos/', 'https://uploads.github.com/')))
+            if endpoint == base + '/git/refs':
+                assert method == 'POST' and not state['tag_created']
+                assert json.loads(kwargs['input_data']) == {
+                    'ref': 'refs/tags/v2026.10.22', 'sha': identity['commit']}
+                state['tag_created'] = True
+                return b'{}'
+            if endpoint == base + '/releases':
+                payload = json.loads(kwargs['input_data'])
+                assert method == 'POST' and not state['created'] and state['tag_created']
+                assert payload['draft'] is True and payload['target_commitish'] == identity['commit']
+                assert payload['tag_name'] == release['tag_name']
+                state['created'] = True
+                return json.dumps(current_release()).encode()
+            if endpoint.startswith('https://uploads.github.com/'):
+                parsed = urlparse(endpoint)
+                assert method == 'POST' and parsed.path == '/' + base + '/releases/321/assets'
+                name, = parse_qs(parsed.query)['name']
+                assert name in by_name and name not in state['uploaded']
+                assert 'Content-Type: application/octet-stream' in argv
+                path = Path(argv[argv.index('--input') + 1])
+                state['uploaded'][name] = path.read_bytes()
+                return json.dumps(by_name[name]).encode()
+            assert endpoint == base + '/releases/321' and method == 'PATCH'
+            assert json.loads(kwargs['input_data']) == {'draft': False, 'make_latest': 'true'}
+            assert len(state['uploaded']) == len(by_name)
+            state['published'] = True
+            return json.dumps(current_release()).encode()
+        if argv[:3] == ['gh', 'release', 'create']:
+            # Model the old CLI create accurately so the regression reaches the
+            # actual bug: REST GET-by-tag cannot retrieve this draft afterward.
             assert '--draft' in argv and '--verify-tag' in argv
             state['created'] = True
-        else:
-            assert argv[:3] == ['gh', 'release', 'edit']
-            assert state['created'] and not corrupt_draft
-            assert '--draft=false' in argv
-            state['published'] = True
-        return b''
+            state['uploaded'] = {name: (assets / name).read_bytes() for name in by_name}
+            return b''
+        pytest.fail('Publication must mutate the created numeric release ID')
 
     def download(endpoint, path):
         name = by_id[int(endpoint.rsplit('/', 1)[1])]['name']
-        content = (assets / name).read_bytes()
-        if corrupt_draft and name == module.ARCHIVE:
+        content = state['uploaded'][name]
+        if state['damage'] == 'archive' and name == module.ARCHIVE:
             content += b'SYNTHETIC DRAFT DAMAGE'
         Path(path).write_bytes(content)
+        state['downloaded'] += 1
+        if state['downloaded'] == len(by_name):
+            if state['damage'] == 'tag-moved':
+                state['tag']['sha'] = 'b' * 40
+            elif state['damage'] == 'tag-object':
+                state['tag']['type'] = 'tag'
 
     monkeypatch.setattr(module, '_api', api)
     monkeypatch.setattr(module, '_command', command)
     monkeypatch.setattr(module, '_download', download)
+    return module, assets, identity, release, state
+
+
+@pytest.mark.parametrize('corrupt_draft', [False, True])
+def test_publish_checks_draft_readback_by_created_id_before_publication_and_never_clobbers(
+        publishing_release, corrupt_draft):
+    module, assets, identity, release, state = publishing_release
+    state['damage'] = 'archive' if corrupt_draft else None
     if corrupt_draft:
         with pytest.raises(ValueError, match='digest|size'):
             module.publish(assets, 'v2026.10.22', **identity)
         assert not state['published']
+        assert 0 < state['downloaded'] <= len(release['assets'])
     else:
         assert module.publish(assets, 'v2026.10.22', **identity) == release['html_url']
         assert state['published']
-    assert len(mutations) == (2 if corrupt_draft else 3)
+        assert state['downloaded'] == 2 * len(release['assets'])
+    assert any(endpoint.endswith('/releases/321') for endpoint in state['reads'])
+    assert all(argv[:2] == ['gh', 'api'] for argv in state['mutations'])
+
+
+@pytest.mark.parametrize('damage', ['tag-moved', 'tag-object'])
+def test_a_tag_changed_after_draft_readback_never_becomes_public(publishing_release, damage):
+    module, assets, identity, release, state = publishing_release
+    state['damage'] = damage
+    with pytest.raises(ValueError, match='tag|Tag|source commit'):
+        module.publish(assets, 'v2026.10.22', **identity)
+    assert state['created'] and not state['published'], 'A changed tag must leave the release in draft'
+    assert state['downloaded'] == len(release['assets']), 'The race is injected after complete draft readback'
+    assert not any('PATCH' in argv for argv in state['mutations'])
 
 
 def test_publish_refuses_non_main_dispatch_before_any_external_command(prepared_release, monkeypatch):

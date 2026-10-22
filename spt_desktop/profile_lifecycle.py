@@ -280,6 +280,8 @@ def temporary_profile(root, kind):
             try:
                 os.close(lease)
             except OSError:
+                # Lease cleanup cannot replace the original cancellation/result;
+                # any still-held lease makes the following recovery fail closed.
                 pass
         if marker is not None:
             # Cleanup may fail while Chromium closes a file. It must never

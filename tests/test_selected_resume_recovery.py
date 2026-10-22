@@ -142,3 +142,32 @@ def test_cli_continuation_consumes_saved_desktop_selection_and_mode(tmp_path, mo
     monkeypatch.setattr(coretax, 'save_output', save)
     assert coretax._main(['--resume', str(folder), '--non-interactive']) == 0
     assert observed == [(['21-january'], 'json-first')]
+
+
+@pytest.mark.parametrize('mode', ['dom', 'json-first'])
+def test_nonprefix_selection_reuses_real_first_ordinal_checkpoint_without_navigation(tmp_path, mode):
+    module = recovery()
+    import coretax_browser as driver
+    import support_browser_protocol as protocol
+    inventory = protocol.run_fixture()
+    original = deepcopy(inventory['records'][0])
+    inventory['records'] = [
+        {**deepcopy(original), 'key': 'unselected-key-one', 'record_id': 'unselected-one'},
+        {**deepcopy(original), 'key': 'unselected-key-two', 'record_id': 'unselected-two'},
+        original]
+    (tmp_path / 'inventory.json').write_text(json.dumps(inventory), encoding='utf-8')
+    module.persist_selection(select_records(inventory, [original['record_id']]), tmp_path,
+                             detail_source=mode)
+    protocol.write_checkpoint(tmp_path, original, ordinal=1)
+    checkpoint = tmp_path / 'returns' / '0001.json'
+    checkpoint_bytes = checkpoint.read_bytes()
+    other = tmp_path / 'returns' / '0002.json'
+    other.write_bytes(b'SYNTHETIC UNSELECTED ORDINAL MUST NOT BE READ OR MODIFIED')
+    selected, source = module.load_resume_inventory(tmp_path)
+    page = protocol.SourcePage()
+    result = driver.collect_details(page, selected, tmp_path, detail_source=source)
+    assert result['complete'] is True and not page.navigated
+    assert [record['record_id'] for record in result['records']] == [original['record_id']]
+    assert result['records'][0]['sections'][0]['name'] == 'Synthetic saved section'
+    assert checkpoint.read_bytes() == checkpoint_bytes
+    assert other.read_bytes() == b'SYNTHETIC UNSELECTED ORDINAL MUST NOT BE READ OR MODIFIED'

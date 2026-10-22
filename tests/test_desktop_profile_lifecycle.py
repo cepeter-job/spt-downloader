@@ -246,7 +246,8 @@ def test_locked_profile_cleanup_preserves_cancellation_and_retries_after_release
     module = profiles()
     held = None
     try:
-        with pytest.raises(worker.CaptureCancelled):
+        cancelled = False
+        try:
             with module.temporary_profile(tmp_path, 'login-run') as value:
                 path = Path(value)
                 marker, _ = ownership(tmp_path, path)
@@ -254,6 +255,9 @@ def test_locked_profile_cleanup_preserves_cancellation_and_retries_after_release
                 held.write(b'SYNTHETIC SESSION ONLY')
                 held.flush()
                 raise worker.CaptureCancelled('Synthetic Stop with a still-closing profile handle')
+        except worker.CaptureCancelled:
+            cancelled = True
+        assert cancelled, 'Cleanup must preserve the original cancellation'
         assert path.exists() and marker.exists()
         held.close()
         held = None

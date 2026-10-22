@@ -240,6 +240,8 @@ def packaged_self_test(report):
                 destination.write_text(json.dumps({'schema': 1, 'kind': 'packaged-bootstrap',
                     'ok': False, 'phase': phase, 'error_type': category}), encoding='utf-8')
             except OSError:
+                # Report failure must preserve the nonzero smoke outcome and
+                # must not open an exception dialog exposing private details.
                 pass
         return 1
 
