@@ -14,6 +14,7 @@ $work = Join-Path $env:RUNNER_TEMP ('launcher-build-' + [guid]::NewGuid().ToStri
 $stage = Join-Path $work 'runtime'
 $evidence = "$output-evidence"
 New-Item -ItemType Directory -Path $stage, $evidence | Out-Null
+@{ schema = 1; head = $env:GITHUB_SHA; run_id = $env:GITHUB_RUN_ID; phase = 'verified-source-acquisition' } | ConvertTo-Json | Set-Content "$evidence/phase.json"
 # Only synthetic native build diagnostics are emitted; no workspace/profile capture.
 $roots = @{}
 foreach ($source in $manifest.sources) {
@@ -37,7 +38,9 @@ $sdk = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/Include" -Directo
 $toolset = if ([version]$vcTools.Name -ge [version]'14.50') { 'v145' } else { 'v143' }
 $devcmd = Join-Path $vs.installationPath 'Common7/Tools/VsDevCmd.bat'
 # Import only the developer command environment into this isolated runner process.
-$environment = & $env:ComSpec /d /s /c "`"`"$devcmd`" -no_logo -arch=x64 -host_arch=x64 -vcvars_ver=$($vcTools.Name) -winsdk=$($sdk.Name) >nul && set`""
+$setupCommand = Join-Path $work 'compiler-environment.cmd'
+@("@call `"$devcmd`" -no_logo -arch=x64 -host_arch=x64 -vcvars_ver=$($vcTools.Name) -winsdk=$($sdk.Name) >nul", '@if errorlevel 1 exit /b 1', '@set') | Set-Content -LiteralPath $setupCommand -Encoding ascii
+$environment = & $env:ComSpec /d /c $setupCommand
 if ($LASTEXITCODE -ne 0) { throw 'Developer command environment failed' }
 foreach ($line in $environment) { if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process') } }
 $msbuild = Join-Path $vs.installationPath 'MSBuild/Current/Bin/MSBuild.exe'
