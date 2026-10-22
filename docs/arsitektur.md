@@ -18,7 +18,7 @@ Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontra
 | `coretax_exporter.py` | Validasi scope dan nilai, deduplikasi ID, susunan workbook, serta tautan relatif. Tidak membuka browser. |
 | `coretax_json.py`, `coretax_masa_json.py` dan modul observer/projection terkait | Binding respons native ke identitas/scope dan proyeksi form; kelayakan diperiksa terpisah dari pilihan mode. |
 | `coretax_masa_templates.py`, `coretax_pph21.py`, `coretax_badan_template.py` | Renderer template terverifikasi, angka moneter dan aturan tampilan per jenis/form. |
-| `coretax_attachments.py`, `coretax_pdf.py` | Penemuan href PDF yang didukung, unduhan terbatas, deklarasi, serta verifikasi byte melalui stream yang tetap dipegang. |
+| `coretax_attachments.py`, `coretax_financial_post.py`, `coretax_pdf.py` | Penemuan href/kontrol PDF yang didukung, POST dokumen yang sudah ada, unduhan terbatas, deklarasi, serta verifikasi byte melalui stream yang tetap dipegang. |
 | `spt_gui.py`, `spt_desktop/app.py` | Entry point dan GUI Tkinter, pengaturan, tombol, serta self-test source/frozen. |
 | `spt_desktop/controller.py`, `events.py` | Protokol progres/terminal, otorisasi start, Stop, dan pemrosesan event pada thread GUI. |
 | `spt_desktop/interaction.py` | Permintaan/jawaban pilihan SPT dan penggantian hasil yang terikat pada job; payload privat terpisah dari sinyal stdout/stdin. |
@@ -64,7 +64,7 @@ Metadata scope per-record yang tidak tersedia pada capture lama tidak dapat memb
 
 Capture memakai kontrol baca yang sudah dikenali: pencarian wajib pajak, Pilih, navigasi status, View, tab, accordion, ukuran halaman, serta paginasi. Tombol submit, batal SPT, kirim email, pembuatan dokumen, dan aksi baris yang tidak dikenal tidak boleh dijadikan fallback. Bila selector View berubah, hasil tetap terblokir/parsial sampai layout baru diperiksa dan fixture regresinya tersedia.
 
-PDF keuangan/auditan hanya didukung melalui href baca biasa yang teramati pada Induk Badan terverifikasi; identitas, origin, byte, ukuran, signature/hash dan custody tetap diperiksa. Metadata saja bukan unduhan. PDF/BPE/lampiran lain, pembuatan dokumen jarak jauh dan drill-down per baris tetap di luar cakupan. Tab dinonaktifkan tidak dijelajahi. Capture detail harus memiliki field atau tabel terstruktur yang bermakna; halaman kosong atau layout tak dikenal tidak disertifikasi lengkap.
+PDF keuangan/auditan didukung melalui href baca biasa atau kontrol Unduh pada grid FinancialStatement yang teramati pada Induk Badan terverifikasi. [Adapter POST](pdf-keuangan-post.md) memverifikasi source pin, kepemilikan kontrol serta request akhir, membatalkan request aplikasi sebelum satu replay stream terbatas, dan menolak perpindahan scope/redirect. Identitas, origin, byte, ukuran, signature/hash dan custody tetap diperiksa; metadata saja bukan unduhan. PDF/BPE/lampiran lain, pembuatan dokumen jarak jauh dan drill-down per baris tetap di luar cakupan. Tab dinonaktifkan tidak dijelajahi. Capture detail harus memiliki field atau tabel terstruktur yang bermakna; halaman kosong atau layout tak dikenal tidak disertifikasi lengkap.
 
 ## Kredensial dan autentikasi desktop
 

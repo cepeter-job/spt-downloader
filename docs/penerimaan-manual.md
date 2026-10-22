@@ -32,7 +32,10 @@ Catat build/commit, run ID dan artifact ID bila dari GitHub, profil Python, tang
 - [ ] Jenis SPT atau tahun yang tidak ada pada scope tidak diberi berkas/data fiktif.
 - [ ] Layout yang tidak dikenali, error halaman, atau data berubah di tengah run terlihat sebagai batas/masalah, bukan COMPLETE palsu.
 
-PDF laporan keuangan/auditan hanya boleh diambil dari href baca biasa yang sudah terlihat pada Induk Badan terverifikasi. Cocokkan deklarasi, byte/hash dan tautan relatif pada Audit resume; metadata saja bukan unduhan. PDF/BPE/lampiran lain, pembuatan dokumen, dan dialog drill-down per baris tetap di luar cakupan. Jangan menekan tombol submit, pembatalan SPT, email, atau pembuatan dokumen untuk melengkapi checklist ini.
+PDF laporan keuangan/auditan hanya boleh diambil dari href baca biasa atau [kontrol Unduh FinancialStatement yang didukung](pdf-keuangan-post.md) pada Induk Badan terverifikasi. Cocokkan deklarasi, byte/hash dan tautan relatif pada Audit resume; metadata saja bukan unduhan. PDF/BPE/lampiran lain, pembuatan dokumen, dan dialog drill-down per baris tetap di luar cakupan. Jangan menekan tombol submit, pembatalan SPT, email, atau pembuatan dokumen untuk melengkapi checklist ini.
+
+- [ ] Pada sampel Badan yang memiliki laporan keuangan PDF, aplikasi mengunduhnya otomatis dari Induk; file dapat dibuka dan isi cocok dengan dokumen sumber yang diizinkan.
+- [ ] Tautan PDF pada Excel/resume menuju file COMPLETE yang sama; kegagalan download atau build/kontrol yang belum didukung tetap PARTIAL, tanpa PDF kosong atau sertifikasi palsu.
 
 ## Stop dan pemulihan
 

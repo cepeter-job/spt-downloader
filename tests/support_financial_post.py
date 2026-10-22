@@ -45,6 +45,7 @@ def post_routed(browser, monkeypatch):
                content_type='application/pdf', status=200, headers=None,
                count=1, change_scope=None, script=SCRIPT):
         context = browser.new_context(service_workers='block')
+        context._spt_financial_route_policy = 'service_workers_blocked'
         contexts.append(context)
         wire = []
         options = {
