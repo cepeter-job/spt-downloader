@@ -378,6 +378,14 @@ Job `cleanup` berjalan hanya pada push `main` setelah check gabungan sukses. [sc
 
 Kandidat harus berasal dari PR tertutup di repo yang sama, bukan branch default/protected atau head maupun base PR terbuka, dan SHA branch saat ini harus sama dengan head PR. Perlindungan base juga berlaku untuk PR dari fork. Riwayat harus membuktikan head tersebut ancestor dari main yang diuji. Branch hasil squash/rebase yang belum memiliki bukti ancestry dipertahankan. Main yang berubah membuat cleanup berhenti.
 
+Jika API memberikan SHA `main` lain yang valid, cleanup berhenti dengan kode keluar
+0 dan hasil `status: stopped`, `reason: base_changed`. Hasil tersebut tetap mencatat
+penghapusan yang sudah terkonfirmasi sebelum perubahan teramati; tidak ada
+penghapusan lanjutan. Push baru dengan demikian tidak mengubah build lama yang
+sudah terverifikasi menjadi run gagal hanya karena cleanup tidak lagi sesuai.
+SHA yang hilang/tidak valid, kegagalan API/autentikasi dan penolakan deletion lease
+tetap menghasilkan kode keluar 1; penghentian aman ini bukan pengabaian error.
+
 Opsi `--apply` mengaktifkan penghapusan dan memerlukan `GH_TOKEN` dengan `contents: write`. Jangan menulis nilai token ke command, file, atau log. Script mengecek kembali metadata dan memakai Git `--force-with-lease=<ref>:<sha>` pada penghapusan, sehingga push baru pada branch yang sama ditolak oleh server alih-alih ikut terhapus. Tidak ada penghapusan branch berdasarkan umur atau status PR tertutup saja.
 
 ## Menutup tindak lanjut audit
