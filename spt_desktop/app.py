@@ -455,6 +455,9 @@ class App:
             return
         interaction = self._new_interaction(key, copy_text('selection.title'))
         dialog = interaction['dialog']
+        # Resolve native size before mapping the full child tree at a temporary
+        # geometry, which otherwise makes Windows arrange every child twice.
+        configure_dialog(dialog, self.root, size_dip=(920, 600))
         scale = effective_scale(self.root)
         px = lambda value: dip_to_px(value, scale)
         frame = ttk.Frame(dialog, padding=px(12))
@@ -714,7 +717,6 @@ class App:
         interaction['traces'].append((search, search.trace_add('write', filter_records)))
         dialog.protocol('WM_DELETE_WINDOW', lambda: self._cancel_interaction(interaction))
         dialog.bind('<Escape>', lambda event: self._cancel_interaction(interaction))
-        configure_dialog(dialog, self.root, size_dip=(920, 600))
         filter_records()
         entry.focus_set()
 
@@ -736,6 +738,7 @@ class App:
             return
         interaction = self._new_interaction(key, copy_text('overwrite.title'))
         dialog = interaction['dialog']
+        configure_dialog(dialog, self.root, size_dip=(800, 520))
         scale = effective_scale(self.root)
         px = lambda value: dip_to_px(value, scale)
         frame = ttk.Frame(dialog, padding=px(12))
@@ -909,7 +912,6 @@ class App:
             interaction['bindings'].append((widget, sequence, token))
         dialog.protocol('WM_DELETE_WINDOW', decline)
         dialog.bind('<Escape>', decline_key)
-        configure_dialog(dialog, self.root, size_dip=(800, 520))
         request_reflow()
         safe_button.focus_set()
 

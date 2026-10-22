@@ -75,7 +75,6 @@ public static class SptAccessNative {
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettingsW(string device,int index,ref DEVMODE mode);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int ChangeDisplaySettingsExW(string device,ref DEVMODE mode,IntPtr hwnd,uint flags,IntPtr param);
   [DllImport("user32.dll",SetLastError=true)] static extern bool SystemParametersInfoW(uint action,uint param,ref HC data,uint flags);
-  [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
   [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -105,10 +104,10 @@ public static class SptAccessNative {
   public static Contrast GetContrast() {
     HC hc=new HC(); hc.Size=(uint)Marshal.SizeOf(typeof(HC));
     if(!SystemParametersInfoW(0x0042,hc.Size,ref hc,0)) throw new Win32Exception();
-    try { return new Contrast { Flags=hc.Flags,Scheme=Marshal.PtrToStringUni(hc.Scheme) }; }
-    // HIGHCONTRASTW.lpszDefaultScheme documentation explicitly requires LocalFree:
-    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-highcontrastw
-    finally { if(hc.Scheme!=IntPtr.Zero) LocalFree(hc.Scheme); }
+    // The Windows-owned pointer must not be freed. Microsoft's .NET implementation
+    // explicitly corrects the contradictory Learn documentation on ownership:
+    // https://source.dot.net/System.Private.Windows.Core/Windows/Win32/PInvokeCore.SystemParametersInfo.cs.html
+    return new Contrast { Flags=hc.Flags,Scheme=Marshal.PtrToStringUni(hc.Scheme) };
   }
   public static void SetContrast(Contrast contrast) {
     HC hc=new HC(); hc.Size=(uint)Marshal.SizeOf(typeof(HC)); hc.Flags=contrast.Flags;
@@ -127,6 +126,12 @@ function Write-RestorationCheckpoint {
     # Evidence persistence must never prevent the independent restoration steps.
     try { Write-Evidence (Join-Path $output 'report.json') $report }
     catch { [Console]::Error.WriteLine("Restoration checkpoint write failed: " + $_.Exception.Message) }
+}
+
+function Write-Phase([string]$Name) {
+    $report.last_phase = $Name
+    $report.last_phase_utc = [DateTime]::UtcNow.ToString('o')
+    Write-Evidence (Join-Path $output 'report.json') $report
 }
 
 function Read-UiaNode($Element, $Depth, $Index, $Parent) {
@@ -266,7 +271,7 @@ if (Test-Path -LiteralPath $output) { throw 'Use a new diagnostic output directo
 [void](New-Item -ItemType Directory -Path $output)
 $pythonPath = (Resolve-Path -LiteralPath $Python).Path
 $hostPath = Join-Path $PSScriptRoot 'ui_delivery_accessibility.py'
-$oldContext = [SptAccessNative]::SetThreadDpiAwarenessContext([IntPtr](-4))
+$oldContext = [IntPtr]::Zero
 $beforeContrast = $null
 $originalMode = $null
 $device = $null
@@ -283,7 +288,10 @@ $report = [ordered]@{schema=1; synthetic=$true; github_run_id=$env:GITHUB_RUN_ID
     high_contrast_observation='Fresh windows after native setting change; live-window theme switching is not exercised';
     cases=@(); failures=@(); restoration=@{}}
 try {
+    Write-Phase 'initial-report-before-native-queries'
+    $oldContext = [SptAccessNative]::SetThreadDpiAwarenessContext([IntPtr](-4))
     if ($oldContext -eq [IntPtr]::Zero) { throw 'Physical-pixel observer DPI context could not be established.' }
+    Write-Phase 'query-display-inventory'
     $report.monitors_before = @([SptAccessNative]::Monitors())
     $primary = @($report.monitors_before | Where-Object Primary)[0]
     $device = $primary.Device
@@ -291,8 +299,10 @@ try {
     $modes = @([SptAccessNative]::Modes($device))
     $report.display_modes = $modes
     $report.original_mode = $originalMode
+    Write-Phase 'query-original-high-contrast'
     $beforeContrast = [SptAccessNative]::GetContrast()
     $report.high_contrast_before = $beforeContrast
+    Write-Phase 'original-native-settings-recorded'
     if ($RequestLargeDisplay) {
         $report.display_attempts = @()
         $candidates = @($modes | Where-Object { $_.BitsPerPel -eq 32 -and
@@ -320,6 +330,7 @@ try {
         } else { 'UNATTAINED: no applied display mode meets the sufficiently large 200% prerequisite' }
     }
     $report.monitors_observed = @([SptAccessNative]::Monitors())
+    Write-Phase 'display-selection-complete'
     $modesToObserve = @('original')
     if ($IncludeHighContrast) { $modesToObserve += 'high-contrast' }
     foreach ($contrastMode in $modesToObserve) {
@@ -328,6 +339,7 @@ try {
             $contrast.Flags = $beforeContrast.Flags -bor 1
             $contrast.Scheme = $beforeContrast.Scheme
             $contrastTouched = $true
+            Write-Phase 'enable-high-contrast'
             [SptAccessNative]::SetContrast($contrast)
             Start-Sleep -Seconds 2
             $report.high_contrast_after_enable = [SptAccessNative]::GetContrast()
@@ -348,6 +360,7 @@ try {
                 $case = @{scenario=$scenario; layout=$layout; contrast=$contrastMode; snapshots=@()}
                 try {
                     for ($step=0; $step -lt 6; $step++) {
+                        Write-Phase "$contrastMode/$scenario/$layout/$step-await-host"
                         if ($step -gt 0) { Write-Evidence (Join-Path $caseDirectory 'command.json') @{sequence=$step; action='tab'} }
                         $snapshot = Wait-HostSnapshot $child $caseDirectory $step
                         $ownership = Confirm-OwnedHost $child ([int]$snapshot.pid) ([IntPtr]$snapshot.hwnd)
@@ -356,14 +369,18 @@ try {
                         $case.ownership = $ownership
                         [void][SptAccessNative]::SetForegroundWindow([IntPtr]$snapshot.hwnd)
                         Start-Sleep -Milliseconds 150
+                        Write-Phase "$contrastMode/$scenario/$layout/$step-read-uia"
                         $uia = Read-UiaTree ([IntPtr]$snapshot.hwnd) ([int]$snapshot.pid)
+                        Write-Phase "$contrastMode/$scenario/$layout/$step-read-high-contrast"
                         $snapshot | Add-Member -NotePropertyName high_contrast -NotePropertyValue ([SptAccessNative]::GetContrast())
                         $snapshot | Add-Member -NotePropertyName monitors -NotePropertyValue @([SptAccessNative]::Monitors())
                         Write-Evidence (Join-Path $caseDirectory "observation-$step.json") @{host=$snapshot; uia=$uia}
+                        Write-Phase "$contrastMode/$scenario/$layout/$step-capture-frame"
                         $frame = Save-NativeFrame ([IntPtr]$snapshot.hwnd) ([int]$snapshot.pid) (Join-Path $caseDirectory "frame-$step.png")
                         $case.snapshots += @{sequence=$step; frame=$frame; uia_node_count=$uia.nodes.Count;
                             uia_exposure=$uia.exposure;
                             nominal_geometry_attained=$snapshot.nominal_geometry_attained}
+                        Write-Phase "$contrastMode/$scenario/$layout/$step-observed"
                     }
                 } catch {
                     $case.error = $_.Exception.Message

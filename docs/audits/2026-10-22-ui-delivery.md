@@ -78,6 +78,15 @@ window before making UIA claims. Its incomplete final report also cannot prove
 High Contrast restoration. Narrator/NVDA speech/navigation and movement between
 distinct-DPI monitors remain separate acceptance requirements.
 
+The upstream [Tk accessibility proposal](https://core.tcl-lang.org/tips/doc/main/tip/733.md)
+targets Tk 9.1 and describes its Windows MSAA implementation, a limited UIA
+bridge, and stronger NVDA support than Narrator. The
+[9.1 accessible API](https://www.tcl-lang.org/man/tcl9.1/TkCmd/accessible.html)
+provides roles/names/values/focus notifications. Neither source establishes
+those capabilities for the pinned Tk 9.0.4 build. A runtime/provider change
+needs a separate design and regression scope; a version bump alone cannot
+establish Narrator/UIA acceptance.
+
 ## Delivery status
 
 Final focused GREEN, paired performance results, native accessibility results,
