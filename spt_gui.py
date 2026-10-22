@@ -16,7 +16,35 @@ from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
 from spt_desktop.windows import InstanceLock
 
 
+def candidate_existing_startup():
+    """Observe ordinary App startup against the guarded synthetic resolved workspace."""
+    workspace = workspace_root()
+    marker = json.loads((workspace/'_candidate-fixture.json').read_text(encoding='utf-8'))
+    if marker.get('schema') != 1 or marker.get('purpose') != 'candidate-existing-state-fixture':
+        raise RuntimeError('candidate startup requires the isolated synthetic runner fixture')
+    expected = {'browser':'chrome', 'headless':False, 'identifier':'SYNTHETIC_PRESERVED', 'detail_source':'dom'}
+    root=tk.Tk();root.withdraw();app=None
+    try:
+        app=App(root,workspace)
+        root.update_idletasks()
+        observation = {
+            'workspace':str(workspace.resolve()),
+            'preferences_loaded':all(app.preferences.get(key)==value for key,value in expected.items()),
+            'workspace_matches':app.workspace.resolve()==workspace.resolve()==app.controller.root.resolve(),
+            'controller_idle':not app.controller.active and app.controller.process is None
+                and app.controller._prepare_thread is None and not app.controller._preparing}
+        if not all(observation[key] is True for key in ('preferences_loaded','workspace_matches','controller_idle')):
+            raise RuntimeError('candidate startup did not preserve/load connected synthetic state')
+        return observation
+    finally:
+        if app is not None:app.controller.close();app._dispose()
+        for callback in root.tk.splitlist(root.tk.call('after','info')):
+            root.after_cancel(callback)
+        root.destroy()
+
+
 def self_test(report=None, candidate_report=False):
+    existing_state = candidate_existing_startup() if candidate_report else None
     class SyntheticController:
         # Injection proves that constructing/rendering the GUI never prepares a worker.
         active = False
@@ -214,6 +242,7 @@ def self_test(report=None, candidate_report=False):
             if candidate_report:
                 import importlib
                 data['launcher_candidate'] = importlib.import_module('scripts.launcher_candidate.probe').application_probe(root)
+                data['candidate_existing_state'] = existing_state
             if report:
                 report=Path(report);report.parent.mkdir(parents=True,exist_ok=True)
                 report.write_text(json.dumps(data,indent=2),encoding='utf-8')

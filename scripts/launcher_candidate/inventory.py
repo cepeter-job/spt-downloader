@@ -121,6 +121,10 @@ def validate_candidate_report(report: dict, inventory: dict) -> None:
         raise ValueError('missing source/frozen identity')
     if any(report.get(key) != IDENTITY[key] for key in ('python', 'tcl', 'tk')):
         raise ValueError('self-test runtime fields disagree with candidate identity')
+    existing = report.get('candidate_existing_state')
+    if (not isinstance(existing, dict) or any(existing.get(key) is not True for key in
+            ('preferences_loaded', 'workspace_matches', 'controller_idle'))):
+        raise ValueError('missing connected existing workspace startup proof')
     proof = report.get('launcher_candidate')
     if not isinstance(proof, dict):
         raise ValueError('missing actual launcher proof')

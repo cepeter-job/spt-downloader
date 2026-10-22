@@ -18,6 +18,7 @@ def proof():
         'libraries': {'tcl': 'tcl/tcl9.1', 'tk': 'tcl/tk9.1'}}
     report = {'python': '3.14.8', 'tcl': '9.1.0', 'tk': '9.1.0', 'ok': True, 'frozen': True, 'credentials_accessed': False,
               'live_scrape': False, 'worker_python': '3.14.8',
+              'candidate_existing_state': {'preferences_loaded': True, 'workspace_matches': True, 'controller_idle': True},
               'launcher_candidate': {**identity, 'loaded': inventory['loaded'].copy(),
                   'loaded_sha256': {role: files[name] for role, name in inventory['loaded'].items()},
                   'resources': files.copy()}}

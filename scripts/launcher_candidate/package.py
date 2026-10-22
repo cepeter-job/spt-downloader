@@ -1,5 +1,6 @@
 """Package an isolated unsigned launcher; run only on a GitHub Windows runner."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -18,11 +20,47 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def production_snapshot():
-    from spt_desktop.paths import workspace_root
-    root = workspace_root()
+def workspace_snapshot(root):
     return {'exists': root.exists(), 'files': {
         path.relative_to(root).as_posix(): digest(path) for path in root.rglob('*') if path.is_file()}}
+
+
+@contextmanager
+def existing_workspace_fixture(root):
+    """Seed only an absent, explicitly resolved runner fixture; never replace state."""
+    root = Path(root).absolute()
+    if root.exists() or root.is_symlink() or root.is_junction():
+        raise ValueError('existing workspace fixture requires an absent target')
+    root.mkdir()
+    owned_root = root.resolve(strict=True)
+    ownership = str(uuid.uuid4())
+    marker = json.dumps({'schema': 1, 'purpose': 'candidate-existing-state-fixture', 'owner': ownership})
+    evidence = {'workspace': str(owned_root), 'cleaned': False}
+    try:
+        fixture_files = {
+            '_candidate-fixture.json': marker,
+            'preferences.json': '{"browser":"chrome","headless":false,"identifier":"SYNTHETIC_PRESERVED","detail_source":"dom"}',
+            'runtime-ready.txt': 'SYNTHETIC_WORKER_IDENTITY_NOT_EXECUTABLE',
+            'runtime/worker-inventory.json': '{"python":"3.14.8","uv":"0.13.4","synthetic":true}',
+            'cache/synthetic-marker': 'preserve synthetic production cache'}
+        for name, value in fixture_files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value, encoding='utf-8')
+        evidence['before'] = workspace_snapshot(root)
+        try:
+            yield evidence
+        finally:
+            evidence['after'] = workspace_snapshot(root)
+            if evidence['before'] != evidence['after']:
+                raise RuntimeError('candidate changed connected existing workspace fixture')
+    finally:
+        # Check the exact owned absolute target and marker before recursive cleanup.
+        if (root.is_symlink() or root.is_junction() or root.resolve() != owned_root
+                or (root / '_candidate-fixture.json').read_text(encoding='utf-8') != marker):
+            raise RuntimeError('refusing cleanup of changed fixture ownership')
+        shutil.rmtree(owned_root)
+        evidence['cleaned'] = not root.exists()
 
 
 def run_selftest(command, report):
@@ -49,23 +87,14 @@ def package(runtime, output):
     validate_inventory(inventory, runtime)
     if Path(sys.base_prefix).resolve() != runtime:
         raise ValueError('packaging interpreter must use the exact candidate runtime')
-    production_before = production_snapshot()
+    from spt_desktop.paths import workspace_root
     # All setup/cache state belongs to this new output workspace, never the worker.
     output.mkdir(parents=True)
-    with tempfile.TemporaryDirectory(prefix='spt-candidate-package-') as scratch_name:
+    with existing_workspace_fixture(workspace_root()) as preservation, tempfile.TemporaryDirectory(prefix='spt-candidate-package-') as scratch_name:
         scratch = Path(scratch_name)
         env = os.environ.copy()
         env.update(UV_CACHE_DIR=str(scratch / 'uv-cache'), UV_PYTHON_DOWNLOADS='never',
-                   PYTHONDONTWRITEBYTECODE='1', LOCALAPPDATA=str(scratch / 'local-app-data'))
-        production = scratch / 'local-app-data' / 'SPTDownloader'
-        production.mkdir(parents=True)
-        for name, value in {'preferences.json': '{"identifier":"SYNTHETIC_PRESERVED"}',
-                            'worker-inventory.json': '{"python":"3.14.8","uv":"0.13.4","synthetic":true}',
-                            'cache/synthetic-marker': 'preserve synthetic production cache'}.items():
-            path = production / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(value, encoding='utf-8')
-        before = {path.relative_to(production).as_posix(): digest(path) for path in production.rglob('*') if path.is_file()}
+                   PYTHONDONTWRITEBYTECODE='1')
         venv = scratch / 'build-env'
         subprocess.run(['uv', 'venv', '--python', str(runtime / 'python.exe'), str(venv)], env=env, check=True)
         python = venv / 'Scripts/python.exe'
@@ -83,16 +112,7 @@ def package(runtime, output):
         for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json'):
             shutil.copy2(scratch / 'build' / name, output / name)
         validate_candidate_report(json.loads((output / 'build-selftest.json').read_text(encoding='utf-8')), inventory)
-        after = {path.relative_to(production).as_posix(): digest(path) for path in production.rglob('*') if path.is_file()}
-        if before != after:
-            raise RuntimeError('candidate preparation/startup changed synthetic production state')
-        production_after = production_snapshot()
-        if production_before != production_after:
-            raise RuntimeError('candidate changed actual Known Folder production state')
-        (output / 'worker-independence.json').write_text(json.dumps({
-            'unchanged': True, 'before': before, 'after': after,
-            'known_folder_unchanged': True, 'known_folder_before': production_before,
-            'known_folder_after': production_after}, indent=2), encoding='utf-8')
+    (output / 'worker-independence.json').write_text(json.dumps(preservation, indent=2), encoding='utf-8')
     shutil.copytree(runtime / 'licenses', output / 'licenses')
     shutil.copy2(runtime / 'inventory.json', output / 'runtime-inventory.json')
     validate_inventory(inventory, runtime)
@@ -134,16 +154,16 @@ def verify(output, report):
     for name in inventory['licenses']:
         if actual[name] != inventory['files'][name]:
             raise ValueError('runtime license bytes changed')
-    production_before = production_snapshot()
-    with tempfile.TemporaryDirectory(prefix='spt-candidate-readback-') as folder:
+    from spt_desktop.paths import workspace_root
+    with existing_workspace_fixture(workspace_root()) as preservation, tempfile.TemporaryDirectory(prefix='spt-candidate-readback-') as folder:
         previous = Path.cwd()
         try:
             os.chdir(folder)
             result = run_selftest([output / 'SPTDownloader.exe'], report)
         finally:
             os.chdir(previous)
-    if production_before != production_snapshot():
-        raise RuntimeError('frozen readback changed production state')
+    result['candidate_existing_preservation'] = preservation
+    report.write_text(json.dumps(result, indent=2), encoding='utf-8')
     from build_desktop import validate_report
     validate_report(result)
     validate_candidate_report(result, inventory)
@@ -165,7 +185,3 @@ if __name__ == '__main__':
         parser.error('--runtime is required for packaging')
     else:
         package(args.runtime, args.output)
-
-
-def existing_workspace_fixture(root):
-    raise NotImplementedError('connected existing workspace fixture is not implemented')
