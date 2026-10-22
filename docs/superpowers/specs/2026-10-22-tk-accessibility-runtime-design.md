@@ -1,7 +1,9 @@
 # Proposed desktop runtime accessibility upgrade
 
-Status: **approved by the owner on 22 October 2026 for implementation planning;
-no runtime upgrade implemented**.
+Status: **isolated candidate investigation implemented; production adoption blocked**.
+The owner approved implementation on 22 October 2026. The candidate is kept separate
+from production; see the [candidate audit](../../audits/2026-10-22-tk-accessibility-candidate.md)
+for exact evidence, failed reader qualification and remaining display gates.
 The owner requested this separate review after the current Tk 9.0.4 diagnostic
 exposed the tested inputs as unnamed UI Automation panes. The existing UI fixes
 are reviewed separately in [PR #71](https://github.com/cepeter-job/spt-downloader/pull/71).

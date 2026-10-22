@@ -307,3 +307,281 @@ jobs:
             ${{ runner.temp }}/reader-evidence/*/*-blocked.json
           if-no-files-found: error
           retention-days: 14
+
+  regression:
+    # Reader qualification failures must not suppress independent safety evidence.
+    runs-on: windows-2025
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: '12400037968'
+          run-id: '39718421643'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/regression-runtime
+          merge-multiple: true
+      - name: Prepare exact candidate test environment
+        shell: pwsh
+        run: |
+          $runtime = "$env:RUNNER_TEMP/regression-runtime"
+          if ((Get-FileHash "$runtime/inventory.json").Hash.ToLowerInvariant() -ne '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239') { throw 'Unverified native inventory' }
+          & "$runtime/python.exe" -I -B scripts/launcher_candidate/inventory.py --root $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime custody failed' }
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { throw 'Managed worker prerequisite failed' }
+          uv venv --python "$runtime/python.exe" .venv
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate venv failed' }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Locked installation failed' }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Complete Windows suite including native Tk and isolated Edge fixtures
+        id: tests
+        shell: pwsh
+        run: >-
+          .venv/Scripts/python.exe -m pytest tests -p scripts.ci_tests --ci-workload windows -q
+          --basetemp "$env:RUNNER_TEMP/candidate-full-tests"
+          --ci-manifest "$env:RUNNER_TEMP/candidate-test-inventory.json"
+          --junitxml "$env:RUNNER_TEMP/candidate-test-results.xml"
+          -o junit_logging=no -o junit_log_passing_tests=false --durations=10
+      - name: Unchanged managed worker bootstrap and verified reuse
+        if: always() && steps.tests.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe -m scripts.ci_runtime --profile production 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP/worker-bootstrap.txt"
+          if ($LASTEXITCODE -ne 0) { throw 'Managed worker bootstrap/reuse failed' }
+      - name: Retain synthetic regression evidence after failures
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-regression-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/candidate-test-inventory.json
+            ${{ runner.temp }}/candidate-test-results.xml
+            ${{ runner.temp }}/worker-bootstrap.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Install unchanged managed portable test environment
+        run: |
+          uv python install cpython-3.14.8-linux-x86_64-gnu --no-bin --no-registry
+          uv venv --managed-python --python 3.14.8+gil .venv
+          uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
+          uv pip check --python .venv/bin/python
+          .venv/bin/python -m scripts.update_locks --check
+      - name: Portable suite
+        id: tests
+        run: >-
+          .venv/bin/python -m pytest tests -p scripts.ci_tests --ci-workload portable -q
+          --basetemp "$RUNNER_TEMP/candidate-portable-tests"
+          --ci-manifest "$RUNNER_TEMP/portable-test-inventory.json"
+          --junitxml "$RUNNER_TEMP/portable-test-results.xml"
+          -o junit_logging=no -o junit_log_passing_tests=false
+      - name: Retain portable evidence
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-portable-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/portable-test-inventory.json
+            ${{ runner.temp }}/portable-test-results.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  dependency-audit:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Install locked packages and separate audit tooling
+        shell: pwsh
+        run: |
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { throw 'Managed interpreter installation failed' }
+          foreach ($name in @('build','audit')) {
+            uv venv --managed-python --python 3.14.8+gil ".$name"
+            if ($LASTEXITCODE -ne 0) { throw 'Audit environment creation failed' }
+            uv pip sync --python ".$name/Scripts/python.exe" --require-hashes --only-binary :all: "locks/$name.txt"
+            if ($LASTEXITCODE -ne 0) { throw 'Locked installation failed' }
+            uv pip check --python ".$name/Scripts/python.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'Dependency check failed' }
+          }
+      - name: Audit runtime test build and auditor dependencies
+        id: audit
+        shell: pwsh
+        run: >-
+          .audit/Scripts/python.exe -m pip_audit --path .build/Lib/site-packages
+          --path .audit/Lib/site-packages --strict --progress-spinner off
+          --format json --output "$env:RUNNER_TEMP/candidate-dependency-audit.json"
+      - name: Retain advisory results even after failure
+        if: always() && steps.audit.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-dependency-audit-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-dependency-audit.json
+          if-no-files-found: error
+          retention-days: 14
+
+  performance-display:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: '12400037968'
+          run-id: '39718421643'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/observer-runtime
+          merge-multiple: true
+      - name: Verify candidate bytes and prepare clean reviewed baseline
+        shell: pwsh
+        run: |
+          $runtime = "$env:RUNNER_TEMP/observer-runtime"
+          if ((Get-FileHash "$runtime/inventory.json").Hash.ToLowerInvariant() -ne '9758f2a63e8815952ca91178a9c20397f4292ad2aca8bfbff0feeb3c87b80239') { throw 'Unverified native inventory' }
+          & "$runtime/python.exe" -I -B scripts/launcher_candidate/inventory.py --root $runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime custody failed' }
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { throw 'Managed interpreter installation failed' }
+          git worktree add --detach "$env:RUNNER_TEMP/reviewed-baseline" cfa30a41e1106b8b0565c44b46da6b4ffdba0b4d
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline checkout failed' }
+          New-Item -ItemType Directory "$env:RUNNER_TEMP/observer-evidence" | Out-Null
+          @{head=$env:GITHUB_SHA;tree=(git rev-parse 'HEAD^{tree}');run=$env:GITHUB_RUN_ID;attempt=$env:GITHUB_RUN_ATTEMPT;image=$env:ImageVersion;os=[Environment]::OSVersion.VersionString;runtime_artifact=12400037968;observer_sha256=(Get-FileHash scripts/ui_delivery_performance.py).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content "$env:RUNNER_TEMP/observer-evidence/custody.json"
+      - name: Unchanged paired observer with managed Tcl Tk
+        id: managed
+        shell: pwsh
+        run: |
+          $python = uv python find --managed-python 3.14.8+gil
+          & $python -B scripts/ui_delivery_performance.py --baseline "$env:RUNNER_TEMP/reviewed-baseline" --baseline-revision cfa30a41e1106b8b0565c44b46da6b4ffdba0b4d --candidate "$env:GITHUB_WORKSPACE" --candidate-revision "$env:GITHUB_SHA" --out "$env:RUNNER_TEMP/observer-evidence/managed"
+          if ($LASTEXITCODE -ne 0) { throw 'Managed performance observation failed' }
+      - name: Unchanged paired observer with candidate Tcl Tk on same runner
+        if: always() && steps.managed.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          & "$env:RUNNER_TEMP/observer-runtime/python.exe" -B scripts/ui_delivery_performance.py --baseline "$env:RUNNER_TEMP/reviewed-baseline" --baseline-revision cfa30a41e1106b8b0565c44b46da6b4ffdba0b4d --candidate "$env:GITHUB_WORKSPACE" --candidate-revision "$env:GITHUB_SHA" --out "$env:RUNNER_TEMP/observer-evidence/candidate"
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate performance observation failed' }
+      - name: Actual display normal compact and High Contrast observations with restoration
+        if: always() && steps.managed.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -STA -File scripts/ui_delivery_accessibility.ps1 -Python "$env:RUNNER_TEMP/observer-runtime/python.exe" -OutputDirectory "$env:RUNNER_TEMP/observer-evidence/display" -RequestLargeDisplay -IncludeHighContrast
+          if ($LASTEXITCODE -ne 0) { throw 'Display observation failed; inspect retained phase and restoration' }
+      - name: Retain raw samples payload hashes display observations and restoration
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-observers-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/observer-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  production-exclusion:
+    # Diagnostic build from current source; never uploaded as a release payload.
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+        with:
+          version: '0.13.4'
+          enable-cache: false
+      - name: Build normal production mode from current candidate source
+        shell: pwsh
+        run: |
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { throw 'Managed interpreter installation failed' }
+          uv venv --managed-python --python 3.14.8+gil .venv
+          if ($LASTEXITCODE -ne 0) { throw 'Build environment failed' }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/build.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Locked build installation failed' }
+          .venv/Scripts/python.exe build_desktop.py --python-profile production --output "$env:RUNNER_TEMP/production-exclusion"
+          if ($LASTEXITCODE -ne 0) { throw 'Normal production mode build failed' }
+      - name: Inspect actual CArchive and PYZ for candidate fixture exclusion
+        shell: pwsh
+        run: |
+          @'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          from PyInstaller.archive.readers import CArchiveReader
+          root = Path(os.environ['RUNNER_TEMP']) / 'production-exclusion'
+          exe = root / 'SPTDownloader.exe'
+          archive = CArchiveReader(str(exe))
+          members = sorted(archive.toc)
+          pyz = {}
+          for name, entry in archive.toc.items():
+              if entry[-1] == 'z':
+                  pyz[name] = sorted(archive.open_embedded_archive(name).toc)
+          forbidden = [name for name in members + [n for entries in pyz.values() for n in entries]
+                       if 'launcher_candidate' in name or 'candidate_probe' in name or 'candidate_fixture' in name]
+          report = {'head': os.environ['GITHUB_SHA'], 'tree': subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+                    'run': os.environ['GITHUB_RUN_ID'], 'attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+                    'exe_sha256': hashlib.sha256(exe.read_bytes()).hexdigest(), 'carchive': members, 'pyz': pyz,
+                    'forbidden': forbidden, 'excluded': not forbidden}
+          (root / 'bundle-exclusion.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+          assert pyz and not forbidden, 'Candidate-only module present or PYZ unavailable'
+          '@ | .venv/Scripts/python.exe -
+          if ($LASTEXITCODE -ne 0) { throw 'Production bundle exclusion failed' }
+      - name: Retain exclusion and frozen self-test evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: launcher-production-exclusion-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/production-exclusion/bundle-exclusion.json
+            ${{ runner.temp }}/production-exclusion/build-selftest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  workflow-syntax:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Validate workflows with pinned actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --location --silent --show-error --retry 3 --max-time 60 --output "$archive" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check --status
+          tar --no-same-owner -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck='' -pyflakes=''
