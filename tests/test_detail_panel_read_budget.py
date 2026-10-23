@@ -14,6 +14,7 @@ from support_financial_browser import browser as browser
 from support_financial_browser import RECORD, downloaded
 from support_financial_post import ENDPOINT
 from support_financial_post import post_routed as post_routed
+from test_diagnostics import records as diagnostic_records
 from test_financial_actual_route import DETAIL, record
 
 
@@ -104,6 +105,17 @@ def test_stop_after_slow_panel_read_prevents_capture_and_post(post_routed, tmp_p
     page, wire = post_routed(detail_url=DETAIL)
     corporate_tabs(page)
     reads = slow_resolution(page, monkeypatch, 'inner_text')
+    subsequent = []
+    locator_type = type(page.locator('body'))
+    for method in ('get_attribute', 'wait_for', 'element_handle', 'evaluate'):
+        original = getattr(locator_type, method)
+
+        def read(locator, *args, _original=original, _method=method, **kwargs):
+            if reads and kwargs.get('timeout') is not None:
+                subsequent.append(_method)
+            return _original(locator, *args, **kwargs)
+
+        monkeypatch.setattr(locator_type, method, read)
 
     def cancel():
         if reads:
@@ -113,10 +125,12 @@ def test_stop_after_slow_panel_read_prevents_capture_and_post(post_routed, tmp_p
         driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path, check_cancel=cancel)
 
     assert page.evaluate('window.syntheticClicks') == 0 and wire == []
+    assert subsequent == [], 'Stop must be checked before another readiness read'
     assert not list(tmp_path.rglob('*.pdf'))
 
 
-def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypatch):
+@pytest.mark.parametrize('read_seconds', [0.4, 0.18], ids=['early-read', 'final-read'])
+def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypatch, read_seconds):
     page, wire = post_routed(detail_url=DETAIL)
     corporate_tabs(page)
     tab = page.get_by_role('tab', name='Induk', exact=True)
@@ -132,7 +146,7 @@ def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypat
             if allowance is not None:
                 allowances.append((clock[0], allowance))
             result = _original(locator, *args, **kwargs)
-            clock[0] += 0.4
+            clock[0] += read_seconds
             return result
 
         monkeypatch.setattr(locator_type, method, read)
@@ -147,3 +161,35 @@ def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypat
     assert allowances and all(0 < timeout <= max(1, (1 - at) * 1000)
                               for at, timeout in allowances)
     assert page.evaluate('window.syntheticClicks') == 0 and wire == []
+
+
+def test_slow_timeout_probe_retains_structural_evidence_without_pdf(post_routed, tmp_path, monkeypatch):
+    page, wire = post_routed(detail_url=DETAIL)
+    corporate_tabs(page, hidden=True)
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 0.05)
+    locator_type = type(page.locator('body'))
+    original = locator_type.evaluate
+    attempts = []
+
+    def evaluate(locator, expression, *args, **kwargs):
+        if expression == driver.PANEL_TIMEOUT_JS:
+            attempts.append(kwargs.get('timeout'))
+            if kwargs.get('timeout', 0) < 250:
+                raise driver.PlaywrightTimeoutError('SYNTHETIC slow probe')
+        return original(locator, expression, *args, **kwargs)
+
+    monkeypatch.setattr(locator_type, 'evaluate', evaluate)
+    with driver.diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        result = driver.capture_detail(page, record=record(), folder=tmp_path)
+        assert log.flush()
+
+    assert attempts == [1000], 'Probe gets one separate bounded diagnostic read'
+    events = [row for row in diagnostic_records(tmp_path / 'diagnostics')
+              if row['event'] == 'capture.panel_timeout']
+    assert len(events) == 1 and events[0]['panel_state'] == 'hidden'
+    assert 'probe_failure' not in events[0]
+    assert result['capture_complete'] is False
+    assert [section['name'] for section in result['sections']] == ['L1D']
+    assert page.evaluate('window.syntheticClicks') == 0 and wire == []
+    assert result['attachments'][0]['status'] == 'PARTIAL'
+    assert not list(tmp_path.rglob('*.pdf'))
