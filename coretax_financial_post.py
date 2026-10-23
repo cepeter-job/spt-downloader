@@ -7,10 +7,12 @@ from urllib.parse import urlparse
 import uuid
 
 from coretax_browser import list_taxpayer_id
+from spt_desktop import diagnostics
 
 _NONCE = 'x-spt-financial-nonce'
 _SOURCE_LIMIT = 8 * 1024 * 1024
 _BODY_LIMIT = 4096
+_AUTHORIZATION_LIMIT = 64 * 1024
 
 _SOURCE_NODES = r'''({pins, document_url}) => {
     if (location.href !== document_url) throw new Error('Financial document changed');
@@ -160,6 +162,7 @@ class FinancialPost:
         self.count = 0
         self.replayed = False
         self.invalid = False
+        self.guard = 'context'
         self.stopped = None
         self.nonce = uuid.uuid4().hex
         self.handler = self._route
@@ -188,41 +191,58 @@ class FinancialPost:
             raise ValueError('Inspected financial source changed')
 
     def _capture(self, request, headers):
+        self.guard = 'body'
         raw = request.post_data
         if not isinstance(raw, str) or len(raw.encode('utf-8')) > _BODY_LIMIT:
             raise ValueError('Unsupported financial request body')
         body = json.loads(raw, object_pairs_hook=_unique_object)
-        if (not isinstance(body, dict) or set(body) != {'DocumentId', 'TaxpayerAggregateIdentifier'}
-                or not all(_text(value, 512) for value in body.values())
-                or body['TaxpayerAggregateIdentifier'] != list_taxpayer_id(self.record['list_url'])):
+        if not isinstance(body, dict) or set(body) != {'DocumentId', 'TaxpayerAggregateIdentifier'}:
+            raise ValueError('Unsupported financial request fields')
+        if not all(_text(value, 512) for value in body.values()):
+            raise ValueError('Unsupported financial request values')
+        if body['TaxpayerAggregateIdentifier'] != list_taxpayer_id(self.record['list_url']):
             raise ValueError('Financial request does not match the selected taxpayer')
+        self.guard = 'authentication'
         content_type = headers.get('content-type', '')
         if (content_type.split(';', 1)[0].strip().lower() != 'application/json'
-                or not _text(content_type, 256) or not _text(headers.get('authorization'), 8192)
-                or headers.get('request_from') != self.control['document_url']):
-            raise ValueError('Unsupported financial request authentication context')
+                or not _text(content_type, 256)):
+            raise ValueError('Unsupported financial request content type')
+        authorization = headers.get('authorization')
+        if not isinstance(authorization, str) or not authorization:
+            raise ValueError('Financial request authorization is missing')
+        if len(authorization) > _AUTHORIZATION_LIMIT:
+            raise ValueError('Financial request authorization exceeds budget')
+        if not _text(authorization, _AUTHORIZATION_LIMIT):
+            raise ValueError('Unsupported financial request authorization text')
+        if headers.get('request_from') != self.control['document_url']:
+            raise ValueError('Unsupported financial request origin context')
         retained = {name: headers[name] for name in ('content-type', 'authorization', 'request_from')}
         if 'accept' in headers:
             if not _text(headers['accept'], 1024):
                 raise ValueError('Unsupported financial request Accept header')
             retained['accept'] = headers['accept']
         self.envelope.update(body=raw, headers=retained)
+        diagnostics.record('pdf.request_captured', phase='pdf',
+            authorization_budget='within_8k' if len(authorization) <= 8192 else 'above_8k')
 
     def _route(self, route):
         request = route.request
         try:
+            self.guard = 'context'
             headers = request.all_headers()
             nonce = headers.get(_NONCE)
             if request.method in ('GET', 'HEAD') and nonce is None:
                 route.fallback()
                 return
             self.check()
+            self.guard = 'route'
             if (request.method != 'POST' or request.url != self.url
                     or request.frame != self.page.main_frame
                     or request.resource_type not in ('xhr', 'fetch')
                     or request.is_navigation_request()):
                 raise ValueError('Unsupported financial request route')
             if self.phase == 'capture':
+                self.guard = 'count'
                 self.count += 1
                 if self.count != 1 or nonce is not None:
                     raise ValueError('Multiple financial requests are not supported')
@@ -230,6 +250,7 @@ class FinancialPost:
                 # Request aplikasi pertama selalu dibatalkan; tidak ada byte backend.
                 route.abort('blockedbyclient')
                 return
+            self.guard = 'replay'
             if (self.phase != 'replay' or self.replayed or nonce != self.nonce
                     or request.post_data != self.envelope.get('body')
                     or any(headers.get(name) != value
@@ -239,7 +260,13 @@ class FinancialPost:
             # Nonce hanya pembeda lokal. Context guard tetap memeriksa request.
             route.fallback(headers={name: value for name, value in headers.items() if name != _NONCE})
         except BaseException as error:
+            first = not self.invalid
             self.invalid = True
+            if first:
+                # Summarize immediately: do not retain traceback locals/headers.
+                diagnostics.record('pdf.request_rejected', level='WARNING', phase='pdf',
+                    pdf_guard=self.guard, error=error,
+                    status='PARTIAL' if isinstance(error, Exception) else 'CANCELLED')
             if not isinstance(error, Exception):
                 self.stopped = error
             try:
