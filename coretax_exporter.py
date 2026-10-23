@@ -695,6 +695,9 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
     if mapping_reports:
         put(summary, 23, 1, 'Pemetaan template pengambilan terbaru')
         put(summary, 23, 2, 'COMPLETE' if all(r['complete'] for r in mapping_reports) else 'PARTIAL')
+        header(audit, ar, ['Status / Objek', 'Field belum dipetakan', 'Tabel belum dipetakan',
+                           'Baris belum dipetakan', 'Hasil', 'Keterangan'])
+        ar += 1
         for report in mapping_reports:
             derivation_note = {
                 'missing_average': ' DER belum dihitung: saldo rata-rata utang atau modal belum tersedia.',

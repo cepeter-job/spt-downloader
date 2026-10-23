@@ -96,7 +96,12 @@ def test_audit_contains_literal_relative_pdf_link_and_bound_metadata_without_ext
             assert record.get('attachments', []) == selected.get('attachments', [])
             if name == normal:
                 source_values = [cell.value for sheet in workbook for row in sheet for cell in row]
-                assert '0000123' in source_values and '1.234,56' in source_values
+                assert '0000123' in source_values
+                money = next(row[1] for row in workbook['Induk']
+                             if row[0].value == 'Angsuran PPh Pasal 25')
+                assert money.value == 1234.56 and money.data_type == 'n'
+                assert 'Rp' in money.number_format and '#,##0.' not in money.number_format
+                assert original['records'][0]['sections'][0]['fields'][-1]['value'] == '1.234,56'
                 assert '0007' not in source_values  # Clean Induk omits unmapped tables.
                 assert original['records'][0]['sections'][0]['tables'][0]['rows'] == [
                     ['0007', '1.234,56'], ['0007', '1.234,56']]
