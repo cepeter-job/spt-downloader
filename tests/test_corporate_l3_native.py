@@ -300,3 +300,18 @@ def test_known_l3_request_identity_is_fatal_before_observer_or_build_eligibility
                      'request_json': {'ReturnSheetRecordId': corpus.FOREIGN_ID}}]
     with pytest.raises(JsonSafetyError, match='contradicts selected return'):
         driver._check_corporate_request_identities(observations, selected(), corpus.SCOPE)
+
+
+@pytest.mark.parametrize('bound', [False, True])
+def test_l3_changed_cross_page_count_is_fatal_before_any_semantic_fallback(bound):
+    raw = packets()
+    rows = deepcopy(inputs()[1][1]['data'])
+    rows.append(deepcopy(rows[-1]))
+    # Both pages are individually complete for their own declared total. The
+    # same selected query changed12->13 between First0 and First10.
+    raw[3] = packet({'IsSuccessful': True, 'Payload': {'TotalRecords': 13, 'Data': rows}},
+                    4, GRID, request(10))
+    before = deepcopy(raw)
+    with pytest.raises(JsonSafetyError, match='snapshot|count'):
+        adapt_corporate_detail(iter(raw), selected(), corpus.SCOPE, bindings() if bound else [])
+    assert raw == before

@@ -147,3 +147,11 @@ exception captured before its deliberately failing diagnostic probe. Fresh
 source review closed that fixture correction; no production deadline changed.
 Native implementation review, full combined-tree GREEN and package readback
 remain pending.
+
+Fresh implementation review identified a cross-page count contradiction that
+could be hidden by unsupported fallback: per-request snapshots include First,
+so individually complete B pages with totals12/13 reached the pure helper's
+unsupported-input contract. Two bound/unbound regression cases now require a
+fatal snapshot/count error for the same exact observed query apart from First.
+Keep the pure helper's existing contract unchanged. The adapter guard must wait
+until the actual review-RED is read; do not infer its behavior by local execution.
