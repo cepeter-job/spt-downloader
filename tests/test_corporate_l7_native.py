@@ -196,6 +196,11 @@ class L7Fixture(NativeFixture):
         self.primary_mime = primary_mime
         super().__init__(browser, tmp_path, monkeypatch, popup=popup,
                          extra_form=('L7', 'rshshr-citr-l7-form'))
+        self.business_reads = []
+        observe = lambda page: page.on('console', lambda event:
+            self.business_reads.append(True) if event.text == 'SYNTHETIC L7 BUSINESS VALUE READ' else None)
+        observe(self.page)
+        self.context.on('page', observe)
         record = selected(model)
         self.record['meta'] = record['meta']
         self.record['source_fields'] = record['source_fields']
@@ -236,7 +241,8 @@ class L7Fixture(NativeFixture):
                   const d=Object.getOwnPropertyDescriptor(proto,key);
                   Object.defineProperty(proto,key,{...d,get(){
                     if(this.matches?.('input,tbody,tbody *,tfoot td,tfoot td *')){
-                      window.businessReads++;throw Error('DOM business value read');
+                      window.businessReads++;console.warn('SYNTHETIC L7 BUSINESS VALUE READ');
+                      throw Error('DOM business value read');
                     }return d.get.call(this);
                   }});
                 }
@@ -261,8 +267,7 @@ def test_native_l7_uses_no_business_dom_values_and_exports_source_bound_workbook
         assert len([r for r in fixture.requests if r['url'] == PDF_URL]) == 1
         assert not any('/loadcit/' in r['url'] for r in fixture.requests)
         assert fixture.unexpected == []
-        detail, = [page for page in fixture.context.pages if page.url == FRAME]
-        assert detail.evaluate('window.businessReads') == 0
+        assert fixture.business_reads == []  # The collector closes owned popups.
         assert_saved_l7(result, tmp_path, model)
     finally:
         fixture.close()
