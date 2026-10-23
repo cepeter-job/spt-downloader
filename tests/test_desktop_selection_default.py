@@ -113,3 +113,6 @@ def test_source_and_frozen_selftest_observes_initial_order_including_unifikasi(t
         'synthetic-badan-two', 'synthetic-badan-one', 'synthetic-21', 'synthetic-unifikasi',
         'synthetic-ppn-normal', 'synthetic-ppn-one', 'synthetic-ppn-two',
         '::synthetic {return}; [literal] / id', 'synthetic-ppn-feb']
+    assert sorting.get('period_labels') == [
+        'Januari', 'Tahunan', 'Februari', 'Tahunan', 'Januari',
+        'Januari', 'Januari', 'Februari', 'Januari']
