@@ -495,6 +495,7 @@ def _main(argv=None):
             else:
                 owned_context = playwright.chromium.launch_persistent_context(str(args.profile.resolve()), channel=args.browser,
                     headless=False, no_viewport=True, service_workers='block',
+                    locale='id-ID', timezone_id='Asia/Jakarta',
                     args=['--no-first-run', '--no-default-browser-check'])
                 owned_context._spt_financial_route_policy = 'service_workers_blocked'
                 context = owned_context

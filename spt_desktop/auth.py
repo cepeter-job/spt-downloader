@@ -155,7 +155,8 @@ def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,man
         check_cancel()
         try:
             owned=playwright.chromium.launch_persistent_context(str(profile),channel=browser,
-                headless=hidden,viewport={'width':1600,'height':1000},service_workers='block')
+                headless=hidden,viewport={'width':1600,'height':1000},service_workers='block',
+                locale='id-ID',timezone_id='Asia/Jakarta')
             # Only contexts created with this policy may capture/replay a PDF POST.
             owned._spt_financial_route_policy = 'service_workers_blocked'
         except Exception:
