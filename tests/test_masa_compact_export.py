@@ -54,7 +54,7 @@ def test_ppn_induk_removes_only_two_redundant_spacers_and_moves_merges(tmp_path)
     try:
         ws=book['Induk']
         assert ws.max_row == 76
-        assert ws['A8'].value == 'I. PENYERAHAN BARANG DAN JASA'
+        assert ws['A8'].value == 'I.'
         assert 'A9:D9' in {str(x) for x in ws.merged_cells.ranges}
         assert all(ws.cell(7,c).value is None for c in range(1,9))
     finally:
@@ -75,7 +75,7 @@ def test_pph21_matches_reference_body_capacity_headers_spacers_and_totals(tmp_pa
     book,reports=saved(tmp_path,'PPh Pasal 21/26',[section(form,tables=tables)])
     try:
         ws=book[form]
-        assert ws.cell(total,1).value.startswith('JUMLAH')
+        assert ws.cell(total,1).value.startswith('TOTAL' if form=='L-II' else 'JUMLAH')
         assert ws.max_row == total + (0 if form=='L-II' else 2)
         assert [ws.cell(r,1).value for r in headers] == ['NO.']*len(headers)
         assert all(r['complete'] for r in reports)
@@ -89,7 +89,7 @@ def test_pph21_matches_reference_body_capacity_headers_spacers_and_totals(tmp_pa
 
 
 @pytest.mark.parametrize('rate,valid,expected', [('0',True,0),('2,50',True,0.025),('100,00',True,1),
-    ('1.5',False,'1.5'),('1,234',False,'1,234'),('999.999.999.999.999,99',False,'999.999.999.999.999,99')])
+    ('1.5',False,'1.5'),('1,234',True,0.01234),('999.999.999.999.999,99',False,'999.999.999.999.999,99')])
 def test_lia_rate_fraction_is_strict_and_unsafe_source_stays_partial(tmp_path,rate,valid,expected):
     table,_=appendix_table('L-IA','LIST-IA',1)
     table['rows'][0][table['headers'].index('TARIF PAJAK (%)')]=rate
@@ -98,5 +98,17 @@ def test_lia_rate_fraction_is_strict_and_unsafe_source_stays_partial(tmp_path,ra
         assert book['L-IA']['H4'].value == expected
         assert reports[0]['complete'] is valid
         assert reports[0]['unmapped_tables'] == (0 if valid else 1)
+    finally:
+        book.close()
+
+
+def test_pph21_accounting_uses_whole_display_without_rounding_saved_amounts(tmp_path):
+    table,_=appendix_table('L-III','BP26',1,with_totals=True)
+    book,_=saved(tmp_path,'PPh Pasal 21/26',[section('L-III',tables=[table])])
+    try:
+        money=[c for ws in book for row in ws for c in row if '"Rp"' in c.number_format]
+        assert money
+        assert all('.00' not in c.number_format.split(';')[0] for c in money)
+        assert any(c.value==1234.5 for c in money)
     finally:
         book.close()
