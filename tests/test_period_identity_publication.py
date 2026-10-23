@@ -7,6 +7,7 @@ import coretax
 from spt_desktop import output
 from support_runs import fixture_run
 from support_financial_publication import CHANGED_PDF, declare_pdf
+from test_financial_publication import assert_audit_targets
 
 
 def one_run(period, *, captured=True):
@@ -83,6 +84,27 @@ def test_period_identity_fallback_rejects_corrupted_retained_pdf(tmp_path):
     with pytest.raises(ValueError, match='(?i)pdf|hash|digest|financial'):
         output.publish_workbooks(new, tmp_path / 'new-job', tmp_path / 'Downloads', 'synthetic-new')
     assert bytes_in(old) == before
+
+
+def test_separate_period_folders_preserve_their_own_declared_pdf_bytes_and_links(tmp_path):
+    previous = one_run('Januari - Desember 2025')
+    old_pdf = declare_pdf(previous['records'][0], tmp_path / 'old-job')
+    old_bytes = old_pdf.read_bytes()
+    coretax.save_output(previous, tmp_path / 'old-job')
+    old = output.publish_workbooks(previous, tmp_path / 'old-job', tmp_path / 'Downloads', 'synthetic-old')
+    before = bytes_in(old)
+    new = one_run('01122025')
+    declare_pdf(new['records'][0], tmp_path / 'new-job', CHANGED_PDF)
+    coretax.save_output(new, tmp_path / 'new-job')
+    final = output.publish_workbooks(new, tmp_path / 'new-job', tmp_path / 'Downloads', 'synthetic-new')
+    assert final != old and bytes_in(old) == before
+    for run, folder, data in [(previous, old, old_bytes), (new, final, CHANGED_PDF)]:
+        relative = run['records'][0]['attachments'][0]['relative_path']
+        assert (folder / relative).read_bytes() == data
+        assert {p.relative_to(folder).as_posix() for p in folder.rglob('*.pdf')} == {relative}
+        for name in run['output_files']:
+            assert_audit_targets(folder, name, {relative: data})
+        coretax.verify_outputs(run, folder)
 
 
 def test_same_literal_period_still_requires_overwrite_consent(tmp_path):

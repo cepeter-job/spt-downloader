@@ -512,7 +512,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                               archive_period_conflict=False, outside_year_padding=20,
                               extra_status_links=False, submitted_link='normal',
                               submitted_redirect=False, restored_period_label=False,
-                              restored_catalog='valid'):
+                              restored_catalog='valid', restored_metadata=None,
+                              restored_api_period=None):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -590,8 +591,11 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
             available_cache = {**cache, 'Details': [*cache['Details'],
                 {'Code': 'synthetic-other-period', 'CodeDescription': 'Januari - Desember 2024'}]}
         headers = ''.join('<th>' + html.escape(label) + '</th>' for label in labels)
+        current_displays = {key: dict(value) for key, value in displays_by_id.items()}
+        if restored and restored_metadata:
+            current_displays['fixture-normal'].update(restored_metadata)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
-                             'headers': labels, 'displays': displays_by_id,
+                             'headers': labels, 'displays': current_displays,
                              'catalog': available_cache, 'archived': archived,
                              'codePeriod': archive_period_conflict and submitted and not archive_seen and not restored,
                              'auxiliary': auxiliary_request, 'hashLink': hash_link})
@@ -716,6 +720,15 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                                 assert filt['MatchMode'] == 'any' + '-equals' * len(filt['Value'])
                                 candidates = [r for r in candidates if r['TaxPeriodCode'] in filt['Value']]
                     data_rows = candidates[data['First']:data['First'] + 2]
+                    if (restored_api_period is not None and submitted and
+                            metrics['list_navigations'].count('/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') > 1):
+                        data_rows = [dict(row) for row in data_rows]
+                        for row in data_rows:
+                            if row['RecordId'] == 'fixture-normal':
+                                if restored_api_period == 'missing':
+                                    row.pop('TaxPeriodCode', None)
+                                else:
+                                    row['TaxPeriodCode'] = restored_api_period
                     if submitted:
                         metrics['submitted_api_requests'] += 1
                         metrics['submitted_requests'].append(data)

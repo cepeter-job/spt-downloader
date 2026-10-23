@@ -47,16 +47,15 @@ def test_submitted_only_late_label_uses_fresh_catalog_without_rewriting_inventor
 @pytest.mark.parametrize('invalid', ['missing', 'expired', 'ambiguous', 'receipt', 'model',
                                    'legacy_without_proof', 'occurrence_mismatch'])
 def test_late_label_still_rejects_unproved_or_changed_metadata(browser, monkeypatch, tmp_path, invalid):
+    changes = ({'Nomor Bukti Penerimaan': 'SYNTHETIC_CHANGED_RECEIPT'} if invalid == 'receipt' else
+               {'Model SPT': 'SYNTHETIC_CHANGED_MODEL'} if invalid == 'model' else None)
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
                                    restored_period_label=True, expired_catalog=invalid == 'expired',
-                                   restored_catalog=invalid, outside_year_padding=0) as (page, metrics):
+                                   restored_catalog=invalid, restored_metadata=changes,
+                                   outside_year_padding=0) as (page, metrics):
         run = inventory(page, tmp_path)
         selected = run['records'][0]
-        if invalid == 'receipt':
-            selected['meta']['Nomor Bukti Penerimaan'] = 'SYNTHETIC_CHANGED_RECEIPT'
-        elif invalid == 'model':
-            selected['meta']['Model SPT'] = 'SYNTHETIC_CHANGED_MODEL'
-        elif invalid == 'legacy_without_proof':
+        if invalid == 'legacy_without_proof':
             selected['source_occurrences'].append({**deepcopy(selected['source_occurrences'][0]),
                                                    'source_status': 'Archieved Return Sheets'})
         elif invalid == 'occurrence_mismatch':
@@ -66,6 +65,18 @@ def test_late_label_still_rejects_unproved_or_changed_metadata(browser, monkeypa
         assert any('metadata changed' in e['message'] for e in run['errors'])
         assert not list(tmp_path.glob('period-catalog-restoration-*.json'))
         assert not run['complete']
+
+
+@pytest.mark.parametrize('api_period', ['missing', '06062024'])
+def test_fresh_catalog_pair_cannot_override_changed_current_api_period(browser, monkeypatch, tmp_path, api_period):
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
+                                   restored_period_label=True, restored_api_period=api_period,
+                                   outside_year_padding=0) as (page, metrics):
+        run = inventory(page, tmp_path)
+        driver.collect_details(page, run, tmp_path)
+        assert metrics['viewed_record_ids'] == []
+        assert run['errors'] and not run['complete']
+        assert not list(tmp_path.glob('period-catalog-restoration-*.json'))
 
 
 def test_stop_during_fresh_period_proof_prevents_view(browser, monkeypatch, tmp_path):
