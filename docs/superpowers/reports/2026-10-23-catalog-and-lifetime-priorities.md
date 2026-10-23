@@ -73,8 +73,9 @@ Fresh source reviews accepted ordering, locale/vendor dependency, script-provide
 custody, current routes, L1-D geometry and lifetime cleanup. Combined review
 verified the owning parents' critical functions unchanged and all tracked Python
 files parsed. Preceding other-session PR101's seven changed files and finite
-Authorization/rejection-diagnostic contracts were reviewed and preserved byte
-for byte. Its independent live PDF evidence is not reused here.
+Authorization/rejection-diagnostic contracts were reviewed. Its changes remain
+preserved: six files are byte-identical, with later contracts appended to
+AGENTS.md. Its independent live PDF evidence is not reused here.
 
 ## Final runner and package evidence
 
