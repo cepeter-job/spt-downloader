@@ -216,12 +216,15 @@ def _workbook_scope(run, path, relative):
                     elif set(groups) != {relative}:
                         continue
                     references = []
+                    record_identities = []
                     for record, location in zip(source['records'], locations):
                         meta = record['meta']
                         identity = (meta.get('Jenis Pajak'), meta.get('Masa Pajak'), meta.get('Model SPT'))
                         filename = filenames[id(record)] if relative == 'resume.xlsx' else relative
                         references.append((filename, identity, location))
-                    return _group_identities(groups, legacy=legacy), references, nested_pdfs
+                        if proof is not None and 'record_id' in record:
+                            record_identities.append((record['record_id'], identity))
+                    return _group_identities(groups, legacy=legacy), references, nested_pdfs, record_identities
                 raise ValueError('Unknown workbook filename or literal period/model scope')
             finally:
                 workbook.close()
@@ -322,12 +325,13 @@ def _inspect(run, downloads, target):
         raise ValueError('Existing output scope has no known resume.xlsx')
     fingerprints, identities, indexed = {}, {}, {}
     physical_references, resume_references = [], []
+    physical_ids = {}
     nested_pdfs = False
     for name in sorted(actual):
         path = coretax.output_path(target, name)
         _include_directories(directories, path.parent)
         before = _fingerprint(path)
-        declared, references, workbook_nested_pdfs = _workbook_scope(run, path, name)
+        declared, references, workbook_nested_pdfs, record_identities = _workbook_scope(run, path, name)
         if _fingerprint(path) != before:
             raise ValueError('Workbook changed while inspecting output scope')
         fingerprints[name] = before
@@ -335,6 +339,10 @@ def _inspect(run, downloads, target):
             indexed = declared
             resume_references = references
         else:
+            for identifier, identity in record_identities:
+                if identifier in physical_ids:
+                    raise ValueError('Existing physical workbooks contain a duplicate return identifier')
+                physical_ids[identifier] = (name, identity)
             identities.update(declared)
             physical_references.extend(references)
             nested_pdfs = nested_pdfs or workbook_nested_pdfs
@@ -348,6 +356,18 @@ def _inspect(run, downloads, target):
     if any(name in identities and identities[name] != identity
            for name, identity in selected_identities.items()):
         raise ValueError('Tax type or literal period filename collision with existing output scope')
+    period_identity_conflict = False
+    for name, records in workbook_groups(run).items():
+        for record in records:
+            previous = physical_ids.get(record.get('record_id'))
+            if previous is None or previous[0] == name:
+                continue
+            meta = record['meta']
+            tax, period, model = previous[1]
+            if (tax, model) != (meta.get('Jenis Pajak'), meta.get('Model SPT')):
+                raise ValueError('Existing return identifier has a different tax/model identity')
+            if period != meta.get('Masa Pajak'):
+                period_identity_conflict = True
     pdf_states = {}
     for name in sorted(actual_pdfs):
         path = coretax.output_path(target, name)
@@ -359,7 +379,8 @@ def _inspect(run, downloads, target):
     # A new flat export must not leave old nested declarations in the same set.
     legacy_layout = (any(layout == 'legacy' for layout, entries in identities.values())
                      or (flat_selected_pdfs and nested_pdfs))
-    _approved_existing_pdfs(run, target, actual_pdfs, corporate_files, validate_all=legacy_layout)
+    _approved_existing_pdfs(run, target, actual_pdfs, corporate_files,
+                            validate_all=legacy_layout or period_identity_conflict)
     for name, fingerprint in {**fingerprints, **pdf_states}.items():
         if _fingerprint(coretax.output_path(target, name)) != fingerprint:
             raise ValueError('Existing output bytes changed during consent inspection')
@@ -368,7 +389,7 @@ def _inspect(run, downloads, target):
             'selected_files': names,
             'files': [name for name in names if name in actual | actual_pdfs],
             'directories': directories, 'workbooks': fingerprints, 'attachments': pdf_states,
-            'legacy_layout': legacy_layout}
+            'legacy_layout': legacy_layout, 'period_identity_conflict': period_identity_conflict}
 
 
 def existing_outputs(run, downloads):
@@ -390,7 +411,7 @@ def existing_outputs(run, downloads):
         raise ValueError('Existing output folder filename collision')
     snapshot = _inspect(run, downloads, max(candidates, key=lambda path: path.name))
     # Never leave an old combined workbook declaring PDFs we replace in-place.
-    return None if snapshot['legacy_layout'] else snapshot
+    return None if snapshot['legacy_layout'] or snapshot['period_identity_conflict'] else snapshot
 
 
 def _revalidate(run, downloads, snapshot):

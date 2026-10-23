@@ -115,3 +115,16 @@ def test_same_literal_period_still_requires_overwrite_consent(tmp_path):
     with pytest.raises(FileExistsError, match='overwrite consent'):
         output.publish_workbooks(run, tmp_path / 'job', tmp_path / 'Downloads', 'synthetic-new')
     assert bytes_in(old) == before
+
+
+def test_period_folder_fallback_does_not_accept_changed_model_for_the_same_id(tmp_path):
+    previous = one_run('Januari - Desember 2025')
+    coretax.save_output(previous, tmp_path / 'old-job')
+    old = output.publish_workbooks(previous, tmp_path / 'old-job', tmp_path / 'Downloads', 'synthetic-old')
+    before = bytes_in(old)
+    new = one_run('01122025')
+    new['records'][0]['meta']['Model SPT'] = 'Pembetulan 1'
+    coretax.save_output(new, tmp_path / 'new-job')
+    with pytest.raises(ValueError, match='(?i)identifier|identity|model'):
+        output.publish_workbooks(new, tmp_path / 'new-job', tmp_path / 'Downloads', 'synthetic-new')
+    assert bytes_in(old) == before
