@@ -296,10 +296,10 @@ def test_known_route_conflict_is_fatal_even_with_unreadable_primary_and_changed_
 
     monkeypatch.setattr(driver, 'capture_detail', fallback)
     try:
-        result = fixture.collect()
-        assert not result['complete'] and result['errors']
+        with pytest.raises(JsonSafetyError, match='route identity'):
+            fixture.collect()
         assert calls == [], 'Known route identity conflict must prevent whole DOM fallback'
-        assert not result['records'][0].get('sections')
+        assert not fixture.record.get('capture_complete') and not fixture.record.get('sections')
         assert fixture.unexpected == []
     finally:
         fixture.close()
