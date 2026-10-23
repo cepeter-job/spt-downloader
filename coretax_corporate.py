@@ -11,6 +11,7 @@ FORMS = {
  'L2': ('rshshr-citr-l2-form', 'ListOfOwnership'),
  'L4': ('rshshr-citr-l4-form', 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject'),
  'L6': ('rshshr-citr-l6-form', 'FiscalYearIncomeTax'),
+ 'L7': ('rshshr-citr-l7-form', 'CalculationOfFiscalLossCompensation'),
  'L9': ('rshshr-citr-l9-form', 'RecapitulationFiscalDepreciationAmortization'),
  'L10-A': ('rshshr-citr-l10a-form', 'DeclarationTransactionRelatedParties'),
  'L10-B': ('rshshr-citr-l10b-form', 'L10bFormData'),
@@ -152,8 +153,11 @@ def _turn_grid(page, table, max_pages, check_cancel):
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
+    from coretax_json import _check_corporate_route, _corporate_selected
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
+    selected = _corporate_selected(record, scope)
+    _check_corporate_route(page.url, selected)
     try:
         digest = page.evaluate(_BUILD_HASH, CIT_SOURCE_URL)
         _check_cancel(check_cancel)
@@ -175,6 +179,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
                 return None
+            _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
@@ -183,6 +188,25 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
+            if name == 'L7':
+                from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
+                from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
+                if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
+                    return None
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                _check_cancel(check_cancel)
+                if main_digest != BUILD_DIGESTS.get(MAIN_SOURCE):
+                    return None
+                grid = form.locator('rsh-citr-l7-grid1')
+                if (grid.count() != 1 or grid.locator('p-table').count() != 1
+                        or grid.locator('table').count() != 1 or form.locator('table').count() != 1):
+                    return None
+                metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
+                locale = page.evaluate('() => navigator.language')
+                binding['projection'] = {'kind': 'corporate-l7-v1', 'builds': {
+                    CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url, 'locale': locale,
+                    'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
+                                'footer_spans': metadata['footer_spans']}]}
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)
                 if grids.count() != len(groups):

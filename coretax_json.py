@@ -596,6 +596,17 @@ def _corporate_bindings(observed_forms):
     return sections, paths, requests, grids, responses, dependencies, primary
 
 
+def _check_corporate_route(frame, selected):
+    """Known submitted route identities remain fatal before any fallback gate."""
+    match = re.fullmatch(r'/returnsheets/id-ID/corporate-income-tax-return/([^/]+)/([^/]+)/([^/]+)/([^/]+)/?',
+                         urlparse(frame).path)
+    if match:
+        expected = (selected['frame_taxpayer'], selected['record_id'],
+                    selected['native_fields'].get('TaxTypeCode'), selected['aggregate_id'])
+        if any(value is not None and actual != value for actual, value in zip(match.groups(), expected)):
+            raise JsonSafetyError('Corporate route identity contradicts selected source')
+
+
 def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_reference=False,
                       allow_unifikasi_reference=False):
     if not isinstance(item, dict) or not isinstance(item.get('body'), bytes) or not isinstance(item.get('context'), dict):
@@ -637,11 +648,20 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     parts = urlparse(frame).path.split('/')
     if selected['record_id'] not in parts or selected['frame_taxpayer'] not in parts:
         raise JsonSafetyError('Captured corporate frame ownership contradicts selection')
+    _check_corporate_route(frame, selected)
     status = ctx.get('status')
     if type(status) is not int or not 100 <= status <= 599 or status in (401, 403):
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
     envelope = _corporate_json(raw)
     _corporate_privacy(envelope)
+    if (urlparse(endpoint).path == '/returnsheet/api/prefillreturnsheet/corporate-income'
+            and isinstance(envelope, dict) and isinstance(envelope.get('Payload'), dict)):
+        status_source = selected['native_fields'].get('ReturnSheetStatusCode')
+        payload = envelope['Payload']
+        if (status_source is not None and 'ReturnSheetStatusCode' in payload
+                and (type(payload['ReturnSheetStatusCode']) is not str
+                     or payload['ReturnSheetStatusCode'] != status_source)):
+            raise JsonSafetyError('Corporate response status contradicts selected source')
     # Only bounded metadata is retained, never the collector packet/raw payload.
     event = {key: ctx[key] for key in ('relative_path', 'bytes', 'sha256', 'url', 'method', 'status',
                                      'frame_url', 'sequence', 'attempt', 'record_id', 'identity_validated') if key in ctx}
@@ -793,7 +813,7 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
         rows = []
         _corporate_rows(value, path, rows)
         section['tables'].append(_corporate_table(_corporate_pointer(path), rows))
-    return len(root), len(evidence)
+    return len(root), len(evidence), root
 
 
 def _corporate_grid_page(state, key, offset, payload, digest):
@@ -837,6 +857,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks = [], set(), {}, set()
     attempt, primary_hash, total_bytes = None, None, 0
+    primary_source = None
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
     if not supported_tax:
         reasons.append('unsupported_corporate_tax_kind')
@@ -881,7 +902,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                     raise _UnsupportedMetadata('unsupported_corporate_primary_payload')
                 if primary_hash is None:
                     primary_hash = ctx['sha256']
-                    roots, rows = _corporate_primary(payload, record, selected, scope, paths, provenance)
+                    roots, rows, root = _corporate_primary(payload, record, selected, scope, paths, provenance)
+                    primary_source = (root, payload, event)
                     coverage['source_root_count'], coverage['evidence_row_count'] = roots, rows
                     wrapper_rows = []
                     for field, value in envelope.items():
@@ -951,6 +973,16 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             coverage['evidence_row_count'] += len(rows)
         else:
             provenance.setdefault('dependencies', []).append({'endpoint': state['endpoint'], 'rows': rows})
+    if not reasons and primary_source is not None:
+        from coretax_corporate_projection import apply_projections
+        try:
+            root, payload, event = primary_source
+            projected = apply_projections(sections, observed_forms, root=root, payload=payload,
+                                          record=record, event=event)
+            if projected:
+                provenance['projections'] = projected
+        except _UnsupportedMetadata as error:
+            reasons.append(str(error))
     if reasons:
         return {'eligible': False, 'reason': ','.join(dict.fromkeys(reasons)), 'sections': [],
                 'coverage': coverage, 'provenance': provenance}
