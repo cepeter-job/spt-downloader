@@ -15,7 +15,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
-                          CORPORATE_L3_REFERENCE_URLS, ORIGIN,
+                          CORPORATE_REFERENCE_REQUESTS, ORIGIN,
                           _capture_clock_interval, _capture_component_lifetime,
                           _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop.output_windows import DirectoryGuard, locked_file
@@ -127,7 +127,7 @@ class DetailJsonCapture:
                      and fields.get('ReturnSheetTypeCode') == 'ICT_RCITR')
         self._reference_urls = (PPH21_REFERENCE_URLS if tax == 'PPh Pasal 21/26' else
                                 (UNIFIKASI_REFERENCE_URL,) if tax == 'PPh Unifikasi' else
-                                tuple(CORPORATE_L3_REFERENCE_URLS.values()) if corporate else ())
+                                tuple(CORPORATE_REFERENCE_REQUESTS) if corporate else ())
         self.source_url = source
         self.taxpayer_id = match.group(1)
         self.ordinal = ordinal

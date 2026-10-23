@@ -5,6 +5,8 @@ import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
                           CORPORATE_L3_REFERENCE_URLS, CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL,
+                          CORPORATE_L11A_REFERENCE_URLS, CORPORATE_L11A_GRID_URLS,
+                          CORPORATE_REFERENCE_REQUESTS,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
@@ -21,6 +23,7 @@ L11C_BUILD_DIGESTS = {**BUILD_DIGESTS,
     VENDOR_SOURCE: '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'}
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -169,18 +172,24 @@ def project_countries(payload, *, clock_interval=None):
     return _project_corporate_catalog(payload, kind='COUNTRY_CODE', clock_interval=clock_interval)
 
 
-def _project_corporate_catalog(payload, *, kind, clock_interval=None):
-    """Only the four source-proved singleton catalog consumers share this order."""
+def _project_corporate_catalog(payload, *, kind, clock_interval=None, requested_types=None):
+    """Reviewed singleton or exact ordered pair; preserve original array paths."""
     _reference_locale(payload)
-    if (kind not in CORPORATE_L3_REFERENCE_URLS or not isinstance(payload, list)
-            or len(payload) != 1 or not isinstance(payload[0], dict)
-            or payload[0].get('ReferenceDataType') != kind
-            or not isinstance(payload[0].get('Details'), list)):
+    requested = (kind,) if requested_types is None else tuple(requested_types)
+    if (kind not in {*CORPORATE_L3_REFERENCE_URLS, *CORPORATE_L11A_REFERENCE_URLS}
+            or requested not in ((kind,), ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT'))
+            or kind not in requested or not isinstance(payload, list) or len(payload) != len(requested)
+            or any(not isinstance(item, dict) or type(item.get('ReferenceDataType')) is not str
+                   for item in payload)
+            or {item['ReferenceDataType'] for item in payload} != set(requested)):
         raise _UnsupportedMetadata('unsupported_corporate_country_catalog')
-    catalog, groups, evidence = payload[0], {}, []
+    catalog_index = next(index for index, item in enumerate(payload) if item['ReferenceDataType'] == kind)
+    catalog, groups, evidence = payload[catalog_index], {}, []
+    if not isinstance(catalog.get('Details'), list):
+        raise _UnsupportedMetadata('unsupported_corporate_country_catalog')
     if 'language' in catalog and catalog['language'] != 'id-ID':
         raise JsonSafetyError('Corporate country locale contradicts observed source')
-    evidence.append(_evidence(kind, [0, 'ReferenceDataType']))
+    evidence.append(_evidence(kind, [catalog_index, 'ReferenceDataType']))
     descriptions = {}
     ordered, order_rule = _reference_consumer_order(catalog['Details'], kind)
     for index, row in enumerate(catalog['Details']):
@@ -193,8 +202,8 @@ def _project_corporate_catalog(payload, *, kind, clock_interval=None):
             if key in row and row[key] is not None and type(row[key]) is not str:
                 raise _UnsupportedMetadata('unsupported_corporate_country_validity')
         for key in ('Code', 'CodeDescription', 'ValidFrom', 'ValidTo', 'ParameterData'):
-            entry = (_evidence(row[key], [0, 'Details', index, key]) if key in row else
-                     {'path': [0, 'Details', index, key], 'type': 'missing', 'value': None})
+            entry = (_evidence(row[key], [catalog_index, 'Details', index, key]) if key in row else
+                     {'path': [catalog_index, 'Details', index, key], 'type': 'missing', 'value': None})
             evidence.append(entry)
             if key == 'CodeDescription':
                 descriptions[index] = entry
@@ -413,6 +422,11 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
     for binding, section in zip(observed_forms, sections):
         if 'projection' not in binding:
             continue  # Preserve old evidence-leaf captures and caller contracts.
+        if binding['name'] == 'L11-A':
+            projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,
+                record=record, event=event, reference_packets=reference_packets or {},
+                auxiliary_packets=auxiliary_packets or {}))
+            continue
         if binding['name'] == 'L3':
             projected.append(_apply_l3(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event, reference_packets=reference_packets or {},
@@ -1021,7 +1035,8 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
         page_sources.append(packet['event'])
     footer_key = (CORPORATE_L3_FOOTER_URL, _corporate_request_key(footer_request))
     expected.add(footer_key)
-    if expected != set(auxiliary_packets):
+    if expected != {key for key in auxiliary_packets
+                    if key[0] in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL)}:
         raise _UnsupportedMetadata('incomplete_corporate_l3_auxiliary_packets')
     footer = auxiliary_packets[footer_key]
     references = proof['references']
@@ -1121,6 +1136,148 @@ _L11A_MONEY = {'RecipientAmountOfPromotionCost', 'IncomeTax', 'EntertainmentAmou
     'UncollectibleDebt', 'AcquisitionValue', 'UpToPreviousYear', 'CurrentYear', 'UpToCurrentYear',
     'AmountBeginning', 'AmountEnd', 'AmountInterestCurrentYear'}
 _L11A_ENDPOINTS = {index: f'l11a-table-{index + 1}-grid' for index in (0, 1, 2, 4)}
+_L11A_OWNERS = ('rshshr-citr-l11a-grid1', 'rshshr-citr-l11a-grid2', 'rshshr-citr-l11a-grid3',
+                'rsh-citr-l11a-grid4', 'rshshr-citr-l11a-grid5')
+_L11A_GROUPS = [
+    ['I. DAFTAR NOMINATIF BIAYA PROMOSI DAN PENJUALAN, SERTA PENGGANTIAN ATAU IMBALAN DALAM BENTUK NATURA DAN/ATAU KENIKMATAN'],
+    ['II. DAFTAR NOMINATIF BIAYA ENTERTAINMENT'],
+    ['III. DAFTAR PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH'],
+    ['IV. RINCIAN BAGI WAJIB PAJAK PEMBERI NATURA DAN/ATAU KENIKMATAN',
+     'IV.A DAFTAR SARANA DAN FASILITAS SERTA PENYUSUTANNYA'],
+    ['V. DAFTAR DEBITUR NON-PERFORMING LOAN']]
+
+
+def _apply_l11a(binding, section, observed_forms, *, root, payload, record, event,
+                 reference_packets, auxiliary_packets):
+    proof = binding['projection']
+    if (not isinstance(proof, dict)
+            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or proof['kind'] != 'corporate-l11a-v1' or proof['builds'] != L11A_BUILD_DIGESTS
+            or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L11A_ROOT]]
+            or binding.get('grids', []) or binding.get('dependencies', [])
+            or event.get('component_lifetime') is None):
+        raise _UnsupportedMetadata('unverified_corporate_l11a_semantic_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    main = root.get('MainFormData')
+    if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
+            or not isinstance(main, dict)
+            or any(type(value) is not _CorporateNumber or _decimal(value) != 1
+                   for value in (payload.get('IsDeclareEntertainmentExpense'),
+                                 main.get('IsDeclareEntertainmentExpense')))):
+        raise _UnsupportedMetadata('unverified_corporate_l11a_submitted_lifecycle')
+    if 'PreviousFormData' not in payload:
+        raise _UnsupportedMetadata('missing_corporate_l11a_previous_encoding')
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l11a_previous_encoding')
+        previous = _corporate_json(previous)
+        if previous is not None and not isinstance(previous, dict):
+            raise _UnsupportedMetadata('unsupported_corporate_l11a_previous_shape')
+    previous_form = previous.get(_L11A_ROOT) if previous is not None else None
+    tables = proof['tables']
+    if not isinstance(tables, list) or len(tables) != 5:
+        raise _UnsupportedMetadata('unverified_corporate_l11a_table_catalog')
+    for index, table in enumerate(tables):
+        structure = {'form': 'L11-A', 'component': _L11A_OWNERS[index], 'groups': _L11A_GROUPS[index]}
+        if (not isinstance(table, dict)
+                or set(table) != {'component', 'source_structure', 'headers', 'footer_spans'}
+                or table['component'] != structure['component'] or table['source_structure'] != structure):
+            raise _UnsupportedMetadata('unverified_corporate_l11a_grid_owner')
+    responses = binding.get('responses')
+    if not isinstance(responses, list) or len(responses) != 4:
+        raise _UnsupportedMetadata('unverified_corporate_l11a_auxiliary_binding')
+    page_sources, pages, expected = {}, {}, set()
+    for response in responses:
+        if (not isinstance(response, dict) or set(response) != {'name', 'endpoint', 'requests'}
+                or response['endpoint'] not in CORPORATE_L11A_GRID_URLS):
+            raise _UnsupportedMetadata('unverified_corporate_l11a_auxiliary_binding')
+        endpoint = response['endpoint'].rsplit('/', 1)[-1]
+        if response['name'] != 'L11-A/' + endpoint or endpoint in pages:
+            raise _UnsupportedMetadata('unverified_corporate_l11a_auxiliary_binding')
+        requests = response['requests']
+        if not isinstance(requests, list) or not 1 <= len(requests) <= 1000:
+            raise _UnsupportedMetadata('missing_corporate_l11a_page_requests')
+        for request in requests:
+            if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId',
+                    'First', 'Rows', 'SortField', 'SortOrder', 'Filters', 'LanguageId'}
+                    or request['ReturnSheetRecordId'] != record['record_id']
+                    or request['LanguageId'] != 'id-ID' or type(request['First']) is not int
+                    or request['First'] < 0 or type(request['Rows']) is not int or request['Rows'] != 10
+                    or request['SortField'] != '' or type(request['SortOrder']) is not int
+                    or request['SortOrder'] != 1 or request['Filters'] != []):
+                raise _UnsupportedMetadata('unsupported_corporate_l11a_page_request')
+        pages[endpoint], page_sources[endpoint] = [], []
+        for request in sorted(requests, key=lambda value: value['First']):
+            key = (response['endpoint'], _corporate_request_key(request))
+            expected.add(key)
+            packet = auxiliary_packets.get(key)
+            source = packet['payload'] if packet is not None else None
+            if not isinstance(source, dict) or set(source) != {'Data', 'TotalRecords'}:
+                raise _UnsupportedMetadata('unsupported_corporate_l11a_page_payload')
+            pages[endpoint].append({'offset': request['First'], 'rows': request['Rows'],
+                'total': _corporate_integer(source['TotalRecords']), 'data': source['Data']})
+            page_sources[endpoint].append(packet['event'])
+    if expected != {key for key in auxiliary_packets if key[0] in CORPORATE_L11A_GRID_URLS}:
+        raise _UnsupportedMetadata('incomplete_corporate_l11a_auxiliary_packets')
+    references = proof['references']
+    if not isinstance(references, list) or len(references) not in (4, 5):
+        raise _UnsupportedMetadata('missing_corporate_l11a_reference_bindings')
+    catalogs, sources = {}, {}
+    urls = set()
+    for ref in references:
+        if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
+                or type(ref['endpoint']) is not str or ref['endpoint'] in urls
+                or ref['method'] != 'GET' or not isinstance(ref['sequences'], list) or not ref['sequences']):
+            raise _UnsupportedMetadata('unsupported_corporate_l11a_reference_binding')
+        kinds = CORPORATE_REFERENCE_REQUESTS.get(ref['endpoint'])
+        if kinds is None or any(kind not in CORPORATE_L11A_REFERENCE_URLS or kind in catalogs for kind in kinds):
+            raise _UnsupportedMetadata('unsupported_corporate_l11a_reference_binding')
+        urls.add(ref['endpoint'])
+        sequences = ref['sequences']
+        if any(type(n) is not int or n <= 0 for n in sequences) or len(set(sequences)) != len(sequences):
+            raise JsonSafetyError('Corporate L11-A reference sequence is invalid or repeated')
+        actual = {n for n, packet in reference_packets.items() if packet['event']['url'] == ref['endpoint']}
+        if set(sequences) != actual or any(not reference_packets[n]['successful'] for n in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_l11a_catalog')
+        source = reference_packets[sequences[0]]
+        for kind in kinds:
+            catalogs[kind] = _project_corporate_catalog(source['payload'], kind=kind, requested_types=kinds,
+                clock_interval=source['event'].get('clock_interval'))
+            sources[kind] = source['event']
+    if set(catalogs) != set(CORPORATE_L11A_REFERENCE_URLS):
+        raise _UnsupportedMetadata('missing_corporate_l11a_catalogs')
+    result = project_l11a(root.get(_L11A_ROOT), previous=previous_form, pages=pages,
+        headers=[t['headers'] for t in tables], footer_spans=[t['footer_spans'] for t in tables],
+        tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'],
+        labels={kind: catalog['lookups'] for kind, catalog in catalogs.items()})
+    for index, table in enumerate(result['tables']):
+        table['source_structure'] = deepcopy(tables[index]['source_structure'])
+    section['tables'], section['fields'] = result['tables'], result['fields']
+    for entry in tuple(result['provenance']):
+        source = (page_sources[entry['endpoint']][entry['page_index']] if entry['source'] == 'grid' else event)
+        entry.update(response_sequence=source['sequence'],
+                     container=['Payload', 'CurrentFormData'] if source is event else ['Payload'])
+        kind = _L11A_LABELS.get(entry['path'][-1]) if entry['rule'] == 'bound-reference-description' else None
+        if kind is not None and entry['value'] in catalogs[kind]['selected']:
+            result['provenance'].append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
+                'response_sequence': sources[kind]['sequence'], 'container': ['Payload'],
+                'destination': deepcopy(entry['destination'])})
+    for kind, catalog in catalogs.items():
+        result['provenance'].extend({**entry, 'response_sequence': sources[kind]['sequence'],
+            'container': ['Payload'], 'destination': {'table': 'L11-A', 'reference': kind}}
+            for entry in catalog['provenance'])
+    return {'form': 'L11-A', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
 
 
 def _l11a_integer(value, *, nullish=False):
