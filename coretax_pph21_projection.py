@@ -3,7 +3,7 @@ from copy import deepcopy
 import re
 
 from coretax_json import (ORIGIN, PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL,
-                          JsonSafetyError, _UnsupportedMetadata)
+                          JsonSafetyError, _UnsupportedMetadata, _reference_order_proof)
 from coretax_masa_projection import _source, _evidence
 from coretax_pph21_observer import BUILD_DIGESTS, FORMS
 from coretax_pph21_json_bindings import (AMOUNT_CONTROLS, REFERENCE_TYPES, project_pph21_amount,
@@ -68,7 +68,7 @@ def _forms(observed):
     for form in observed:
         allowed = {'name', 'fields', 'tables', 'builds', 'locale', 'timezone'}
         if form['name'] == 'Induk':
-            allowed |= {'primary', 'references'}
+            allowed |= {'primary', 'references', 'reference_order_build'}
         if (set(form) - allowed or form.get('builds') != BUILD_DIGESTS or form.get('locale') != 'id-ID'
                 or form.get('timezone') != 'Asia/Jakarta' or not isinstance(form.get('fields'), list)
                 or not isinstance(form.get('tables'), list)):
@@ -112,6 +112,7 @@ def project_pph21_forms(packets, *, record, observed_forms):
     model_reference = _reference(references[1], PPH21_MODEL_REFERENCE_URL, packets)
     grid_labels = project_pph21_references(grid_reference['payload'], requested_types=REFERENCE_TYPES, locale='id-ID',
                                           clock_interval=grid_reference['event'].get('clock_interval'))
+    _reference_order_proof(forms['Induk'], grid_labels)
     model_labels = project_pph21_model_references(model_reference['payload'], locale='id-ID')
     bindings = _evidence(grid_labels['provenance'], grid_reference, ['Payload'], {'reference_catalog': 'grid'})
     bindings += _evidence(model_labels['provenance'], model_reference, ['Payload'], {'reference_catalog': 'model'})

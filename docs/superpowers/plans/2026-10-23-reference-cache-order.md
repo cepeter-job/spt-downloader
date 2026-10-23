@@ -1,0 +1,159 @@
+# Reference cache ordering repair
+
+The pinned main bundle (`696ac66d…`) sorts catalog Details before the active
+version consumer reads them. Existing native PPh21, Unifikasi and corporate
+COUNTRY_CODE projectors incorrectly group the raw response order first. Duplicate
+open-ended codes can therefore select a different label and original source row.
+
+Reproduce only the source-proved ordinary catalog ordering: ascending literal
+CodeDescription under JavaScript UTF-16 relational ordering, stable on ties. The
+first raw catalog row globally switches the key to parsed ParameterData.DisplayIndex
+only when its string contains the exact `"DisplayIndex":` spelling. Support
+homogeneous safe integer keys or homogeneous literal string keys; unproved key
+types, malformed triggered metadata and coercive mixtures stay unsupported.
+Preserve original raw rows, duplicates and source indices. Group the sorted
+index/row pairs, then apply the existing attempt-clock version selector. PERIOD
+and model dropdown uniqueness gates remain strict and separate.
+
+The source chain is cache.add at main UTF-16 offset3008210, Details assignment
+3008441, applyReferenceDataOrderBy3006443, getSingleReferenceData3018067 and
+getActiveReferenceDataValue3017141. Vendor (`1de6335b…`) Lodash orderBy460288,
+an427348, Np427715 and Bp432292 establish relational keys and stable original
+index ties. COUNTRY_CODE has no direct raw-response bypass. No browser cache
+inspection or extra catalog requests are authorized by this repair.
+
+1. Publish source-bound regressions and correct the earlier raw-order expected
+   dated result. Read intended failing assertions from GitHub runners before
+   implementing the repair. Strengthen existing native/saved PPh21 and Unifikasi
+   regressions by reversing the raw version order.
+2. Add one shared bounded ordering helper and use it in the three ordinary label
+   projectors, retaining ParameterData evidence and original selected paths.
+3. Run the full unchanged Windows/portable/package workflows, inspect exact
+   artifacts, obtain fresh source review, review preceding other-session merge
+   and latest main, then merge the repair with an exact head lease.
+
+This is synthetic/source validation. The completed matched PPh21 benchmark keeps
+its original tested tree and private evidence; it is not silently rebound to a
+later build. Corporate native/capture/PDF/mapping gates remain independent.
+
+## Catalog RED readback
+
+Final tests-first head `6f8231babd4c9a9ac94d4e25abed0069e7433141`, tested merge
+`b05ce2087bb863053112e246285962e709021e98`, tree
+`453d5d403e74c11e7f7ec475ea29c2d544410459`, run
+[39945716183](https://github.com/cepeter-job/spt-downloader/actions/runs/39945716183),
+attempt1, produced4,696 disjoint Windows cases:4,588 passed and108 intended
+failures, zero errors/skips. All101 new catalog cases failed, along with seven
+strengthened/corrected existing dated cases; all4,588 untouched baseline cases
+passed. Two parameter node IDs change only because the corrected expected label
+is included in their name; reconciliation maps those two explicit names.
+Portable710 overlaps Windows and passed.
+
+The exact JUnit ZIP digests matched GitHub artifact metadata:
+
+| Artifact | SHA256 |
+| --- | --- |
+| Windows0 `12498772579` | `a9d7b34dc98f85a91322dd65406ea690d31adf8f6dee0f4a04e937bf9bf64c1b` |
+| Windows1 `12499350043` | `bad6413a4eb9a62768feab481da8136d2e1ccab2a85cea90073cbf2df456b06a` |
+| Portable `12498620559` | `bb78350924ce703e073419fb5cb9ce2bf99464cee2dcf5dca58e8ce78e040b06` |
+
+The first completed Windows shard's54 intended failures were read before the
+shared ordering helper was written; the remaining54 were read before publication.
+Earlier superseded tests runs are not full-suite verification. Static review
+corrected the initial test helper's catalog ownership before this final run.
+The repair uses original ordinal/row pairs, retains raw candidate evidence order,
+records ParameterData and the selected ordering rule, then applies the existing
+clock selector. Full GREEN/package readback and final source review remain open.
+
+## Review follow-up and latest main
+
+Fresh implementation review found two additional boundaries. An unsupported
+ordering key must not mask an explicitly contradictory catalog/detail language,
+including when form observation is unavailable. Preflight the exact admitted
+reference payload before projection/fallback, and preserve the same rule in
+pure projectors. Mixed-defect tests use valid JSON with unsupported keys so a
+separate parsing/privacy failure cannot conceal the locale check.
+
+The comparator is supplied by the separately reviewed vendor bundle. Preserve
+legacy unique-Code compatibility, but require positive optional Induk
+`reference_order_build` evidence for every ordinary duplicate-Code catalog in
+PPh21/Unifikasi. Pure projectors declare `requires_vendor`; they do not claim
+that an asset was loaded. Observers hash the exact already-loaded vendor through
+the existing bounded public-source reader; omit unavailable/wrong proof and
+never force a missing asset to load. Validate any present proof and preserve it
+with selected-value provenance. Corporate L11-C already requires this vendor.
+PERIOD/model ambiguity stays unsupported even with positive proof.
+
+Tests-first follow-up adds80 cases:54 mixed-defect pure/packet cases with/without
+form observation, six pure dependency declarations, fourteen native gate and
+dropdown controls, and six real Edge observer digest/changed/missing controls.
+Existing dated positive fixtures now supply the required dependency proof, with
+an actually loaded synthetic vendor for the full native PPh21 saved export.
+The follow-up production guards are not implemented in this tests-first commit.
+
+Follow-up RED run39949738494 tested merge
+`538351e14e3643ab84f2402da283146ca12ebfb6`, head
+`f55cc0d47116e7876fdd819ae85f7283a6e8bce1`, tree
+`54e3571841ac51148ba2086eef7e058c022f4e26`:4,821 Windows cases,
+4,767 passed,54 intended failures,zero errors/skips. Read both digest-matched
+JUnit archives before implementing the guards (artifacts12500836362 and
+12499603874; SHA256 respectively
+`1f2d6c8354ebc6dc709b6021c487ed3a5e5efb506724fea7e9ee763a4a0fc97f`
+and `56306cec22e80e4c58f82f683e4e33a12360fe3c3e5eb84825213c699f6dab30`).
+Failures cover preflight priority, dependency declarations, native missing/wrong/
+positive proof, loaded-asset rehash and the newly proof-bearing saved fixture.
+The strengthened Unifikasi observer fixture also traps body/footer/dropdown
+reads and verifies GET methods. The subsequent implementation adds the shared
+locale preflight, duplicate dependency flags, optional loaded-vendor observation,
+native proof validation and selected-value provenance; GREEN remains pending.
+
+Fresh review required positive script-provider loading in addition to expected
+bytes: the generic asset reader accepts any matching performance resource entry.
+Four extra Edge controls fetch/preload the correct bytes without a script, then
+assert the fetch/link initiator, absence from document.scripts and no second GET.
+Run39952648748, head `79c9c8ce8cf3089cf3b6587af03c4c94c183b7e7`, tested merge
+`69cec5698f0328789994b7f06ea2006d88cd4512`, tree
+`324961cd80dffc2cfa8a9bba90f9a242110a241e`:4,825 Windows cases,
+4,821 passed,four intended failures,zero errors/skips. The previous54 defects
+now pass. Both digest-matched JUnit archives were read before publishing the
+correction:12502350429 SHA256
+`c8fed7af829a5dbaf143a4ec45f384cd7555f704bf33cd9a765bd4a30a1b0bab`
+and12501462981 `b84dd23d4be5a234f883ad2d9b21bea9082a2a4a3187b44d821b13cef59c152a`.
+A vendor-specific wrapper now requires the connected exact script or a
+script-initiated resource before calling the existing bounded reader, inside
+one browser evaluation. The generic reader remains unchanged. Final whole-tree
+GREEN and package verification are still pending.
+
+Preceding other-session [PR101](https://github.com/cepeter-job/spt-downloader/pull/101)
+merged as `f45ba79f26eaa923c3afc017eab0458d8be66328`. Reviewed all seven changed
+files, including finite Authorization budget, exact one-request replay,
+first-rejection diagnostics, allowlisted categories and23 synthetic cases.
+It changes no catalog/projection code or source pins. The local integration
+preserves its source/tests/docs and their independent live/PDF claims; this
+JSON work does not reuse the other session's live authorization. The latest-main
+baseline now has4,618 Windows cases; combined follow-up expects4,821.
+
+## Submitted corporate View integration
+
+The same priority repair includes a separate two-line route compatibility fix:
+the pinned submitted-list View navigates to the exact selected corporate route
+with `?view=true`, while L7/L11-C semantic lifecycle checks accepted only the
+query-free spelling. Both already require proof/frame equality. Preserve that
+equality and permit only those two exact route spellings; retain shared identity
+checks and the semantic query/history rejection.
+
+The identical six unit regressions were first run in the L1-D tests-first slice,
+head `3795ad1296ad4efddb4bfb438bb99d5856c23d5b`, tested merge
+`2829c946fa7169cef3c726882227b8122a78d6f3`, tree
+`eeba64f3a1fbf5ebd396dfb86e9df31cbfa2ab0f`, run
+[39943608612](https://github.com/cepeter-job/spt-downloader/actions/runs/39943608612).
+Digest-matched JUnit artifacts `12497533505`/`12496999056` showed both current-query
+cases failing at their semantic submitted-lifecycle checks, while the two legacy
+and two proof/frame mismatch controls passed. All4,595 baseline cases passed;
+the other43 failures belong to separate lifetime/metadata/layout extensions.
+The route tests here are AST-identical copies of those six regressions, plus four
+native Edge-to-saved-workbook cases for Normal/amendment and popup/same-page
+navigation. Fresh source review found no blocker and requested matching-proof
+negative controls; twelve cases cover duplicate/additional/encoded queries,
+case changes and history paths for both forms. This work does not enable
+undispatched L1-D semantic projection.

@@ -4,7 +4,14 @@ Status: implemented and runner-verified on 2026-10-23 in merged [PR #86](https:/
 
 ## Result and source contract
 
-PPh21 and Unifikasi grid labels can use the inspected active-version selector when one source row is selected throughout the owned browser-clock interval. Source order matters: first own null/empty `ValidTo`; otherwise first future `ValidTo`; otherwise latest valid `ValidFrom` with stable ties; otherwise first candidate. Every cutoff within the interval is checked, including a possible A -> B -> A selection with equal endpoints. Model and PERIOD dropdowns keep their distinct-code rules.
+PPh21 and Unifikasi grid labels can use the inspected active-version selector when one source row is selected throughout the owned browser-clock interval. Consumer order matters: first own null/empty `ValidTo`; otherwise first future `ValidTo`; otherwise latest valid `ValidFrom` with stable ties; otherwise first candidate. Every cutoff within the interval is checked, including a possible A -> B -> A selection with equal endpoints. Model and PERIOD dropdowns keep their distinct-code rules.
+
+The original PR86 implementation incorrectly treated that consumer order as raw
+response order. The pinned cache actually sorts Details before version selection.
+[The priority ordering repair](../plans/2026-10-23-reference-cache-order.md) records
+this correction and its separate runner evidence. The historical results below
+remain bound to their original tested tree; they do not prove the later cache
+ordering correction.
 
 Source proof is the unauthenticated pinned `main.cccfdb820c20596c.js`, 4,357,138 bytes, SHA256 `696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd`. `getActiveReferenceDataValue` at UTF-16 offset 3017141 supplies the ordered selector. The source was inspected as text; that inspection is not live execution evidence.
 

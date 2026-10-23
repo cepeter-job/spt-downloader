@@ -154,3 +154,38 @@ remain intact. The combined prerequisite candidate expects4,719 Windows cases.
 The current View compatibility correction is separately tracked in PR104; the
 two saved L1-D geometry failures remain open. This prerequisite candidate does
 not enable native L1-D or certify its mapping/PDF/live acceptance.
+
+The two observed saved-layout RED cases now have a narrow renderer repair:
+check the complete source-proven35-slot sequence, exact owner/group, ten ordered
+columns, reference body6..39 and its four heading merges. Plan against copied
+merges shifted at original row24, then insert one style-copied account slot only
+after body/footer plans succeed. This preserves5322 inside operating expenses,
+the later headings and both balance blocks. The approved binary resource is
+unchanged. Final saved/reopened GREEN and fresh source review remain pending.
+
+Review RED run39951546091, head
+`b828fa0466342be8a9a03e75ecbbd8e2622c2e24`, tested merge
+`52f3008080027a15975d8cfae2228c5f2ae41ca7`, tree
+`02667326bac7ef3a7c2986e102a9bc4947008a0a`:4,719 Windows cases,
+4,708 passed,11 expected failures,zero errors/skips. The failures comprise
+six new route/cleanup findings, three separately fixed current-View cases and
+the two saved-layout cases. The other four new actual driver history-event
+cases pass. Read digest-matched JUnit artifacts12501711325/12501636544 before
+fixing acquisition Stop, and the completed shard's matrix-route failures before
+adding route guards. SHA256 respectively
+`c326d66a8bbb192ffbdc297650b621d13eb5d3c3539d5c58546a1280ce6861f9`
+and `069cfbcb94b9dbacf34c336fb2149178df65c90148211022f5c9ec082c6ecf2b`.
+Live/replay validators now explicitly reject URL matrix parameters. Initial
+Document acquisition assigns its owned handle before the post-probe Stop check,
+so normal cancellation cleanup can always dispose it. Native stays disabled.
+
+Source review accepted both the geometry and route/handle repairs. The combined
+candidate now includes PR104's independently reviewed catalog/locale/vendor
+guards and exact current-View compatibility. The latter resolves the three
+remaining L7/L11-C current-route cases. Integration retained both additions at
+the three shared textual conflict sites; AST comparison verified the owning
+parents' lifetime, catalog and semantic functions unchanged. Expected full
+Windows universe is4,926 cases (including four script-provider controls), with
+710 portable overlap. Exact-tree GREEN, package readback and final integration
+review remain pending. Native L1-D observer/dispatch and other corporate forms
+retain their explicit subsequent source/runner/live requirements.

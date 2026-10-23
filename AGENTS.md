@@ -78,6 +78,13 @@ Owned L8 DOM capture records raw body cells, colspans and rowspans atomically un
 
 ## Verification
 
+The source-proven full L1-D profit table has35 slots including account5322.
+Its approved34-slot reference may grow only at the verified internal account
+position after exact component/group, ten-column, account/group sequence and
+reference-merge checks. Plan against copied post-growth merge geometry before
+mutating the sheet; retain existing totals, subsequent blocks, styles and final
+compaction. Do not append5322 after totals or change the sanitized resource.
+
 Optional `component_lifetime` evidence belongs to the capture manifest only.
 For the reviewed ordinary corporate SPA branch, start at one visible submitted
 list owner before the inspected View, in the owned Service-Worker-blocked
@@ -91,6 +98,36 @@ descriptor overrides and mixed packet evidence. Stop checks surround every
 probe and final probes stay inside the existing late-response drain fence.
 This metadata alone does not enable L1-D or certify source pins, mapping or PDF
 completion.
+
+
+Ordinary PPh21/Unifikasi grid catalogs and corporate COUNTRY_CODE must reproduce
+the pinned full-catalog cache order before grouping by Code or selecting a
+version. Default to stable ascending literal UTF-16 CodeDescription order. Only
+the first raw Details row can trigger parsed ParameterData.DisplayIndex through
+the exact `"DisplayIndex":` substring. The supported triggered subset is one
+homogeneous family of safe JSON integer literals or literal UTF-16 strings;
+malformed, mixed, coercive and unsafe keys remain unsupported. Preserve original
+rows, duplicates, candidate evidence order, ParameterData and selected raw paths.
+PERIOD/model dropdown uniqueness and the owned attempt-clock stability rules
+remain separate. Sorting does not authorize cache reads or extra requests.
+Check every explicit catalog/detail language contradiction before unsupported
+shape/order fallback, including packets without observed forms. PPh21/Unifikasi
+ordinary duplicate-Code catalogs additionally require positive Induk
+`reference_order_build` custody for the exact reviewed loaded vendor digest.
+Pure projectors only declare the dependency. Observe the optional proof once
+through the existing bounded asset reader; never fetch an absent asset. Any
+present invalid proof is unsupported, while missing proof preserves legacy
+unique-Code compatibility. Retain the verified digest with selected provenance.
+For this optional vendor proof, a resource entry must be script-initiated or
+the exact script must be connected. Fetch/preload-only entries are insufficient;
+keep this stricter check and hashing in one evaluation without changing the
+generic source reader's existing contracts.
+
+Submitted corporate L7/L11-C semantic proofs accept only the literal selected
+query-free legacy route or that exact route with `?view=true`, matching the
+inspected submitted-list View. Keep the proof route exactly equal to the captured
+frame; other query spellings, history routes and identity conflicts retain the
+existing rejection rules.
 
 Approved compact Masa presentation: bind against original reference coordinates,
 then remove only declared empty body capacity. Keep populated rows (including

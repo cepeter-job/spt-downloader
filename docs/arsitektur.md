@@ -89,6 +89,28 @@ Metadata tersimpan yang rusak, berbeda percobaan, atau tercampur antar-packet
 ditolak sebelum fallback. Ketiadaan bukti mempertahankan batas dukungan lama;
 aturan kode unik dropdown Model/PERIOD tidak dilonggarkan.
 
+Sebelum memilih versi grid, katalog ordinary PPh21/Unifikasi dan COUNTRY_CODE
+corporate mengikuti urutan cache sumber untuk seluruh Details. Default adalah
+CodeDescription literal dalam urutan UTF-16 stabil. Hanya ParameterData baris
+mentah pertama dengan substring tepat `"DisplayIndex":` yang mengaktifkan
+sort DisplayIndex; subset aman menerima satu keluarga integer JSON aman atau
+string literal, tanpa koersi tipe. Kelompok Code dibentuk sesudah sort, sedangkan
+bukti kandidat dan path terpilih tetap memakai urutan/indeks respons asli.
+ParameterData dipertahankan dalam provenance. Metadata malformed atau key yang
+tidak terbukti tetap unsupported; waktu replay, dropdown Model/PERIOD dan
+perizinan request tidak berubah.
+Kontradiksi language eksplisit pada katalog/detail diperiksa sebelum fallback
+metadata, termasuk packet tanpa form teramati. Kode ordinary berulang pada
+PPh21/Unifikasi memerlukan `reference_order_build` pada Induk: hash positif
+vendor termuat yang menyediakan comparator. Observer mengukur sekali melalui
+pembaca asset berbatas yang ada; asset absen tidak di-fetch. Proof absen tetap
+kompatibel untuk kode unik, proof salah tetap unsupported, dan digest terverifikasi
+disimpan bersama provenance nilai terpilih. Projector murni hanya menyatakan
+`requires_vendor`; tidak mengklaim browser telah memuat asset.
+Proof vendor ini memerlukan script yang terhubung atau resource ber-initiator
+script. Entry fetch/preload saja tidak cukup; pemeriksaan dan pembaca hash
+berbatas berjalan dalam satu evaluasi. Pembaca source generik tidak diubah.
+
 Sampel lingkungan akhir juga dapat memompa event jaringan. Request baru pada
 batas itu membuat capture PARTIAL meskipun responsnya sudah dikeluarkan oleh
 filter MIME; hitungan pending dari timeout sebelumnya tetap dipertahankan.
@@ -111,6 +133,13 @@ izin request. Replay memvalidasi attempt/record/URL, menolak override per
 descriptor dan bukti packet yang tercampur, lalu menyalin metadata tervalidasi.
 Capture lama tanpa bukti tetap dapat dibaca; metadata ini belum mengaktifkan
 proyeksi native L1-D dan tidak membuktikan mapping/PDF.
+
+
+Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk
+checkpoint lama, atau URL identik dengan `?view=true` seperti aksi View yang
+diinspeksi. Route proof harus tetap persis sama dengan frame respons. Perubahan
+ini mempertahankan pemeriksaan identitas, status submitted, sumber, query lain
+dan route history yang sudah ada.
 
 Proyeksi bisnis Badan L7 berada di `coretax_corporate_projection.py`, terpisah dari
 observer struktur dan pemeriksaan custody pada adapter. Cabang native memerlukan

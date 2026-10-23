@@ -228,7 +228,7 @@ class DetailJsonCapture:
         if not self._detail_matches(value):
             return False
         parsed = urlparse(value)
-        return (parsed.query == 'view=true' and not parsed.fragment and re.fullmatch(
+        return (not parsed.params and parsed.query == 'view=true' and not parsed.fragment and re.fullmatch(
             r'/returnsheets/id-ID/corporate-income-tax-return/' + re.escape(self.taxpayer_id)
             + '/' + re.escape(self.record_id) + r'/ICT_RCIT/[^/%\\]+', parsed.path) is not None)
 
@@ -258,7 +258,10 @@ class DetailJsonCapture:
             self._component_listener = None
             self._cancel()
             return None
-        self._component_document = self._component_probe(lambda: self.page.evaluate_handle('() => document'))
+        def retain_document():
+            self._component_document = self.page.evaluate_handle('() => document')
+            return self._component_document
+        self._component_probe(retain_document)
         if self._component_document is None:
             return None
         owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
