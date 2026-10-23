@@ -110,5 +110,31 @@ resource/layout addition is implied by this plan.
    only the implemented supported boundary. Corporate live/PDF/Induk acceptance
    remains independent from synthetic source and package evidence.
 
-Status: source plan only. No helper, admission, observer or native L3 dispatch
-has been added by this document; no product execution or runtime proof is claimed.
+## Tests-first execution
+
+Corrected35-case fixtures were reviewed before publication: parse current/grid/
+footer values through the real corporate decoder, retain generated page metadata,
+assert typed source-number lexemes and parsed-input immutability, distinguish
+saved standalone1/888 and unused777/overwritten999 controls from final footer1/41.
+Equivalent footer40.0/4e1 values preserve their original lexemes independently.
+
+RED run39966057016 attempt1 tests head
+`579e70fddb4f0047b8983ead9241759e418c3103` as merge
+`83cb3581972eb54814c1ed224d3fb8ed2e6effa2`, tree
+`6a0cad84754dc8a21f86bfd5cbe76a8e15fd2188`:4,961 Windows cases,
+4,926 baseline passes and35 intended missing-helper failures, zero errors/skips.
+The710 portable cases overlap baseline Windows. Both downloaded JUnit/inventory
+sets reconcile metadata, exact universes and test phases before implementation.
+JUnit12507797460 SHA256
+`ac933a542986e67807fcf79e79d2550fc43222a084449d44b9e2c373093c148f`;
+JUnit12508071058 SHA256
+`2fee1c875b970f70975a5e35fdc3c65c3b0a87e092ef73afb79311b0cf96cc3e`.
+
+Merged native-L1-D PR105 is integrated from latest main331a0b6, preserving its
+three-provider/actual-table-chain gates and64 tests. The pure L3 implementation
+now adds only the source helper in the existing projection module. It leaves
+admission, observation and dispatch unchanged, preserves original control/row/
+footer tokens with source kind/page index and destination, and retains the two
+unmapped standalone canonical values. The combined Windows universe is5,025.
+Fresh implementation review, exact-tree GREEN, saved-workbook results and package
+readback are pending; no local product execution is claimed.
