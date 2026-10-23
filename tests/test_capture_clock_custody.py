@@ -122,7 +122,7 @@ def test_final_clock_sample_preserves_prior_drain_timeout_counts(tmp_path, monke
 
     page.evaluate = sample
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
-        initial = exchange(context, page, finish=False)
+        initial = network_exchange(context, page, raw=RAW, method='GET', url=REFERENCE_URL, finish=False)
         capture.bind_detail_page(page)
         # Expire the normal drain immediately without sleeping or changing its
         # declared production limits. Final environment sampling admits one reply.
