@@ -116,3 +116,45 @@ def test_real_edge_clock_and_dated_response_reach_native_workbook_without_dom_va
             assert workbook['L-IA']['G5'].value == 1200
         finally:
             workbook.close()
+
+
+@pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
+def test_dated_unifikasi_catalogs_reach_all_forms_and_preserve_period_dropdown(tmp_path, model):
+    from unifikasi_projection_fixture import case as unifikasi_case, URL
+    from support_masa_native import exported
+    fixture = unifikasi_case(model=model)
+    expected = set()
+    for item in fixture['packets']:
+        item['context']['clock_interval'] = {**CLOCK, 'attempt': item['context']['attempt']}
+        if item['context']['url'] != URL:
+            continue
+        envelope = json.loads(item['body'])
+        for catalog in envelope['Payload']:
+            if catalog['ReferenceDataType'] == 'PERIOD':
+                continue
+            label = 'DATED ' + catalog['ReferenceDataType']
+            expected.add(label)
+            catalog['Details'] = [version for entry in catalog['Details'] for version in (
+                {**entry, 'CodeDescription': label, 'ValidTo': '2030-01-01'},
+                {**entry, 'CodeDescription': 'UNSELECTED LABEL', 'ValidTo': '2029-01-01'})]
+        item['body'] = json.dumps(envelope).encode()
+        item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
+    before = deepcopy(fixture)
+    result = adapt_masa_detail(fixture['packets'], record=fixture['record'], scope=fixture['scope'],
+                              observed_forms=fixture['forms'])
+    assert result['eligible'], result['reason']
+    assert len(result['coverage']['grids']) == 5 and result['coverage']['complete']
+    assert any(binding.get('projection_rule', '').startswith('reviewed-grid-active-version:')
+               for binding in result['provenance']['bindings'])
+    assert next(field['value'] for field in result['sections'][0]['fields']
+                if field['field'] == 'TaxPeriodCode') == 'Januari 2025'
+    workbook = exported(tmp_path, 'PPh Unifikasi', result['sections'])
+    try:
+        assert len(workbook.sheetnames) == 4
+        values = {cell.value for sheet in workbook for row in sheet for cell in row
+                  if isinstance(cell.value, str)}
+        assert expected <= values
+        assert 'UNSELECTED LABEL' not in values
+    finally:
+        workbook.close()
+    assert fixture == before

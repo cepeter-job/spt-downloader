@@ -54,6 +54,78 @@ class _UnsupportedMetadata(ValueError):
     pass
 
 
+def _capture_clock_interval(value, attempt):
+    """Validate optional custody metadata, never consult this machine's clock."""
+    if (not isinstance(value, dict) or set(value) != {'attempt', 'start_ms', 'end_ms', 'timezone'}
+            or type(attempt) is not str or not re.fullmatch(r'[a-f0-9]{32}', attempt)
+            or value.get('attempt') != attempt or value.get('timezone') != 'Asia/Jakarta'
+            or type(value.get('start_ms')) is not int or type(value.get('end_ms')) is not int
+            or not 0 <= value['start_ms'] <= value['end_ms'] <= 8640000000000000):
+        raise JsonSafetyError('Captured browser clock interval is invalid or unbound')
+    return dict(value)
+
+
+def _reference_date_ms(value):
+    """Reviewed ISO subset of JS Date: date-only UTC; local datetime Jakarta."""
+    if value is None or value == '':
+        return None
+    if (type(value) is not str or not re.fullmatch(
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+            r'(?:\.[0-9]{3})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])?)?', value)):
+        raise _UnsupportedMetadata('unsupported_grid_reference_date')
+    try:
+        date = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if date.year < 1970:
+            raise ValueError('Unreviewed historic local offset')
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc if len(value) == 10 else timezone(timedelta(hours=7)))
+        elapsed = date.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return (elapsed.days * 86400 + elapsed.seconds) * 1000 + elapsed.microseconds // 1000
+    except (ValueError, OverflowError):
+        raise _UnsupportedMetadata('unsupported_grid_reference_date') from None
+
+
+def _select_reference_version(candidates, clock_interval=None):
+    """Pinned getActiveReferenceDataValue; require the same row at every cutoff.
+
+    Candidate order is source order. Future rows can only expire as time moves
+    forward, so the cursor advances at most once per row across all cutoffs.
+    """
+    clock = (_capture_clock_interval(clock_interval, clock_interval.get('attempt'))
+             if isinstance(clock_interval, dict) else None)
+    if clock_interval is not None and clock is None:
+        raise JsonSafetyError('Captured browser clock interval is invalid or unbound')
+    for ordinal, row in candidates:
+        if 'ValidTo' in row and row['ValidTo'] in (None, ''):
+            return ordinal, row, 'first-open-ended'
+    if len(candidates) == 1:
+        return *candidates[0], 'only-version'
+    if not candidates or clock is None:
+        raise _UnsupportedMetadata('clock_dependent_grid_reference_versions')
+    dates, latest, fallback = [], None, 0
+    for index, (_, row) in enumerate(candidates):
+        if 'ValidTo' not in row:
+            raise _UnsupportedMetadata('missing_grid_reference_validity')
+        until, since = _reference_date_ms(row['ValidTo']), _reference_date_ms(row.get('ValidFrom'))
+        dates.append(until)
+        if since is not None and (latest is None or since > latest):
+            latest, fallback = since, index
+    start, end = clock['start_ms'], clock['end_ms']
+    points = sorted({start, end, *(value for value in dates if value is not None and start <= value <= end)})
+    cursor, chosen, rule = 0, None, None
+    for point in points:
+        while cursor < len(dates) and (dates[cursor] is None or dates[cursor] <= point):
+            cursor += 1
+        current = cursor if cursor < len(dates) else fallback
+        if chosen is None:
+            chosen = current
+            rule = ('first-future-valid-to' if cursor < len(dates) else
+                    'latest-valid-from' if latest is not None else 'first-candidate')
+        elif current != chosen:
+            raise _UnsupportedMetadata('unstable_grid_reference_version')
+    return *candidates[chosen], rule
+
+
 def _trusted_origin(value):
     if not isinstance(value, str) or value != value.strip() or '\\' in value or any(ord(c) < 32 for c in value):
         return False
@@ -539,6 +611,7 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     current = ctx.get('attempt')
     if not isinstance(current, str) or not re.fullmatch(r'[a-f0-9]{32}', current) or attempt is not None and attempt != current:
         raise JsonSafetyError('Captured corporate attempts are missing or mixed')
+    clock = _capture_clock_interval(ctx['clock_interval'], current) if 'clock_interval' in ctx else None
     sequence = ctx.get('sequence')
     if type(sequence) is not int or sequence < 1 or sequence in sequences:
         raise JsonSafetyError('Captured corporate event sequence is invalid or duplicated')
@@ -573,6 +646,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     event = {key: ctx[key] for key in ('relative_path', 'bytes', 'sha256', 'url', 'method', 'status',
                                      'frame_url', 'sequence', 'attempt', 'record_id', 'identity_validated') if key in ctx}
     event['scope'] = list(scope)
+    if clock is not None:
+        event['clock_interval'] = clock
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -760,7 +835,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     sections, paths, requests, grids, responses, dependencies, primary = _corporate_bindings(observed_forms)
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
-    reasons, sequences, snapshots = [], set(), {}
+    reasons, sequences, snapshots, clocks = [], set(), {}, set()
     attempt, primary_hash, total_bytes = None, None, 0
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
     if not supported_tax:
@@ -773,6 +848,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         reasons.append('missing_observed_corporate_primary_binding')
     for item in bodies:
         envelope, ctx, attempt, event = _corporate_packet(item, selected, scope, attempt, sequences)
+        clocks.add(_corporate_request_key(event.get('clock_interval')))
+        if len(clocks) != 1:
+            raise JsonSafetyError('Corporate capture clock evidence is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Corporate source response budget exceeded')

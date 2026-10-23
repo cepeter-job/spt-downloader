@@ -73,6 +73,30 @@ def test_backwards_browser_clock_does_not_create_evidence(tmp_path):
         assert 'clock_interval' not in capture.drain()
 
 
+def test_response_arriving_during_final_clock_sample_remains_partial_and_unread(tmp_path):
+    context = Context()
+    page = Page(context, DETAIL_URL)
+    samples, late = [], []
+
+    def sample(_):
+        samples.append(True)
+        if len(samples) == 2:
+            late.append(exchange(context, page))
+        return {'epoch_ms': START, 'timezone': 'Asia/Jakarta'}
+
+    page.evaluate = sample
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        initial = exchange(context, page)
+        capture.bind_detail_page(page)
+        result = capture.drain()
+        assert len(samples) == 2
+        assert initial.reads == 1 and late[0].reads == 0
+        assert not result['complete'] and result['counts']['pending'] == 1
+        assert result['counts']['accepted'] == 1
+        assert 'response-after-final-drain' in result['reasons']
+        assert len(result['responses']) == 1
+
+
 @pytest.mark.parametrize('phase', ['start', 'finish'])
 def test_stop_after_clock_sample_prevents_manifest_and_preserves_cleanup(tmp_path, phase):
     from coretax_browser import CaptureCancelled

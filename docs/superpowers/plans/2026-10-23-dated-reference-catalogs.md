@@ -10,6 +10,8 @@
 
 **Source proof:** unauthenticated pinned `main.cccfdb820c20596c.js`, SHA256 `696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd`, `getActiveReferenceDataValue` at UTF-16 offset 3017141: filter literal Code; first own null/empty ValidTo; first truthy valid ValidTo strictly greater than new Date(); latest valid truthy ValidFrom (stable ties); otherwise first candidate. A generic latest version heuristic is incorrect. Static source inspection is not runtime execution evidence.
 
+The bounded parser uses full `YYYY-MM-DD` dates and second-resolution ISO datetimes with optional three-digit milliseconds and numeric/Z offsets, years 1970..9999. Date-only UTC and offset-free local datetime semantics follow [ECMAScript Date.parse](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-date.parse). Other date spellings, calendar normalization, expanded years and historic local offsets remain unsupported.
+
 ## Constraints
 
 - No workstation clock, DOM business values, new requests, endpoint permissions, template changes, dependencies or CI edits.

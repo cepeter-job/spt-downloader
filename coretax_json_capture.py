@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
-                          _object_pairs, _reject_constant, _trusted_origin)
+                          _capture_clock_interval, _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
@@ -26,6 +26,7 @@ _SECRET_KEYS = frozenset({'password', 'passwd', 'pwd', 'authorization', 'cookie'
                           'setcookie', 'token', 'accesstoken', 'refreshtoken',
                           'idtoken', 'apikey', 'clientsecret', 'secret', 'sessionid'})
 _SECRET_TEXT = re.compile(r'\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', re.I)
+_BROWSER_CLOCK = '() => ({epoch_ms:Date.now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})'
 
 
 def _secret_key(value):
@@ -130,6 +131,7 @@ class DetailJsonCapture:
         self._reasons = []
         self._result = None
         self._manifest_hash = None
+        self._clock_start = None
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -148,6 +150,23 @@ class DetailJsonCapture:
         expected = {parent: _ordinary_directory(parent) for parent in reversed([path, *path.parents])}
         self._guard.include(expected)
 
+    def _sample_clock(self, page, check_cancel=None):
+        """Optional browser environment evidence; driver failures reveal no text."""
+        self._cancel(check_cancel)
+        try:
+            sample = page.evaluate(_BROWSER_CLOCK)
+        except Exception:
+            sample = None
+        self._cancel(check_cancel)
+        if not isinstance(sample, dict) or set(sample) != {'epoch_ms', 'timezone'}:
+            return None
+        try:
+            _capture_clock_interval({'attempt': self.attempt, 'start_ms': sample['epoch_ms'],
+                                     'end_ms': sample['epoch_ms'], 'timezone': sample['timezone']}, self.attempt)
+        except JsonSafetyError:
+            return None
+        return dict(sample)
+
     def __enter__(self):
         self._cancel()
         if self._active or self._listeners or self._result is not None:
@@ -160,6 +179,7 @@ class DetailJsonCapture:
                 current = current / name
                 current.mkdir(exist_ok=name != self.attempt)
                 self._hold(current)
+            self._clock_start = self._sample_clock(self.page)
             self._active = True
             for event, callback in (('request', self._on_request), ('response', self._on_response),
                                     ('requestfinished', self._on_finished), ('requestfailed', self._on_failed)):
@@ -388,12 +408,27 @@ class DetailJsonCapture:
         self._requests.clear()
         self._cancel(check_cancel)
         self._verify_binding()
+        clock_end = self._sample_clock(self._bound, check_cancel)
+        self._verify_binding()
+        if self._requests:
+            # Evaluating environment metadata pumps browser events too. A late
+            # response is outside the final drain, never an empty/complete set.
+            self._counts['pending'] = len(self._requests)
+            self._reason('response-after-final-drain')
+            self._requests.clear()
         result = {'version': 1, 'attempt': self.attempt, 'record_id': self.record_id,
                   'scope': list(self.scope), 'source_url': self.source_url, 'detail_url': self._bound_url,
                   'limits': dict(self._limits), 'counts': dict(self._counts),
                   'complete': not self._reasons, 'reasons': list(self._reasons),
                   'responses': list(self._responses), 'credentials_accessed': False,
                   'primary_identity_validated': False}
+        if self._clock_start is not None and clock_end is not None:
+            try:
+                result['clock_interval'] = _capture_clock_interval({
+                    'attempt': self.attempt, 'start_ms': self._clock_start['epoch_ms'],
+                    'end_ms': clock_end['epoch_ms'], 'timezone': clock_end['timezone']}, self.attempt)
+            except JsonSafetyError:
+                pass  # An unavailable/reversed sample cannot authorize dated selection.
         raw = json.dumps(result, ensure_ascii=False, sort_keys=True).encode('utf-8')
         manifest = self._write('manifest.json', raw, check_cancel)
         self._cancel(check_cancel)
@@ -423,11 +458,13 @@ class DetailJsonCapture:
             saved = _json(manifest)
             if saved['attempt'] != self.attempt or saved['scope'] != self.scope or saved['record_id'] != self.record_id:
                 raise JsonSafetyError('Private capture scope or attempt changed')
+            clock = (_capture_clock_interval(saved['clock_interval'], self.attempt)
+                     if 'clock_interval' in saved else None)
             for descriptor in saved['responses']:
                 self._cancel(check_cancel)
                 relative = Path(descriptor['relative_path'])
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
-                        or descriptor['attempt'] != self.attempt):
+                        or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -440,7 +477,10 @@ class DetailJsonCapture:
                 if _has_secret(payload):
                     raise JsonSafetyError('Private response no longer meets privacy policy')
                 self._cancel(check_cancel)
-                yield {'body': raw, 'payload': payload, 'context': descriptor}
+                context = dict(descriptor)
+                if clock is not None:
+                    context['clock_interval'] = dict(clock)
+                yield {'body': raw, 'payload': payload, 'context': context}
                 del raw, payload
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise JsonSafetyError('Private capture references cannot be safely resolved') from None
@@ -510,6 +550,8 @@ def checkpoint_bodies(folder, capture, record, scope):
                     or saved.get('attempt') != relative.parent.name
                     or saved.get('detail_url') != record.get('detail_url')):
                 raise JsonSafetyError('Private checkpoint identity or attempt changed')
+            clock = (_capture_clock_interval(saved['clock_interval'], saved['attempt'])
+                     if 'clock_interval' in saved else None)
             descriptors = saved.get('responses')
             if not isinstance(descriptors, list) or len(descriptors) > MAX_RESPONSES:
                 raise JsonSafetyError('Private checkpoint response budget changed')
@@ -520,6 +562,7 @@ def checkpoint_bodies(folder, capture, record, scope):
                         or PurePosixPath(name).parent != relative.parent
                         or not re.fullmatch(r'response-[0-9]{4,}\.json', PurePosixPath(name).name)
                         or name in seen or descriptor.get('attempt') != saved['attempt']
+                        or 'clock_interval' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -535,7 +578,10 @@ def checkpoint_bodies(folder, capture, record, scope):
                 payload = _json(body)
                 if _has_secret(payload):
                     raise JsonSafetyError('Private checkpoint no longer meets privacy policy')
-                packets.append({'body': body, 'payload': payload, 'context': descriptor})
+                context = dict(descriptor)
+                if clock is not None:
+                    context['clock_interval'] = dict(clock)
+                packets.append({'body': body, 'payload': payload, 'context': context})
             return packets
     except (OSError, ValueError, TypeError, KeyError, IndexError):
         raise JsonSafetyError('Private checkpoint custody cannot be safely verified') from None
