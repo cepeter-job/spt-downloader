@@ -136,7 +136,9 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event)
                 or fields.get('ReturnSheetModel') != literal_model
                 or 'Induk' not in [form['name'] for form in observed_forms[:observed_forms.index(binding)]]):
             raise _UnsupportedMetadata('unverified_corporate_l7_submitted_lifecycle')
-        previous = payload.get('PreviousFormData')
+        if 'PreviousFormData' not in payload:
+            raise _UnsupportedMetadata('missing_corporate_l7_previous_encoding')
+        previous = payload['PreviousFormData']
         if previous is not None:
             if type(previous) is not str:
                 raise _UnsupportedMetadata('unsupported_corporate_l7_previous_encoding')

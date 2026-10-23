@@ -87,9 +87,12 @@ def test_l7_packet_semantics_preserve_literal_model_source_and_saved_approved_la
 def assert_saved_l7(run, folder, model):
     from openpyxl import load_workbook
     before, reports = deepcopy(run), []
-    paths = exporter.export_split_workbooks(run, folder, mapping_reports=reports)
+    # Match the save_output wrapper's scoped PDF declaration, then keep the
+    # lower-level export/mapping-report assertions independent of publication.
+    current = {**run, 'output_attachments': coretax.attachment_declarations(run)}
+    paths = exporter.export_split_workbooks(current, folder, mapping_reports=reports)
     assert run == before
-    coretax.verify_outputs(run, folder)
+    coretax.verify_outputs(current, folder)
     name, = [name for name in paths if name != 'resume.xlsx']
     assert model in name
     book = load_workbook(folder / name)
