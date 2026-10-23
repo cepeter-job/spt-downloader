@@ -1,6 +1,6 @@
 # Dated JSON reference catalogs: verified slice
 
-Status: implemented and runner-verified on 2026-10-23 in draft [PR #86](https://github.com/cepeter-job/spt-downloader/pull/86), dependent on native-readiness [PR #85](https://github.com/cepeter-job/spt-downloader/pull/85). This closes the dated grid-reference workstream in the approved [JSON program](../specs/2026-10-23-json-mode-completion-design.md); corporate semantic projection, PPN final lifecycle and live acceptance retain their own gates.
+Status: implemented and runner-verified on 2026-10-23 in merged [PR #86](https://github.com/cepeter-job/spt-downloader/pull/86), dependent on native-readiness [PR #85](https://github.com/cepeter-job/spt-downloader/pull/85). This closes the dated grid-reference workstream in the approved [JSON program](../specs/2026-10-23-json-mode-completion-design.md); corporate semantic projection, PPN final lifecycle and live acceptance retain their own gates.
 
 ## Result and source contract
 
