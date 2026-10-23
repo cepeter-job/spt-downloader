@@ -76,6 +76,17 @@ bukan jaminan bahwa browser tidak melakukan buffering jaringan internal.
 Stop tetap diperiksa sebelum request, selama pembacaan dan sebelum penyimpanan.
 Route sementara, reader dan envelope request selalu dibersihkan.
 
+Callback route mencatat penolakan pertama sebagai `pdf.request_rejected`
+sebelum error lanjutan melaporkan state invalid. Field `pdf_guard` hanya menerima
+enam tahap tetap: `context`, `route`, `count`, `body`, `authentication`, dan
+`replay`. Frame module/function/baris yang diizinkan menunjuk pemeriksaan awal;
+pemeriksaan field, nilai, identitas akhir dan header tetap terpisah agar lokasi
+penolakannya dapat dibedakan tanpa mencatat nilainya. Pesan exception, traceback
+mentah, URL, header, body, nama file dan identifier tidak disimpan. Exception
+diringkas saat callback masih berjalan, tanpa menahannya untuk log berikutnya.
+Event ini hanya bukti diagnosis; semua izin request dan syarat byte COMPLETE
+tetap berlaku, dan Stop tetap cancellation.
+
 Hanya byte yang lolos seluruh pemeriksaan menjadi deklarasi COMPLETE. Nama
 file, tautan relatif, penahanan stream, pemeriksaan salinan dan publikasi memakai
 kontrak PDF yang sama dengan href biasa. Kegagalan atau kontrol yang tidak dikenal
