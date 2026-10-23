@@ -196,3 +196,101 @@ Windows universe is4,926 cases (including four script-provider controls), with
 710 portable overlap. Exact-tree GREEN, package readback and final integration
 review remain pending. Native L1-D observer/dispatch and other corporate forms
 retain their explicit subsequent source/runner/live requirements.
+
+## Native integration slice (separate continuation)
+
+Start with40 synthetic packet contracts: four Normal/amendment and explicit
+migrated/nonmigrated positives through canonical sections and saved/reopened
+workbooks;32 unsupported proof/source/dependency controls;four fatal lifetime/
+malformed-parent cases before fallback. Require positive manifest lifetime, three loaded
+source pins, exact current-View submitted route/model, outer BC04 classification,
+explicit boolean migration and valid previous-parent encoding. The observed
+L1-D component remains authoritative for its final classification branch.
+Preserve all three exact table owners/headers/footer spans, pure-helper guards,
+whole-record source coverage and source/value provenance. Induk's independent
+mapping remains unresolved in this fixture. These tests alone cannot enable the
+live observer: add actual owned same-page View/capture/observer/GET-digest tests
+with business-value getter traps, cancellation and whole-record fallback before
+implementation/dispatch. This continuation does not alter the prerequisite
+candidate already undergoing final verification in PR102.
+The migrated positive deliberately preserves reported13 totals against zero
+4500/4700 operands; canonical and saved-footer amounts distinguish correct flag
+binding from an adapter that always selects the nonmigrated path.
+The next tests-only increment adds16 actual Edge cases: four owned same-document
+View -> loaded source hashes -> observer -> sealed raw response -> native/checkpoint
+replay -> saved workbook positives; ten whole-record refusal controls; one
+post-View Stop case and one fixture read-trap self-check. A single same-document fixture serves only synthetic exact
+public assets and primary bytes, traps detail body/footer/input business reads,
+and counts uninspected clicks. Three-table structure, original response bytes,
+source hashes, source request counts, final mapping and canonical replay are
+checked independently. Source-proven A/B accordions and the existing inspected
+corporate structure metadata bind each component to its literal group; wrong or
+misplaced groups stay unsupported. Visible static Induk content avoids an early
+unrelated readiness failure. The trap also covers table/footer/panel ancestors,
+with six forbidden text-getter accesses and allowed header access checked in its
+own fixture test. This remains a tests-only continuation with56 new cases,
+expected4,982 Windows total; no observer/adapter implementation is enabled yet.
+
+Initial37-case packet run39956395541 at heade174f26760a385590f5209111f3402f68e9a8a09,
+tested mergee613ee1b4b9959e070ccd3fc6fc3cf88dbe5a6d7, tree
+`e2177781ec17a0471a1725bc0b639af6ca0258e5`, ran4,963 Windows cases:
+4,958 passed,five failures,zero errors/skips. Four positives failed at the
+intentionally missing semantic dispatcher. The other failure was a fixture
+expectation: malformed PreviousFormData is already fatal in generic privacy
+decoding. Preserve that production guard; move this case to explicit fatal
+tests with/without observed forms instead of weakening it to unsupported.
+Digest-matched JUnits12502899089/12502829004 were read (SHA256
+`41c57687777ceab9fa00d2845651497502f200ff7ecf19523733a6757840f4d8`
+and `5f67bc6f887aefcb60537af04675b7d8642639f8cff6b4833196de4d97de05e5`).
+
+Final tests-only run39959642240, head
+`cc89e9f7936ecead89be1e7a655f614ed3a63072`, tested merge
+`2c2539cc1191ac979344906036f1b29dbf238650`, tree
+`f8a9cfdef402c3a3ac32a231f36b3bd77d8ca36e`:4,982 Windows cases,
+4,974 passes and eight intended missing-integration failures, zero errors/skips.
+All4,926 baseline cases pass. The56 new cases comprise40 packet and16 Edge
+contracts; four packet and four browser positives fail at the missing dispatch/
+observer, while all refusal/Stop/fixture controls pass. The710 portable cases
+overlap baseline Windows. Both JUnit and inventory archives were downloaded and
+reconciled before implementation. Windows JUnits12505231720/12505201736 have
+SHA256 `8896749401675038a92b1e5a7f1becfb2a599498f1b84cce2fe6a29adaf9cb9d`
+and `d1f158d5e7cfbf4c4c3fd74d4aadb763de2e29d0e8d5c4c103f85ff4886cf5d7`.
+
+The implementation now observes loaded pins and positive retained lifetime,
+three exact component/accordion owners and static table metadata, then dispatches
+to the reviewed pure projector after source lifecycle/parent checks. Generic
+privacy/packet/late-drain/replay checks remain authoritative. Final runner,
+saved-workbook readback, package inspection and fresh source review remain open.
+
+Fresh review found two further proof gaps: generic corporate/main digest readers
+accept matching fetch/preload resources, and descendant counts do not establish
+the actual table -> p-table -> financial-wrapper ancestry. Add eight real Edge
+refusal cases before changing production: corporate/main/vendor fetched-only or
+preloaded-only providers, an empty financial wrapper beside the first p-table,
+and a table beside its empty p-table. Each keeps valid source bytes and all other
+lifetime/structure facts, so refusal cannot rely on a changed digest. Provider
+fixtures prove their actual resource initiator and absence from document.scripts.
+The existing strict vendor controls should already pass; the other six expose
+the reviewed missing predicates. Production is unchanged in this test increment.
+
+Review RED run39963512715, head
+`8639c4dbf2975a155ae6ab89eeb3e5dbdab42d61`, tested merge
+`190570dadaacc546315812aa480c75f8349180fc`, tree
+`94eeaa1ba8134f531d1d95874487e83fcf7fbca4`:4,990 Windows cases,
+4,984 passes,six expected failures and zero errors/skips. All eight prior
+integration positives and both vendor fetch/preload refusal controls pass;
+four corporate/main provider and two actual-chain controls fail as predicted.
+Both JUnits and inventories were read and reconciled before the guard correction:
+12505948657 SHA256
+`6bf6b9016e2970ea8e5a839baacc7ac95309c04b6fcc398fcfbec7c6791f9f1b`,
+12506871979 SHA256
+`de83c2069366bfaf0bf8ce7ddd3b7add80282abaef5f8ca680ddbd4d00c430ed`.
+
+The narrow correction requires all three exact script providers in one
+value-free evaluation, retaining existing bounded digest readers and one rehash
+per positive asset. It validates actual table/p-table/financial-wrapper element
+ancestry and containment within the observed grid/form, then retains the existing
+component/accordion/header/span checks. Stop checks surround both new probes.
+Fresh review accepted this design under the existing trusted-browser/source-pin
+boundary; final implementation review and exact-tree GREEN/package readback
+remain required. The superseded first implementation run is not final evidence.

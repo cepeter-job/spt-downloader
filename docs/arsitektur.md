@@ -131,8 +131,23 @@ Document yang diketahui tetap fatal. POST pengganti laporan keuangan yang
 persis dikenali hanya memasang veto tanpa membaca body/header atau menambah
 izin request. Replay memvalidasi attempt/record/URL, menolak override per
 descriptor dan bukti packet yang tercampur, lalu menyalin metadata tervalidasi.
-Capture lama tanpa bukti tetap dapat dibaca; metadata ini belum mengaktifkan
-proyeksi native L1-D dan tidak membuktikan mapping/PDF.
+Capture lama tanpa bukti tetap dapat dibaca; metadata saja tidak memberikan
+kelayakan native L1-D atau membuktikan mapping/PDF.
+
+Cabang native L1-D juga memerlukan tiga pin corporate/main/vendor yang termuat,
+rute literal submitted `?view=true`, model sumber yang cocok, Induk teramati
+lebih dahulu, klasifikasi luar BC04 dan boolean IsMigrated eksplisit. Observer
+memeriksa satu form L1-D yang terlihat, tiga komponen tabel, rantai grid keuangan
+pertama dan kelompok accordion A/B melalui pemeriksa struktur corporate yang
+sama. Ketiga pin memerlukan bukti provider script, bukan fetch/preload saja;
+rantai ancestor p-table dan wrapper keuangan pertama harus memuat tabel yang
+benar-benar diperiksa. Header, colspan footer dan source_structure boleh dibaca; nilai body,
+footer dan input tidak dibaca dari DOM. Adapter memakai CurrentFormData.L1dFormData
+setelah encoding PreviousFormData tervalidasi, memproyeksikan kode/mask/total yang
+terbukti dan mengikat provenance ke respons/container/path asli. Bukti hilang
+memakai fallback seluruh record; kontradiksi lifetime/encoding tetap fatal.
+Replay memerlukan custody manifest yang sama. Pemetaan Induk, PDF keuangan dan
+form corporate lain tetap mempunyai gate tersendiri.
 
 
 Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk

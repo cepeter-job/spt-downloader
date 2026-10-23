@@ -17,6 +17,7 @@ BUILD_DIGESTS = {
 VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
 L11C_BUILD_DIGESTS = {**BUILD_DIGESTS,
     VENDOR_SOURCE: '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'}
+L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -340,12 +341,71 @@ def _apply_l11c(binding, section, observed_forms, *, root, payload, record, even
             'route': proof['route'], 'values': result['provenance']}
 
 
+def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event):
+    proof = binding['projection']
+    if (not isinstance(proof, dict)
+            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
+            or proof['kind'] != 'corporate-l1d-v1' or proof['builds'] != L1D_BUILD_DIGESTS
+            or proof['route'] != event['frame_url'] or binding.get('paths') != [['L1dFormData']]
+            or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])):
+        raise _UnsupportedMetadata('unsupported_corporate_l1d_semantic_binding')
+    # Packet decoding has already validated every present lifetime fact against
+    # this attempt/record/source/frame. Absence never authorizes this branch.
+    if event.get('component_lifetime') is None:
+        raise _UnsupportedMetadata('missing_corporate_l1d_component_lifetime')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or payload.get('BusinessClassification') != 'BC04'
+            or type(payload.get('IsMigrated')) is not bool
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
+        raise _UnsupportedMetadata('unverified_corporate_l1d_submitted_lifecycle')
+    if 'PreviousFormData' not in payload:
+        raise _UnsupportedMetadata('missing_corporate_l1d_previous_encoding')
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l1d_previous_encoding')
+        previous = _corporate_json(previous)
+        if previous is not None and not isinstance(previous, dict):
+            raise _UnsupportedMetadata('unsupported_corporate_l1d_previous_shape')
+    tables = proof['tables']
+    if not isinstance(tables, list) or len(tables) != 3:
+        raise _UnsupportedMetadata('unverified_corporate_l1d_table_catalog')
+    for index, table in enumerate(tables):
+        structure = {'form': 'L1-D', 'component': f'rsh-citr-l1d-grid{index + 1}',
+                     'groups': ['A. LAPORAN LABA RUGI' if index == 0 else 'B. LAPORAN POSISI KEUANGAN']}
+        if (not isinstance(table, dict)
+                or set(table) != {'component', 'headers', 'footer_spans', 'source_structure'}
+                or table['component'] != structure['component'] or table['source_structure'] != structure):
+            raise _UnsupportedMetadata('unverified_corporate_l1d_grid_owner')
+    result = project_l1d(root.get('L1dFormData'), migrated=payload['IsMigrated'],
+        headers=[t['headers'] for t in tables], footer_spans=[t['footer_spans'] for t in tables],
+        tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'])
+    section['tables'] = result['tables']
+    for entry in result['provenance']:
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+    return {'form': 'L1-D', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
     projected = []
     for binding, section in zip(observed_forms, sections):
         if 'projection' not in binding:
             continue  # Preserve old evidence-leaf captures and caller contracts.
+        if binding['name'] == 'L1-D':
+            projected.append(_apply_l1d(binding, section, observed_forms, root=root, payload=payload,
+                record=record, event=event))
+            continue
         if binding['name'] == 'L11-C':
             projected.append(_apply_l11c(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event, country_packets=country_packets or {}))
