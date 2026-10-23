@@ -1,6 +1,9 @@
 """Shared style-preserving primitives for the three approved Masa templates."""
 from copy import copy
+from decimal import Decimal
+import math
 import re
+import sys
 
 from openpyxl import load_workbook
 
@@ -33,6 +36,26 @@ def _write(sheet, row, column, value):
     if isinstance(cell.value, str):
         # Excel-injection protection must not replace the user's number format.
         cell.data_type = 's'
+
+
+def _parse_percent_rate(value):
+    """Return a safe Excel fraction and validity for unsigned percentage points."""
+    if value is None or value == '':
+        return None, True
+    if (type(value) not in (int, float, str)
+            or isinstance(value, str) and not re.fullmatch(r'[0-9]+(?:,[0-9]+)?', value)):
+        return None, False
+    rate = Decimal(str(value).replace(',', '.'))
+    # Check source digits before division can discard trailing zeroes or round.
+    if (not rate.is_finite() or not 0 <= rate <= 100
+            or len(rate.as_tuple().digits) > 15):
+        return None, False
+    fraction = rate / 100
+    converted = float(fraction)
+    if (not math.isfinite(converted) or 0 < abs(converted) < sys.float_info.min
+            or Decimal(str(converted)) != fraction):
+        return None, False
+    return converted, True
 
 
 def _header_key(value):

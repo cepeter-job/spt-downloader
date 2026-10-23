@@ -313,9 +313,16 @@ def _check_pph21_primary(payload, record, selected, scope, period, reasons):
     if model is None:
         reasons.append('unsupported_masa_model_binding')
 
+    # Metadata can disprove primary identity without supplying the missing
+    # listing binding. Keep its ineligibility reason and never promote it.
+    checked_period = period
+    label = record.get('meta', {}).get('Masa Pajak')
+    if checked_period is None and isinstance(label, str) and re.fullmatch(r'[0-9]{8}', label):
+        checked_period = _check_period_evidence(label, record, scope, reasons)
+
     def check_period(source, month_key, year_key):
-        for key, expected in ((month_key, str(int(period[:2])) if period else None),
-                              (year_key, period[4:] if period else str(scope[1]) if scope[2] == 'period' else None)):
+        for key, expected in ((month_key, str(int(checked_period[:2])) if checked_period else None),
+                              (year_key, checked_period[4:] if checked_period else str(scope[1]) if scope[2] == 'period' else None)):
             if key not in source or expected is None:
                 reasons.append('missing_pph21_period_binding_' + key)
             elif type(source[key]) not in (str, _CorporateNumber) or source[key] != expected:

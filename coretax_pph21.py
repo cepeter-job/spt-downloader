@@ -6,7 +6,8 @@ import math
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
-                                    _grow, _table_projection, _compact_rows, _whole_accounting)
+                                    _grow, _table_projection, _compact_rows, _whole_accounting,
+                                    _parse_percent_rate)
 
 
 RESOURCE = Path(__file__).resolve().parent / 'resources' / 'pph21_format.xlsx'
@@ -76,22 +77,9 @@ def _write_amount(sheet, row, column, value):
 
 def _write_rate(sheet, row, column, value):
     """Convert inspected percentage points to a safe Excel fraction."""
-    _write(sheet, row, column, value)
-    if value is None or value == '':
-        return True
-    if (type(value) not in (int, float, str)
-            or isinstance(value, str) and not re.fullmatch(r'[0-9]+(?:,[0-9]+)?', value)):
-        return False
-    rate = Decimal(str(value).replace(',', '.'))
-    if (not rate.is_finite() or not 0 <= rate <= 100
-            or len(rate.as_tuple().digits) > 15):
-        return False
-    fraction = rate / 100
-    converted = float(fraction)
-    if not math.isfinite(converted) or Decimal(str(converted)) != fraction:
-        return False
-    sheet.cell(row, column).value = converted
-    return True
+    fraction, valid = _parse_percent_rate(value)
+    _write(sheet, row, column, fraction if valid else value)
+    return valid
 
 
 def _display_only_field(field, form):

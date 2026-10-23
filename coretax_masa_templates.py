@@ -7,7 +7,7 @@ import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
                                     _grow, _body_rows, _header_key, _table_projection,
-                                    _compact_rows, _whole_accounting)
+                                    _compact_rows, _whole_accounting, _parse_percent_rate)
 
 
 def canonical_form(tax, form):
@@ -344,37 +344,6 @@ def _unifikasi_footer(table, labels, aliases, column, allowed):
         used.add(targets[0])
         result.append((targets[0], values[1]))
     return result
-
-
-def _parse_percent_rate(value):
-    """Parse a TINGKAT (%) percentage-points string into an Excel fraction.
-
-    Strict: digits with optional comma decimal separator, no thousands
-    separator, no period, no suffix. Blank yields (None, True) meaning
-    "blank, not zero". Out of range or too many significant digits yields
-    (None, False).
-    """
-    if value is None or value == '':
-        return None, True
-    if isinstance(value, bool):
-        return None, False
-    if isinstance(value, (int, float)):
-        rate = Decimal(str(value))
-    elif isinstance(value, str):
-        if not re.fullmatch(r'[0-9]+(?:,[0-9]+)?', value):
-            return None, False
-        try:
-            rate = Decimal(value.replace(',', '.'))
-        except Exception:
-            return None, False
-    else:
-        return None, False
-    if rate < 0 or rate > 100:
-        return None, False
-    fraction = rate / Decimal(100)
-    if len(fraction.as_tuple().digits) > 15:
-        return None, False
-    return float(fraction), True
 
 
 def _unifikasi_appendix(sheet, blocks, sections, form):

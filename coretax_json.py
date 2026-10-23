@@ -728,9 +728,22 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     if 'TIN' in payload and (type(payload['TIN']) is not str or payload['TIN'] != scope[0]):
         raise JsonSafetyError('Outer corporate taxpayer number contradicts selected scope')
     period = fields.get('TaxPeriodCode')
+    meta = record.get('meta', {})
+    label = meta.get('Masa Pajak')
+    literal_period = label if isinstance(label, str) and re.fullmatch(r'[0-9]{8}', label) else None
+    if literal_period is not None:
+        first, last = int(literal_period[:2]), int(literal_period[2:4])
+        if not 1 <= first <= last <= 12:
+            raise JsonSafetyError('Selected corporate literal period month bounds are invalid')
+        if period is not None and period != literal_period:
+            raise JsonSafetyError('Selected corporate literal period contradicts native code')
+        if scope[2] == 'period' and int(literal_period[4:]) != scope[1]:
+            raise JsonSafetyError('Selected corporate literal period contradicts scope year')
     expected_year = None
     if isinstance(period, str) and re.search(r'[0-9]{4}$', period):
         expected_year = int(period[-4:])
+    elif literal_period is not None:
+        expected_year = int(literal_period[4:])
     elif scope[2] == 'period':
         expected_year = scope[1]
     if 'PeriodYear' in payload:
@@ -743,6 +756,11 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     root = _corporate_json(raw)
     if not isinstance(root, dict):
         raise _UnsupportedMetadata('missing_corporate_current_source')
+    # This comparison rejects contradictions; it cannot replace absent native
+    # listing fields in the eligibility checks below.
+    if literal_period is not None and 'TaxPeriodCode' in root:
+        if type(root['TaxPeriodCode']) is not str or root['TaxPeriodCode'] != literal_period:
+            raise JsonSafetyError('Current corporate period contradicts selected literal period')
     fields = selected['native_fields']
     expected = {'ReturnSheetRecordIdentifier': selected['record_id'],
                 'ReturnSheetAggregateIdentifier': selected['aggregate_id'],
@@ -761,7 +779,6 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     # unsupported coverage. Missing Tin must not hide a contradictory TaxYear.
     if 'Tin' in main and (type(main['Tin']) is not str or main['Tin'] != scope[0]):
         raise JsonSafetyError('Current corporate taxpayer number contradicts selected scope')
-    meta = record.get('meta', {})
     year = None
     if 'TaxYear' in main:
         year = _corporate_integer(main['TaxYear'])
