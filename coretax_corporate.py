@@ -18,6 +18,7 @@ FORMS = {
  'L10-C': ('rshshr-citr-l10c-form', 'L10cFormData'),
  'L10-D': ('rshshr-citr-l10d-form', 'L10dFormData'),
  'L11-B': ('rshshr-citr-l11b-form', 'L11BFormData'),
+ 'L11-C': ('rshshr-citr-l11c-form', 'L11CFormData'),
 }
 # The inspected native fifth input is not a numeric Group 5 alias.
 GROUPS = ('Group 1', 'Group 2', 'Group 3', 'Group 4', 'Other Group')
@@ -206,6 +207,38 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-l7-v1', 'builds': {
                     CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url, 'locale': locale,
                     'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
+                                'footer_spans': metadata['footer_spans']}]}
+            if name == 'L11-C':
+                from coretax_corporate_projection import L11C_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
+                from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
+                from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
+                if 'Induk' not in names or L11C_BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
+                    return None
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                _check_cancel(check_cancel)
+                vendor_digest = page.evaluate(_BUILD_HASH, VENDOR_SOURCE)
+                _check_cancel(check_cancel)
+                if (main_digest != L11C_BUILD_DIGESTS.get(MAIN_SOURCE)
+                        or vendor_digest != L11C_BUILD_DIGESTS.get(VENDOR_SOURCE)):
+                    return None
+                grid = form.locator('rshshr-citr-l11c-form-grid1')
+                if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
+                        or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1
+                        or form.locator('table').count() != 1):
+                    return None
+                metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
+                environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+                references = []
+                sequences = [e['sequence'] for e in capture.request_observations()
+                    if e['url'] == CORPORATE_COUNTRY_REFERENCE_URL and e['method'] == 'GET'
+                    and e['request_json'] is None]
+                if sequences:
+                    references.append({'endpoint': CORPORATE_COUNTRY_REFERENCE_URL,
+                                       'method': 'GET', 'sequences': sequences})
+                binding['projection'] = {'kind': 'corporate-l11c-v1', 'builds': {
+                    CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+                    'route': page.url, **environment, 'references': references,
+                    'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)
