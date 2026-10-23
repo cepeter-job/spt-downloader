@@ -1,5 +1,9 @@
 # Development instructions
 
+Before merging a PR, review the preceding PR merged by another session and its
+interaction with the current change. Understand the affected functions and
+repository contracts. Update this file when making significant behavior changes.
+
 This repository is the development home for the read-only Coretax SPT downloader. Keep changes small, explicit and covered by behavior tests.
 
 Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md), lalu baca [setup dan pengujian](docs/pengembangan.md), [kontrak arsitektur](docs/arsitektur.md), dan [CI/rilis](docs/ci-dan-rilis.md). CLI dan desktop dikembangkan bersama pada `main` melalui PR.
@@ -31,6 +35,19 @@ Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit
 Latest approved corporate clean presentation: Induk now uses the operator-approved two-column layout and L8 the approved three-column table, with only static captions/styles in source. This supersedes the earlier generic-Induk restriction. Induk/L1-D/L8/L9 also omit redundant raw display appendices, retaining checkpoints and truthful unresolved counts. Compact only known template body ranges to populated captured rows (zero and False are content); keep one body slot for an empty table, intentional separators, headers, captured totals, merges and styles. Map before compaction and move verified DER references with both removed and inserted rows. L1-D omits its first three title/identity rows plus the empty row before its first header; metadata remains in checkpoint/proof. All corporate accounting defaults to zero decimal places, including existing reference accounting cells and newly bound monetary cells; retain exact stored numeric values without rounding. DER ratios and percentage displays keep their existing two-decimal formats. These are presentation exceptions only; native eligibility and capture/PDF completion gates are unchanged.
 
 ## Verification
+
+Approved compact Masa presentation: bind against original reference coordinates,
+then remove only declared empty body capacity. Keep populated rows (including
+zero and False), one body slot for an empty table, intentional separators,
+captured totals, merges, styles, row dimensions, widths and page layout. PPN
+Induk omits original blank rows 8 and 25. PPh21 L-IA/L-IB omit one extra blank
+row before the first header; reuse external group/footer separators rather than
+adding a duplicate spacer. L-IA verified percentage points become safe numeric
+Excel fractions with a 15-digit precision guard; invalid values stay literal
+and unresolved. PPN/PPh21 accounting defaults to zero decimals without rounding
+stored values. Checkpoints, proof, native eligibility and PARTIAL gates remain
+unchanged. Binding tests can isolate original geometry; independent saved export
+tests must exercise final compaction without suppressing it.
 
 Create a local `.venv` with the production CPython/GIL pin in `spt_desktop.runtime.PYTHON_PROFILES`. Install the resolved test environment using `uv pip sync --python <venv-python> --require-hashes --only-binary :all: locks/test.txt`; use `locks/build.txt` for packaging. Run `python -m pytest tests -q` on Windows with a dedicated scratch `--basetemp` outside the repository. Linux can run the reviewed portable subset through `-p scripts.ci_tests --ci-workload portable`; Windows runs the full suite. Browser tests use isolated local synthetic HTML fixtures and an installed Microsoft Edge; they are not live taxpayer tests. Verify changed behavior, output counts, literal source text and links before committing.
 

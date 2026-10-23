@@ -365,7 +365,9 @@ def test_each_amendment_uses_independent_templates_and_exact_resume_links(tmp_pa
     run['records'].append(amendment)
     normal_file = TYPES[tax]['path']
     amendment_file = normal_file.replace('_Normal.xlsx', '_Pembetulan 2.xlsx')
-    files = exporter.export_split_workbooks(run, tmp_path)
+    from support_masa_binding import reference_geometry
+    with reference_geometry():
+        files = exporter.export_split_workbooks(run, tmp_path)
     assert set(files) == {'resume.xlsx', normal_file, amendment_file}
     coretax.verify_outputs(run, tmp_path)
     workbook = load_workbook(tmp_path / normal_file)
@@ -419,7 +421,14 @@ def test_copied_worker_exports_using_only_explicit_packaged_template_resources(t
     reference = approved_reference(tax)
     try:
         assert workbook.sheetnames == ['Induk']
-        assert_layout(workbook['Induk'], reference['Induk'])
+        if tax == 'PPN':
+            # This is the real copied worker, with final presentation enabled.
+            assert workbook['Induk'].max_row == 76
+            assert workbook['Induk']['A8'].value == 'I.'
+            assert 'A9:D9' in {str(m) for m in workbook['Induk'].merged_cells.ranges}
+            assert_format(workbook['Induk']['A9'], reference['Induk']['A10'])
+        else:
+            assert_layout(workbook['Induk'], reference['Induk'])
     finally:
         workbook.close()
         reference.close()

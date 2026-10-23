@@ -77,7 +77,10 @@ def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, pe
             copies = 2 if tax in ('PPh Badan', 'PPN', 'PPh Pasal 21/26', 'PPh Unifikasi') else 4
             assert values.count('00007') == copies and values.count('1.234,50') == copies
             if tax == 'PPN':
-                assert workbook['Induk']['E45'].value == int(expected[identifier]['sections'][0]['fields'][-1]['value'])
+                # Two approved blank spacers were removed above this section.
+                amount = int(expected[identifier]['sections'][0]['fields'][-1]['value'])
+                assert workbook['Induk']['E43'].value == amount
+                assert values.count(amount) == 1
             if tax == 'PPh Unifikasi':
                 amount = int(expected[identifier]['sections'][0]['tables'][-1]['rows'][0][2])
                 assert workbook['Induk']['C10'].value == amount
@@ -117,7 +120,7 @@ def test_resume_links_to_the_correct_model_file_and_first_form(tmp_path, tax, pe
                 marker = f"SYNTHETIC {expected['record_id']} / Induk"
                 if tax == 'PPN':
                     assert marker not in values
-                    assert workbook['Induk']['E45'].value == int(expected['sections'][0]['fields'][-1]['value'])
+                    assert workbook['Induk']['E43'].value == int(expected['sections'][0]['fields'][-1]['value'])
                 elif tax == 'PPh Unifikasi':
                     assert marker not in values
                     assert workbook['Induk']['C10'].value == int(expected['sections'][0]['tables'][-1]['rows'][0][2])

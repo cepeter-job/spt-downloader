@@ -6,7 +6,8 @@ import math
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
-                                    _grow, _body_rows, _header_key, _table_projection)
+                                    _grow, _body_rows, _header_key, _table_projection,
+                                    _compact_rows, _whole_accounting)
 
 
 def canonical_form(tax, form):
@@ -587,7 +588,13 @@ def _ppn_appendix(sheet, blocks, sections, form):
             _write_ppn_amount(sheet, last + extra + 1, column, value)
     elif totals:
         pending.extend({**table, 'rows': table['footer']} for table, _ in totals)
+    _compact_layout(sheet, range(first + max(1, len(rows)), last + extra + 1))
     return fields, pending
+
+def _compact_layout(sheet, deleted):
+    _whole_accounting(sheet)
+    _compact_rows(sheet, deleted)
+
 
 def render_template_form(sheet, tax, form, sections):
     form = canonical_form(tax, form)
@@ -596,6 +603,7 @@ def render_template_form(sheet, tax, form, sections):
         tables = _ppn_induk(sheet, sections) if tax == 'PPN' else _unifikasi_induk(sheet, sections)
         if tax == 'PPN':
             fields = _ppn_fields(sheet, fields)
+            _compact_layout(sheet, {8, 25})
     else:
         blocks = (PPN_BLOCKS if tax == 'PPN' else UNIFIKASI_BLOCKS)[form.casefold()]
         if tax == 'PPN':
