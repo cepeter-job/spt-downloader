@@ -6,6 +6,7 @@ import math
 import re
 
 from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Border, Color, Side
 
 from coretax_template_cells import load_template_workbook, _write, _grow, _raw_evidence
 
@@ -103,10 +104,23 @@ def _clean_page(sheet, widths):
     sheet.page_setup.fitToHeight = 0
 
 
+def _thin_grid(sheet, first, last, width):
+    side = Side(style='thin', color=Color(indexed=64))
+    border = Border(left=side, right=side, top=side, bottom=side)
+    for cells in sheet.iter_rows(min_row=first, max_row=last, min_col=1, max_col=width):
+        for cell in cells:
+            if not isinstance(cell, MergedCell):
+                cell.border = border
+
+
 def _induk(sheet, sections):
-    _clean_page(sheet, {'A': 110.7109375, 'B': 44, 'C': 36})
+    _clean_page(sheet, {'A': 110.7109375, 'B': 49.7109375, 'C': 36})
+    sheet.column_dimensions['B'].bestFit = True
     _write(sheet, 1, 1, 'INDUK')
     _write(sheet, 1, 2, None)
+    title_font = copy(sheet['A1'].font)
+    title_font.bold = True
+    sheet['A1'].font = title_font
     fields = [field for section in sections for field in section.get('fields', [])]
     used, blocks = set(), []
     for slots, strip_number in ((_INDUK_IDENTITY, False), (_INDUK_CALCULATIONS, True)):
@@ -121,19 +135,61 @@ def _induk(sheet, sections):
             used.add(index)
             if _present(field.get('value')):
                 label = re.sub(r'^[0-9]+(?:\.[a-z])?\.\s+', '', caption) if strip_number else caption
-                output.append((label, field['value']))
+                kind = ('money' if strip_number and name != 'TaxRate' and caption != 'Ganti SPT sebelumnya'
+                        else 'tariff' if name == 'TaxRate' else 'choice' if strip_number else 'identity')
+                output.append((index, label, field['value'], kind))
         blocks.append(output)
     row = 2
     for index, block in enumerate(blocks):
         if index and blocks[0] and block:
-            row += 3  # Intentional identity/calculation separator in the target.
-        for caption, value in block:
+            row += 2  # Approved identity/calculation separator.
+        first = row
+        for field_index, caption, value, kind in block:
             _write(sheet, row, 1, caption)
-            _write(sheet, row, 2, value)
+            if kind == 'money':
+                if not _write_amount(sheet, row, 2, value):
+                    used.remove(field_index)
+                sheet.cell(row, 2).number_format = ACCOUNTING_LITERAL
+            else:
+                if kind == 'tariff' and isinstance(value, str):
+                    value = re.sub(r'^[0-9]+\.(?=\s*[A-Za-z])\s*', '', value, count=1)
+                _write(sheet, row, 2, value)
+                if kind == 'choice':
+                    sheet.cell(row, 2).number_format = ACCOUNTING_LITERAL
             row += 1
+        if block:
+            _thin_grid(sheet, first, row - 1, 2)
     return _clean_report([field for index, field in enumerate(fields) if index not in used],
                          [{**table, 'complete': False} for section in sections
                           for table in section.get('tables', [])])
+
+
+def _l8_body(table, count):
+    rows = table['rows'][:count]
+    if not any(key in table for key in ('source_structure', 'body_spans', 'body_rowspans')):
+        return [(list(values), False) for values in rows] if all(len(values) == 3 for values in rows) else None
+    if (table.get('source_structure') != {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1', 'groups': [_L8_GROUP]}
+            or type(table.get('pages')) is not int or table['pages'] != 1):
+        return None
+    spans, rowspans = table.get('body_spans'), table.get('body_rowspans')
+    if (not isinstance(spans, list) or not isinstance(rowspans, list)
+            or len(spans) != count or len(rowspans) != count):
+        return None
+    result = []
+    for values, columns, heights in zip(rows, spans, rowspans):
+        if (not isinstance(columns, list) or not isinstance(heights, list)
+                or len(columns) != len(values) or len(heights) != len(values)
+                or any(type(span) is not int for span in columns)
+                or any(type(span) is not int or span != 1 for span in heights)):
+            return None
+        if columns == [1, 2]:
+            # C belongs to the observed merged caption; it is not a missing amount.
+            result.append(([values[0], values[1], None], True))
+        elif columns == [1, 1, 1]:
+            result.append((list(values), False))
+        else:
+            return None
+    return result
 
 
 def _l8(sheet, sections):
@@ -149,6 +205,7 @@ def _l8(sheet, sections):
     matches = [table for table in tables if table.get('group') == _L8_GROUP
                and table.get('headers') == _L8_HEADERS]
     pending = [{**table, 'complete': False} for table in tables]
+    merges = []
     if len(matches) == 1:
         table = matches[0]
         rows, footer = table.get('rows', []), table.get('footer', [])
@@ -157,17 +214,27 @@ def _l8(sheet, sections):
                 and rows[count:] == footer and len(rows) == count + len(footer)
                 and table.get('source_total', count) in (None, count)
                 and len(footer) <= 1 and table.get('footer_spans', []) == [[1, 1, 1]] * len(footer)
-                and all(len(values) == 3 for values in rows)):
+                and all(len(values) == 3 for values in footer)):
+            body = _l8_body(table, count)
+        else:
+            body = None
+        if body is not None:
             pending = [{**item, 'complete': False} for item in tables if item is not table]
-            body = [values for values in rows[:count] if any(map(_present, values))]
-            output = body + ([['', '', '']] if not body else []) + footer
-            for row, values in enumerate(output, 2):
+            body = [(values, merged) for values, merged in body if any(map(_present, values))]
+            output = body + ([(['', '', ''], False)] if not body else []) + [(values, False) for values in footer]
+            for row, (values, merged) in enumerate(output, 2):
                 _write(sheet, row, 1, values[0])
                 _write(sheet, row, 2, values[1])
+                if merged:
+                    merges.append(row)
+                    continue
                 safe = _write_amount(sheet, row, 3, values[2])
                 sheet.cell(row, 3).number_format = ACCOUNTING_WHOLE
                 if not safe:
                     pending.append({**table, 'rows': [values], 'complete': False})
+    _thin_grid(sheet, 1, sheet.max_row, 3)
+    for row in merges:
+        sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
     return _clean_report(fields, pending)
 
 
@@ -545,6 +612,8 @@ def render_template_form(sheet, form, sections, *, period=None):
     grouped = [[] for _ in blocks]
     fields = [field for section in sections for field in section.get('fields', [])]
     fields = _scalar_fields(sheet, form, fields)
+    if form == 'l6':
+        _thin_grid(sheet, 2, 8, 2)
     pending = []
     for section in sections:
         for table in section.get('tables', []):

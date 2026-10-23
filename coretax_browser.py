@@ -105,13 +105,26 @@ TABLE_JS = r'''(table) => {
  });
  const width=Math.max(0,...matrix.map(r=>r.length));
  const headers=Array.from({length:width},(_,i)=>[...new Set(matrix.map(r=>r[i]).filter(Boolean))].join(' / ')||`Kolom ${i+1}`);
- const rows=[...table.tBodies].flatMap(b=>[...b.rows]).filter(r=>!r.classList.contains('p-datatable-emptymessage'))
- .filter(r=>!(r.cells.length===1 && r.cells[0].colSpan>1 && /tidak ada data|no records|no data/i.test(r.textContent)))
- .map(r=>[...r.cells].map(value));
+ const bodyRows=[...table.tBodies].flatMap(b=>[...b.rows]).filter(r=>!r.classList.contains('p-datatable-emptymessage'))
+ .filter(r=>!(r.cells.length===1 && r.cells[0].colSpan>1 && /tidak ada data|no records|no data/i.test(r.textContent)));
+ const rows=bodyRows.map(r=>[...r.cells].map(value));
  const foot=table.tFoot ? [...table.tFoot.rows].map(r=>[...r.cells].map(value)) : [];
  const footer_spans=table.tFoot ? [...table.tFoot.rows].map(r=>[...r.cells].map(c=>c.colSpan||1)) : [];
  const caption=table.caption && table.caption.getClientRects().length ? table.caption.innerText.trim() : '';
- return {headers,rows,footer:foot,footer_spans,group:caption||group(table)};
+ const result={headers,rows,footer:foot,footer_spans,group:caption||group(table)};
+ const panel=table.closest('.p-tabview-panel'), form=table.closest('rshshr-citr-l8-form');
+ const grid=table.closest('rsh-citr-l8-form-grid1');
+ if(panel && form && grid && form.closest('.p-tabview-panel')===panel &&
+    grid.closest('rshshr-citr-l8-form')===form &&
+    panel.querySelectorAll('rshshr-citr-l8-form').length===1 &&
+    form.querySelectorAll('rsh-citr-l8-form-grid1').length===1 &&
+    form.querySelectorAll('table').length===1){
+   // Raw cells and their positions come from the same owned-table snapshot.
+   result.source_structure={form:'L8',component:'rsh-citr-l8-form-grid1',groups:[result.group]};
+   result.body_spans=bodyRows.map(r=>[...r.cells].map(c=>c.colSpan));
+   result.body_rowspans=bodyRows.map(r=>[...r.cells].map(c=>c.rowSpan));
+ }
+ return result;
 }'''.replace('CELL', CELL_JS).replace('GROUP', GROUP_JS)
 
 FIELDS_JS = r'''(root) => {
@@ -304,9 +317,20 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None):
             break
         data = table.evaluate(TABLE_JS)
         result['rows'].extend(data['rows'])
+        if 'body_spans' in result:
+            if (any(data.get(key) != result.get(key) for key in ('source_structure', 'headers', 'group'))
+                    or not isinstance(data.get('body_spans'), list)
+                    or not isinstance(data.get('body_rowspans'), list)):
+                result['complete'] = False
+                result['warning'] = 'Table structural identity changed during pagination'
+            else:
+                result['body_spans'].extend(data['body_spans'])
+                result['body_rowspans'].extend(data['body_rowspans'])
         result['footer'] = data.get('footer', [])
         result['footer_spans'] = data.get('footer_spans', [])
         result['pages'] += 1
+        if not result['complete']:
+            break
     # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.
     total_element = container_handle.query_selector('.p-paginator-current')
     if total_element:

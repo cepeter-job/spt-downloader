@@ -85,7 +85,7 @@ ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', '
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
     'JSONDecodeError', 'TclError', 'AuthBlocked', 'SetupCancelled', 'CaptureCancelled',
     'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', '_RecoveryRequired'})
-MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_attachments', 'coretax_pdf',
+MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_attachments', 'coretax_financial_post', 'coretax_pdf',
     'coretax_exporter', 'coretax_json', 'coretax_json_capture', 'coretax_corporate',
     'spt_gui', *('spt_desktop.' + name for name in (
         'app', 'controller', 'worker', 'auth', 'runtime', 'events', 'interaction',
@@ -98,6 +98,7 @@ FUNCTIONS = frozenset({'main', '_main', 'run_job', 'run_login_check', 'prepare',
     'collect_inventory', 'collect_details', 'capture_detail', 'capture_panel', 'capture_table',
     '_wait_tab_panel', '_record_panel_timeout', '_find_taxpayer_row',
     'download_financial_attachments', '_read_pdf', '_verify_page', '_financial_url',
+    '__enter__', '_route', '_capture',
     'save_output', 'verify_outputs', '_publish_output', '_check_output_scope',
     'validate_export_run', 'export_workbook', 'export_split_workbooks',
     'publish_workbooks', '_replace_selected', '_rollback', '_fingerprint', '_inspect',

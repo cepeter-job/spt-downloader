@@ -49,9 +49,14 @@ Detail dari SPT Dilaporkan memakai path yang teramati
 `/returnsheets/id-ID/corporate-income-tax-return/{taxpayer}/{record}/ICT_RCIT/{context}`.
 Adapter mengikat posisi taxpayer dan record ke pilihan terverifikasi; context
 harus satu segmen UUID yang sudah ada pada URL aktif. Context tidak dibentuk
-atau ditebak. Route lama `corporatereturnsheets/{taxpayer}/{record}` tetap
-didukung secara persis. Jenis route/form lain, query, fragment, segmen tambahan,
-atau perpindahan URL sesudah discovery tidak mengizinkan POST.
+atau ditebak. Detail submitted tersebut mendukung query mode baca yang teramati
+secara literal `?view=true`, selain bentuk tanpa query yang sudah didukung.
+Duplikat, parameter tambahan, encoding alternatif, kapitalisasi lain dan nilai
+selain `true` ditolak. Route lama `corporatereturnsheets/{taxpayer}/{record}`
+tetap didukung tanpa query. Jenis route/form lain, fragment, segmen tambahan,
+atau perpindahan URL lengkap sesudah discovery tidak mengizinkan POST.
+`Request_From` tetap harus sama persis dengan URL dokumen, termasuk query mode
+baca. Flag ini tidak memberikan izin POST untuk endpoint atau scope lain.
 Konteks browser milik desktop/CLI dibuat dengan Service Worker diblokir agar
 request tidak dapat melewati route pemeriksaan. POST pada konteks reuse/CDP
 yang kebijakannya tidak dibuktikan tetap tidak didukung; href biasa tetap dapat

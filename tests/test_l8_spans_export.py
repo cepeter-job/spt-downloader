@@ -31,7 +31,7 @@ def test_owned_l8_spans_export_all_rows_and_captured_footer(tmp_path):
 
 @pytest.mark.parametrize('broken', ['missing_spans', 'missing_owner', 'foreign_owner', 'foreign_group',
     'missing_rowspans', 'rowspan', 'zero_span', 'bool_span', 'wide_span', 'reverse_span',
-    'short_metadata', 'extra_metadata', 'wrong_count', 'multiple_pages'])
+    'short_metadata', 'extra_metadata', 'wrong_count', 'multiple_pages', 'bool_rowspan', 'extra_owner'])
 def test_l8_invalid_span_proof_stays_unresolved_without_padding(tmp_path, broken):
     table = source()
     if broken == 'missing_spans': table.pop('body_spans')
@@ -48,6 +48,8 @@ def test_l8_invalid_span_proof_stays_unresolved_without_padding(tmp_path, broken
     elif broken == 'extra_metadata': table['body_spans'].append([1, 1, 1])
     elif broken == 'wrong_count': table['body_row_count'] = 7
     elif broken == 'multiple_pages': table['pages'] = 2
+    elif broken == 'bool_rowspan': table['body_rowspans'][0][0] = True
+    elif broken == 'extra_owner': table['source_structure']['unexpected'] = 'SYNTHETIC OWNER'
     before = deepcopy(table)
     book, reports = export(tmp_path, [section('L8', tables=[table])])
     try:
@@ -55,6 +57,18 @@ def test_l8_invalid_span_proof_stays_unresolved_without_padding(tmp_path, broken
         assert not book['L8'].merged_cells.ranges
         assert not reports[0]['complete'] and reports[0]['unmapped_rows'] == 9
         assert table == before
+    finally:
+        book.close()
+
+
+def test_duplicate_owned_l8_tables_stay_unresolved_without_choosing_by_order(tmp_path):
+    tables = [source(), source()]
+    before = deepcopy(tables)
+    book, reports = export(tmp_path, [section('L8', tables=tables)])
+    try:
+        assert book['L8'].max_row == 2 and not book['L8'].merged_cells.ranges
+        assert reports[0]['unmapped_tables'] == 2 and reports[0]['unmapped_rows'] == 18
+        assert not reports[0]['complete'] and tables == before
     finally:
         book.close()
 

@@ -115,7 +115,7 @@ def _unique_object(pairs):
 def _selected_corporate_detail(url, record):
     """Accept only inspected route shapes, with literal selected identities."""
     detail, listed = urlparse(url), urlparse(record['list_url'])
-    if detail.query or detail.fragment or detail.params:
+    if detail.fragment or detail.params:
         return False
     taxpayer = list_taxpayer_id(record['list_url'])
     if not all(isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_-]+', value)
@@ -124,8 +124,12 @@ def _selected_corporate_detail(url, record):
     prefix = '/returnsheets/id-ID/'
     list_path = listed.path.rstrip('/')
     if list_path == prefix + 'corporatereturnsheets/' + taxpayer:
-        return detail.path == list_path + '/' + record['record_id']
+        return not detail.query and detail.path == list_path + '/' + record['record_id']
     if list_path != prefix + 'submitted-returnsheets/' + taxpayer:
+        return False
+    # The inspected submitted View link carries this literal read-only flag.
+    # Do not parse/normalize aliases, duplicate keys, history or extra parameters.
+    if detail.query not in ('', 'view=true'):
         return False
     expected = (prefix + 'corporate-income-tax-return/' + taxpayer + '/'
                 + record['record_id'] + '/ICT_RCIT/')
