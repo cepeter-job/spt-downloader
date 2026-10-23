@@ -26,15 +26,19 @@ def test_optional_induk_proof_requires_loaded_digest_without_business_reads(
             assert forms is not None
             induk, = [form for form in forms if form['name'] == 'Induk']
             assert_no_values_or_actions(fixture)
-            assert len(fixture.vendor_requests) == (0 if vendor == 'missing' else 2)
+            assert fixture.vendor_requests == ([] if vendor == 'missing' else ['GET', 'GET'])
     else:
         from support_masa_native import observed
+        from unifikasi_observer_fixture import NativeFixture
+        monkeypatch.setattr('support_masa_native.Fixture', NativeFixture)
         with observed(browser, tmp_path, monkeypatch, 'PPh Unifikasi', vendor=raw) as (module, fixture, capture):
             forms = module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5)
             assert forms is not None
             induk, = [form for form in forms if form['name'] == 'INDUK']
             assert fixture.unexpected == []
-            assert len(fixture.vendor_requests) == (0 if vendor == 'missing' else 2)
+            assert fixture.page.evaluate('window.valueReads') == 0
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
+            assert fixture.vendor_requests == ([] if vendor == 'missing' else ['GET', 'GET'])
     if vendor == 'verified':
         assert induk.get('reference_order_build') == digest
     else:
