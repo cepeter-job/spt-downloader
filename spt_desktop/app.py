@@ -18,11 +18,28 @@ from .ui_theme import configure_dialog, dip_to_px, effective_scale
 
 DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'json-first'}
 DETAIL_SOURCE_LABELS={'dom':'DOM','json-first':'JSON-hybrid (pilot)'}
+_SELECTION_MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember')
+
+
+def _selection_period_label(tax, period):
+    """Display captions only; source periods still own search, sorting and capture."""
+    if tax.casefold() == 'pph badan':
+        return 'Tahunan'
+    number = re.fullmatch(r'0?[1-9]|1[0-2]', period)
+    code = re.fullmatch(r'(0[1-9]|1[0-2])\1(?:19|20|21)[0-9]{2}', period)
+    if number or code:
+        return _SELECTION_MONTHS[int(period if number else code[1]) - 1]
+    caption = re.fullmatch(r'([a-z]+) [0-9]{4}', period.casefold())
+    if caption:
+        for month in _SELECTION_MONTHS:
+            if caption[1] == month.casefold():
+                return month
+    return period
 
 
 def _selection_detail_key(period, model):
-    months = ('januari', 'februari', 'maret', 'april', 'mei', 'juni',
-              'juli', 'agustus', 'september', 'oktober', 'november', 'desember')
+    months = tuple(month.casefold() for month in _SELECTION_MONTHS)
     monthly = re.fullmatch(r'([a-z]+) ([0-9]{4})', period.casefold())
     annual = re.fullmatch(r'(?:januari - desember )?([0-9]{4})', period.casefold())
     if monthly and monthly[1] in months:
@@ -407,9 +424,11 @@ class App:
                         or identifier in identifiers or not isinstance(meta, dict)):
                     raise ValueError('Invalid inventory identifier or metadata')
                 identifiers.add(identifier)
-                values = tuple(str(meta.get(field, '')) for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT')) + (identifier,)
+                tax, period, model = (str(meta.get(field, '')) for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT'))
+                values = (tax, _selection_period_label(tax, period), model, identifier)
                 # Source identifiers remain data, never Tcl widget paths or item names.
-                rows[f'record-{ordinal}'] = (identifier, values, ' '.join(values).casefold())
+                rows[f'record-{ordinal}'] = (identifier, values, ' '.join((tax, period, model, identifier, values[1])).casefold(),
+                                           _selection_detail_key(period, model))
         except (TypeError, ValueError):
             self._interaction_error(key[0], 'Daftar SPT belum bisa ditampilkan.')
             return
@@ -492,7 +511,7 @@ class App:
         type_priority = {'pph badan': 0, 'pph pasal 21/26': 1, 'pph unifikasi': 2, 'ppn': 3}
         ordered_iids = sorted(rows, key=lambda iid: (
             type_priority.get(rows[iid][1][0].casefold(), len(type_priority)), rows[iid][1][0].casefold(),
-            _selection_detail_key(*rows[iid][1][1:3])))
+            rows[iid][3]))
         descending, reset_pending = None, False
 
         def selected_ids():
@@ -551,7 +570,7 @@ class App:
                 tree.delete(*children)
             query = search.get().strip().casefold()
             for iid in ordered_iids:
-                _, values, text = rows[iid]
+                _, values, text, _ = rows[iid]
                 if query in text:
                     tree.insert('', 'end', iid=iid, values=values)
             update_selection()
@@ -563,7 +582,7 @@ class App:
                 return
             descending = False if descending is None else not descending
             # Reverse only the type grouping; chronology and source ties stay ascending.
-            ordered_iids = sorted(rows, key=lambda iid: _selection_detail_key(*rows[iid][1][1:3]))
+            ordered_iids = sorted(rows, key=lambda iid: rows[iid][3])
             ordered_iids.sort(key=lambda iid: rows[iid][1][0].casefold(), reverse=descending)
             visible = set(tree.get_children())
             for position, iid in enumerate(iid for iid in ordered_iids if iid in visible):

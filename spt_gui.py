@@ -40,7 +40,7 @@ def self_test(report=None):
                 {'record_id': 'synthetic-badan-one', 'meta': {
                     'Jenis Pajak': 'PPh Badan', 'Masa Pajak': '2025', 'Model SPT': 'Pembetulan 2'}},
                 {'record_id': 'synthetic-21', 'meta': {
-                    'Jenis Pajak': 'PPh Pasal 21/26', 'Masa Pajak': 'Februari 2025', 'Model SPT': 'Normal'}},
+                    'Jenis Pajak': 'PPh Pasal 21/26', 'Masa Pajak': '02022025', 'Model SPT': 'Normal'}},
                 {'record_id': 'synthetic-badan-two', 'meta': {
                     'Jenis Pajak': 'pph badan', 'Masa Pajak': 'Januari - Desember 2025', 'Model SPT': 'Normal'}},
                 {'record_id': 'synthetic-ppn-normal', 'meta': {
@@ -176,6 +176,10 @@ def self_test(report=None):
                      'hierarchy':['type','year','month','model'], 'ordered_ids':[],
                      'default_ordered_ids':initial_ids}
             values={iid:tuple(tree.item(iid,'values')) for iid in original}
+            sorting['period_labels']=[values[iid][1] for iid in original]
+            assert sorting['period_labels']==[
+                'Januari','Tahunan','Februari','Tahunan','Januari',
+                'Januari','Januari','Februari','Januari']
             # Independent literal oracles: never compute expectations with the sort key.
             for expected_order in ((3,1,2,8,4,5,6,0,7),(4,5,6,0,7,8,2,3,1)):
                 root.tk.call(tree.heading('type','command'))
