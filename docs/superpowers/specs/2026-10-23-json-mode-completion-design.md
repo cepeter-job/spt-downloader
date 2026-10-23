@@ -6,6 +6,15 @@ Presentation addendum: the user later requested consolidation of the latest Exce
 
 Consolidation addendum: the user also explicitly included PR #89's submitted inventory readiness and page sizing. Preserve that reviewed implementation and its tests alongside the JSON changes, without adding status scans or weakening preliminary response ownership, Stop, literal metadata or restoration checks. The final combined-tree evidence is recorded separately from either prerequisite's earlier run.
 
+Coverage addendum: the five form-catalog omissions identified below now have
+reviewed bounded branches through L7, L11-C, L1-D, L3 and current-only L11-A.
+[Native L11-A PR111 evidence](../reports/2026-10-24-corporate-l11a-native.md)
+records the latest slice. This does not establish all corporate semantic
+destinations or lifecycles: other enabled unknown forms still require whole-record
+fallback. The [PR108 formatting audit](../reports/2026-10-24-pr108-formatting-review.md)
+confirms the approved presentation is preserved; source, mapping, PDF and live
+acceptance remain independent.
+
 ## Intent and baseline
 
 The user requested the remaining JSON scraping work from the latest codebase, then instructed us to do it. Deliver the identified improvements through the existing JSON-first architecture, preserve approved workbook layouts and source evidence, and distinguish implemented behavior, runner verification, and live acceptance.
