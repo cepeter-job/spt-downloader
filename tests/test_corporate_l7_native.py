@@ -89,7 +89,10 @@ def assert_saved_l7(run, folder, model):
     before, reports = deepcopy(run), []
     # Match the save_output wrapper's scoped PDF declaration, then keep the
     # lower-level export/mapping-report assertions independent of publication.
-    current = {**run, 'output_attachments': coretax.attachment_declarations(run)}
+    current = {**run, 'output_attachments': coretax.attachment_declarations(run),
+               'output_json': coretax.json_output_names(run)}
+    with coretax.json_custody(run, folder, published=False) as (items, streams):
+        coretax.copy_held_json(items, streams, folder)
     paths = exporter.export_split_workbooks(current, folder, mapping_reports=reports)
     assert run == before
     coretax.verify_outputs(current, folder)

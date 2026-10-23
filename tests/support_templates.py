@@ -89,7 +89,9 @@ def source_run(tax, sections):
 
 
 def export(tax, run, folder):
-    files = exporter.export_split_workbooks(run, folder)
+    from support_masa_binding import reference_geometry
+    with reference_geometry():
+        files = exporter.export_split_workbooks(run, folder)
     coretax.verify_outputs(run, folder)
     assert set(files) == {'resume.xlsx', TYPES[tax]['path']}
     return load_workbook(folder / TYPES[tax]['path'])
@@ -119,7 +121,9 @@ def export_ppn(tmp_path, sections):
     run['records'][0]['meta']['Jenis Pajak'] = 'PPN'
     before = deepcopy(run)
     reports = []
-    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    from support_masa_binding import reference_geometry
+    with reference_geometry():
+        paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
     assert run == before, 'Display projection must not rewrite captured values or identity'
     path = next(path for path in paths if path != 'resume.xlsx')
     return load_workbook(tmp_path / path), reports, before

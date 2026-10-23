@@ -35,6 +35,19 @@ Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontra
 
 GUI memakai stdlib/Tkinter dan tidak mengimpor Playwright atau openpyxl ke prosesnya. Worker memasang dependensi pada runtime terisolasi. `WORKER_FILES` merupakan allowlist eksplisit; modul worker baru harus ditambahkan di sana bersama tes kontraknya. Jangan menggantinya dengan penyalinan direktori rekursif, karena checkout dapat berdampingan dengan profil, hasil, atau environment lokal.
 
+Hasil mode JSON-hybrid menyimpan manifest capture dan byte respons asli yang
+dideklarasikan record terpilih di `json/<ordinal>/<attempt>/` dalam folder hasil
+SPT, baik melalui CLI maupun publikasi desktop ke Downloads. Penyimpanan checkpoint
+privat `returns/json/` tetap kompatibel; hanya prefix lokasi salinan publikasi
+yang berubah. Isi manifest tetap literal, termasuk reference checkpoint asal;
+salinan ini merupakan bukti, bukan job mandiri untuk resume. Deklarasi `output_json`
+terpisah dari `output_files` Excel. Verifikasi identitas/scope, hash, privasi dan
+budget tetap wajib sebelum penyalinan dari stream yang dipegang serta sesudah
+staging/publikasi. Snapshot persetujuan dan journal pemulihan mencakup JSON;
+attempt lama yang tidak dipilih tetap dipertahankan saat overwrite. File job lain
+tidak disalin, mode DOM murni tidak membuat folder JSON, dan keberadaan salinan
+tidak mengubah status PARTIAL maupun kelayakan native.
+
 ## Identitas, scope, dan provenance
 
 `validate_scope` menerima NPWP tepat 16 digit ASCII. Nol awal merupakan bagian dari identitas. Tahun pajak berada dalam rentang 1900 sampai 2100; input GUI/CLI harus memenuhi bentuk empat digit. Jangan menerapkan `strip()`, menghapus pemisah, mengonversi NPWP menjadi angka, atau memilih kecocokan sebagian untuk membantu input yang salah.

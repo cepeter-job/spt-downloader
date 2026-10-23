@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from openpyxl import load_workbook
 
-from coretax_pph21 import render_template_form
+from support_masa_binding import render_pph21_binding as render_template_form
 from support_pph21_dom import appendix_table, induk_tables, observed
 from support_templates import assert_format
 from test_pph21_template import REFERENCE

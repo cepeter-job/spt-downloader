@@ -89,6 +89,38 @@ def test_only_selected_attempt_is_published_and_originals_remain(tmp_path):
     assert evidence(stale, source) == stale_files
 
 
+def test_offline_reexport_keeps_declared_json_without_opening_browser(tmp_path, monkeypatch):
+    source = tmp_path / 'private-job'
+    run = captured_run(source)
+    coretax.save_output(run, source)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Offline JSON export opened a browser')
+    monkeypatch.setattr(coretax, 'sync_playwright', forbidden)
+    final = tmp_path / 'offline-result'
+    assert coretax.main(['--from-json', str(source / 'run.json'), '--output', str(final),
+                         '--detail-source', 'json-first']) == 0
+    saved = json.loads((final / 'run.json').read_text(encoding='utf-8'))
+    assert_evidence(saved, source, final)
+    assert saved['records'] == run['records']
+    assert coretax.main(['--from-json', str(final / 'run.json'), '--detail-source', 'json-first']) == 0
+    assert_evidence(saved, source, final)
+
+
+def test_changed_selected_json_refuses_overwrite_before_workbook_replacement(tmp_path):
+    source = tmp_path / 'private-job'
+    run = captured_run(source)
+    coretax.save_output(run, source)
+    downloads = tmp_path / 'Downloads'
+    final = output.publish_workbooks(run, source, downloads, 'initial-json')
+    assert_evidence(run, source, final)
+    before = {p.relative_to(final).as_posix(): p.read_bytes() for p in final.rglob('*.xlsx')}
+    name = next(iter(evidence(run, source)))
+    (final / name).write_bytes(b'{"SYNTHETIC":"CHANGED SELECTED EVIDENCE"}')
+    with pytest.raises((ValueError, RuntimeError)):
+        output.publish_workbooks(run, source, downloads, 'changed-json', overwrite=True)
+    assert {p.relative_to(final).as_posix(): p.read_bytes() for p in final.rglob('*.xlsx')} == before
+
+
 @pytest.mark.parametrize('which', ['manifest', 'body', 'scope', 'traversal'])
 def test_invalid_source_evidence_cannot_be_exported(tmp_path, which):
     source = tmp_path / 'private-job'
