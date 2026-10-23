@@ -53,7 +53,12 @@ def test_binding_stage_preserves_reference_geometry_and_approved_styles(tmp_path
         assert book.sheetnames == reference.sheetnames == FORMS
         # Explicitly approved number-format exceptions; all other style and
         # layout attributes still compare against the untouched reference.
-        accounting = reference['L1-D']['C44'].number_format
+        accounting = reference['L1-D']['C44'].number_format.replace('0.00', '0')
+        for sheet in reference:
+            for row in sheet:
+                for cell in row:
+                    if not isinstance(cell, MergedCell) and 'Rp' in cell.number_format and '*' in cell.number_format:
+                        cell.number_format = cell.number_format.replace('0.00', '0')
         for form, ranges in APPROVED_ACCOUNTING_RANGES.items():
             for area in ranges:
                 for row in reference[form][area]:
@@ -66,7 +71,7 @@ def test_binding_stage_preserves_reference_geometry_and_approved_styles(tmp_path
                     if not isinstance(cell, MergedCell):
                         cell.number_format = '0.00%'
         for address in ('F4', 'G4', 'J4'):
-            reference['L3'][address].number_format = '_-"Rp"* #,##0.00_-;\\-"Rp"* #,##0.00_-;_-"Rp"* "-"??_-;_-@_-'
+            reference['L3'][address].number_format = '_-"Rp"* #,##0_-;\\-"Rp"* #,##0_-;_-"Rp"* "-"??_-;_-@_-'
         for row in (226, 227, 228):
             reference['L9'].cell(row, 8).number_format = accounting.replace('0.00', '0')
         der = reference['L11-B']

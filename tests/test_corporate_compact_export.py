@@ -1,5 +1,5 @@
 """Clean corporate presentation through the public exporter; synthetic data only."""
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -139,6 +139,18 @@ def test_l3_short_body_moves_all_three_captured_totals_and_merges(tmp_path):
         assert 'A70:D70' in sheet.merged_cells and reports[0]['complete']
         for address in ('F4', 'G4', 'J4'):
             assert 'Rp' in sheet[address].number_format
+        reference = load_workbook(RESOURCE)
+        try:
+            for target, original in [(8, 8), (68, 4662), (69, 4663), (70, 4664)]:
+                for attribute in ('height', 'hidden', 'outlineLevel', 'collapsed'):
+                    assert getattr(sheet.row_dimensions[target], attribute) == getattr(
+                        reference['L3'].row_dimensions[original], attribute)
+                for column in range(1, 9):
+                    for attribute in ('font', 'fill', 'border', 'alignment', 'protection'):
+                        assert copy(getattr(sheet.cell(target, column), attribute)) == copy(
+                            getattr(reference['L3'].cell(original, column), attribute))
+        finally:
+            reference.close()
     finally:
         book.close()
 
@@ -234,10 +246,10 @@ def test_l9_captured_totals_and_scalar_merges_follow_compaction(tmp_path):
     try:
         sheet = book['L9']
         assert sheet.max_row == 82 and sheet['A5'].value == '0001'
-        assert sheet['H9'].value == 99 and '0.00' in sheet['H9'].number_format
+        assert sheet['H9'].value == 99 and '0.00' not in sheet['H9'].number_format
         assert sheet['H33'].value == 12.5 and '0.00' not in sheet['H33'].number_format
         assert sheet['H47'].value == 1234.5 and '0.00' not in sheet['H47'].number_format
-        assert sheet['H80'].value == 1234.5 and '0.00' in sheet['H80'].number_format
+        assert sheet['H80'].value == 1234.5 and '0.00' not in sheet['H80'].number_format
         assert 'A47:G47' in sheet.merged_cells and 'A80:G80' in sheet.merged_cells
         assert reports[0]['complete']
     finally:
@@ -254,5 +266,21 @@ def test_unsafe_l8_amount_remains_literal_and_mapping_partial(tmp_path):
         assert book['L8']['C2'].value == source['rows'][0][2]
         assert book['L8']['C2'].data_type == 's'
         assert reports[0]['unmapped_rows'] == 1 and not reports[0]['complete']
+    finally:
+        book.close()
+
+
+def test_accounting_defaults_to_zero_decimals_without_rounding_source(tmp_path):
+    source = table('L10-A', 2, [['SYNTHETIC PARTY', '0000000000000002', 'COUNTRY', 'RELATION',
+                               'ACTIVITY', 'TRANSACTION', '1.234,50', 'METHOD', 'REASON']])
+    book, reports = export(tmp_path, [section('L10-A', tables=[source]), section('L3'), section('L9')])
+    try:
+        assert book['L10-A']['G3'].value == 1234.5
+        for sheet in book:
+            for row in sheet:
+                for cell in row:
+                    if 'Rp' in cell.number_format and '*' in cell.number_format:
+                        assert '0.00' not in cell.number_format
+        assert all(report['complete'] for report in reports)
     finally:
         book.close()

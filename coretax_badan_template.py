@@ -11,9 +11,9 @@ from coretax_template_cells import load_template_workbook, _write, _grow, _raw_e
 
 FORMS = ['L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9', 'L10-A', 'L10-C',
          'L11-A', 'L11-B', 'L11-C']
-ACCOUNTING = '_-[$Rp-421]* #,##0.00_-;\\-[$Rp-421]* #,##0.00_-;_-[$Rp-421]* "-"??_-;_-@_-'
-ACCOUNTING_LITERAL = '_-"Rp"* #,##0.00_-;\\-"Rp"* #,##0.00_-;_-"Rp"* "-"??_-;_-@_-'
-ACCOUNTING_WHOLE = ACCOUNTING_LITERAL.replace('0.00', '0')
+ACCOUNTING = '_-[$Rp-421]* #,##0_-;\\-[$Rp-421]* #,##0_-;_-[$Rp-421]* "-"??_-;_-@_-'
+ACCOUNTING_LITERAL = '_-"Rp"* #,##0_-;\\-"Rp"* #,##0_-;_-"Rp"* "-"??_-;_-@_-'
+ACCOUNTING_WHOLE = ACCOUNTING_LITERAL
 # Header and reserved body boundaries in the approved, sanitized reference.
 BLOCKS = {
     'l1-d': [(5, 6, 39), (42, 43, 68), (71, 72, 100)],
@@ -34,6 +34,7 @@ BLOCKS = {
 
 
 def template_workbook(reserved_titles):
+    reserved_titles = list(reserved_titles)
     resource = Path(__file__).resolve().parent / 'resources/corporate_format.xlsx'
     workbook, templates = load_template_workbook(resource, FORMS, reserved_titles)
     reserved = {title.casefold() for title in [*reserved_titles, *workbook.sheetnames]}
@@ -231,6 +232,8 @@ def _columns(table, sheet, header):
 
 
 def _write_amount(sheet, row, column, value, *, subtract=False):
+    # Display precision never rounds or rewrites the captured numeric value.
+    sheet.cell(row, column).number_format = ACCOUNTING
     text = value
     if isinstance(text, str):
         if text in ('', 'Rp.', 'Rp'):
@@ -429,6 +432,10 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
 
 
 def _accounting_format(sheet, form):
+    for row in sheet:
+        for cell in row:
+            if not isinstance(cell, MergedCell) and 'Rp' in cell.number_format and '*' in cell.number_format:
+                cell.number_format = cell.number_format.replace('0.00', '0')
     ranges = {
         'l2': ['E13:E21', 'G13:G22', 'J13:J22', 'G3:G9', 'I3:I9'],
         'l3': ['E8:E4662', 'F8:F4664'],
@@ -454,9 +461,6 @@ def _accounting_format(sheet, form):
     elif form == 'l3':
         for address in ('F4', 'G4', 'J4'):
             sheet[address].number_format = ACCOUNTING_LITERAL
-    elif form == 'l9':
-        for row in (226, 227, 228):
-            sheet.cell(row, 8).number_format = ACCOUNTING.replace('0.00', '0')
 
 
 def _l11b_der(sheet, row, averages):
