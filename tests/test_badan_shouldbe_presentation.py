@@ -51,19 +51,19 @@ def test_induk_shouldbe_preserves_values_with_typed_whole_accounting_and_spacing
     book,reports=export(tmp_path,[section('Induk',fields=raw)])
     try:
         sheet=book['Induk']
-        assert sheet.max_row==28 and sheet.max_column==2
-        assert all(cell.value is None for row in sheet.iter_rows(min_row=12,max_row=13) for cell in row)
+        assert sheet.max_row==30 and sheet.max_column==2
+        assert all(cell.value is None for cell in sheet[12])
         assert sheet['A14'].value=='Penghasilan Neto Fiskal sebelum Fasilitas Pajak'
-        for row,value in [(14,0),(15,-2000),(16,1234.5),(17,0),(18,1234.5),(19,0),
-                          (20,0),(21,0),(22,-2000),(23,0),(24,0),(26,1234.5),(27,0)]:
+        for row,value in [(14,0),(15,-2000),(16,1234.5),(17,0),(19,1234.5),(20,0),
+                          (21,0),(22,0),(24,-2000),(25,0),(26,0),(28,1234.5),(29,0)]:
             cell=sheet.cell(row,2)
             assert cell.value==value and cell.data_type=='n'
             assert 'Rp' in cell.number_format and '#,##0' in cell.number_format
             assert '#,##0.' not in cell.number_format
         assert sheet['B6'].value=='0000000000000002' and sheet['B6'].data_type=='s'
         assert sheet['B2'].value=='2025' and sheet['B2'].data_type=='s'
-        assert sheet['B25'].value=='SYNTHETIC CHOICE' and sheet['B25'].data_type=='s'
-        assert sheet['B28'].value=='Tarif Fasilitas sebagaimana Pasal 31E ayat (1) UU PPh'
+        assert sheet['B27'].value=='SYNTHETIC CHOICE' and sheet['B27'].data_type=='s'
+        assert sheet['B30'].value=='Tarif Fasilitas sebagaimana Pasal 31E ayat (1) UU PPh'
         assert reports[0]['complete'] and raw==before
     finally:
         book.close()
@@ -74,11 +74,11 @@ def test_induk_shouldbe_styles_apply_only_to_populated_blocks(tmp_path):
     try:
         sheet=book['Induk']
         assert sheet['A1'].font.bold and sheet.column_dimensions['B'].width==49.7109375
-        for first,last in [(2,11),(14,28)]:
+        for first,last in [(2,11),(14,17),(19,22),(24,30)]:
             for row in sheet.iter_rows(min_row=first,max_row=last,min_col=1,max_col=2):
                 for cell in row:
                     assert all(getattr(cell.border,side).style=='thin' for side in ('top','bottom','left','right'))
-        for row in sheet.iter_rows(min_row=12,max_row=13,min_col=1,max_col=2):
+        for row in sheet.iter_rows(min_row=12,max_row=12,min_col=1,max_col=2):
             assert all(cell.border.bottom.style is None for cell in row)
     finally:
         book.close()
@@ -90,8 +90,8 @@ def test_induk_bad_money_is_literal_and_unresolved(tmp_path,value):
           'label':'4. Penghasilan Neto Fiskal sebelum Fasilitas Pajak','value':value}]
     book,reports=export(tmp_path,[section('Induk',fields=raw)])
     try:
-        assert book['Induk']['B2'].value==value
-        assert book['Induk']['B2'].data_type!='f'
+        assert book['Induk']['B3'].value==value
+        assert book['Induk']['B3'].data_type!='f'
         assert not reports[0]['complete'] and reports[0]['unmapped_fields']==1
     finally:
         book.close()
@@ -101,7 +101,8 @@ def test_induk_numeric_tariff_text_is_not_an_ordinal_caption(tmp_path):
     raw=[{'group':'D. PENGHITUNGAN PPh','field':'TaxRate','label':'11. Tarif Pajak *','value':'0.22'}]
     book,reports=export(tmp_path,[section('Induk',fields=raw)])
     try:
-        assert book['Induk']['B2'].value=='0.22' and book['Induk']['B2'].data_type=='s'
+        assert list(book['Induk'].values)==[('INDUK',None),('Tarif Pajak *','0.22')]
+        assert book['Induk']['B2'].data_type=='s'
         assert reports[0]['complete']
     finally:
         book.close()

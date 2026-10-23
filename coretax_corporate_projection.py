@@ -1092,7 +1092,14 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
 
     recap, total = form['Recapitulation'], 0
     for key in _L11A_COSTS:
-        total += _l11a_integer(recap[key], nullish=True)
+        operand = _l11a_integer(recap[key], nullish=True)
+        # PrimeNG keeps a signed-zero cost control distinct from Angular's
+        # normalized number display. Refuse this unproved presentation branch.
+        if recap[key] is not None:
+            original = _decimal(recap[key])
+            if original.is_zero() and original.is_signed():
+                raise _UnsupportedMetadata('unproved_corporate_l11a_signed_zero_cost')
+        total += operand
         if abs(total) > _MAX_INTEGER:
             raise _UnsupportedMetadata('unsafe_corporate_l11a_ordered_cost_sum')
     if _l11a_integer(recap['TotalAmountofCosts']) != max(0, total):

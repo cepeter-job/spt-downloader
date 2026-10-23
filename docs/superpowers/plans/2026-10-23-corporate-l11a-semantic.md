@@ -124,5 +124,14 @@ while the shared Angular-number helper normalizes it. Source costs themselves
 are not overwritten by the total callback. Keep this unproved signed-zero cost
 subset unsupported rather than claiming a changed display. Eighteen isolated
 parsed-wire controls now require refusal, six costs across literal-0/-0.0/-0e0,
-with otherwise valid total/shape/metadata. The production helper remains unchanged until that new
-review-RED is read. Do not use a local product import to infer this result.
+with otherwise valid total/shape/metadata. Review-RED39983385240 at tested merge
+`d1e51521ac5c6e40cb008ea5125b5f3771cfb352` was fully read before the correction:
+5115 Windows cases,5097 passed and exactly18 intended signed-zero failures;
+all5028 baseline cases and710 overlapping portable cases passed, no errors/skips.
+All six archives' hashes, inventories, phases and JUnit outcomes reconciled.
+The correction now rejects Decimal signed zero after strict numeric validation,
+covering all three original lexemes without changing shared number formatting.
+The preceding other-session PR108 merge374c6da8 was reviewed and its exact
+tree8b088701 integrated. Its presentation/Audit additions preserve these source
+helpers, unresolved counts and native eligibility gates. Fresh correction review,
+combined-tree GREEN and package readback remain pending; no local product execution.
