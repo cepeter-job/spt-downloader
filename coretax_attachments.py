@@ -84,7 +84,10 @@ _SCAN = r'''() => {
                 handler_present: !!el && ['onclick','onmousedown','onpointerdown'].some(name=>el.hasAttribute(name))});
         }
     }
-    const controls = [...root.querySelectorAll('a, button, input')].filter(visible).map(el => {
+    // Only action-input captions belong to download-control structure. Ordinary
+    // text/number fields contain taxpayer values, even when they are readonly.
+    const controls = [...root.querySelectorAll(
+        'a,button,input[type="button"],input[type="submit"],input[type="reset"]')].filter(visible).map(el => {
         const direct = el.innerText || el.value || el.getAttribute('aria-label') || '';
         const table = el.tagName==='A' ? el.closest('table') : null;
         const label = labels.has(direct.trim()) ? direct : table ? tableLabel(table) : null;

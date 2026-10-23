@@ -1,5 +1,7 @@
 # Pagination, benchmark logging, and JSON-hybrid default implementation plan
 
+**Historical outcome:** delivered through [PR #41](https://github.com/cepeter-job/spt-downloader/pull/41), merge `2b034635b01ac8c139d2c64126ba433ceee6f762`. Head `bee47c70245e9858d56bdbfdf6257ed11eb5d684` passed run `39208386402` with 3,135 Windows cases and 442 overlapping portable cases. Package `12166329252` and its embedded resources were verified. The guarded generic paginator, source/timing diagnostics and desktop default were implemented; the unchecked steps below preserve the original planning state and are not a current missing-feature list. No paired live DOM/JSON speed benchmark was performed. Native traversal parity and broader acceptance are tracked by the [approved completion design](../specs/2026-10-23-json-mode-completion-design.md).
+
 > Execute with the existing parent-led workflow and independent source/review checks. Product execution remains GitHub-runner-only.
 
 **Goal:** Repair the generic read-only paginator's unsafe dependence on pointer actionability, expose privacy-safe per-record benchmark attribution, and default new desktop settings to JSON-hybrid without overriding saved DOM.

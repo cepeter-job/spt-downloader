@@ -65,6 +65,7 @@ kontrak. URL/path lama dipertahankan; tidak ada penghapusan bukti.
 | Metadata periode | [Diagnostik cache](period-cache-diagnostics.md); [readiness terbatas](period-cache-readiness.md); [alias kode/label terverifikasi](period-metadata-conflict.md). |
 | PPN | [Tahap DOM](ppn-dom-release.md); [integrasi native PR30](ppn-native-integration.md). |
 | PPh21 dan Unifikasi | [PPh21 DOM](pph21-dom-mapping.md); [ledger native PPh21](pph21-json-native.md); [ledger native Unifikasi](unifikasi-json-native.md). |
+| Badan JSON | [Proyeksi bisnis L7 dan batas kelayakan](superpowers/reports/2026-10-23-corporate-l7-semantic.md); bentuk evidence leaves lama tidak membuktikan pemetaan template. |
 | Snapshot UI/UX | [20 Oktober sebelum Phase 2](ui-ux/baseline-2026-10-20.md); [21 Oktober setelah Phase 2](ui-ux/baseline-2026-10-21.md), dengan sumber dan batas ukur masing-masing. |
 
 <details>

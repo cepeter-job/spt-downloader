@@ -1,5 +1,13 @@
 # PR30 integration ledger
 
+## Final historical outcome
+
+[PR #30](https://github.com/cepeter-job/spt-downloader/pull/30) merged as `be7e8cdb8965ca61865cf8f278b1c4e75781c585`. Head `be71e54f5e3710cf4761f00fecfe9bc2a25c5393` and tested merge `5aea0bb55e6b7b6d572d9799f600bd652642dbc3` shared tree `d7bfd492f020b4a7f8a960464ce10b42ec71b132`. Build run `39024008867` passed 2,628 Windows cases; package `12098296029` and JUnit `12097604689` were downloaded and hash-verified.
+
+The authorized selected PPN amendment subsequently completed with `used=json`, complete seven-form coverage, verified output and unchanged prior files. Its independent audit recorded zero mismatches across the checked monetary/template/provenance and raw-grid/footer values. This acceptance is limited to that selected historical record and build. It does not certify every Normal/refund/calendar branch, the current consolidated build or a DOM/JSON speed improvement.
+
+The remaining-gate language later in this ledger records the earlier integration stage; those original selected-record gates closed through PR #30. The [approved completion design](superpowers/specs/2026-10-23-json-mode-completion-design.md) owns the new coverage, robustness and acceptance work. Earlier PARTIAL captures remain PARTIAL.
+
 ## Scope
 
 Finish native PPN JSON delivery only after inventory PR34 is merged. Preserve literal source identities/amendments and submitted monetary values. Keep other tax dispatch unchanged. Synthetic tests, builds and self-tests run on GitHub only; previously authorized bounded live acceptance is separate from those tests and must preserve prior outputs.

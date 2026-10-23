@@ -65,7 +65,7 @@ class PublicationJournal:
         self.value = {'schema': 1, 'state': 'pending', 'source': str(self.source),
                       'downloads': str(downloads), 'target': snapshot['target'],
                       'recovery': str(self.recovery), 'scope': snapshot['scope'],
-                      'before': {**snapshot['workbooks'], **snapshot['attachments']},
+                      'before': {**snapshot['workbooks'], **snapshot['attachments'], **snapshot.get('json', {})},
                       'directories': _directory_snapshot(self.source, Path(snapshot['target']),
                                                           self.recovery, directories),
                       'entries': []}
@@ -181,7 +181,7 @@ def _recover_one(source, downloads, notice):
         # Retained, unselected workbooks must also remain the approved old bytes.
         names = {entry['name'] for entry in entries}
         allowed = set(before) | names
-        actual = coretax.workbook_files(target) | output._pdf_files(target)
+        actual = coretax.workbook_files(target) | output._pdf_files(target) | output._json_files(target)
         if not actual.issubset(allowed):
             raise ValueError('Unapproved file appeared before publication recovery')
         for name in set(before) - names:

@@ -1,9 +1,8 @@
 """PPh21 navigation and metadata only; source values remain in captured JSON."""
-import json
 import re
 
 from coretax_json import ORIGIN, PPH21_REFERENCE_URLS, JsonSafetyError
-from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid
+from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
 from coretax_masa_bindings import MAIN_SOURCE, BUILD_DIGESTS as MASA_BUILD_DIGESTS
 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests
 
@@ -110,7 +109,7 @@ def _reference_bindings(page, record, scope, capture, check_cancel, *, endpoints
 
 def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_cancel=None):
     """Observe all five forms; this alone never grants native export coverage."""
-    from coretax_browser import GROUP_JS, _check_cancel, list_taxpayer_id, verify_detail_url, wait_idle
+    from coretax_browser import GROUP_JS, _check_cancel, list_taxpayer_id, verify_detail_url
     _check_cancel(check_cancel)
     _observations(capture, record, scope)
     try:
@@ -139,20 +138,12 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
                 return None
-            panel_id = tab.get_attribute('aria-controls')
-            if not panel_id or tab.get_attribute('href') not in (None, '', '#', '#' + panel_id):
+            caption = tab.inner_text().strip()
+            if canonical.get(caption.upper()) != name:
                 return None
-            target = '[id=' + json.dumps(panel_id) + ']'
-            if view.locator(target).count() != 1:
+            panel = _native_panel(page, view, tab, caption, record, check_cancel)
+            if panel is None:
                 return None
-            panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel' + target + ', '
-                                 ':scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel' + target)
-            if panel.count() != 1:
-                return None
-            tab.click()
-            wait_idle(page)
-            verify_detail_url(page.url, taxpayer, record['record_id'])
-            panel.wait_for(state='visible', timeout=30000)
             selector, container, roles = FORMS[name]
             root = panel.locator(selector)
             if root.count() != 1 or not root.is_visible():

@@ -7,7 +7,7 @@ from decimal import Decimal
 import math
 import re
 
-from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata
+from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, _select_reference_version
 from coretax_masa_bindings import _decimal, _evidence, _number, _source_scalar, render_grid_value, _project_masa_grid
 
 _AMOUNT_SUFFIXES = (
@@ -183,7 +183,7 @@ REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS')
 _REFERENCE_FIELDS = ('TaxCertificate', 'CountryCode', 'Status')
 
 
-def project_pph21_references(payload, *, requested_types, locale):
+def project_pph21_references(payload, *, requested_types, locale, clock_interval=None):
     """Project a request-bound catalog, not unverified UI filter choices.
 
     The caller establishes response custody and request locale. Time-dependent
@@ -208,28 +208,28 @@ def project_pph21_references(payload, *, requested_types, locale):
         evidence.append(_evidence(kind, [index, 'ReferenceDataType']))
         if 'language' in catalog:
             evidence.append(_evidence(catalog['language'], [index, 'language']))
-        versions = {}
+        versions, descriptions = {}, {}
         for ordinal, item in enumerate(details):
             if (not isinstance(item, dict) or type(item.get('Code')) is not str or not item['Code']
                     or type(item.get('CodeDescription')) is not str):
                 raise _UnsupportedMetadata('unsupported_pph21_reference_scalar')
             versions.setdefault(item['Code'], []).append((ordinal, item))
-            evidence.append(_evidence(item['Code'], [index, 'Details', ordinal, 'Code']))
+            for key in ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom'):
+                if key in item:
+                    entry = _evidence(item[key], [index, 'Details', ordinal, key])
+                else:
+                    entry = {'path': [index, 'Details', ordinal, key], 'value': None, 'type': 'missing'}
+                evidence.append(entry)
+                if key == 'CodeDescription':
+                    descriptions[ordinal] = entry
         labels = {}
         for code, candidates in versions.items():
-            # Pinned main getActiveReferenceDataValue selects the FIRST explicit
-            # null/empty ValidTo. A sole version is independent of clock/date.
-            chosen = next(((n, row) for n, row in candidates
-                           if 'ValidTo' in row and row['ValidTo'] in (None, '')), None)
-            if chosen is None:
-                if len(candidates) != 1:
-                    raise _UnsupportedMetadata('unverified_pph21_reference_version')
-                chosen = candidates[0]
-            ordinal, item = chosen
+            ordinal, item, rule = _select_reference_version(candidates, clock_interval)
             labels[code] = item['CodeDescription']
-            evidence.append(_evidence(item['CodeDescription'], [index, 'Details', ordinal, 'CodeDescription']))
-            if 'ValidTo' in item:
-                evidence.append(_evidence(item['ValidTo'], [index, 'Details', ordinal, 'ValidTo']))
+            selected = descriptions[ordinal]
+            selected['projection_rule'] = 'reviewed-grid-active-version:' + rule
+            if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
+                selected['clock_interval'] = dict(clock_interval)
         lookups[_REFERENCE_FIELDS[REFERENCE_TYPES.index(kind)]] = labels
     return {'lookups': lookups, 'provenance': evidence}
 

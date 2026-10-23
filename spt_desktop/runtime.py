@@ -23,6 +23,7 @@ WORKER_FILES = (
     'coretax.py', 'coretax_browser.py', 'coretax_exporter.py', 'coretax_json.py', 'coretax_inventory.py',
     'coretax_resume.py',
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
+    'coretax_corporate_projection.py',
     'coretax_pph21_json_bindings.py', 'coretax_pph21_observer.py', 'coretax_pph21_projection.py',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
     'coretax_badan_template.py', 'resources/corporate_format.xlsx',
