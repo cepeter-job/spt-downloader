@@ -16,10 +16,13 @@ from masa_json_fixtures import SCOPE, TAXPAYER
 
 
 @pytest.mark.parametrize('occupied', [False, True], ids=['new-directory', 'reject-existing-file'])
-def test_collect_attaches_original_listing_identity_and_replays_native_checkpoint(tmp_path, monkeypatch, occupied):
+@pytest.mark.parametrize('literal_period', [False, True], ids=['caption', 'literal-code'])
+def test_collect_attaches_original_listing_identity_and_replays_native_checkpoint(tmp_path, monkeypatch, occupied, literal_period):
     case = Scenario(tmp_path, monkeypatch, tax_kind='PPh Pasal 21/26')
     record, packets, forms = native_case()
     case.record.update(deepcopy(record))
+    if literal_period:
+        case.record['meta']['Masa Pajak'] = case.record['source_fields']['TaxPeriodCode']
     row = {**case.record.pop('source_fields'), 'ReturnSheetStatusCode': 'SUBMITTED',
            'ReturnSheetModel': case.record['meta']['Model SPT']}
     case.record.pop('source_identity')

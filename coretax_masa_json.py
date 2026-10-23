@@ -147,7 +147,7 @@ def _bind_masa_listing_identity(response, *, record, scope, tax):
         year = int(period[4:])
         if scope[2] == 'period' and year != scope[1]:
             raise JsonSafetyError('Corporate listing period contradicts selected scope')
-        if record['meta'].get('Masa Pajak') != f'Januari - Desember {year}':
+        if record['meta'].get('Masa Pajak') not in (period, f'Januari - Desember {year}'):
             raise JsonSafetyError('Corporate listing period contradicts selected display')
     else:
         _selected_period(record, {'native_fields': fields}, scope, reasons)
@@ -181,10 +181,12 @@ def _selected_period(record, selected, scope, reasons):
         raise JsonSafetyError('Selected Masa period month bounds are invalid')
     if scope[2] == 'period' and year != scope[1]:
         raise JsonSafetyError('Selected Masa period contradicts scope year')
-    # Only a single-month display has been verified for these Masa fixtures.
-    # A different display is not repaired or interpreted as a month range.
+    # Inventories preserve the literal source code; older captures may retain
+    # its reviewed caption. Neither spelling may repair a different code.
     label = record.get('meta', {}).get('Masa Pajak')
-    if first == last and label != f'{_MONTHS[first - 1]} {year}':
+    if isinstance(label, str) and re.fullmatch(r'[0-9]{8}', label) and label != code:
+        raise JsonSafetyError('Selected Masa period label contradicts native code')
+    if first == last and label not in (code, f'{_MONTHS[first - 1]} {year}'):
         raise JsonSafetyError('Selected Masa period label contradicts native code')
     if first != last:
         reasons.append('unsupported_masa_period_range')
@@ -214,6 +216,10 @@ def _check_period_evidence(code, record, scope, reasons):
     if scope[2] == 'period' and year != scope[1]:
         raise JsonSafetyError('Masa source period contradicts scope year')
     label = record.get('meta', {}).get('Masa Pajak')
+    if isinstance(label, str) and re.fullmatch(r'[0-9]{8}', label):
+        if label != code:
+            raise JsonSafetyError('Masa source period contradicts selected literal period')
+        return code
     known_label = isinstance(label, str) and any(
         re.fullmatch(re.escape(month) + r' [0-9]{4}', label) for month in _MONTHS)
     if known_label and (first != last or label != f'{_MONTHS[first - 1]} {year}'):
@@ -307,9 +313,16 @@ def _check_pph21_primary(payload, record, selected, scope, period, reasons):
     if model is None:
         reasons.append('unsupported_masa_model_binding')
 
+    # Metadata can disprove primary identity without supplying the missing
+    # listing binding. Keep its ineligibility reason and never promote it.
+    checked_period = period
+    label = record.get('meta', {}).get('Masa Pajak')
+    if checked_period is None and isinstance(label, str) and re.fullmatch(r'[0-9]{8}', label):
+        checked_period = _check_period_evidence(label, record, scope, reasons)
+
     def check_period(source, month_key, year_key):
-        for key, expected in ((month_key, str(int(period[:2])) if period else None),
-                              (year_key, period[4:] if period else str(scope[1]) if scope[2] == 'period' else None)):
+        for key, expected in ((month_key, str(int(checked_period[:2])) if checked_period else None),
+                              (year_key, checked_period[4:] if checked_period else str(scope[1]) if scope[2] == 'period' else None)):
             if key not in source or expected is None:
                 reasons.append('missing_pph21_period_binding_' + key)
             elif type(source[key]) not in (str, _CorporateNumber) or source[key] != expected:

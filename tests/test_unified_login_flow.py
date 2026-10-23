@@ -51,6 +51,35 @@ def test_named_account_download_needs_no_preliminary_check_or_manual_login(brows
         context.close()
 
 
+@pytest.mark.parametrize('headless', [False, True])
+def test_owned_download_display_environment_reaches_real_edge(browser, tmp_path, monkeypatch, headless):
+    from types import SimpleNamespace
+
+    saved(monkeypatch)
+    engine = Engine(browser, entry=auth.SEARCH_URL)
+    original_launch = engine.launch_persistent_context
+    def launch(profile, **options):
+        # Deliberately conflicting defaults expose dependence on the host's
+        # ambient environment. Forward only actual owned-launch options.
+        environment = {'locale': 'en-US', 'timezone_id': 'UTC'}
+        environment.update({key: options[key] for key in environment if key in options})
+        engine.browser = SimpleNamespace(new_context=lambda: browser.new_context(**environment))
+        try:
+            return original_launch(profile, **options)
+        finally:
+            engine.browser = browser
+    monkeypatch.setattr(engine, 'launch_persistent_context', launch)
+    context, page = auth.authenticate_owned(engine, tmp_path / 'new-profile', 'msedge', headless,
+        lambda *args: None, lambda: None, manual_timeout=0, account=ACCOUNT)
+    try:
+        assert auth.authenticated(page)
+        assert page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})') == {
+            'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+        assert engine.unknown == []
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize('account', ['', 'OTHER_SYNTHETIC_ACCOUNT'])
 def test_missing_or_different_selected_account_never_autofills(browser, tmp_path, monkeypatch, account):
     reads = saved(monkeypatch)
