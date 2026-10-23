@@ -100,11 +100,13 @@ def assert_saved_l7(run, folder, model):
         sheet = book['L7']
         assert sheet['B3'].value == '02023' and sheet['B4'].value == '2025'
         assert sheet['C3'].value == 12345 and sheet['C4'].value == 1000
-        assert sheet['D13'].value == 200 and sheet['I13'].value == 1200
-        assert sheet['H2'].value == HEADERS[7] and sheet.max_row == 13
-        assert 'A13:C13' in {str(area) for area in sheet.merged_cells.ranges}
+        assert sheet['A5'].value == 'JUMLAH'
+        assert sheet['D5'].value == 200 and sheet['I5'].value == 1200
+        assert sheet['H2'].value == HEADERS[7] and sheet.max_row == 5
+        assert 'A5:C5' in {str(area) for area in sheet.merged_cells.ranges}
         assert all('Rp' in sheet[cell].number_format and '*' in sheet[cell].number_format
-                   for cell in ('C3', 'I4', 'D13', 'I13'))
+                   and '0.00' not in sheet[cell].number_format
+                   for cell in ('C3', 'I4', 'D5', 'I5'))
     finally:
         book.close()
     report, = [report for report in reports if report['form'] == 'L7']
