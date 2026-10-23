@@ -138,3 +138,12 @@ footer tokens with source kind/page index and destination, and retains the two
 unmapped standalone canonical values. The combined Windows universe is5,025.
 Fresh implementation review, exact-tree GREEN, saved-workbook results and package
 readback are pending; no local product execution is claimed.
+
+Fresh source review identified distinct empty-date consumers. Offline A maps
+falsy DateOfTransaction to null before its date pipe, so explicit empty string
+can display blank. Active B calls main formatDate directly (UTF164125539 and
+4197371); its guard handles null and the source sentinel, while empty string
+continues through pinned dayjs to Invalid Date. The bounded B slice must refuse
+empty string instead of certifying blank. Add three isolated tests-first cases:
+A empty stays blank, B null stays blank, B empty remains unsupported. The current
+production date helper is unchanged until this new RED has been read.

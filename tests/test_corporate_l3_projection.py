@@ -118,6 +118,21 @@ def test_l3_preserves_exact_footer_numeric_lexemes_while_rendering_the_same_valu
                and e['type'] == 'number' and e['value'] == lexeme for e in result['provenance'])
 
 
+@pytest.mark.parametrize('case', ['a-empty', 'b-null', 'b-empty'])
+def test_l3_keeps_distinct_offline_and_active_grid_empty_date_consumers(case):
+    form, pages, footer = inputs()
+    if case == 'a-empty':
+        form['IncomeOverseas'][0]['DateOfTransaction'] = ''
+        assert project(form, pages, footer)['tables'][0]['rows'][0][3] == ''
+    elif case == 'b-null':
+        pages[0]['data'][0]['WithholdingSlipsDate'] = None
+        assert project(form, pages, footer)['tables'][1]['rows'][0][7] == ''
+    else:
+        pages[0]['data'][0]['WithholdingSlipsDate'] = ''
+        with pytest.raises(_UnsupportedMetadata):
+            project(form, pages, footer)
+
+
 @pytest.mark.parametrize('empty', [None, []])
 def test_l3_explicit_empty_bodies_need_complete_zero_page_and_reported_totals(empty):
     form, _, _ = inputs()
