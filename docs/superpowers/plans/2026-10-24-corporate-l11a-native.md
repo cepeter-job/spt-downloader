@@ -121,3 +121,22 @@ L3+L11-A packet contract to prove both projections retain exact provenance.
    bootstrap readback. Refresh actual main and review the preceding external
    merged PR and interactions immediately before merge. Source/synthetic proof
    is separate from live corporate or real Excel visual/print acceptance.
+
+## Initial runner RED and fixture correction
+
+Run40000075342 attempt1 tested head
+`a23ba9992da8bbf3fed1f566c0a6475fc170b491` as merge
+`ba5219925a792e2f817ac01ce0d2e9c1c10485b6`, tree
+`c7c00a75bcda4213d090d883c4ca01f7af0202d6`. All six archives' hashes/sizes,
+metadata, complete inventories, phases, JUnit identities and summary totals
+reconcile: 5,589 Windows cases, 5,297 passes and292 failures, zero errors/skips.
+All5,265 baseline cases and710 overlapping portable cases passed. The324 new
+cases had32 passes,291 missing-feature failures and one fixture failure.
+
+The strict RED gate refused that fixture failure: when the absent observer
+returned after revisiting Induk, the count-safety test attempted a hidden Next.
+The fixture now reopens the same inspected L11-A tab before its owned Next;
+source/count/fatal-error assertions are unchanged. The separate initial audit
+retains the timeout as a fixture failure and explicitly leaves the gate open.
+A corrected tests-only run must fully reconcile the intended count failure
+before native L11-A production changes. No local product execution was used.

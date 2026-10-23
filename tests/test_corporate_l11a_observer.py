@@ -127,6 +127,9 @@ def test_owned_l11a_changed_page_count_is_fatal_after_observation_even_if_bindin
             page.wait_for_function('window.l11aReplies===4', timeout=10000)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             if not page.evaluate('window.l11aNextDone'):
+                # An unsupported observer may return immediately after visiting
+                # Induk. Reopen the inspected owner before issuing its Next.
+                page.locator('a[role=tab]').filter(has_text='L11-A').click()
                 page.locator(OWNERS[0] + ' .p-paginator-next').click()
             page.wait_for_function('window.l11aNextDone===true', timeout=10000)
             capture.drain()
