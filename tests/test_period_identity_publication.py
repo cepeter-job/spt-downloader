@@ -4,6 +4,7 @@ import json
 from openpyxl import load_workbook
 import pytest
 import coretax
+from coretax_exporter import read_workbook_proof
 from spt_desktop import output
 from support_runs import fixture_run
 from support_financial_publication import CHANGED_PDF, declare_pdf
@@ -128,3 +129,37 @@ def test_period_folder_fallback_does_not_accept_changed_model_for_the_same_id(tm
     with pytest.raises(ValueError, match='(?i)identifier|identity|model'):
         output.publish_workbooks(new, tmp_path / 'new-job', tmp_path / 'Downloads', 'synthetic-new')
     assert bytes_in(old) == before
+
+
+def test_duplicate_ids_across_old_physical_workbooks_cannot_escape_into_a_new_folder(tmp_path):
+    previous = one_run('Januari - Desember 2025')
+    other = one_run('Juni 2025')['records'][0]
+    other.update(key='synthetic-other-return', record_id='synthetic-other-return')
+    previous['records'].append(other)
+    downloads = tmp_path / 'Downloads'
+    coretax.save_output(previous, tmp_path / 'old-job')
+    old = output.publish_workbooks(previous, tmp_path / 'old-job', downloads, 'synthetic-old')
+    form = old / 'SPT_Badan_Juni 2025_Normal.xlsx'
+    wb = load_workbook(form)
+    try:
+        proof = json.loads(wb.properties.identifier)
+        proof['records'][0]['record_id'] = 'badan-normal'
+        wb.properties.identifier = json.dumps(proof)
+        wb.save(form)
+    finally:
+        wb.close()
+    for form in old.glob('SPT_Badan_*.xlsx'):
+        wb = load_workbook(form)
+        try:
+            assert read_workbook_proof(wb)['records'][0]['record_id'] == 'badan-normal'
+        finally:
+            wb.close()
+    before = bytes_in(old)
+    new = one_run('01122025')
+    coretax.save_output(new, tmp_path / 'new-job')
+    with pytest.raises(ValueError, match='(?i)duplicate.*identifier'):
+        output.existing_outputs(new, downloads)
+    with pytest.raises(ValueError, match='(?i)duplicate.*identifier'):
+        output.publish_workbooks(new, tmp_path / 'new-job', downloads, 'synthetic-new')
+    assert bytes_in(old) == before
+    assert list(old.parent.iterdir()) == [old]
