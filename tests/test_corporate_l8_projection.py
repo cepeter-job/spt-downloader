@@ -272,6 +272,26 @@ def test_l8_unproved_optional_exchange_control_shape_is_unsupported(value):
         project(form, parent)
 
 
+@pytest.mark.parametrize('location,key', [('form', key) for key in KEYS] + [('main', key) for key in MAIN])
+@pytest.mark.parametrize('token', ['1e1000000', '-1e1000000'])
+def test_l8_large_exponent_amounts_use_the_unsupported_metadata_refusal(location, key, token):
+    form, parent = inputs()
+    (form if location == 'form' else parent)[key] = Number(token)
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, parent)
+
+
+def test_l8_large_exponent_unused_exchange_control_stays_literal_without_decimal_conversion():
+    form, parent = inputs()
+    expected = project(form, parent)['table']
+    form['ExchangeRateValue'] = Number('1e1000000')
+    result = project(form, parent)
+    assert result['table'] == expected
+    entry = evidence_for(result, [ROOT, 'ExchangeRateValue'])
+    assert entry['type'] == 'number' and entry['value'] == '1e1000000'
+    assert entry['destination'] == {'table': 'L8', 'control': 'unused-rupiah-exchange-rate'}
+
+
 @pytest.mark.parametrize('taxable', [0, 12345, 999999999999999])
 def test_l8_final_saved_export_keeps_both_literal_models_counts_merges_and_links(tmp_path, taxable):
     result = project(*inputs(taxable=taxable))

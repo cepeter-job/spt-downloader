@@ -148,3 +148,12 @@ The 710 overlapping portable cases passed. Independent tests source review
 accepted the original-year, captured-tax dependency and saved-export controls.
 Implementation began only after this full actual RED was read and accepted.
 Final GREEN, package readback and whole-branch review remain separate gates.
+
+Implementation review found that a valid JSON exponent such as `1e1000000`
+can raise Decimal Overflow in the shared converter before the L8 precision
+gate. Add sixteen parsed-wire regression cases across the eight amount inputs
+and both signs, plus an unused exchange-control preservation case. Keep all
+original 192 tests and existing shared helpers unchanged. Read the actual
+17-case extension (sixteen expected refusal-path failures and one pass) before
+the narrow L8 repair; the complete expected collection is now 5,798. A candidate
+run superseded by these tests does not establish GREEN or package success.
