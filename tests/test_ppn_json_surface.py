@@ -94,6 +94,9 @@ def test_only_response_proven_final_radio_option_reaches_the_workbook_fields(cho
     envelope = json.loads(case['packets'][0]['body'])
     data = json.loads(envelope['Payload']['FormData'])
     data.update(AskedTo=choice, VATUnderOrOverPaidDueToAmendment={'VAT': 0 if choice is None else -1})
+    # Both export stages and the exact facility code establish preservation;
+    # a final A1 total alone does not exclude earlier calendar/facility writes.
+    data.update(TaxPeriod='01012025', BookkeepingPeriodEnd=12, FacilityRegisters=['AS.09-01'])
     envelope['Payload']['FormData'] = json.dumps(data)
     reseal(case, envelope)
     case['forms'][0]['fields'] += [
