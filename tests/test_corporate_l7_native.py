@@ -109,7 +109,7 @@ def assert_saved_l7(run, folder, model):
 
 
 @pytest.mark.parametrize('defect', ['pin', 'header', 'span', 'extra-table', 'unknown-marker',
-    'route-history', 'locale', 'status-missing', 'draft-status', 'current-null', 'bad-previous',
+    'route-history', 'locale', 'status-missing', 'draft-status', 'current-null', 'bad-previous', 'missing-previous',
     'prior-only', 'total-mismatch', 'unknown-root'])
 def test_l7_unreviewed_lifecycle_or_structure_refuses_entire_semantic_record(defect):
     value, observed = envelope(), bindings()
@@ -134,6 +134,8 @@ def test_l7_unreviewed_lifecycle_or_structure_refuses_entire_semantic_record(def
         value['Payload']['ReturnSheetStatusCode'] = 'DRAFT'
     elif defect == 'bad-previous':
         value['Payload']['PreviousFormData'] = 'SYNTHETIC INVALID JSON'
+    elif defect == 'missing-previous':
+        del value['Payload']['PreviousFormData']
     else:
         form = corpus.current_form()
         form['MainFormData']['NetIncomeBeforeTax'] = corpus.Number('1000')
