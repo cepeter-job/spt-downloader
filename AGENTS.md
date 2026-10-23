@@ -41,6 +41,32 @@ The separate L11-C semantic branch requires loaded corporate/main/vendor pins, t
 
 ## Output contract
 
+The pure current-only L11-A helper grants no native admission or dispatch.
+Require explicit null predecessor, four complete normalized endpoint inventories,
+current Facilities/Recapitulation, exact five-table headers with no footers and
+independently bound labels. Preserve literal source Index/identifiers/year and
+original typed provenance. Null cost inputs stay blank while contributing zero
+only to the ordered six-cost calculation; check every intermediate and clamp
+only the final sum before reconciling the reported total. Preserve ordinary
+PartnerName text despite its source numeric annotation. Keep all twelve IV.B
+controls canonical and unresolved because the approved template has no slots;
+do not alter facility text or approved accounting ranges to manufacture mapping.
+Native observation, catalog/packet custody, predecessors, Induk/PDF and live
+acceptance retain independent gates.
+
+The pure L3 projector is a source helper only; it must not enable native L3
+observation, footer/catalog admission or dispatch. Its bounded Rupiah branch
+requires explicit current data, complete normalized B pages, the actual captured
+footer payload and independently bound labels. Use active B IncomeTax and plural
+WithholdingSlipsNumber/Date fields, page-local row numbers, exact A/B footer spans
+and safe ordered integral arithmetic. Final B footers use captured footer data
+and model overseas-credit operands, never a sum of B rows or stale saved totals.
+Preserve original numeric lexemes, overwritten/unused control provenance and the
+two standalone field values even though their template mappings remain unresolved.
+Offline A admits an empty date as blank under its explicit null conversion;
+active B admits null as blank but refuses empty-string dates in the bounded subset.
+The approved resource and independent native/Induk/PDF gates remain unchanged.
+
 JSON-hybrid output retains only selected capture manifests and accepted original response bytes under `json/<ordinal>/<attempt>/` inside the final SPT output folder, for CLI and desktop publication. Keep private `returns/json/` checkpoints compatible; published manifests preserve their original bytes/references and are evidence, not standalone resumable jobs. Declare JSON separately from workbook filenames. Verify scope, record, attempt, privacy, budgets and hashes before copying from held readers, and verify staging/final bytes. Include JSON in consent snapshots, cancellation rollback and process-death recovery. Preserve earlier unselected JSON and reject changed selected evidence or case/reparse aliases. Never copy arbitrary job JSON, credentials, headers, profiles or unrelated attempts. Copying evidence does not certify capture completion or native eligibility; DOM-only jobs create no JSON directory.
 
 `resume.xlsx` contains the global summary/index/audit. Every observed tax type gets a separate workbook per literal source period/year and literal `Model SPT`: Normal, Pembetulan 1, Pembetulan 2 and subsequent amendments must never share one workbook. Periodic types remain under `SPT Masa 21`, `SPT Masa Unifikasi` and `SPT Masa PPN`. Badan uses `SPT_Badan_<period>_<model>.xlsx`; periodic and other type filenames likewise include source period and model. Each workbook contains all observed form-only sheets for its own model. Use simple form names and minimal numeric suffixes only for workbook-local collisions; preserve raw period/model strings and leading zeroes in metadata and physical proof, never group by a display-normalized amendment label. Validate old combined exports before choosing a new final folder; do not silently rewrite or delete old combined workbooks or their PDFs. Preserve the entire folder hierarchy and exact relative links; reject case-insensitive path collisions and verify NPWP/year/basis before replacing outputs. Keep raw source values and duplicates in checkpoints; numeric analysis columns are optional. PPN verified monetary slots use native Excel numbers under strict id-ID syntax and a 15-digit precision guard; period/year, identifiers and invoice columns remain literal text. Malformed or unsafe-precision monetary strings remain text rather than being guessed or rounded. PPh Pasal 21/26 uses the approved sanitized user template for observed Induk/L-IA/L-IB/L-II/L-III forms: preserve cell styles, number formats, merges, dimensions and page layout; grow data rows by copying their original styles. For these observed PPh21 forms, omit the redundant raw/extra-source display block; preserve the entire unchanged checkpoint and report unsupported or ambiguous bindings as unresolved/PARTIAL in the resume mapping audit. Unsupported PPh21 forms continue through the generic renderer. PPN and PPh Unifikasi likewise use the approved clean layouts for observed reference forms only; bind multi-level headers and repeated labels to their visible group, never guess JSON aliases. For PPN, omit the redundant extra/unmapped block from exported forms; keep source captures unchanged and report unresolved bindings in the resume mapping audit. Its observed Period display supplies the month/year header, and Status Penyampaian is not displayed. Other Masa forms retain explicit raw source evidence below the form for incomplete tables unless an approved presentation exception applies. Never ship sample taxpayer values or reference defaults (including a compensation choice) from reference templates.

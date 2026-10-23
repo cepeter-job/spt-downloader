@@ -91,3 +91,38 @@ properties remain unsupported with original capture intact.
 5. Native observation, catalog/admission/packet bindings, predecessor support,
    whole-Induk/PDF completion and live corporate acceptance remain separate
    follow-up slices. Update AGENTS/architecture only for implemented behavior.
+
+## Observed tests-first evidence and implementation status
+
+Fresh source/fixture review accepted69 cases at local
+`5cc63f3cc277bba211c2718f7a77c201ba36f0c7`, tree
+`23c30169973503e614f2c6f5ae734c97ad2d1d82`. Corrections preserve approved facility
+text1.000/General versus existing Grid2 accounting, null/negative control displays
+with typed provenance, and mixed[-3,5,0,0,0,0] final2 rather than stepwise clamping.
+
+Tests-only published head`6589a00bc2696da99007b4d6b4bc866afa48badd` ran as merge
+`425da7b7591b70492902839de0d64fecd3a1b06d` in run39977708606 attempt1.
+All six original JUnit/inventory archives were downloaded and digest/metadata/
+phase/universe reconciled before implementation:5,059 Windows cases,4,990 baseline
+passes,69 intended missing-helper failures and zero errors/skips. The710 portable
+cases overlap the baseline. JUnit12511724957 SHA256
+`e4742d19b7efde80072fbfc73c2b6eeb03bccd96fe3b8e9a0ebd58fdcf275a61`;
+JUnit12512582805 SHA256
+`0f98fafda6bdbf42773be21c97689f6758db7aa9c1525db38da29c7e0ee1abb5`.
+
+The reviewed pure L3 date correction is integrated as a prerequisite, preserving
+its existing functions/tests. L11-A now adds constants and a pure current-only
+helper in the same module. The first typed page capacity subset is10/25/50;
+ordinary text PartnerName remains literal, numeric values use Number2, and the
+source time-like-string exception remains unsupported. No native integration,
+resource, renderer, request permission or worker allowlist was changed.
+Fresh implementation review, combined-tree GREEN and package readback are pending.
+
+Implementation review found an input-number signed-zero distinction: vendor's
+allowEmpty/writeValue/Intl formatting retains a source cost token-0 as display-0,
+while the shared Angular-number helper normalizes it. Source costs themselves
+are not overwritten by the total callback. Keep this unproved signed-zero cost
+subset unsupported rather than claiming a changed display. Eighteen isolated
+parsed-wire controls now require refusal, six costs across literal-0/-0.0/-0e0,
+with otherwise valid total/shape/metadata. The production helper remains unchanged until that new
+review-RED is read. Do not use a local product import to infer this result.

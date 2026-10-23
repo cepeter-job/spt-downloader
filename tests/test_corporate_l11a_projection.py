@@ -170,6 +170,19 @@ def test_l11a_clamps_only_the_final_six_cost_sum():
     assert result['fields'][-1]['value'] == '2'
 
 
+@pytest.mark.parametrize('cost', COSTS)
+@pytest.mark.parametrize('lexeme', ['-0', '-0.0', '-0e0'])
+def test_l11a_unproved_signed_zero_cost_control_remains_unsupported(cost, lexeme):
+    form, pages = inputs()
+    previous = form['Recapitulation'][cost]
+    form['Recapitulation'][cost] = 0
+    form['Recapitulation']['TotalAmountofCosts'] = 21 - previous
+    wire = json.dumps(form).replace('"' + cost + '": 0', '"' + cost + '": ' + lexeme)
+    assert '"' + cost + '": ' + lexeme in wire
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages, form_wire=wire)
+
+
 @pytest.mark.parametrize('empty', [None, []])
 def test_l11a_explicit_empty_facilities_and_zero_pages_do_not_invent_footers(empty):
     form, pages = inputs()

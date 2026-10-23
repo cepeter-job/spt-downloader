@@ -4,8 +4,11 @@ Prerequisite status: pure projection, component-lifetime custody and saved-layou
 repair merged in PR102 (`e25aa5e88132c4f8aa03cd6e764dbd507160d816`).
 Historical pending entries below are superseded by the final
 [runner, review and package report](../reports/2026-10-23-catalog-and-lifetime-priorities.md).
-Native L1-D observation/dispatch continues separately in draft PR105; the merged
-helper alone does not enable native eligibility.
+Native L1-D observation/dispatch subsequently merged in PR105
+(`331a0b6d6b2668a39c1ea985d220ca9ae076eec8`); the complete exact-tree result is
+recorded in the [native L1-D report](../reports/2026-10-23-corporate-l1d-native.md).
+Historical pending entries below describe the tests-first sequence, not current
+merge readiness. Independent whole-Induk/PDF/live gates remain unchanged.
 
 Execute inline with the approved JSON completion design and runner-only TDD.
 This is a focused continuation after L7/L11-C, not authority for an editing
