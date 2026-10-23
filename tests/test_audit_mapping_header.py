@@ -7,6 +7,7 @@ from support_financial_publication import financial_run
 
 def test_resume_mapping_header_is_separate_from_inventory_and_pdf_headers(tmp_path):
     run=financial_run(tmp_path)
+    run['complete']=False
     run['audit']=[{'status':'SPT Dilaporkan','total':1,'scanned':1,'selected':1,'result':'RECONCILED'}]
     run['errors']=[{'object':'SYNTHETIC OBJECT','message':'SYNTHETIC LIMITATION'}]
     run['template_mapping']=[{'file':'SPT_Badan_2025_Normal.xlsx','form':'L8','complete':False,

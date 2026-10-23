@@ -31,7 +31,7 @@ def test_owned_l8_spans_export_all_rows_and_captured_footer(tmp_path):
 
 @pytest.mark.parametrize('broken', ['missing_spans', 'missing_owner', 'foreign_owner', 'foreign_group',
     'missing_rowspans', 'rowspan', 'zero_span', 'bool_span', 'wide_span', 'reverse_span',
-    'short_metadata', 'extra_metadata', 'wrong_count', 'multiple_pages', 'incomplete'])
+    'short_metadata', 'extra_metadata', 'wrong_count', 'multiple_pages'])
 def test_l8_invalid_span_proof_stays_unresolved_without_padding(tmp_path, broken):
     table = source()
     if broken == 'missing_spans': table.pop('body_spans')
@@ -48,7 +48,6 @@ def test_l8_invalid_span_proof_stays_unresolved_without_padding(tmp_path, broken
     elif broken == 'extra_metadata': table['body_spans'].append([1, 1, 1])
     elif broken == 'wrong_count': table['body_row_count'] = 7
     elif broken == 'multiple_pages': table['pages'] = 2
-    elif broken == 'incomplete': table['complete'] = False
     before = deepcopy(table)
     book, reports = export(tmp_path, [section('L8', tables=[table])])
     try:
@@ -58,6 +57,15 @@ def test_l8_invalid_span_proof_stays_unresolved_without_padding(tmp_path, broken
         assert table == before
     finally:
         book.close()
+
+
+def test_incomplete_l8_capture_cannot_claim_a_complete_record(tmp_path):
+    table=source()
+    table['complete']=False
+    before=deepcopy(table)
+    with pytest.raises(ValueError,match='completion'):
+        export(tmp_path,[section('L8',tables=[table])])
+    assert table==before
 
 
 def test_l8_unsafe_amount_keeps_literal_and_truthful_unmapped_count(tmp_path):
