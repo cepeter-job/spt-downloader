@@ -41,6 +41,29 @@ def project(raw=None, *, model='AMENDMENT', **options):
                                 model=model, **options)
 
 
+@pytest.mark.parametrize('status', ['DRAFT', 'SUBMITTING', None, 0])
+@pytest.mark.parametrize('observe', [False, True])
+def test_normal_primary_must_be_submitted_before_semantic_or_fallback(status, observe):
+    case = native_case('PPN')
+    outer = json.loads(case['packets'][0]['body'])
+    outer['Payload']['ReturnSheetStatusCode'] = status
+    reseal(case, outer)
+    if not observe:
+        case['forms'] = []
+    with pytest.raises(JsonSafetyError):
+        decode(case)
+
+
+def test_missing_normal_primary_status_cannot_certify_submitted_lifecycle():
+    case = native_case('PPN')
+    outer = json.loads(case['packets'][0]['body'])
+    del outer['Payload']['ReturnSheetStatusCode']
+    reseal(case, outer)
+    result = decode(case)
+    assert not result['eligible']
+    assert 'missing_masa_identity_ReturnSheetStatusCode' in result['reason']
+
+
 @pytest.mark.parametrize('choice', [None, *CHOICES])
 def test_invariant_amendment_choice_needs_both_export_stages_and_facility_provenance(choice):
     source = raw_source(choice)
