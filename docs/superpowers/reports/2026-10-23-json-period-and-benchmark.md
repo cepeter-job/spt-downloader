@@ -182,7 +182,7 @@ catalog, current-View, lifetime and pure-L1-D/layout prerequisites. Native L1-D
 subsequently merged in [PR105](https://github.com/cepeter-job/spt-downloader/pull/105)
 with [bounded native L1-D evidence](2026-10-23-corporate-l1d-native.md). L3 pure
 projection is [merged and verified in PR107](2026-10-23-corporate-l3-pure.md).
-Native L3 continues in draftPR110 and pure current-only L11-A in draftPR109. The remaining
+[Native L3 is merged and verified in PR110](2026-10-24-corporate-l3-native.md). [Current-only pure L11-A is merged and verified in PR109](2026-10-23-corporate-l11a-pure.md); native L11-A has a separate tests-first continuation. The remaining
 corporate semantic destinations and unproved PPN lifecycle branches retain
 their own source/runner gates. Current-build live acceptance for other families
 needs an explicitly selected scope. Missing consumer proof or live scope stays
