@@ -6,6 +6,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-23-json-mode-completion-design.md`, section 5.
 
+**Delivery:** draft PR #86 depends on native readiness PR #85. It targets `main` to use the existing PR workflow; its initial diff includes #85 until that prerequisite is integrated. Keep both runner identities distinct.
+
 **Source proof:** unauthenticated pinned `main.cccfdb820c20596c.js`, SHA256 `696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd`, `getActiveReferenceDataValue` at UTF-16 offset 3017141: filter literal Code; first own null/empty ValidTo; first truthy valid ValidTo strictly greater than new Date(); latest valid truthy ValidFrom (stable ties); otherwise first candidate. A generic latest version heuristic is incorrect. Static source inspection is not runtime execution evidence.
 
 ## Constraints
