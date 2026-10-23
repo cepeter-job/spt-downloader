@@ -2,7 +2,15 @@
 
 ## Current implementation status
 
-Current-build same-return acceptance is recorded in [the period repair and benchmark report](superpowers/reports/2026-10-23-json-period-and-benchmark.md). PR95 merged the literal-period and owned-browser environment repairs. On the selected December 2025 Normal return, JSON median total was 84.6745 seconds versus DOM 89.885 seconds (5.80% faster), with five forms, complete mappings and seven verified native grids. The report preserves exact tree/run/package coordinates and source fidelity differences.
+Same-return acceptance and both matched cohorts are recorded in
+[the period repair and benchmark report](superpowers/reports/2026-10-23-json-period-and-benchmark.md).
+PR95 merged the literal-period and owned-browser environment repairs. On the
+selected December 2025 Normal return, the recorded `e25aa5e8` cohort had median
+JSON total **100.1035 seconds** versus DOM **96.6895 seconds**: JSON was **3.53%
+slower**. The earlier period-fix cohort had JSON 84.6745 versus DOM 89.885 seconds
+(5.80% faster). Both retain five forms, complete mappings and seven verified
+native grids. These are separate record/build-specific measurements; later
+consolidation has not been live-benchmarked by this documentation update.
 
 The five-form/seven-grid implementation was merged in [PR #37](https://github.com/cepeter-job/spt-downloader/pull/37), merge `66c729b9fcaafcceeef28ecf16a00cc9e14407b2`. Final head `ef2e52f717626e59adb7d9616728e0d55111c78e` passed Windows run `39107209239`: 2,993 cases, zero failures/errors. The independent shard run `39107209381` passed the same 2,993 unique cases; these results overlap and are not additive.
 
