@@ -722,3 +722,204 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                 rows.append(row)
         tables.append(table(index, rows, foot))
     return {'tables': tables, 'provenance': provenance}
+
+
+_L3_ROOT = 'ListIncomeTaxWithheldByOtherParties'
+_L3_HEADERS = [['NO.', 'PEMOTONG PAJAK / NAMA', 'PEMOTONG PAJAK / NEGARA',
+    'TANGGAL TRANSAKSI/PEMBAYARAN PPh', 'JENIS PENGHASILAN', 'PENGHASILAN NETO (RUPIAH)',
+    'PPh YANG DIBAYAR/DIPOTONG/TERUTANG DI LUAR NEGERI / NILAI (Rp)',
+    'PPh YANG DIBAYAR/DIPOTONG/TERUTANG DI LUAR NEGERI / MATA UANG',
+    'PPh YANG DIBAYAR/DIPOTONG/TERUTANG DI LUAR NEGERI / NILAI DALAM MATA UANG ASING',
+    'JUMLAH KREDIT PAJAK YANG DAPAT DIPERHITUNGKAN (Rp)'],
+    ['NO.', 'NAMA PEMOTONG/PEMUNGUT', 'NPWPW PEMOTONG/PEMUNGUT', 'Jenis Pajak',
+     'DASAR PENGENAAN PAJAK (Rupiah)', 'PPH YANG DIPOTONG/DIPUNGUT (Rupiah)',
+     'BUKTI POTONG/SSP/SSPCP - NOMOR', 'BUKTI POTONG/SSP/SSPCP - TANGGAL']]
+_L3_SCALARS = ('OverseasTotalNetIncome', 'OverseasTotalTaxPayable', 'OverseasTotalTaxCredit',
+    'OverseasRefundPreviousYear', 'OverseasTotalCalculatedCurrentYear', 'OtherPartiesTotalTaxBase',
+    'OtherPartiesIncomeTaxWithheld', 'OtherPartiesIncomeTaxWithheldUsd',
+    'OtherPartiesOverseasIncomeTax', 'OtherPartiesTotalCredit', 'OtherPartiesTotalCreditUsd')
+_L3_A_FIELDS = ('Name', 'CountryCode', 'DateOfTransaction', 'IncomeCode', 'NetIncome',
+    'PayableRupiah', 'PayableCurrency', 'AmountForeignCurrency', 'CreditCalculated')
+_L3_B_FIELDS = ('Name', 'TIN', 'TaxType', 'TaxBase', 'IncomeTax',
+    'WithholdingSlipsNumber', 'WithholdingSlipsDate')
+_L3_LABELS = ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')
+_L3_CAPTIONS = (
+    'PENGEMBALIAN/PENGURANGAN PAJAK PENGHASILAN LUAR NEGERI (PASAL 24) YANG TELAH DIKREDITKAN UNTUK TAHUN SEBELUMNYA',
+    'JUMLAH PAJAK PENGHASILAN YANG DIBAYAR DI LUAR NEGERI YANG DAPAT DIPERHITUNGKAN DALAM TAHUN BERJALAN')
+
+
+def _l3_integer(value, *, nullish=False):
+    if value is None and nullish:
+        return 0
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l3_number_type')
+    number = _decimal(value)
+    if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
+        raise _UnsupportedMetadata('unsupported_corporate_l3_number_precision')
+    return int(number)
+
+
+def _l3_sum(values):
+    result = 0
+    for value in values:
+        result += value
+        if abs(result) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsafe_corporate_l3_ordered_sum')
+    return result
+
+
+def _l3_date(value, *, offline=False):
+    if value is None or offline and value == '':
+        return ''
+    if type(value) is not str or not re.fullmatch(
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
+            r'(?:\.[0-9]{1,3})?Z)?', value):
+        raise _UnsupportedMetadata('unsupported_corporate_l3_date')
+    try:
+        date = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if not 1970 <= date.year <= 2100:
+            raise ValueError('Unreviewed date range')
+        date = date.replace(tzinfo=timezone.utc) if date.tzinfo is None else date
+        return date.astimezone(timezone(timedelta(hours=7))).strftime('%d-%m-%Y')
+    except (ValueError, OverflowError):
+        raise _UnsupportedMetadata('unsupported_corporate_l3_date') from None
+
+
+def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, locale,
+               timezone_name, labels):
+    """Pure consumer projection; callers must separately prove every packet/owner.
+
+    Normalized page bounds are metadata, never original business identifiers.
+    This helper grants no native eligibility or reference/footer transport access.
+    """
+    spans = [[[1, 4, 1, 1, 2, 1]], [[4, 1, 1, 2]] * 3]
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or timezone_name != 'Asia/Jakarta'
+            or headers != _L3_HEADERS or footer_spans != spans
+            or not isinstance(form, dict) or set(form) != {'IncomeOverseas', *_L3_SCALARS}
+            or not isinstance(labels, dict) or set(labels) != set(_L3_LABELS)
+            or any(not isinstance(labels[k], dict) for k in _L3_LABELS)):
+        raise _UnsupportedMetadata('unverified_corporate_l3_source_structure')
+    overseas = [] if form['IncomeOverseas'] is None else form['IncomeOverseas']
+    if not isinstance(overseas, list) or len(overseas) > 100000:
+        raise _UnsupportedMetadata('unsupported_corporate_l3_overseas_body')
+    if (not isinstance(footer_payload, dict) or set(footer_payload) != {'TaxBase', 'IncomeTax', 'IncomeTaxUsd'}
+            or not isinstance(pages, list) or not 1 <= len(pages) <= 1000):
+        raise _UnsupportedMetadata('missing_corporate_l3_footer_or_pages')
+    provenance, arows, brows = [], [], []
+
+    def evidence(value, path, destination, *, source='current', page_index=None, rule='literal-source'):
+        item = {**_evidence(value, path), 'source': source, 'destination': destination, 'rule': rule}
+        if page_index is not None:
+            item['page_index'] = page_index
+        provenance.append(item)
+
+    def text(value):
+        if value is None:
+            return ''
+        if type(value) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l3_text')
+        return value
+
+    def label(value, kind, *, offline=False):
+        if offline and (value is None or type(value) is str and value == ''):
+            return ''
+        if (type(value) is not str or not value or type(labels[kind].get(value)) is not str
+                or not labels[kind][value].strip()):
+            raise _UnsupportedMetadata('missing_corporate_l3_reference_label')
+        return labels[kind][value]
+
+    def number(value, fraction=0):
+        _l3_integer(value)
+        return _number(value, fraction, locale=locale)
+
+    for field in _L3_SCALARS:
+        _l3_integer(form[field], nullish=True)
+        evidence(form[field], [_L3_ROOT, field], {'control': field})
+    sums = []
+    for field, reported in zip(('NetIncome', 'PayableRupiah', 'CreditCalculated'), _L3_SCALARS[:3]):
+        if any(not isinstance(row, dict) or set(row) != set(_L3_A_FIELDS) for row in overseas):
+            raise _UnsupportedMetadata('unsupported_corporate_l3_overseas_row')
+        total = _l3_sum(_l3_integer(row[field]) for row in overseas)
+        if _l3_integer(form[reported]) != total:
+            raise _UnsupportedMetadata('unreconciled_corporate_l3_overseas_total')
+        sums.append(total)
+    foreign_credit = _l3_sum([sums[2], -_l3_integer(form['OverseasRefundPreviousYear'], nullish=True)])
+    for index, row in enumerate(overseas):
+        arows.append([str(index + 1), text(row['Name']), label(row['CountryCode'], 'COUNTRY_CODE', offline=True),
+            _l3_date(row['DateOfTransaction'], offline=True), label(row['IncomeCode'], 'FOREIGN_INCOME_TYPE_CIT', offline=True),
+            number(row['NetIncome']), number(row['PayableRupiah']), label(row['PayableCurrency'], 'CURRENCY', offline=True),
+            number(row['AmountForeignCurrency'], 2), number(row['CreditCalculated'])])
+        for column, field in enumerate(_L3_A_FIELDS, 1):
+            evidence(row[field], [_L3_ROOT, 'IncomeOverseas', index, field],
+                     {'table': 'L3/overseas', 'row': index, 'column': column},
+                     rule='bound-reference-label' if field in ('CountryCode', 'IncomeCode', 'PayableCurrency')
+                     else 'date-id-jakarta' if field == 'DateOfTransaction'
+                     else 'number-id-fraction-2' if field == 'AmountForeignCurrency'
+                     else 'number-id-fraction-0' if field in ('NetIncome', 'PayableRupiah', 'CreditCalculated')
+                     else 'literal-source')
+    for field, column in zip(_L3_SCALARS[:3], (5, 6, 9)):
+        evidence(form[field], [_L3_ROOT, field], {'table': 'L3/overseas', 'footer': 0, 'column': column},
+                 rule='reconciled-model-ordered-sum')
+    total = None
+    for page_index, page in enumerate(pages):
+        if (not isinstance(page, dict) or set(page) != {'offset', 'rows', 'total', 'data'}
+                or any(type(page[k]) is not int for k in ('offset', 'rows', 'total'))
+                or page['rows'] not in (10, 25, 50, 100, 250, 500)
+                or not 0 <= page['total'] <= 100000 or page['offset'] != len(brows)
+                or page['offset'] > page['total'] or not isinstance(page['data'], list)
+                or len(page['data']) != min(page['rows'], page['total'] - page['offset'])
+                or total is not None and total != page['total']
+                or page_index and page['offset'] == page['total']):
+            raise _UnsupportedMetadata('incomplete_corporate_l3_pages')
+        total = page['total']
+        for local_index, row in enumerate(page['data']):
+            if not isinstance(row, dict) or set(row) != {'RecordId', *_L3_B_FIELDS}:
+                raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
+            text(row['RecordId'])
+            brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
+                label(row['TaxType'], 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
+                text(row['WithholdingSlipsNumber']), _l3_date(row['WithholdingSlipsDate'])])
+            evidence(row['RecordId'], ['Data', local_index, 'RecordId'],
+                {'table': 'L3/domestic', 'row': len(brows) - 1}, source='grid', page_index=page_index,
+                rule='non-displayed-row-key')
+            for column, field in enumerate(_L3_B_FIELDS, 1):
+                evidence(row[field], ['Data', local_index, field],
+                    {'table': 'L3/domestic', 'row': len(brows) - 1, 'column': column}, source='grid', page_index=page_index,
+                    rule='bound-reference-label' if field == 'TaxType' else 'date-id-jakarta'
+                    if field == 'WithholdingSlipsDate' else 'number-id-fraction-0'
+                    if field in ('TaxBase', 'IncomeTax') else 'literal-source')
+    if len(brows) != total:
+        raise _UnsupportedMetadata('incomplete_corporate_l3_pages')
+    amounts = {key: _l3_integer(value, nullish=True) for key, value in footer_payload.items()}
+    credit = _l3_sum([foreign_credit, amounts['IncomeTax']])
+    _l3_sum([foreign_credit, amounts['IncomeTaxUsd']])  # The same callback writes the hidden USD total.
+    for field, value in footer_payload.items():
+        destination = ({'table': 'L3/domestic', 'footer': 0, 'column': 4 if field == 'TaxBase' else 5}
+                       if field != 'IncomeTaxUsd' else {'hidden_control': 'OtherPartiesIncomeTaxWithheldUsd'})
+        evidence(value, [field], destination, source='footer', rule='captured-footer-nullish-zero')
+    for footer_index in (1, 2):
+        destination = {'table': 'L3/domestic', 'footer': footer_index, 'column': 5}
+        for index, row in enumerate(overseas):
+            evidence(row['CreditCalculated'], [_L3_ROOT, 'IncomeOverseas', index, 'CreditCalculated'],
+                     destination, rule='credit-sum-minus-refund')
+        evidence(form['OverseasRefundPreviousYear'], [_L3_ROOT, 'OverseasRefundPreviousYear'],
+                 destination, rule='credit-sum-minus-refund')
+        if footer_index == 2:
+            evidence(footer_payload['IncomeTax'], ['IncomeTax'], destination, source='footer',
+                     rule='overseas-model-plus-footer-income-tax')
+    def render(value):
+        return _number(str(value), 0, locale=locale)
+
+    afooter = [['', 'JUMLAH', number(form[_L3_SCALARS[0]]), number(form[_L3_SCALARS[1]]),
+                '', number(form[_L3_SCALARS[2]])]]
+    bfooter = [['JUMLAH', render(amounts['TaxBase']), render(amounts['IncomeTax']), ''],
+        ['KREDIT PAJAK LUAR NEGERI', '', render(foreign_credit), ''], ['JUMLAH KREDIT PAJAK', '', render(credit), '']]
+    tables = []
+    for index, (body, footer) in enumerate(((arows, afooter), (brows, bfooter))):
+        tables.append({'name': ('L3/overseas', 'L3/domestic')[index], 'headers': list(headers[index]),
+            'rows': body + footer, 'footer': footer, 'footer_spans': deepcopy(spans[index]),
+            'body_row_count': len(body), 'source_total': len(body), 'complete': True})
+    fields = [{'field': field, 'label': caption, 'value': '' if form[field] is None else number(form[field]),
+               'group': 'A. PENGHASILAN DARI LUAR NEGERI'}
+              for field, caption in zip(_L3_SCALARS[3:5], _L3_CAPTIONS)]
+    return {'tables': tables, 'fields': fields, 'provenance': provenance}
