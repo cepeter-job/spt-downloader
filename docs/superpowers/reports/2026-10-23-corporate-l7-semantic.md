@@ -1,6 +1,6 @@
 # Corporate L7 source-bound JSON projection
 
-Status: implemented, reviewed and runner-verified on 2026-10-23 in draft [PR #88](https://github.com/cepeter-job/spt-downloader/pull/88). Includes native readiness PR #85, dated references PR #86, inventory PR #89 and main through Excel-formatting PR #90, as requested by the user. This closes the focused L7/consolidation increment, not the complete JSON program.
+Status: implemented, reviewed and runner-verified on 2026-10-23 in merged [PR #88](https://github.com/cepeter-job/spt-downloader/pull/88). Includes native readiness PR #85, dated references PR #86, inventory PR #89 and main through Excel-formatting PR #90, as requested by the user. This closes the focused L7/consolidation increment, not the complete JSON program.
 
 ## Supported behavior
 
