@@ -3,8 +3,8 @@ import html
 import json
 
 import coretax_corporate_projection as projection
-from l1d_observer_fixture import Fixture as BaseFixture, ASSET
-from test_corporate_l3_native import DETAIL, GRID, FOOTER, REFERENCES, OWNERS, GROUPS, packets, request
+from l1d_observer_fixture import Fixture as BaseFixture, ASSET as ASSET
+from test_corporate_l3_native import GRID, FOOTER, REFERENCES, OWNERS, GROUPS, packets, request
 from test_corporate_l3_projection import HEADERS, SPANS
 import support_json_corpus as corpus
 
