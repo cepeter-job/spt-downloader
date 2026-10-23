@@ -169,9 +169,10 @@ def _induk(sheet, sections):
         (_INDUK_INCOME_GROUP[3:] + ' ', _INDUK_INCOME),
         ('PENGHITUNGAN PPh', _INDUK_CALCULATIONS[:4]),
         ('PENGURANG PPh TERUTANG ', _INDUK_CALCULATIONS[4:8]),
-        ('PPh KURANG/LEBIH BAYAR ', _INDUK_CALCULATIONS[8:])]
+        ('PPh KURANG/LEBIH BAYAR ', _INDUK_CALCULATIONS[8:-1]),
+        (None, _INDUK_CALCULATIONS[-1:])]
     for heading, slots in declarations:
-        strip_number = bool(heading)
+        strip_number = heading != ''
         output = []
         for group, name, caption in slots:
             matches = [(index, field) for index, field in enumerate(fields)
@@ -193,13 +194,13 @@ def _induk(sheet, sections):
         blocks.append((heading, output))
     row = 2
     separated = False
-    for heading, block in blocks:
+    for block_index, (heading, block) in enumerate(blocks):
         if not block:
             continue
+        if block_index and blocks[0][1] and not separated:
+            row += 1  # Reviewed single identity/section separator.
+            separated = True
         if heading:
-            if blocks[0][1] and not separated:
-                row += 1  # Reviewed single identity/section separator.
-                separated = True
             _write(sheet, row, 1, heading)
             horizontal = Side(style='thin', color=Color(indexed=64))
             for column in (1, 2):
@@ -208,7 +209,7 @@ def _induk(sheet, sections):
                 font.bold = True
                 cell.font = font
                 if heading != declarations[1][0]:
-                    cell.border = Border(top=horizontal, bottom=horizontal)
+                    cell.border = Border(left=Side(), right=Side(), top=horizontal, bottom=horizontal)
             if heading != declarations[1][0]:
                 sheet.cell(row, 2).number_format = ACCOUNTING_LITERAL
             row += 1
