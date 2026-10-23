@@ -101,7 +101,8 @@ def test_induk_numeric_tariff_text_is_not_an_ordinal_caption(tmp_path):
     raw=[{'group':'D. PENGHITUNGAN PPh','field':'TaxRate','label':'11. Tarif Pajak *','value':'0.22'}]
     book,reports=export(tmp_path,[section('Induk',fields=raw)])
     try:
-        assert book['Induk']['B3'].value=='0.22' and book['Induk']['B3'].data_type=='s'
+        assert list(book['Induk'].values)==[('INDUK',None),('Tarif Pajak *','0.22')]
+        assert book['Induk']['B2'].data_type=='s'
         assert reports[0]['complete']
     finally:
         book.close()

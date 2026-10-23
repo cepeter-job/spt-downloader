@@ -90,6 +90,32 @@ def test_empty_new_induk_amounts_omit_heading_and_body_while_zero_is_content(tmp
         book.close()
 
 
+@pytest.mark.parametrize('empty_f', [False, True], ids=['missing-F', 'empty-F'])
+def test_final_tariff_does_not_create_an_empty_f_section_after_other_groups(tmp_path, empty_f):
+    raw = fields() + income_fields()
+    if empty_f:
+        for field in raw:
+            if field['group'] == 'F. PPh KURANG/LEBIH BAYAR': field['value'] = ''
+    else:
+        raw = [field for field in raw if field['group'] != 'F. PPh KURANG/LEBIH BAYAR']
+    book, reports = export(tmp_path, [section('Induk', fields=raw)])
+    try:
+        sheet = book['Induk']
+        assert sheet.max_row == 26
+        assert not any(row[0] == 'PPh KURANG/LEBIH BAYAR ' for row in sheet.values)
+        assert sheet['A26'].value == 'Tarif Pajak *'
+        assert sheet['B26'].value == 'Tarif Fasilitas sebagaimana Pasal 31E ayat (1) UU PPh'
+        assert sheet['B26'].data_type == 's'
+        assert all(getattr(sheet['B26'].border, side).style == 'thin' for side in ('top', 'bottom', 'left', 'right'))
+        assert sheet['A13'].value == INCOME_GROUP[3:] + ' '
+        assert sheet['A16'].value == 'PENGHITUNGAN PPh'
+        assert sheet['A21'].value == 'PENGURANG PPh TERUTANG '
+        assert sheet['B14'].value == 1234.5 and sheet['B15'].value == 0
+        assert reports[0]['complete'] and reports[0]['unmapped_fields'] == 0
+    finally:
+        book.close()
+
+
 @pytest.mark.parametrize('form,year_field,year_label,tin_label', [
     ('L2', 'TaxPeriodYear', 'Tahun Pajak/Bagian Tahun Pajak', 'Nomor Identitas WP'),
     ('L3', 'TaxPeriodYear', 'TAHUN PAJAK', 'Nomor Identitas WP'),
