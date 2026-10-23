@@ -513,7 +513,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                               extra_status_links=False, submitted_link='normal',
                               submitted_redirect=False, restored_period_label=False,
                               restored_catalog='valid', restored_metadata=None,
-                              restored_api_period=None):
+                              restored_api_period=None, page_sizes=None, initial_page_size=2,
+                              readiness_defect=None):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -579,6 +580,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
 
     def listing(submitted, archived=False):
         import html
+        readiness = submitted and metrics['list_navigations'].count(
+            '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') == 1
         archive_seen = any("/archived-returnsheets/" in url for url in metrics["list_navigations"])
         restored = (restored_period_label and submitted and
                     metrics['list_navigations'].count('/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') > 1)
@@ -596,10 +599,14 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
             current_displays['fixture-normal'].update(restored_metadata)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
                              'headers': labels, 'displays': current_displays,
-                             'catalog': available_cache, 'archived': archived,
+                             'catalog': available_cache, 'archived': archived or (readiness and readiness_defect == 'archived'),
                              'codePeriod': archive_period_conflict and submitted and not archive_seen and not restored,
-                             'auxiliary': auxiliary_request, 'hashLink': hash_link})
+                              'auxiliary': auxiliary_request, 'hashLink': hash_link,
+                              'pageSizes': page_sizes, 'initialSize': initial_page_size,
+                              'foreignRequest': readiness and readiness_defect == 'request'})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
+        if readiness and readiness_defect == 'endpoint':
+            endpoint = '/returnsheet/api/returnsheetsfixture'
         archive_link = ('<a href="/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer">Archieved Return Sheets</a>'
                         if archive_period_conflict else '')
         if extra_status_links:
@@ -622,9 +629,9 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
         return submitted_navigation + archive_link + '''
         <div class="main-content"><p-table><table><thead><tr>''' + headers + '''</tr></thead><tbody></tbody></table>
         <div class="p-paginator"><button class="p-paginator-prev" onclick="first=0;load()">Previous</button>
-        <button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="first+=2;load()">Next</button></div>
+        <button class="p-paginator-page p-highlight">1</button><button class="p-paginator-next" onclick="first+=size;load()">Next</button></div>
         </p-table></div><script>
-        const config=''' + config + ''';let first=config.start;
+        const config=''' + config + ''';let first=config.start,size=config.initialSize;
         const cacheReady=config.catalog?new Promise((resolve,reject)=>{
           const r=indexedDB.open('e-tax-database',2);
           r.onupgradeneeded=()=>{const s=r.result.createObjectStore('referenceDataStore',{keyPath:['ReferenceDataType','language']});s.createIndex('ReferenceDataType','ReferenceDataType');};
@@ -634,7 +641,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
         }):Promise.resolve();
         async function load(){
           await cacheReady;
-          const request={TaxpayerAggregateIdentifier:'fixture-taxpayer',First:first,Rows:2,Filters:[],isArchieved:config.archived,LanguageId:1,SortField:null,SortOrder:null};
+          const request={TaxpayerAggregateIdentifier:config.foreignRequest?'fixture-other-taxpayer':'fixture-taxpayer',First:first,Rows:size,Filters:[],isArchieved:config.archived,LanguageId:1,SortField:null,SortOrder:null};
           fetch(''' + json.dumps(endpoint) + ''',{method:'POST',body:JSON.stringify(request)}).then(r=>r.json()).then(body=>{
             const received=body.Payload.Data||[];const tbody=document.querySelector('tbody');tbody.replaceChildren();
             received.forEach((record,i)=>{
@@ -648,7 +655,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                 row.appendChild(td);
               });tbody.appendChild(row);
             });
-            document.querySelector('.p-highlight').textContent=String(first/2+1);
+            document.querySelector('.p-highlight').textContent=String(first/size+1);
             document.querySelector('.p-paginator-prev').disabled=first===0||body.Payload.TotalRecords===0;
             document.querySelector('.p-paginator-next').disabled=first+received.length>=body.Payload.TotalRecords;
             if(config.auxiliary)fetch('/returnsheet/api/returnsheetssubmitted',{
@@ -656,6 +663,17 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
           });
         }
         if(config.hashLink){const a=document.createElement('a');a.href='#';document.body.prepend(a);}
+        if(config.pageSizes){
+          const picker=document.createElement('div');picker.className='p-paginator-rpp-options';
+          picker.innerHTML='<span class="p-dropdown-label">'+size+'</span><button class="p-dropdown-trigger">Size</button>';
+          const options=document.createElement('ul');options.className='p-dropdown-items';options.hidden=true;
+          for(const value of config.pageSizes){const option=document.createElement('li');option.textContent=String(value);
+            option.onclick=()=>{options.hidden=true;if(size!==value){size=value;first=0;picker.querySelector('span').textContent=String(size);load();}};
+            options.appendChild(option);}
+          picker.querySelector('button').onclick=()=>options.hidden=false;
+          document.addEventListener('keydown',e=>{if(e.key==='Escape')options.hidden=true;});
+          document.querySelector('.p-paginator').appendChild(picker);document.body.appendChild(options);
+        }
         load();</script>'''
 
     @contextmanager
@@ -701,13 +719,16 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                 elif url.path in ('/returnsheet/api/returnsheetsfixture', '/returnsheet/api/returnsheetssubmitted'):
                     data = request.post_data_json
                     assert request.method == 'POST'
-                    assert data['TaxpayerAggregateIdentifier'] == TAXPAYER
+                    readiness = metrics['list_navigations'].count(
+                        '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') == 1
+                    foreign_request = readiness and readiness_defect == 'request'
+                    assert data['TaxpayerAggregateIdentifier'] == ('fixture-other-taxpayer' if foreign_request else TAXPAYER)
                     if url.path.endswith('/returnsheetssubmitted') and set(data) == {'TaxpayerAggregateIdentifier'}:
                         metrics['auxiliary_requests'] += 1
                         route.fulfill(json=envelope(rows, total=len(rows)))
                         return
-                    assert data['Rows'] == 2 and type(data['First']) is int
-                    submitted = url.path.endswith('/returnsheetssubmitted')
+                    assert data['Rows'] in (page_sizes or [initial_page_size]) and type(data['First']) is int
+                    submitted = url.path.endswith('/returnsheetssubmitted') or (readiness and readiness_defect == 'endpoint')
                     candidates = rows if submitted else []
                     if submitted and not ignore_source_filter:
                         for filt in data['Filters']:
@@ -719,7 +740,12 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                             else:
                                 assert filt['MatchMode'] == 'any' + '-equals' * len(filt['Value'])
                                 candidates = [r for r in candidates if r['TaxPeriodCode'] in filt['Value']]
-                    data_rows = candidates[data['First']:data['First'] + 2]
+                    data_rows = candidates[data['First']:data['First'] + data['Rows']]
+                    if submitted and readiness and not metrics['submitted_requests'] and data_rows:
+                        if readiness_defect == 'rows':
+                            data_rows = [dict(row, TaxpayerAggregateIdentifier='fixture-other-taxpayer') for row in data_rows]
+                        elif readiness_defect == 'status':
+                            data_rows = [dict(row, ReturnSheetStatusCode='DRAFT') for row in data_rows]
                     if (restored_api_period is not None and submitted and
                             metrics['list_navigations'].count('/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') > 1):
                         data_rows = [dict(row) for row in data_rows]
@@ -788,13 +814,26 @@ def test_unknown_metadata_schema_uses_audited_dom_page(browser, tmp_path, monkey
         assert submitted['fallback_reason']
 
 
-def test_unsafe_submitted_identity_does_not_start_dom_fallback(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize('catalog_present', [False, True])
+def test_unsafe_submitted_identity_does_not_start_dom_fallback(browser, tmp_path, monkeypatch, catalog_present):
     import coretax_browser as driver
-    with synthetic_listing_browser(browser, monkeypatch, unsafe=True) as (page, metrics):
-        result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
-        assert result['inventory_complete'] is False
-        assert result['errors']
-        assert result['records'] == []
+    with synthetic_listing_browser(browser, monkeypatch, unsafe=True, year_catalog=catalog_present,
+                                   expired_catalog=True) as (page, metrics):
+        if catalog_present:
+            # Existing invalid metadata takes the ordinary unfiltered path;
+            # its page failure must still be recorded as an empty PARTIAL run.
+            result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
+            assert result['inventory_complete'] is False
+            assert result['errors']
+            assert result['records'] == []
+        else:
+            # Missing metadata enters readiness; ownership failure blocks the
+            # run before any inventory evidence or filtered restart is saved.
+            with pytest.raises(driver.JsonSafetyError, match='taxpayer'):
+                driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
+            assert not (tmp_path/'inventory.json').exists()
+        assert (tmp_path/'inventory-batches.jsonl').read_bytes() == b''
+        assert len(metrics['submitted_requests']) == 1
         assert metrics['submitted_full_grid_reads'] == 0, 'Unsafe identity was hidden by a DOM fallback'
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
 
