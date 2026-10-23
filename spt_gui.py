@@ -72,6 +72,8 @@ def self_test(report=None):
             # A mapped window is required: grid options alone do not prove placement.
             root.deiconify()
             contact=app.view.bugreport_label
+            contact_font=root.tk.call('ttk::style','lookup',contact.cget('style'),'-font')
+            assert int(root.tk.call('font','actual',contact_font,'-size'))==12
             positions=[]
             for width,height in ((540,430),(800,620)):
                 root.geometry(f'{width}x{height}')

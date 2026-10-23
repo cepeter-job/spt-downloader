@@ -113,7 +113,8 @@ def configure_theme(root: tk.Tk) -> None:
     if 'Segoe UI' in root.tk.splitlist(root.tk.call('font', 'families')):
         family = 'Segoe UI'
     for name, size, weight in [('SPTBody', 11, 'normal'), ('SPTLabel', 11, 'bold'),
-                                ('SPTCaption', 9, 'normal'), ('SPTHeading', 14, 'bold'),
+                                ('SPTCaption', 9, 'normal'), ('SPTContact', 12, 'normal'),
+                                ('SPTHeading', 14, 'bold'),
                                 ('SPTTitle', 18, 'bold')]:
         # Tcl-owned named fonts survive this function without Python Font GC.
         root.tk.call('font', 'configure' if name in names else 'create', name,
@@ -127,6 +128,7 @@ def configure_theme(root: tk.Tk) -> None:
         style.configure(name, font=font, background='SystemWindow', foreground='SystemWindowText')
     style.configure('Title.TLabel', font='SPTTitle', background='SystemButtonFace', foreground='SystemWindowText')
     style.configure('SPT.Stage.TLabel', font='SPTCaption', background='SystemButtonFace', foreground='SystemWindowText')
+    style.configure('SPT.Contact.TLabel', font='SPTContact', background='SystemButtonFace', foreground='SystemWindowText')
     style.configure('SPT.ActiveStage.TLabel', font='SPTLabel', background='SystemButtonFace', foreground='SystemHighlight')
     style.configure('SPT.TButton', font='SPTBody', padding=(dip_to_px(12, scale), dip_to_px(8, scale)))
     style.configure('SPT.Primary.TButton', font='SPTLabel', padding=(dip_to_px(12, scale), dip_to_px(8, scale)))

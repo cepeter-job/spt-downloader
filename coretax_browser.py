@@ -383,7 +383,7 @@ def _record_panel_timeout(view, panel_id, duration_ms):
     # hidden/foreign panel. Keep the original timeout even if this read fails.
     fields = {'panel_state': 'unavailable', 'panel_controlled': bool(panel_id)}
     try:
-        snapshot = view.evaluate(PANEL_TIMEOUT_JS, panel_id, timeout=100)
+        snapshot = view.evaluate(PANEL_TIMEOUT_JS, panel_id, timeout=1000)
         if type(snapshot) is dict:
             fields.update({key: snapshot[key] for key in (
                 'panel_state', 'tab_state', 'panel_matches', 'document_panel_matches', 'tab_views'
@@ -400,12 +400,23 @@ def _wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None):
     deadline = started + DETAIL_PANEL_TIMEOUT
     panel_id = initial_panel_id
     controlled = initial_panel_id is not None
+
+    def read_timeout():
+        # A busy Induk can take more than 100 ms to resolve a locator. Give
+        # each read a bounded slice of the SAME deadline, with Stop between
+        # reads; never pass zero (which disables Playwright's timeout).
+        _check_cancel(check_cancel)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise PlaywrightTimeoutError('Timeout waiting for tab panel: readiness deadline exhausted')
+        return min(1000, max(1, int(remaining * 1000)))
+
     while True:
         _check_cancel(check_cancel)
         try:
-            if tab.inner_text(timeout=100).strip() != caption:
+            if tab.inner_text(timeout=read_timeout()).strip() != caption:
                 raise RuntimeError('Tab identity changed while waiting for its panel')
-            current_id = tab.get_attribute('aria-controls', timeout=100)
+            current_id = tab.get_attribute('aria-controls', timeout=read_timeout())
             if controlled and not current_id:
                 # A rebinding gap must never authorize the previous form.
                 raise PlaywrightTimeoutError('Controlled tab has no current panel binding')
@@ -415,12 +426,12 @@ def _wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None):
                 panel = view.locator('[id=' + repr(panel_id) + ']')
             else:
                 panel = view.locator(':scope > .p-tabview-panels > .p-tabview-panel:not([hidden]):visible, :scope > .p-tabview-panels > p-tabpanel > .p-tabview-panel:not([hidden]):visible')
-            panel.wait_for(state='visible', timeout=100)
+            panel.wait_for(state='visible', timeout=read_timeout())
             _check_cancel(check_cancel)
-            owner = view.element_handle(timeout=100)
+            owner = view.element_handle(timeout=read_timeout())
             try:
                 belongs = '(e, owner) => e.isConnected && owner.isConnected && e.closest(".p-tabview") === owner'
-                if not panel.evaluate(belongs, owner, timeout=100):
+                if not panel.evaluate(belongs, owner, timeout=read_timeout()):
                     raise PlaywrightTimeoutError('Controlled panel is outside its owning tab view')
                 # nth() is live: validate its caption, owner and binding together
                 # after readiness so a reordered tab cannot relabel this panel.
@@ -428,13 +439,15 @@ def _wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None):
                         e.closest('.p-tabview') === expected.owner &&
                         e.innerText.trim() === expected.caption &&
                         e.getAttribute('aria-controls') === expected.panel_id''',
-                        {'owner': owner, 'caption': caption, 'panel_id': panel_id}, timeout=100):
+                        {'owner': owner, 'caption': caption, 'panel_id': panel_id}, timeout=read_timeout()):
                     raise PlaywrightTimeoutError('Tab identity or panel binding did not stabilize')
             finally:
                 owner.dispose()
+            read_timeout()  # A successful final read must not outlive the budget.
             return panel
         except PlaywrightTimeoutError:
             if time.monotonic() >= deadline:
+                _check_cancel(check_cancel)
                 _record_panel_timeout(view, panel_id, (time.monotonic() - started) * 1000)
                 raise
 
