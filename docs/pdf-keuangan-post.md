@@ -34,6 +34,14 @@ terikat ke tab/view saat ini. Jika penantian Induk gagal, Audit mencatat kegagal
 panel dan lampiran PARTIAL; alur POST belum dijalankan. Bedakan kondisi ini dari
 penolakan kontrol/build atau respons PDF setelah discovery.
 
+Penantian panel memakai satu tenggat 30 detik. Setiap pembacaan locator mendapat
+sisa waktu yang tersedia, maksimum satu detik, dengan pemeriksaan Stop sebelum
+setiap pembacaan. Pembacaan terakhir yang selesai sesudah tenggat tidak boleh
+mengizinkan capture. Ini menghindari pengulangan batas mikro 100 ms pada Induk
+yang sibuk tanpa memperpanjang tenggat total atau melonggarkan binding panel.
+Setelah tenggat habis, satu probe struktur memiliki batas terpisah satu detik;
+hasilnya hanya membantu diagnosis dan tidak mengizinkan unduhan.
+
 Adapter hanya mengaktifkan tombol yang terikat ke tabel laporan keuangan pada
 Induk Badan yang sedang diverifikasi. Bundle yang digunakan halaman harus cocok
 dengan pin di atas. Kontrol atau build yang tidak didukung tetap PARTIAL.

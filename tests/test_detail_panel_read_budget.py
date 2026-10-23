@@ -25,14 +25,15 @@ def corporate_tabs(page, *, hidden=False):
         root.querySelector('h1').remove();
         const view = document.createElement('div');
         view.className = 'p-tabview';
-        view.innerHTML = '<ul class="p-tabview-nav">' +
+        view.innerHTML = '<div class="p-tabview-nav-container"><div class="p-tabview-nav-content">' +
+            '<ul class="p-tabview-nav">' +
             '<li><a role="tab" aria-controls="synthetic-induk">Induk</a></li>' +
-            '<li><a role="tab" aria-controls="synthetic-appendix">L1D</a></li></ul>' +
+            '<li><a role="tab" aria-controls="synthetic-appendix">L1D</a></li></ul></div></div>' +
             '<div class="p-tabview-panels">' +
-            '<div class="p-tabview-panel" id="synthetic-induk" hidden></div>' +
-            '<div class="p-tabview-panel" id="synthetic-appendix">' +
+            '<p-tabpanel><div class="p-tabview-panel" id="synthetic-induk" hidden></div></p-tabpanel>' +
+            '<p-tabpanel><div class="p-tabview-panel" id="synthetic-appendix">' +
             '<label for="synthetic-field">Synthetic appendix</label>' +
-            '<input id="synthetic-field" value="0000123"></div></div>';
+            '<input id="synthetic-field" value="0000123"></div></p-tabpanel></div>';
         root.append(view);
         view.querySelector('#synthetic-induk').append(form);
         for (const tab of view.querySelectorAll('a[role=tab]')) {
