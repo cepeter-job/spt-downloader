@@ -1,6 +1,7 @@
 """One inspected financial-document POST, captured before transport and replayed once."""
 import hashlib
 import json
+import re
 import time
 from urllib.parse import urlparse
 import uuid
@@ -111,6 +112,30 @@ def _unique_object(pairs):
     return result
 
 
+def _selected_corporate_detail(url, record):
+    """Accept only inspected route shapes, with literal selected identities."""
+    detail, listed = urlparse(url), urlparse(record['list_url'])
+    if detail.query or detail.fragment or detail.params:
+        return False
+    taxpayer = list_taxpayer_id(record['list_url'])
+    if not all(isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_-]+', value)
+               for value in (taxpayer, record.get('record_id'))):
+        return False
+    prefix = '/returnsheets/id-ID/'
+    list_path = listed.path.rstrip('/')
+    if list_path == prefix + 'corporatereturnsheets/' + taxpayer:
+        return detail.path == list_path + '/' + record['record_id']
+    if list_path != prefix + 'submitted-returnsheets/' + taxpayer:
+        return False
+    expected = (prefix + 'corporate-income-tax-return/' + taxpayer + '/'
+                + record['record_id'] + '/ICT_RCIT/')
+    # The opaque context comes from the inspected active URL, never a guessed
+    # document identifier. Exact document equality is checked throughout replay.
+    return (detail.path.startswith(expected) and re.fullmatch(
+        r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',
+        detail.path[len(expected):]) is not None)
+
+
 class FinancialPost:
     """Own the temporary route and secret envelope through verified persistence."""
 
@@ -142,9 +167,7 @@ class FinancialPost:
         _cancel(self.check_cancel)
         _policy(self.page)
         self.verify_scope(self.page, self.record)
-        expected_path = urlparse(self.record['list_url']).path.rstrip('/') + '/' + self.record['record_id']
-        if ('/corporatereturnsheets/' not in expected_path
-                or urlparse(self.page.url).path != expected_path):
+        if not _selected_corporate_detail(self.page.url, self.record):
             raise ValueError('Financial POST requires the selected corporate return detail')
         if self.invalid or self.page.url != self.control['document_url']:
             raise ValueError('Financial request or document changed')

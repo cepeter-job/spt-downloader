@@ -64,7 +64,7 @@ def test_resume_links_to_correct_external_detail_without_generic_backlink(tmp_pa
         target = load_workbook(tmp_path / link.target)
         sheet_name = link.location.rsplit('!', 1)[0].strip("'")
         assert sheet_name in target.sheetnames
-        caption = 'Induk'
+        caption = 'INDUK'
         for directory, expected in [('SPT Masa 21/', 'Induk SPT PPh Pasal 21/26'),
                                     ('SPT Masa PPN/', 'Induk SPT PPN'),
                                     ('SPT Masa Unifikasi/', 'Induk SPT PPh Unifikasi')]:

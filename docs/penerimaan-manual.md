@@ -62,6 +62,8 @@ Kegagalan file terkunci atau listrik padam tidak perlu dibuat pada data nyata. G
 - [ ] Total L9 kelompok LAINNYA terikat ke tabel yang benar pada capture baru yang menyimpan pemilik kelompok. Capture lama tanpa bukti pemilik tetap dilaporkan belum terpetakan.
 - [ ] L11-B menampilkan label DER, referensi total rata-rata utang/modal, serta rasio dua desimal yang dihitung Excel. Periksa referensi ketika tabel tumbuh; operand hilang/tidak aman atau modal nol tidak menghasilkan rasio fiktif dan memiliki alasan PARTIAL pada Audit.
 - [ ] Blok tambahan yang dihilangkan dari L2/L3/L4/L11-A/L11-B tidak menghilangkan checkpoint atau hitungan yang belum terpetakan pada Audit.
+- [ ] Bandingkan hasil Badan dengan referensi tampilan bersih yang disetujui: Induk dua kolom, L8 tiga kolom, body tabel mengikuti baris yang berisi nilai (termasuk nol), satu slot untuk tabel kosong, serta header/pemisah/total tetap ada. Periksa footer, merge dan DER setelah tabel dipadatkan maupun diperpanjang; source_total dan proof tetap cocok dengan capture.
+- [ ] Seluruh accounting Badan memakai nol desimal; nilai numerik tersimpan tetap sama dengan sumber, termasuk pecahannya. Rasio DER dan tampilan persentase tetap memakai dua desimal.
 - [ ] Tautan indeks resume menuju workbook, lembar, dan pembetulan yang tepat; SPT tidak diberi backlink generik ke resume.
 - [ ] Pada scope yang sama, hanya resume yang sudah ada diperbarui tanpa dialog; SPT/PDF terpilih yang sudah ada tetap meminta consent. Penolakan membatalkan publikasi tanpa mengubah resume atau file lama.
 - [ ] Salinan seluruh folder ke lokasi uji lain tetap memiliki tautan relatif yang berfungsi tanpa mengganti nama berkas.

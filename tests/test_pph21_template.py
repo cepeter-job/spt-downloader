@@ -321,10 +321,11 @@ def test_template_is_shipped_and_used_from_the_copied_worker_resource_tree(tmp_p
 
 def test_other_tax_types_keep_the_existing_generic_form_output(tmp_path):
     run = run_for([section('Induk', fields=[{'label': 'Record marker', 'field': 'marker', 'value': 'SYNTHETIC CORPORATE'}])])
-    run['records'][0]['meta']['Jenis Pajak'] = 'PPh Badan'
-    exporter.export_split_workbooks(run, tmp_path)
+    run['records'][0]['meta']['Jenis Pajak'] = 'PPh Pasal 22'
+    paths = exporter.export_split_workbooks(run, tmp_path)
     coretax.verify_outputs(run, tmp_path)
-    wb = load_workbook(tmp_path / 'SPT_Badan_Januari 2025_Normal.xlsx')
+    detail, = [path for name, path in paths.items() if name != 'resume.xlsx']
+    wb = load_workbook(detail)
     try:
         assert wb['Induk']['A1'].value == 'Induk'
         assert wb['Induk'].freeze_panes == 'A3'

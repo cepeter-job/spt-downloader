@@ -74,7 +74,7 @@ def test_each_model_file_contains_only_its_own_all_form_sheets(tmp_path, tax, pe
             assert markers == [f'SYNTHETIC {identifier} / {form}' for form in expected_forms]
             # Unsupported Induk rows are source-only for approved clean forms;
             # the generic L-Z still displays both duplicate rows unchanged.
-            copies = 2 if tax in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi') else 4
+            copies = 2 if tax in ('PPh Badan', 'PPN', 'PPh Pasal 21/26', 'PPh Unifikasi') else 4
             assert values.count('00007') == copies and values.count('1.234,50') == copies
             if tax == 'PPN':
                 assert workbook['Induk']['E45'].value == int(expected[identifier]['sections'][0]['fields'][-1]['value'])

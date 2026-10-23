@@ -601,7 +601,7 @@ def test_unknown_masa_has_no_invented_corporate_decoder():
     ineligible(adapt([opaque], record=record))
 
 
-def test_reopened_real_export_preserves_raw_values_types_paths_duplicates_and_resume_links(tmp_path):
+def test_clean_induk_preserves_raw_source_custody_types_paths_duplicates_and_resume_links(tmp_path):
     form = current_form()
     form['MainFormData']['NetIncomeBeforeTax'] = Number('9007199254740993.0000')
     form['MainFormData']['TaxRate'] = '=SUM(1,2)'
@@ -615,7 +615,10 @@ def test_reopened_real_export_preserves_raw_values_types_paths_duplicates_and_re
     run = {'npwp': NPWP, 'year': 2025, 'year_basis': 'period', 'complete': False,
            'inventory_complete': False, 'taxpayer_name': 'SYNTHETIC COMPANY',
            'started_at': 'fixture', 'audit': [], 'errors': [], 'records': [record]}
-    files = exporter.export_split_workbooks(run, tmp_path)
+    before = deepcopy(run)
+    reports = []
+    files = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert run == before
     assert set(files) == {'resume.xlsx', 'SPT_Badan_Tahun 2025_Pembetulan 001.xlsx'}
     coretax.verify_outputs(run, tmp_path)
     workbook = load_workbook(tmp_path / 'SPT_Badan_Tahun 2025_Pembetulan 001.xlsx')
@@ -625,16 +628,28 @@ def test_reopened_real_export_preserves_raw_values_types_paths_duplicates_and_re
         proof = exporter.read_workbook_proof(workbook)
         assert proof['complete'] is False and proof['records'][0]['capture_complete'] is False
         assert proof['records'][0]['meta']['Model SPT'] == 'Pembetulan 001'
-        rows = [list(row) for row in workbook['Induk'].iter_rows(values_only=True)]
+        # Raw JSON paths remain in unchanged source custody, while the approved
+        # clean Induk does not display unsupported raw JSON tables as form data.
+        rows = source_rows(result)
         assert any(row[:3] == ['/MainFormData/NetIncomeBeforeTax', 'number', '9007199254740993.0000'] for row in rows)
         assert any(row[:3] == ['/MainFormData/Tin', 'string', NPWP] for row in rows)
         for index in [0, 1]:
             assert any(row[:3] == [f'/Payload/Data/{index}/TaxBase', 'number', '12.3400'] for row in rows)
             assert any(row[:3] == [f'/Payload/Data/{index}/IsManually', 'boolean', False] for row in rows)
             assert any(row[:3] == [f'/Payload/Data/{index}/Action', 'null', None] for row in rows)
-        literals = [cell for sheet in workbook for row in sheet for cell in row
-                    if cell.value in {'9007199254740993.0000', '12.3400', NPWP, '=SUM(1,2)'}]
-        assert literals and all(cell.data_type == 's' for cell in literals)
+        literals = [value for _, _, value in rows
+                    if value in ('9007199254740993.0000', '12.3400', NPWP, '=SUM(1,2)')]
+        assert literals and all(type(value) is str for value in literals)
+        assert workbook['Induk']['A1'].value == 'INDUK' and workbook['Induk'].max_column == 2
+        assert not any(isinstance(cell.value, str) and cell.value.startswith('/MainFormData/')
+                       for row in workbook['Induk'] for cell in row)
+        captured_tables = [table for section in record['sections'] for table in section.get('tables', [])]
+        assert reports[0]['unmapped_tables'] == len(captured_tables)
+        assert reports[0]['unmapped_rows'] == sum(len(table['rows']) for table in captured_tables)
+        assert not reports[0]['complete']
+        audit = [row for row in resume['Audit'].iter_rows(values_only=True) if row[0] == 'Pemetaan template']
+        assert len(audit) == 1 and audit[0][1:5] == (
+            reports[0]['unmapped_fields'], reports[0]['unmapped_tables'], reports[0]['unmapped_rows'], 'PARTIAL')
         links = [c.hyperlink for sheet in resume for row in sheet for c in row if c.hyperlink]
         assert any(link.target == 'SPT_Badan_Tahun 2025_Pembetulan 001.xlsx' and link.location == "'Induk'!A1" for link in links)
         assert not list(tmp_path.rglob('*.pdf')), 'Decoder metadata is not downloaded PDF custody'

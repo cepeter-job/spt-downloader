@@ -43,7 +43,7 @@ def post_routed(browser, monkeypatch):
     def create(*, payload=None, endpoint=ENDPOINT, label=LABEL,
                component='rshshr-citr-main-form', body=PDF,
                content_type='application/pdf', status=200, headers=None,
-               count=1, change_scope=None, script=SCRIPT):
+               count=1, change_scope=None, script=SCRIPT, detail_url=DETAIL):
         context = browser.new_context(service_workers='block')
         context._spt_financial_route_policy = 'service_workers_blocked'
         contexts.append(context)
@@ -74,7 +74,7 @@ def post_routed(browser, monkeypatch):
                                       status=status, headers=headers or {})
                 else:
                     intercept.abort('blockedbyclient')
-            elif request.url == DETAIL:
+            elif request.url == detail_url.split('#', 1)[0]:
                 intercept.fulfill(body=html, content_type='text/html')
             elif request.url == ORIGIN + SCRIPT_PATH:
                 intercept.fulfill(body=script, content_type='application/javascript')
@@ -83,7 +83,7 @@ def post_routed(browser, monkeypatch):
 
         context.route('**/*', route)
         page = context.new_page()
-        page.goto(DETAIL, wait_until='load')
+        page.goto(detail_url, wait_until='load')
         return page, wire
 
     yield create
