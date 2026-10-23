@@ -88,6 +88,14 @@ malformed, mixed, coercive and unsafe keys remain unsupported. Preserve original
 rows, duplicates, candidate evidence order, ParameterData and selected raw paths.
 PERIOD/model dropdown uniqueness and the owned attempt-clock stability rules
 remain separate. Sorting does not authorize cache reads or extra requests.
+Check every explicit catalog/detail language contradiction before unsupported
+shape/order fallback, including packets without observed forms. PPh21/Unifikasi
+ordinary duplicate-Code catalogs additionally require positive Induk
+`reference_order_build` custody for the exact reviewed loaded vendor digest.
+Pure projectors only declare the dependency. Observe the optional proof once
+through the existing bounded asset reader; never fetch an absent asset. Any
+present invalid proof is unsupported, while missing proof preserves legacy
+unique-Code compatibility. Retain the verified digest with selected provenance.
 
 Submitted corporate L7/L11-C semantic proofs accept only the literal selected
 query-free legacy route or that exact route with `?view=true`, matching the

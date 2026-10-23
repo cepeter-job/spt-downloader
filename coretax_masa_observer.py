@@ -8,6 +8,20 @@ from coretax_masa_json import check_masa_request_identities
 
 from coretax_masa_bindings import MAIN_SOURCE, TAX_SOURCES, BUILD_DIGESTS, FORMS
 
+
+def _reference_order_build(page, check_cancel):
+    """Hash only the already loaded reviewed vendor; absence stays optional."""
+    from coretax_browser import _check_cancel
+    from coretax_json import REFERENCE_ORDER_SOURCE, REFERENCE_ORDER_SHA256
+    _check_cancel(check_cancel)
+    try:
+        digest = page.evaluate(_BUILD_HASH, REFERENCE_ORDER_SOURCE)
+    except Exception:
+        digest = None
+    _check_cancel(check_cancel)
+    return digest if digest == REFERENCE_ORDER_SHA256 else None
+
+
 # Both reviewed Masa chunks load the same main bundle, which exceeds 4 MiB.
 # Only that loaded, digest-verified main asset receives the larger byte budget.
 _PPN_MAIN_BUILD_HASH = r'''async url => {
@@ -258,6 +272,7 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             if digest != BUILD_DIGESTS[url]:
                 return None
             builds[url] = digest
+        reference_order = _reference_order_build(page, check_cancel) if tax == 'PPh Unifikasi' else None
         if tax == 'PPN':
             from coretax_browser import _ppn_catalog_ready
             if not _ppn_catalog_ready(page, check_cancel):
@@ -284,6 +299,8 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             if fields is None or any(not field['field'] or not field['label'] for field in fields):
                 return None
             binding = {'name': name, 'fields': fields, 'tables': [], 'builds': dict(builds), **environment}
+            if name == 'INDUK' and reference_order is not None:
+                binding['reference_order_build'] = reference_order
             if tax == 'PPh Unifikasi' and name == 'INDUK':
                 tree = form.locator('rshshr-spt-unifikasi-grid p-treetable table:visible')
                 if tree.count() != 1:

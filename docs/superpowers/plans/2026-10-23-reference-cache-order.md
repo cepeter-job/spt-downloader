@@ -91,6 +91,22 @@ Existing dated positive fixtures now supply the required dependency proof, with
 an actually loaded synthetic vendor for the full native PPh21 saved export.
 The follow-up production guards are not implemented in this tests-first commit.
 
+Follow-up RED run39949738494 tested merge
+`538351e14e3643ab84f2402da283146ca12ebfb6`, head
+`f55cc0d47116e7876fdd819ae85f7283a6e8bce1`, tree
+`54e3571841ac51148ba2086eef7e058c022f4e26`:4,821 Windows cases,
+4,767 passed,54 intended failures,zero errors/skips. Read both digest-matched
+JUnit archives before implementing the guards (artifacts12500836362 and
+12499603874; SHA256 respectively
+`1f2d6c8354ebc6dc709b6021c487ed3a5e5efb506724fea7e9ee763a4a0fc97f`
+and `56306cec22e80e4c58f82f683e4e33a12360fe3c3e5eb84825213c699f6dab30`).
+Failures cover preflight priority, dependency declarations, native missing/wrong/
+positive proof, loaded-asset rehash and the newly proof-bearing saved fixture.
+The strengthened Unifikasi observer fixture also traps body/footer/dropdown
+reads and verifies GET methods. The subsequent implementation adds the shared
+locale preflight, duplicate dependency flags, optional loaded-vendor observation,
+native proof validation and selected-value provenance; GREEN remains pending.
+
 Preceding other-session [PR101](https://github.com/cepeter-job/spt-downloader/pull/101)
 merged as `f45ba79f26eaa923c3afc017eab0458d8be66328`. Reviewed all seven changed
 files, including finite Authorization budget, exact one-request replay,

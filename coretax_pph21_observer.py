@@ -4,7 +4,8 @@ import re
 from coretax_json import ORIGIN, PPH21_REFERENCE_URLS, JsonSafetyError
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
 from coretax_masa_bindings import MAIN_SOURCE, BUILD_DIGESTS as MASA_BUILD_DIGESTS
-from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests
+from coretax_masa_observer import (TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests,
+                                   _reference_order_build)
 
 ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
 BUILD_DIGESTS = {MAIN_SOURCE: MASA_BUILD_DIGESTS[MAIN_SOURCE],
@@ -124,6 +125,7 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
             if digest != BUILD_DIGESTS[url]:
                 return None
             builds[url] = digest
+        reference_order = _reference_order_build(page, check_cancel)
         view, tabs = _tabs(page)
         canonical = {name.upper(): name for name in FORMS}
         names = [canonical.get(tabs.nth(i).inner_text().strip().upper()) for i in range(tabs.count())]
@@ -152,6 +154,8 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
             if fields is None:
                 return None
             binding = {'name': name, 'fields': fields, 'tables': [], 'builds': dict(builds), **environment}
+            if name == 'Induk' and reference_order is not None:
+                binding['reference_order_build'] = reference_order
             if not roles:
                 if root.locator('ui-grid').count():
                     return None

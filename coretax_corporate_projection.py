@@ -5,7 +5,7 @@ import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
-                          _select_reference_version, _reference_consumer_order)
+                          _select_reference_version, _reference_consumer_order, _reference_locale)
 from coretax_masa_bindings import _decimal, _number, _evidence
 
 CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
@@ -162,6 +162,7 @@ def _l11c_date(value):
 
 def project_countries(payload, *, clock_interval=None):
     """Exact naturally observed COUNTRY_CODE consumer; never read browser cache."""
+    _reference_locale(payload)
     if (not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict)
             or payload[0].get('ReferenceDataType') != 'COUNTRY_CODE'
             or not isinstance(payload[0].get('Details'), list)):
@@ -199,7 +200,8 @@ def project_countries(payload, *, clock_interval=None):
         if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
             entry['clock_interval'] = dict(clock_interval)
         selected[code] = deepcopy(entry)
-    return {'lookups': lookups, 'provenance': evidence, 'selected': selected}
+    return {'lookups': lookups, 'provenance': evidence, 'selected': selected,
+            'requires_vendor': any(len(items) > 1 for items in groups.values())}
 
 
 def project_l11c(form, *, headers, footer_spans, tax_type, locale, timezone_name, country_labels):

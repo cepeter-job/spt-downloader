@@ -18,6 +18,8 @@ PPH21_REFERENCE_URLS = (PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL)
 UNIFIKASI_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'EBUPOT_TAX_CERTIFICATE,EBUPOT_PAYMENT_METHOD,EBUPOTSP_TAX_OBJECT,EBUPOTCY_TAX_OBJECT,PERIOD')
 CORPORATE_COUNTRY_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/COUNTRY_CODE'
+REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
+REFERENCE_ORDER_SHA256 = '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -53,6 +55,35 @@ def validate_detail_source(value):
 
 class _UnsupportedMetadata(ValueError):
     pass
+
+
+def _reference_locale(payload):
+    """Check explicit catalog/detail locale before any unsupported fallback."""
+    if not isinstance(payload, list):
+        return
+    for catalog in payload:
+        if not isinstance(catalog, dict):
+            continue
+        if 'language' in catalog and catalog['language'] != 'id-ID':
+            raise JsonSafetyError('Reference catalog locale contradicts bound request')
+        details = catalog.get('Details')
+        if isinstance(details, list):
+            for entry in details:
+                if isinstance(entry, dict) and 'language' in entry and entry['language'] != 'id-ID':
+                    raise JsonSafetyError('Reference detail locale contradicts bound request')
+
+
+def _reference_order_proof(induk, projected):
+    """Duplicate ordinary codes depend on the positively hashed loaded vendor."""
+    present = 'reference_order_build' in induk
+    if (present and (type(induk['reference_order_build']) is not str
+                     or induk['reference_order_build'] != REFERENCE_ORDER_SHA256)
+            or projected['requires_vendor'] and not present):
+        raise _UnsupportedMetadata('unverified_reference_order_build')
+    if present:
+        for entry in projected['provenance']:
+            if entry.get('catalog_order_rule'):
+                entry['reference_order_build'] = induk['reference_order_build']
 
 
 def _capture_clock_interval(value, attempt):
@@ -718,6 +749,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
     envelope = _corporate_json(raw)
     _corporate_privacy(envelope)
+    if reference and isinstance(envelope, dict):
+        _reference_locale(envelope.get('Payload'))
     if (urlparse(endpoint).path == '/returnsheet/api/prefillreturnsheet/corporate-income'
             and isinstance(envelope, dict) and isinstance(envelope.get('Payload'), dict)):
         status_source = selected['native_fields'].get('ReturnSheetStatusCode')

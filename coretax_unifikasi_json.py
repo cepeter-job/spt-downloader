@@ -1,6 +1,6 @@
 """Reviewed Unifikasi catalogs and submitted controls, separate from PPN/PPh21."""
 from coretax_json import (JsonSafetyError, _UnsupportedMetadata, _select_reference_version,
-                          _reference_consumer_order)
+                          _reference_consumer_order, _reference_locale, _reference_order_proof)
 from coretax_masa_bindings import _source_scalar, project_unifikasi_text
 
 REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'EBUPOT_PAYMENT_METHOD',
@@ -8,9 +8,10 @@ REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'EBUPOT_PAYMENT_METHOD',
 
 
 def project_references(payload, *, clock_interval=None):
+    _reference_locale(payload)
     if not isinstance(payload, list) or len(payload) != len(REFERENCE_TYPES):
         raise _UnsupportedMetadata('incomplete_unifikasi_reference_catalogs')
-    lookups, evidence = {}, []
+    lookups, evidence, requires_vendor = {}, [], False
     for index, catalog in enumerate(payload):
         if not isinstance(catalog, dict):
             raise _UnsupportedMetadata('unsupported_unifikasi_reference_catalog')
@@ -46,6 +47,8 @@ def project_references(payload, *, clock_interval=None):
                     descriptions[ordinal] = item
         for ordinal, entry in ordered:
             groups.setdefault(entry['Code'], []).append((ordinal, entry))
+        if kind != 'PERIOD':
+            requires_vendor |= any(len(items) > 1 for items in groups.values())
         lookup = {}
         for code, versions in groups.items():
             if kind == 'PERIOD' and len(versions) != 1:
@@ -58,7 +61,7 @@ def project_references(payload, *, clock_interval=None):
             if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
                 selected['clock_interval'] = dict(clock_interval)
         lookups[kind] = lookup
-    return {'lookups': lookups, 'provenance': evidence}
+    return {'lookups': lookups, 'provenance': evidence, 'requires_vendor': requires_vendor}
 
 
 def project_field(form, outer, control, lookups):
@@ -126,4 +129,8 @@ def reference_projection(observed_forms, packets):
         raise _UnsupportedMetadata('incomplete_unifikasi_reference_binding')
     source = _reference(first[0], UNIFIKASI_REFERENCE_URL, packets)
     projected = project_references(source['payload'], clock_interval=source['event'].get('clock_interval'))
+    induk = [form for form in observed_forms if form.get('name') == 'INDUK']
+    if len(induk) != 1:
+        raise _UnsupportedMetadata('unbound_unifikasi_reference_owner')
+    _reference_order_proof(induk[0], projected)
     return projected['lookups'], projected['provenance'], source

@@ -99,6 +99,14 @@ bukti kandidat dan path terpilih tetap memakai urutan/indeks respons asli.
 ParameterData dipertahankan dalam provenance. Metadata malformed atau key yang
 tidak terbukti tetap unsupported; waktu replay, dropdown Model/PERIOD dan
 perizinan request tidak berubah.
+Kontradiksi language eksplisit pada katalog/detail diperiksa sebelum fallback
+metadata, termasuk packet tanpa form teramati. Kode ordinary berulang pada
+PPh21/Unifikasi memerlukan `reference_order_build` pada Induk: hash positif
+vendor termuat yang menyediakan comparator. Observer mengukur sekali melalui
+pembaca asset berbatas yang ada; asset absen tidak di-fetch. Proof absen tetap
+kompatibel untuk kode unik, proof salah tetap unsupported, dan digest terverifikasi
+disimpan bersama provenance nilai terpilih. Projector murni hanya menyatakan
+`requires_vendor`; tidak mengklaim browser telah memuat asset.
 
 Sampel lingkungan akhir juga dapat memompa event jaringan. Request baru pada
 batas itu membuat capture PARTIAL meskipun responsnya sudah dikeluarkan oleh
