@@ -94,3 +94,32 @@ All three B footer rows and both standalone fields remain source-faithful. The
 two fields have no approved writable slots and stay unresolved in Audit. Whole
 Induk mapping, financial PDFs, other enabled forms, final run COMPLETE and
 authorized live corporate acceptance retain independent gates.
+
+## Owned Edge fixture continuation
+
+The accepted82-case packet plan/tests are published in draftPR110. Original
+packet RED39981436612 has now been fully read before admission/adapter edits.
+Its exact5110-case Windows inventory had5036 passes and74 failures:70 intended
+missing native/admission checks, two invalid privacy-regex fixture expectations
+(the existing guard correctly rejected secret metadata), and two existing
+browser fixtures with timing/timeout wording failures. All710 overlapping
+portable cases passed, zero errors/skips. All six archives' SHA256, run/merge
+metadata, phases and JUnit identities reconcile. The privacy wording is repaired
+in the fixture only; PR108's reviewed recovery fixture repair is now integrated.
+The financial timeout wording failure remains separate from native behavior.
+The next29 cases
+exercise actual owned View/SPA capture with synthetic source bytes, id-ID/Jakarta
+and blocked Service Workers. Positive Normal/Amendment002 fixtures use early/late
+footer requests, exact multi-level A/flat B headers, both actual accordion owners,
+all source dependencies, pagination, checkpoint replay and final saved compaction.
+
+DOM bodies/footers/inputs contain different synthetic bait values; enclosing
+text/element reads and uninspected clicks are trapped. Controls cover wrong
+locale/timezone, external context, changed vendor bytes, fetch/preload-only proof
+for each provider, wrong grid/ui-grid/p-table/group ancestry, duplicate/hidden
+owners, missing/failed dependencies, conflicting second footer, Stop and explicit
+read-trap verification. These remain fixtures, not runtime proof, until the actual
+runner results are read. No native admission/observer/dispatcher change is included.
+Fresh review accepted the second-footer completion counter and retained distinct
+original byte assertions. Stop currently tests entry cancellation/cleanup only;
+interruption during L3 pagination/dependency waits needs implementation coverage.

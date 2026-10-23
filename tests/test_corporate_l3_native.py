@@ -271,7 +271,7 @@ def test_l3_known_source_contradictions_remain_fatal_before_any_semantic_fallbac
     category = ('snapshot' if defect.startswith('changed-') else
         'contradicts selected return' if defect in ('foreign-footer-id', 'foreign-grid-id') else
         'frame' if defect == 'foreign-frame' else 'authorization' if defect == 'authorization' else
-        'Authentication material|privacy|forbidden' if defect == 'privacy' else
+        'Authentication material|privacy|forbidden|prohibited secret' if defect == 'privacy' else
         'clock' if defect == 'clock' else 'lifetime')
     with pytest.raises(JsonSafetyError, match=category):
         adapt_corporate_detail(iter(raw), selected(), corpus.SCOPE, bindings() if bound else [])

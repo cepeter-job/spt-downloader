@@ -87,7 +87,24 @@ Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit
 
 Latest approved corporate clean presentation: Induk now uses the operator-approved two-column layout and L8 the approved three-column table, with only static captions/styles in source. This supersedes the earlier generic-Induk restriction. Induk/L1-D/L8/L9 also omit redundant raw display appendices, retaining checkpoints and truthful unresolved counts. Compact only known template body ranges to populated captured rows (zero and False are content); keep one body slot for an empty table, intentional separators, headers, captured totals, merges and styles. Map before compaction and move verified DER references with both removed and inserted rows. L1-D omits its first three title/identity rows plus the empty row before its first header; metadata remains in checkpoint/proof. All corporate accounting defaults to zero decimal places, including existing reference accounting cells and newly bound monetary cells; retain exact stored numeric values without rounding. DER ratios and percentage displays keep their existing two-decimal formats. These are presentation exceptions only; native eligibility and capture/PDF completion gates are unchanged.
 
-Owned L8 DOM capture records raw body cells, colspans and rowspans atomically under the exact `rshshr-citr-l8-form` / `rsh-citr-l8-form-grid1` owner and observed group. Single-page `[1,2]` heading cells may merge B:C; ordinary cells and footer remain three columns. Reject contradictory/missing span proof, foreign ownership and unsupported rowspans; never pad legacy two-cell rows or infer their columns from labels/positions. Preserve raw captures and unresolved counts. The approved Induk presentation keeps two blank separator rows, safe numeric monetary slots with zero-decimal accounting, literal identity/choice fields, the tariff caption without its numeric choice prefix, and the reviewed title/borders/width. L6/L8 use the approved thin borders. Resume Audit gives mapping counts a dedicated field/table/row header without changing inventory headings, existing row markers, PDF links or completion semantics.
+Owned L8 DOM capture records raw body cells, colspans and rowspans atomically under the exact `rshshr-citr-l8-form` / `rsh-citr-l8-form-grid1` owner and observed group. Single-page `[1,2]` heading cells may merge B:C; ordinary cells and footer remain three columns. Reject contradictory/missing span proof, foreign ownership and unsupported rowspans; never pad legacy two-cell rows or infer their columns from labels/positions. Preserve raw captures and unresolved counts. The approved Induk presentation uses populated C/D/E/F section headings and one blank separator after identity, safe numeric monetary slots with zero-decimal accounting, literal identity/choice fields, the tariff caption without its numeric choice prefix, and the reviewed title/borders/width. L6/L8 use the approved thin borders. Resume Audit gives mapping counts a dedicated field/table/row header without changing inventory headings, existing row markers, PDF links or completion semantics.
+
+The reviewed Induk C-section binds its two additional monetary amounts only by
+the exact group, blank field name and full captured question caption, separately
+from the similarly named radio choices. Keep duplicate/foreign/unsafe bindings
+unresolved. Only populated groups receive section headings; the C heading is
+unbordered and D/E/F headings use horizontal rules. Keep the approved tariff
+position at the end, first captured L9 total bold, and the empty L10-C monetary
+body slot in zero-decimal accounting. Reviewed L2/L3/L6/L8/L9/L10-A omissions add
+`reviewed_redundant_fields`/`reviewed_redundant_tables` counts to mapping reports
+and an Audit note; those counts remain included in unmapped totals and never
+promote COMPLETE. New DOM business-field capture excludes actual paginator
+descendants. Never classify legacy unnamed values as paginator proof. The three
+reviewed-but-unqualified L11-B unnamed controls retain their unresolved counts
+until informative source evidence is available; preserve DER availability gates.
+Recovery fixtures use a two-second synthetic budget with a slow healthy read,
+failed middle panel, later-panel recovery and Stop propagation. Production's
+shared 30-second readiness deadline and diagnostic budget are unchanged.
 
 ## Verification
 
