@@ -36,6 +36,19 @@
 
 ## Task 2 — Pin the real mismatch and repair it
 
+The operator's verified-candidate rerun now identifies the first failing
+predicate: Authorization text validation at the existing 8192-character bound.
+Route, body, final selected taxpayer and content-type checks passed. The pinned
+main interceptor always sets Authorization from its token-type/access-token
+getter. Header presence/size/content was deliberately not retained, so an
+over-limit token remains an inference until a controlled live retest. Test a
+65536-character bounded envelope with invented credentials across the old/new
+boundaries, while rejecting absent, empty, unsafe and over-budget values.
+Separate the equivalent presence/size/syntax failures into safe frame locations.
+Change only this transport budget; preserve identical captured credentials and
+all request/source/scope/replay/custody gates. Confirm the hypothesis with actual
+PDF bytes before claiming live repair. Integrate reviewed PR98 and fresh main.
+
 - [ ] Run the verified candidate against the same authorized operator scope; inspect its safe first rejection evidence. Do not guess the underlying condition.
 - [ ] Reproduce the demonstrated condition with a representative synthetic browser fixture, observe runner RED, then make the smallest compatible repair and observe full GREEN.
 - [ ] Keep unsupported behavior PARTIAL; if the evidence requires a new source/permission contract, make the concrete change reviewable before requesting any expanded authority.
