@@ -99,6 +99,19 @@ Setiap primary PPN, termasuk Normal, harus menyatakan ReturnSheetStatusCode=SUBM
 
 ## Batas akses baca
 
+Manifest capture dapat menyimpan bukti opsional `component_lifetime` untuk
+transisi SPA dari pemilik list submitted yang terlihat ke pemilik corporate
+yang unik. Context harus milik worker dengan Service Worker diblokir; capture
+menahan Document asli dan tepat satu navigasi main frame ke URL terpilih dengan
+`?view=true`. Pemeriksaan akhir masuk ke fence drain yang sama dengan clock,
+agar request terlambat tidak mendapat COMPLETE. Detour atau penggantian
+Document yang diketahui tetap fatal. POST pengganti laporan keuangan yang
+persis dikenali hanya memasang veto tanpa membaca body/header atau menambah
+izin request. Replay memvalidasi attempt/record/URL, menolak override per
+descriptor dan bukti packet yang tercampur, lalu menyalin metadata tervalidasi.
+Capture lama tanpa bukti tetap dapat dibaca; metadata ini belum mengaktifkan
+proyeksi native L1-D dan tidak membuktikan mapping/PDF.
+
 Proyeksi bisnis Badan L7 berada di `coretax_corporate_projection.py`, terpisah dari
 observer struktur dan pemeriksaan custody pada adapter. Cabang native memerlukan
 dua source pin yang termuat, rute submitted literal, sumber current serta field

@@ -126,3 +126,31 @@ Native eligibility, capture, mapping, financial PDFs and publication stay separa
 - [ ] Keep unproved lifecycle/currency/financial branches and unselected live
       scopes unsupported. No live acceptance or whole-corporate mapping claim
       follows from pure-source helper tests.
+
+## Prerequisite review cycle
+
+The later tests-first run39943608612 at tested merge
+`2829c946fa7169cef3c726882227b8122a78d6f3` ran4,686 Windows cases: all4,595
+baseline cases passed, with45 intended new failures and zero errors/skips.
+Those failures cover40 lifetime/current-route cases, three optional/overwritten
+mask cases and two final saved-layout cases. The remaining46 new cases passed.
+The pure helper now follows the source-proven optional/ignored mask semantics;
+it remains undispatched.
+
+Optional manifest-owned lifetime capture, both reader validators, packet
+consistency and the inspected View hook were added only after reading those
+failures. Fresh source review found an unreviewed matrix-parameter URL could
+pass the new route proof, and a Stop immediately after initial handle acquisition
+could leave the returned Document handle untracked for cleanup. Tests-first
+follow-up adds self-consistent live/checkpoint/packet matrix-parameter controls
+and an acquisition-time Stop control before fixing either issue. Three actual
+Edge cases also exercise rapid replaceState/popstate detours and same-URL reload;
+the positive SPA case covers both pushState and replaceState driver events.
+
+Reviewed preceding other-session PR101 and integrated its latest main
+`f45ba79f26eaa923c3afc017eab0458d8be66328` without source conflicts. The new
+Authorization budget/first-rejection diagnostics and their23 synthetic tests
+remain intact. The combined prerequisite candidate expects4,719 Windows cases.
+The current View compatibility correction is separately tracked in PR104; the
+two saved L1-D geometry failures remain open. This prerequisite candidate does
+not enable native L1-D or certify its mapping/PDF/live acceptance.

@@ -209,14 +209,15 @@ def test_checkpoint_lifetime_schema_or_scope_contradictions_are_fatal(tmp_path, 
         checkpoint_bodies(tmp_path, capture_metadata, record, SCOPE)
 
 
-def test_actual_inspected_view_tracks_same_document_spa_without_business_reads(tmp_path):
+@pytest.mark.parametrize('navigation', ['pushState', 'replaceState'])
+def test_actual_inspected_view_tracks_same_document_spa_without_business_reads(tmp_path, navigation):
     import coretax_browser as driver
     from playwright.sync_api import sync_playwright
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel='msedge', headless=True)
         context = browser.new_context(service_workers='block')
         context._spt_financial_route_policy = 'service_workers_blocked'
-        script = ('history.pushState({},"",' + json.dumps(DETAIL) + ');'
+        script = ('history.' + navigation + '({},"",' + json.dumps(DETAIL) + ');'
                   'document.querySelector("rshshr-submitted-returnsheets").remove();'
                   'document.body.insertAdjacentHTML("beforeend","<rshshr-corporate-income-tax-return><h1>Fixture detail</h1></rshshr-corporate-income-tax-return>");'
                   'fetch(' + json.dumps(API_URL) + ',{method:"POST"}).then(r=>r.json())'
@@ -366,3 +367,136 @@ def test_packet_lifetime_contradiction_is_fatal_before_structural_fallback(obser
         del raw[1]['context']['component_lifetime']
     with pytest.raises(JsonSafetyError):
         adapt_corporate_detail(raw, record, scope, bindings if observed else [])
+
+
+def test_live_matrix_parameter_route_cannot_receive_lifetime_attestation(tmp_path):
+    from urllib.parse import urlparse
+    context, page = setup()
+    page.evaluate = lambda script: {'source_owner': page.url == LIST,
+        'detail_owner': urlparse(page.url).path == urlparse(DETAIL).path} if 'source_owner' in script else None
+    matrix = DETAIL.replace('?view=true', ';mode=edit?view=true')
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, matrix)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        with pytest.raises(JsonSafetyError):
+            observe(capture)
+            capture.drain()
+    assert not list(tmp_path.rglob('manifest.json'))
+
+
+@pytest.mark.parametrize('location', ['source', 'detail'])
+def test_checkpoint_matrix_parameters_are_rejected_with_self_consistent_urls(tmp_path, location):
+    context, page = setup()
+    record = selected()
+    with DetailJsonCapture(context, page, record, SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        observe(capture)
+        result = capture.drain()
+    record['detail_url'] = DETAIL
+    path = tmp_path / result['manifest']
+    saved = json.loads(path.read_bytes())
+    if location == 'source':
+        changed = LIST + ';mode=edit'
+        record['list_url'] = saved['source_url'] = saved['component_lifetime']['source_url'] = changed
+    else:
+        changed = DETAIL.replace('?view=true', ';mode=edit?view=true')
+        record['detail_url'] = saved['detail_url'] = saved['component_lifetime']['detail_url'] = changed
+        for descriptor in saved['responses']:
+            descriptor['frame_url'] = changed
+    raw = json.dumps(saved).encode()
+    path.write_bytes(raw)
+    wrapper = {**saved, 'manifest': result['manifest'], 'manifest_sha256': hashlib.sha256(raw).hexdigest()}
+    with pytest.raises(JsonSafetyError):
+        checkpoint_bodies(tmp_path, wrapper, record, SCOPE)
+
+
+@pytest.mark.parametrize('observed', [False, True])
+def test_packet_matrix_parameters_are_fatal_even_with_matching_proof_and_frame(observed):
+    from coretax_json import adapt_corporate_detail
+    raw, record, scope, bindings, proof = corporate_packets()
+    changed = record['detail_url'].replace('?view=true', ';mode=edit?view=true')
+    record['detail_url'] = changed
+    for packet in raw:
+        packet['context']['frame_url'] = changed
+        packet['context']['component_lifetime']['detail_url'] = changed
+    for binding in bindings:
+        if 'projection' in binding:
+            binding['projection']['route'] = changed
+    with pytest.raises(JsonSafetyError):
+        adapt_corporate_detail(raw, record, scope, bindings if observed else [])
+
+
+def test_stop_during_initial_document_acquisition_disposes_the_returned_handle(tmp_path):
+    from coretax_browser import CaptureCancelled
+    context, page = setup()
+    stopped = [False]
+    acquire = page.evaluate_handle
+    def acquire_and_stop(script):
+        document = acquire(script)
+        stopped[0] = True
+        return document
+    def cancel():
+        if stopped[0]:
+            raise CaptureCancelled('SYNTHETIC STOP')
+    page.evaluate_handle = acquire_and_stop
+    with pytest.raises(CaptureCancelled):
+        with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path, check_cancel=cancel) as capture:
+            begin(capture)
+    assert page.documents and all(document.disposed for document in page.documents)
+    assert not any(context.listeners.values()) and not any(page.listeners.values())
+    assert not list(tmp_path.rglob('manifest.json'))
+
+
+@pytest.mark.parametrize('change', ['replace-detour', 'popstate-detour', 'same-url-reload'])
+def test_real_driver_reports_rapid_history_detours_and_same_url_document_replacement(tmp_path, change):
+    import coretax_browser as driver
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel='msedge', headless=True)
+        context = browser.new_context(service_workers='block')
+        context._spt_financial_route_policy = 'service_workers_blocked'
+        action = ('history.pushState({},"",' + json.dumps(DETAIL) + ');'
+            'document.querySelector("rshshr-submitted-returnsheets").remove();'
+            'document.body.insertAdjacentHTML("beforeend","<rshshr-corporate-income-tax-return>Fixture detail</rshshr-corporate-income-tax-return>")')
+        style = '<style>rshshr-submitted-returnsheets,rshshr-corporate-income-tax-return{display:block}</style>'
+        html = style + '<rshshr-submitted-returnsheets><table><tbody><tr><td><button id="ViewButton" onclick=\'' + action + '\'>View</button></td></tr></tbody></table></rshshr-submitted-returnsheets>'
+        def route(item):
+            if item.request.url == LIST:
+                item.fulfill(body=html, content_type='text/html')
+            elif item.request.url == DETAIL:
+                item.fulfill(body=style + '<rshshr-corporate-income-tax-return>Reloaded detail</rshshr-corporate-income-tax-return>', content_type='text/html')
+            else:
+                item.abort()
+        context.route('**/*', route)
+        page = context.new_page()
+        page.goto(LIST)
+        try:
+            with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+                detail, popup = driver.open_return_readonly(page, page.locator('tbody tr'),
+                    'fixture-taxpayer', 'fixture-record', json_capture=capture)
+                assert not popup and observe(capture) == expected(capture)
+                events = []
+                page.on('framenavigated', lambda frame: events.append(frame.url) if frame is page.main_frame else None)
+                if change == 'replace-detour':
+                    page.evaluate('''({foreign, selected}) => {
+                        history.replaceState({}, '', foreign); history.replaceState({}, '', selected);
+                    }''', {'foreign': DETAIL.replace('fixture-record', 'foreign-record'), 'selected': DETAIL})
+                    assert events[-2:] == [DETAIL.replace('fixture-record', 'foreign-record'), DETAIL]
+                elif change == 'popstate-detour':
+                    page.evaluate("async () => {const once=()=>new Promise(r=>addEventListener('popstate',r,{once:true})); let p=once(); history.back(); await p; p=once(); history.forward(); await p;}")
+                    assert events[-2:] == [LIST, DETAIL]
+                else:
+                    page.reload(wait_until='domcontentloaded')
+                    assert events[-1:] == [DETAIL]
+                assert page.url == DETAIL
+                with pytest.raises(JsonSafetyError):
+                    capture.drain()
+            assert not list(tmp_path.rglob('manifest.json'))
+        finally:
+            context.close()
+            browser.close()

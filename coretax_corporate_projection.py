@@ -519,7 +519,8 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
         raise _UnsupportedMetadata('unsupported_corporate_l1d_source_shape')
     codes = {value for value in _L1D_ORDER if value.isdecimal()}
     nodes, provenance = {}, []
-    data_fields = {*_L1D_FIELDS, 'AccountCode', 'Description', 'CorrectionCode', 'BlockFields'}
+    data_fields = {*_L1D_FIELDS, 'AccountCode', 'Description', 'CorrectionCode'}
+    metadata_fields = {'BlockFields', 'RowOptions', 'StyleOptions'}
 
     def evidence(value, path, destination, rule='literal-source'):
         item = _evidence(value, ['L1dFormData', *path])
@@ -533,7 +534,7 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                     or not isinstance(node.get('Data'), dict)):
                 raise _UnsupportedMetadata('unsupported_corporate_l1d_tree_node')
             data = node['Data']
-            if (not data_fields <= set(data) or set(data) - data_fields - {'RowOptions', 'StyleOptions'}
+            if (not data_fields <= set(data) or set(data) - data_fields - metadata_fields
                     or type(data.get('AccountCode')) is not str or data['AccountCode'] not in codes
                     or data['AccountCode'] in nodes or type(data.get('Description')) is not str):
                 raise _UnsupportedMetadata('ambiguous_corporate_l1d_account')
@@ -546,9 +547,11 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                     raise _UnsupportedMetadata('unverified_corporate_l1d_effective_style')
             for field in _L1D_FIELDS:
                 _l1d_integer(data[field], nullish=True)
-            masks = data['BlockFields']
-            if (not isinstance(masks, dict) or set(masks) - _L1D_MASKS - {'CorrectionCode'}
-                    or any(value is not None and type(value) is not bool for value in masks.values())):
+            masks = data.get('BlockFields')
+            if (masks is not None and not isinstance(masks, dict)
+                    or code in _L1D_UNCHANGED and isinstance(masks, dict)
+                    and any(masks.get(key) is not None and type(masks[key]) is not bool
+                            for key in _L1D_MASKS)):
                 raise _UnsupportedMetadata('unsupported_corporate_l1d_mask')
             correction = data['CorrectionCode']
             if not (correction is None or type(correction) is str or
@@ -574,18 +577,19 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
         row, destination = [code, data['Description']], {'table': 'L1-D/tree', 'row': len(body)}
         evidence(code, [*path, 'AccountCode'], {**destination, 'column': 0})
         evidence(data['Description'], [*path, 'Description'], {**destination, 'column': 1})
+        masks = data.get('BlockFields') or {}
         if code in _L1D_UNCHANGED:
             for field in sorted(_L1D_MASKS):
-                value = data['BlockFields'].get(field)
+                value = masks.get(field)
                 provenance.append({'path': ['L1dFormData', *path, 'BlockFields', field],
-                    'type': 'missing' if field not in data['BlockFields'] else
+                    'type': 'missing' if field not in masks else
                             'null' if value is None else 'boolean',
                     'value': value, 'destination': dict(destination), 'rule': 'captured-mask-truthiness'})
         for column, field in enumerate(_L1D_FIELDS[:6], 2):
             masked = field in _L1D_MASKS and (
                 field in ('NonTaxableObject', 'SubjectToFinalTax') and code not in _L1D_UNCHANGED
                 or code in _L1D_SUBTOTALS
-                or code in _L1D_UNCHANGED and data['BlockFields'].get(field) is True)
+                or code in _L1D_UNCHANGED and masks.get(field) is True)
             row.append('' if masked or data[field] is None else _number(data[field], 0, locale=locale))
             evidence(data[field], [*path, field], {**destination, 'column': column},
                      'source-mask' if masked else 'angular-number-1.0-0-id')
@@ -601,7 +605,7 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
         body.append(row)
     reported = form['L1dTreeTotalRow']
     if (not isinstance(reported, dict) or not set(_L1D_FIELDS) <= set(reported)
-            or set(reported) - data_fields - {'RowOptions', 'StyleOptions'}):
+            or set(reported) - data_fields - metadata_fields):
         raise _UnsupportedMetadata('unsupported_corporate_l1d_tree_totals')
     footer = ['4800', 'Laba (Rugi) Sebelum Pajak']
     for field in _L1D_FIELDS:

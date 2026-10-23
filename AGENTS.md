@@ -51,6 +51,23 @@ Tab-panel readiness uses one shared 30-second deadline. Each locator read gets a
 
 The inspected submitted corporate financial-POST detail also supports exactly the literal read-only query `view=true`. Reject duplicate/additional/encoded query variants, fragments and changed complete document URLs. Legacy corporate routes remain query-free. Preserve every existing request/body/authentication/source/selected-identity gate. Financial guard diagnostics expose only allowlisted module/function/line frames, never exception text, request URLs, headers or bodies.
 
+The financial route callback records its first rejection immediately as
+`pdf.request_rejected`, with only a fixed `pdf_guard` stage and sanitized error
+frames. Later invalid-state checks must not replace that originating evidence.
+Do not retain an exception/traceback or request material for later logging.
+Stage values and safe frame lines diagnose existing checks; they grant no new
+request permissions and do not certify a downloaded PDF.
+
+The temporary captured Authorization value has a finite 65536-character budget,
+including its token-type prefix; the earlier 8192-character limit rejected valid
+larger interceptor headers. Missing, empty, unsafe and over-budget values remain
+unsupported. Preserve the exact captured value through the same one-request
+replay; never construct a credential, drop authentication or broaden POST scope.
+An accepted envelope may log only `pdf.request_captured` with the fixed
+`authorization_budget` category `within_8k`/`above_8k`, without a raw value or
+exact length. This category confirms transport-budget diagnosis, not credential
+validity, replay, native eligibility, PDF completion or publication.
+
 Corporate presentation exceptions: `resources/corporate_format.xlsx` is the approved sanitized default for its twelve reference appendices; copy only observed forms and do not fabricate an Induk layout. Exclude only literal L10-B/L10-D from new corporate workbooks, never from checkpoints or retained physical proof/index namespaces. Repeated corporate table headers require observed owner/group metadata, not financial values or source order. Keep ambiguous content visible and mapping counts truthful, except the explicitly approved clean L6/L7/L10-A/L10-C presentation: omit their raw appendices while retaining checkpoints and unresolved audit counts. L6 B2:B8 and writable L7 C1:I13 cells use rupiah accounting; preserve merged labels. Corporate footer mapping preserves literal account codes, inspected colspan/label ownership and captured totals, including all three L3 footer rows and the final L1-D total at reference row 101. All observed approved Unifikasi reference forms, including Induk, omit redundant raw display appendices while retaining checkpoints and unresolved counts; DAFTAR-I rates use numeric percentage fractions and preserve the blank spacer. Preserve the blank separator before BPNR and exactly one empty row before the LAMPIRAN-I total, following observed body rows. PPN A-2 cell B15 uses centered alignment. These display rules do not relax capture completion or native eligibility gates.
 
 Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
@@ -60,6 +77,20 @@ Latest approved corporate clean presentation: Induk now uses the operator-approv
 Owned L8 DOM capture records raw body cells, colspans and rowspans atomically under the exact `rshshr-citr-l8-form` / `rsh-citr-l8-form-grid1` owner and observed group. Single-page `[1,2]` heading cells may merge B:C; ordinary cells and footer remain three columns. Reject contradictory/missing span proof, foreign ownership and unsupported rowspans; never pad legacy two-cell rows or infer their columns from labels/positions. Preserve raw captures and unresolved counts. The approved Induk presentation keeps two blank separator rows, safe numeric monetary slots with zero-decimal accounting, literal identity/choice fields, the tariff caption without its numeric choice prefix, and the reviewed title/borders/width. L6/L8 use the approved thin borders. Resume Audit gives mapping counts a dedicated field/table/row header without changing inventory headings, existing row markers, PDF links or completion semantics.
 
 ## Verification
+
+Optional `component_lifetime` evidence belongs to the capture manifest only.
+For the reviewed ordinary corporate SPA branch, start at one visible submitted
+list owner before the inspected View, in the owned Service-Worker-blocked
+context. Retain the original Document and exactly one selected `?view=true`
+main-frame transition; observe the unique corporate owner and recheck before
+sealing. Known document/route detours or the exact financial replacement POST
+remain fatal. Record only the replacement veto, never its body or headers.
+Unavailable evidence leaves the new dependent branch unsupported. Bind each
+replayed fact to the attempt, record and literal source/detail URLs; reject
+descriptor overrides and mixed packet evidence. Stop checks surround every
+probe and final probes stay inside the existing late-response drain fence.
+This metadata alone does not enable L1-D or certify source pins, mapping or PDF
+completion.
 
 Approved compact Masa presentation: bind against original reference coordinates,
 then remove only declared empty body capacity. Keep populated rows (including
