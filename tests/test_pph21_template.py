@@ -30,7 +30,9 @@ def row(marker='SYNTHETIC EMPLOYEE', *, ia=False):
 
 
 def export(run, folder, *, expected_file=JANUARY, reports=None):
-    exporter.export_split_workbooks(run, folder, mapping_reports=reports)
+    from support_masa_binding import reference_geometry
+    with reference_geometry():
+        exporter.export_split_workbooks(run, folder, mapping_reports=reports)
     coretax.verify_outputs(run, folder)
     return load_workbook(folder / expected_file)
 

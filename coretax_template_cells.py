@@ -119,6 +119,45 @@ def _grow(sheet, boundary, count, style_row):
         _copy_row_style(sheet, style_row, row, sheet.max_column)
 
 
+def _compact_rows(sheet, deleted):
+    """Remove only declared empty rows, preserving merges and row dimensions."""
+    ordered = sorted(set(deleted))
+    for row in ordered:
+        if row < 1 or any(c.value is not None and str(c.value).strip() for c in sheet[row]):
+            raise ValueError('Pemadatan template menargetkan baris berisi data.')
+    runs = []
+    for row in ordered:
+        if runs and runs[-1][0] + runs[-1][1] == row:
+            runs[-1][1] += 1
+        else:
+            runs.append([row, 1])
+    for first, count in reversed(runs):
+        last = first + count - 1
+        moving = [copy(m) for m in sheet.merged_cells.ranges if m.max_row >= first]
+        if any(m.min_row < first <= m.max_row or m.min_row <= last < m.max_row for m in moving):
+            raise ValueError('Pemadatan body memotong merge template.')
+        for region in moving:
+            sheet.unmerge_cells(str(region))
+        dimensions = [(r, sheet.row_dimensions.pop(r)) for r in list(sheet.row_dimensions) if r >= first]
+        sheet.delete_rows(first, count)
+        for row, dimension in dimensions:
+            if row > last:
+                dimension.index = row - count
+                sheet.row_dimensions[row - count] = dimension
+        for region in moving:
+            if region.min_row > last:
+                region.shift(row_shift=-count)
+                sheet.merge_cells(str(region))
+
+
+def _whole_accounting(sheet):
+    # Change display precision only, never stored amounts or percentage formats.
+    for row in sheet:
+        for cell in row:
+            if '"Rp"' in cell.number_format and '* ' in cell.number_format:
+                cell.number_format = cell.number_format.replace('#,##0.00', '#,##0')
+
+
 def _raw_evidence(sheet, sections, fields, tables, style_row):
     unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
     report = {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),

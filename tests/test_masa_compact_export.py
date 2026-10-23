@@ -89,7 +89,9 @@ def test_pph21_matches_reference_body_capacity_headers_spacers_and_totals(tmp_pa
 
 
 @pytest.mark.parametrize('rate,valid,expected', [('0',True,0),('2,50',True,0.025),('100,00',True,1),
-    ('1.5',False,'1.5'),('1,234',True,0.01234),('999.999.999.999.999,99',False,'999.999.999.999.999,99')])
+    ('1.5',False,'1.5'),('1,234',True,0.01234),
+    ('1,000000000000000000000000000001',False,'1,000000000000000000000000000001'),
+    ('999.999.999.999.999,99',False,'999.999.999.999.999,99')])
 def test_lia_rate_fraction_is_strict_and_unsafe_source_stays_partial(tmp_path,rate,valid,expected):
     table,_=appendix_table('L-IA','LIST-IA',1)
     table['rows'][0][table['headers'].index('TARIF PAJAK (%)')]=rate
@@ -112,3 +114,47 @@ def test_pph21_accounting_uses_whole_display_without_rounding_saved_amounts(tmp_
         assert any(c.value==1234.5 for c in money)
     finally:
         book.close()
+
+
+def test_lia_filters_empty_display_rows_but_keeps_zero_false_and_duplicates(tmp_path):
+    table,_=appendix_table('L-IA','LIST-IA',1)
+    row=table['rows'][0]
+    row[0],row[2]=0,False
+    table['rows']=[deepcopy(row),[None]*len(row),deepcopy(row)]
+    table['body_row_count']=table['source_total']=3
+    book,reports=saved(tmp_path,'PPh Pasal 21/26',[section('L-IA',tables=[table])])
+    try:
+        ws=book['L-IA']
+        assert [ws.cell(r,1).value for r in (4,5)] == [0,0]
+        assert [ws.cell(r,3).value for r in (4,5)] == [False,False]
+        assert ws['A6'].value.startswith('JUMLAH')
+        assert reports[0]['complete']
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize('form,groups,counts,total,starts', [
+    ('L-IA',['LIST-IA'],[18],23,[4]),
+    ('L-IB',['BPA1','BPA2'],[6,9],24,[5,14]),
+    ('L-II',['BPA1','BPA2'],[6,9],24,[5,14]),
+    ('L-III',['BP21','BP26'],[6,9],24,[5,14]),
+])
+def test_pph21_growing_groups_keep_all_rows_styles_and_footer_custody(tmp_path,form,groups,counts,total,starts):
+    from copy import copy
+    from pathlib import Path
+    reference=load_workbook(Path(__file__).resolve().parents[1]/'resources/pph21_format.xlsx')
+    tables=[appendix_table(form,group,count,with_totals=i==len(groups)-1)[0]
+            for i,(group,count) in enumerate(zip(groups,counts))]
+    book,reports=saved(tmp_path,'PPh Pasal 21/26',[section(form,tables=list(reversed(tables)))])
+    try:
+        ws=book[form]
+        assert ws.max_row == total+(0 if form=='L-II' else 2)
+        for group,count,start in zip(groups,counts,starts):
+            assert [ws.cell(r,3).value for r in range(start,start+count)] == [f'SYNTHETIC {group} {i}' for i in range(count)]
+            assert copy(ws.cell(start,2).border) == copy(reference[form].cell(5 if form!='L-IB' else 6,2).border)
+        assert ws.cell(total,7).value == 7321.45
+        assert set(map(str,ws.merged_cells.ranges)) == {'A1:N1'}
+        assert all(r['complete'] for r in reports)
+    finally:
+        book.close()
+        reference.close()
