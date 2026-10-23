@@ -179,3 +179,16 @@ markers retain semantic shape fallback; all original-byte snapshots, access,
 privacy, locale, clock and lifetime checks remain before fallback. Existing
 wrong-marker refusal and all20 valid cross-endpoint fatal controls are unchanged.
 A fresh complete corrected-tree run and package readback remain mandatory.
+
+## Final acceptance
+
+The corrected source, all 5,589 Windows cases, 710 overlapping portable cases
+and both exact package/bootstrap archives were verified in run 40010230796,
+attempt 1. Independent source and six-archive review accepted the result without
+remaining findings. After a fresh actual-main and preceding-other-session PR108
+interaction review, PR111 merged as
+`f7cc45ed6e990de2c4bb9f7fd59f2da0fe769ccf`, tree
+`662e1cac081f0f1410248b5173db894f8f954abd`, exactly matching the tested/package
+tree. See the [final native evidence and supported boundaries](../reports/2026-10-24-corporate-l11a-native.md).
+This closes this bounded slice; it does not close broader corporate mapping,
+financial-PDF or live-account acceptance gates.
