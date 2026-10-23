@@ -1,5 +1,12 @@
 # Corporate L1-D source projection and fresh-lifetime gate
 
+Prerequisite status: pure projection, component-lifetime custody and saved-layout
+repair merged in PR102 (`e25aa5e88132c4f8aa03cd6e764dbd507160d816`).
+Historical pending entries below are superseded by the final
+[runner, review and package report](../reports/2026-10-23-catalog-and-lifetime-priorities.md).
+Native L1-D observation/dispatch continues separately in draft PR105; the merged
+helper alone does not enable native eligibility.
+
 Execute inline with the approved JSON completion design and runner-only TDD.
 This is a focused continuation after L7/L11-C, not authority for an editing
 financial-data request or a different live taxpayer scope.
@@ -235,3 +242,22 @@ tests with/without observed forms instead of weakening it to unsupported.
 Digest-matched JUnits12502899089/12502829004 were read (SHA256
 `41c57687777ceab9fa00d2845651497502f200ff7ecf19523733a6757840f4d8`
 and `5f67bc6f887aefcb60537af04675b7d8642639f8cff6b4833196de4d97de05e5`).
+
+Final tests-only run39959642240, head
+`cc89e9f7936ecead89be1e7a655f614ed3a63072`, tested merge
+`2c2539cc1191ac979344906036f1b29dbf238650`, tree
+`f8a9cfdef402c3a3ac32a231f36b3bd77d8ca36e`:4,982 Windows cases,
+4,974 passes and eight intended missing-integration failures, zero errors/skips.
+All4,926 baseline cases pass. The56 new cases comprise40 packet and16 Edge
+contracts; four packet and four browser positives fail at the missing dispatch/
+observer, while all refusal/Stop/fixture controls pass. The710 portable cases
+overlap baseline Windows. Both JUnit and inventory archives were downloaded and
+reconciled before implementation. Windows JUnits12505231720/12505201736 have
+SHA256 `8896749401675038a92b1e5a7f1becfb2a599498f1b84cce2fe6a29adaf9cb9d`
+and `d1f158d5e7cfbf4c4c3fd74d4aadb763de2e29d0e8d5c4c103f85ff4886cf5d7`.
+
+The implementation now observes loaded pins and positive retained lifetime,
+three exact component/accordion owners and static table metadata, then dispatches
+to the reviewed pure projector after source lifecycle/parent checks. Generic
+privacy/packet/late-drain/replay checks remain authoritative. Final runner,
+saved-workbook readback, package inspection and fresh source review remain open.

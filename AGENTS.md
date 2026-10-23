@@ -99,6 +99,18 @@ probe and final probes stay inside the existing late-response drain fence.
 This metadata alone does not enable L1-D or certify source pins, mapping or PDF
 completion.
 
+Native L1-D additionally requires all three loaded corporate/main/vendor pins,
+the literal submitted current-View route/model, preceding observed Induk, outer
+BC04 classification and an explicit boolean IsMigrated. Observe the unique
+visible L1-D form and all three exact table/component/A-B accordion owners;
+retain their actual source_structure, headers and footer spans without reading
+body/footer values or inputs. Require explicit valid PreviousFormData encoding,
+the complete current L1dFormData and the reviewed safe code/mask/total projection.
+Bind every projected value to its original response sequence/container/path.
+Missing proof uses whole-record fallback; known lifetime/encoding contradictions
+remain fatal. Replay must retain manifest custody. This branch does not certify
+Induk mapping, financial PDFs or other corporate forms.
+
 
 Ordinary PPh21/Unifikasi grid catalogs and corporate COUNTRY_CODE must reproduce
 the pinned full-catalog cache order before grouping by Code or selecting a

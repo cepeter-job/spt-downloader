@@ -8,6 +8,7 @@ CIT_SOURCE_SHA256 = 'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de14
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),
  'L1-B': ('rshshr-citr-l1b-form', 'L1bFormData'),
+ 'L1-D': ('rshshr-citr-l1d-form', 'L1dFormData'),
  'L2': ('rshshr-citr-l2-form', 'ListOfOwnership'),
  'L4': ('rshshr-citr-l4-form', 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject'),
  'L6': ('rshshr-citr-l6-form', 'FiscalYearIncomeTax'),
@@ -152,6 +153,50 @@ def _turn_grid(page, table, max_pages, check_cancel):
         owner.dispose()
 
 
+def _observe_l1d(page, form, capture, digest, check_cancel):
+    """Inspect only owned structure, loaded providers and fresh lifetime."""
+    from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
+    from coretax_corporate_projection import L1D_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    if digest != L1D_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+        return None
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if (main_digest != L1D_BUILD_DIGESTS.get(MAIN_SOURCE)
+            or vendor_digest != L1D_BUILD_DIGESTS.get(VENDOR_SOURCE)
+            or form.locator('table').count() != 3):
+        return None
+    tables = []
+    for index in range(3):
+        _check_cancel(check_cancel)
+        selector = f'rsh-citr-l1d-grid{index + 1}'
+        grid = form.locator(selector)
+        if (grid.count() != 1 or not grid.is_visible()
+                or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1
+                or grid.locator('rshshr-citr-financial-statement-grid').count() != (1 if index == 0 else 0)):
+            return None
+        table = grid.locator('table')
+        structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L1-D')
+        if structure != {'form': 'L1-D', 'component': selector,
+                         'groups': ['A. LAPORAN LABA RUGI' if index == 0 else 'B. LAPORAN POSISI KEUANGAN']}:
+            return None
+        metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+        _check_cancel(check_cancel)
+        tables.append({'component': selector, 'source_structure': structure,
+                       'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    return {'kind': 'corporate-l1d-v1', 'builds': {
+        CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+        'route': page.url, **environment, 'tables': tables}
+
+
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
@@ -189,6 +234,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
+            if name == 'L1-D':
+                if 'Induk' not in names:
+                    return None
+                projection = _observe_l1d(page, form, capture, digest, check_cancel)
+                if projection is None:
+                    return None
+                binding['projection'] = projection
             if name == 'L7':
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
