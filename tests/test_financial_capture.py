@@ -128,7 +128,7 @@ def test_detail_records_anonymous_table_duration_and_counts(routed, tmp_path, li
 def test_induk_timeout_records_structure_without_private_dom_or_repairing_capture(
         routed, tmp_path, monkeypatch, failure, want_state, want_owned, want_document, want_views):
     page, requests = routed()
-    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 0.05)
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
     page.evaluate("""failure => {
         const tab = document.querySelector('a[aria-controls="induk"]');
         const panel = document.getElementById('induk');
@@ -176,7 +176,7 @@ def test_induk_timeout_records_structure_without_private_dom_or_repairing_captur
     assert event['tab_views'] == want_views
     assert event['panel_controlled'] is True and event['tab_state'] == 'selected'
     assert event['ordinal'] == 1 and event['tax_kind'] == 'corporate'
-    assert event['source_requested'] == 'dom' and event['duration_ms'] >= 50
+    assert event['source_requested'] == 'dom' and event['duration_ms'] >= 2000
     text = json.dumps(diagnostic_records(tmp_path))
     for secret in ('SYNTHETIC_PANEL_SECRET', 'SYNTHETIC_FIELD_SECRET', '0000123',
                    '1.234,56', ORIGIN, RECORD['record_id'], 'aria-controls', 'outerHTML'):
@@ -185,7 +185,7 @@ def test_induk_timeout_records_structure_without_private_dom_or_repairing_captur
 
 def test_induk_timeout_probe_failure_keeps_original_timeout_and_later_appendix(routed, tmp_path, monkeypatch):
     page, requests = routed()
-    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 0.05)
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
     page.locator('a[aria-controls="induk"]').evaluate('(tab) => { tab.onclick = () => {}; }')
     locator_type = type(page.locator('body'))
     original_evaluate = locator_type.evaluate

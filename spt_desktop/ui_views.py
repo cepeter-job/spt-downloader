@@ -109,7 +109,7 @@ class MainView(ttk.Frame):
         self.results_label = ttk.Label(self.footer, text=copy_text('results.location_hint'), style='SPT.Stage.TLabel', wraplength=self.px(500))
         self.results_label.grid(row=0, column=0, sticky='ew')
         self.bugreport_label = ttk.Label(self.footer, text=copy_text('app.bugreport'),
-            style='SPT.Stage.TLabel', justify='right', wraplength=self.px(500))
+            style='SPT.Contact.TLabel', justify='right', wraplength=self.px(500))
         self.bugreport_label.grid(row=1, column=0, sticky='e', pady=(self.px(4), 0))
         self.canvas.bind('<Configure>', self.request_reflow)
         self.workspace.bind('<Configure>', self._update_scrollregion)
@@ -349,7 +349,10 @@ class MainView(ttk.Frame):
         # even when Windows restores the minimum-size application window.
         tiny = policy.compact and self.window.winfo_height() / self.scale < 480
         padding = self.px(8 if tiny else (16 if policy.compact else 24))
-        self.configure(padding=padding)
+        # Keep the compact summary and inputs visible with the larger contact
+        # footer, retaining the existing horizontal wrapping measurements.
+        vertical_padding = self.px(8 if tiny else (12 if policy.compact else 24))
+        self.configure(padding=(padding, vertical_padding))
         available = self.canvas.winfo_width()
         self.canvas.itemconfigure(self._canvas_window, width=available)
         gap, summary_width = self.px(10 if policy.compact else policy.gap_dip), self.px(policy.summary_width_dip)

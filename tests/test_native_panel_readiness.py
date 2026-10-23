@@ -124,13 +124,17 @@ def rebind_at_control_read(page, monkeypatch, outcome='owned', *, after_click=Fa
         try:
             return original_wait(locator, *args, **kwargs)
         except driver.PlaywrightTimeoutError:
-            if after_click and released and kwargs.get('timeout') == 100:
+            if (after_click and released and kwargs.get('state') == 'visible'
+                    and 0 < kwargs.get('timeout', 0) <= 1000):
                 page.evaluate('nativeReadinessRetries++')
             raise
 
     monkeypatch.setattr(locator_type, 'get_attribute', get_attribute)
     monkeypatch.setattr(locator_type, 'wait_for', wait_for)
-    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 1)
+    # Allow a stale owned panel's bounded read to fail before following the
+    # current binding. Counter above observes a real failed readiness wait,
+    # independent of its former fixed 100 ms allowance.
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
 
 
 @pytest.mark.parametrize('family', FAMILIES)

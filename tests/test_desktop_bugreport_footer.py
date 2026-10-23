@@ -33,6 +33,9 @@ def test_contact_is_visible_bottom_right_without_replacing_existing_copy(tmp_pat
         contact = [w for w in labels if str(w.cget('text')) == TEXT]
         assert len(contact) == 1
         label = contact[0]
+        from tkinter import ttk
+        contact_font = ttk.Style(root).lookup(label.cget('style'), 'font')
+        assert int(root.tk.call('font', 'actual', contact_font, '-size')) >= 12
         assert label.winfo_viewable()
         left = label.winfo_rootx() - root.winfo_rootx()
         top = label.winfo_rooty() - root.winfo_rooty()
