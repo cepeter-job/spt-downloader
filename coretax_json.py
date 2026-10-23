@@ -1013,6 +1013,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes = [], set(), {}, set(), set()
+    l3_counts = {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
@@ -1052,6 +1053,19 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             if old_hash is not None and old_hash != ctx['sha256']:
                 raise JsonSafetyError('Declared corporate source snapshot changed within one attempt')
             snapshots[key] = ctx['sha256']
+        if (ctx['url'] == CORPORATE_L3_GRID_URL and success
+                and isinstance(payload, dict) and 'TotalRecords' in payload
+                and isinstance(request, dict)
+                and request.get('ReturnSheetRecordId') == selected['record_id']
+                and type(request.get('First')) is int and request['First'] >= 0
+                and type(request.get('Rows')) is int and request['Rows'] > 0):
+            # First identifies a page; every other query field identifies the
+            # dataset. Contradictions are fatal even without a semantic binding.
+            query = _corporate_request_key({name: value for name, value in request.items() if name != 'First'})
+            count = _corporate_integer(payload['TotalRecords'])
+            if query in l3_counts and l3_counts[query] != count:
+                raise JsonSafetyError('Corporate L3 page count snapshot changed within one query')
+            l3_counts[query] = count
         try:
             if isinstance(envelope, dict) and (is_primary or binding is not None):
                 envelope_rows = []

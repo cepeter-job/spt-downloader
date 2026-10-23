@@ -121,8 +121,10 @@ owners, missing/failed dependencies, conflicting second footer, Stop and explici
 read-trap verification. These remain fixtures, not runtime proof, until the actual
 runner results are read.
 Fresh review accepted the second-footer completion counter and retained distinct
-original byte assertions. Stop currently tests entry cancellation/cleanup only;
-interruption during L3 pagination/dependency waits needs implementation coverage.
+original byte assertions. Stop covers entry cancellation and, in one added case,
+cancellation after owned B pagination starts. The added case checks propagation,
+cleanup and absence of publication, without claiming a cancellation latency bound
+or interruption of a held pending response.
 
 ## Read RED and implementation candidate
 
@@ -153,5 +155,18 @@ could be hidden by unsupported fallback: per-request snapshots include First,
 so individually complete B pages with totals12/13 reached the pure helper's
 unsupported-input contract. Two bound/unbound regression cases now require a
 fatal snapshot/count error for the same exact observed query apart from First.
-Keep the pure helper's existing contract unchanged. The adapter guard must wait
-until the actual review-RED is read; do not infer its behavior by local execution.
+Run39992456725 attempt1, head6b5a10e9 as tested merge
+`75e099d9b5685cc1d560eb31f0b567c9ab2df0fc`, tree
+`10e1445465e97410dfab3f4e720797ec40f9552e`, reconciled all5264 Windows cases:
+5262 passes and exactly two intended DID NOT RAISE count failures, zero errors
+or skips. All5151 verified baseline cases and710 overlapping portable cases
+passed. All six archive hashes/sizes, metadata, inventories, phases and JUnits
+were read before the guard changed.
+
+The adapter now compares successful known B responses for the selected return
+and same exact query apart from First before semantic fallback. It validates
+literal nonnegative JSON counts and rejects a changed count within one attempt;
+other query fields remain part of the dataset key. The pure helper and generic
+grid contract are unchanged. Final review and combined-tree runner/package
+verification remain pending. Including the added Stop case, the final candidate
+contains114 native cases above the5151-case verified baseline.

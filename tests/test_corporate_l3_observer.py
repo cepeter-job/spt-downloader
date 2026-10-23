@@ -150,6 +150,28 @@ def test_owned_l3_stop_propagates_and_releases_document_without_manifest(browser
         fixture.close()
 
 
+def test_owned_l3_stop_after_next_page_request_propagates_without_manifest(browser, tmp_path, monkeypatch):
+    fixture = Fixture(browser, monkeypatch)
+    stopped = []
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            def stop_after_next_page():
+                if fixture.requests.count((GRID, 'POST')) >= 2:
+                    stopped.append(True)
+                    raise driver.CaptureCancelled('SYNTHETIC STOP AFTER L3 NEXT PAGE')
+            with pytest.raises(driver.CaptureCancelled):
+                observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                    approved_digest=fixture.pins[ASSET], check_cancel=stop_after_next_page)
+            assert stopped == [True] and fixture.requests.count((GRID, 'POST')) == 2
+            assert not list(tmp_path.rglob('manifest.json'))
+            assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
+            assert fixture.unexpected == []
+        assert capture._component_document is None
+    finally:
+        fixture.close()
+
+
 def test_l3_business_read_traps_cover_enclosing_panel_and_table(browser, tmp_path, monkeypatch):
     fixture = Fixture(browser, monkeypatch)
     try:
