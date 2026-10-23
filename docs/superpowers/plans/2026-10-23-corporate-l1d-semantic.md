@@ -192,10 +192,10 @@ retain their explicit subsequent source/runner/live requirements.
 
 ## Native integration slice (separate continuation)
 
-Start with37 synthetic packet contracts: four Normal/amendment and explicit
+Start with40 synthetic packet contracts: four Normal/amendment and explicit
 migrated/nonmigrated positives through canonical sections and saved/reopened
-workbooks;31 unsupported proof/source/dependency controls;two fatal lifetime
-contradictions before fallback. Require positive manifest lifetime, three loaded
+workbooks;32 unsupported proof/source/dependency controls;four fatal lifetime/
+malformed-parent cases before fallback. Require positive manifest lifetime, three loaded
 source pins, exact current-View submitted route/model, outer BC04 classification,
 explicit boolean migration and valid previous-parent encoding. The observed
 L1-D component remains authoritative for its final classification branch.
@@ -209,3 +209,29 @@ candidate already undergoing final verification in PR102.
 The migrated positive deliberately preserves reported13 totals against zero
 4500/4700 operands; canonical and saved-footer amounts distinguish correct flag
 binding from an adapter that always selects the nonmigrated path.
+The next tests-only increment adds16 actual Edge cases: four owned same-document
+View -> loaded source hashes -> observer -> sealed raw response -> native/checkpoint
+replay -> saved workbook positives; ten whole-record refusal controls; one
+post-View Stop case and one fixture read-trap self-check. A single same-document fixture serves only synthetic exact
+public assets and primary bytes, traps detail body/footer/input business reads,
+and counts uninspected clicks. Three-table structure, original response bytes,
+source hashes, source request counts, final mapping and canonical replay are
+checked independently. Source-proven A/B accordions and the existing inspected
+corporate structure metadata bind each component to its literal group; wrong or
+misplaced groups stay unsupported. Visible static Induk content avoids an early
+unrelated readiness failure. The trap also covers table/footer/panel ancestors,
+with six forbidden text-getter accesses and allowed header access checked in its
+own fixture test. This remains a tests-only continuation with56 new cases,
+expected4,982 Windows total; no observer/adapter implementation is enabled yet.
+
+Initial37-case packet run39956395541 at heade174f26760a385590f5209111f3402f68e9a8a09,
+tested mergee613ee1b4b9959e070ccd3fc6fc3cf88dbe5a6d7, tree
+`e2177781ec17a0471a1725bc0b639af6ca0258e5`, ran4,963 Windows cases:
+4,958 passed,five failures,zero errors/skips. Four positives failed at the
+intentionally missing semantic dispatcher. The other failure was a fixture
+expectation: malformed PreviousFormData is already fatal in generic privacy
+decoding. Preserve that production guard; move this case to explicit fatal
+tests with/without observed forms instead of weakening it to unsupported.
+Digest-matched JUnits12502899089/12502829004 were read (SHA256
+`41c57687777ceab9fa00d2845651497502f200ff7ecf19523733a6757840f4d8`
+and `5f67bc6f887aefcb60537af04675b7d8642639f8cff6b4833196de4d97de05e5`).

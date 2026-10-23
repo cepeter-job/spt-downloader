@@ -46,6 +46,8 @@ def bindings():
         'kind': 'corporate-l1d-v1', 'builds': dict(L11C_PINS), 'route': DETAIL,
         'locale': 'id-ID', 'timezone': 'Asia/Jakarta',
         'tables': [{'component': f'rsh-citr-l1d-grid{index + 1}', 'headers': list(headers),
+                    'source_structure': {'form': 'L1-D', 'component': f'rsh-citr-l1d-grid{index + 1}',
+                        'groups': ['A. LAPORAN LABA RUGI' if index == 0 else 'B. LAPORAN POSISI KEUANGAN']},
                     'footer_spans': deepcopy(SPANS[index])} for index, headers in enumerate(HEADERS)]}}]
 
 
@@ -94,9 +96,10 @@ def test_fresh_services_l1d_packet_reaches_canonical_and_final_saved_workbook(tm
 @pytest.mark.parametrize('defect', ['missing-lifetime', 'vendor-pin', 'main-pin', 'corporate-pin',
     'kind', 'proof-route', 'locale', 'timezone', 'owner', 'header', 'span', 'missing-table',
     'extra-table', 'reordered-table', 'induk-after', 'missing-migration', 'migration-type',
-    'missing-classification', 'other-classification', 'missing-previous', 'invalid-previous',
+    'missing-classification', 'other-classification', 'missing-previous',
     'nonobject-previous', 'missing-model', 'model-mismatch', 'missing-status',
     'non-submitted', 'literal-model-mismatch', 'unsubmitted-list-label',
+    'wrong-group', 'missing-structure',
     'missing-5322', 'unsafe-total', 'unsupported-mask'])
 def test_unproved_l1d_semantic_branch_keeps_whole_record_fallback_without_mutating_source(defect):
     value, observed, record = envelope(), bindings(), selected()
@@ -113,6 +116,10 @@ def test_unproved_l1d_semantic_branch_keeps_whole_record_fallback_without_mutati
         proof[defect] = 'SYNTHETIC-UNREVIEWED'
     elif defect == 'owner':
         proof['tables'][1]['component'] = 'SYNTHETIC-FOREIGN-OWNER'
+    elif defect == 'wrong-group':
+        proof['tables'][1]['source_structure']['groups'] = ['A. LAPORAN LABA RUGI']
+    elif defect == 'missing-structure':
+        del proof['tables'][1]['source_structure']
     elif defect == 'header':
         proof['tables'][0]['headers'][0] = 'SYNTHETIC-UNBOUND-HEADER'
     elif defect == 'span':
@@ -144,8 +151,8 @@ def test_unproved_l1d_semantic_branch_keeps_whole_record_fallback_without_mutati
         value['Payload']['ReturnSheetModel'] = 'AMENDMENT'
     elif defect == 'unsubmitted-list-label':
         record['source_status'] = 'SYNTHETIC OTHER LIST'
-    elif defect in ('invalid-previous', 'nonobject-previous'):
-        value['Payload']['PreviousFormData'] = '{' if defect == 'invalid-previous' else '[]'
+    elif defect == 'nonobject-previous':
+        value['Payload']['PreviousFormData'] = '[]'
     elif defect in ('missing-5322', 'unsafe-total', 'unsupported-mask'):
         form = corpus.current_form()
         form[ROOT] = source()
@@ -168,8 +175,13 @@ def test_unproved_l1d_semantic_branch_keeps_whole_record_fallback_without_mutati
 
 
 @pytest.mark.parametrize('observed', [False, True])
-def test_l1d_lifetime_contradiction_is_fatal_before_semantic_fallback(observed):
-    raw = packet()
-    raw['context']['component_lifetime']['detail_owner'] = False
+@pytest.mark.parametrize('defect', ['lifetime', 'invalid-previous'])
+def test_l1d_source_contradiction_is_fatal_before_semantic_fallback(observed, defect):
+    value = envelope()
+    if defect == 'invalid-previous':
+        value['Payload']['PreviousFormData'] = '{'
+    raw = packet(value)
+    if defect == 'lifetime':
+        raw['context']['component_lifetime']['detail_owner'] = False
     with pytest.raises(JsonSafetyError):
         adapt_corporate_detail([raw], selected(), corpus.SCOPE, bindings() if observed else [])
