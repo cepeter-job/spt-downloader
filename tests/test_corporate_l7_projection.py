@@ -112,19 +112,17 @@ def test_l7_keeps_duplicates_and_only_first_current_year_row_receives_main_overr
     assert form == before and len(rows) == 3
 
 
-def test_l7_explicit_empty_body_uses_only_the_six_reported_zero_totals():
+def test_l7_empty_body_keeps_unsupported_main_callback_initialization_on_fallback():
     form = _corporate_json(wire({BODY: [], **{'TotalFiscalLossCompensation' + suffix: Number('0')
                                                for suffix in SUFFIXES}}))
-    result = project(form)
-    assert result['table']['rows'] == result['table']['footer']
-    assert result['table']['footer'] == [['JUMLAH', '0', '0', '0', '0', '0', '0']]
-    assert result['table']['body_row_count'] == result['table']['source_total'] == 0
+    with pytest.raises(_UnsupportedMetadata):
+        project(form)
 
 
 @pytest.mark.parametrize('defect', ['reported-mismatch', 'missing-total', 'missing-body', 'unknown-root',
     'unknown-row', 'string-money', 'null-money', 'fractional-loss', 'unsafe-loss', 'bool-year',
     'invalid-year', 'negative-main', 'missing-main', 'wrong-currency', 'unknown-tax',
-    'unknown-locale', 'changed-header-year', 'wrong-footer-span'])
+    'unknown-locale', 'changed-header-year', 'wrong-footer-span', 'no-current-year'])
 def test_l7_unproved_source_or_structure_keeps_semantic_projection_unsupported(defect):
     form, parent, options = source(), main(), {}
     if defect == 'reported-mismatch':
@@ -157,5 +155,7 @@ def test_l7_unproved_source_or_structure_keeps_semantic_projection_unsupported(d
         options['headers'] = [value.replace('2025', '2024') for value in HEADERS]
     elif defect == 'wrong-footer-span':
         options['footer_spans'] = [[2, 2, 1, 1, 1, 1, 1]]
+    elif defect == 'no-current-year':
+        form[BODY][1]['TaxYear'] = '2024'
     with pytest.raises(_UnsupportedMetadata):
         project(form, main_form=parent, **options)

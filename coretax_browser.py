@@ -1580,6 +1580,51 @@ def _benchmark_result(record):
         return {}
 
 
+def _verify_restored_metadata(page, run, record, current_meta, api_record, folder, ordinal, check_cancel):
+    """Prove a display alias before View without changing inventory literals."""
+    failure = 'SPT metadata changed since inventory; refusing to capture a different return'
+    for field in ('Jenis Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
+        _check_cancel(check_cancel)
+        if record['meta'].get(field, '') != current_meta.get(field, ''):
+            raise RuntimeError(failure)
+    left, right = record['meta'].get('Masa Pajak', ''), current_meta.get('Masa Pajak', '')
+    if left == right:
+        return
+    saved_proof = record.get('period_equivalence')
+    occurrences = record.get('source_occurrences')
+    source_keys = ('key', 'source_status', 'list_url', 'list_page', 'row_position')
+    fresh = ('period_equivalence' not in record and record.get('source_status') == 'SPT Dilaporkan'
+             and isinstance(occurrences, list) and len(occurrences) == 1
+             and isinstance(occurrences[0], dict)
+             and occurrences[0].get('meta') == record['meta']
+             and all(key in record and occurrences[0].get(key) == record[key] for key in source_keys))
+    if not fresh and not isinstance(saved_proof, dict):
+        raise RuntimeError(failure)
+    _check_cancel(check_cancel)
+    diagnostics.record('catalog.checkpoint', catalog_stage='restoration')
+    proof = None
+    try:
+        catalog = read_period_catalog(page)
+        _check_cancel(check_cancel)
+        proof = prove_period_equivalence(left, right, catalog, run['year'])
+    except Exception:
+        diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
+    _check_cancel(check_cancel)
+    if proof is None or api_record.get('TaxPeriodCode') != proof['code']:
+        raise RuntimeError(failure)
+    if not fresh:
+        if any(proof[key] != saved_proof.get(key) for key in ('code', 'label', 'catalog_binding_sha256')):
+            raise RuntimeError(failure)
+        return
+    # Exclusive private evidence: never replace inventory or an earlier snapshot.
+    _check_cancel(check_cancel)
+    name = f'period-catalog-restoration-{ordinal:04d}-{uuid4().hex}.json'
+    with (folder / name).open('x', encoding='utf-8') as handle:
+        json.dump(catalog, handle, ensure_ascii=False, indent=2)
+    _check_cancel(check_cancel)
+    record['period_equivalence'] = {**proof, 'catalog_file': name}
+
+
 @diagnostics.traced('details')
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None, *, detail_source='dom'):
     """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
@@ -1690,28 +1735,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             source_row = table.locator('tbody tr').nth(position)
                             data = table.evaluate(TABLE_JS)
                             current_meta = dict(zip(data['headers'], data['rows'][position]))
-                            for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT', 'Nomor Bukti Penerimaan'):
-                                _check_cancel(check_cancel)
-                                if record['meta'].get(field, '') != current_meta.get(field, ''):
-                                    saved_proof = record.get('period_equivalence')
-                                    if field == 'Masa Pajak' and isinstance(saved_proof, dict):
-                                        # A display alias is allowed only with the same source
-                                        # semantics as inventory, freshly checked before View.
-                                        diagnostics.record('catalog.checkpoint', catalog_stage='restoration')
-                                        proof = None
-                                        try:
-                                            catalog = read_period_catalog(page)
-                                            _check_cancel(check_cancel)
-                                            proof = prove_period_equivalence(record['meta'].get(field),
-                                                current_meta.get(field), catalog, run['year'])
-                                        except Exception:
-                                            diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
-                                        _check_cancel(check_cancel)
-                                        if proof is not None and all(
-                                                proof[key] == saved_proof.get(key)
-                                                for key in ('code', 'label', 'catalog_binding_sha256')):
-                                            continue
-                                    raise RuntimeError('SPT metadata changed since inventory; refusing to capture a different return')
+                            _verify_restored_metadata(page, run, record, current_meta,
+                                current_response['rows'][position], folder, ordinal, check_cancel)
                             if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
                                                                bind_unifikasi_listing_identity, bind_corporate_listing_identity)

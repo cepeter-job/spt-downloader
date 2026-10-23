@@ -29,7 +29,7 @@ def selected(model='Normal'):
     record = corpus.selected_record()
     record['meta'].update({'Masa Pajak': 'Januari - Desember 2025', 'Model SPT': model})
     record['source_fields'].update(ReturnSheetStatusCode='SUBMITTED',
-                                  ReturnSheetModel='NORMAL' if model == 'Normal' else 'AMENDMENT')
+                                  ReturnSheetTypeCode='ICT_RCITR', ReturnSheetModel=model)
     return record
 
 
@@ -187,9 +187,13 @@ def l7_html():
 
 class L7Fixture(NativeFixture):
     def __init__(self, browser, tmp_path, monkeypatch, *, model='Normal', popup=True, trap=True,
-                 changed_main=False, changed_header=False):
-        monkeypatch.setattr(corpus, 'FRAME_URL', FRAME)
+                 changed_main=False, changed_header=False, frame_url=FRAME, primary_mime='application/json'):
+        monkeypatch.setattr(corpus, 'FRAME_URL', frame_url)
+        new_context = browser.new_context
+        monkeypatch.setattr(browser, 'new_context', lambda **options:
+                            new_context(locale='id-ID', **options))
         self.trap, self.changed_main, self.changed_header = trap, changed_main, changed_header
+        self.primary_mime = primary_mime
         super().__init__(browser, tmp_path, monkeypatch, popup=popup,
                          extra_form=('L7', 'rshshr-citr-l7-form'))
         record = selected(model)
@@ -202,6 +206,11 @@ class L7Fixture(NativeFixture):
                 ASSET: hashlib.sha256(BUILD).hexdigest(), MAIN: hashlib.sha256(MAIN_BUILD).hexdigest()})
 
     def route(self, route):
+        if route.request.url == corpus.PRIMARY_URL and self.primary_mime != 'application/json':
+            assert route.request.post_data_json == REQUEST
+            self.requests.append({'url': corpus.PRIMARY_URL, 'method': 'POST', 'body': dict(REQUEST)})
+            route.fulfill(content_type=self.primary_mime, body=self.raw)
+            return
         if route.request.url == MAIN:
             self.requests.append({'url': MAIN, 'method': route.request.method, 'body': None})
             route.fulfill(content_type='application/javascript',
@@ -267,6 +276,30 @@ def test_changed_l7_source_or_header_uses_whole_dom(browser, tmp_path, monkeypat
         result = fixture.collect()
         assert result['complete'] and result['errors'] == [], result['errors']
         assert result['records'][0]['detail_source']['used'] == 'dom'
+        assert fixture.unexpected == []
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('defect', ['tax', 'aggregate'])
+def test_known_route_conflict_is_fatal_even_with_unreadable_primary_and_changed_main(
+        browser, tmp_path, monkeypatch, defect):
+    frame = (FRAME.replace('/ICT_RCIT/', '/ICT_ROGCIT/') if defect == 'tax' else
+             FRAME.rsplit('/', 1)[0] + '/' + corpus.FOREIGN_ID)
+    fixture = L7Fixture(browser, tmp_path, monkeypatch, trap=False, frame_url=frame,
+                        primary_mime='text/html', changed_main=True)
+    calls, original = [], driver.capture_detail
+
+    def fallback(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(driver, 'capture_detail', fallback)
+    try:
+        result = fixture.collect()
+        assert not result['complete'] and result['errors']
+        assert calls == [], 'Known route identity conflict must prevent whole DOM fallback'
+        assert not result['records'][0].get('sections')
         assert fixture.unexpected == []
     finally:
         fixture.close()
