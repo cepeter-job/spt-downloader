@@ -33,12 +33,12 @@
 
 **Interfaces:** `_wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None)` preserves pre-click binding knowledge; `_native_panel(page, view, tab, caption, record, check_cancel)` returns the ready owned panel or `None` for unsupported native structure. Existing observers retain their return and exception contracts.
 
-- [ ] Write `test_native_observer_follows_current_binding`, parametrized over corporate/PPN/Unifikasi/PPh21. Rebind after the first real post-click `aria-controls` read; the old target remains hidden. Assert complete structural catalogs, one click per intended tab, no unexpected requests and no native business-value reads.
-- [ ] Write `test_native_observer_rejects_invalid_rebinding` for hidden/foreign/duplicate targets, missing controlled binding and reordered caption. Assert `None`, no wrong-form observation and no unsafe action.
-- [ ] Write `test_native_observer_stop_during_rebinding_propagates`. Assert `CaptureCancelled` and no later tab/grid traversal.
-- [ ] Commit tests only, push this feature branch, create a draft PR, and read exact-head GitHub RED failures. Expected: valid rebinding fails on the old observers; negative/safety fixture checks execute without skips.
-- [ ] Implement the shared helper and wire all four families. Validate inspected href before click and current href/direct ownership/duplicate target after readiness. Preserve initial controlled identity through binding gaps. Keep the same readiness deadline and one click.
-- [ ] Read exact-head GitHub results. Expected: all new panel cases and existing native getter/identity/ownership cases pass. Record head, tested tree, run, artifact and node outcomes in the ledger.
+- [x] Write `test_native_observer_follows_current_binding`, parametrized over corporate/PPN/Unifikasi/PPh21. Rebind after the first real post-click `aria-controls` read; the old target remains hidden. Assert complete structural catalogs, one click per intended tab, no unexpected requests and no native business-value reads.
+- [x] Write `test_native_observer_rejects_invalid_rebinding` for hidden/foreign/duplicate targets, missing controlled binding and reordered caption. Assert `None`, no wrong-form observation and no unsafe action.
+- [x] Write `test_native_observer_stop_during_rebinding_propagates`. Assert `CaptureCancelled` and no later tab/grid traversal.
+- [x] Commit tests only, push this feature branch, create a draft PR, and read exact-head GitHub RED failures. Expected: valid rebinding fails on the old observers; negative/safety fixture checks execute without skips.
+- [x] Implement the shared helper and wire all four families. Validate inspected href before click and current href/direct ownership/duplicate target after readiness. Preserve initial controlled identity through binding gaps. Keep the same readiness deadline and one click.
+- [x] Read exact-head GitHub results. Expected: all new panel cases and existing native getter/identity/ownership cases pass. Record head, tested tree, run, artifact and node outcomes in the ledger.
 
 ### Task 2: Guarded native grid traversal
 
@@ -46,12 +46,12 @@
 
 **Interfaces:** preserve `_turn_grid(page, table, max_pages, check_cancel) -> bool`. It reads paginator state only, uses the actual table owner handle with `_click_table_paginator`, rejects unsupported/no-advance traversal and propagates cancellation.
 
-- [ ] Write `test_native_grid_uses_inspected_controls_under_pointer_interception` for initial first/later pages. Independently prove ordinary pointer clicks are intercepted; assert full native traversal and expected click count.
-- [ ] Write `test_native_grid_refuses_hidden_disabled_ambiguous_and_foreign_controls`. Assert no forbidden click, `False` for enabled but unavailable controls, and legitimate end-of-list semantics for disabled controls.
-- [ ] Write `test_native_grid_stalled_reset_does_not_click_repeatedly`, `test_native_grid_budget_does_not_open_an_extra_page`, and `test_native_grid_stop_prevents_next_request`. Assert one stalled action, no beyond-budget action and propagated Stop.
-- [ ] Obtain runner RED for new failures before editing production; preserve Task 1 results.
-- [ ] Implement minimal guarded traversal; reset and forward movement each require a changed paginator marker within the existing bounded wait. Preserve repeated-state detection, page limits and handle cleanup.
-- [ ] Obtain GREEN on the full existing Windows suite and portable subset. Do not sum overlapping suite counts or label synthetic browser execution as live acceptance.
+- [x] Write `test_native_grid_uses_inspected_controls_under_pointer_interception` for initial first/later pages. Independently prove ordinary pointer clicks are intercepted; assert full native traversal and expected click count.
+- [x] Write `test_native_grid_refuses_hidden_disabled_ambiguous_and_foreign_controls`. Assert no forbidden click, `False` for enabled but unavailable controls, and legitimate end-of-list semantics for disabled controls.
+- [x] Write `test_native_grid_stalled_reset_does_not_click_repeatedly`, `test_native_grid_budget_does_not_open_an_extra_page`, and `test_native_grid_stop_prevents_next_request`. Assert one stalled action, no beyond-budget action and propagated Stop.
+- [x] Obtain runner RED for new failures before editing production; preserve Task 1 results.
+- [x] Implement minimal guarded traversal; reset and forward movement each require a changed paginator marker within the existing bounded wait. Preserve repeated-state detection, page limits and handle cleanup.
+- [x] Obtain GREEN on the full existing Windows suite and portable subset. Do not sum overlapping suite counts or label synthetic browser execution as live acceptance.
 
 ### Task 3: Evidence, documentation and independent review
 
@@ -59,7 +59,7 @@
 
 **Interfaces:** consume exact PR head/merge tree and runner artifacts; produce a reviewable PR and a scope-specific evidence report. The approved remaining JSON program stays open.
 
-- [ ] Read back JUnit, package and bootstrap artifacts by exact run/attempt/artifact ID; verify digest/manifest/build identity/embedded worker resources against the tested tree. Expected: all required gates pass and all new RED nodes have passing successors.
-- [ ] Request one fresh-context whole-branch source review per executing-plans. Fix concrete findings through new runner RED/GREEN evidence where behavior changes.
-- [ ] Update the report and PR description with final behavior, evidence coordinates and remaining live/other-program boundaries. Do not merge, install or imply live acceptance from this slice.
-- [ ] Record completion in the plan-scoped ignored ledger, then continue the corporate source/projection work under its own concrete plan.
+- [x] Read back JUnit, package and bootstrap artifacts by exact run/attempt/artifact ID; verify digest/manifest/build identity/embedded worker resources against the tested tree. Expected: all required gates pass and all new RED nodes have passing successors.
+- [x] Request one fresh-context whole-branch source review per executing-plans. Fix concrete findings through new runner RED/GREEN evidence where behavior changes.
+- [x] Update the report and PR description with final behavior, evidence coordinates and remaining live/other-program boundaries. Do not merge, install or imply live acceptance from this slice.
+- [x] Record completion in the plan-scoped ignored ledger, then continue the corporate source/projection work under its own concrete plan.

@@ -11,6 +11,7 @@ from pph21_projection_fixture import case, REFERENCE
 from support_templates import run_for
 from test_dated_reference_catalogs import CLOCK
 from test_pph21_template import export
+from pph21_observer_fixture import browser
 
 
 def dated_case():
@@ -74,3 +75,44 @@ def test_dated_label_ineligibility_keeps_whole_record_fallback(defect):
     result = adapt_masa_detail(bodies, record=record, scope=SCOPE, observed_forms=forms)
     assert not result['eligible'] and not result['coverage']['complete']
     assert result['sections'] == []
+
+
+def test_real_edge_clock_and_dated_response_reach_native_workbook_without_dom_values(
+        browser, tmp_path, monkeypatch):
+    import coretax_browser as driver
+    import coretax_pph21_projection as projection
+    from pph21_observer_fixture import MAIN, ARTICLE, BUILD, observed
+    from test_pph21_json_observer import feature, assert_no_values_or_actions
+    monkeypatch.setattr(projection, 'BUILD_DIGESTS', {
+        MAIN: hashlib.sha256(BUILD).hexdigest(), ARTICLE: hashlib.sha256(BUILD).hexdigest()})
+    feature(monkeypatch)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('Dated native source must not read DOM business values')
+
+    monkeypatch.setattr(driver, 'capture_detail', forbidden)
+    with observed(browser, tmp_path, native=True) as (fixture, capture):
+        envelope = json.loads(fixture.source_packets[REFERENCE])
+        for catalog in envelope['Payload']:
+            catalog['Details'] = [version for entry in catalog['Details'] for version in (
+                {**entry, 'CodeDescription': 'DATED ' + entry['CodeDescription'], 'ValidTo': '2099-01-01'},
+                {**entry, 'CodeDescription': 'UNSELECTED LABEL', 'ValidTo': '2098-01-01'})]
+        fixture.source_packets[REFERENCE] = json.dumps(envelope).encode()
+        result = driver._hybrid_detail(fixture.page, fixture.record, SCOPE, tmp_path, capture, 5, None)
+        assert result['capture_complete'] and result['detail_source']['used'] == 'json'
+        clock = capture.drain()['clock_interval']
+        assert clock['timezone'] == 'Asia/Jakarta' and clock['start_ms'] <= clock['end_ms']
+        assert_no_values_or_actions(fixture)
+        reports = []
+        workbook = export(run_for(result['sections'], key=fixture.record['record_id']),
+                          tmp_path / 'export', reports=reports)
+        try:
+            assert len(reports) == 5 and all(report['complete'] for report in reports)
+            values = {cell.value for sheet in workbook for row in sheet for cell in row
+                      if isinstance(cell.value, str)}
+            assert 'DATED SYNTHETIC CERTIFICATE' in values
+            assert 'UNSELECTED LABEL' not in values
+            assert workbook['L-IA']['B5'].value == '0000000000000002'
+            assert workbook['L-IA']['G5'].value == 1200
+        finally:
+            workbook.close()

@@ -14,6 +14,7 @@ from test_pph21_reference_capture import selected, exchange, RAW
 from test_pph21_reference_packets import reference_packet
 from test_pph21_json_primary import case, source
 from test_dated_reference_catalogs import CLOCK, START
+from masa_json_fixtures import SCOPE as MASA_SCOPE
 
 
 def test_clock_is_sampled_before_view_and_after_final_body_then_replayed_without_clock(tmp_path):
@@ -72,6 +73,33 @@ def test_backwards_browser_clock_does_not_create_evidence(tmp_path):
         assert 'clock_interval' not in capture.drain()
 
 
+@pytest.mark.parametrize('phase', ['start', 'finish'])
+def test_stop_after_clock_sample_prevents_manifest_and_preserves_cleanup(tmp_path, phase):
+    from coretax_browser import CaptureCancelled
+    context = Context()
+    page = Page(context, DETAIL_URL)
+    samples = []
+
+    def sample(_):
+        samples.append(True)
+        return {'epoch_ms': START, 'timezone': 'Asia/Jakarta'}
+
+    page.evaluate = sample
+
+    def stop():
+        if len(samples) >= (1 if phase == 'start' else 2):
+            raise CaptureCancelled('SYNTHETIC STOP AFTER CLOCK SAMPLE')
+
+    with pytest.raises(CaptureCancelled):
+        with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path, check_cancel=stop) as capture:
+            exchange(context, page)
+            capture.bind_detail_page(page)
+            capture.drain()
+    assert len(samples) == (1 if phase == 'start' else 2)
+    assert not list(tmp_path.rglob('manifest.json'))
+    assert not any(context.listeners.values())
+
+
 @pytest.mark.parametrize('defect', ['bool', 'float', 'string', 'missing', 'extra', 'reversed',
     'negative', 'unsafe', 'timezone', 'attempt', 'mixed', 'absent-one'])
 def test_clock_contradictions_are_fatal_before_metadata_fallback(defect):
@@ -95,7 +123,7 @@ def test_clock_contradictions_are_fatal_before_metadata_fallback(defect):
     elif defect == 'mixed': broken['end_ms'] += 1
     else: del bodies[-1]['context']['clock_interval']
     with pytest.raises(JsonSafetyError):
-        adapt_masa_detail(bodies, record=record, scope=SCOPE, observed_forms=[])
+        adapt_masa_detail(bodies, record=record, scope=MASA_SCOPE, observed_forms=[])
 
 
 def test_valid_clock_is_preserved_in_every_packet_event_without_mutating_original():
@@ -104,7 +132,7 @@ def test_valid_clock_is_preserved_in_every_packet_event_without_mutating_origina
     for item in bodies:
         item['context']['clock_interval'] = {**CLOCK, 'attempt': item['context']['attempt']}
     before = deepcopy(bodies)
-    result = adapt_masa_detail(bodies, record=record, scope=SCOPE, observed_forms=[])
+    result = adapt_masa_detail(bodies, record=record, scope=MASA_SCOPE, observed_forms=[])
     assert not result['eligible']
     assert all(event.get('clock_interval') == bodies[0]['context']['clock_interval']
                for event in result['provenance']['events'])
