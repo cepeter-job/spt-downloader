@@ -2,16 +2,13 @@
 
 Before merging a PR, review the preceding PR merged by another session and its
 interaction with the current change. Understand the affected functions and
-repository contracts. Update this file when making significant behavior changes.
+repository contracts, and verify the latest `main` baseline before merging.
+Update this file when a significant change alters behavior, architecture, output
+contracts or verification requirements.
 
 This repository is the development home for the read-only Coretax SPT downloader. Keep changes small, explicit and covered by behavior tests.
 
 Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md), lalu baca [setup dan pengujian](docs/pengembangan.md), [kontrak arsitektur](docs/arsitektur.md), dan [CI/rilis](docs/ci-dan-rilis.md). CLI dan desktop dikembangkan bersama pada `main` melalui PR.
-
-## Integration and maintenance
-
-- Before merging a PR, review the preceding PR merged by another session. Understand its affected functions and repository contracts, check their interaction with the proposed changes, and verify the latest `main` baseline before merging.
-- Update this file when a significant change alters behavior, architecture, output contracts or verification requirements.
 
 ## Data and access safety
 
