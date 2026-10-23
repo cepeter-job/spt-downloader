@@ -27,6 +27,29 @@ This establishes a request capability, not complete year coverage. Full referenc
 3. Add browser integration with read-only PERIOD-cache evidence, a narrowly guarded submitted-request route, effective-request provenance, fixed filters across pagination, per-partition totals and cancellation cleanup. Unknown endpoints retain existing collection. Persist and restore the exact filter and page size before selected-row navigation; include filter identity in the active group key.
 4. Exercise synthetic browser contracts on runners: rewritten-body binding, empty partitions, changing totals/filters/catalog, stale offsets, catalog failures, cancellation, amendment/deduplication, and detail restoration. Verify the managed-worker allowlist includes the new module. Close the live acceptance and review gates below before marking ready.
 
+## Submitted-page readiness and page size
+
+When the landing page has no period catalog, the collector first opens the
+uniquely inspected same-taxpayer SPT Dilaporkan page. Before saving any inventory
+page, it reads the source cache again and, if still absent, makes at most one
+additional read after a cancellation-aware 500 ms pause. Each existing cache
+read retains its own five-second bound. This observes only the portal's normal
+cache loading; it does not fetch reference endpoints or refresh expired metadata.
+The preliminary response must pass the same pure request/row safety validation
+as captured pages, even if a recovered filter will discard that response. Valid
+retained offsets are checked against their observed page, rather than page one.
+
+A newly valid catalog starts the existing verified year partitions from page
+one. If the catalog remains missing, invalid, expired or unreadable, the complete
+unfiltered scan reuses the already loaded submitted response. No draft/archive
+scan or completed-evidence rewrite is involved. The final diagnostic snapshot
+still cannot change an inventory that has already been collected.
+
+The collector chooses the largest offered numeric page size up to 100 and waits
+for a new listing response only when the size actually changes. It retains the
+effective page size for selected-record restoration. A missing picker or an
+already selected maximum does not start a fresh-response wait.
+
 ## Retained pagination
 
 Each owned filter route starts its first validated grid request at `First: 0`,
