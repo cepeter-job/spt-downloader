@@ -11,6 +11,17 @@ def resource_root():
     return Path(sys._MEIPASS) if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent.parent
 
 
+def is_valid_build_info(value):
+    """Keep produced and consumed public build coordinates within one schema."""
+    return (isinstance(value, dict) and set(value) == {'schema', 'commit', 'run_id', 'run_attempt'}
+            and type(value['schema']) is int and value['schema'] == 1
+            and isinstance(value['commit'], str)
+            and re.fullmatch(r'[0-9a-f]{40}', value['commit']) is not None
+            and isinstance(value['run_id'], str)
+            and re.fullmatch(r'[1-9][0-9]{0,23}', value['run_id']) is not None
+            and type(value['run_attempt']) is int and 1 <= value['run_attempt'] <= 1_000_000)
+
+
 def read_build_info(root=None):
     """Invalid/unavailable metadata is unknown, never environment-supplied."""
     try:
@@ -24,11 +35,7 @@ def read_build_info(root=None):
             if (opened.st_dev, opened.st_ino, opened.st_size) != (before.st_dev, before.st_ino, before.st_size):
                 return None
             value = json.loads(stream.read(4097))
-        if (not isinstance(value, dict) or set(value) != {'schema', 'commit', 'run_id', 'run_attempt'}
-                or type(value['schema']) is not int or value['schema'] != 1
-                or not isinstance(value['commit'], str) or not re.fullmatch(r'[0-9a-f]{40}', value['commit'])
-                or not isinstance(value['run_id'], str) or not re.fullmatch(r'[1-9][0-9]{0,23}', value['run_id'])
-                or type(value['run_attempt']) is not int or not 1 <= value['run_attempt'] <= 1000000):
+        if not is_valid_build_info(value):
             return None
         return value
     except (OSError, ValueError, TypeError, RecursionError):

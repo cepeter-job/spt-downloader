@@ -64,6 +64,15 @@ stored values. Checkpoints, proof, native eligibility and PARTIAL gates remain
 unchanged. Binding tests can isolate original geometry; independent saved export
 tests must exercise final compaction without suppressing it.
 
+PPh21 L-IA dan Unifikasi DAFTAR-I memakai parser persentase bersama di
+`coretax_template_cells.py`. Blank tetap kosong; hanya angka biasa atau
+digit ASCII dengan koma desimal opsional dalam rentang 0–100 yang boleh
+menjadi pecahan numerik. Periksa maksimum 15 digit koefisien sumber sebelum
+pembagian, kesetaraan desimal setelah konversi float, dan batas minimum
+normal Excel untuk hasil nonzero. Underflow, subnormal, dan presisi tidak
+aman tetap literal dan unresolved; jangan mengubah checkpoint atau grammar
+persentase Badan yang terpisah.
+
 Create a local `.venv` with the production CPython/GIL pin in `spt_desktop.runtime.PYTHON_PROFILES`. Install the resolved test environment using `uv pip sync --python <venv-python> --require-hashes --only-binary :all: locks/test.txt`; use `locks/build.txt` for packaging. Run `python -m pytest tests -q` on Windows with a dedicated scratch `--basetemp` outside the repository. Linux can run the reviewed portable subset through `-p scripts.ci_tests --ci-workload portable`; Windows runs the full suite. Browser tests use isolated local synthetic HTML fixtures and an installed Microsoft Edge; they are not live taxpayer tests. Verify changed behavior, output counts, literal source text and links before committing.
 
 For this user-authorized work, pytest, product imports, native/Tk/browser fixtures, source/frozen self-tests, builds and EXE execution are GitHub-runner-only. Local AST/source checks and artifact hash/metadata inspection are not execution evidence. Do not modify user-owned CI merely to obtain GREEN. Bind claims to exact head/merge tree/run/artifact ID and preserve recovery work.
@@ -79,3 +88,12 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 - Windows Job Objects must contain suspended children **before** resuming them; uv-created virtualenv Python launchers can spawn an interpreter before Python code runs. Preserve start authorization, cooperative cancellation, 15-second forced owned-tree cleanup and main-thread-only UI callbacks. Success requires terminal COMPLETE, matching exit code, verified output and completed owned cleanup—not a zero exit alone.
 - Saved credentials belong only to Windows Credential Manager and exact approved origins. Never print fill exceptions, inherit Playwright credential-debug flags, guess login actions or click generic form-submit controls. Require inspected sign-in intent and no unknown challenge/fields; otherwise manual visible login. No MFA/CAPTCHA bypass.
 - Exercise both source and frozen GUI self-tests without real accounts. The Windows CI artifact must be read back by exact run/commit/artifact ID before reporting build success. Do not include private diagnostic logs or local test tax output in artifacts. Preserve source-level COMPLETE/PARTIAL checks and relative Excel links when staging/publishing to Known Folder Downloads.
+
+Schema identitas build dimiliki `spt_desktop.build_info.is_valid_build_info`
+dan dipakai bersama oleh producer/validator CI serta reader runtime. Tetap
+gunakan tepat empat field, schema integer 1, commit heksadesimal kecil 40
+digit, run ID positif 1–24 digit ASCII, dan run attempt integer 1–1.000.000;
+boolean dan field tambahan tidak valid. Runtime tetap mengembalikan `None`
+dan diagnostik unknown untuk metadata tidak sah; CI melempar `ValueError`
+sebelum menulis metadata. Pertahankan pemeriksaan file dan pembacaan terbatas;
+modul bersama ini hanya boleh bergantung pada standard library.

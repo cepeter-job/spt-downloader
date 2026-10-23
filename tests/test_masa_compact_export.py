@@ -89,8 +89,13 @@ def test_pph21_matches_reference_body_capacity_headers_spacers_and_totals(tmp_pa
 
 
 @pytest.mark.parametrize('rate,valid,expected', [('0',True,0),('2,50',True,0.025),('100,00',True,1),
+    (0,True,0),(2.5,True,0.025),(100,True,1),(None,True,None),('',True,None),
+    ('12,3456789012345',True,0.123456789012345),
     ('1.5',False,'1.5'),('1,234',True,0.01234),
     ('1,000000000000000000000000000001',False,'1,000000000000000000000000000001'),
+    pytest.param('0,' + '0' * 400 + '1', False, '0,' + '0' * 400 + '1', id='underflow'),
+    pytest.param('0,' + '0' * 305 + '1', False, '0,' + '0' * 305 + '1', id='subnormal'),
+    pytest.param('100,0000000000000', False, '100,0000000000000', id='source-precision-before-division'),
     ('999.999.999.999.999,99',False,'999.999.999.999.999,99')])
 def test_lia_rate_fraction_is_strict_and_unsafe_source_stays_partial(tmp_path,rate,valid,expected):
     table,_=appendix_table('L-IA','LIST-IA',1)
@@ -98,8 +103,11 @@ def test_lia_rate_fraction_is_strict_and_unsafe_source_stays_partial(tmp_path,ra
     book,reports=saved(tmp_path,'PPh Pasal 21/26',[section('L-IA',tables=[table])])
     try:
         assert book['L-IA']['H4'].value == expected
+        if expected is not None:
+            assert book['L-IA']['H4'].data_type == ('n' if valid else 's')
         assert reports[0]['complete'] is valid
         assert reports[0]['unmapped_tables'] == (0 if valid else 1)
+        assert reports[0]['unmapped_rows'] == (0 if valid else 1)
     finally:
         book.close()
 
