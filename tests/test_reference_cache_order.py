@@ -61,6 +61,11 @@ def active(label, parameter=None):
     # Homogeneous string keys use lexical ordering, not numeric conversion.
     ([active('ALPHA', '{"DisplayIndex":"2"}'), active('ZULU', '{"DisplayIndex":"10"}')], 1),
     ([active('ZULU', '{"DisplayIndex":1}'), active('ALPHA', '{"DisplayIndex":1}')], 0),
+    ([active('ALPHA', '{"DisplayIndex":9007199254740991}'),
+      active('ZULU', '{"DisplayIndex":-9007199254740991}')], 1),
+    ([active('ZULU', '{"DisplayIndex":0}'), active('ALPHA', '{"DisplayIndex":-0}')], 0),
+    ([active('ALPHA', '{"DisplayIndex":"\ue000"}'),
+      active('ZULU', '{"DisplayIndex":"\U00010000"}')], 1),
     # Only the first raw row decides the global branch; later metadata is inert.
     ([active('ZULU', '{}'), active('ALPHA', '{"DisplayIndex":99}')], 1),
     ([active('ZULU', '{"DisplayIndex" : 0}'), active('ALPHA', '{"DisplayIndex":99}')], 1),
