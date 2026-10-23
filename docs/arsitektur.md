@@ -111,6 +111,8 @@ tetap berupa evidence leaves; itu bukan bukti pemetaan template. Status pengujia
 artefak, batas cabang dan pekerjaan lain tercatat pada
 [laporan L7](superpowers/reports/2026-10-23-corporate-l7-semantic.md).
 
+Cabang semantik L11-C terpisah memakai pin corporate/main/vendor yang termuat, rute submitted rupiah biasa, struktur offline enam belas kolom dan footer fisik dengan prefix nomor kosong. Enam total tangkapan harus cocok dengan operasi integral berurutan yang aman; source tidak diganti hasil hitungan. Tanggal terbatas pada subset ISO tervalidasi di Asia/Jakarta, dengan Number dan Number2 tetap berbeda. Label negara hanya berasal dari GET COUNTRY_CODE id-ID yang benar-benar teramati, ber-byte custody dan berurutan pada attempt yang sama; tidak ada fetch buatan atau pembacaan cache. Katalog tambahan yang tidak dipakai L7/legacy tetap melewati seluruh pemeriksaan keselamatan dan snapshot tanpa menjadi respons bisnis tak terikat. Bentuk tak terbukti tetap fallback seluruh record. Lihat [rencana dan ledger L11-C](superpowers/plans/2026-10-23-corporate-l11c-semantic.md).
+
 `ListObserver` mengamati respons JSON dari tindakan UI milik browser. Ia menyimpan respons terakhir dan nomor urut yang terus bertambah, bukan seluruh riwayat respons dalam RAM. Ia tidak membaca cookie/header autentikasi dan tidak menjalankan request API penulisan tersendiri.
 
 Capture memakai kontrol baca yang sudah dikenali: pencarian wajib pajak, Pilih, navigasi status, View, tab, accordion, ukuran halaman, serta paginasi. Tombol submit, batal SPT, kirim email, pembuatan dokumen, dan aksi baris yang tidak dikenal tidak boleh dijadikan fallback. Bila selector View berubah, hasil tetap terblokir/parsial sampai layout baru diperiksa dan fixture regresinya tersedia.
