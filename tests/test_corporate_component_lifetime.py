@@ -316,16 +316,34 @@ def test_unused_valid_lifetime_attestation_preserves_l7_and_country_source_event
 
 
 @pytest.mark.parametrize('query', ['', '?view=true'])
-def test_l7_semantic_route_accepts_only_reviewed_current_view_and_legacy(query):
+@pytest.mark.parametrize('form', ['L7', 'L11-C'])
+def test_semantic_route_accepts_only_reviewed_current_view_and_legacy(query, form):
     import test_corporate_l11c_native as reference
     from coretax_json import adapt_corporate_detail
-    raw, record, bindings = [reference.l7_packet()], reference.selected(), reference.l7_bindings()
+    raw, bindings = ([reference.l7_packet()], reference.l7_bindings()) if form == 'L7' else (
+        reference.packets(), reference.bindings())
+    record = reference.selected()
     frame = reference.FRAME + query
-    raw[0]['context']['frame_url'] = frame
+    for packet in raw:
+        packet['context']['frame_url'] = frame
     bindings[1]['projection']['route'] = frame
     record['detail_url'] = frame
     result = adapt_corporate_detail(raw, record, reference.corpus.SCOPE, bindings)
     assert result['eligible'] and result['coverage']['complete'], result['reason']
+
+
+@pytest.mark.parametrize('form', ['L7', 'L11-C'])
+def test_semantic_route_proof_cannot_describe_a_different_captured_frame(form):
+    import test_corporate_l11c_native as reference
+    from coretax_json import adapt_corporate_detail
+    raw, bindings = ([reference.l7_packet()], reference.l7_bindings()) if form == 'L7' else (
+        reference.packets(), reference.bindings())
+    for packet in raw:
+        packet['context']['frame_url'] = reference.FRAME + '?view=true'
+    # Keep the structural proof's legacy query-free route. Both routes are
+    # permitted individually; evidence may not silently switch between them.
+    result = adapt_corporate_detail(raw, reference.selected(), reference.corpus.SCOPE, bindings)
+    assert not result['eligible']
 
 
 @pytest.mark.parametrize('observed', [False, True])
