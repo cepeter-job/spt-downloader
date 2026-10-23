@@ -16,6 +16,7 @@ from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
 from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
                           adapt_inventory_page, validate_inventory_rows)
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Error as PlaywrightError
 from coretax_json import validate_detail_source
 from coretax_corporate import CIT_SOURCE_SHA256
 from coretax_inventory import (InventoryFilterRoute, plan_year_filters, read_period_catalog,
@@ -732,6 +733,18 @@ REFERENCE_ROWS_JS = r'''(table) => {
 }'''.replace('CELL', CELL_JS)
 
 
+def _inventory_context(response, source, taxpayer_id, npwp, year, basis, page_number):
+    """Bind a response for the same pure safety probe in readiness and capture."""
+    if not isinstance(response.get('binding'), dict):
+        raise JsonSafetyError('Submitted response lacks verified request/frame/source binding')
+    return {
+        **response['binding'], 'npwp': npwp, 'year': year, 'year_basis': basis,
+        'taxpayer_id': taxpayer_id, 'source_url': source['url'], 'source_status': source['label'],
+        'page': page_number, 'sequence': response['sequence'], 'after_sequence': response['after_sequence'],
+        'date_format': 'dd-MM-yyyy', 'timezone': None, 'lookup_labels': {},
+    }
+
+
 def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, basis,
                         page_number, folder, source_number, check_cancel):
     """Adapt a bound submitted page; read only reference captions, not its grid."""
@@ -742,14 +755,7 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
         return {'eligible': False, 'reason': 'unobserved_status_schema', 'rows': []}
     if not isinstance(response.get('body'), bytes):
         return {'eligible': False, 'reason': 'unavailable_original_response_bytes', 'rows': []}
-    if not isinstance(response.get('binding'), dict):
-        raise JsonSafetyError('Submitted response lacks verified request/frame/source binding')
-    context = {
-        **response['binding'], 'npwp': npwp, 'year': year, 'year_basis': basis,
-        'taxpayer_id': taxpayer_id, 'source_url': source['url'], 'source_status': source['label'],
-        'page': page_number, 'sequence': response['sequence'], 'after_sequence': response['after_sequence'],
-        'date_format': 'dd-MM-yyyy', 'timezone': None, 'lookup_labels': {},
-    }
+    context = _inventory_context(response, source, taxpayer_id, npwp, year, basis, page_number)
     # Safety is evaluated before even the narrow reference read or fallback.
     probe = adapt_inventory_page(response['body'], context)
     raw_folder = folder / 'listing-responses'
@@ -1011,7 +1017,11 @@ def _verify_inventory_source(page, source, taxpayer_id):
 
 def _open_inventory_source(page, source, taxpayer_id, observer):
     before = observer.sequence
-    page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
+    try:
+        page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
+    except PlaywrightError as exc:
+        _check_cancel(observer.check_cancel)
+        raise RuntimeError('Submitted navigation failed; refusing inventory capture') from exc
     _verify_inventory_source(page, source, taxpayer_id)
     response = observer.wait(before)
     _verify_inventory_source(page, source, taxpayer_id)
@@ -1090,6 +1100,12 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 # Observe it before saving rows; reuse this page on fallback.
                 retry_missing_catalog = False
                 ready_response = _open_inventory_source(page, source, taxpayer_id, observer)
+                _check_cancel(check_cancel)
+                # Even a page discarded for a recovered filter must prove its
+                # original request/row ownership before any further navigation.
+                ready_page = ready_response['first'] // ready_response['page_size'] + 1
+                adapt_inventory_page(ready_response['body'], _inventory_context(
+                    ready_response, source, taxpayer_id, npwp, year, basis, ready_page))
                 diagnostics.record('catalog.checkpoint', catalog_stage='readiness')
                 try:
                     catalog = read_period_catalog(page)

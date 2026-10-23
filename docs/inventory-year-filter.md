@@ -35,6 +35,9 @@ page, it reads the source cache again and, if still absent, makes at most one
 additional read after a cancellation-aware 500 ms pause. Each existing cache
 read retains its own five-second bound. This observes only the portal's normal
 cache loading; it does not fetch reference endpoints or refresh expired metadata.
+The preliminary response must pass the same pure request/row safety validation
+as captured pages, even if a recovered filter will discard that response. Valid
+retained offsets are checked against their observed page, rather than page one.
 
 A newly valid catalog starts the existing verified year partitions from page
 one. If the catalog remains missing, invalid, expired or unreadable, the complete

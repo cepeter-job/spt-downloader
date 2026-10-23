@@ -6,6 +6,33 @@ from support_isolated_browser import browser
 from test_json_inventory import synthetic_listing_browser
 
 
+def reject_noop_response_wait(monkeypatch):
+    """Trap the wrong wait directly without shortening real navigation budgets."""
+    resize = driver.maximize_page_size
+    paginate = driver._click_table_paginator
+    observe = driver.ListObserver.wait
+    noop = False
+
+    def sized(page, container):
+        nonlocal noop
+        changed = resize(page, container)
+        noop = not changed
+        return changed
+
+    def moved(*args):
+        nonlocal noop
+        noop = False
+        return paginate(*args)
+
+    def waited(self, after, timeout=45):
+        assert not noop, 'A no-op resize must not start a fresh-response wait'
+        return observe(self, after, timeout=timeout)
+
+    monkeypatch.setattr(driver, 'maximize_page_size', sized)
+    monkeypatch.setattr(driver, '_click_table_paginator', moved)
+    monkeypatch.setattr(driver.ListObserver, 'wait', waited)
+
+
 @pytest.mark.parametrize('extra_read', [False, True])
 def test_late_catalog_filters_before_any_unfiltered_page_is_checkpointed(browser, tmp_path, monkeypatch, extra_read):
     original_read = driver.read_period_catalog
@@ -39,10 +66,11 @@ def test_late_catalog_filters_before_any_unfiltered_page_is_checkpointed(browser
         assert {r['record_id'] for r in run['records']} == {
             'fixture-normal', 'fixture-amend-001', 'fixture-monthly', 'fixture-cross-year'}
         requests = metrics['submitted_requests']
-        assert len(requests) == 4, 'One readiness page followed by three filtered pages'
+        # Retained UI offset adds one observed reset request per partition.
+        assert len(requests) == (6 if extra_read else 4)
         assert requests[0]['Filters'] == []
         assert all(request['Filters'] for request in requests[1:])
-        assert [request['First'] for request in requests] == [2 if extra_read else 0, 0, 2, 0]
+        assert [request['First'] for request in requests] == ([2, 0, 0, 2, 0, 0] if extra_read else [0, 0, 2, 0])
         assert all(a['filter_mode'] == 'period-year-candidates' for a in run['audit'])
         assert all(r.get('list_filter') for r in run['records'])
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
@@ -59,13 +87,7 @@ def test_late_catalog_filters_before_any_unfiltered_page_is_checkpointed(browser
 ])
 def test_inventory_uses_largest_offered_page_size_without_waiting_for_noop(browser, tmp_path, monkeypatch,
                                                                          initial, options, expected):
-    original_wait = driver.ListObserver.wait
-
-    def bounded_wait(self, after, timeout=45):
-        # A no-op resize must not consume the production 45-second timeout.
-        return original_wait(self, after, timeout=0.5)
-
-    monkeypatch.setattr(driver.ListObserver, 'wait', bounded_wait)
+    reject_noop_response_wait(monkeypatch)
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, expired_catalog=True,
                                    outside_year_padding=120, page_sizes=options,
                                    initial_page_size=initial) as (page, metrics):
@@ -151,22 +173,21 @@ def test_stop_during_catalog_grace_prevents_another_read_or_request(browser, tmp
 def test_detail_restore_uses_captured_size_or_fails_before_view_without_noop_wait(browser, tmp_path,
                                                                              monkeypatch, saved_size):
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, expired_catalog=True,
-                                   page_sizes=[10, 50, 100], initial_page_size=10) as (page, metrics):
+                                   page_sizes=[10, 50, 100],
+                                   initial_page_size=10 if saved_size == 100 else 100) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
         record = next(r for r in run['records'] if r['record_id'] == 'fixture-normal')
         assert record['list_page_size'] == 100
         record['list_page_size'] = saved_size
         run['records'] = [record]
-        original_wait = driver.ListObserver.wait
-
-        def bounded_wait(self, after, timeout=45):
-            return original_wait(self, after, timeout=0.5)
-
-        monkeypatch.setattr(driver.ListObserver, 'wait', bounded_wait)
+        reject_noop_response_wait(monkeypatch)
+        before = len(metrics['submitted_requests'])
         driver.collect_details(page, run, tmp_path)
         if saved_size == 100:
             assert metrics['viewed_record_ids'] == ['fixture-normal']
             assert metrics['submitted_requests'][-1]['Rows'] == 100
+            assert len(metrics['submitted_requests']) == before + 2
         else:
             assert metrics['viewed_record_ids'] == []
+            assert len(metrics['submitted_requests']) == before + 1
             assert any('Could not restore inventory page size' in e['message'] for e in run['errors'])
