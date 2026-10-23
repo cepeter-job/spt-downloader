@@ -167,7 +167,9 @@ def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypat
 def test_slow_timeout_probe_retains_structural_evidence_without_pdf(post_routed, tmp_path, monkeypatch):
     page, wire = post_routed(detail_url=DETAIL)
     corporate_tabs(page, hidden=True)
-    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 0.05)
+    # The hidden panel must exhaust its budget, while the later healthy
+    # appendix should not depend on six reads finishing inside 50 ms.
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
     locator_type = type(page.locator('body'))
     original = locator_type.evaluate
     attempts = []
