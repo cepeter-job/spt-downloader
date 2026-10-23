@@ -37,6 +37,13 @@ penolakan kontrol/build atau respons PDF setelah discovery.
 Adapter hanya mengaktifkan tombol yang terikat ke tabel laporan keuangan pada
 Induk Badan yang sedang diverifikasi. Bundle yang digunakan halaman harus cocok
 dengan pin di atas. Kontrol atau build yang tidak didukung tetap PARTIAL.
+Detail dari SPT Dilaporkan memakai path yang teramati
+`/returnsheets/id-ID/corporate-income-tax-return/{taxpayer}/{record}/ICT_RCIT/{context}`.
+Adapter mengikat posisi taxpayer dan record ke pilihan terverifikasi; context
+harus satu segmen UUID yang sudah ada pada URL aktif. Context tidak dibentuk
+atau ditebak. Route lama `corporatereturnsheets/{taxpayer}/{record}` tetap
+didukung secara persis. Jenis route/form lain, query, fragment, segmen tambahan,
+atau perpindahan URL sesudah discovery tidak mengizinkan POST.
 Konteks browser milik desktop/CLI dibuat dengan Service Worker diblokir agar
 request tidak dapat melewati route pemeriksaan. POST pada konteks reuse/CDP
 yang kebijakannya tidak dibuktikan tetap tidak didukung; href biasa tetap dapat

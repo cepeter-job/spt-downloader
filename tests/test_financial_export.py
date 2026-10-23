@@ -22,8 +22,8 @@ def export_fixture(*, partial=False):
         record['scope'] = [run['npwp'], run['year'], run['year_basis']]
     record = run['records'][0]
     record['sections'][0]['fields'] += [
-        {'label': 'Nomor literal', 'field': 'identifier', 'value': '0000123'},
-        {'label': 'Nilai literal', 'field': 'amount', 'value': '1.234,56'},
+        {'label': '1. NPWP', 'field': 'Tin', 'group': 'A. IDENTITAS WAJIB PAJAK', 'value': '0000123'},
+        {'label': '14. Angsuran PPh Pasal 25', 'field': '', 'group': 'E. PENGURANG PPh TERUTANG', 'value': '1.234,56'},
     ]
     record['sections'][0]['tables'] = [{'name': 'SYNTHETIC DUPLICATES', 'headers': ['Kode', 'Nilai'],
                                       'rows': [['0007', '1.234,56'], ['0007', '1.234,56']], 'complete': True}]
@@ -97,7 +97,9 @@ def test_audit_contains_literal_relative_pdf_link_and_bound_metadata_without_ext
             if name == normal:
                 source_values = [cell.value for sheet in workbook for row in sheet for cell in row]
                 assert '0000123' in source_values and '1.234,56' in source_values
-                assert source_values.count('0007') == 2
+                assert '0007' not in source_values  # Clean Induk omits unmapped tables.
+                assert original['records'][0]['sections'][0]['tables'][0]['rows'] == [
+                    ['0007', '1.234,56'], ['0007', '1.234,56']]
         finally:
             workbook.close()
     workbook = load_workbook(files['resume.xlsx'])
