@@ -46,6 +46,9 @@ def test_large_captured_authorization_replays_identically_once_without_logging(p
     assert not any(key.startswith('x-spt') for key in wire[0]['headers'])
     events = records(tmp_path / 'diagnostics')
     assert not any(row['event'] == 'pdf.request_rejected' for row in events)
+    captured = [row for row in events if row['event'] == 'pdf.request_captured']
+    assert len(captured) == 1
+    assert captured[0]['authorization_budget'] == ('within_8k' if length <= 8192 else 'above_8k')
     assert MARKER not in json.dumps(events)
     assert page.evaluate("() => Object.keys(window).filter(key=>key.startsWith('_spt_financial_'))") == []
 
@@ -66,4 +69,23 @@ def test_missing_or_over_budget_authorization_never_reaches_backend(post_routed,
     rejected = [row for row in records(tmp_path / 'diagnostics') if row['event'] == 'pdf.request_rejected']
     assert len(rejected) == 1 and rejected[0]['pdf_guard'] == 'authentication'
     assert MARKER not in json.dumps(records(tmp_path / 'diagnostics'))
+    assert not any(row['event'] == 'pdf.request_captured' for row in records(tmp_path / 'diagnostics'))
     assert page.evaluate("() => Object.keys(window).filter(key=>key.startsWith('_spt_financial_'))") == []
+
+
+def test_authorization_budget_diagnostics_accept_only_fixed_categories(tmp_path):
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Never stringify credentials or diagnostic inputs')
+    values = ['within_8k', 'above_8k', Untrusted(), MARKER, None, 8193, True]
+    with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        for value in values:
+            diagnostics.record('pdf.request_captured', authorization_budget=value,
+                               authorization=MARKER, headers=MARKER, body=MARKER)
+        assert log.flush()
+    events = [row for row in records(tmp_path / 'diagnostics') if row['event'] == 'pdf.request_captured']
+    assert len(events) == len(values)
+    assert [row.get('authorization_budget') for row in events[:2]] == values[:2]
+    assert all('authorization_budget' not in row for row in events[2:])
+    assert all(not {'authorization','headers','body'} & row.keys() for row in events)
+    assert MARKER not in json.dumps(events)

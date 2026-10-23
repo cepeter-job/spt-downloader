@@ -45,6 +45,10 @@ over-limit token remains an inference until a controlled live retest. Test a
 65536-character bounded envelope with invented credentials across the old/new
 boundaries, while rejecting absent, empty, unsafe and over-budget values.
 Separate the equivalent presence/size/syntax failures into safe frame locations.
+Record accepted-capture size only as the fixed category `within_8k`/`above_8k`,
+never a raw length or credential. This single category lets the next live run
+confirm or refute the budget hypothesis independently of eventual PDF status;
+capturing an accepted envelope still does not certify replay or PDF completion.
 Change only this transport budget; preserve identical captured credentials and
 all request/source/scope/replay/custody gates. Confirm the hypothesis with actual
 PDF bytes before claiming live repair. Integrate reviewed PR98 and fresh main.
