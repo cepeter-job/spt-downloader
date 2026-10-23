@@ -149,6 +149,19 @@ memakai fallback seluruh record; kontradiksi lifetime/encoding tetap fatal.
 Replay memerlukan custody manifest yang sama. Pemetaan Induk, PDF keuangan dan
 form corporate lain tetap mempunyai gate tersendiri.
 
+Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
+Ia memproyeksikan body A dari current source dan body B dari page metadata yang
+sudah dinormalisasi caller, dengan alias aktif IncomeTax/WithholdingSlipsNumber/
+WithholdingSlipsDate dan nomor baris lokal per halaman. Footer B berasal dari
+payload footer yang ditangkap serta operand model kredit luar negeri; body B
+tidak dijumlahkan sebagai pengganti footer. Subset aritmetika integral memeriksa
+setiap operand/intermediate lima belas digit. Provenance menyimpan token sumber,
+jenis sumber/page dan destination, termasuk kontrol yang kemudian ditimpa atau
+tidak ditampilkan. Dua field standalone tetap literal dan belum terpetakan;
+observer, custody katalog/footer, native dispatch, Induk dan PDF tetap terpisah.
+Tanggal kosong string pada A mengikuti konversi null yang eksplisit. Pada B,
+null tetap kosong, tetapi string kosong ditolak karena consumer tanggalnya berbeda.
+
 
 Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk
 checkpoint lama, atau URL identik dengan `?view=true` seperti aksi View yang

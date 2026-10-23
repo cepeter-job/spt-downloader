@@ -7,8 +7,10 @@
 `e25aa5e88132c4f8aa03cd6e764dbd507160d816`, tree
 `9d84692db85cf2b6fc69ef2b20ec1064fb987fcc`. These complete the reviewed catalog,
 current-View, component-lifetime and saved L1-D layout prerequisites. Native
-L1-D observation/dispatch continues separately in [PR105](https://github.com/cepeter-job/spt-downloader/pull/105).
-The pure L1-D helper does not enable that branch by itself.
+L1-D observation/dispatch subsequently merged separately in
+[PR105](https://github.com/cepeter-job/spt-downloader/pull/105), with its own
+[native verification and remaining boundaries](2026-10-23-corporate-l1d-native.md).
+The pure helper alone does not establish that native proof.
 
 ## Behavior and boundaries
 
