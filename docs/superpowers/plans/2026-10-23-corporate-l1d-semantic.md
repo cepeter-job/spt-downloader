@@ -189,3 +189,23 @@ Windows universe is4,926 cases (including four script-provider controls), with
 710 portable overlap. Exact-tree GREEN, package readback and final integration
 review remain pending. Native L1-D observer/dispatch and other corporate forms
 retain their explicit subsequent source/runner/live requirements.
+
+## Native integration slice (separate continuation)
+
+Start with37 synthetic packet contracts: four Normal/amendment and explicit
+migrated/nonmigrated positives through canonical sections and saved/reopened
+workbooks;31 unsupported proof/source/dependency controls;two fatal lifetime
+contradictions before fallback. Require positive manifest lifetime, three loaded
+source pins, exact current-View submitted route/model, outer BC04 classification,
+explicit boolean migration and valid previous-parent encoding. The observed
+L1-D component remains authoritative for its final classification branch.
+Preserve all three exact table owners/headers/footer spans, pure-helper guards,
+whole-record source coverage and source/value provenance. Induk's independent
+mapping remains unresolved in this fixture. These tests alone cannot enable the
+live observer: add actual owned same-page View/capture/observer/GET-digest tests
+with business-value getter traps, cancellation and whole-record fallback before
+implementation/dispatch. This continuation does not alter the prerequisite
+candidate already undergoing final verification in PR102.
+The migrated positive deliberately preserves reported13 totals against zero
+4500/4700 operands; canonical and saved-footer amounts distinguish correct flag
+binding from an adapter that always selects the nonmigrated path.
