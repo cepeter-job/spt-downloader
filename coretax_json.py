@@ -17,6 +17,7 @@ PPH21_MODEL_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id
 PPH21_REFERENCE_URLS = (PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL)
 UNIFIKASI_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'EBUPOT_TAX_CERTIFICATE,EBUPOT_PAYMENT_METHOD,EBUPOTSP_TAX_OBJECT,EBUPOTCY_TAX_OBJECT,PERIOD')
+CORPORATE_COUNTRY_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/COUNTRY_CODE'
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -608,7 +609,7 @@ def _check_corporate_route(frame, selected):
 
 
 def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_reference=False,
-                      allow_unifikasi_reference=False):
+                      allow_unifikasi_reference=False, allow_corporate_reference=False):
     if not isinstance(item, dict) or not isinstance(item.get('body'), bytes) or not isinstance(item.get('context'), dict):
         raise JsonSafetyError('Original corporate body bytes and captured descriptor are required')
     raw, ctx = item['body'], item['context']
@@ -638,6 +639,10 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_WT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WTR')
+    reference = reference or (allow_corporate_reference is True and endpoint == CORPORATE_COUNTRY_REFERENCE_URL
+                 and ctx.get('method') == 'GET' and ctx.get('request_json') is None
+                 and selected['native_fields'].get('TaxTypeCode') == 'ICT_RCIT'
+                 and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_RCITR')
     ordinary = (urlparse(endpoint).path.startswith('/returnsheet/api/')
                 and not urlparse(endpoint).path.casefold().startswith('/returnsheet/api/returnsheets')
                 and ctx.get('method') == 'POST')
@@ -874,7 +879,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks = [], set(), {}, set()
     attempt, primary_hash, total_bytes = None, None, 0
-    primary_source = None
+    primary_source, country_packets = None, {}
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
     if not supported_tax:
         reasons.append('unsupported_corporate_tax_kind')
@@ -885,7 +890,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     if primary is None:
         reasons.append('missing_observed_corporate_primary_binding')
     for item in bodies:
-        envelope, ctx, attempt, event = _corporate_packet(item, selected, scope, attempt, sequences)
+        envelope, ctx, attempt, event = _corporate_packet(item, selected, scope, attempt, sequences,
+                                                        allow_corporate_reference=supported_tax)
         clocks.add(_corporate_request_key(event.get('clock_interval')))
         if len(clocks) != 1:
             raise JsonSafetyError('Corporate capture clock evidence is missing or mixed within one attempt')
@@ -900,7 +906,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         key = (ctx['url'], _corporate_request_key(request))
         binding = requests.get(key)
         is_primary = primary is not None and key == primary
-        if is_primary or binding is not None:
+        is_country = ctx['url'] == CORPORATE_COUNTRY_REFERENCE_URL
+        if is_primary or binding is not None or is_country:
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
                 raise JsonSafetyError('Declared corporate source snapshot changed within one attempt')
@@ -912,7 +919,21 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                     if field != 'Payload':
                         _corporate_rows(value, (field,), envelope_rows)
                 event['envelope_fields'] = envelope_rows
-            if is_primary:
+            if is_country:
+                # Even an unused naturally observed catalog keeps all generic
+                # packet/clock/snapshot/privacy checks. Its presence must not
+                # change old L7/evidence-leaf coverage into an unbound response.
+                if isinstance(payload, list):
+                    for catalog in payload:
+                        if not isinstance(catalog, dict):
+                            continue
+                        entries = catalog.get('Details')
+                        for value in [catalog, *(entries if isinstance(entries, list) else [])]:
+                            if isinstance(value, dict) and 'language' in value and value['language'] != 'id-ID':
+                                raise JsonSafetyError('Corporate country locale contradicts observed source')
+                event['reference_catalog'] = 'COUNTRY_CODE'
+                country_packets[event['sequence']] = {'payload': payload, 'event': event, 'successful': success}
+            elif is_primary:
                 if not success:
                     reasons.append('failed_corporate_primary_response')
                 if not isinstance(payload, dict):
@@ -995,7 +1016,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         try:
             root, payload, event = primary_source
             projected = apply_projections(sections, observed_forms, root=root, payload=payload,
-                                          record=record, event=event)
+                                          record=record, event=event, country_packets=country_packets)
             if projected:
                 provenance['projections'] = projected
         except _UnsupportedMetadata as error:
