@@ -6,6 +6,58 @@ as `9751650f14d4301c5b009849dc66fe508ad3b37c`, tree
 is included and GitHub records it merged through the same commit. The installed
 application and earlier taxpayer outputs were preserved.
 
+The latest merged-code refresh on `e25aa5e8` completed all four trials with native
+JSON and equal completeness. Median JSON total was **100.1035 seconds**, versus
+**96.6895 seconds for DOM**: JSON was **3.53% slower** in this cohort. The earlier
+period-fix cohort below showed JSON 5.80% faster. Each has only two observations
+per mode; neither establishes a consistent general speed advantage.
+
+## Latest merged-code live refresh
+
+This repeats the same authorized submitted **PPh Pasal 21/26, December 2025,
+Normal** selection after PR104/102 changed the PPh21 runtime path. Order remains
+DOM, JSON, JSON, DOM, with fresh owned profiles, submitted inventories and output
+folders, no checkpoint reuse and unchanged private benchmark scripts. Source
+execution uses merged main `e25aa5e88132c4f8aa03cd6e764dbd507160d816`, tree
+`9d84692db85cf2b6fc69ef2b20ec1064fb987fcc`; its 438 archived Git blobs were verified
+byte for byte before extraction and unchanged after all trials. Archive SHA256:
+`3e85b844afa17c741ed68a36fa75c9137a09d228bb6224ac0e3c1a6ff4c20cf9`.
+The same locked CPython 3.14.8 GIL runtime was reused. Product code supplies
+id-ID/Asia/Jakarta; no tracing or harness locale override was used.
+
+| Order | Actual source | Total seconds | Details seconds | Forms | Capture and mapping |
+| --- | --- | ---: | ---: | ---: | --- |
+| 1 | DOM | 102.305 | 46.041 | 5 | COMPLETE |
+| 2 | JSON | 107.527 | 55.468 | 5 | COMPLETE |
+| 3 | JSON | 92.680 | 41.145 | 5 | COMPLETE |
+| 4 | DOM | 91.074 | 42.045 | 5 | COMPLETE |
+
+Total measures parent launch through worker exit and completed owned cleanup,
+including login, inventory, details, publication and independent output readback.
+Runtime preparation is excluded; details are included in total. DOM/JSON median
+total ratio is0.966. Every run ended exit0 with zero errors, verified outputs,
+completed cleanup and the requested actual source; JSON did not fall back to DOM.
+Observed variation across trials prevents attributing the difference to a single
+stage or code change. The cohorts are kept separate and all trials are retained.
+
+Each pair again contains447 populated visible cells per mode:445 exact matches,
+two source-preserving Name whitespace differences at L-IB C8 and L-II C8, and zero
+unexplained differences. Original response bytes/hashes and exact form/table/row
+bindings prove both differences. Sheet sets, formula text, styles, merges,
+dimensions, row/column geometry and print setup match. Outputs are stable within
+each mode. Readback uses saved OOXML without recalculation, refresh or edits.
+Both JSON trials prove seven complete grids and19 declared body rows, with14
+declared original evidence files under `json/` directly inside each SPT root;
+checkpoint/publication bytes and hashes match. Private artifacts stay outside Git.
+
+Runner/package evidence for this exact code is PR102 head
+`e0e4aa11c0f5d4f9c89dccd52ebb87264b056a27`, tested merge
+`3431738fb3637e8470aba8cf8aa1e169794dcb6a`, run39955033389 attempt1,
+distribution12503530279 and bootstrap12503675810. See the
+[catalog/lifetime final report](2026-10-23-catalog-and-lifetime-priorities.md)
+for complete readback and supported boundaries. The unchanged installed app and
+earlier outputs are preserved; this is the authorized source benchmark.
+
 ## Repairs
 
 Matching literal source periods such as `12122025` now bind directly to their
@@ -20,7 +72,7 @@ desktop and CLI contexts now explicitly use id-ID and Asia/Jakarta. Externally
 reused contexts retain their checks and fallback. Authentication, challenge,
 taxpayer, origin, Stop and owned cleanup contracts remain in force.
 
-## Same-return live benchmark
+## Earlier period-fix live benchmark
 
 The user authorized local execution for the same submitted **PPh Pasal 21/26,
 December 2025, Normal** return. All four runs used the same saved selection and
@@ -125,8 +177,10 @@ semantic/native coverage and PPN final-choice branches retain separate gates.
 [PR99](https://github.com/cepeter-job/spt-downloader/pull/99) merged
 [PPN final-choice invariants and the narrow Normal branch](2026-10-23-ppn-choice-invariants.md).
 Both have exact runner/package evidence and separate supported boundaries.
-L1-D continues in draft [PR102](https://github.com/cepeter-job/spt-downloader/pull/102);
-its pure helper and tests do not certify native eligibility. L3/L11-A, remaining
+[PR104/102](2026-10-23-catalog-and-lifetime-priorities.md) merged the reviewed
+catalog, current-View, lifetime and pure-L1-D/layout prerequisites. Native L1-D
+continues in draft [PR105](https://github.com/cepeter-job/spt-downloader/pull/105);
+the merged pure helper does not certify native eligibility. L3/L11-A, remaining
 corporate semantic destinations and unproved PPN lifecycle branches retain
 their own source/runner gates. Current-build live acceptance for other families
 needs an explicitly selected scope. Missing consumer proof or live scope stays
