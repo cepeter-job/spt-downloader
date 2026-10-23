@@ -157,3 +157,16 @@ original 192 tests and existing shared helpers unchanged. Read the actual
 17-case extension (sixteen expected refusal-path failures and one pass) before
 the narrow L8 repair; the complete expected collection is now 5,798. A candidate
 run superseded by these tests does not establish GREEN or package success.
+
+The full review-RED
+[run 40021242729, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/40021242729)
+tested merge `e763b78ec69710d4e253200c59c972052d6de12f`, tree
+`84cd0954738373c8fd48e623df951152d2458109`. All six actual archives were read
+with the same strict metadata/identity/phase/hash/measurement requirements.
+Of 5,798 Windows cases (2,963 plus 2,835), exactly the sixteen named regressions
+failed with Decimal Overflow; all other 5,782 passed, including every original
+baseline and L8 case plus the new unused-control case. The 710 portable cases
+passed, with no errors/skips or setup/teardown failures. Only after this complete
+actual review RED did the L8 guard translate Decimal conversion exceptions to
+unsupported metadata. Shared conversion/projection functions and all tests stay
+unchanged by the repair. Final exact-tree GREEN/package/review remain required.

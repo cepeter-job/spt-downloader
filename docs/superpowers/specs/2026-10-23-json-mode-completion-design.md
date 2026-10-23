@@ -78,7 +78,18 @@ The semantic layer emits the existing canonical sections, fields and tables used
 - Per-value provenance with response sequence, container/path, source type/literal value, destination and any verified rendering rule. Derived display results preserve all contributing source paths.
 - Explicit unsupported/unresolved accounting for captured values that have no approved destination. Preserve the full checkpoint even where approved presentation omits raw display blocks.
 
-Preserve the approved twelve-sheet corporate resource and its per-form style, merge, dimension and page-layout contracts. Do not fabricate an Induk template. Use existing strict id-ID/15-digit monetary and percentage writers; retain identifiers, job titles, dates and headings as text. Preserve the exact L1-D negative subtraction rule, all L3 footer rows, final L1-D total, L7 dynamic year/header rules, and L11-B DER operands/merges.
+Preserve the approved twelve-sheet corporate resource and its per-form style,
+merge, dimension and page-layout contracts. Use the operator-approved source
+layouts for Induk and L8 described above; do not invent reference layouts for
+other forms. Use existing strict id-ID/15-digit monetary and percentage writers;
+retain identifiers, job titles, dates and headings as text. Preserve the exact
+L1-D negative subtraction rule, all L3 footer rows, final L1-D total, L7 dynamic
+year/header rules, and L11-B DER operands/merges.
+
+The [bounded L8 pure projection](../plans/2026-10-24-corporate-l8-pure.md) requires
+reconciled original inputs and preserves the approved eight-row geometry and
+footer. It does not enable native L8, change the corporate form catalog or close
+the remaining native lifecycle, mapping, PDF and live-acceptance gates.
 
 The 58 unresolved scalar fields mentioned in PR #82 are a scope-specific audit observation. Do not hard-code this number, invent destinations, mark all of them solved by native capture, or add fake unmapped counts. The final mapping report must reconcile its actual input capture.
 

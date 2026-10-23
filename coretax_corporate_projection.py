@@ -1,6 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from decimal import DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -166,7 +167,10 @@ _L8_SPANS = ((1, 2), (1, 1, 1), (1, 2), (1, 1, 1), (1, 1, 1), (1, 2), (1, 1, 1),
 def _l8_integer(value):
     if type(value) is not _CorporateNumber:
         raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_type')
-    number = _decimal(value)
+    try:
+        number = _decimal(value)
+    except DecimalException:
+        raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_precision') from None
     if number.is_signed() or number > _MAX_INTEGER or number != number.to_integral_value():
         raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_precision')
     return int(number)

@@ -231,7 +231,9 @@ L8 has a pure source projector only; it does not enable native admission,
 observers, dispatch or transport. Its supported ICT_RCIT/id-ID branch requires
 matching original numeric literal main/outer years 2020..2100, explicit unsigned
 nonnegative safe integral operands, turnover at most 4.8 billion and zero main
-research. Reconcile captured shares with the thousand-masked main taxable input,
+research. Translate Decimal conversion failures to the same unsupported-input refusal
+inside the L8 guard; never broaden that catch to other projections or controls.
+Reconcile captured shares with the thousand-masked main taxable input,
 captured 11%/zero taxes and the reported total; never replace a mismatch. Keep
 eight physical body rows, original spans/captions, one footer and typed source
 provenance, including both captured tax operands supporting that footer. Retain
