@@ -219,7 +219,9 @@ catalog types while preserving original Payload/catalog/detail indices and
 ordinary ordering/version proof. Never force-fetch a missing catalog. Preserve
 fatal identity/snapshot/query-count checks before fallback, even unbound, and
 compare full typed same-kind catalog content across admitted endpoints before
-overlap fallback, retaining numeric lexemes, metadata and duplicate order.
+overlap fallback, retaining numeric lexemes, metadata and duplicate order. The
+catalog type must be requested by that exact endpoint; a wrong marker remains
+unsupported source shape rather than establishing a new catalog identity.
 Count queries include endpoint and every field except First. Scope L3/L11-A
 auxiliary exact-set checks to each form's endpoints without admitting unrelated
 responses. Keep all twelve IV.B fields canonical and unresolved; template,

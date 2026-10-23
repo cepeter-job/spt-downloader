@@ -169,8 +169,10 @@ mengizinkan request tujuh field yang diinspeksi, kapasitas10, empat inventori
 Data/TotalRecords lengkap serta lima GET singleton atau pasangan literal
 DEDUCTION_METHOD,TYPE_OF_FULFILLMENT. Tidak membaca nilai bisnis DOM/cache atau
 meminta katalog tambahan. Path Payload/catalog/detail asli tetap dipertahankan
-meskipun urutan dua katalog dalam payload berbeda. Katalog bertipe sama yang
-berubah lintas endpoint tetap fatal sebelum fallback, termasuk metadata, urutan
+meskipun urutan dua katalog dalam payload berbeda. Tipe katalog yang dibandingkan
+wajib diminta endpoint asalnya; marker salah tetap merupakan bentuk unsupported.
+Katalog bertipe sama yang berubah lintas endpoint tetap fatal sebelum fallback,
+termasuk metadata, urutan
 duplicate, jenis JSON dan token angka. Identitas/snapshot/count grid diketahui
 juga fatal tanpa binding; count dibedakan per endpoint dan query selain First.
 L3 dan L11-A memeriksa paket auxiliary masing-masing. Tidak mengubah template,

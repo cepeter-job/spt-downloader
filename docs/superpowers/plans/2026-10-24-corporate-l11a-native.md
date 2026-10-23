@@ -70,8 +70,9 @@ have one unambiguous bound transport; singleton/pair overlap stays unsupported.
 Pair Payload may reorder the two catalog entries: bind by unique literal type,
 preserve original catalog/detail indices and require exact requested type set.
 Before overlap or any eligibility fallback, compare every successful known
-catalog entry for the same literal type across allowed transports. A changed
-typed full catalog (including Details order/duplicates and all metadata) is
+catalog entry whose type was requested by its exact endpoint across allowed
+transports. A changed typed full catalog (including Details order/duplicates and
+all metadata) is
 fatal with or without bindings. Preserve JSON type and numeric lexeme: numeric3,
 numeric3.0 and string'3' cannot compare equal through lossy serialization.
 Catalog index may differ across pair/singleton packets; bind by literal type,
@@ -158,3 +159,23 @@ before native product edits; the initial fixture failure remains recorded above.
 Implementation is confined to the five existing worker modules plus these
 contracts. Full implementation review, exact-tree GREEN and package readback
 remain required before merge. No new live corporate scope is authorized.
+
+## Initial implementation regression and narrow correction
+
+Run40007432228 attempt1 tested head
+`413b63c409669560a23336a3421af9d053f1d9a3` as merge
+`2942622ff9413a068038d1e814971a899c53a6ba`, tree
+`6ba964b3cec87acae2a31a3f6389f6645e224f71`. All six archives reconcile:
+5,589 Windows cases, 5,588 passes, one existing L3 wrong-catalog-type fallback
+regression, zero errors/skips. All324 new cases and710 overlapping portable
+cases passed;5,264 of5,265 baseline cases passed. This is a failed candidate,
+not GREEN or package evidence.
+
+The new comparison incorrectly admitted a CURRENCY marker inside a COUNTRY_CODE
+singleton response, then compared it with the real CURRENCY response. Independent
+review confirmed that each compared entry must have a type requested by its
+exact endpoint. The correction narrows only that admission predicate. Wrong
+markers retain semantic shape fallback; all original-byte snapshots, access,
+privacy, locale, clock and lifetime checks remain before fallback. Existing
+wrong-marker refusal and all20 valid cross-endpoint fatal controls are unchanged.
+A fresh complete corrected-tree run and package readback remain mandatory.

@@ -1113,7 +1113,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                 if not isinstance(catalog, dict):
                     continue
                 kind = catalog.get('ReferenceDataType')
-                if type(kind) is not str or kind not in {*CORPORATE_L3_REFERENCE_URLS, *CORPORATE_L11A_REFERENCE_URLS}:
+                if type(kind) is not str or kind not in reference_kinds:
                     continue
                 fingerprint = _corporate_catalog_fingerprint(catalog)
                 prior = catalog_snapshots.setdefault(kind, {})
