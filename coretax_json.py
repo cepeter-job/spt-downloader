@@ -18,6 +18,10 @@ PPH21_REFERENCE_URLS = (PPH21_REFERENCE_URL, PPH21_MODEL_REFERENCE_URL)
 UNIFIKASI_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'EBUPOT_TAX_CERTIFICATE,EBUPOT_PAYMENT_METHOD,EBUPOTSP_TAX_OBJECT,EBUPOTCY_TAX_OBJECT,PERIOD')
 CORPORATE_COUNTRY_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/COUNTRY_CODE'
+CORPORATE_L3_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')}
+CORPORATE_L3_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l3-table-b-grid'
+CORPORATE_L3_FOOTER_URL = CORPORATE_L3_GRID_URL + '/footer'
 REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
 REFERENCE_ORDER_SHA256 = '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
@@ -147,7 +151,8 @@ def _reference_consumer_order(details, kind):
     ignore types and ECONOMIC_CODE's additional lifecycle. Never sort raw bytes.
     """
     ordinary = {'EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS',
-                'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT'}
+                'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT',
+                'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES'}
     if (kind not in ordinary or not isinstance(details, list)
             or any(not isinstance(row, dict) or type(row.get('CodeDescription')) is not str for row in details)):
         raise _UnsupportedMetadata('unsupported_reference_cache_order')
@@ -752,7 +757,7 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_WT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WTR')
-    reference = reference or (allow_corporate_reference is True and endpoint == CORPORATE_COUNTRY_REFERENCE_URL
+    reference = reference or (allow_corporate_reference is True and endpoint in CORPORATE_L3_REFERENCE_URLS.values()
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_RCIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_RCITR')
@@ -761,6 +766,12 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                 and ctx.get('method') == 'POST')
     if not (ordinary or reference):
         raise JsonSafetyError('Captured corporate endpoint or method is unsafe')
+    if endpoint in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL):
+        request = ctx.get('request_json')
+        if isinstance(request, dict) and 'ReturnSheetRecordId' in request:
+            value = request['ReturnSheetRecordId']
+            if type(value) is not str or value != selected['record_id']:
+                raise JsonSafetyError('Known corporate request contradicts selected return')
     if not _corporate_url(frame) or not urlparse(frame).path.startswith('/returnsheets/'):
         raise JsonSafetyError('Captured corporate frame is unauthorized')
     parts = urlparse(frame).path.split('/')
@@ -1002,8 +1013,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes = [], set(), {}, set(), set()
+    l3_counts = {}
     attempt, primary_hash, total_bytes = None, None, 0
-    primary_source, country_packets = None, {}
+    primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
     if not supported_tax:
         reasons.append('unsupported_corporate_tax_kind')
@@ -1034,11 +1046,26 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         binding = requests.get(key)
         is_primary = primary is not None and key == primary
         is_country = ctx['url'] == CORPORATE_COUNTRY_REFERENCE_URL
-        if is_primary or binding is not None or is_country:
+        reference_kind = next((kind for kind, url in CORPORATE_L3_REFERENCE_URLS.items() if ctx['url'] == url), None)
+        is_l3 = ctx['url'] in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL)
+        if is_primary or binding is not None or reference_kind is not None or is_l3:
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
                 raise JsonSafetyError('Declared corporate source snapshot changed within one attempt')
             snapshots[key] = ctx['sha256']
+        if (ctx['url'] == CORPORATE_L3_GRID_URL and success
+                and isinstance(payload, dict) and 'TotalRecords' in payload
+                and isinstance(request, dict)
+                and request.get('ReturnSheetRecordId') == selected['record_id']
+                and type(request.get('First')) is int and request['First'] >= 0
+                and type(request.get('Rows')) is int and request['Rows'] > 0):
+            # First identifies a page; every other query field identifies the
+            # dataset. Contradictions are fatal even without a semantic binding.
+            query = _corporate_request_key({name: value for name, value in request.items() if name != 'First'})
+            count = _corporate_integer(payload['TotalRecords'])
+            if query in l3_counts and l3_counts[query] != count:
+                raise JsonSafetyError('Corporate L3 page count snapshot changed within one query')
+            l3_counts[query] = count
         try:
             if isinstance(envelope, dict) and (is_primary or binding is not None):
                 envelope_rows = []
@@ -1046,7 +1073,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                     if field != 'Payload':
                         _corporate_rows(value, (field,), envelope_rows)
                 event['envelope_fields'] = envelope_rows
-            if is_country:
+            if reference_kind is not None:
                 # Even an unused naturally observed catalog keeps all generic
                 # packet/clock/snapshot/privacy checks. Its presence must not
                 # change old L7/evidence-leaf coverage into an unbound response.
@@ -1058,8 +1085,11 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                         for value in [catalog, *(entries if isinstance(entries, list) else [])]:
                             if isinstance(value, dict) and 'language' in value and value['language'] != 'id-ID':
                                 raise JsonSafetyError('Corporate country locale contradicts observed source')
-                event['reference_catalog'] = 'COUNTRY_CODE'
-                country_packets[event['sequence']] = {'payload': payload, 'event': event, 'successful': success}
+                event['reference_catalog'] = reference_kind
+                packet = {'payload': payload, 'event': event, 'successful': success}
+                reference_packets[event['sequence']] = packet
+                if is_country:
+                    country_packets[event['sequence']] = packet
             elif is_primary:
                 if not success:
                     reasons.append('failed_corporate_primary_response')
@@ -1095,6 +1125,10 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                         rows = []
                         _corporate_rows(payload, ('Payload',), rows)
                         state['seen'][key] = {'sha256': ctx['sha256'], 'rows': rows}
+                        if is_l3:
+                            # Keep decoded original values, never reconstruct
+                            # business data from the rendered leaf rows.
+                            auxiliary_packets[key] = {'payload': payload, 'event': event}
             elif (urlparse(ctx['url']).path.endswith('/getinfotin') and ctx['status'] == 400
                   and isinstance(envelope, dict) and envelope.get('IsSuccessful') is False and payload is None):
                 event['informational_failure'] = True
@@ -1143,7 +1177,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         try:
             root, payload, event = primary_source
             projected = apply_projections(sections, observed_forms, root=root, payload=payload,
-                                          record=record, event=event, country_packets=country_packets)
+                record=record, event=event, country_packets=country_packets,
+                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets)
             if projected:
                 provenance['projections'] = projected
         except _UnsupportedMetadata as error:

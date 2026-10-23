@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
+                          CORPORATE_L3_REFERENCE_URLS, CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
+                          _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
 from coretax_masa_bindings import _decimal, _number, _evidence
 
@@ -18,6 +20,7 @@ VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
 L11C_BUILD_DIGESTS = {**BUILD_DIGESTS,
     VENDOR_SOURCE: '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'}
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -163,17 +166,23 @@ def _l11c_date(value):
 
 def project_countries(payload, *, clock_interval=None):
     """Exact naturally observed COUNTRY_CODE consumer; never read browser cache."""
+    return _project_corporate_catalog(payload, kind='COUNTRY_CODE', clock_interval=clock_interval)
+
+
+def _project_corporate_catalog(payload, *, kind, clock_interval=None):
+    """Only the four source-proved singleton catalog consumers share this order."""
     _reference_locale(payload)
-    if (not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict)
-            or payload[0].get('ReferenceDataType') != 'COUNTRY_CODE'
+    if (kind not in CORPORATE_L3_REFERENCE_URLS or not isinstance(payload, list)
+            or len(payload) != 1 or not isinstance(payload[0], dict)
+            or payload[0].get('ReferenceDataType') != kind
             or not isinstance(payload[0].get('Details'), list)):
         raise _UnsupportedMetadata('unsupported_corporate_country_catalog')
     catalog, groups, evidence = payload[0], {}, []
     if 'language' in catalog and catalog['language'] != 'id-ID':
         raise JsonSafetyError('Corporate country locale contradicts observed source')
-    evidence.append(_evidence('COUNTRY_CODE', [0, 'ReferenceDataType']))
+    evidence.append(_evidence(kind, [0, 'ReferenceDataType']))
     descriptions = {}
-    ordered, order_rule = _reference_consumer_order(catalog['Details'], 'COUNTRY_CODE')
+    ordered, order_rule = _reference_consumer_order(catalog['Details'], kind)
     for index, row in enumerate(catalog['Details']):
         if (not isinstance(row, dict) or type(row.get('Code')) is not str or not row['Code']
                 or type(row.get('CodeDescription')) is not str or not row['CodeDescription'].strip()):
@@ -196,7 +205,8 @@ def project_countries(payload, *, clock_interval=None):
         index, row, rule = _select_reference_version(candidates, clock_interval)
         lookups[code] = row['CodeDescription']
         entry = descriptions[index]
-        entry['rule'] = 'reviewed-country-active-version:' + rule
+        entry['rule'] = ('reviewed-country-active-version:' if kind == 'COUNTRY_CODE'
+                         else 'reviewed-corporate-catalog-active-version:') + rule
         entry['catalog_order_rule'] = order_rule
         if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
             entry['clock_interval'] = dict(clock_interval)
@@ -396,12 +406,18 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
             'route': proof['route'], 'values': result['provenance']}
 
 
-def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None):
+def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
+                      reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
     projected = []
     for binding, section in zip(observed_forms, sections):
         if 'projection' not in binding:
             continue  # Preserve old evidence-leaf captures and caller contracts.
+        if binding['name'] == 'L3':
+            projected.append(_apply_l3(binding, section, observed_forms, root=root, payload=payload,
+                record=record, event=event, reference_packets=reference_packets or {},
+                auxiliary_packets=auxiliary_packets or {}))
+            continue
         if binding['name'] == 'L1-D':
             projected.append(_apply_l1d(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event))
@@ -725,6 +741,8 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
 
 
 _L3_ROOT = 'ListIncomeTaxWithheldByOtherParties'
+_L3_OWNERS = ('rsh-citr-l3-grid1', 'rshshr-citr-l3-grid2')
+_L3_GROUPS = ('A. PENGHASILAN DARI LUAR NEGERI', 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN')
 _L3_HEADERS = [['NO.', 'PEMOTONG PAJAK / NAMA', 'PEMOTONG PAJAK / NEGARA',
     'TANGGAL TRANSAKSI/PEMBAYARAN PPh', 'JENIS PENGHASILAN', 'PENGHASILAN NETO (RUPIAH)',
     'PPh YANG DIBAYAR/DIPOTONG/TERUTANG DI LUAR NEGERI / NILAI (Rp)',
@@ -923,6 +941,135 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                'group': 'A. PENGHASILAN DARI LUAR NEGERI'}
               for field, caption in zip(_L3_SCALARS[3:5], _L3_CAPTIONS)]
     return {'tables': tables, 'fields': fields, 'provenance': provenance}
+
+
+def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
+              reference_packets, auxiliary_packets):
+    proof = binding['projection']
+    if (not isinstance(proof, dict)
+            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or proof['kind'] != 'corporate-l3-v1' or proof['builds'] != L3_BUILD_DIGESTS
+            or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L3_ROOT]]
+            or binding.get('grids', []) or event.get('component_lifetime') is None):
+        raise _UnsupportedMetadata('unverified_corporate_l3_semantic_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    main = root.get('MainFormData')
+    if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
+            or not isinstance(main, dict)
+            or any(type(value) is not _CorporateNumber or _decimal(value) != 1
+                   for value in (payload.get('IsIncomeTaxOverseas'), main.get('IsIncomeTaxOverseas')))):
+        raise _UnsupportedMetadata('unverified_corporate_l3_submitted_lifecycle')
+    if 'PreviousFormData' not in payload:
+        raise _UnsupportedMetadata('missing_corporate_l3_previous_encoding')
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l3_previous_encoding')
+        previous = _corporate_json(previous)
+        if previous is not None and not isinstance(previous, dict):
+            raise _UnsupportedMetadata('unsupported_corporate_l3_previous_shape')
+    tables = proof['tables']
+    if not isinstance(tables, list) or len(tables) != 2:
+        raise _UnsupportedMetadata('unverified_corporate_l3_table_catalog')
+    for index, table in enumerate(tables):
+        structure = {'form': 'L3', 'component': _L3_OWNERS[index], 'groups': [_L3_GROUPS[index]]}
+        if (not isinstance(table, dict)
+                or set(table) != {'component', 'source_structure', 'headers', 'footer_spans'}
+                or table['component'] != structure['component'] or table['source_structure'] != structure):
+            raise _UnsupportedMetadata('unverified_corporate_l3_grid_owner')
+    responses, dependencies = binding.get('responses'), binding.get('dependencies')
+    footer_request = {'ReturnSheetRecordId': record['record_id']}
+    if (not isinstance(responses, list) or len(responses) != 1
+            or not isinstance(responses[0], dict) or set(responses[0]) != {'name', 'endpoint', 'requests'}
+            or responses[0]['name'] != 'L3/domestic' or responses[0]['endpoint'] != CORPORATE_L3_GRID_URL
+            or dependencies != [{'endpoint': CORPORATE_L3_FOOTER_URL, 'request_json': footer_request}]):
+        raise _UnsupportedMetadata('unverified_corporate_l3_auxiliary_binding')
+    requests = responses[0]['requests']
+    if not isinstance(requests, list) or not 1 <= len(requests) <= 1000:
+        raise _UnsupportedMetadata('missing_corporate_l3_page_requests')
+    for request in requests:
+        if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId', 'Language',
+                'First', 'Rows', 'SortField', 'SortOrder', 'Filters', 'LanguageId'}
+                or request['ReturnSheetRecordId'] != record['record_id']
+                or request['Language'] != 'id-ID' or request['LanguageId'] != 'id-ID'
+                or type(request['First']) is not int or request['First'] < 0
+                or type(request['Rows']) is not int or request['Rows'] != 10
+                or request['SortField'] != 'WithholdingSlipsDate'
+                or type(request['SortOrder']) is not int or request['SortOrder'] != 1
+                or request['Filters'] != []):
+            raise _UnsupportedMetadata('unsupported_corporate_l3_page_request')
+    requests = sorted(requests, key=lambda value: value['First'])
+    page_sources, pages, expected = [], [], set()
+    for request in requests:
+        key = (CORPORATE_L3_GRID_URL, _corporate_request_key(request))
+        expected.add(key)
+        packet = auxiliary_packets.get(key)
+        source = packet['payload'] if packet is not None else None
+        if not isinstance(source, dict) or set(source) != {'Data', 'TotalRecords'}:
+            raise _UnsupportedMetadata('unsupported_corporate_l3_page_payload')
+        pages.append({'offset': request['First'], 'rows': request['Rows'],
+                      'total': _corporate_integer(source['TotalRecords']), 'data': source['Data']})
+        page_sources.append(packet['event'])
+    footer_key = (CORPORATE_L3_FOOTER_URL, _corporate_request_key(footer_request))
+    expected.add(footer_key)
+    if expected != set(auxiliary_packets):
+        raise _UnsupportedMetadata('incomplete_corporate_l3_auxiliary_packets')
+    footer = auxiliary_packets[footer_key]
+    references = proof['references']
+    if not isinstance(references, list) or len(references) != 4:
+        raise _UnsupportedMetadata('missing_corporate_l3_reference_bindings')
+    catalogs, sources, labels, seen_kinds = {}, {}, {}, set()
+    for ref in references:
+        if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
+                or ref['method'] != 'GET' or not isinstance(ref['sequences'], list) or not ref['sequences']):
+            raise _UnsupportedMetadata('unsupported_corporate_l3_reference_binding')
+        kind = next((kind for kind, url in CORPORATE_L3_REFERENCE_URLS.items() if url == ref['endpoint']), None)
+        if kind is None or kind in seen_kinds:
+            raise _UnsupportedMetadata('unsupported_corporate_l3_reference_binding')
+        seen_kinds.add(kind)
+        sequences = ref['sequences']
+        if any(type(n) is not int or n <= 0 for n in sequences) or len(set(sequences)) != len(sequences):
+            raise JsonSafetyError('Corporate L3 reference sequence is invalid or repeated')
+        actual = {n for n, packet in reference_packets.items() if packet['event']['url'] == ref['endpoint']}
+        if set(sequences) != actual or any(not reference_packets[n]['successful'] for n in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_l3_catalog')
+        source = reference_packets[sequences[0]]
+        catalogs[kind] = _project_corporate_catalog(source['payload'], kind=kind,
+            clock_interval=source['event'].get('clock_interval'))
+        sources[kind], labels[kind] = source['event'], catalogs[kind]['lookups']
+    result = project_l3(root.get(_L3_ROOT), pages=pages, footer_payload=footer['payload'],
+        headers=[t['headers'] for t in tables], footer_spans=[t['footer_spans'] for t in tables],
+        tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'], labels=labels)
+    for index, table in enumerate(result['tables']):
+        table['source_structure'] = deepcopy(tables[index]['source_structure'])
+    section['tables'], section['fields'] = result['tables'], result['fields']
+    label_fields = {'CountryCode': 'COUNTRY_CODE', 'PayableCurrency': 'CURRENCY',
+                    'IncomeCode': 'FOREIGN_INCOME_TYPE_CIT', 'TaxType': 'TAX_TYPE_BY_OTHER_PARTIES'}
+    for entry in tuple(result['provenance']):
+        source = (page_sources[entry['page_index']] if entry['source'] == 'grid'
+                  else footer['event'] if entry['source'] == 'footer' else event)
+        entry.update(response_sequence=source['sequence'],
+                     container=['Payload', 'CurrentFormData'] if source is event else ['Payload'])
+        kind = label_fields.get(entry['path'][-1]) if entry['rule'] == 'bound-reference-label' else None
+        if kind is not None and entry['value'] in catalogs[kind]['selected']:
+            result['provenance'].append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
+                'response_sequence': sources[kind]['sequence'], 'container': ['Payload'],
+                'destination': deepcopy(entry['destination'])})
+    for kind, catalog in catalogs.items():
+        result['provenance'].extend({**entry, 'response_sequence': sources[kind]['sequence'],
+            'container': ['Payload'], 'destination': {'table': 'L3', 'reference': kind}}
+            for entry in catalog['provenance'])
+    return {'form': 'L3', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
 
 
 # Active L11-A consumers in the pinned corporate build; no taxpayer defaults.

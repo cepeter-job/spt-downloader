@@ -10,6 +10,7 @@ FORMS = {
  'L1-B': ('rshshr-citr-l1b-form', 'L1bFormData'),
  'L1-D': ('rshshr-citr-l1d-form', 'L1dFormData'),
  'L2': ('rshshr-citr-l2-form', 'ListOfOwnership'),
+ 'L3': ('rshshr-citr-l3-form', 'ListIncomeTaxWithheldByOtherParties'),
  'L4': ('rshshr-citr-l4-form', 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject'),
  'L6': ('rshshr-citr-l6-form', 'FiscalYearIncomeTax'),
  'L7': ('rshshr-citr-l7-form', 'CalculationOfFiscalLossCompensation'),
@@ -219,6 +220,113 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
         'route': page.url, **environment, 'tables': tables}
 
 
+def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
+    """Inspect source providers/structure and turn only the owned B paginator."""
+    from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
+    from coretax_corporate_projection import L3_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_json import CORPORATE_L3_REFERENCE_URLS, CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    if digest != L3_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+        return None
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    _check_cancel(check_cancel)
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if (main_digest != L3_BUILD_DIGESTS.get(MAIN_SOURCE)
+            or vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE) or form.locator('table').count() != 2):
+        return None
+    tables = []
+    for phase in range(2):
+        if form.count() != 1 or not form.is_visible() or form.locator('table').count() != 2:
+            return None
+        observed_tables = []
+        for index, selector in enumerate(('rsh-citr-l3-grid1', 'rshshr-citr-l3-grid2')):
+            _check_cancel(check_cancel)
+            grid, ui = form.locator(selector), 'ui-grid-offline' if index == 0 else 'ui-grid'
+            other = 'ui-grid' if index == 0 else 'ui-grid-offline'
+            if (grid.count() != 1 or not grid.is_visible() or grid.locator(ui).count() != 1
+                    or grid.locator(other).count() or grid.locator('p-table').count() != 1
+                    or grid.locator('table').count() != 1):
+                return None
+            table = grid.locator('table')
+            chain = table.evaluate('''(table, {selector, ui}) => {
+                const form=table.closest('rshshr-citr-l3-form'), grid=table.closest(selector);
+                const owner=table.closest('p-table'), wrapper=table.closest(ui);
+                return !!form && !!grid && grid.closest('rshshr-citr-l3-form')===form &&
+                    !!owner && !!wrapper && grid.contains(wrapper) && wrapper.contains(owner) &&
+                    owner.closest(ui)===wrapper && owner.closest(selector)===grid &&
+                    wrapper.closest(selector)===grid && wrapper.closest('rshshr-citr-l3-form')===form;
+            }''', {'selector': selector, 'ui': ui})
+            _check_cancel(check_cancel)
+            if chain is not True:
+                return None
+            structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L3')
+            if structure != {'form': 'L3', 'component': selector, 'groups': [
+                    'A. PENGHASILAN DARI LUAR NEGERI' if index == 0 else 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
+                return None
+            metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+            _check_cancel(check_cancel)
+            observed_tables.append({'component': selector, 'source_structure': structure,
+                           'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
+            if phase == 0 and index == 1 and not _turn_grid(page, grid.locator('p-table'), max_pages, check_cancel):
+                return None
+        if phase == 0:
+            tables = observed_tables
+        elif observed_tables != tables:
+            return None
+    requests, seen, footer = [], set(), False
+    observations = capture.request_observations()
+    for item in observations:
+        if item['method'] != 'POST' or item['url'] not in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL):
+            continue
+        request = item.get('request_json')
+        if not isinstance(request, dict) or 'ReturnSheetRecordId' not in request:
+            return None
+        if request['ReturnSheetRecordId'] != record['record_id']:
+            raise JsonSafetyError('Observed L3 request contradicts selected return')
+        if item['url'] == CORPORATE_L3_FOOTER_URL:
+            if request != {'ReturnSheetRecordId': record['record_id']}:
+                return None
+            footer = True
+            continue
+        if type(request.get('First')) is not int or request['First'] < 0:
+            return None
+        key = json.dumps(request, sort_keys=True)
+        if key not in seen:
+            requests.append(request)
+            seen.add(key)
+    if not requests or not footer:
+        return None
+    references = []
+    for url in CORPORATE_L3_REFERENCE_URLS.values():
+        sequences = [item['sequence'] for item in observations
+            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
+        if not sequences:
+            return None
+        references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    return {'responses': [{'name': 'L3/domestic', 'endpoint': CORPORATE_L3_GRID_URL,
+                          'requests': sorted(requests, key=lambda request: request['First'])}],
+        'dependencies': [{'endpoint': CORPORATE_L3_FOOTER_URL,
+                          'request_json': {'ReturnSheetRecordId': record['record_id']}}],
+        'projection': {'kind': 'corporate-l3-v1', 'builds': {CIT_SOURCE_URL: digest,
+            MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
+            **environment, 'tables': tables, 'references': references}}
+
+
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
@@ -256,6 +364,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
+            if name == 'L3':
+                if 'Induk' not in names:
+                    return None
+                inspected = _observe_l3(page, form, capture, digest, record, max_pages, check_cancel)
+                if inspected is None:
+                    return None
+                binding.update(inspected)
             if name == 'L1-D':
                 if 'Induk' not in names:
                     return None

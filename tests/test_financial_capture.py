@@ -184,11 +184,24 @@ def test_induk_timeout_records_structure_without_private_dom_or_repairing_captur
 
 
 def test_induk_timeout_probe_failure_keeps_original_timeout_and_later_appendix(routed, tmp_path, monkeypatch):
+    import sys
+
     page, requests = routed()
     monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
     page.locator('a[aria-controls="induk"]').evaluate('(tab) => { tab.onclick = () => {}; }')
     locator_type = type(page.locator('body'))
     original_evaluate = locator_type.evaluate
+    original_probe = driver._record_panel_timeout
+    original_timeouts = []
+
+    def observe_original_timeout(*args, **kwargs):
+        # The shared deadline can expire in any bounded locator read. Capture
+        # the actual exception before the diagnostic probe, then require exact
+        # preservation instead of assuming which locator operation expired.
+        error = sys.exc_info()[1]
+        assert isinstance(error, driver.PlaywrightTimeoutError)
+        original_timeouts.append(str(error).split('\n')[0])
+        return original_probe(*args, **kwargs)
 
     def fail_snapshot(locator, expression, arg=None, **kwargs):
         # Inject a failed browser read at the diagnostic boundary, not the
@@ -198,12 +211,14 @@ def test_induk_timeout_probe_failure_keeps_original_timeout_and_later_appendix(r
         return original_evaluate(locator, expression, arg, **kwargs)
 
     monkeypatch.setattr(locator_type, 'evaluate', fail_snapshot)
+    monkeypatch.setattr(driver, '_record_panel_timeout', observe_original_timeout)
     with driver.diagnostics.session(tmp_path, 'worker') as log:
         result = driver.capture_detail(page, record=deepcopy(RECORD), folder=tmp_path)
         assert log.flush()
     assert [section['name'] for section in result['sections']] == ['L1D']
     assert result['capture_complete'] is False
-    assert result['errors'][0]['message'].startswith('Locator.wait_for: Timeout')
+    assert len(original_timeouts) == 1
+    assert result['errors'][0]['message'] == original_timeouts[0]
     assert requests == [('GET', DETAIL)]
     events = [row for row in diagnostic_records(tmp_path) if row['event'] == 'capture.panel_timeout']
     assert len(events) == 1 and events[0]['panel_state'] == 'unavailable'
