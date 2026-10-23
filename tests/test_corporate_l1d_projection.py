@@ -48,10 +48,14 @@ def source():
 def project(raw=None, *, migrated=False, headers=None, spans=None):
     helper = getattr(importlib.import_module('coretax_corporate_projection'), 'project_l1d', None)
     assert callable(helper), 'Source-bound L1-D projector is absent'
-    return helper(_corporate_json(json.dumps(source() if raw is None else raw)),
-        migrated=migrated, headers=deepcopy(HEADERS if headers is None else headers),
-        footer_spans=deepcopy(SPANS if spans is None else spans),
-        tax_type='ICT_RCIT', locale='id-ID', timezone_name='Asia/Jakarta')
+    captured = _corporate_json(json.dumps(source() if raw is None else raw))
+    before = deepcopy(captured)
+    try:
+        return helper(captured, migrated=migrated, headers=deepcopy(HEADERS if headers is None else headers),
+            footer_spans=deepcopy(SPANS if spans is None else spans),
+            tax_type='ICT_RCIT', locale='id-ID', timezone_name='Asia/Jakarta')
+    finally:
+        assert captured == before, 'Projection must preserve the parsed source as well as captured bytes'
 
 
 def tree_row(raw, code):
@@ -179,3 +183,54 @@ def test_ordered_asset_overflow_is_not_hidden_by_a_safe_final_total():
 def test_migration_flag_is_never_inferred(migrated):
     with pytest.raises(_UnsupportedMetadata):
         project(migrated=migrated)
+
+
+@pytest.mark.parametrize('value', [None, 'missing'])
+def test_missing_or_null_raw_masks_are_terminal_false_without_source_defaults(value):
+    raw = source()
+    for row in raw['L1dTreeData']:
+        if value == 'missing':
+            del row['Data']['BlockFields']
+        else:
+            row['Data']['BlockFields'] = None
+    before = deepcopy(raw)
+    assert project(raw)['tables'] == project()['tables']
+    assert raw == before
+
+
+def test_submitted_inert_and_overwritten_metadata_do_not_replace_retained_source():
+    raw = source()
+    for row in raw['L1dTreeData']:
+        row['Data']['RowOptions'] = {'IsShowEdit': True, 'IsShowDelete': True}
+        row['Data']['StyleOptions'] = {'Style': None, 'DescriptionStyle': None}
+        row['Data']['BlockFields']['CorrectionCode'] = {'SYNTHETIC_UNUSED': True}
+    changed = tree_row(raw, '5311')
+    changed['StyleOptions'] = {'Style': 'display:none', 'DescriptionStyle': 'visibility:hidden'}
+    changed['BlockFields']['NonTaxableObject'] = 'SYNTHETIC OVERWRITTEN MASK'
+    before = deepcopy(raw)
+    assert project(raw)['tables'] == project()['tables']
+    assert raw == before
+
+
+@pytest.mark.parametrize('field', ['Style', 'DescriptionStyle'])
+def test_effective_unknown_caption_css_stays_unsupported(field):
+    raw = source()
+    tree_row(raw, '4021')['StyleOptions'] = {field: 'display:none'}
+    with pytest.raises(_UnsupportedMetadata):
+        project(raw)
+
+
+@pytest.mark.parametrize('children', [None, 'missing', []])
+@pytest.mark.parametrize('expanded', [None, 'missing', False, True])
+def test_leaf_omissions_and_expansion_metadata_do_not_remove_flattened_rows(children, expanded):
+    raw = source()
+    for row in raw['L1dTreeData']:
+        if children == 'missing':
+            del row['Children']
+        else:
+            row['Children'] = children
+        if expanded == 'missing':
+            del row['Expanded']
+        else:
+            row['Expanded'] = expanded
+    assert project(raw)['tables'] == project()['tables']

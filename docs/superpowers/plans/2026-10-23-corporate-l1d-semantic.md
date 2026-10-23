@@ -19,10 +19,40 @@ Do not infer freshness from missing requests, a final URL or a DOM business valu
 The pure projector can be tested independently of that eligibility gate. It
 must not enable native L1-D by itself. The adapter must refuse L1-D until the
 current capture proves fresh component initialization and all three exact
-owned table structures. A popup-only proof would be conservative but the
-reviewed submitted-list View normally calls Angular router.navigate; route
-reuse/default provider evidence is still being investigated. Do not silently
-expand to an unproved SPA path.
+owned table structures. The reviewed submitted-list View calls Angular
+router.navigate. The pinned vendor constructor/factory positively selects the
+default reuse strategy (no detach/attach, reuse only equal routeConfig), while
+the submitted list and corporate detail have distinct leaf and layout configs.
+Their controlled transition creates a fresh parent; corporate record-to-record
+navigation can reuse it and remains unsupported. The proof requires the loaded
+vendor pin `1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68`
+as well as main/corporate. Both reviewed routes use fromCore=true; that flag is
+not itself a history/editing condition.
+
+The first attestation kind is `corporate-submitted-spa-v1`: an owned context,
+exact active submitted-list owner before the inspected View click, one exact
+selected route transition, the same Page/mainframe/retained Document, and an
+observed unique corporate outer owner after activation. Start/final owner checks
+use only structural visibility of rshshr-submitted-returnsheets and
+rshshr-corporate-income-tax-return. No URL-only or unchanged-Document-only
+inference is valid. Sample and seal inside the final-drain late-response fence.
+Bind exact attempt/record/source/detail URLs, strict true facts and transition
+count one at manifest level; reject descriptor overrides and malformed/mixed
+proofs on live iteration and offline replay. Old captures remain readable.
+Known detours/document replacement/snapshot contradictions are fatal. Missing
+initial proof stays unsupported. Never claim a general human-idle guarantee.
+
+The exact financial replacement request needs a value-free veto indicator:
+the current collector excludes its returnsheets prefix, so absence from ordinary
+request observations is not evidence. Read only the inspected URL/method/frame
+needed for that veto, never body/authentication headers or a replay. Preserve
+all existing request permissions. Outer Payload.BusinessClassification must be
+BC04 and the final observed L1-D owner must agree; a MainForm callback can change
+classification. Source metadata/leaf omissions follow the actual consumers:
+RowOptions is inert behind the hidden submitted action column; effective CSS
+on untouched rows is restricted to absent/null/empty; only four effective
+BlockFields flags control masking. Missing/null/[] Children are terminal leaves,
+and Expanded never filters the visible flattened table.
 
 ## Pure source projection
 
@@ -69,9 +99,14 @@ Native eligibility, capture, mapping, financial PDFs and publication stay separa
 
 ## Execution
 
-- [ ] Publish pure-source regressions and read intended runner RED before
+- [x] Publish pure-source regressions and read intended runner RED before
       implementing the pure projector. Missing callable asserts belong in the
       test body, not import/collection failures.
+      Run39939119266 attempt1 tested e22c523d40f0585731bfd7ce8d2c036ca34be719:
+      exactly28 missing-projector failures, all4538 existing Windows cases
+      passed, zero errors/skips. The initial pure helper was written after
+      reading the completed shard's15 intended failures; the other13 were read
+      before the next publication. Native dispatch is still disabled.
 - [ ] Close fresh-lifetime proof for the actual inspected View mechanism;
       implement optional capture/route evidence with focused runner regressions.
       Old captures remain readable and cannot gain new eligibility.

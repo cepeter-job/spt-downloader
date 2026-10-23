@@ -37,7 +37,8 @@ def payload(tax):
              'PeriodCode': '01012025', 'ReturnSheetModel': 'NORMAL'}
     if tax == 'PPN':
         form.update(TIN=NPWP, TaxType='VAT_VAT', ReturnSheetModel='NORMAL')
-        outer.update(PeriodYear=2025, PeriodMonth=1, ReturnSheetType='VAT_VATR')
+        outer.update(PeriodYear=2025, PeriodMonth=1, ReturnSheetType='VAT_VATR',
+                     ReturnSheetStatusCode='SUBMITTED')
     else:
         form.update(TaxIdentificationNumber=NPWP)
         outer.update(PeriodYear='2025', PeriodStartMonth='1', PeriodEndMonth='1')

@@ -266,6 +266,9 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
             _identity_field(payload, 'PeriodEndMonth', last, reasons)
     if tax == 'PPN':
         _identity_field(payload, 'ReturnSheetType', 'VAT_VATR', reasons)
+        # Normal projections also exclude the draft-only attachment overrides.
+        # A submitted listing alone cannot repair contradictory primary bytes.
+        _identity_field(payload, 'ReturnSheetStatusCode', 'SUBMITTED', reasons)
     elif tax == 'PPh Unifikasi':
         _identity_field(payload, 'ReturnSheetType', 'ICT_WTR', reasons)
         # Submitted is the reviewed lifecycle: draft can depend on login claims.
