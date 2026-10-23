@@ -1,6 +1,6 @@
 # PR30 integration ledger
 
-Current PPh21 performance evidence is in the separate [matched benchmark report](superpowers/reports/2026-10-23-json-period-and-benchmark.md); it does not extend this PPN acceptance scope. Remaining PPN choice guards are tracked in PR99.
+Current PPh21 performance evidence is in the separate [matched benchmark report](superpowers/reports/2026-10-23-json-period-and-benchmark.md); it does not extend this PPN acceptance scope. Merged PR99 adds [verified final-choice guards and a narrow submitted Normal branch](superpowers/reports/2026-10-23-ppn-choice-invariants.md). Its runner evidence does not expand the historical live acceptance below; active-calendar, Normal-negative and unproved FORWARD_REFUND branches remain unsupported.
 
 ## Final historical outcome
 
