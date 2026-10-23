@@ -107,6 +107,9 @@ pembaca asset berbatas yang ada; asset absen tidak di-fetch. Proof absen tetap
 kompatibel untuk kode unik, proof salah tetap unsupported, dan digest terverifikasi
 disimpan bersama provenance nilai terpilih. Projector murni hanya menyatakan
 `requires_vendor`; tidak mengklaim browser telah memuat asset.
+Proof vendor ini memerlukan script yang terhubung atau resource ber-initiator
+script. Entry fetch/preload saja tidak cukup; pemeriksaan dan pembaca hash
+berbatas berjalan dalam satu evaluasi. Pembaca source generik tidak diubah.
 
 Sampel lingkungan akhir juga dapat memompa event jaringan. Request baru pada
 batas itu membuat capture PARTIAL meskipun responsnya sudah dikeluarkan oleh

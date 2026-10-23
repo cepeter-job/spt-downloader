@@ -107,6 +107,23 @@ reads and verifies GET methods. The subsequent implementation adds the shared
 locale preflight, duplicate dependency flags, optional loaded-vendor observation,
 native proof validation and selected-value provenance; GREEN remains pending.
 
+Fresh review required positive script-provider loading in addition to expected
+bytes: the generic asset reader accepts any matching performance resource entry.
+Four extra Edge controls fetch/preload the correct bytes without a script, then
+assert the fetch/link initiator, absence from document.scripts and no second GET.
+Run39952648748, head `79c9c8ce8cf3089cf3b6587af03c4c94c183b7e7`, tested merge
+`69cec5698f0328789994b7f06ea2006d88cd4512`, tree
+`324961cd80dffc2cfa8a9bba90f9a242110a241e`:4,825 Windows cases,
+4,821 passed,four intended failures,zero errors/skips. The previous54 defects
+now pass. Both digest-matched JUnit archives were read before publishing the
+correction:12502350429 SHA256
+`c8fed7af829a5dbaf143a4ec45f384cd7555f704bf33cd9a765bd4a30a1b0bab`
+and12501462981 `b84dd23d4be5a234f883ad2d9b21bea9082a2a4a3187b44d821b13cef59c152a`.
+A vendor-specific wrapper now requires the connected exact script or a
+script-initiated resource before calling the existing bounded reader, inside
+one browser evaluation. The generic reader remains unchanged. Final whole-tree
+GREEN and package verification are still pending.
+
 Preceding other-session [PR101](https://github.com/cepeter-job/spt-downloader/pull/101)
 merged as `f45ba79f26eaa923c3afc017eab0458d8be66328`. Reviewed all seven changed
 files, including finite Authorization budget, exact one-request replay,

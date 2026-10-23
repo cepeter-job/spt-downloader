@@ -96,6 +96,10 @@ Pure projectors only declare the dependency. Observe the optional proof once
 through the existing bounded asset reader; never fetch an absent asset. Any
 present invalid proof is unsupported, while missing proof preserves legacy
 unique-Code compatibility. Retain the verified digest with selected provenance.
+For this optional vendor proof, a resource entry must be script-initiated or
+the exact script must be connected. Fetch/preload-only entries are insufficient;
+keep this stricter check and hashing in one evaluation without changing the
+generic source reader's existing contracts.
 
 Submitted corporate L7/L11-C semantic proofs accept only the literal selected
 query-free legacy route or that exact route with `?view=true`, matching the

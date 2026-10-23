@@ -8,6 +8,15 @@ from coretax_masa_json import check_masa_request_identities
 
 from coretax_masa_bindings import MAIN_SOURCE, TAX_SOURCES, BUILD_DIGESTS, FORMS
 
+# A fetch/preload entry alone does not establish the comparator's script owner.
+# Keep this check and the existing bounded reader in one browser evaluation.
+_REFERENCE_ORDER_BUILD_HASH = r'''async url => {
+ const loaded=[...document.scripts].some(s=>s.src===url) ||
+   performance.getEntriesByType('resource').some(e=>e.name===url&&e.initiatorType==='script');
+ if(!loaded)return null;
+ return (''' + _BUILD_HASH + r''')(url);
+}'''
+
 
 def _reference_order_build(page, check_cancel):
     """Hash only the already loaded reviewed vendor; absence stays optional."""
@@ -15,7 +24,7 @@ def _reference_order_build(page, check_cancel):
     from coretax_json import REFERENCE_ORDER_SOURCE, REFERENCE_ORDER_SHA256
     _check_cancel(check_cancel)
     try:
-        digest = page.evaluate(_BUILD_HASH, REFERENCE_ORDER_SOURCE)
+        digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, REFERENCE_ORDER_SOURCE)
     except Exception:
         digest = None
     _check_cancel(check_cancel)
