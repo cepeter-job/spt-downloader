@@ -1,5 +1,7 @@
 # PR30 integration ledger
 
+Current PPh21 performance evidence is in the separate [matched benchmark report](superpowers/reports/2026-10-23-json-period-and-benchmark.md); it does not extend this PPN acceptance scope. Remaining PPN choice guards are tracked in PR99.
+
 ## Final historical outcome
 
 [PR #30](https://github.com/cepeter-job/spt-downloader/pull/30) merged as `be7e8cdb8965ca61865cf8f278b1c4e75781c585`. Head `be71e54f5e3710cf4761f00fecfe9bc2a25c5393` and tested merge `5aea0bb55e6b7b6d572d9799f600bd652642dbc3` shared tree `d7bfd492f020b4a7f8a960464ce10b42ec71b132`. Build run `39024008867` passed 2,628 Windows cases; package `12098296029` and JUnit `12097604689` were downloaded and hash-verified.

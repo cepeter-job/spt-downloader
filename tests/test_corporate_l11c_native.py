@@ -56,15 +56,15 @@ def packets(value=None, reference=None):
 
 
 def assert_saved(result, folder, model):
-    record = result['records'][0]
-    section, = [s for s in record['sections'] if s['name'] == 'L11-C']
-    record['sections'] = [section]
+    # Keep the observed Induk as well: L11-C completeness cannot erase another
+    # form's legacy evidence or certify that form's approved-layout mapping.
     coretax.save_output(result, folder)
     coretax.verify_outputs(result, folder)
     name, = [n for n in result['output_files'] if n != 'resume.xlsx']
     assert model in name
     book = load_workbook(folder / name)
     try:
+        assert set(book.sheetnames) == {'Induk', 'L11-C'}
         sheet = book['L11-C']
         assert sheet.max_row == 5 and sheet.max_column == 16
         assert sheet['B3'].value == sheet['B4'].value == 'SYNTHETIC CREDITOR'
@@ -82,6 +82,8 @@ def assert_saved(result, folder, model):
         book.close()
     report, = [r for r in result['template_mapping'] if r['form'] == 'L11-C']
     assert report['complete'] and report['unmapped_tables'] == report['unmapped_rows'] == 0
+    induk, = [r for r in result['template_mapping'] if r['form'] == 'Induk']
+    assert not induk['complete'] and induk['unmapped_tables'] > 0
 
 
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])

@@ -1,6 +1,6 @@
 # Native JSON readiness: verified first slice
 
-Status: implemented and runner-verified on 2026-10-23; draft [PR #85](https://github.com/cepeter-job/spt-downloader/pull/85). This report closes shared native panel readiness and guarded pagination. It does not close the complete [JSON program](../specs/2026-10-23-json-mode-completion-design.md).
+Status: implemented and runner-verified on 2026-10-23; merged [PR #85](https://github.com/cepeter-job/spt-downloader/pull/85). This report closes shared native panel readiness and guarded pagination. It does not close the complete [JSON program](../specs/2026-10-23-json-mode-completion-design.md).
 
 ## Result
 
@@ -51,10 +51,10 @@ The suite preserves native DOM value getter traps and checks expected form count
 
 ## Remaining JSON program
 
-- Corporate L1-D/L3/L7/L11-A/L11-C source coverage and semantic projection into approved form layouts remain separate work. Root-property discovery alone does not prove final values, dependent predecessor data or recomputed totals.
+- Corporate L1-D/L3/L11-A/L11-C source coverage and semantic projection into approved form layouts remain separate work. Root-property discovery alone does not prove final values, dependent predecessor data or recomputed totals.
 - PPN Normal/AskedTo branches still require the pinned final lifecycle proof, including later subscriptions and calendar conditions.
-- Dated reference catalog/clock custody contracts continue in [PR #86](https://github.com/cepeter-job/spt-downloader/pull/86); they are not part of this verified artifact.
+- Dated reference catalog/clock custody contracts merged through [PR #86](https://github.com/cepeter-job/spt-downloader/pull/86); they are not part of this verified artifact.
 - Five historical JSON guides were reconciled to merged implementation evidence while retaining historical RED/PARTIAL and scope-specific live boundaries.
-- Latest consolidated-build live acceptance and paired DOM/JSON performance measurements remain open. No exact authorized taxpayer/year scope was selected, no real-account capture was performed, and no distribution was installed or published by this slice.
+- This historical slice performed no real-account capture or installation. The later [matched PPh21 benchmark](2026-10-23-json-period-and-benchmark.md) closes current-build acceptance for the selected December 2025 Normal return; other families retain their own scope and acceptance gates. L7 semantic coverage and its deferred regressions are also merged.
 
 Later documentation-only commits may extend this report and plan. The package and execution evidence above belong specifically to the code/test tree shown in the table.

@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
+                          CORPORATE_COUNTRY_REFERENCE_URL,
                           _capture_clock_interval, _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
@@ -111,8 +112,13 @@ class DetailJsonCapture:
         self.record_id = record['record_id']
         meta = record.get('meta')
         tax = meta.get('Jenis Pajak') if isinstance(meta, dict) else None
+        fields = record.get('source_fields', {})
+        corporate = (tax == 'PPh Badan' and isinstance(fields, dict)
+                     and fields.get('TaxTypeCode') == 'ICT_RCIT'
+                     and fields.get('ReturnSheetTypeCode') == 'ICT_RCITR')
         self._reference_urls = (PPH21_REFERENCE_URLS if tax == 'PPh Pasal 21/26' else
-                                (UNIFIKASI_REFERENCE_URL,) if tax == 'PPh Unifikasi' else ())
+                                (UNIFIKASI_REFERENCE_URL,) if tax == 'PPh Unifikasi' else
+                                (CORPORATE_COUNTRY_REFERENCE_URL,) if corporate else ())
         self.source_url = source
         self.taxpayer_id = match.group(1)
         self.ordinal = ordinal
