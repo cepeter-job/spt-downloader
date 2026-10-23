@@ -10,4 +10,6 @@ def money_row(values, *, ia=False):
     expected = list(values)
     for index in (6, 8 if ia else 7):
         expected[index] = money(expected[index])
+    if ia:
+        expected[7] = float(Decimal(expected[7].replace(',', '.')) / 100)
     return expected

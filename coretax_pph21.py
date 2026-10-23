@@ -6,7 +6,7 @@ import math
 import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
-                                    _grow, _table_projection)
+                                    _grow, _table_projection, _compact_rows, _whole_accounting)
 
 
 RESOURCE = Path(__file__).resolve().parent / 'resources' / 'pph21_format.xlsx'
@@ -72,6 +72,26 @@ def _write_amount(sheet, row, column, value):
             numeric, valid = converted, True
     _write(sheet, row, column, numeric)
     return valid
+
+
+def _write_rate(sheet, row, column, value):
+    """Convert inspected percentage points to a safe Excel fraction."""
+    _write(sheet, row, column, value)
+    if value is None or value == '':
+        return True
+    if (type(value) not in (int, float, str)
+            or isinstance(value, str) and not re.fullmatch(r'[0-9]+(?:,[0-9]+)?', value)):
+        return False
+    rate = Decimal(str(value).replace(',', '.'))
+    if (not rate.is_finite() or not 0 <= rate <= 100
+            or len(rate.as_tuple().digits) > 15):
+        return False
+    fraction = rate / 100
+    converted = float(fraction)
+    if not math.isfinite(converted) or Decimal(str(converted)) != fraction:
+        return False
+    sheet.cell(row, column).value = converted
+    return True
 
 
 def _display_only_field(field, form):
@@ -238,18 +258,24 @@ def _appendix(sheet, form, sections):
                 tables_left.append(_unresolved(table))
                 continue
             footer_values, spacer = mapped_footer
-            grouped[index].extend((mapping, values, table) for values in projected['rows'])
+            grouped[index].extend((mapping, values, table) for values in projected['rows']
+                                  if any(v is not None and str(v).strip() for v in values))
             spacers[index] = spacers[index] or spacer
             for row, values in footer_values.items():
                 totals.setdefault(row, []).append((values, table))
     offset = 0
+    deleted = set()
     for index, (_, _, first, last) in enumerate(blocks):
         first, last = first + offset, last + offset
         rows = grouped[index]
         # The observed blank footer row is a spacer, not an employee. Reuse
         # existing capacity before growing, moving later labels and totals too.
-        needed = len(rows) + int(spacers[index])
-        extra = max(0, needed - (last - first + 1))
+        # Reuse existing external separators for captured footer spacers.
+        external_spacer = form in ('l-ib', 'l-iii') or form == 'l-ii' and index == 0
+        needed = max(1, len(rows)) + int(spacers[index] and not external_spacer)
+        # Bind/grow using original geometry; remove the duplicate spacer only
+        # after totals and subsequent group ownership have been resolved.
+        extra = max(0, len(rows) + int(spacers[index]) - (last - first + 1))
         _grow(sheet, last + 1, extra, first)
         for row, (mapping, values, table) in enumerate(rows, first):
             if form == 'l-ia':
@@ -261,11 +287,14 @@ def _appendix(sheet, form, sections):
             for column, value in zip(mapping, values):
                 if column in money_columns:
                     valid = _write_amount(sheet, row, column, value) and valid
+                elif form == 'l-ia' and column == 8:
+                    valid = _write_rate(sheet, row, column, value) and valid
                 else:
                     _write(sheet, row, column, value)
             if not valid and id(table) not in numeric_failures:
                 numeric_failures.add(id(table))
                 tables_left.append(_unresolved(table))
+        deleted.update(range(first + needed, last + extra + 1))
         offset += extra
     for row, candidates in totals.items():
         if len(candidates) != 1:
@@ -278,12 +307,22 @@ def _appendix(sheet, form, sections):
         if not valid and id(table) not in numeric_failures:
             numeric_failures.add(id(table))
             tables_left.append(_unresolved(table))
+    _compact_layout(sheet, form, deleted)
     return fields_left, tables_left
+
+
+def _compact_layout(sheet, form, deleted):
+    _whole_accounting(sheet)
+    if form in ('l-ia', 'l-ib'):
+        deleted = set(deleted) | {3}
+    _compact_rows(sheet, deleted)
 
 
 def render_template_form(sheet, form, sections):
     key = form.casefold()
     fields, tables = _induk(sheet, sections) if key == 'induk' else _appendix(sheet, key, sections)
+    if key == 'induk':
+        _compact_layout(sheet, key, set())
     # Hiding redundant source text must not certify unresolved source data.
     # Checkpoints stay unchanged; the existing resume Audit receives failures.
     unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
