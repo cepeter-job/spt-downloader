@@ -18,7 +18,7 @@ from coretax_exporter import (validate_export_run, validate_scope, workbook_grou
                               read_workbook_proof, record_forms, _validate_financial_attachments)
 from coretax_pdf import (attachment_declarations, verified_declarations, pdf_custody,
                          copy_held_pdfs, _verify_stream)
-from coretax_json_capture import verified_json_names, json_custody, copy_held_json
+from coretax_json_capture import verified_json_names, json_custody, copy_held_json, verify_existing_json
 from .paths import safe_taxpayer_name
 from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
 
@@ -388,9 +388,7 @@ def _inspect(run, downloads, target):
         _include_directories(directories, path.parent)
         json_states[name] = _fingerprint(path)
     # Existing selected paths are immutable evidence, even with overwrite consent.
-    if actual_json.intersection(verified_json_names(run)):
-        with json_custody(run, target):
-            pass
+    verify_existing_json(run, target)
     corporate_files = [name for name, (_, entries) in identities.items()
                        if any(tax == 'PPh Badan' for tax, period, model in entries)]
     flat_selected_pdfs = any('/' not in item['relative_path'] for item in verified_declarations(run))
