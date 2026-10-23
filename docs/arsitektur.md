@@ -159,6 +159,8 @@ setiap operand/intermediate lima belas digit. Provenance menyimpan token sumber,
 jenis sumber/page dan destination, termasuk kontrol yang kemudian ditimpa atau
 tidak ditampilkan. Dua field standalone tetap literal dan belum terpetakan;
 observer, custody katalog/footer, native dispatch, Induk dan PDF tetap terpisah.
+Tanggal kosong string pada A mengikuti konversi null yang eksplisit. Pada B,
+null tetap kosong, tetapi string kosong ditolak karena consumer tanggalnya berbeda.
 
 
 Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk

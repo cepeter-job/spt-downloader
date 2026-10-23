@@ -135,7 +135,7 @@ three-provider/actual-table-chain gates and64 tests. The pure L3 implementation
 now adds only the source helper in the existing projection module. It leaves
 admission, observation and dispatch unchanged, preserves original control/row/
 footer tokens with source kind/page index and destination, and retains the two
-unmapped standalone canonical values. The combined Windows universe is5,025.
+unmapped standalone canonical values. The initial combined Windows universe was5,025.
 Fresh implementation review, exact-tree GREEN, saved-workbook results and package
 readback are pending; no local product execution is claimed.
 
@@ -145,5 +145,19 @@ can display blank. Active B calls main formatDate directly (UTF164125539 and
 4197371); its guard handles null and the source sentinel, while empty string
 continues through pinned dayjs to Invalid Date. The bounded B slice must refuse
 empty string instead of certifying blank. Add three isolated tests-first cases:
-A empty stays blank, B null stays blank, B empty remains unsupported. The current
-production date helper is unchanged until this new RED has been read.
+A empty stays blank, B null stays blank, B empty remains unsupported.
+
+The reviewed tests-only increment head
+`3b78a1c65be9b890077730bb0e96e4fa317a8c6b`, tree
+`98c416cd65ece2c8cb4e2de9b54d5ab17c46c7a0`, ran as merge
+`f71dd46e12396ab252c6e447b0b2edbd30a24d82` in run39975526656 attempt1.
+All six digest-matched JUnit/inventory archives were read before the correction:
+5,028 Windows cases,5,027 passes and exactly one B-empty DID NOT RAISE failure,
+zero errors/skips, all4,990 baseline passes and710 portable overlap.
+JUnit12511687722 SHA256
+`47c6a387857bbf466ccfe4551b2d5472c9e62715e007de489ad4ff5e1071437a`;
+JUnit12512216280 SHA256
+`8ddc78113b271e3e6944229ea91b699b6d43538b694ee93de8a653fab18ca04a`.
+Only the A call now opts into empty-string admission; the default date path
+refuses empty string and retains null handling. No native/transport dispatch
+was added. Final source review,5,028-case GREEN and package readback remain pending.

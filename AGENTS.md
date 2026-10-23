@@ -50,6 +50,8 @@ and safe ordered integral arithmetic. Final B footers use captured footer data
 and model overseas-credit operands, never a sum of B rows or stale saved totals.
 Preserve original numeric lexemes, overwritten/unused control provenance and the
 two standalone field values even though their template mappings remain unresolved.
+Offline A admits an empty date as blank under its explicit null conversion;
+active B admits null as blank but refuses empty-string dates in the bounded subset.
 The approved resource and independent native/Induk/PDF gates remain unchanged.
 
 JSON-hybrid output retains only selected capture manifests and accepted original response bytes under `json/<ordinal>/<attempt>/` inside the final SPT output folder, for CLI and desktop publication. Keep private `returns/json/` checkpoints compatible; published manifests preserve their original bytes/references and are evidence, not standalone resumable jobs. Declare JSON separately from workbook filenames. Verify scope, record, attempt, privacy, budgets and hashes before copying from held readers, and verify staging/final bytes. Include JSON in consent snapshots, cancellation rollback and process-death recovery. Preserve earlier unselected JSON and reject changed selected evidence or case/reparse aliases. Never copy arbitrary job JSON, credentials, headers, profiles or unrelated attempts. Copying evidence does not certify capture completion or native eligibility; DOM-only jobs create no JSON directory.

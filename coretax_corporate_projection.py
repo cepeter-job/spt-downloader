@@ -768,8 +768,8 @@ def _l3_sum(values):
     return result
 
 
-def _l3_date(value):
-    if value is None or value == '':
+def _l3_date(value, *, offline=False):
+    if value is None or offline and value == '':
         return ''
     if type(value) is not str or not re.fullmatch(
             r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
@@ -846,7 +846,7 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
     foreign_credit = _l3_sum([sums[2], -_l3_integer(form['OverseasRefundPreviousYear'], nullish=True)])
     for index, row in enumerate(overseas):
         arows.append([str(index + 1), text(row['Name']), label(row['CountryCode'], 'COUNTRY_CODE', offline=True),
-            _l3_date(row['DateOfTransaction']), label(row['IncomeCode'], 'FOREIGN_INCOME_TYPE_CIT', offline=True),
+            _l3_date(row['DateOfTransaction'], offline=True), label(row['IncomeCode'], 'FOREIGN_INCOME_TYPE_CIT', offline=True),
             number(row['NetIncome']), number(row['PayableRupiah']), label(row['PayableCurrency'], 'CURRENCY', offline=True),
             number(row['AmountForeignCurrency'], 2), number(row['CreditCalculated'])])
         for column, field in enumerate(_L3_A_FIELDS, 1):
