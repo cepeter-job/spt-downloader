@@ -397,3 +397,268 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         projected.append({'form': 'L7', 'kind': proof['kind'], 'builds': dict(proof['builds']),
                           'route': proof['route'], 'values': result['provenance']})
     return projected
+
+
+# Static captions/control ownership from the pinned L1-D source; no source defaults.
+_L1D_BALANCE_ROWS = [[('group', 'body', None, 'Aset Lancar', None),
+  ('amount', 'body', '1101', 'Kas dan Setara Kas', 'AC1101'),
+  ('amount', 'body', '1122', 'Piutang Usaha - Pihak Ketiga', 'AC1122'),
+  ('amount', 'body', '1123', 'Piutang Usaha - Pihak yang Mempunyai Hubungan Istimewa', 'AC1123'),
+  ('amount', 'body', '1124', 'Piutang Lainnya - Pihak Ketiga', 'AC1124'),
+  ('amount', 'body', '1125', 'Piutang Lainnya - Pihak yang Mempunyai Hubungan Istimewa', 'AC1125'),
+  ('amount', 'body', '1131', 'Cadangan Kerugian Penurunan Nilai - Aset Lancar', 'AC1131'),
+  ('amount', 'body', '1181', 'Aset Kontrak', 'AC1181'),
+  ('amount', 'body', '1200', 'Investasi', 'AC1200'),
+  ('amount', 'body', '1401', 'Persediaan', 'AC1401'),
+  ('amount', 'body', '1421', 'Beban Dibayar di Muka', 'AC1421'),
+  ('amount', 'body', '1422', 'Uang Muka', 'AC1422'),
+  ('amount', 'body', '1423', 'Pajak Dibayar di Muka', 'AC1423'),
+  ('amount', 'body', '1499', 'Aset lancar lainnya', 'AC1499'),
+  ('group', 'body', None, 'Aset Tidak Lancar', None),
+  ('amount', 'body', '1501', 'Piutang Jangka Panjang', 'AC1501'),
+  ('amount', 'body', '1521', 'Aset tetap dan inventaris', 'AC1521'),
+  ('amount', 'body', '1522', 'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris', 'AC1522'),
+  ('amount',
+   'body',
+   '1551',
+   'Investasi pada Perusahaan Asosiasi, Ventura Bersama dan Anak Perusahaan',
+   'AC1551'),
+  ('amount', 'body', '1599', 'Investasi Jangka Panjang Lainnya', 'AC1599'),
+  ('amount', 'body', '1600', 'Aset Tak Berwujud', 'AC1600'),
+  ('amount', 'body', '1601', 'Dikurangi : Akumulasi Amortisasi-Aset Tak Berwujud', 'AC1601'),
+  ('amount', 'body', '1611', 'Aktiva Pajak Tangguhan', 'AC1611'),
+  ('amount', 'body', '1651', 'Klaim atas pengembalian pajak', 'AC1651'),
+  ('amount', 'body', '1658', 'Cadangan Kerugian Penurunan Nilai - Aset Tidak Lancar', 'AC1658'),
+  ('amount', 'body', '1698', 'Aset Tidak Lancar Lainnya', 'AC1698'),
+  ('footer_total', 'footer', '1700', 'Jumlah Aset', 'AC1700')],
+ [('group', 'body', None, 'Liabilitas Jangka Pendek', None),
+  ('amount', 'body', '2102', 'Utang Usaha - Pihak Ketiga', 'AC2102'),
+  ('amount', 'body', '2103', 'Utang Usaha - Pihak yang Mempunyai Hubungan Istimewa', 'AC2103'),
+  ('amount', 'body', '2111', 'Utang Bunga', 'AC2111'),
+  ('amount', 'body', '2186', 'Liabilitas Kontrak', 'AC2186'),
+  ('amount', 'body', '2187', 'Liabilitas Sewa Jangka Pendek', 'AC2187'),
+  ('amount', 'body', '2191', 'Utang Pajak', 'AC2191'),
+  ('amount', 'body', '2192', 'Utang Dividen', 'AC2192'),
+  ('amount', 'body', '2195', 'Beban yang Masih Harus Dibayar', 'AC2195'),
+  ('amount', 'body', '2201', 'Utang Bank Jangka Pendek', 'AC2201'),
+  ('amount', 'body', '2202', 'Utang Jangka Panjang yang Jatuh Tempo dalam Satu Tahun', 'AC2202'),
+  ('amount', 'body', '2203', 'Pendapatan Diterima di Muka', 'AC2203'),
+  ('amount', 'body', '2228', 'Liabilitas Jangka Pendek Lainnya', 'AC2228'),
+  ('group', 'body', None, 'Liabilitas Jangka Panjang', None),
+  ('amount', 'body', '2301', 'Utang Bank Jangka Panjang', 'AC2301'),
+  ('amount', 'body', '2303', 'Utang Jangka Panjang-Pihak Ketiga', 'AC2303'),
+  ('amount',
+   'body',
+   '2304',
+   'Utang Jangka Panjang - Pihak yang Mempunyai Hubungan Istimewa',
+   'AC2304'),
+  ('amount', 'body', '2312', 'Liabilitas Sewa Jangka Panjang', 'AC2312'),
+  ('amount', 'body', '2321', 'Liabilitas Pajak Tangguhan', 'AC2321'),
+  ('amount', 'body', '2322', 'Liabilitas Imbalan Kerja', 'AC2322'),
+  ('amount', 'body', '2998', 'Liabilitas Jangka Panjang Lainnya', 'AC2998'),
+  ('body_total', 'body', '2999', 'Jumlah Liabilitas', 'AC2999'),
+  ('group', 'body', None, 'Ekuitas', None),
+  ('amount', 'body', '3102', 'Modal Saham', 'AC3102'),
+  ('amount', 'body', '3120', 'Tambahan Modal Disetor', 'AC3120'),
+  ('amount', 'body', '3200', 'Laba Ditahan', 'AC3200'),
+  ('amount', 'body', '3297', 'Pendapatan Komprehensif Lainnya', 'AC3297'),
+  ('amount', 'body', '3298', 'Ekuitas Lainnya', 'AC3298'),
+  ('body_total', 'body', '3299', 'Jumlah Ekuitas', 'AC3299'),
+  ('footer_total', 'footer', '3300', 'Jumlah Liabilitas dan Ekuitas', 'AC3300')]]
+
+_L1D_FIELDS = ('Amount', 'NonTaxableObject', 'SubjectToFinalTax', 'NonFinal',
+               'PositiveFiscalCorrection', 'NegativeFiscalCorrection', 'FinalAmount')
+_L1D_ORDER = ['Pendapatan:', '4021', '4013', '5020', '4300', '4199', 'Beban Usaha',
+    *[str(code) for code in range(5311, 5323)], '5399', '5400', '4500',
+    'Pendapatan Non Usaha', '4501', '4503', '4511', '4599', '4600',
+    'Beban Non Usaha', '5405', '5409', '5421', '5499', '5500', '4700']
+_L1D_HEADERS = [['KODE AKUN', 'NAMA AKUN', 'NILAI KOMERSIAL', 'TIDAK TERMASUK OBJEK PAJAK',
+    'DIKENAKAN PPh BERSIFAT FINAL', 'OBJEK PAJAK TIDAK FINAL', 'PENYESUAIAN FISKAL POSITIF',
+    'PENYESUAIAN FISKAL NEGATIF', 'KODE PENYESUAIAN FISKAL', 'NILAI FISKAL'],
+    ['KODE AKUN', 'NAMA AKUN', 'NILAI'], ['KODE AKUN', 'NAMA AKUN', 'NILAI']]
+_L1D_ASSET_CALC = ['1101', '1122', '1123', '1124', '1125', '-1131', '1181', '1200', '1401',
+    '1421', '1423', '1422', '1499', '1501', '1521', '-1522', '1551', '1599',
+    '1600', '-1601', '1611', '1651', '-1658', '1698']
+_L1D_DEBT_CALC = ['2102', '2103', '2111', '2186', '2187', '2191', '2192', '2195',
+    '2201', '2202', '2203', '2228', '2301', '2303', '2304', '2312', '2322', '2321', '2998']
+_L1D_EQUITY_CALC = ['3102', '3120', '3200', '3297', '3298']
+_L1D_UNCHANGED = {'4021', '4199', '4501', '4503', '4511', '4599'}
+_L1D_SUBTOTALS = {'4300', '5400', '4500', '4600', '5500', '4700'}
+_L1D_MASKS = {'NonTaxableObject', 'SubjectToFinalTax',
+              'PositiveFiscalCorrection', 'NegativeFiscalCorrection'}
+
+
+def _l1d_integer(value, *, nullish=False):
+    if value is None and nullish:
+        return 0
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l1d_numeric_type')
+    number = _decimal(value)
+    if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
+        raise _UnsupportedMetadata('unsupported_corporate_l1d_numeric_precision')
+    return int(number)
+
+
+def _l1d_sum(values):
+    result = 0
+    for value in values:
+        result += value
+        if abs(result) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsafe_corporate_l1d_ordered_sum')
+    return result
+
+
+def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, timezone_name):
+    """Pure source transformation; caller must separately prove fresh lifetime.
+
+    This helper cannot authorize a native record. It copies reported totals
+    only after exact consumer reconciliation, preserving original source paths.
+    """
+    if (type(migrated) is not bool or tax_type != 'ICT_RCIT' or locale != 'id-ID'
+            or timezone_name != 'Asia/Jakarta' or headers != _L1D_HEADERS
+            or footer_spans != [[[1] * 10], [[1, 1, 1]], [[1, 1, 1]]]):
+        raise _UnsupportedMetadata('unverified_corporate_l1d_structure')
+    roots = {'L1dTreeData', 'L1dTreeTotalRow', 'L1dAssets', 'L1dLiabilitiesAndEquity'}
+    if (not isinstance(form, dict) or set(form) != roots
+            or not isinstance(form['L1dTreeData'], list) or not form['L1dTreeData']):
+        raise _UnsupportedMetadata('unsupported_corporate_l1d_source_shape')
+    codes = {value for value in _L1D_ORDER if value.isdecimal()}
+    nodes, provenance = {}, []
+    data_fields = {*_L1D_FIELDS, 'AccountCode', 'Description', 'CorrectionCode'}
+    metadata_fields = {'BlockFields', 'RowOptions', 'StyleOptions'}
+
+    def evidence(value, path, destination, rule='literal-source'):
+        item = _evidence(value, ['L1dFormData', *path])
+        provenance.append({**item, 'destination': destination, 'rule': rule})
+
+    def walk(rows, path, depth=0):
+        if depth > 32 or not isinstance(rows, list):
+            raise _UnsupportedMetadata('unsupported_corporate_l1d_tree')
+        for index, node in enumerate(rows):
+            if (not isinstance(node, dict) or set(node) - {'Data', 'Expanded', 'Children'}
+                    or not isinstance(node.get('Data'), dict)):
+                raise _UnsupportedMetadata('unsupported_corporate_l1d_tree_node')
+            data = node['Data']
+            if (not data_fields <= set(data) or set(data) - data_fields - metadata_fields
+                    or type(data.get('AccountCode')) is not str or data['AccountCode'] not in codes
+                    or data['AccountCode'] in nodes or type(data.get('Description')) is not str):
+                raise _UnsupportedMetadata('ambiguous_corporate_l1d_account')
+            code = data['AccountCode']
+            if code in _L1D_UNCHANGED:
+                style = data.get('StyleOptions')
+                if style is not None and (not isinstance(style, dict)
+                        or set(style) - {'Style', 'DescriptionStyle'}
+                        or any(value not in ('', None) for value in style.values())):
+                    raise _UnsupportedMetadata('unverified_corporate_l1d_effective_style')
+            for field in _L1D_FIELDS:
+                _l1d_integer(data[field], nullish=True)
+            masks = data.get('BlockFields')
+            if (masks is not None and not isinstance(masks, dict)
+                    or code in _L1D_UNCHANGED and isinstance(masks, dict)
+                    and any(masks.get(key) is not None and type(masks[key]) is not bool
+                            for key in _L1D_MASKS)):
+                raise _UnsupportedMetadata('unsupported_corporate_l1d_mask')
+            correction = data['CorrectionCode']
+            if not (correction is None or type(correction) is str or
+                    isinstance(correction, list) and len(correction) <= 10000
+                    and all(type(value) is str for value in correction)):
+                raise _UnsupportedMetadata('unsupported_corporate_l1d_correction_code')
+            nodes[code] = (data, [*path, index, 'Data'])
+            if len(nodes) > 10000:
+                raise _UnsupportedMetadata('corporate_l1d_tree_budget')
+            children = node.get('Children')
+            if children is not None:
+                walk(children, [*path, index, 'Children'], depth + 1)
+
+    walk(form['L1dTreeData'], ['L1dTreeData'])
+    if set(nodes) != codes:
+        raise _UnsupportedMetadata('missing_corporate_l1d_account')
+    body = []
+    for code in _L1D_ORDER:
+        if code not in codes:
+            body.append(['', code, *([''] * 8)])
+            continue
+        data, path = nodes[code]
+        row, destination = [code, data['Description']], {'table': 'L1-D/tree', 'row': len(body)}
+        evidence(code, [*path, 'AccountCode'], {**destination, 'column': 0})
+        evidence(data['Description'], [*path, 'Description'], {**destination, 'column': 1})
+        masks = data.get('BlockFields') or {}
+        if code in _L1D_UNCHANGED:
+            for field in sorted(_L1D_MASKS):
+                value = masks.get(field)
+                provenance.append({'path': ['L1dFormData', *path, 'BlockFields', field],
+                    'type': 'missing' if field not in masks else
+                            'null' if value is None else 'boolean',
+                    'value': value, 'destination': dict(destination), 'rule': 'captured-mask-truthiness'})
+        for column, field in enumerate(_L1D_FIELDS[:6], 2):
+            masked = field in _L1D_MASKS and (
+                field in ('NonTaxableObject', 'SubjectToFinalTax') and code not in _L1D_UNCHANGED
+                or code in _L1D_SUBTOTALS
+                or code in _L1D_UNCHANGED and masks.get(field) is True)
+            row.append('' if masked or data[field] is None else _number(data[field], 0, locale=locale))
+            evidence(data[field], [*path, field], {**destination, 'column': column},
+                     'source-mask' if masked else 'angular-number-1.0-0-id')
+        correction = data['CorrectionCode']
+        row.append('; '.join(correction) if isinstance(correction, list) else correction or '')
+        if isinstance(correction, list):
+            for index, value in enumerate(correction):
+                evidence(value, [*path, 'CorrectionCode', index], {**destination, 'column': 8})
+        else:
+            evidence(correction, [*path, 'CorrectionCode'], {**destination, 'column': 8})
+        row.append('' if data['FinalAmount'] is None else _number(data['FinalAmount'], 0, locale=locale))
+        evidence(data['FinalAmount'], [*path, 'FinalAmount'], {**destination, 'column': 9})
+        body.append(row)
+    reported = form['L1dTreeTotalRow']
+    if (not isinstance(reported, dict) or not set(_L1D_FIELDS) <= set(reported)
+            or set(reported) - data_fields - metadata_fields):
+        raise _UnsupportedMetadata('unsupported_corporate_l1d_tree_totals')
+    footer = ['4800', 'Laba (Rugi) Sebelum Pajak']
+    for field in _L1D_FIELDS:
+        value = _l1d_integer(reported[field])
+        if not migrated and value != _l1d_sum(
+                [_l1d_integer(nodes[code][0][field], nullish=True) for code in ('4500', '4700')]):
+            raise _UnsupportedMetadata('unreconciled_corporate_l1d_tree_total')
+        footer.append(_number(reported[field], 0, locale=locale))
+        evidence(reported[field], ['L1dTreeTotalRow', field], {'table': 'L1-D/tree', 'footer': 0},
+                 'migrated-reported-total' if migrated else 'reconciled-reported-total')
+    footer.insert(8, '')
+
+    def table(index, rows, foot):
+        return {'name': ['L1-D/tree', 'L1-D/assets', 'L1-D/liabilities-equity'][index],
+            'headers': list(headers[index]), 'rows': rows + [foot], 'footer': [foot],
+            'footer_spans': deepcopy(footer_spans[index]), 'body_row_count': len(rows),
+            'source_total': len(rows), 'complete': True, 'source_structure': {'form': 'L1-D',
+                'component': f'rsh-citr-l1d-grid{index + 1}',
+                'groups': ['A. LAPORAN LABA RUGI' if index == 0 else 'B. LAPORAN POSISI KEUANGAN']}}
+
+    tables = [table(0, body, footer)]
+    for index, root in enumerate(('L1dAssets', 'L1dLiabilitiesAndEquity'), 1):
+        data = form[root]
+        descriptors = _L1D_BALANCE_ROWS[index - 1]
+        expected = {entry[4] for entry in descriptors if entry[4] is not None}
+        if not isinstance(data, dict) or set(data) != expected:
+            raise _UnsupportedMetadata('unsupported_corporate_l1d_balance_source')
+        values = {key: _l1d_integer(value, nullish=True) for key, value in data.items()}
+        calculations = [('AC1700', _L1D_ASSET_CALC)] if index == 1 else [
+            ('AC2999', _L1D_DEBT_CALC), ('AC3299', _L1D_EQUITY_CALC),
+            ('AC3300', ['2999', '3299'])]
+        for total, operands in calculations:
+            computed = _l1d_sum([(-1 if code.startswith('-') else 1) * values['AC' + code.lstrip('-')]
+                                 for code in operands])
+            if _l1d_integer(data[total]) != computed:
+                raise _UnsupportedMetadata('unreconciled_corporate_l1d_balance_total')
+        rows, foot = [], None
+        for _, location, code, caption, key in descriptors:
+            row = [code or '', caption, '' if key is None or data[key] is None
+                   else _number(data[key], 0, locale=locale)]
+            if key is not None:
+                evidence(data[key], [root, key], {'table': f'L1-D/grid{index + 1}',
+                    'footer': 0} if location == 'footer' else {'table': f'L1-D/grid{index + 1}',
+                    'row': len(rows), 'column': 2}, 'reconciled-reported-total' if key in
+                    {total for total, _ in calculations} else 'angular-number-1.0-0-id')
+            if location == 'footer':
+                foot = row
+            else:
+                rows.append(row)
+        tables.append(table(index, rows, foot))
+    return {'tables': tables, 'provenance': provenance}

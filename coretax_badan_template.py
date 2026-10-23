@@ -550,10 +550,38 @@ def _l11b_der(sheet, row, averages):
     return {'derived_complete': False, 'derived_reason': reason}
 
 
-def _body_plan(sheet, form, first, last, columns, rows):
-    merges = list(sheet.merged_cells.ranges)
+def _l1d_growth(sheet, table, first, last, columns, rows):
+    """The reviewed 35-slot source adds account5322 inside the 34-slot reference."""
+    order = ['Pendapatan:', '4021', '4013', '5020', '4300', '4199', 'Beban Usaha',
+        *[str(code) for code in range(5311, 5323)], '5399', '5400', '4500',
+        'Pendapatan Non Usaha', '4501', '4503', '4511', '4599', '4600',
+        'Beban Non Usaha', '5405', '5409', '5421', '5499', '5500', '4700']
+    if (_l1d_role(table) != 0 or (first, last) != (6, 39)
+            or columns != list(range(1, 11)) or len(rows) != len(order)):
+        return None
+    for values, key in zip(rows, order):
+        if key.isdecimal():
+            if values[0] != key:
+                return None
+        elif (values[0] not in ('', None) or values[1] != key
+              or any(value not in ('', None) for value in values[2:])):
+            return None
+    merges = {str(region) for region in sheet.merged_cells.ranges
+              if region.min_row <= last and region.max_row >= first}
+    if merges != {'A6:B6', 'A12:B12', 'A27:B27', 'A33:B33'}:
+        return None
+    return first + 18
+
+
+def _body_plan(sheet, form, first, last, columns, rows, *, growth=None):
+    merges = [copy(region) for region in sheet.merged_cells.ranges]
     style_row = next((row for row in range(first, last + 1)
                       if not any(region.min_row <= row <= region.max_row for region in merges)), first)
+    if growth is not None:
+        for region in merges:
+            if region.min_row >= growth:
+                region.shift(row_shift=1)
+        last += 1
     result = []
     for index, values in enumerate(rows):
         row = first + index if first + index <= last else style_row
@@ -649,13 +677,14 @@ def render_template_form(sheet, form, sections, *, period=None):
                        if form == 'l2' and '%' in str(sheet.cell(header, column).value)}
         footer_numbers = money | percentages
         foot = _footer_plan(sheet, form, block, table, last + 1, footer_numbers, columns)
-        body, style_row = _body_plan(sheet, form, first, last, columns, rows)
+        growth = _l1d_growth(sheet, table, first, last, columns, rows) if (form, block) == ('l1-d', 0) else None
+        body, style_row = _body_plan(sheet, form, first, last, columns, rows, growth=growth)
         if foot is None or body is None:
             pending.append({**table, 'complete': False})
             deleted.update(range(first + 1, last + 1))
             continue
         extra = max(0, len(rows) - (last - first + 1))
-        _grow(sheet, last + 1, extra, style_row)
+        _grow(sheet, growth if growth is not None else last + 1, extra, style_row)
         occupied = {first + index for index, values in enumerate(rows) if any(map(_present, values))}
         if not occupied:
             occupied.add(first)

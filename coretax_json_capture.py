@@ -15,8 +15,9 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
-                          CORPORATE_COUNTRY_REFERENCE_URL,
-                          _capture_clock_interval, _object_pairs, _reject_constant, _trusted_origin)
+                          CORPORATE_COUNTRY_REFERENCE_URL, ORIGIN,
+                          _capture_clock_interval, _capture_component_lifetime,
+                          _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
@@ -29,6 +30,14 @@ _SECRET_KEYS = frozenset({'password', 'passwd', 'pwd', 'authorization', 'cookie'
                           'idtoken', 'apikey', 'clientsecret', 'secret', 'sessionid'})
 _SECRET_TEXT = re.compile(r'\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', re.I)
 _BROWSER_CLOCK = '() => ({epoch_ms:Date.now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})'
+_COMPONENT_OWNERS = """() => {
+ const visible=e=>{for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);
+   if(p.hidden||s.display==='none'||s.visibility==='hidden'||s.visibility==='collapse')return false;}
+   return !!e.getClientRects().length;};
+ const count=s=>Array.from(document.querySelectorAll(s)).filter(visible).length;
+ return {source_owner:count('rshshr-submitted-returnsheets')===1,
+         detail_owner:count('rshshr-corporate-income-tax-return')===1};
+}"""
 
 
 def _secret_key(value):
@@ -139,6 +148,15 @@ class DetailJsonCapture:
         self._result = None
         self._manifest_hash = None
         self._clock_start = None
+        self._corporate = corporate
+        self._view_called = False
+        self._component_document = None
+        self._component_listener = None
+        self._component_transitions = 0
+        self._component_target = None
+        self._component_invalid = False
+        self._component_observed = False
+        self._component_started = False
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -206,6 +224,99 @@ class DetailJsonCapture:
         parts = urlparse(value).path.split('/')
         return self.taxpayer_id in parts and self.record_id in parts
 
+    def _component_detail_matches(self, value):
+        if not self._detail_matches(value):
+            return False
+        parsed = urlparse(value)
+        return (not parsed.params and parsed.query == 'view=true' and not parsed.fragment and re.fullmatch(
+            r'/returnsheets/id-ID/corporate-income-tax-return/' + re.escape(self.taxpayer_id)
+            + '/' + re.escape(self.record_id) + r'/ICT_RCIT/[^/%\\]+', parsed.path) is not None)
+
+    def _component_probe(self, operation, check_cancel=None):
+        self._cancel(check_cancel)
+        try:
+            value = operation()
+        except Exception:
+            value = None  # Driver failure is unavailable proof; no exception text.
+        self._cancel(check_cancel)
+        return value
+
+    def begin_readonly_view(self):
+        """Called only after the controller inspects one exact View control."""
+        self._cancel()
+        if self._view_called:
+            raise JsonSafetyError('Inspected View authorization cannot be reused')
+        self._view_called = True
+        if (not self._active or not self._corporate or self.page.url != self.source_url
+                or self.source_url != ORIGIN + '/returnsheets/id-ID/submitted-returnsheets/' + self.taxpayer_id
+                or getattr(self.context, '_spt_financial_route_policy', None) != 'service_workers_blocked'):
+            return None
+        self._component_listener = self._on_component_navigation
+        try:
+            self.page.on('framenavigated', self._component_listener)
+        except Exception:
+            self._component_listener = None
+            self._cancel()
+            return None
+        def retain_document():
+            self._component_document = self.page.evaluate_handle('() => document')
+            return self._component_document
+        self._component_probe(retain_document)
+        if self._component_document is None:
+            return None
+        owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
+        same = self._component_probe(lambda: self._component_document.evaluate('(d) => d === document'))
+        if owners != {'source_owner': True, 'detail_owner': False} or same is not True:
+            return None
+        self._component_started = True
+        if self.page.url != self.source_url or self._component_transitions:
+            self._component_invalid = True
+        return None
+
+    def _on_component_navigation(self, frame):
+        if not self._active or self._result is not None:
+            return
+        try:
+            if frame is not self.page.main_frame:
+                return
+            self._component_transitions += 1
+            if self._component_transitions != 1 or not self._component_detail_matches(frame.url):
+                self._component_invalid = True
+            else:
+                self._component_target = frame.url
+        except Exception:
+            self._component_invalid = True
+
+    def observe_component_lifetime(self, *, check_cancel=None):
+        """Value-free retained Document and structural owner evidence only."""
+        self._cancel(check_cancel)
+        self._verify_binding()
+        if not self._component_started:
+            return None
+        if self._component_invalid:
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        if (self._component_document is None or self._bound is not self.page
+                or self._component_transitions != 1 or self._component_target != self._bound_url):
+            return None
+        same_before = self._component_probe(
+            lambda: self._component_document.evaluate('(d) => d === document'), check_cancel)
+        owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS), check_cancel)
+        same_after = self._component_probe(
+            lambda: self._component_document.evaluate('(d) => d === document'), check_cancel)
+        self._verify_binding()
+        if (same_before is False or same_after is False or self._component_invalid
+                or self._component_observed and owners != {'source_owner': False, 'detail_owner': True}):
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        if same_before is not True or same_after is not True or owners != {'source_owner': False, 'detail_owner': True}:
+            return None
+        proof = _capture_component_lifetime({'attempt': self.attempt,
+            'kind': 'corporate-submitted-spa-v1', 'record_id': self.record_id,
+            'source_url': self.source_url, 'detail_url': self._bound_url,
+            'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+            attempt=self.attempt, record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
+        self._component_observed = True
+        return proof
+
     def _candidate(self, target, frame):
         return (target.context is self.context and frame is target.main_frame
                 and frame.parent_frame is None
@@ -215,6 +326,12 @@ class DetailJsonCapture:
         if not self._active or self._result is not None:
             return
         try:
+            # Replacement changes L1-D input despite ordinary capture excluding
+            # this prefix. Retain only a value-free veto; never inspect its body.
+            if (self._component_listener is not None and request.method == 'POST'
+                    and request.url == ORIGIN + '/returnsheet/api/returnsheetsfinancialstatements'
+                    and request.frame is self.page.main_frame):
+                self._component_invalid = True
             reference = (request.url in self._reference_urls
                          and request.method == 'GET' and request.post_data is None)
             if (not _safe_url(request.url) or request.resource_type not in ('xhr', 'fetch')
@@ -417,6 +534,8 @@ class DetailJsonCapture:
         self._verify_binding()
         seen_before_clock = self._seen
         clock_end = self._sample_clock(self._bound, check_cancel)
+        lifetime = self.observe_component_lifetime(check_cancel=check_cancel)
+        self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:
             # Evaluating environment metadata pumps browser events too. A late
@@ -431,6 +550,8 @@ class DetailJsonCapture:
                   'complete': not self._reasons, 'reasons': list(self._reasons),
                   'responses': list(self._responses), 'credentials_accessed': False,
                   'primary_identity_validated': False}
+        if lifetime is not None:
+            result['component_lifetime'] = lifetime
         if self._clock_start is not None and clock_end is not None:
             try:
                 result['clock_interval'] = _capture_clock_interval({
@@ -469,11 +590,15 @@ class DetailJsonCapture:
                 raise JsonSafetyError('Private capture scope or attempt changed')
             clock = (_capture_clock_interval(saved['clock_interval'], self.attempt)
                      if 'clock_interval' in saved else None)
+            lifetime = (_capture_component_lifetime(saved['component_lifetime'], attempt=self.attempt,
+                record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
+                if 'component_lifetime' in saved else None)
             for descriptor in saved['responses']:
                 self._cancel(check_cancel)
                 relative = Path(descriptor['relative_path'])
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
-                        or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor):
+                        or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor
+                        or 'component_lifetime' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -489,6 +614,8 @@ class DetailJsonCapture:
                 context = dict(descriptor)
                 if clock is not None:
                     context['clock_interval'] = dict(clock)
+                if lifetime is not None:
+                    context['component_lifetime'] = dict(lifetime)
                 yield {'body': raw, 'payload': payload, 'context': context}
                 del raw, payload
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -498,6 +625,18 @@ class DetailJsonCapture:
         self._active = False
         self._requests.clear()
         self._observations.clear()
+        if self._component_listener is not None:
+            try:
+                self.page.remove_listener('framenavigated', self._component_listener)
+            except Exception:
+                pass
+            self._component_listener = None
+        if self._component_document is not None:
+            try:
+                self._component_document.dispose()
+            except Exception:
+                pass
+            self._component_document = None
         for event, callback in reversed(self._listeners):
             try:
                 self.context.remove_listener(event, callback)
@@ -569,6 +708,9 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
                 raise JsonSafetyError('Private checkpoint identity or attempt changed')
             clock = (_capture_clock_interval(saved['clock_interval'], saved['attempt'])
                      if 'clock_interval' in saved else None)
+            lifetime = (_capture_component_lifetime(saved['component_lifetime'], attempt=saved['attempt'],
+                record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
+                if 'component_lifetime' in saved else None)
             descriptors = saved.get('responses')
             if not isinstance(descriptors, list) or len(descriptors) > MAX_RESPONSES:
                 raise JsonSafetyError('Private checkpoint response budget changed')
@@ -579,7 +721,7 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
                         or PurePosixPath(name).parent != relative.parent
                         or not re.fullmatch(r'response-[0-9]{4,}\.json', PurePosixPath(name).name)
                         or name in seen or descriptor.get('attempt') != saved['attempt']
-                        or 'clock_interval' in descriptor
+                        or 'clock_interval' in descriptor or 'component_lifetime' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -598,6 +740,8 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
                 context = dict(descriptor)
                 if clock is not None:
                     context['clock_interval'] = dict(clock)
+                if lifetime is not None:
+                    context['component_lifetime'] = dict(lifetime)
                 packets.append({'body': body, 'payload': payload, 'context': context})
             return packets
     except (OSError, ValueError, TypeError, KeyError, IndexError):

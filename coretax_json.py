@@ -117,6 +117,29 @@ def _reference_date_ms(value):
         raise _UnsupportedMetadata('unsupported_grid_reference_date') from None
 
 
+def _capture_component_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Validate optional manifest-owned facts; a replay never probes a browser."""
+    keys = {'attempt', 'kind', 'record_id', 'source_url', 'detail_url',
+            'transition_count', 'same_document', 'source_owner', 'detail_owner'}
+    if (not isinstance(value, dict) or set(value) != keys
+            or type(attempt) is not str or not re.fullmatch(r'[a-f0-9]{32}', attempt)
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('kind') != 'corporate-submitted-spa-v1'
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or type(value.get('transition_count')) is not int or value['transition_count'] != 1
+            or any(value.get(key) is not True for key in ('same_document', 'source_owner', 'detail_owner'))
+            or not _trusted_origin(source_url) or not _trusted_origin(detail_url)):
+        raise JsonSafetyError('Captured component lifetime is invalid or unbound')
+    source, detail = urlparse(source_url), urlparse(detail_url)
+    match = re.fullmatch(r'/returnsheets/id-ID/submitted-returnsheets/([^/]+)', source.path)
+    if (match is None or source.params or source.query or source.fragment
+            or detail.params or detail.query != 'view=true' or detail.fragment
+            or not re.fullmatch(r'/returnsheets/id-ID/corporate-income-tax-return/'
+                + re.escape(match.group(1)) + '/' + re.escape(record_id) + r'/ICT_RCIT/[^/%\\]+', detail.path)):
+        raise JsonSafetyError('Captured component lifetime route is unverified')
+    return dict(value)
+
+
 def _reference_consumer_order(details, kind):
     """Pinned ordinary cache.add order, retaining original response ordinals.
 
@@ -597,7 +620,7 @@ def _corporate_selected(record, scope):
         raise JsonSafetyError('Selected native taxpayer contradicts source URL')
     if identity.get('source_url', source) != source:
         raise JsonSafetyError('Selected native source URL contradicts selection')
-    bound.update(record_id=identifier, frame_taxpayer=match.group(1), native_fields=fields)
+    bound.update(record_id=identifier, frame_taxpayer=match.group(1), native_fields=fields, source_url=source)
     return bound
 
 
@@ -744,6 +767,13 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     if selected['record_id'] not in parts or selected['frame_taxpayer'] not in parts:
         raise JsonSafetyError('Captured corporate frame ownership contradicts selection')
     _check_corporate_route(frame, selected)
+    lifetime = None
+    if 'component_lifetime' in ctx:
+        if (selected['native_fields'].get('TaxTypeCode') != 'ICT_RCIT'
+                or selected['native_fields'].get('ReturnSheetTypeCode') != 'ICT_RCITR'):
+            raise JsonSafetyError('Captured component lifetime has an unsupported owner')
+        lifetime = _capture_component_lifetime(ctx['component_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     status = ctx.get('status')
     if type(status) is not int or not 100 <= status <= 599 or status in (401, 403):
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
@@ -765,6 +795,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     event['scope'] = list(scope)
     if clock is not None:
         event['clock_interval'] = clock
+    if lifetime is not None:
+        event['component_lifetime'] = lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -969,7 +1001,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     sections, paths, requests, grids, responses, dependencies, primary = _corporate_bindings(observed_forms)
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
-    reasons, sequences, snapshots, clocks = [], set(), {}, set()
+    reasons, sequences, snapshots, clocks, lifetimes = [], set(), {}, set(), set()
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets = None, {}
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
@@ -987,6 +1019,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         clocks.add(_corporate_request_key(event.get('clock_interval')))
         if len(clocks) != 1:
             raise JsonSafetyError('Corporate capture clock evidence is missing or mixed within one attempt')
+        lifetimes.add(_corporate_request_key(event.get('component_lifetime')))
+        if len(lifetimes) != 1:
+            raise JsonSafetyError('Corporate component lifetime is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Corporate source response budget exceeded')

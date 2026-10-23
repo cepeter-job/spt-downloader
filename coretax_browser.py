@@ -1383,6 +1383,9 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture
     page.on('popup', callback)
     verified = False
     try:
+        begin_view = getattr(json_capture, 'begin_readonly_view', None)
+        if callable(begin_view):
+            begin_view()
         view.click()
         deadline = time.monotonic() + 20
         while not opened and page.url == previous_url:

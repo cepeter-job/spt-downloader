@@ -121,6 +121,20 @@ Setiap primary PPN, termasuk Normal, harus menyatakan ReturnSheetStatusCode=SUBM
 
 ## Batas akses baca
 
+Manifest capture dapat menyimpan bukti opsional `component_lifetime` untuk
+transisi SPA dari pemilik list submitted yang terlihat ke pemilik corporate
+yang unik. Context harus milik worker dengan Service Worker diblokir; capture
+menahan Document asli dan tepat satu navigasi main frame ke URL terpilih dengan
+`?view=true`. Pemeriksaan akhir masuk ke fence drain yang sama dengan clock,
+agar request terlambat tidak mendapat COMPLETE. Detour atau penggantian
+Document yang diketahui tetap fatal. POST pengganti laporan keuangan yang
+persis dikenali hanya memasang veto tanpa membaca body/header atau menambah
+izin request. Replay memvalidasi attempt/record/URL, menolak override per
+descriptor dan bukti packet yang tercampur, lalu menyalin metadata tervalidasi.
+Capture lama tanpa bukti tetap dapat dibaca; metadata ini belum mengaktifkan
+proyeksi native L1-D dan tidak membuktikan mapping/PDF.
+
+
 Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk
 checkpoint lama, atau URL identik dengan `?view=true` seperti aksi View yang
 diinspeksi. Route proof harus tetap persis sama dengan frame respons. Perubahan

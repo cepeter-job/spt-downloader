@@ -78,6 +78,28 @@ Owned L8 DOM capture records raw body cells, colspans and rowspans atomically un
 
 ## Verification
 
+The source-proven full L1-D profit table has35 slots including account5322.
+Its approved34-slot reference may grow only at the verified internal account
+position after exact component/group, ten-column, account/group sequence and
+reference-merge checks. Plan against copied post-growth merge geometry before
+mutating the sheet; retain existing totals, subsequent blocks, styles and final
+compaction. Do not append5322 after totals or change the sanitized resource.
+
+Optional `component_lifetime` evidence belongs to the capture manifest only.
+For the reviewed ordinary corporate SPA branch, start at one visible submitted
+list owner before the inspected View, in the owned Service-Worker-blocked
+context. Retain the original Document and exactly one selected `?view=true`
+main-frame transition; observe the unique corporate owner and recheck before
+sealing. Known document/route detours or the exact financial replacement POST
+remain fatal. Record only the replacement veto, never its body or headers.
+Unavailable evidence leaves the new dependent branch unsupported. Bind each
+replayed fact to the attempt, record and literal source/detail URLs; reject
+descriptor overrides and mixed packet evidence. Stop checks surround every
+probe and final probes stay inside the existing late-response drain fence.
+This metadata alone does not enable L1-D or certify source pins, mapping or PDF
+completion.
+
+
 Ordinary PPh21/Unifikasi grid catalogs and corporate COUNTRY_CODE must reproduce
 the pinned full-catalog cache order before grouping by Code or selecting a
 version. Default to stable ascending literal UTF-16 CodeDescription order. Only
