@@ -40,7 +40,18 @@ Do not assume FORWARD_REFUND is cleared when a distinct event is unproved.
 
 For Normal nonnegative choice, reuse the existing narrow final-normal-VAT
 balance lifecycle, with exact integral monetary inputs and intermediate
-operations bounded to fifteen digits. A definite percentage reset proves its
+operations bounded to fifteen digits. Reconcile captured SelfCollected output
+against the ordered VAT sum of DomesticDeliveriesUsingOtherValue,
+DomesticDeliveriesToTourist, DomesticDeliveriesOtherThanOtherValue and
+DomesticDeliveriesSelfCollected. Reconcile captured CalculatedInput against
+ImportOfTaxableGoods, DomesticTaxableGoodsUsingOtherValueTaxBase,
+DomesticTaxableGoodsWithInvoiceCode01/02, CarryForwardOfInputTax and
+ResultsOfTheRecalculation, in that source order. Missing/mismatched/unsafe
+components cannot prove stable operands. These ten component mappings precede
+raw AskedTo; the sole additional component writer is draft-only. Deposit and
+collector have no later incoming writes. Apply the same reconciliation to the
+shared final-balance amount helper, whose old direct operands could otherwise
+be overwritten by these callbacks. A definite percentage reset proves its
 late calculation. Raw null/FAST_REFUND/CARRY_FORWARD reaches the explicit clear;
 calendar cannot restore a choice at a nonnegative Normal balance. Keep Normal
 negative and nonnegative FORWARD_REFUND unsupported. Do not substitute amendment

@@ -13,6 +13,7 @@ from masa_projection_fixture import native_case
 from test_ppn_json_amendment import amend_case, decode, reseal
 from test_ppn_json_surface import CHOICES
 from support_templates import export_ppn
+from test_ppn_json_vat_balance import raw_source as balance_source
 
 
 def raw_source(choice='FAST_REFUND'):
@@ -62,6 +63,7 @@ def test_final_a1_export_does_not_hide_earlier_calendar_override():
 @pytest.mark.parametrize('model', ['NORMAL', 'AMENDMENT'])
 def test_nonnegative_forward_refund_cannot_assume_a_distinct_post_raw_clear(model):
     source = raw_source('FORWARD_REFUND')
+    source.update(json.loads(json.dumps(balance_source())))
     source['ReturnSheetModel'] = model
     source.update(BasedOnType=None, InputTaxPercentageGoods=0, InputTaxPercentageServices=0,
         OutputTaxMustBeSelfCollected={'VAT': 0}, VATIsDepositedInAdvance={'VAT': 0},
@@ -129,11 +131,13 @@ def test_inactive_calendar_uses_outer_year_and_same_attempt_clock_not_replay_tim
 @pytest.mark.parametrize('balance', [0, 55])
 def test_narrow_normal_nonnegative_final_balance_clears_stale_choice(choice, balance):
     source = raw_source(choice)
+    source.update(json.loads(json.dumps(balance_source())))
     source['ReturnSheetModel'] = 'NORMAL'
     source.update(BasedOnType=None, InputTaxPercentageGoods=0, InputTaxPercentageServices=0,
         OutputTaxMustBeSelfCollected={'VAT': balance + 45}, VATIsDepositedInAdvance={'VAT': 12},
         InputTaxCanBeCalculated={'VAT': 30}, VATCollectedByVATCollector={'VAT': 3},
         VATUnderOrOverPaid={'VAT': -999})
+    source['DomesticDeliveriesUsingOtherValue']['VAT'] = balance + 45
     result = project(source, model='NORMAL')
     assert result['value'] is None
     paths = {tuple(e['path']) for e in result['provenance']}
@@ -174,10 +178,13 @@ def test_complete_native_packet_choice_reaches_final_compact_saved_workbook(tmp_
     additions = raw_source(choice)
     additions['TaxPeriod'] = '01012025'
     if model == 'NORMAL':
+        additions.update(json.loads(json.dumps(balance_source())))
         additions.update(ReturnSheetModel='NORMAL', BasedOnType=None,
             InputTaxPercentageGoods=0, InputTaxPercentageServices=0,
             OutputTaxMustBeSelfCollected={'VAT': 1}, VATIsDepositedInAdvance={'VAT': 0},
             InputTaxCanBeCalculated={'VAT': 0}, VATCollectedByVATCollector={'VAT': 0})
+        additions['DomesticDeliveriesUsingOtherValue']['VAT'] = 1
+        additions['ImportOfTaxableGoods']['VAT'] = 0
     elif cleared:
         additions.update(TaxPeriod='01012025', BookkeepingPeriodEnd=1, FacilityRegisters=[])
         additions['TotalDeliveryOfGoodsAndServices']['SellingPrice'] = 0
