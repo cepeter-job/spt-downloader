@@ -149,6 +149,16 @@ memakai fallback seluruh record; kontradiksi lifetime/encoding tetap fatal.
 Replay memerlukan custody manifest yang sama. Pemetaan Induk, PDF keuangan dan
 form corporate lain tetap mempunyai gate tersendiri.
 
+Helper murni L11-A juga belum terhubung ke admission, observer atau dispatcher.
+Subset current-only memerlukan predecessor null, empat inventori halaman lengkap,
+Facilities/Recapitulation dan lima struktur tabel tanpa footer. Index sumber,
+identitas dan tahun tetap literal; PartnerName teks tidak diubah menjadi uang.
+Enam biaya dijumlahkan berurutan dengan pemeriksaan setiap intermediate, lalu
+clamp nol hanya pada hasil akhir sebelum rekonsiliasi total. Input biaya null
+tetap kosong pada tampilan dan tersimpan sebagai null dalam provenance.
+Dua belas field IV.B tetap canonical serta belum terpetakan; template dan
+rentang format yang disetujui tidak berubah.
+
 Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
 Ia memproyeksikan body A dari current source dan body B dari page metadata yang
 sudah dinormalisasi caller, dengan alias aktif IncomeTax/WithholdingSlipsNumber/
@@ -161,6 +171,20 @@ tidak ditampilkan. Dua field standalone tetap literal dan belum terpetakan;
 observer, custody katalog/footer, native dispatch, Induk dan PDF tetap terpisah.
 Tanggal kosong string pada A mengikuti konversi null yang eksplisit. Pada B,
 null tetap kosong, tetapi string kosong ditolak karena consumer tanggalnya berbeda.
+
+Integrasi native L3 memakai marker terpisah corporate-l3-v1: lifetime SPA milik
+capture yang masih segar, route submitted literal ?view=true, Induk sebelumnya,
+encoding predecessor eksplisit dan flag IsIncomeTaxOverseas numerik1 pada outer
+serta current MainFormData. Observer membuktikan tiga provider script termuat dan
+hash, dua grid/ui-grid/p-table/form beserta grup/header/span, lalu hanya memutar
+paginator B yang dimiliki. Tidak ada pembacaan nilai bisnis DOM atau cache.
+Adapter mengikat request B sepuluh baris dan footer yang benar-benar diamati,
+menyimpan payload decoded asli beserta event untuk provenance, serta memerlukan
+empat GET katalog singleton yang diinspeksi. Urutan comparator/version dan path
+ordinal katalog asli dipertahankan; katalog hilang tidak di-fetch. Kontradiksi
+identitas/snapshot B/footer dan locale/snapshot katalog tetap fatal sebelum
+fallback. Skema Index grid generik lama tidak dilonggarkan. Final drain, Stop,
+custody JSON, dua field belum terpetakan, Induk/PDF dan penerimaan live terpisah.
 
 
 Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk

@@ -119,7 +119,31 @@ locale/timezone, external context, changed vendor bytes, fetch/preload-only proo
 for each provider, wrong grid/ui-grid/p-table/group ancestry, duplicate/hidden
 owners, missing/failed dependencies, conflicting second footer, Stop and explicit
 read-trap verification. These remain fixtures, not runtime proof, until the actual
-runner results are read. No native admission/observer/dispatcher change is included.
+runner results are read.
 Fresh review accepted the second-footer completion counter and retained distinct
 original byte assertions. Stop currently tests entry cancellation/cleanup only;
 interruption during L3 pagination/dependency waits needs implementation coverage.
+
+## Read RED and implementation candidate
+
+Run39987353300 attempt1, head079651a7 as tested merge
+`e1e384cccc03f64b65a7745fae75394e106f1975`, tree
+`aea393e0a7729f63568c48c025da815c693474e9`, reconciled all5175 Windows cases:
+5100 passes and exactly75 intended missing-feature failures, zero errors/skips.
+All5064 PR108 baseline cases and710 overlapping portable cases passed. The111
+new cases had36 passes;70 failures retain the packet-only categories, four
+owned positive fixtures report the missing observer and one conflicting-footer
+fixture reports the missing unbound snapshot check. All six archives' size/hash,
+metadata, complete inventories, phases and JUnit identities were fully read
+before native code changes. No local product/browser execution was used.
+
+The candidate now adds the closed catalog admission, original auxiliary-payload
+retention, fatal known-ID/snapshot preflight, exact native semantic binding and
+owned structural observer described above. Existing generic grid schemas and
+all earlier native branches are preserved. PR109's verified87-case pure L11-A
+helper is integrated; its native dispatch remains absent. The previously observed
+financial timeout fixture now compares the exact original public first-line
+exception captured before its deliberately failing diagnostic probe. Fresh
+source review closed that fixture correction; no production deadline changed.
+Native implementation review, full combined-tree GREEN and package readback
+remain pending.

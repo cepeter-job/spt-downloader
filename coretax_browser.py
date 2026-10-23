@@ -51,14 +51,16 @@ GROUP_JS = r'''(element) => {
 
 CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  const panel=table.closest('.p-tabview-panel');
- const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form');
+ const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form,rshshr-citr-l3-form');
  if(!panel || !form || form.closest('.p-tabview-panel')!==panel) return null;
- const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':'';
+ const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':'';
  if(form.localName!==expectedForm) return null;
  const roles={
   'rsh-citr-l1d-grid1':['L1-D','A. LAPORAN LABA RUGI'],
   'rsh-citr-l1d-grid2':['L1-D','B. LAPORAN POSISI KEUANGAN'],
   'rsh-citr-l1d-grid3':['L1-D','B. LAPORAN POSISI KEUANGAN'],
+  'rsh-citr-l3-grid1':['L3','A. PENGHASILAN DARI LUAR NEGERI'],
+  'rshshr-citr-l3-grid2':['L3','B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'],
   'rshshr-citr-l9-form-grid1':['L9','HARTA BERWUJUD'],
   'rshshr-citr-l9-form-grid2':['L9','BANGUNAN'],
   'rshshr-citr-l9-form-grid3':['L9','HARTA TIDAK BERWUJUD']
@@ -77,7 +79,7 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  if(components.length!==1) return null;
  const component=components[0], role=roles[component];
  if(role[0]!==name || groups[0]!==role[1]) return null;
- if(name==='L1-D' && groups.length!==1) return null;
+ if(['L1-D','L3'].includes(name) && groups.length!==1) return null;
  if(name==='L9'){
   const inner=component.endsWith('grid2')?['PERMANEN','TIDAK PERMANEN']:
    ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA','KELOMPOK LAINNYA'];
@@ -1427,6 +1429,8 @@ def _check_corporate_request_identities(observations, record, scope):
     from coretax_corporate import GRID_ROLES
     grid_paths = {'/returnsheet/api/loadcit/' + suffix
                   for roles in GRID_ROLES.values() for _, suffix, _ in roles}
+    grid_paths.update(('/returnsheet/api/loadcit/l3-table-b-grid',
+                       '/returnsheet/api/loadcit/l3-table-b-grid/footer'))
     period = record.get('source_fields', {}).get('TaxPeriodCode')
     expected_year = period[-4:] if isinstance(period, str) and re.search(r'[0-9]{4}$', period) else None
     if expected_year is None and scope[2] == 'period':

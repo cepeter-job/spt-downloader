@@ -29,7 +29,7 @@
 - [x] Implement and verify the reviewed corporate L11-C semantic slice in merged PR98; retain independent whole-corporate mapping/PDF/live gates.
 - [x] Complete reviewed catalog ordering, locale/vendor custody, current corporate View routes and lifetime/pure-L1-D/layout prerequisites in merged PR104/102; see the [exact final evidence](../reports/2026-10-23-catalog-and-lifetime-priorities.md).
 - [x] Connect and verify the bounded fresh submitted services L1-D native branch in merged PR105; see [runner/package/review evidence and independent gates](../reports/2026-10-23-corporate-l1d-native.md).
-- [ ] Continue corporate L3/L11-A and other semantic destinations in focused source-proven slices, preserving source dependencies, raw values, ownership, captured totals and approved layouts. L3 pure projection continues in draft PR107; it does not enable native observation or dispatch.
+- [ ] Continue corporate L3/L11-A and other semantic destinations in focused source-proven slices, preserving source dependencies, raw values, ownership, captured totals and approved layouts. [L3 pure projection is merged and verified in PR107](../reports/2026-10-23-corporate-l3-pure.md); native L3 continues separately in draft PR110 and current-only pure L11-A in draft PR109.
 - [x] Implement and verify the source-proven narrow submitted PPN Normal/final-choice invariants in merged PR99, including the reviewed primary-status correction.
 - [ ] Extend remaining PPN lifecycle branches only with sufficient source/environment evidence; active-calendar, Normal-negative and unproved FORWARD_REFUND branches stay unsupported.
 - [x] Add L7 intermediate-overflow-with-safe-final-sum and more-than-ten-row packet-to-workbook regressions.

@@ -41,8 +41,23 @@ The separate L11-C semantic branch requires loaded corporate/main/vendor pins, t
 
 ## Output contract
 
-The pure L3 projector is a source helper only; it must not enable native L3
-observation, footer/catalog admission or dispatch. Its bounded Rupiah branch
+The pure current-only L11-A helper grants no native admission or dispatch.
+Require explicit null predecessor, four complete normalized endpoint inventories,
+current Facilities/Recapitulation, exact five-table headers with no footers and
+independently bound labels. Preserve literal source Index/identifiers/year and
+original typed provenance. Null cost inputs stay blank while contributing zero
+only to the ordered six-cost calculation; check every intermediate and clamp
+only the final sum before reconciling the reported total.
+Negative-zero cost operands remain unsupported across their numeric lexemes;
+the input control's signed-zero display has not been projected by this helper.
+Preserve ordinary PartnerName text despite its source numeric annotation. Keep all twelve IV.B
+controls canonical and unresolved because the approved template has no slots;
+do not alter facility text or approved accounting ranges to manufacture mapping.
+Native observation, catalog/packet custody, predecessors, Induk/PDF and live
+acceptance retain independent gates.
+
+The pure L3 projector alone grants no native observation, transport or dispatch.
+Its bounded Rupiah branch
 requires explicit current data, complete normalized B pages, the actual captured
 footer payload and independently bound labels. Use active B IncomeTax and plural
 WithholdingSlipsNumber/Date fields, page-local row numbers, exact A/B footer spans
@@ -53,6 +68,23 @@ two standalone field values even though their template mappings remain unresolve
 Offline A admits an empty date as blank under its explicit null conversion;
 active B admits null as blank but refuses empty-string dates in the bounded subset.
 The approved resource and independent native/Induk/PDF gates remain unchanged.
+
+Native L3 separately requires the exact submitted Rupiah `?view=true` route,
+preceding Induk, valid explicit predecessor encoding, positive fresh owned SPA
+lifetime and numeric1 outer/current IsIncomeTaxOverseas flags. Require all three
+loaded script providers/pins, both exact grid/ui-grid/p-table/form ancestries,
+groups, headers and footer spans; read no DOM business values. Turn only the
+owned B paginator. Bind exact observed ten-row Language/LanguageId id-ID,
+WithholdingSlipsDate/SortOrder1/empty-filter requests and the selected-ID-only
+footer dependency. Retain decoded original page/footer payloads internally with
+their event provenance; never reconstruct them from rendered leaf rows. Admit
+only the four inspected singleton COUNTRY_CODE/CURRENCY/FOREIGN_INCOME_TYPE_CIT/
+TAX_TYPE_BY_OTHER_PARTIES GETs, with exact bound sequences and reviewed cache
+ordering/version provenance. Do not fetch missing catalogs. Known B/footer
+identity or changed snapshots and catalog locale/snapshot contradictions remain
+fatal before fallback even without a semantic binding. Generic corporate grids
+retain their existing Index contract. Final drain/Stop, JSON custody, unresolved
+fields, Induk/PDF/live and whole-run completion remain independent gates.
 
 JSON-hybrid output retains only selected capture manifests and accepted original response bytes under `json/<ordinal>/<attempt>/` inside the final SPT output folder, for CLI and desktop publication. Keep private `returns/json/` checkpoints compatible; published manifests preserve their original bytes/references and are evidence, not standalone resumable jobs. Declare JSON separately from workbook filenames. Verify scope, record, attempt, privacy, budgets and hashes before copying from held readers, and verify staging/final bytes. Include JSON in consent snapshots, cancellation rollback and process-death recovery. Preserve earlier unselected JSON and reject changed selected evidence or case/reparse aliases. Never copy arbitrary job JSON, credentials, headers, profiles or unrelated attempts. Copying evidence does not certify capture completion or native eligibility; DOM-only jobs create no JSON directory.
 
