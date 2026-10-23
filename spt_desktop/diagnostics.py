@@ -23,13 +23,15 @@ EVENTS = frozenset({
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
-    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery', 'pdf.request_rejected',
+    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
+    'pdf.request_rejected', 'pdf.request_captured',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
     'pdf_guard': frozenset({'context', 'route', 'count', 'body', 'authentication', 'replay'}),
+    'authorization_budget': frozenset({'within_8k', 'above_8k'}),
     'search_result': frozenset({'matched', 'timeout', 'error', 'cancelled'}),
     'search_observation': frozenset({'complete', 'limited', 'unavailable'}),
     'search_table': frozenset({'missing', 'hidden', 'empty', 'rows_present', 'unavailable'}),

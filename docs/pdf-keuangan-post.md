@@ -87,6 +87,21 @@ diringkas saat callback masih berjalan, tanpa menahannya untuk log berikutnya.
 Event ini hanya bukti diagnosis; semua izin request dan syarat byte COMPLETE
 tetap berlaku, dan Stop tetap cancellation.
 
+Nilai Authorization sementara dibatasi **65536 karakter**, termasuk prefix tipe
+token. Batas lokal 8192 karakter sebelumnya menolak header interceptor yang lebih
+besar; ini merupakan budget memori aplikasi, bukan ukuran token yang ditentukan
+oleh [OAuth RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.1).
+Header yang hilang, kosong, memuat karakter tidak aman atau melewati budget tetap
+ditolak. Nilai yang tertangkap harus diteruskan persis pada satu replay yang sama;
+adapter tidak membuat/mengubah kredensial atau memberikan izin POST tambahan.
+Pemeriksaan presence, ukuran dan sintaks memiliki frame error terpisah.
+
+Setelah seluruh validasi envelope lolos, `pdf.request_captured` hanya mencatat
+kategori tetap `authorization_budget=within_8k` atau `above_8k`. Panjang persis,
+header dan token tidak dicatat. Event capture ini dapat mendahului kegagalan
+request ganda, replay, respons atau byte; hanya deklarasi PDF COMPLETE dengan
+byte/hash dan custody yang sesuai membuktikan hasil unduhan.
+
 Hanya byte yang lolos seluruh pemeriksaan menjadi deklarasi COMPLETE. Nama
 file, tautan relatif, penahanan stream, pemeriksaan salinan dan publikasi memakai
 kontrak PDF yang sama dengan href biasa. Kegagalan atau kontrol yang tidak dikenal

@@ -14,7 +14,7 @@
 
 - All product imports, pytest, native/Tk/browser fixtures, builds and EXE self-tests run on GitHub runners. Local work uses source/AST and private metadata only. Operator live acceptance remains separate.
 - Preserve source pins, selected record/taxpayer, full URL and Request_From equality, owned Service Worker policy, inspected button identity, exact endpoint, final body/authentication, one aborted application request plus one bounded replay, Stop and verified byte custody.
-- Never log request URLs, bodies, headers, filenames, document identifiers, exception messages/locals/chains or arbitrary reason strings. Retain no caught exception/traceback object beyond the callback.
+- Never log request URLs, bodies, headers, filenames, document identifiers, exception messages/locals/chains or arbitrary reason strings. Add no exception/traceback retention for later logging; preserve the existing Stop propagation and cleanup contract.
 - Keep PARTIAL truthful. A diagnostic improvement is not proof of a successful live PDF download.
 - Base latest main `9751650f14d4301c5b009849dc66fe508ad3b37c` includes preceding other-session PR95: literal period binding, strict contradiction checks and explicit id-ID/Asia-Jakarta owned contexts. Review these changes and their tests before merge; preserve all recovery work.
 
@@ -25,14 +25,15 @@
 - Diagnostics must accept only fixed stage values and must not stringify arbitrary objects.
 - Successful existing PDFs must keep one authenticated replay, cleanup and identical bytes/links.
 - Deleted manual references must not motivate ignoring unknown workbook files or changing overwrite consent/scope checks.
+- The Authorization budget must remain finite and preserve the exact captured value; never decode, reconstruct or weaken credentials. Its size category must expose neither a token nor an exact length, and must not certify a successful replay or PDF.
 
 ## Task 1 — Safe originating rejection evidence
 
-- [ ] Add real isolated-Edge regressions for callback body/authentication/route/count/context failures using the actual submitted route shape and invented values; assert one originating event, its fixed stage, useful allowlisted frame, no secret values, no replay/file.
-- [ ] Add safe-schema rejection tests and a successful-download case with no rejection event.
-- [ ] Push tests only and observe their expected RED on unchanged full GitHub CI before production edits.
-- [ ] Record a fixed guard stage in the existing callback and emit only the first sanitized rejection event before setting invalid; keep all authorization predicates and abort behavior intact.
-- [ ] Update AGENTS.md and the diagnostic/PDF contract; verify unchanged full CI and exact candidate artifact readback.
+- [x] Add real isolated-Edge regressions for callback body/authentication/route/count/context failures using the actual submitted route shape and invented values; assert one originating event, its fixed stage, useful allowlisted frame, no secret values, no replay/file.
+- [x] Add safe-schema rejection tests and a successful-download case with no rejection event.
+- [x] Push tests only and observe their expected RED on unchanged full GitHub CI before production edits.
+- [x] Record a fixed guard stage in the existing callback and emit only the first sanitized rejection event before later invalid-state errors mask it; keep all authorization predicates and abort behavior intact.
+- [x] Update AGENTS.md and the diagnostic/PDF contract; verify unchanged full CI and exact candidate artifact readback.
 
 ## Task 2 — Pin the real mismatch and repair it
 
@@ -53,7 +54,7 @@ Change only this transport budget; preserve identical captured credentials and
 all request/source/scope/replay/custody gates. Confirm the hypothesis with actual
 PDF bytes before claiming live repair. Integrate reviewed PR98 and fresh main.
 
-- [ ] Run the verified candidate against the same authorized operator scope; inspect its safe first rejection evidence. Do not guess the underlying condition.
+- [x] Run the verified candidate against the same authorized operator scope; inspect its safe first rejection evidence. Do not guess the underlying condition.
 - [ ] Reproduce the demonstrated condition with a representative synthetic browser fixture, observe runner RED, then make the smallest compatible repair and observe full GREEN.
 - [ ] Keep unsupported behavior PARTIAL; if the evidence requires a new source/permission contract, make the concrete change reviewable before requesting any expanded authority.
 

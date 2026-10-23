@@ -12,6 +12,7 @@ from spt_desktop import diagnostics
 _NONCE = 'x-spt-financial-nonce'
 _SOURCE_LIMIT = 8 * 1024 * 1024
 _BODY_LIMIT = 4096
+_AUTHORIZATION_LIMIT = 64 * 1024
 
 _SOURCE_NODES = r'''({pins, document_url}) => {
     if (location.href !== document_url) throw new Error('Financial document changed');
@@ -206,8 +207,13 @@ class FinancialPost:
         if (content_type.split(';', 1)[0].strip().lower() != 'application/json'
                 or not _text(content_type, 256)):
             raise ValueError('Unsupported financial request content type')
-        if not _text(headers.get('authorization'), 8192):
-            raise ValueError('Unsupported financial request authorization')
+        authorization = headers.get('authorization')
+        if not isinstance(authorization, str) or not authorization:
+            raise ValueError('Financial request authorization is missing')
+        if len(authorization) > _AUTHORIZATION_LIMIT:
+            raise ValueError('Financial request authorization exceeds budget')
+        if not _text(authorization, _AUTHORIZATION_LIMIT):
+            raise ValueError('Unsupported financial request authorization text')
         if headers.get('request_from') != self.control['document_url']:
             raise ValueError('Unsupported financial request origin context')
         retained = {name: headers[name] for name in ('content-type', 'authorization', 'request_from')}
@@ -216,6 +222,8 @@ class FinancialPost:
                 raise ValueError('Unsupported financial request Accept header')
             retained['accept'] = headers['accept']
         self.envelope.update(body=raw, headers=retained)
+        diagnostics.record('pdf.request_captured', phase='pdf',
+            authorization_budget='within_8k' if len(authorization) <= 8192 else 'above_8k')
 
     def _route(self, route):
         request = route.request
