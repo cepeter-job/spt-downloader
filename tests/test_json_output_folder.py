@@ -15,17 +15,18 @@ from support_runs import model_run
 from test_json_capture import Page, LIST_URL, DETAIL_URL, RECORD, RAW
 
 
-def captured_run(source, *, partial=False, fallback=False):
+def captured_run(source, *, partial=False, fallback=False, identifier=RECORD):
     source.mkdir(parents=True, exist_ok=True)
     run = model_run(models=('Normal',))
     record = run['records'][0]
     scope = [run['npwp'], run['year'], run['year_basis']]
-    record.update(record_id=RECORD, key=RECORD, list_url=LIST_URL,
-                  detail_url=DETAIL_URL, scope=scope, source_status='SPT Dilaporkan')
+    detail_url = DETAIL_URL.removesuffix(RECORD) + identifier
+    record.update(record_id=identifier, key=identifier, list_url=LIST_URL,
+                  detail_url=detail_url, scope=scope, source_status='SPT Dilaporkan')
     context = Context()
-    page = Page(context, DETAIL_URL)
+    page = Page(context, detail_url)
     with DetailJsonCapture(context, page, record, scope, source, ordinal=1) as capture:
-        exchange(context, page, raw=RAW)
+        exchange(context, page, raw=RAW.replace(RECORD.encode(), identifier.encode()))
         capture.bind_detail_page(page)
         saved = capture.drain()
     if partial:

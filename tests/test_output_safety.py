@@ -64,6 +64,33 @@ def test_cli_keeps_changed_selected_json_before_replacing_any_output(tmp_path, o
     assert (destination / name).read_bytes() == changed
 
 
+def test_resume_accepts_reused_and_new_json_attempts_in_one_selection(tmp_path):
+    from copy import deepcopy
+    from test_json_output_folder import captured_run, evidence
+    from spt_desktop import output
+    source, downloads = tmp_path / 'private-json-job', tmp_path / 'Downloads'
+    first = captured_run(source)
+    first['complete'] = False
+    coretax.save_output(first, source)
+    final = output.publish_workbooks(first, source, downloads, 'partial-json')
+    old = evidence(first, source)
+    second = captured_run(source, identifier='fixture-extra-record')
+    run = deepcopy(first)
+    run.update(complete=True, records=first['records'] + second['records'])
+    coretax.save_output(run, source)
+    incoming = evidence(second, source)
+    assert all(not (final / name).exists() for name in incoming)
+    consent = output.existing_outputs(run, downloads)
+    assert consent['target'] == str(final)
+    assert set(consent['json']) == set(old)
+    assert all((final / name).read_bytes() == body for name, body in old.items())
+    if sys.platform == 'win32':
+        assert output.publish_workbooks(run, source, downloads, 'resumed-json',
+            overwrite=True, expected_outputs=consent) == final
+        assert all((final / name).read_bytes() == body for name, body in {**old, **incoming}.items())
+        coretax.verify_outputs(run, final)
+
+
 def test_relative_output_root_reparse_point_cannot_hide_during_normalization(tmp_path, monkeypatch):
     run = fixture_run()
     existing = tmp_path / 'existing-results'
