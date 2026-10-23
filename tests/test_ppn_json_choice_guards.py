@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
+import coretax
 from coretax_json import JsonSafetyError, _UnsupportedMetadata, _corporate_json
 from coretax_masa_bindings import project_ppn_asked_to
 from masa_projection_fixture import native_case
 from test_ppn_json_amendment import amend_case, decode, reseal
 from test_ppn_json_surface import CHOICES
-from support_templates import export_ppn
 from test_ppn_json_vat_balance import raw_source as balance_source
 
 
@@ -203,9 +203,20 @@ def test_complete_native_packet_choice_reaches_final_compact_saved_workbook(tmp_
         caption = reference['Induk']['B48'].value
     finally:
         reference.close()
-    book, _, _ = export_ppn(tmp_path, result['sections'])
+    record = deepcopy(case['record'])
+    record.update(capture_complete=True, sections=result['sections'])
+    run = {'npwp': case['scope'][0], 'year': case['scope'][1], 'year_basis': case['scope'][2],
+           'inventory_complete': True, 'complete': True, 'errors': [], 'records': [record]}
+    # Use actual publication/final compaction. The binding-only export helper
+    # suppresses compaction and is not final saved-export evidence.
+    coretax.save_output(run, tmp_path)
+    coretax.verify_outputs(run, tmp_path)
+    name, = [n for n in run['output_files'] if n != 'resume.xlsx']
+    assert record['meta']['Model SPT'] in name
+    book = load_workbook(tmp_path / name)
     try:
-        sheet = book['Induk']
+        title, = [name for name in book.sheetnames if name.casefold() == 'induk']
+        sheet = book[title]
         positions = [row for row in range(1, sheet.max_row + 1) if sheet.cell(row, 2).value == caption]
         assert len(positions) == 1
         assert sheet.cell(positions[0], 4).value == (None if cleared else CHOICES[choice][3:])

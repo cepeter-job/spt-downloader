@@ -95,6 +95,8 @@ filter MIME; hitungan pending dari timeout sebelumnya tetap dipertahankan.
 Byte terlambat tidak dibaca. Grammar tanggal, source pin, batas dukungan dan bukti
 runner dicatat pada [laporan katalog bertanggal](superpowers/reports/2026-10-23-dated-reference-catalogs.md).
 
+Proyeksi pilihan PPN `AskedTo` membuktikan nilai akhir dari lifecycle sumber. Ekspor A1 saja tidak cukup: blok kalender harus mencakup nilai ekspor awal dan akhir, atau predicate quartet invoice/fasilitas yang terbukti, atau interval attempt milik capture yang seluruhnya belum melewati batas tahun/periode pembukuan. Predicate null fasilitas memakai kode literal AS.09-01/AS.09-02. Cabang Normal nonnegative merekonsiliasi dua operand tersimpan terhadap empat/enam komponen VAT berurutan sebelum memakai saldo akhir; sumber atau operasi tidak aman tetap fallback. Helper saldo bersama hanya menerima pecahan langsung yang tepat dalam binary64, selain subset integral, dan setiap operasi antara harus tepat serta dalam batas presisi. FORWARD_REFUND tanpa bukti event clear, kalender aktif dan Normal-negative belum didukung. Semua nilai/path asli, clock luar PeriodYear dan audit tetap dipertahankan. Lihat [ledger dan rencana pilihan PPN](superpowers/plans/2026-10-23-ppn-choice-invariants.md).
+
 ## Batas akses baca
 
 Proyeksi bisnis Badan L7 berada di `coretax_corporate_projection.py`, terpisah dari

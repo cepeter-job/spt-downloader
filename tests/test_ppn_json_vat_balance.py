@@ -104,3 +104,17 @@ def test_unsafe_component_partial_sum_is_not_hidden_by_safe_final_reported_total
     data['OutputTaxMustBeSelfCollected']['VAT'] = _corporate_json('999999999999999')
     with pytest.raises(_UnsupportedMetadata):
         project_ppn_amount(data, 'VATIsUnderOrOverPaid', model='AMENDMENT')
+
+
+def test_inexact_direct_fraction_does_not_get_a_decimal_instead_of_browser_floor():
+    data = source()
+    data['VATIsDepositedInAdvance']['VAT'] = _corporate_json('1.1')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(data, 'VATIsUnderOrOverPaid', model='AMENDMENT')
+
+
+def test_underflowing_percentage_does_not_fabricate_a_late_distinct_change():
+    data = source(goods=90, services=0)
+    data['InputTaxPercentageServices'] = _corporate_json('1e-400')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(data, 'VATIsUnderOrOverPaid', model='AMENDMENT')

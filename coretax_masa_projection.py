@@ -143,7 +143,8 @@ def project_masa_forms(packets, *, record, observed_forms):
                 ]
                 if [(f.get('option'), f.get('label'), f.get('tag')) for f in options] != expected:
                     raise _UnsupportedMetadata('unverified_ppn_requested_options')
-                choice = project_ppn_asked_to(source_form, model=source_form.get('ReturnSheetModel'))
+                choice = project_ppn_asked_to(source_form, model=source_form.get('ReturnSheetModel'),
+                    clock_interval=primary['event'].get('clock_interval'), period_year=primary['payload'].get('PeriodYear'))
         for field in observed['fields']:
             if (not isinstance(field, dict) or set(field) - {'field', 'label', 'group', 'column_label', 'tag', 'option'}
                     or any(type(field.get(key)) is not str for key in ('field', 'label', 'group', 'column_label', 'tag'))
@@ -175,8 +176,10 @@ def project_masa_forms(packets, *, record, observed_forms):
                 if choice is None:
                     raise _UnsupportedMetadata('unverified_ppn_requested_choice')
                 if not choice_bound:
-                    bindings.extend(_evidence(choice['provenance'], primary, ['Payload', 'FormData'],
-                                              {'form': name, 'field': 'AskedTo'}, rule=choice['rule']))
+                    for entry in choice['provenance']:
+                        container = ['Payload'] if entry.get('source') == 'outer' else ['Payload', 'FormData']
+                        bindings.extend(_evidence([entry], primary, container,
+                                                  {'form': name, 'field': 'AskedTo'}, rule=choice['rule']))
                     choice_bound = True
                 if choice['value'] is not None and field['option'] == choice['value']:
                     section['fields'].append({**deepcopy(field), 'value': choice['value']})

@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 import re
 
-from coretax_json import ORIGIN, JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, _corporate_request_key
+from coretax_json import (ORIGIN, JsonSafetyError, _CorporateNumber, _UnsupportedMetadata,
+                          _corporate_request_key, _capture_clock_interval)
 
 MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
 TAX_SOURCES = {
@@ -316,28 +317,129 @@ def _ppn_source_number(form, path, evidence):
     return value
 
 
-def project_ppn_asked_to(form, *, model):
+_PPN_INTEGER_BOUND = Decimal('999999999999999')
+
+
+def _checked_ppn_number(number, *, integral=False):
+    # Binary-exact fractions retain the pre-existing final-floor subset. Every
+    # intermediate operation must also be exact; ordinary decimal coercion or
+    # underflow cannot authorize a different browser Math.floor result.
+    if (abs(number) > _PPN_INTEGER_BOUND or len(number.as_tuple().digits) > 15
+            or integral and number != number.to_integral_value()
+            or Decimal.from_float(float(number)) != number):
+        raise _UnsupportedMetadata('unverified_ppn_exact_arithmetic')
+    return number
+
+
+def _observed_ppn_number(form, path, evidence, *, nullish=False, integral=True):
+    value = _ppn_source_number(form, path, evidence)
+    if evidence[-1]['type'] == 'missing' or value is None and not nullish:
+        raise _UnsupportedMetadata('missing_ppn_choice_or_balance_dependency')
+    return _checked_ppn_number(Decimal(0) if value is None else _decimal(value), integral=integral)
+
+
+def _ppn_facility_clears(form, evidence):
+    period = _source_scalar(form, ('TaxPeriod',), evidence)
+    if (type(period) is not str or not re.fullmatch(r'(0[1-9]|1[0-2]){2}[1-9][0-9]{3}', period)
+            or period[:2] != period[2:4]):
+        raise _UnsupportedMetadata('unverified_ppn_facility_period')
+    end = _observed_ppn_number(form, ('BookkeepingPeriodEnd',), evidence)
+    if not 1 <= end <= 12 or 'FacilityRegisters' not in form:
+        raise _UnsupportedMetadata('unverified_ppn_facility_source')
+    facilities = form['FacilityRegisters']
+    if facilities is None:
+        evidence.append(_evidence(None, ['FacilityRegisters']))
+        facilities = []
+    elif isinstance(facilities, list) and len(facilities) <= 10000 and all(type(v) is str for v in facilities):
+        evidence.extend(_evidence(v, ['FacilityRegisters', i]) for i, v in enumerate(facilities))
+        if not facilities:
+            evidence.append({'path': ['FacilityRegisters'], 'type': 'array', 'value': '[]'})
+    else:
+        raise _UnsupportedMetadata('unverified_ppn_facility_source')
+    if any(code in facilities for code in ('AS.09-01', 'AS.09-02')):
+        return False
+    same_month = int(period[2:4]) == end
+    delivery = False
+    if not same_month:
+        for root in ('ExportTangibleTaxableGoods', 'DomesticDeliveriesCollectedByVATCollector',
+                     'DomesticDeliveriesUncollectedVAT'):
+            if _observed_ppn_number(form, (root, 'SellingPrice'), evidence) > 0:
+                delivery = True
+                break
+    if not same_month and not delivery:
+        return False
+    turnover = _observed_ppn_number(form, ('TotalDeliveryOfGoodsAndServices', 'SellingPrice'), evidence)
+    return not 1 <= turnover <= 4200000000
+
+
+def _ppn_calendar_blocker(form, evidence, *, clock_interval, period_year):
+    initial = _observed_ppn_number(form, ('ExportTangibleTaxableGoods', 'SellingPrice'), evidence)
+    final = _observed_ppn_number(form, ('A1FormListOfExportTaxableGoodsOrServices', 'Total'), evidence)
+    if initial != 0 and final != 0:
+        return 'export_blocks_calendar_override'
+    quartet = ('SellingPrice', 'OtherTaxBase', 'VAT', 'SalesTaxLuxuryGoods')
+    invoice = [_observed_ppn_number(form, ('DomesticTaxableGoodsWithInvoiceCode02', key), evidence,
+                                   nullish=True) for key in quartet]
+    uncollected = [_observed_ppn_number(form, ('DomesticDeliveriesUncollectedVAT', key), evidence,
+                                       nullish=True) for key in quartet]
+    if any(value != 0 for value in invoice) and any(value == 0 for value in uncollected):
+        return 'invoice_blocks_calendar_override'
+    if clock_interval is None or type(period_year) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unbound_ppn_carry_forward_calendar')
+    year = _checked_ppn_number(_decimal(period_year), integral=True)
+    end = _observed_ppn_number(form, ('BookkeepingPeriodEnd',), evidence)
+    if not 1970 <= year <= 2100 or not 1 <= end <= 12:
+        raise _UnsupportedMetadata('unverified_ppn_calendar_source')
+    try:
+        dates = [datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(milliseconds=clock_interval[key])
+                 for key in ('start_ms', 'end_ms')]
+        dates = [date.astimezone(_JAKARTA) for date in dates]
+    except (ValueError, OverflowError):
+        raise _UnsupportedMetadata('unsupported_ppn_calendar_interval') from None
+    if any(not 1970 <= date.year <= 2100 or date.year > year
+           or date.year == year and date.month > end for date in dates):
+        raise _UnsupportedMetadata('unbound_ppn_carry_forward_calendar')
+    evidence.append({**_evidence(period_year, ['PeriodYear']), 'source': 'outer',
+                     'clock_interval': dict(clock_interval), 'rule': 'calendar-inactive-throughout-attempt'})
+    return 'owned_interval_blocks_calendar_override'
+
+
+def project_ppn_asked_to(form, *, model, clock_interval=None, period_year=None):
     """Resolve reviewed submitted-choice paths without a DOM checked-state read.
 
     Potential calendar-dependent carry-forward overrides remain unsupported
     unless a response-bound short circuit proves they cannot execute.
     """
-    if not isinstance(form, dict) or model != 'AMENDMENT':
+    if clock_interval is not None:
+        clock_interval = _capture_clock_interval(clock_interval,
+            clock_interval.get('attempt') if isinstance(clock_interval, dict) else None)
+    if not isinstance(form, dict) or model not in ('NORMAL', 'AMENDMENT'):
         raise _UnsupportedMetadata('unverified_ppn_asked_to_model')
+    if 'AskedTo' not in form:
+        raise _UnsupportedMetadata('missing_ppn_asked_to_source')
     evidence = []
     choice = _source_scalar(form, ('AskedTo',), evidence)
     choices = ('CARRY_FORWARD', 'FAST_REFUND', 'FORWARD_REFUND')
     if choice is not None and (type(choice) is not str or choice not in choices):
         raise _UnsupportedMetadata('unsupported_ppn_asked_to_source')
-    balance = _ppn_source_number(form, ('VATUnderOrOverPaidDueToAmendment', 'VAT'), evidence)
-    if balance is None:
-        raise _UnsupportedMetadata('unverified_ppn_asked_to_balance')
-    if _decimal(balance) >= 0:
+    if model == 'NORMAL':
+        balance, integral, contributing = _ppn_vat_balance(form)
+        evidence.extend(contributing)
+        if not integral or balance < 0 or choice == 'FORWARD_REFUND':
+            raise _UnsupportedMetadata('unverified_ppn_normal_choice_lifecycle')
         return {'value': None, 'rule': 'not_overpaid_clear', 'provenance': evidence}
-    exported = _ppn_source_number(form, ('A1FormListOfExportTaxableGoodsOrServices', 'Total'), evidence)
-    if exported is not None and _decimal(exported) != 0:
-        return {'value': choice, 'rule': 'export_blocks_calendar_override', 'provenance': evidence}
-    raise _UnsupportedMetadata('unbound_ppn_carry_forward_calendar')
+    balance = _observed_ppn_number(form, ('VATUnderOrOverPaidDueToAmendment', 'VAT'), evidence)
+    if balance >= 0:
+        if choice == 'FORWARD_REFUND':
+            raise _UnsupportedMetadata('unverified_ppn_forward_refund_clear_event')
+        return {'value': None, 'rule': 'not_overpaid_clear', 'provenance': evidence}
+    clears = _ppn_facility_clears(form, evidence)
+    rule = _ppn_calendar_blocker(form, evidence, clock_interval=clock_interval, period_year=period_year)
+    if clears:
+        if choice == 'FORWARD_REFUND':
+            raise _UnsupportedMetadata('unverified_ppn_forward_refund_clear_event')
+        return {'value': None, 'rule': 'facility_clear_without_calendar_override', 'provenance': evidence}
+    return {'value': choice, 'rule': rule, 'provenance': evidence}
 
 
 def project_ppn_header(payload, control):
@@ -415,13 +517,20 @@ def _project_ppn_collection(form, control, model, lc_footer):
             'rule': 'floor_lc_footer_minus_previous', 'provenance': evidence}
 
 
-def _project_ppn_vat_balance(form):
+_PPN_OUTPUT_COMPONENTS = ('DomesticDeliveriesUsingOtherValue', 'DomesticDeliveriesToTourist',
+    'DomesticDeliveriesOtherThanOtherValue', 'DomesticDeliveriesSelfCollected')
+_PPN_INPUT_COMPONENTS = ('ImportOfTaxableGoods', 'DomesticTaxableGoodsUsingOtherValueTaxBase',
+    'DomesticTaxableGoodsWithInvoiceCode01', 'DomesticTaxableGoodsWithInvoiceCode02',
+    'CarryForwardOfInputTax', 'ResultsOfTheRecalculation')
+
+
+def _ppn_vat_balance(form):
     evidence = []
     basis = _source_scalar(form, ('BasedOnType',), evidence)
     goods = _ppn_source_number(form, ('InputTaxPercentageGoods',), evidence)
     services = _ppn_source_number(form, ('InputTaxPercentageServices',), evidence)
     if basis is not None or (goods is not None and services is not None and
-                             _decimal(goods) == 90 and _decimal(services) == 0):
+                             float(_decimal(goods)) == 90 and float(_decimal(services)) == 0):
         raise _UnsupportedMetadata('unverified_ppn_final_balance_lifecycle')
     # The final onChangeBasedOnType resets these percentages to 90/0.
     # A definite change invokes the normal-VAT balance calculation even on a
@@ -429,9 +538,26 @@ def _project_ppn_vat_balance(form):
     values = []
     for path in (('OutputTaxMustBeSelfCollected', 'VAT'), ('VATIsDepositedInAdvance', 'VAT'),
                  ('InputTaxCanBeCalculated', 'VAT'), ('VATCollectedByVATCollector', 'VAT')):
-        value = _ppn_source_number(form, path, evidence)
-        values.append(_decimal(value) if value is not None else Decimal(0))
-    total = (values[0] - values[1] - values[2] - values[3]).to_integral_value(rounding=ROUND_FLOOR)
+        values.append(_observed_ppn_number(form, path, evidence,
+            nullish=path[0] in ('VATIsDepositedInAdvance', 'VATCollectedByVATCollector'), integral=False))
+    for components, reported in ((_PPN_OUTPUT_COMPONENTS, values[0]), (_PPN_INPUT_COMPONENTS, values[2])):
+        total = Decimal(0)
+        for root in components:
+            total = _checked_ppn_number(total + _observed_ppn_number(form, (root, 'VAT'), evidence, nullish=True),
+                                       integral=True)
+        if total != reported:
+            raise _UnsupportedMetadata('unreconciled_ppn_reactive_balance_operand')
+    with localcontext() as context:
+        context.prec = 40
+        total = values[0]
+        for value in values[1:]:
+            total = _checked_ppn_number(total - value)
+    return (total.to_integral_value(rounding=ROUND_FLOOR),
+            all(value == value.to_integral_value() for value in values), evidence)
+
+
+def _project_ppn_vat_balance(form):
+    total, _, evidence = _ppn_vat_balance(form)
     return {'value': _number(str(total), 0, locale='id-ID'),
             'rule': 'late_percentage_change_normal_vat_balance', 'provenance': evidence}
 
