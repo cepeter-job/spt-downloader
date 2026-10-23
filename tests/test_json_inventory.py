@@ -513,7 +513,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                               extra_status_links=False, submitted_link='normal',
                               submitted_redirect=False, restored_period_label=False,
                               restored_catalog='valid', restored_metadata=None,
-                              restored_api_period=None, page_sizes=None, initial_page_size=2):
+                              restored_api_period=None, page_sizes=None, initial_page_size=2,
+                              readiness_defect=None):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -579,6 +580,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
 
     def listing(submitted, archived=False):
         import html
+        readiness = submitted and metrics['list_navigations'].count(
+            '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') == 1
         archive_seen = any("/archived-returnsheets/" in url for url in metrics["list_navigations"])
         restored = (restored_period_label and submitted and
                     metrics['list_navigations'].count('/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') > 1)
@@ -596,11 +599,14 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
             current_displays['fixture-normal'].update(restored_metadata)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
                              'headers': labels, 'displays': current_displays,
-                             'catalog': available_cache, 'archived': archived,
+                             'catalog': available_cache, 'archived': archived or (readiness and readiness_defect == 'archived'),
                              'codePeriod': archive_period_conflict and submitted and not archive_seen and not restored,
                               'auxiliary': auxiliary_request, 'hashLink': hash_link,
-                              'pageSizes': page_sizes, 'initialSize': initial_page_size})
+                              'pageSizes': page_sizes, 'initialSize': initial_page_size,
+                              'foreignRequest': readiness and readiness_defect == 'request'})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
+        if readiness and readiness_defect == 'endpoint':
+            endpoint = '/returnsheet/api/returnsheetsfixture'
         archive_link = ('<a href="/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer">Archieved Return Sheets</a>'
                         if archive_period_conflict else '')
         if extra_status_links:
@@ -635,7 +641,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
         }):Promise.resolve();
         async function load(){
           await cacheReady;
-          const request={TaxpayerAggregateIdentifier:'fixture-taxpayer',First:first,Rows:size,Filters:[],isArchieved:config.archived,LanguageId:1,SortField:null,SortOrder:null};
+          const request={TaxpayerAggregateIdentifier:config.foreignRequest?'fixture-other-taxpayer':'fixture-taxpayer',First:first,Rows:size,Filters:[],isArchieved:config.archived,LanguageId:1,SortField:null,SortOrder:null};
           fetch(''' + json.dumps(endpoint) + ''',{method:'POST',body:JSON.stringify(request)}).then(r=>r.json()).then(body=>{
             const received=body.Payload.Data||[];const tbody=document.querySelector('tbody');tbody.replaceChildren();
             received.forEach((record,i)=>{
@@ -713,13 +719,16 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                 elif url.path in ('/returnsheet/api/returnsheetsfixture', '/returnsheet/api/returnsheetssubmitted'):
                     data = request.post_data_json
                     assert request.method == 'POST'
-                    assert data['TaxpayerAggregateIdentifier'] == TAXPAYER
+                    readiness = metrics['list_navigations'].count(
+                        '/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') == 1
+                    foreign_request = readiness and readiness_defect == 'request'
+                    assert data['TaxpayerAggregateIdentifier'] == ('fixture-other-taxpayer' if foreign_request else TAXPAYER)
                     if url.path.endswith('/returnsheetssubmitted') and set(data) == {'TaxpayerAggregateIdentifier'}:
                         metrics['auxiliary_requests'] += 1
                         route.fulfill(json=envelope(rows, total=len(rows)))
                         return
                     assert data['Rows'] in (page_sizes or [initial_page_size]) and type(data['First']) is int
-                    submitted = url.path.endswith('/returnsheetssubmitted')
+                    submitted = url.path.endswith('/returnsheetssubmitted') or (readiness and readiness_defect == 'endpoint')
                     candidates = rows if submitted else []
                     if submitted and not ignore_source_filter:
                         for filt in data['Filters']:
@@ -732,6 +741,11 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                                 assert filt['MatchMode'] == 'any' + '-equals' * len(filt['Value'])
                                 candidates = [r for r in candidates if r['TaxPeriodCode'] in filt['Value']]
                     data_rows = candidates[data['First']:data['First'] + data['Rows']]
+                    if submitted and readiness and not metrics['submitted_requests'] and data_rows:
+                        if readiness_defect == 'rows':
+                            data_rows = [dict(row, TaxpayerAggregateIdentifier='fixture-other-taxpayer') for row in data_rows]
+                        elif readiness_defect == 'status':
+                            data_rows = [dict(row, ReturnSheetStatusCode='DRAFT') for row in data_rows]
                     if (restored_api_period is not None and submitted and
                             metrics['list_navigations'].count('/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') > 1):
                         data_rows = [dict(row) for row in data_rows]
