@@ -36,7 +36,8 @@ def row(label, **dates):
 
 @pytest.mark.parametrize('family', ['pph21', 'unifikasi'])
 @pytest.mark.parametrize('rows,expected', [
-    ([row('FIRST FUTURE', ValidTo='2030-01-01'), row('EARLIER FUTURE', ValidTo='2029-01-01')], 'FIRST FUTURE'),
+    # Cache sorts descriptions before the active-version consumer runs.
+    ([row('FIRST FUTURE', ValidTo='2030-01-01'), row('EARLIER FUTURE', ValidTo='2029-01-01')], 'EARLIER FUTURE'),
     ([row('OLD', ValidTo='2021-01-01', ValidFrom='2019-01-01'),
       row('LATEST FROM', ValidTo='2020-01-01', ValidFrom='2022-01-01')], 'LATEST FROM'),
     ([row('FIRST TIED', ValidTo='2021-01-01', ValidFrom='2022-01-01'),

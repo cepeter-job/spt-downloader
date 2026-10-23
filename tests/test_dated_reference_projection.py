@@ -30,8 +30,8 @@ def dated_case():
                 chosen = {**entry, 'CodeDescription': 'DATED ' + entry['CodeDescription'],
                           'ValidTo': '2030-01-01'}
                 expected.append(chosen['CodeDescription'])
-                revised.extend([chosen, {**entry, 'CodeDescription': 'UNSELECTED LABEL',
-                                          'ValidTo': '2029-01-01'}])
+                revised.extend([{**entry, 'CodeDescription': 'UNSELECTED LABEL',
+                                  'ValidTo': '2029-01-01'}, chosen])
             catalog['Details'] = revised
         item['body'] = json.dumps(envelope).encode()
         item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
@@ -75,7 +75,7 @@ def test_dated_label_ineligibility_keeps_whole_record_fallback(defect):
                 continue
             envelope = json.loads(item['body'])
             for catalog in envelope['Payload']:
-                for entry in catalog['Details'][::2]:
+                for entry in catalog['Details'][1::2]:
                     entry['ValidTo'] = '2025-01-01T00:00:00.500Z'
             item['body'] = json.dumps(envelope).encode()
             item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
@@ -104,8 +104,8 @@ def test_real_edge_clock_and_dated_response_reach_native_workbook_without_dom_va
         envelope = json.loads(fixture.source_packets[REFERENCE])
         for catalog in envelope['Payload']:
             catalog['Details'] = [version for entry in catalog['Details'] for version in (
-                {**entry, 'CodeDescription': 'DATED ' + entry['CodeDescription'], 'ValidTo': '2099-01-01'},
-                {**entry, 'CodeDescription': 'UNSELECTED LABEL', 'ValidTo': '2098-01-01'})]
+                {**entry, 'CodeDescription': 'UNSELECTED LABEL', 'ValidTo': '2098-01-01'},
+                {**entry, 'CodeDescription': 'DATED ' + entry['CodeDescription'], 'ValidTo': '2099-01-01'})]
         fixture.source_packets[REFERENCE] = json.dumps(envelope).encode()
         result = driver._hybrid_detail(fixture.page, fixture.record, SCOPE, tmp_path, capture, 5, None)
         assert result['capture_complete'] and result['detail_source']['used'] == 'json'
@@ -159,8 +159,8 @@ def test_dated_unifikasi_catalogs_reach_all_forms_and_preserve_period_dropdown(t
             label = 'DATED ' + catalog['ReferenceDataType']
             expected.add(label)
             catalog['Details'] = [version for entry in catalog['Details'] for version in (
-                {**entry, 'CodeDescription': label, 'ValidTo': '2030-01-01'},
-                {**entry, 'CodeDescription': 'UNSELECTED LABEL', 'ValidTo': '2029-01-01'})]
+                {**entry, 'CodeDescription': 'UNSELECTED LABEL', 'ValidTo': '2029-01-01'},
+                {**entry, 'CodeDescription': label, 'ValidTo': '2030-01-01'})]
         item['body'] = json.dumps(envelope).encode()
         item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
     before = deepcopy(fixture)
