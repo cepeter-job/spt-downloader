@@ -923,3 +923,200 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                'group': 'A. PENGHASILAN DARI LUAR NEGERI'}
               for field, caption in zip(_L3_SCALARS[3:5], _L3_CAPTIONS)]
     return {'tables': tables, 'fields': fields, 'provenance': provenance}
+
+
+# Active L11-A consumers in the pinned corporate build; no taxpayer defaults.
+_L11A_ROOT = 'L11AFormData'
+_L11A_COSTS = ('ResidencyCost', 'HealthServiceCost', 'EducationCost', 'WorshipCost',
+               'TransportationCost', 'SportsCost')
+_L11A_RECAP = ('LocationAddress', 'NumberOfDecreeOfSpecificAreasDetermination',
+    'DateOfDecreeOfSpecificAreasDetermination', 'NumberOfDecreeOfExtensificationOfSpecificAreasDetermination',
+    'DateOfDecreeOfExtensificationOfSpecificAreasDetermination', *_L11A_COSTS, 'TotalAmountofCosts')
+_L11A_CAPTIONS = ('Alamat Lokasi', 'Nomor Surat Keputusan Penetapan Daerah Tertentu',
+    'Tanggal Surat Keputusan Penetapan Daerah Tertentu',
+    'Nomor Surat Keputusan Perpanjangan Penetapan Daerah Tertentu',
+    'Tanggal Surat Keputusan Perpanjangan Penetapan Daerah Tertentu',
+    'Biaya yang dikeluarkan untuk tempat tinggal, termasuk perumahan untuk pegawai dan keluarganya',
+    'Biaya yang dikeluarkan untuk pelayanan kesehatan',
+    'Biaya yang dikeluarkan untuk pendidikan bagi pegawai dan keluarganya',
+    'Biaya yang dikeluarkan untuk peribadatan',
+    'Biaya yang dikeluarkan untuk pengangkutan bagi pegawai dan keluarganya',
+    'Biaya yang dikeluarkan untuk olahraga bagi pegawai dan keluarganya, tidak termasuk golf, '
+    'power boating, pacuan kuda, dan terbang layang', 'Jumlah Biaya yang dikeluarkan')
+_L11A_GROUP = ('IV.B RINCIAN PENGGANTIAN ATAU IMBALAN DALAM BENTUK NATURA DAN/ATAU KENIKMATAN '
+               'YANG DIBERIKAN BERKENAAN DENGAN PELAKSANAAN PEKERJAAN DI DAERAH TERTENTU')
+_L11A_FIELDS = [
+    ('Index', 'RecipientIdentityNumber', 'RecipientName', 'RecipientAddress', 'RecipientDate',
+     'RecipientFormAndTypeOfPromotionCost', 'RecipientAmountOfPromotionCost', 'RecipientDescription',
+     'IncomeTax', 'WithholdingSlipNumber'),
+    ('EntertainmentDate', 'EntertainmentPlace', 'EntertainmentAddress', 'EntertainmentType',
+     'EntertainmentAmount', 'PartnerName', 'PartnerPosition', 'PartnerCompanyName', 'PartnerTypeOfBusiness', 'Description'),
+    ('Index', 'IdentityNumber', 'Name', 'Address', 'DebtCeiling', 'UncollectibleDebt', 'DeductionMethod', 'TypeOfFulfillment'),
+    ('TypeOfTangibleAssets', 'YearOfAcquisition', 'AcquisitionValue', 'UpToPreviousYear', 'CurrentYear', 'UpToCurrentYear'),
+    ('Index', 'IdentityNumber', 'Name', 'Address', 'AmountBeginning', 'AmountEnd', 'AmountInterestCurrentYear', 'Category')]
+_L11A_HEADERS = [
+    ['No.', 'NOMOR IDENTITAS PENERIMA', 'NAMA PENERIMA', 'ALAMAT PENERIMA', 'TANGGAL', 'JENIS BIAYA',
+     'NILAI (Rp.)', 'KETERANGAN', 'PPh YANG DIPOTONG/DIPUNGUT (Rp.)Rp.)', 'NOMOR BUKTI POTONG'],
+    ['TANGGAL PEMBERIAN ENTERTAINMENT', 'TEMPAT PEMBERIAN ENTERTAINMENT', 'ALAMAT PEMBERIAN ENTERTAINMENT',
+     'JENIS PEMBERIAN ENTERTAINMENT', 'NILAI PEMBERIAN ENTERTAINMENTRp.)', 'NAMA RELASI USAHA',
+     'JABATAN RELASI USAHA', 'NAMA PERUSAHAAN RELASI USAHA', 'JENIS USAHA RELASI USAHA', 'DESKRIPSI'],
+    ['No.', 'NOMOR IDENTITAS', 'NAMA DEBITUR', 'ALAMAT', 'PLAFON PIUTANG',
+     'PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH', 'METODE PEMBEBANAN',
+     'JENIS DOKUMEN PEMBUKTIAN PEMENUHAN PERSYARATAN'],
+    ['NO.', 'JENIS HARTA BERWUJUD', 'TAHUN PEROLEHAN', 'NILAI PEROLEHAN', 'PENYUSUTAN / S.D. TAHUN LALU',
+     'PENYUSUTAN / PENYUSUTAN TAHUN INI', 'PENYUSUTAN / S.D. TAHUN INI'],
+    ['No.', 'NOMOR IDENTITAS', 'NAMA DEBITUR', 'ALAMAT', 'NILAI KREDIT KURANG LANCAR AWAL TAHUN BUKU',
+     'NILAI KREDIT KURANG LANCAR AKHIR TAHUN BUKU', 'JUMLAH BUNGA PADA TAHUN BUKU (AKRUAL)', 'KATEGORI']]
+_L11A_LABELS = {'RecipientFormAndTypeOfPromotionCost': 'TYPE_OF_PROMOTION_COST',
+    'TypeOfTangibleAssets': 'TANGIBLE_ASSET_INCLUDING_BUILDINGS', 'Category': 'NON_PERFORMING_LOAN_CATEGORY',
+    'DeductionMethod': 'DEDUCTION_METHOD', 'TypeOfFulfillment': 'TYPE_OF_FULFILLMENT'}
+_L11A_MONEY = {'RecipientAmountOfPromotionCost', 'IncomeTax', 'EntertainmentAmount', 'DebtCeiling',
+    'UncollectibleDebt', 'AcquisitionValue', 'UpToPreviousYear', 'CurrentYear', 'UpToCurrentYear',
+    'AmountBeginning', 'AmountEnd', 'AmountInterestCurrentYear'}
+_L11A_ENDPOINTS = {index: f'l11a-table-{index + 1}-grid' for index in (0, 1, 2, 4)}
+
+
+def _l11a_integer(value, *, nullish=False):
+    if value is None and nullish:
+        return 0
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l11a_number_type')
+    number = _decimal(value)
+    if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
+        raise _UnsupportedMetadata('unsupported_corporate_l11a_number_precision')
+    return int(number)
+
+
+def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, locale,
+                  timezone_name, labels):
+    """Pure current-only consumer; no native observation or transport admission."""
+    if (previous is not None or tax_type != 'ICT_RCIT' or locale != 'id-ID'
+            or timezone_name != 'Asia/Jakarta' or headers != _L11A_HEADERS
+            or footer_spans != [[], [], [], [], []] or not isinstance(labels, dict)
+            or set(labels) != set(_L11A_LABELS.values())
+            or any(not isinstance(value, dict) for value in labels.values())):
+        raise _UnsupportedMetadata('unverified_corporate_l11a_current_structure')
+    if (not isinstance(form, dict) or set(form) != {'Facilities', 'Recapitulation'}
+            or not isinstance(form['Recapitulation'], dict) or set(form['Recapitulation']) != set(_L11A_RECAP)
+            or not isinstance(pages, dict) or set(pages) != set(_L11A_ENDPOINTS.values())):
+        raise _UnsupportedMetadata('unsupported_corporate_l11a_source_shape')
+    facilities = [] if form['Facilities'] is None else form['Facilities']
+    if not isinstance(facilities, list) or len(facilities) > 10000:
+        raise _UnsupportedMetadata('unsupported_corporate_l11a_facilities')
+    provenance = []
+
+    def evidence(value, path, destination, *, endpoint=None, page_index=None, rule='literal-source'):
+        entry = _evidence(value, path)
+        entry.update(source='current' if endpoint is None else 'grid', destination=destination, rule=rule)
+        if endpoint is not None:
+            entry.update(endpoint=endpoint, page_index=page_index)
+        provenance.append(entry)
+
+    def text(value):
+        if value is None:
+            return ''
+        if type(value) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l11a_text')
+        return value
+
+    def number(value, fraction=0):
+        if value is None:
+            return ''
+        _l11a_integer(value)
+        return _number(value, fraction, locale=locale)
+
+    def render(value, key):
+        if key in _L11A_LABELS:
+            choices = labels[_L11A_LABELS[key]]
+            if (type(value) is not str or not value or value not in choices
+                    or type(choices[value]) is not str or not choices[value].strip()):
+                raise _UnsupportedMetadata('unbound_corporate_l11a_description')
+            return choices[value], 'bound-reference-description'
+        if key in _L11A_MONEY:
+            return number(value), 'source-number-id/null-blank'
+        if key in ('RecipientDate', 'EntertainmentDate'):
+            return _l3_date(value), 'validated-iso/jakarta-dd-MM-yyyy'
+        if key == 'PartnerName':
+            if type(value) is _CorporateNumber:
+                return number(value, 2), 'source-number-id-1.2-2'
+            if type(value) is str and re.match(r'^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]', value):
+                raise _UnsupportedMetadata('unproved_corporate_l11a_time_like_name')
+        return text(value), 'literal-string/null-blank'
+
+    tables = []
+    for table_index, keys in enumerate(_L11A_FIELDS):
+        body, endpoint = [], _L11A_ENDPOINTS.get(table_index)
+        if endpoint is None:
+            source_pages = [(None, facilities)]
+        else:
+            declarations = pages[endpoint]
+            if not isinstance(declarations, list) or not 1 <= len(declarations) <= 1000:
+                raise _UnsupportedMetadata('missing_corporate_l11a_pages')
+            source_pages, cursor, total, capacity = [], 0, None, None
+            for page_index, page in enumerate(declarations):
+                if (not isinstance(page, dict) or set(page) != {'offset', 'rows', 'total', 'data'}
+                        or any(type(page[key]) is not int for key in ('offset', 'rows', 'total'))
+                        or page['offset'] != cursor or page['rows'] not in (10, 25, 50)
+                        or not 0 <= page['total'] <= 100000 or not isinstance(page['data'], list)):
+                    raise _UnsupportedMetadata('unsupported_corporate_l11a_page')
+                if total is None:
+                    total, capacity = page['total'], page['rows']
+                if (page['total'] != total or page['rows'] != capacity or page_index and cursor >= total
+                        or len(page['data']) != min(capacity, total - cursor)):
+                    raise _UnsupportedMetadata('incomplete_corporate_l11a_pages')
+                source_pages.append((page_index, page['data']))
+                cursor += len(page['data'])
+            if cursor != total:
+                raise _UnsupportedMetadata('incomplete_corporate_l11a_pages')
+        for page_index, values in source_pages:
+            for row_index, row in enumerate(values):
+                expected = set(keys) | ({'RecordId'} if endpoint is not None else set())
+                if not isinstance(row, dict) or set(row) != expected:
+                    raise _UnsupportedMetadata('unsupported_corporate_l11a_row')
+                path = (['Data', row_index] if endpoint is not None else [_L11A_ROOT, 'Facilities', row_index])
+                if endpoint is not None:
+                    if type(row['RecordId']) is not str or not row['RecordId']:
+                        raise _UnsupportedMetadata('unsupported_corporate_l11a_row_id')
+                    evidence(row['RecordId'], [*path, 'RecordId'], {'table': f'L11-A/grid{table_index + 1}',
+                        'row': len(body), 'key': 'RecordId'}, endpoint=endpoint, page_index=page_index)
+                rendered = [] if endpoint is not None else [str(row_index + 1)]
+                for column, key in enumerate(keys, 0 if endpoint is not None else 1):
+                    value, rule = render(row[key], key)
+                    rendered.append(value)
+                    evidence(row[key], [*path, key], {'table': f'L11-A/grid{table_index + 1}',
+                        'row': len(body), 'column': column}, endpoint=endpoint, page_index=page_index, rule=rule)
+                body.append(rendered)
+        tables.append({'name': f'L11-A/grid{table_index + 1}', 'headers': list(headers[table_index]),
+            'rows': body, 'footer': [], 'footer_spans': [], 'body_row_count': len(body),
+            'source_total': len(body), 'complete': True})
+
+    recap, total = form['Recapitulation'], 0
+    for key in _L11A_COSTS:
+        operand = _l11a_integer(recap[key], nullish=True)
+        # PrimeNG keeps a signed-zero cost control distinct from Angular's
+        # normalized number display. Refuse this unproved presentation branch.
+        if recap[key] is not None:
+            original = _decimal(recap[key])
+            if original.is_zero() and original.is_signed():
+                raise _UnsupportedMetadata('unproved_corporate_l11a_signed_zero_cost')
+        total += operand
+        if abs(total) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsafe_corporate_l11a_ordered_cost_sum')
+    if _l11a_integer(recap['TotalAmountofCosts']) != max(0, total):
+        raise _UnsupportedMetadata('unreconciled_corporate_l11a_total_costs')
+    fields = []
+    for key, caption in zip(_L11A_RECAP, _L11A_CAPTIONS):
+        value = recap[key]
+        if key in _L11A_COSTS or key == 'TotalAmountofCosts':
+            display, rule = number(value), 'input-number-id/null-blank'
+            if key == 'TotalAmountofCosts':
+                rule = 'reconciled-six-cost-ordered-sum/final-nonnegative-clamp'
+        elif key.startswith('DateOfDecree'):
+            if type(value) is not str or not value:
+                raise _UnsupportedMetadata('unsupported_corporate_l11a_decree_date')
+            display, rule = _l3_date(value), 'validated-new-Date/jakarta-dd-MM-yyyy'
+        else:
+            display, rule = text(value), 'literal-input/null-blank'
+        fields.append({'group': _L11A_GROUP, 'field': key, 'label': caption, 'value': display})
+        evidence(value, [_L11A_ROOT, 'Recapitulation', key], {'field': key}, rule=rule)
+    return {'tables': tables, 'fields': fields, 'provenance': provenance}

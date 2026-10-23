@@ -41,6 +41,21 @@ The separate L11-C semantic branch requires loaded corporate/main/vendor pins, t
 
 ## Output contract
 
+The pure current-only L11-A helper grants no native admission or dispatch.
+Require explicit null predecessor, four complete normalized endpoint inventories,
+current Facilities/Recapitulation, exact five-table headers with no footers and
+independently bound labels. Preserve literal source Index/identifiers/year and
+original typed provenance. Null cost inputs stay blank while contributing zero
+only to the ordered six-cost calculation; check every intermediate and clamp
+only the final sum before reconciling the reported total.
+Negative-zero cost operands remain unsupported across their numeric lexemes;
+the input control's signed-zero display has not been projected by this helper.
+Preserve ordinary PartnerName text despite its source numeric annotation. Keep all twelve IV.B
+controls canonical and unresolved because the approved template has no slots;
+do not alter facility text or approved accounting ranges to manufacture mapping.
+Native observation, catalog/packet custody, predecessors, Induk/PDF and live
+acceptance retain independent gates.
+
 The pure L3 projector is a source helper only; it must not enable native L3
 observation, footer/catalog admission or dispatch. Its bounded Rupiah branch
 requires explicit current data, complete normalized B pages, the actual captured

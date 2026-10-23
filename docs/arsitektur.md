@@ -149,6 +149,16 @@ memakai fallback seluruh record; kontradiksi lifetime/encoding tetap fatal.
 Replay memerlukan custody manifest yang sama. Pemetaan Induk, PDF keuangan dan
 form corporate lain tetap mempunyai gate tersendiri.
 
+Helper murni L11-A juga belum terhubung ke admission, observer atau dispatcher.
+Subset current-only memerlukan predecessor null, empat inventori halaman lengkap,
+Facilities/Recapitulation dan lima struktur tabel tanpa footer. Index sumber,
+identitas dan tahun tetap literal; PartnerName teks tidak diubah menjadi uang.
+Enam biaya dijumlahkan berurutan dengan pemeriksaan setiap intermediate, lalu
+clamp nol hanya pada hasil akhir sebelum rekonsiliasi total. Input biaya null
+tetap kosong pada tampilan dan tersimpan sebagai null dalam provenance.
+Dua belas field IV.B tetap canonical serta belum terpetakan; template dan
+rentang format yang disetujui tidak berubah.
+
 Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
 Ia memproyeksikan body A dari current source dan body B dari page metadata yang
 sudah dinormalisasi caller, dengan alias aktif IncomeTax/WithholdingSlipsNumber/
