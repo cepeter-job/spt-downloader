@@ -513,8 +513,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                               extra_status_links=False, submitted_link='normal',
                               submitted_redirect=False, restored_period_label=False,
                               restored_catalog='valid', restored_metadata=None,
-                              restored_api_period=None, page_sizes=None, initial_page_size=2,
-                              catalog_delay_ms=0):
+                              restored_api_period=None, page_sizes=None, initial_page_size=2):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -600,8 +599,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                              'catalog': available_cache, 'archived': archived,
                              'codePeriod': archive_period_conflict and submitted and not archive_seen and not restored,
                               'auxiliary': auxiliary_request, 'hashLink': hash_link,
-                              'pageSizes': page_sizes, 'initialSize': initial_page_size,
-                              'catalogDelay': catalog_delay_ms if submitted else 0})
+                              'pageSizes': page_sizes, 'initialSize': initial_page_size})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
         archive_link = ('<a href="/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer">Archieved Return Sheets</a>'
                         if archive_period_conflict else '')
@@ -629,16 +627,14 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
         </p-table></div><script>
         const config=''' + config + ''';let first=config.start,size=config.initialSize;
         const cacheReady=config.catalog?new Promise((resolve,reject)=>{
-          setTimeout(()=>{
           const r=indexedDB.open('e-tax-database',2);
           r.onupgradeneeded=()=>{const s=r.result.createObjectStore('referenceDataStore',{keyPath:['ReferenceDataType','language']});s.createIndex('ReferenceDataType','ReferenceDataType');};
           r.onerror=reject;r.onsuccess=()=>{const db=r.result,t=db.transaction('referenceDataStore','readwrite');
             t.objectStore('referenceDataStore').put({...config.catalog,ExpiryDate:new Date(config.catalog.ExpiryDate)});
             t.oncomplete=()=>{db.close();resolve();};t.onerror=reject;};
-          },config.catalogDelay);
         }):Promise.resolve();
         async function load(){
-          if(!config.catalogDelay)await cacheReady;
+          await cacheReady;
           const request={TaxpayerAggregateIdentifier:'fixture-taxpayer',First:first,Rows:size,Filters:[],isArchieved:config.archived,LanguageId:1,SortField:null,SortOrder:null};
           fetch(''' + json.dumps(endpoint) + ''',{method:'POST',body:JSON.stringify(request)}).then(r=>r.json()).then(body=>{
             const received=body.Payload.Data||[];const tbody=document.querySelector('tbody');tbody.replaceChildren();

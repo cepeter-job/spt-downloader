@@ -6,10 +6,33 @@ from support_isolated_browser import browser
 from test_json_inventory import synthetic_listing_browser
 
 
-@pytest.mark.parametrize('delay', [0, 600])
-def test_late_catalog_filters_before_any_unfiltered_page_is_checkpointed(browser, tmp_path, monkeypatch, delay):
-    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, deferred_catalog=True,
-                                   catalog_delay_ms=delay) as (page, metrics):
+@pytest.mark.parametrize('extra_read', [False, True])
+def test_late_catalog_filters_before_any_unfiltered_page_is_checkpointed(browser, tmp_path, monkeypatch, extra_read):
+    original_read = driver.read_period_catalog
+    submitted_reads = []
+    grace_waits = []
+    waiting = False
+
+    def read(page):
+        nonlocal waiting
+        if '/submitted-returnsheets/' in page.url:
+            submitted_reads.append(True)
+            if extra_read and len(submitted_reads) == 1:
+                waiting = True
+                return None
+            waiting = False
+        return original_read(page)
+
+    monkeypatch.setattr(driver, 'read_period_catalog', read)
+    with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, deferred_catalog=True) as (page, metrics):
+        original_wait = page.wait_for_timeout
+
+        def wait(milliseconds):
+            if waiting:
+                grace_waits.append(milliseconds)
+            original_wait(milliseconds)
+
+        monkeypatch.setattr(page, 'wait_for_timeout', wait)
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
         assert run['inventory_complete'], run['errors']
         assert {r['record_id'] for r in run['records']} == {
@@ -24,6 +47,9 @@ def test_late_catalog_filters_before_any_unfiltered_page_is_checkpointed(browser
         assert metrics['detail_actions'] == metrics['unregistered_requests'] == 0
         assert len(metrics['list_navigations']) == 4
         assert len((tmp_path/'inventory-batches.jsonl').read_text(encoding='utf-8').splitlines()) == 4
+        assert len(submitted_reads) == (5 if extra_read else 4)
+        assert sum(grace_waits) == (500 if extra_read else 0)
+        assert all(milliseconds <= 100 for milliseconds in grace_waits)
 
 
 @pytest.mark.parametrize(('initial', 'options', 'expected'), [
