@@ -11,6 +11,7 @@ FORMS = {
  'L2': ('rshshr-citr-l2-form', 'ListOfOwnership'),
  'L4': ('rshshr-citr-l4-form', 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject'),
  'L6': ('rshshr-citr-l6-form', 'FiscalYearIncomeTax'),
+ 'L7': ('rshshr-citr-l7-form', 'CalculationOfFiscalLossCompensation'),
  'L9': ('rshshr-citr-l9-form', 'RecapitulationFiscalDepreciationAmortization'),
  'L10-A': ('rshshr-citr-l10a-form', 'DeclarationTransactionRelatedParties'),
  'L10-B': ('rshshr-citr-l10b-form', 'L10bFormData'),
@@ -48,32 +49,67 @@ def _tabs(page):
     return view, tabs
 
 
+def _native_panel(page, view, tab, caption, record, check_cancel):
+    """Tunggu binding tab terbaru, lalu pertahankan batas struktur native."""
+    from coretax_browser import (_check_cancel, _wait_tab_panel, wait_idle,
+                                 verify_detail_url, list_taxpayer_id)
+    _check_cancel(check_cancel)
+    initial_id = tab.get_attribute('aria-controls')
+    allowed_href = (None, '', '#') + (('#' + initial_id,) if initial_id else ())
+    if tab.get_attribute('href') not in allowed_href:
+        return None
+    if tab.inner_text().strip() != caption:
+        return None
+    tab.click()
+    wait_idle(page)
+    verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
+    panel = _wait_tab_panel(view, tab, caption, check_cancel,
+                            initial_panel_id=initial_id or None)
+    _check_cancel(check_cancel)
+    current_id = tab.get_attribute('aria-controls')
+    allowed_href = (None, '', '#') + (('#' + current_id,) if current_id else ())
+    if tab.get_attribute('href') not in allowed_href:
+        return None
+    # Native bindings still reject duplicate IDs, including nested targets.
+    if current_id and view.locator('[id=' + json.dumps(current_id) + ']').count() != 1:
+        return None
+    owner = view.element_handle()
+    try:
+        direct = panel.evaluate('''(e, owner) => {
+            const parent = e.parentElement;
+            const panels = parent.matches('p-tabpanel') ? parent.parentElement : parent;
+            return e.matches('.p-tabview-panel') && panels.matches('.p-tabview-panels') &&
+                panels.parentElement === owner && e.closest('.p-tabview') === owner;
+        }''', owner)
+        if direct is not True:
+            return None
+    finally:
+        owner.dispose()
+    verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
+    return panel
+
+
 def _turn_grid(page, table, max_pages, check_cancel):
-    from coretax_browser import _check_cancel, wait_idle
-    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
-    for _ in range(max_pages):
-        _check_cancel(check_cancel)
-        previous = table.locator(previous_selector)
-        if not previous.count():
-            break
-        previous.click()
-        wait_idle(page)
-    if table.locator(previous_selector).count():
+    from coretax_browser import _check_cancel, _click_table_paginator, wait_idle
+    if type(max_pages) is not int or max_pages <= 0:
         return False
-    seen = set()
-    for _ in range(max_pages):
-        _check_cancel(check_cancel)
-        marker = table.locator('.p-paginator-current')
-        if marker.count() != 1:
+    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+    next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
+    marker = table.locator('.p-paginator-current')
+    owner = table.element_handle()
+    if owner is None:
+        return False
+
+    def advance(control, state):
+        if control.count() != 1:
             return False
-        state = marker.inner_text()
-        if state in seen:
+        handle = control.element_handle()
+        try:
+            _click_table_paginator(handle, owner, check_cancel)
+        except RuntimeError:
             return False
-        seen.add(state)
-        next_button = table.locator('.p-paginator-next:not([disabled]):not(.p-disabled)')
-        if not next_button.count():
-            return True
-        next_button.click()
+        finally:
+            handle.dispose()
         deadline = time.monotonic() + 30
         while marker.inner_text() == state:
             _check_cancel(check_cancel)
@@ -81,13 +117,47 @@ def _turn_grid(page, table, max_pages, check_cancel):
                 return False
             page.wait_for_timeout(100)
         wait_idle(page)
-    return False
+        return True
+
+    try:
+        if marker.count() != 1:
+            return False
+        resets = set()
+        for _ in range(max_pages):
+            _check_cancel(check_cancel)
+            previous = table.locator(previous_selector)
+            if not previous.count():
+                break
+            state = marker.inner_text()
+            if state in resets or not advance(previous, state):
+                return False
+            resets.add(state)
+        if table.locator(previous_selector).count():
+            return False
+        seen = set()
+        for ordinal in range(max_pages):
+            _check_cancel(check_cancel)
+            state = marker.inner_text()
+            if state in seen:
+                return False
+            seen.add(state)
+            next_button = table.locator(next_selector)
+            if not next_button.count():
+                return True
+            if ordinal + 1 >= max_pages or not advance(next_button, state):
+                return False
+        return False
+    finally:
+        owner.dispose()
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
-    from coretax_browser import _check_cancel, wait_idle, verify_detail_url, list_taxpayer_id
+    from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
+    from coretax_json import _check_corporate_route, _corporate_selected
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
+    selected = _corporate_selected(record, scope)
+    _check_corporate_route(page.url, selected)
     try:
         digest = page.evaluate(_BUILD_HASH, CIT_SOURCE_URL)
         _check_cancel(check_cancel)
@@ -106,13 +176,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name not in FORMS or name in names:
                 return None
             names.add(name)
-            tab.click()
-            wait_idle(page)
-            panel_id = tab.get_attribute('aria-controls')
-            if not panel_id:
+            panel = _native_panel(page, view, tab, name, record, check_cancel)
+            if panel is None:
                 return None
-            panel = view.locator('[id=' + json.dumps(panel_id) + ']')
-            panel.wait_for(state='visible', timeout=30000)
+            _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
@@ -121,6 +188,25 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
+            if name == 'L7':
+                from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
+                from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
+                if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
+                    return None
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                _check_cancel(check_cancel)
+                if main_digest != BUILD_DIGESTS.get(MAIN_SOURCE):
+                    return None
+                grid = form.locator('rsh-citr-l7-grid1')
+                if (grid.count() != 1 or grid.locator('p-table').count() != 1
+                        or grid.locator('table').count() != 1 or form.locator('table').count() != 1):
+                    return None
+                metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
+                locale = page.evaluate('() => navigator.language')
+                binding['projection'] = {'kind': 'corporate-l7-v1', 'builds': {
+                    CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url, 'locale': locale,
+                    'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
+                                'footer_spans': metadata['footer_spans']}]}
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)
                 if grids.count() != len(groups):

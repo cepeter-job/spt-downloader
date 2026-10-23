@@ -394,12 +394,12 @@ def _record_panel_timeout(view, panel_id, duration_ms):
                        duration_ms=duration_ms, **fields)
 
 
-def _wait_tab_panel(view, tab, caption, check_cancel):
+def _wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None):
     """Follow a changing control binding without extending the panel budget."""
     started = time.monotonic()
     deadline = started + DETAIL_PANEL_TIMEOUT
-    panel_id = None
-    controlled = False
+    panel_id = initial_panel_id
+    controlled = initial_panel_id is not None
     while True:
         _check_cancel(check_cancel)
         try:

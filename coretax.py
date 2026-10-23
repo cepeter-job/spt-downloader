@@ -23,6 +23,7 @@ from coretax_exporter import (validate_scope, validate_export_run, export_split_
                              export_workbook)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
+from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
 
 BASE = Path(__file__).resolve().parent
 
@@ -250,12 +251,13 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
 @diagnostics.traced('verify')
 def verify_outputs(run, folder, *, allow_extra=False):
     """Verify declared held PDF bytes as well as the existing workbook scope."""
-    with pdf_custody(run, folder):
+    with pdf_custody(run, folder), json_custody(run, folder):
         _verify_workbook_outputs(run, folder, allow_extra=allow_extra)
 
 
 def _check_output_scope(run, folder, staging=None):
     """Pastikan checkpoint dan header Excel lama membuktikan scope yang sama."""
+    verify_existing_json(run, folder)
     scope_file = folder / 'run.json'
     if scope_file.is_symlink():
         raise FileExistsError('Output scope cannot be a symbolic link')
@@ -338,7 +340,7 @@ def _publish_output(staging, folder, names):
 
 
 @diagnostics.traced('export')
-def save_output(run, folder):
+def save_output(run, folder, *, json_source=None):
     """Validasi, tulis ke staging, baca ulang, lalu publikasikan seluruh set."""
     folder = Path(folder)
     validate_export_run(run)
@@ -347,11 +349,16 @@ def save_output(run, folder):
     staging = Path(tempfile.mkdtemp(prefix='.spt-export-', dir=folder))
     retain_recovery = False
     try:
-        current = {**run, 'output_attachments': attachment_declarations(run)}
+        current = {**run, 'output_attachments': attachment_declarations(run),
+                   'output_json': json_output_names(run)}
+        evidence_source = Path(json_source) if json_source is not None else folder
         with pdf_custody(current, folder) as (attachments, streams):
             # Unduhan sudah menempatkan PDF sumber privat. Tahan stream terverifikasi
             # selama publikasi workbook/checkpoint; ekspor ulang Excel tidak mengganti PDF.
             copy_held_pdfs(attachments, streams, staging)
+            with json_custody(run, evidence_source,
+                    published=json_source is not None and 'output_json' in run) as (json_items, json_streams):
+                copy_held_json(json_items, json_streams, staging)
             current['template_mapping'] = []
             files = export_split_workbooks(current, staging, mapping_reports=current['template_mapping'])
             saved_run = {**current, 'output_files': list(files)}
@@ -361,10 +368,11 @@ def save_output(run, folder):
             # Simpan staging/backup sejak publikasi dimulai agar interupsi atau
             # rollback yang terhalang tetap menyisakan bahan pemulihan.
             retain_recovery = True
-            _publish_output(staging, folder, [*files, 'run.json'])
+            _publish_output(staging, folder, [*current['output_json'], *files, 'run.json'])
             retain_recovery = False
             run['output_files'] = list(files)
             run['output_attachments'] = current['output_attachments']
+            run['output_json'] = current['output_json']
             run['template_mapping'] = current.get('template_mapping', [])
     finally:
         if not retain_recovery:
@@ -444,7 +452,7 @@ def _main(argv=None):
         run = json.loads(args.from_json.read_text(encoding='utf-8'))
         validate_scope(run['npwp'], run['year'])
         folder = args.output or args.from_json.parent
-        path = save_output(run, folder)
+        path = save_output(run, folder, json_source=args.from_json.parent)
         print(f'Resume rebuilt and verified: {path.resolve()}')
         print('SPT files: ' + ', '.join(name for name in run['output_files'] if name != 'resume.xlsx'))
         return 0 if run.get('complete') else 2

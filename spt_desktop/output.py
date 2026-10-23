@@ -18,6 +18,7 @@ from coretax_exporter import (validate_export_run, validate_scope, workbook_grou
                               read_workbook_proof, record_forms, _validate_financial_attachments)
 from coretax_pdf import (attachment_declarations, verified_declarations, pdf_custody,
                          copy_held_pdfs, _verify_stream)
+from coretax_json_capture import verified_json_names, json_custody, copy_held_json, verify_existing_json
 from .paths import safe_taxpayer_name
 from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
 
@@ -130,7 +131,7 @@ def _selected(run):
             or len(declared) != len(set(declared)) or set(declared) != set(names)):
         raise ValueError('Invalid workbook filename declaration')
     pdf_names = [item['relative_path'] for item in verified_declarations(run)]
-    return [*pdf_names, *names], _group_identities(groups)
+    return [*pdf_names, *verified_json_names(run), *names], _group_identities(groups)
 
 
 def _group_identities(groups, *, legacy=False):
@@ -239,6 +240,13 @@ def _pdf_files(folder):
             if path.suffix.casefold() == '.pdf' and path.is_file()}
 
 
+def _json_files(folder):
+    # Call after workbook_files has rejected reparse points in the entire tree.
+    _case_component(folder, 'json')
+    return {path.relative_to(folder).as_posix() for path in (folder / 'json').rglob('*')
+            if path.suffix.casefold() == '.json' and path.is_file()}
+
+
 def _approved_existing_pdfs(run, target, actual, corporate_files, *, validate_all=False):
     selected = {item['relative_path']: item for item in verified_declarations(run)
                 if item['relative_path'] in actual}
@@ -316,8 +324,9 @@ def _inspect(run, downloads, target):
     directories = _directories(target)
     actual = coretax.workbook_files(target)
     actual_pdfs = _pdf_files(target)
+    actual_json = _json_files(target)
     folded = {}
-    for name in sorted(actual | actual_pdfs | set(names)):
+    for name in sorted(actual | actual_pdfs | actual_json | set(names)):
         if name.casefold() in folded and folded[name.casefold()] != name:
             raise ValueError('Existing workbook filename collision')
         folded[name.casefold()] = name
@@ -373,6 +382,13 @@ def _inspect(run, downloads, target):
         path = coretax.output_path(target, name)
         _include_directories(directories, path.parent)
         pdf_states[name] = _fingerprint(path)
+    json_states = {}
+    for name in sorted(actual_json):
+        path = coretax.output_path(target, name)
+        _include_directories(directories, path.parent)
+        json_states[name] = _fingerprint(path)
+    # Existing selected paths are immutable evidence, even with overwrite consent.
+    verify_existing_json(run, target)
     corporate_files = [name for name, (_, entries) in identities.items()
                        if any(tax == 'PPh Badan' for tax, period, model in entries)]
     flat_selected_pdfs = any('/' not in item['relative_path'] for item in verified_declarations(run))
@@ -381,14 +397,15 @@ def _inspect(run, downloads, target):
                      or (flat_selected_pdfs and nested_pdfs))
     _approved_existing_pdfs(run, target, actual_pdfs, corporate_files,
                             validate_all=legacy_layout or period_identity_conflict)
-    for name, fingerprint in {**fingerprints, **pdf_states}.items():
+    for name, fingerprint in {**fingerprints, **pdf_states, **json_states}.items():
         if _fingerprint(coretax.output_path(target, name)) != fingerprint:
             raise ValueError('Existing output bytes changed during consent inspection')
     _check_directories(directories)
     return {'target': str(target), 'scope': (run['npwp'], run['year'], run['year_basis']),
             'selected_files': names,
-            'files': [name for name in names if name in actual | actual_pdfs],
+            'files': [name for name in names if name in actual | actual_pdfs | actual_json],
             'directories': directories, 'workbooks': fingerprints, 'attachments': pdf_states,
+            'json': json_states,
             'legacy_layout': legacy_layout, 'period_identity_conflict': period_identity_conflict}
 
 
@@ -441,8 +458,10 @@ def _copy_verified(original, target):
 def _check_files(target, states):
     workbooks = {name for name in states if name.endswith('.xlsx')}
     pdfs = {name for name in states if name.endswith('.pdf')}
-    if coretax.workbook_files(target) != workbooks or _pdf_files(target) != pdfs:
-        raise ValueError('Output workbook/PDF set changed during publication')
+    jsons = {name for name in states if name.endswith('.json')}
+    if (coretax.workbook_files(target) != workbooks or _pdf_files(target) != pdfs
+            or _json_files(target) != jsons):
+        raise ValueError('Output workbook/PDF/JSON set changed during publication')
     for name, fingerprint in states.items():
         if _fingerprint(coretax.output_path(target, name)) != fingerprint:
             raise ValueError('Output workbook changed during publication')
@@ -609,7 +628,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
     from .publication_recovery import PublicationJournal
     target = Path(snapshot['target'])
     names = snapshot['selected_files']
-    states = {**snapshot['workbooks'], **snapshot['attachments']}
+    states = {**snapshot['workbooks'], **snapshot['attachments'], **snapshot.get('json', {})}
     backup = recovery / 'backup'
     _prepare_directory(backup, guard, directories)
     for name in names:
@@ -627,6 +646,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
     entries = []
     pdf_locks = ExitStack()
     pdf_names = {item['relative_path'] for item in verified_declarations(run)}
+    json_names = set(verified_json_names(run))
     try:
         for name in names:
             _cancel(check_cancel)
@@ -658,7 +678,7 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
             _cancel(check_cancel)
             _check_directories(directories)
             _move_no_replace(entry.staged, destination)
-            if name in pdf_names:
+            if name in pdf_names | json_names:
                 pdf_locks.enter_context(locked_file(destination))
                 if _fingerprint(destination) != new_states[name]:
                     raise ValueError('Financial PDF bytes/identity changed at native publication')
@@ -739,6 +759,7 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
             guard.include(directories)
             attachments = verified_declarations(run)
             pdf_names = {item['relative_path'] for item in attachments}
+            json_names = set(verified_json_names(run))
             for item in attachments:
                 staged = coretax.output_path(staging, item['relative_path'])
                 _prepare_directory(staged.parent, guard, directories)
@@ -746,8 +767,12 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
             # ulang path saja dapat kehilangan identitas/byte yang diperiksa.
             with pdf_custody(run, source) as (items, streams):
                 copy_held_pdfs(items, streams, staging)
+            for name in json_names:
+                _prepare_directory(coretax.output_path(staging, name).parent, guard, directories)
+            with json_custody(run, source, check_cancel=check_cancel) as (items, streams):
+                copy_held_json(items, streams, staging, check_cancel)
             for name in names:
-                if name in pdf_names:
+                if name in pdf_names | json_names:
                     continue
                 _cancel(check_cancel)
                 original, staged = coretax.output_path(source, name), coretax.output_path(staging, name)
@@ -785,7 +810,8 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                                   if Path(name).is_relative_to(staging)}
             final_directories = {str(final / Path(name).relative_to(staging)): identity
                                  for name, identity in staged_directories.items()}
-            pdf_states = {name: _fingerprint(coretax.output_path(staging, name)) for name in pdf_names}
+            pdf_states = {name: _fingerprint(coretax.output_path(staging, name))
+                          for name in pdf_names | json_names}
             # The deny-delete readers must close before a native directory move.
             # Reacquire and compare the exact moved identities/bytes before
             # returning a result; quarantine an unsuccessful owned PDF tree.
@@ -799,12 +825,12 @@ def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                         if _fingerprint(coretax.output_path(final, name)) != state:
                             raise ValueError('Financial PDF changed across native directory publication')
                     coretax.verify_outputs(run, final)
-                    if attachments:
+                    if attachments or json_names:
                         _cancel(check_cancel)
                 return final
             except BaseException as failure:
                 diagnostics.record('publish.rollback', phase='rollback', level='WARNING', error=failure)
-                if (attachments and final.exists()
+                if ((attachments or json_names) and final.exists()
                         and _identity(final.lstat()) == staging_identity):
                     retain_staging = True
                     try:

@@ -110,7 +110,8 @@ def project_pph21_forms(packets, *, record, observed_forms):
         raise _UnsupportedMetadata('missing_pph21_reference_catalog_binding')
     grid_reference = _reference(references[0], PPH21_REFERENCE_URL, packets)
     model_reference = _reference(references[1], PPH21_MODEL_REFERENCE_URL, packets)
-    grid_labels = project_pph21_references(grid_reference['payload'], requested_types=REFERENCE_TYPES, locale='id-ID')
+    grid_labels = project_pph21_references(grid_reference['payload'], requested_types=REFERENCE_TYPES, locale='id-ID',
+                                          clock_interval=grid_reference['event'].get('clock_interval'))
     model_labels = project_pph21_model_references(model_reference['payload'], locale='id-ID')
     bindings = _evidence(grid_labels['provenance'], grid_reference, ['Payload'], {'reference_catalog': 'grid'})
     bindings += _evidence(model_labels['provenance'], model_reference, ['Payload'], {'reference_catalog': 'model'})

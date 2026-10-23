@@ -359,7 +359,7 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
     from coretax_masa_bindings import FORMS
     from coretax_masa_projection import project_masa_forms
 
-    sequences, snapshots, packets = set(), {}, {}
+    sequences, snapshots, packets, clocks = set(), {}, {}, set()
     primary_seen = False
     grid_paths = {
         '/returnsheet/api/' + ('loadndvat/' if kind == 'PPN' else 'loadwtr/') + suffix + '-grid'
@@ -373,6 +373,9 @@ def adapt_masa_detail(bodies, *, record, scope, observed_forms):
         envelope, ctx, attempt, event = _corporate_packet(
             item, selected, scope, attempt, sequences, allow_pph21_reference=tax == 'PPh Pasal 21/26',
             allow_unifikasi_reference=tax == 'PPh Unifikasi')
+        clocks.add(_corporate_request_key(event.get('clock_interval')))
+        if len(clocks) != 1:
+            raise JsonSafetyError('Masa capture clock evidence is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Masa source response budget exceeded')

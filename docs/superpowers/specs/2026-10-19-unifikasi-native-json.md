@@ -1,6 +1,6 @@
 # Native JSON PPh Unifikasi
 
-Status: design approved by the user; implementation and runner verification pending.
+Status: implemented and runner-verified, merged through [PR #40](https://github.com/cepeter-job/spt-downloader/pull/40) at `af3f1bf60198cc007055825b82ed8b11b02f2905`. The [source ledger](../../unifikasi-json-native.md) records the final historical evidence. Current-build live acceptance and additional unsupported reference branches remain separate work; the original implementation sequence below is retained as history.
 
 ## Scope and existing architecture
 

@@ -1,5 +1,15 @@
 # Native JSON PPh Pasal 21/26
 
+## Current implementation status
+
+The five-form/seven-grid implementation was merged in [PR #37](https://github.com/cepeter-job/spt-downloader/pull/37), merge `66c729b9fcaafcceeef28ecf16a00cc9e14407b2`. Final head `ef2e52f717626e59adb7d9616728e0d55111c78e` passed Windows run `39107209239`: 2,993 cases, zero failures/errors. The independent shard run `39107209381` passed the same 2,993 unique cases; these results overlap and are not additive.
+
+The recorded package readback for artifact `12129436173` checked the archive/member hashes, frozen self-test and 36 allowlisted resources against the tested tree. Connected synthetic Edge-to-workbook, listing-proof directory creation, native checkpoint replay and isolated-worker contracts passed. This is historical evidence for that revision, not a new test of the latest consolidated build or live taxpayer acceptance.
+
+The dated grid-reference extension in draft [PR #86](https://github.com/cepeter-job/spt-downloader/pull/86) is now runner-verified: an optional owned browser-clock interval permits the inspected ordered selector only when its result is stable throughout capture. It does not relax the model dropdown's unique-code rule. [The dated-reference report](superpowers/reports/2026-10-23-dated-reference-catalogs.md) binds the 4,083-case Windows suite, overlapping portable suite, package/bootstrap readback and remaining live boundary to the exact tested tree.
+
+The incremental RED/pending notes below are retained as implementation history. They do not mean that the primary/grid/reference/observer/export integration is still missing. Remaining coverage and current-build acceptance work is defined in the [approved completion design](superpowers/specs/2026-10-23-json-mode-completion-design.md).
+
 ## Approved scope
 
 Extend the existing PPN JSON-first pipeline for the five observed PPh21 forms:

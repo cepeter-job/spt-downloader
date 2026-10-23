@@ -4,6 +4,7 @@ Callbacks retain bounded driver metadata only. A completed response is read once
 on the caller's thread, checked, and written immediately. Driver body() and JSON
 parsing can still allocate a whole body; budgets are not hard RAM/interrupt caps.
 """
+from contextlib import contextmanager, ExitStack
 import hashlib
 import json
 from pathlib import Path
@@ -14,7 +15,7 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
-                          _object_pairs, _reject_constant, _trusted_origin)
+                          _capture_clock_interval, _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
@@ -26,6 +27,7 @@ _SECRET_KEYS = frozenset({'password', 'passwd', 'pwd', 'authorization', 'cookie'
                           'setcookie', 'token', 'accesstoken', 'refreshtoken',
                           'idtoken', 'apikey', 'clientsecret', 'secret', 'sessionid'})
 _SECRET_TEXT = re.compile(r'\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', re.I)
+_BROWSER_CLOCK = '() => ({epoch_ms:Date.now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})'
 
 
 def _secret_key(value):
@@ -130,6 +132,7 @@ class DetailJsonCapture:
         self._reasons = []
         self._result = None
         self._manifest_hash = None
+        self._clock_start = None
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -148,6 +151,23 @@ class DetailJsonCapture:
         expected = {parent: _ordinary_directory(parent) for parent in reversed([path, *path.parents])}
         self._guard.include(expected)
 
+    def _sample_clock(self, page, check_cancel=None):
+        """Optional browser environment evidence; driver failures reveal no text."""
+        self._cancel(check_cancel)
+        try:
+            sample = page.evaluate(_BROWSER_CLOCK)
+        except Exception:
+            sample = None
+        self._cancel(check_cancel)
+        if not isinstance(sample, dict) or set(sample) != {'epoch_ms', 'timezone'}:
+            return None
+        try:
+            _capture_clock_interval({'attempt': self.attempt, 'start_ms': sample['epoch_ms'],
+                                     'end_ms': sample['epoch_ms'], 'timezone': sample['timezone']}, self.attempt)
+        except JsonSafetyError:
+            return None
+        return dict(sample)
+
     def __enter__(self):
         self._cancel()
         if self._active or self._listeners or self._result is not None:
@@ -160,6 +180,7 @@ class DetailJsonCapture:
                 current = current / name
                 current.mkdir(exist_ok=name != self.attempt)
                 self._hold(current)
+            self._clock_start = self._sample_clock(self.page)
             self._active = True
             for event, callback in (('request', self._on_request), ('response', self._on_response),
                                     ('requestfinished', self._on_finished), ('requestfailed', self._on_failed)):
@@ -388,12 +409,29 @@ class DetailJsonCapture:
         self._requests.clear()
         self._cancel(check_cancel)
         self._verify_binding()
+        seen_before_clock = self._seen
+        clock_end = self._sample_clock(self._bound, check_cancel)
+        self._verify_binding()
+        if self._requests or self._seen != seen_before_clock:
+            # Evaluating environment metadata pumps browser events too. A late
+            # reply may already be excluded by MIME and absent from _requests.
+            # It is outside the final drain, never an empty/complete set.
+            self._counts['pending'] += len(self._requests)
+            self._reason('response-after-final-drain')
+            self._requests.clear()
         result = {'version': 1, 'attempt': self.attempt, 'record_id': self.record_id,
                   'scope': list(self.scope), 'source_url': self.source_url, 'detail_url': self._bound_url,
                   'limits': dict(self._limits), 'counts': dict(self._counts),
                   'complete': not self._reasons, 'reasons': list(self._reasons),
                   'responses': list(self._responses), 'credentials_accessed': False,
                   'primary_identity_validated': False}
+        if self._clock_start is not None and clock_end is not None:
+            try:
+                result['clock_interval'] = _capture_clock_interval({
+                    'attempt': self.attempt, 'start_ms': self._clock_start['epoch_ms'],
+                    'end_ms': clock_end['epoch_ms'], 'timezone': clock_end['timezone']}, self.attempt)
+            except JsonSafetyError:
+                pass  # An unavailable/reversed sample cannot authorize dated selection.
         raw = json.dumps(result, ensure_ascii=False, sort_keys=True).encode('utf-8')
         manifest = self._write('manifest.json', raw, check_cancel)
         self._cancel(check_cancel)
@@ -423,11 +461,13 @@ class DetailJsonCapture:
             saved = _json(manifest)
             if saved['attempt'] != self.attempt or saved['scope'] != self.scope or saved['record_id'] != self.record_id:
                 raise JsonSafetyError('Private capture scope or attempt changed')
+            clock = (_capture_clock_interval(saved['clock_interval'], self.attempt)
+                     if 'clock_interval' in saved else None)
             for descriptor in saved['responses']:
                 self._cancel(check_cancel)
                 relative = Path(descriptor['relative_path'])
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
-                        or descriptor['attempt'] != self.attempt):
+                        or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -440,7 +480,10 @@ class DetailJsonCapture:
                 if _has_secret(payload):
                     raise JsonSafetyError('Private response no longer meets privacy policy')
                 self._cancel(check_cancel)
-                yield {'body': raw, 'payload': payload, 'context': descriptor}
+                context = dict(descriptor)
+                if clock is not None:
+                    context['clock_interval'] = dict(clock)
+                yield {'body': raw, 'payload': payload, 'context': context}
                 del raw, payload
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise JsonSafetyError('Private capture references cannot be safely resolved') from None
@@ -466,7 +509,7 @@ class DetailJsonCapture:
         return False
 
 
-def checkpoint_bodies(folder, capture, record, scope):
+def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_cancel=None):
     """Reacquire original private bytes; reject lexical escapes before any read."""
     from pathlib import PurePosixPath
     if not isinstance(capture, dict):
@@ -485,11 +528,17 @@ def checkpoint_bodies(folder, capture, record, scope):
                        for parent in reversed([directory, *directory.parents])})
 
     def read(guard, name, maximum):
+        if check_cancel:
+            check_cancel()
+        if published:
+            name = name.removeprefix('returns/')
         hold(guard, (root / name).parent)
         with locked_file(root / name) as stream:
             raw = stream.read(maximum + 1)
         if len(raw) > maximum:
             raise JsonSafetyError('Private checkpoint exceeds its byte budget')
+        if check_cancel:
+            check_cancel()
         return raw
 
     try:
@@ -500,6 +549,8 @@ def checkpoint_bodies(folder, capture, record, scope):
             # Hash saja belum mengikat checkpoint ke SPT terpilih; manifest,
             # metadata, dan upaya capture harus cocok sebelum body dibuka.
             saved = _json(raw)
+            if _has_secret(saved):
+                raise JsonSafetyError('Private checkpoint metadata no longer meets privacy policy')
             expected = {**saved, 'manifest': reference, 'manifest_sha256': hashlib.sha256(raw).hexdigest()}
             if json.dumps(capture, sort_keys=True) != json.dumps(expected, sort_keys=True):
                 raise JsonSafetyError('Private checkpoint manifest metadata changed')
@@ -510,6 +561,8 @@ def checkpoint_bodies(folder, capture, record, scope):
                     or saved.get('attempt') != relative.parent.name
                     or saved.get('detail_url') != record.get('detail_url')):
                 raise JsonSafetyError('Private checkpoint identity or attempt changed')
+            clock = (_capture_clock_interval(saved['clock_interval'], saved['attempt'])
+                     if 'clock_interval' in saved else None)
             descriptors = saved.get('responses')
             if not isinstance(descriptors, list) or len(descriptors) > MAX_RESPONSES:
                 raise JsonSafetyError('Private checkpoint response budget changed')
@@ -520,6 +573,7 @@ def checkpoint_bodies(folder, capture, record, scope):
                         or PurePosixPath(name).parent != relative.parent
                         or not re.fullmatch(r'response-[0-9]{4,}\.json', PurePosixPath(name).name)
                         or name in seen or descriptor.get('attempt') != saved['attempt']
+                        or 'clock_interval' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -535,7 +589,173 @@ def checkpoint_bodies(folder, capture, record, scope):
                 payload = _json(body)
                 if _has_secret(payload):
                     raise JsonSafetyError('Private checkpoint no longer meets privacy policy')
-                packets.append({'body': body, 'payload': payload, 'context': descriptor})
+                context = dict(descriptor)
+                if clock is not None:
+                    context['clock_interval'] = dict(clock)
+                packets.append({'body': body, 'payload': payload, 'context': context})
             return packets
     except (OSError, ValueError, TypeError, KeyError, IndexError):
         raise JsonSafetyError('Private checkpoint custody cannot be safely verified') from None
+
+
+def _json_output_entries(run):
+    """Derive a closed file set; never enumerate private job directories."""
+    from pathlib import PurePosixPath
+    entries, seen = [], set()
+    for record in run['records']:
+        audit = record.get('detail_source')
+        if audit is None:
+            continue
+        if not isinstance(audit, dict):
+            raise JsonSafetyError('Invalid JSON evidence audit')
+        capture = audit.get('capture')
+        if capture is None and audit.get('used') != 'json':
+            continue
+        if not isinstance(capture, dict):
+            raise JsonSafetyError('Missing JSON evidence capture')
+        reference = capture.get('manifest')
+        if (not isinstance(reference, str) or not re.fullmatch(
+                r'returns/json/[0-9]{4,}/[a-f0-9]{32}/manifest\.json', reference)):
+            raise JsonSafetyError('Unsafe JSON evidence manifest path')
+        responses = capture.get('responses')
+        if not isinstance(responses, list) or len(responses) > MAX_RESPONSES:
+            raise JsonSafetyError('Invalid JSON evidence response set')
+        items = [{'source_path': reference, 'sha256': capture.get('manifest_sha256'),
+                  'maximum': 8 * 1024 * 1024}]
+        for descriptor in responses:
+            name = descriptor.get('relative_path') if isinstance(descriptor, dict) else None
+            if (not isinstance(name, str) or '\\' in name or ':' in name
+                    or PurePosixPath(name).parent != PurePosixPath(reference).parent
+                    or not re.fullmatch(r'response-[0-9]{4,}\.json', PurePosixPath(name).name)):
+                raise JsonSafetyError('Unsafe JSON evidence response path')
+            items.append({'source_path': name, 'sha256': descriptor.get('sha256'),
+                          'maximum': MAX_BODY_BYTES, 'bytes': descriptor.get('bytes')})
+        for item in items:
+            name = item['source_path'].removeprefix('returns/')
+            digest = item['sha256']
+            if (name.casefold() in seen or not isinstance(digest, str)
+                    or not re.fullmatch(r'[0-9a-f]{64}', digest)):
+                raise JsonSafetyError('Duplicate or invalid JSON evidence declaration')
+            seen.add(name.casefold())
+            item['relative_path'] = name
+        entries.append((record, capture, items))
+    return entries
+
+
+def json_output_names(run):
+    return [item['relative_path'] for _, _, items in _json_output_entries(run) for item in items]
+
+
+def verified_json_names(run):
+    expected = json_output_names(run)
+    if run.get('output_json', [] if not expected else None) != expected:
+        raise JsonSafetyError('JSON output declaration differs from selected captures')
+    return expected
+
+
+def _verify_json_stream(stream, item, check_cancel=None):
+    stream.seek(0)
+    digest, total = hashlib.sha256(), 0
+    for chunk in iter(lambda: stream.read(1048576), b''):
+        if check_cancel:
+            check_cancel()
+        total += len(chunk)
+        if total > item['maximum']:
+            raise JsonSafetyError('JSON evidence exceeds its byte budget')
+        digest.update(chunk)
+    if (digest.hexdigest() != item['sha256']
+            or 'bytes' in item and total != item['bytes']):
+        raise JsonSafetyError('JSON evidence bytes changed')
+    stream.seek(0)
+
+
+@contextmanager
+def json_custody(run, folder, *, published=True, check_cancel=None):
+    """Hold selected original bytes through copying or output verification."""
+    if published:
+        verified_json_names(run)
+    entries = _json_output_entries(run)
+    if not entries:
+        yield [], {}
+        return
+    root = Path(folder).absolute()
+    if '..' in root.parts:
+        raise JsonSafetyError('Unsafe JSON evidence folder')
+    with DirectoryGuard() as guard, ExitStack() as readers:
+        streams, items = {}, []
+        for record, capture, record_items in entries:
+            # Bind every byte to the unchanged manifest and literal selected scope.
+            packets = checkpoint_bodies(root, capture, record,
+                [run['npwp'], run['year'], run['year_basis']],
+                published=published, check_cancel=check_cancel)
+            del packets
+            for item in record_items:
+                if check_cancel:
+                    check_cancel()
+                name = item['relative_path'] if published else item['source_path']
+                parent = (root / name).parent
+                guard.include({p: _ordinary_directory(p) for p in reversed([parent, *parent.parents])})
+                stream = readers.enter_context(locked_file(root / name))
+                _verify_json_stream(stream, item, check_cancel)
+                streams[item['relative_path']] = stream
+                items.append(item)
+        yield items, streams
+        for item in items:
+            _verify_json_stream(streams[item['relative_path']], item, check_cancel)
+
+
+def verify_existing_json(run, folder):
+    """Refuse changed selected destination evidence before CLI replacement.
+
+    A destination can contain only some selected attempts. Missing new files
+    are allowed; every existing selected file must match its declared bytes.
+    """
+    entries = _json_output_entries(run)
+    if not entries:
+        return
+    root = Path(folder).absolute()
+    if '..' in root.parts:
+        raise JsonSafetyError('Unsafe JSON evidence destination')
+    with DirectoryGuard() as guard:
+        guard.include({p: _ordinary_directory(p) for p in reversed([root, *root.parents])})
+        for _, _, items in entries:
+            for item in items:
+                parent = root
+                parts = Path(item['relative_path']).parts
+                for index, component in enumerate(parts):
+                    if any(p.name.casefold() == component.casefold() and p.name != component
+                           for p in parent.iterdir()):
+                        raise JsonSafetyError('JSON evidence destination has a case alias')
+                    target = parent / component
+                    if not target.exists() and not target.is_symlink():
+                        break
+                    if index == len(parts) - 1:
+                        with locked_file(target) as stream:
+                            _verify_json_stream(stream, item)
+                    else:
+                        guard.include({target: _ordinary_directory(target)})
+                        parent = target
+
+
+def copy_held_json(items, streams, folder, check_cancel=None):
+    """Copy declared evidence only; manifests retain their original references."""
+    root = Path(folder).absolute()
+    with DirectoryGuard() as guard:
+        for item in items:
+            if check_cancel:
+                check_cancel()
+            target = root / item['relative_path']
+            for parent in reversed([target.parent, *target.parent.parents]):
+                if parent == root or parent.is_relative_to(root):
+                    parent.mkdir(exist_ok=True)
+                    guard.include({p: _ordinary_directory(p) for p in reversed([parent, *parent.parents])})
+            stream = streams[item['relative_path']]
+            _verify_json_stream(stream, item, check_cancel)
+            with target.open('xb') as destination:
+                for chunk in iter(lambda: stream.read(1048576), b''):
+                    if check_cancel:
+                        check_cancel()
+                    destination.write(chunk)
+            with locked_file(target) as copied:
+                _verify_json_stream(copied, item, check_cancel)
+            stream.seek(0)
