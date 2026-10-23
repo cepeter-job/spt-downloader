@@ -511,7 +511,8 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                               auxiliary_request=False, hash_link=False, deferred_catalog=False,
                               archive_period_conflict=False, outside_year_padding=20,
                               extra_status_links=False, submitted_link='normal',
-                              submitted_redirect=False):
+                              submitted_redirect=False, restored_period_label=False,
+                              restored_catalog='valid'):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -578,14 +579,21 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
     def listing(submitted, archived=False):
         import html
         archive_seen = any("/archived-returnsheets/" in url for url in metrics["list_navigations"])
+        restored = (restored_period_label and submitted and
+                    metrics['list_navigations'].count('/returnsheets/id-ID/submitted-returnsheets/fixture-taxpayer') > 1)
         available_cache = cache if not deferred_catalog or len(metrics["list_navigations"]) > 1 else None
-        if archive_period_conflict and not archive_seen:
+        if archive_period_conflict and not archive_seen and not restored:
             available_cache = None
+        if restored and restored_catalog == 'missing':
+            available_cache = None
+        elif restored and restored_catalog == 'ambiguous':
+            available_cache = {**cache, 'Details': [*cache['Details'],
+                {'Code': 'synthetic-other-period', 'CodeDescription': 'Januari - Desember 2024'}]}
         headers = ''.join('<th>' + html.escape(label) + '</th>' for label in labels)
         config = json.dumps({'submitted': submitted, 'start': start if submitted else 0,
                              'headers': labels, 'displays': displays_by_id,
                              'catalog': available_cache, 'archived': archived,
-                             'codePeriod': archive_period_conflict and submitted and not archive_seen,
+                             'codePeriod': archive_period_conflict and submitted and not archive_seen and not restored,
                              'auxiliary': auxiliary_request, 'hashLink': hash_link})
         endpoint = '/returnsheet/api/returnsheetssubmitted' if submitted else '/returnsheet/api/returnsheetsfixture'
         archive_link = ('<a href="/returnsheets/id-ID/archived-returnsheets/fixture-taxpayer">Archieved Return Sheets</a>'
