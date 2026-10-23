@@ -1,5 +1,10 @@
 # Reference cache ordering repair
 
+Final status: merged in PR104 (`64a4ce3f794f2fa439397630502bde3ed1458c93`).
+The historical RED/pending entries below are superseded by the exact final
+[runner, review and package report](../reports/2026-10-23-catalog-and-lifetime-priorities.md).
+The combined PR102 tree includes this complete repair.
+
 The pinned main bundle (`696ac66d…`) sorts catalog Details before the active
 version consumer reads them. Existing native PPh21, Unifikasi and corporate
 COUNTRY_CODE projectors incorrectly group the raw response order first. Duplicate

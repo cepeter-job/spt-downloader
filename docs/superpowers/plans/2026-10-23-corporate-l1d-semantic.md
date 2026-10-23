@@ -1,5 +1,12 @@
 # Corporate L1-D source projection and fresh-lifetime gate
 
+Prerequisite status: pure projection, component-lifetime custody and saved-layout
+repair merged in PR102 (`e25aa5e88132c4f8aa03cd6e764dbd507160d816`).
+Historical pending entries below are superseded by the final
+[runner, review and package report](../reports/2026-10-23-catalog-and-lifetime-priorities.md).
+Native L1-D observation/dispatch continues separately in draft PR105; the merged
+helper alone does not enable native eligibility.
+
 Execute inline with the approved JSON completion design and runner-only TDD.
 This is a focused continuation after L7/L11-C, not authority for an editing
 financial-data request or a different live taxpayer scope.
