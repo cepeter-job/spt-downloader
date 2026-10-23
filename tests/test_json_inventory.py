@@ -814,13 +814,26 @@ def test_unknown_metadata_schema_uses_audited_dom_page(browser, tmp_path, monkey
         assert submitted['fallback_reason']
 
 
-def test_unsafe_submitted_identity_does_not_start_dom_fallback(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize('catalog_present', [False, True])
+def test_unsafe_submitted_identity_does_not_start_dom_fallback(browser, tmp_path, monkeypatch, catalog_present):
     import coretax_browser as driver
-    with synthetic_listing_browser(browser, monkeypatch, unsafe=True) as (page, metrics):
-        result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
-        assert result['inventory_complete'] is False
-        assert result['errors']
-        assert result['records'] == []
+    with synthetic_listing_browser(browser, monkeypatch, unsafe=True, year_catalog=catalog_present,
+                                   expired_catalog=True) as (page, metrics):
+        if catalog_present:
+            # Existing invalid metadata takes the ordinary unfiltered path;
+            # its page failure must still be recorded as an empty PARTIAL run.
+            result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
+            assert result['inventory_complete'] is False
+            assert result['errors']
+            assert result['records'] == []
+        else:
+            # Missing metadata enters readiness; ownership failure blocks the
+            # run before any inventory evidence or filtered restart is saved.
+            with pytest.raises(driver.JsonSafetyError, match='taxpayer'):
+                driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=5)
+            assert not (tmp_path/'inventory.json').exists()
+        assert (tmp_path/'inventory-batches.jsonl').read_bytes() == b''
+        assert len(metrics['submitted_requests']) == 1
         assert metrics['submitted_full_grid_reads'] == 0, 'Unsafe identity was hidden by a DOM fallback'
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
 
