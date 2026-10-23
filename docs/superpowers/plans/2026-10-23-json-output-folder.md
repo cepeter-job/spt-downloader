@@ -31,9 +31,9 @@
 
 **Interfaces:** Consume record `detail_source.capture`, `checkpoint_bodies`, output selection and recovery snapshots. Produce `output_json` names, `json_output_names`, `json_custody` and `copy_held_json` without changing workbook/PDF declarations.
 
-- [ ] Write synthetic capture-to-CLI/desktop publication, PARTIAL/fallback, DOM-only, stale-attempt, tampering, cancellation, overwrite and crash recovery tests.
-- [ ] Publish tests first; observe failures for missing JSON output on the existing GitHub workflow. Expected: assertions about absent `json/` files fail, existing suite remains accounted for.
-- [ ] Implement minimal custody/export/transaction changes and update AGENTS/documentation.
+- [x] Write synthetic capture-to-CLI/desktop publication, PARTIAL/fallback, DOM-only, stale-attempt, tampering, cancellation, overwrite and crash recovery tests.
+- [x] Publish tests first; observe failures for missing JSON output on the existing GitHub workflow. Expected: assertions about absent `json/` files fail, existing suite remains accounted for.
+- [x] Implement minimal custody/export/transaction changes and update AGENTS/documentation.
 - [ ] Run the unchanged workflow on the implementation. Expected: new behavior tests and full Windows/portable suite pass; exact uploaded package/source/frozen self-tests pass.
 - [ ] Read back exact artifacts; perform one fresh whole-change review and one TDD fix pass for any Important/Critical findings.
 - [ ] Review current preceding main merges and merge the verified consolidated PR; close superseded #85/#86 with a link to the delivered PR. Expected: all three PR states verified from GitHub, main retains the reviewed upstream changes.

@@ -2,7 +2,9 @@
 
 Before merging a PR, review the preceding PR merged by another session and its
 interaction with the current change. Understand the affected functions and
-repository contracts. Update this file when making significant behavior changes.
+repository contracts, and verify the latest `main` baseline before merging.
+Update this file when a significant change alters behavior, architecture, output
+contracts or verification requirements.
 
 This repository is the development home for the read-only Coretax SPT downloader. Keep changes small, explicit and covered by behavior tests.
 
@@ -69,6 +71,7 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
+- The SPT selection list uses presentation-only period captions: exact case-insensitive PPh Badan displays `Tahunan`; recognized monthly numbers, same-month period codes and Indonesian month/year captions display the month name. Ambiguous periods remain literal. Preserve original metadata, checkpoint/export periods, identifiers, search by source values, original chronology keys and inventory-order consent IDs.
 - The GUI is a thin stdlib/Tkinter launcher. Do not import Playwright/openpyxl into its process; prepare the isolated worker with uv and copy only `spt_desktop.runtime.WORKER_FILES`. Update that explicit allowlist when adding worker modules; never recursively package workspace/profile/output directories.
 - Windows Job Objects must contain suspended children **before** resuming them; uv-created virtualenv Python launchers can spawn an interpreter before Python code runs. Preserve start authorization, cooperative cancellation, 15-second forced owned-tree cleanup and main-thread-only UI callbacks. Success requires terminal COMPLETE, matching exit code, verified output and completed owned cleanup—not a zero exit alone.
 - Saved credentials belong only to Windows Credential Manager and exact approved origins. Never print fill exceptions, inherit Playwright credential-debug flags, guess login actions or click generic form-submit controls. Require inspected sign-in intent and no unknown challenge/fields; otherwise manual visible login. No MFA/CAPTCHA bypass.

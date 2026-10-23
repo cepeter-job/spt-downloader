@@ -52,7 +52,7 @@ Progress berbobot tahap tetap berbeda dari jumlah SPT terpilih, waktu tersisa, a
 
 ## Pemilihan SPT
 
-Gunakan dialog native dengan pencarian dan Treeview multi-select: Jenis pajak, Masa pajak, Normal/pembetulan, ID SPT. Nilai sumber tetap literal. Source ID bukan IID widget; gunakan IID lokal yang dipetakan kembali ke ID teramati.
+Gunakan dialog native dengan pencarian dan Treeview multi-select: Jenis pajak, Masa pajak, Normal/pembetulan, ID SPT. Kolom Masa pajak menampilkan **Tahunan** untuk jenis PPh Badan dan nama bulan Indonesia untuk masa bulanan yang dikenali: angka 1–12/01–12, kode `MM` + `MM` + tahun dengan bulan awal/akhir sama, atau caption bulan dan tahun. Rentang atau format yang ambigu tetap tampil literal. Metadata, checkpoint, ekspor, ID dan kunci urutan tetap memakai nilai sumber asli; pencarian menerima label tampilan maupun teks sumber. Source ID bukan IID widget; gunakan IID lokal yang dipetakan kembali ke ID teramati.
 
 Saat dialog dibuka, urutan tampilan default adalah **PPh Badan → PPh Pasal 21/26 → PPh Unifikasi → PPN**, lalu jenis lain. Caption dikenali utuh secara case-insensitive; teks sumber tidak diubah. Dalam setiap jenis, tahun menaik, masa Januari–Desember, lalu Normal → Pembetulan 1 → Pembetulan 2 dan seterusnya mengikuti aturan sorting yang ada. Jenis lain diurutkan berdasarkan caption; kunci yang setara tetap mengikuti urutan inventaris.
 

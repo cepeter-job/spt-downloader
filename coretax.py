@@ -23,7 +23,7 @@ from coretax_exporter import (validate_scope, validate_export_run, export_split_
                              export_workbook)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
-from coretax_json_capture import json_output_names, json_custody, copy_held_json
+from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
 
 BASE = Path(__file__).resolve().parent
 
@@ -257,6 +257,7 @@ def verify_outputs(run, folder, *, allow_extra=False):
 
 def _check_output_scope(run, folder, staging=None):
     """Pastikan checkpoint dan header Excel lama membuktikan scope yang sama."""
+    verify_existing_json(run, folder)
     scope_file = folder / 'run.json'
     if scope_file.is_symlink():
         raise FileExistsError('Output scope cannot be a symbolic link')

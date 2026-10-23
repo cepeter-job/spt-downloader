@@ -675,6 +675,9 @@ def json_custody(run, folder, *, published=True, check_cancel=None):
     if published:
         verified_json_names(run)
     entries = _json_output_entries(run)
+    if not entries:
+        yield [], {}
+        return
     root = Path(folder).absolute()
     if '..' in root.parts:
         raise JsonSafetyError('Unsafe JSON evidence folder')
@@ -699,6 +702,39 @@ def json_custody(run, folder, *, published=True, check_cancel=None):
         yield items, streams
         for item in items:
             _verify_json_stream(streams[item['relative_path']], item, check_cancel)
+
+
+def verify_existing_json(run, folder):
+    """Refuse changed selected destination evidence before CLI replacement.
+
+    A destination can contain only some selected attempts. Missing new files
+    are allowed; every existing selected file must match its declared bytes.
+    """
+    entries = _json_output_entries(run)
+    if not entries:
+        return
+    root = Path(folder).absolute()
+    if '..' in root.parts:
+        raise JsonSafetyError('Unsafe JSON evidence destination')
+    with DirectoryGuard() as guard:
+        guard.include({p: _ordinary_directory(p) for p in reversed([root, *root.parents])})
+        for _, _, items in entries:
+            for item in items:
+                parent = root
+                parts = Path(item['relative_path']).parts
+                for index, component in enumerate(parts):
+                    if any(p.name.casefold() == component.casefold() and p.name != component
+                           for p in parent.iterdir()):
+                        raise JsonSafetyError('JSON evidence destination has a case alias')
+                    target = parent / component
+                    if not target.exists() and not target.is_symlink():
+                        break
+                    if index == len(parts) - 1:
+                        with locked_file(target) as stream:
+                            _verify_json_stream(stream, item)
+                    else:
+                        guard.include({target: _ordinary_directory(target)})
+                        parent = target
 
 
 def copy_held_json(items, streams, folder, check_cancel=None):
