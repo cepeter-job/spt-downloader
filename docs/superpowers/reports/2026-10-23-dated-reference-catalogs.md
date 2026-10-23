@@ -65,6 +65,6 @@ Automated review alerts were checked against their source coordinates. Missing `
 
 ## Remaining program
 
-Corporate L1-D/L3/L7/L11-A/L11-C coverage and semantic projection into approved layouts remain separate work; the focused L7 source proof and test preparation do not yet grant native eligibility. PPN Normal and remaining AskedTo branches still need their complete final lifecycle proof. This clock implementation alone does not close those consumers.
+Corporate L1-D/L3/L11-A/L11-C coverage and remaining semantic projection into approved layouts remain separate work. The later [focused L7 increment](2026-10-23-corporate-l7-semantic.md) records its own source proof, runner/package evidence and consolidation with the latest Excel presentation. It does not extend the dated-catalog evidence in this report. PPN Normal and remaining AskedTo branches still need their complete final lifecycle proof. This clock implementation alone does not close those consumers.
 
 No exact authorized live taxpayer/year scope was selected, no real-account capture was performed, and no distribution was installed or published by this slice. Current-build live acceptance and paired DOM/JSON timing remain open. Later documentation commits may extend this report; execution and package evidence belong to the exact code/test tree in the table.

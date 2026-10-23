@@ -2,6 +2,10 @@
 
 Date: 2026-10-23. Status: approved by the user on 2026-10-23 for autonomous inline planning and implementation; runner/live evidence is recorded separately.
 
+Presentation addendum: the user later requested consolidation of the latest Excel-formatting PR. Merged PR #90 supplies the approved clean Induk/L8 layouts, compact corporate body ranges and zero-decimal accounting display while retaining exact stored values. These newer approved presentation rules supersede the earlier generic-Induk restriction. The JSON branch preserves them; native eligibility, raw source custody, truthful mapping counts and PDF completion remain independent. Consolidated verification is recorded in the L7 implementation report.
+
+Consolidation addendum: the user also explicitly included PR #89's submitted inventory readiness and page sizing. Preserve that reviewed implementation and its tests alongside the JSON changes, without adding status scans or weakening preliminary response ownership, Stop, literal metadata or restoration checks. The final combined-tree evidence is recorded separately from either prerequisite's earlier run.
+
 ## Intent and baseline
 
 The user requested the remaining JSON scraping work from the latest codebase, then instructed us to do it. Deliver the identified improvements through the existing JSON-first architecture, preserve approved workbook layouts and source evidence, and distinguish implemented behavior, runner verification, and live acceptance.

@@ -75,6 +75,18 @@ runner dicatat pada [laporan katalog bertanggal](superpowers/reports/2026-10-23-
 
 ## Batas akses baca
 
+Proyeksi bisnis Badan L7 berada di `coretax_corporate_projection.py`, terpisah dari
+observer struktur dan pemeriksaan custody pada adapter. Cabang native memerlukan
+dua source pin yang termuat, rute submitted literal, sumber current serta field
+`PreviousFormData` yang hadir dengan encoding didukung, baris tahun berjalan,
+angka integral aman, dan enam total tangkapan yang cocok dengan consumer sumber.
+Baris/nol awal/duplikasi tetap literal; penyesuaian laba nol pada baris pertama
+tahun berjalan mencatat nilai asal dan kontribusi Induk pada provenance. Bentuk
+tak didukung memakai fallback seluruh record. Binding lama tanpa marker semantik
+tetap berupa evidence leaves; itu bukan bukti pemetaan template. Status pengujian,
+artefak, batas cabang dan pekerjaan lain tercatat pada
+[laporan L7](superpowers/reports/2026-10-23-corporate-l7-semantic.md).
+
 `ListObserver` mengamati respons JSON dari tindakan UI milik browser. Ia menyimpan respons terakhir dan nomor urut yang terus bertambah, bukan seluruh riwayat respons dalam RAM. Ia tidak membaca cookie/header autentikasi dan tidak menjalankan request API penulisan tersendiri.
 
 Capture memakai kontrol baca yang sudah dikenali: pencarian wajib pajak, Pilih, navigasi status, View, tab, accordion, ukuran halaman, serta paginasi. Tombol submit, batal SPT, kirim email, pembuatan dokumen, dan aksi baris yang tidak dikenal tidak boleh dijadikan fallback. Bila selector View berubah, hasil tetap terblokir/parsial sampai layout baru diperiksa dan fixture regresinya tersedia.

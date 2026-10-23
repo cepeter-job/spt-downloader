@@ -4,6 +4,12 @@ This repository is the development home for the read-only Coretax SPT downloader
 
 Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md), lalu baca [setup dan pengujian](docs/pengembangan.md), [kontrak arsitektur](docs/arsitektur.md), dan [CI/rilis](docs/ci-dan-rilis.md). CLI dan desktop dikembangkan bersama pada `main` melalui PR.
 
+## Change and merge discipline
+
+- Understand the existing functions and repository contracts before changing behavior.
+- Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
+- Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
+
 ## Data and access safety
 
 - Commit source, documentation and clearly synthetic tests only. Never commit real taxpayer identifiers/records, captured JSON, Excel/PDF outputs, cookies, credentials, browser profiles or local virtual environments.
@@ -12,6 +18,14 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 - Stop requests take precedence over running capture. Delayed process notifications must not restart a stopped job. Keep limited or failed runs explicitly PARTIAL.
 - Do not fabricate missing tax data, simulate live API output, or create files for tax types absent from the captured scope.
 - New live inventories collect only the inspected same-taxpayer SPT Dilaporkan list. Do not scan archived or other status lists, reinterpret old all-status checkpoints as submitted-only evidence, or certify a missing/ambiguous submitted link as an empty inventory.
+
+## Native JSON boundaries
+
+Native observers read navigation and inspected structure, never business input values, checked state or table body/footer values. Follow the current owned tab binding through one bounded panel wait; keep paginator ownership, page limits and Stop checks. A safely unsupported native attempt falls back as a whole record. Privacy, authorization, known identity contradictions and changed snapshots remain fatal; Stop remains cancellation.
+
+Corporate semantic projection currently adds only the reviewed L7 branch. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
+
+For clock-dependent grid catalogs, use only the interval sampled by the same owned capture attempt and require one source version throughout that interval. Preserve optional metadata for old captures; never use the replay machine's clock to resolve missing evidence. Final sampling must retain earlier pending-response counts and refuse late replies as COMPLETE. Native eligibility, mapping, capture/PDF completion and final publication remain separate gates.
 
 ## Output contract
 
