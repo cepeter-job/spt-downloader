@@ -100,7 +100,7 @@ def test_nested_corporate_sections_keep_full_source_identity(tmp_path):
 def test_fields_and_tables_are_filterable_with_numeric_and_raw_values(tmp_path):
     run = fixture_run()
     run['records'] = run['records'][:1]
-    run['records'][0]['sections'][0].update(fields=[{'label':'Pendapatan','field':'Revenue','value':'1.234,50'},
+    run['records'][0]['sections'][0].update(name='L-Z', fields=[{'label':'Pendapatan','field':'Revenue','value':'1.234,50'},
         {'label':'NPWP','field':'NPWP','value':'0000000000000001'}], tables=[{'name':'Details','headers':['Kode','Nilai'],
         'rows':[['001','1.000,00'],['001','1.000,00']], 'complete':True}])
     exporter.export_split_workbooks(run,tmp_path)
@@ -190,6 +190,7 @@ def test_derived_table_headers_are_unique_without_changing_source_captions(tmp_p
     run=fixture_run()
     run['records']=run['records'][:1]
     headers=['Nilai','Nilai','Nilai (2)','Numerik 1 (Nilai)']
+    run['records'][0]['sections'][0]['name'] = 'L-Z'  # Generic table renderer, outside clean approved forms.
     run['records'][0]['sections'][0]['tables']=[{'name':'SYNTHETIC CAPTIONS','headers':headers,
         'rows':[['1.000,00','2.000,00','3.000,00','4.000,00']], 'complete':True}]
     files=exporter.export_split_workbooks(run,tmp_path)

@@ -21,6 +21,9 @@ def form_run(names=('Induk', 'L-IA'), *, amendments=False):
              'tables': [], 'text': ''}
             for name in names
         ]
+        for section in record['sections']:
+            if section['name'].casefold() == 'induk':
+                section['fields'][0].update(label='2. Nama', field='Name', group='A. IDENTITAS WAJIB PAJAK')
     return run
 
 
@@ -30,7 +33,7 @@ def test_single_return_tabs_are_form_names_without_generated_prefixes(tmp_path):
     workbook = load_workbook(files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx'])
     try:
         assert workbook.sheetnames == ['Induk', 'L-IA']
-        assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'L-IA']
+        assert [sheet['A1'].value for sheet in workbook] == ['INDUK', 'L-IA']
         proof = exporter.read_workbook_proof(workbook)
         assert proof['records'][0]['meta']['Model SPT'] == 'Pembetulan 2'
         assert [section['name'] for section in proof['records'][0]['sections']] == ['Induk', 'L-IA']
@@ -63,7 +66,7 @@ def test_amendments_keep_all_forms_in_separate_file_namespaces(tmp_path, tax, fi
     files = exporter.export_split_workbooks(run, tmp_path)
     expected = [filename, filename.replace('_Normal.xlsx', '_Pembetulan 2.xlsx')]
     assert set(files) == {'resume.xlsx', *expected}
-    captions = ['Induk', 'L-IA']
+    captions = ['INDUK', 'L-IA']
     if tax == 'PPh Pasal 21/26':
         captions = ['Induk SPT PPh Pasal 21/26',
             ('DAFTAR PEMOTONGAN BULANAN PAJAK PENGHASILAN PASAL 21 BAGI PEGAWAI TETAP DAN '
@@ -102,8 +105,11 @@ def test_case_insensitive_form_collisions_preserve_source_case_and_each_form(tmp
     workbook = load_workbook(files['SPT_Badan_Januari - Desember 2025_Pembetulan 2.xlsx'])
     try:
         assert workbook.sheetnames == ['Induk', 'induk (2)', 'INDUK (3)']
-        assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'induk', 'INDUK']
-        exporter.read_workbook_proof(workbook)
+        assert [sheet['A1'].value for sheet in workbook] == ['INDUK'] * 3
+        proof = exporter.read_workbook_proof(workbook)
+        assert [section['name'] for section in proof['records'][0]['sections']] == ['Induk', 'induk', 'INDUK']
+        assert [workbook[name]['B2'].value for name in workbook.sheetnames] == [
+            f'SYNTHETIC 0 / {form}' for form in ('Induk', 'induk', 'INDUK')]
     finally:
         workbook.close()
 
@@ -148,7 +154,7 @@ def test_literal_numbered_form_name_is_not_overwritten_by_an_earlier_suffix(tmp_
     workbook = load_workbook(path)
     try:
         assert workbook.sheetnames == ['Induk', 'Induk (2)', 'Induk (2) (2)']
-        assert [sheet['A1'].value for sheet in workbook] == ['Induk', 'Induk', 'Induk (2)']
+        assert [sheet['A1'].value for sheet in workbook] == ['INDUK', 'INDUK', 'Induk (2)']
         assert 'SYNTHETIC THIRD FORM' in [cell.value for row in workbook.worksheets[2] for cell in row]
         exporter.read_workbook_proof(workbook)
     finally:

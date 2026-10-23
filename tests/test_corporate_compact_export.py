@@ -214,7 +214,7 @@ def test_l1d_full_accounts_keep_all_three_totals_after_removing_identity_banner(
 @pytest.mark.parametrize('form,last', [
     ('L1-D', 11), ('L2', 9), ('L3', 11), ('L4', 10), ('L6', 8),
     ('L7', 4), ('L9', 79), ('L10-A', 3), ('L10-C', 3), ('L11-A', 21),
-    ('L11-B', 28), ('L11-C', 3),
+    ('L11-B', 28), ('L11-C', 4),
 ])
 def test_unused_body_capacity_is_removed_without_adding_unobserved_forms(tmp_path, form, last):
     book, reports = export(tmp_path, [section(form)])

@@ -20,6 +20,8 @@ def fixture_run():
                                                    if tax == 'PPh Pasal 21/26' else
                                                    {'label': 'Masa Pajak', 'value': period}
                                                    if tax == 'PPh Unifikasi' else
+                                                   {'label': '2. Nama', 'field': 'Name', 'group': 'A. IDENTITAS WAJIB PAJAK', 'value': key}
+                                                   if tax == 'PPh Badan' else
                                                    {'label': 'Record marker', 'field': 'Marker', 'value': key})]}]}
                         for key, tax, period, model in rows]}
 
@@ -55,6 +57,9 @@ def model_run(tax='PPh Badan', period='Januari - Desember 2025', models=MODELS):
                          'complete': True}]}
             for form in ('Induk', 'L-Z')
         ]
+        if tax == 'PPh Badan':
+            record['sections'][0]['fields'][0].update(
+                label='2. Nama', field='Name', group='A. IDENTITAS WAJIB PAJAK')
         if tax == 'PPh Pasal 21/26':
             record['sections'][0]['fields'][0].update(
                 label='Status Penyampaian', field='SubmitInProgressStatus', group='HEADER')

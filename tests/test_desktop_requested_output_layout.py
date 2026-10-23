@@ -54,7 +54,7 @@ def test_split_spt_workbooks_have_only_forms_and_administrative_sheets_stay_in_r
             else:
                 assert ADMIN.isdisjoint(workbook.sheetnames), 'Administrative sheets still leak into SPT files'
                 assert all(sheet.sheet_state == 'visible' for sheet in workbook)
-                caption = 'Induk'
+                caption = 'INDUK'
                 for directory, expected in [('SPT Masa 21/', 'Induk SPT PPh Pasal 21/26'),
                                             ('SPT Masa PPN/', 'Induk SPT PPN'),
                                             ('SPT Masa Unifikasi/', 'Induk SPT PPh Unifikasi')]:
@@ -129,6 +129,7 @@ def test_spreadsheet_banners_and_print_headers_are_removed_without_losing_source
     record = run['records'][0]
     record['detail_url'] = 'https://coretax.synthetic.invalid/returns/badan-normal'
     record['sections'][0].update(
+        name='L-Z',  # Generic source-evidence presentation, outside approved clean forms.
         fields=[{'label': 'NPWP', 'value': run['npwp']},
                 {'label': 'Pendapatan', 'value': '1.234,50'}],
         tables=[{'name': 'SYNTHETIC SOURCE TABLE', 'headers': ['Kode', 'Kode', 'Nilai'],
@@ -138,7 +139,7 @@ def test_spreadsheet_banners_and_print_headers_are_removed_without_losing_source
     workbook = load_workbook(tmp_path / 'SPT_Badan_Januari - Desember 2025_Normal.xlsx')
     try:
         detail = next(sheet for sheet in workbook if sheet.title not in ADMIN)
-        assert detail['A1'].value == 'Induk', 'Generic header still precedes the actual source form'
+        assert detail['A1'].value == 'L-Z', 'Generic header still precedes the actual source form'
         cells = [cell for row in detail for cell in row]
         actual = [cell.value for cell in cells]
         assert all(value not in actual for value in exporter.detail_labels(run, record))
