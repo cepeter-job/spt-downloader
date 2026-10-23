@@ -71,6 +71,15 @@ ditulis ulang agar terlihat berasal dari pemindaian Dilaporkan yang baru.
 
 Metadata scope per-record yang tidak tersedia pada capture lama tidak dapat membuktikan NPWP secara independen. Jangan menyimpulkan provenance legacy yang tidak tersimpan. Capture baru membawa metadata scope; pemeriksaan yang tersedia tetap wajib dilakukan saat ekspor ulang.
 
+Binding periode native menerima kode sumber literal yang sama persis atau caption
+terverifikasi yang sudah didukung. Nilai metadata inventaris/checkpoint tidak
+dinormalisasi. Pemeriksaan custody respons, batas bulan dan tahun scope tetap
+mendahului penerimaan; kode tahunan Badan tetap Januari sampai Desember dan
+rentang Masa tetap tidak didukung. Kode periode pada payload utama harus cocok
+dengan kode literal pilihan meskipun bukti listing belum tersedia. Perbedaan
+kode/tahun tetap kontradiksi identitas, bukan dasar memperbaiki caption atau
+menyatakan fallback berhasil.
+
 Katalog grid PPh21/Unifikasi dapat memakai pemilihan versi bertanggal hanya bila
 interval jam browser milik percobaan capture membuktikan pilihan yang sama pada
 kedua batas dan setiap cutoff di dalamnya. Metadata opsional manifest versi 1
