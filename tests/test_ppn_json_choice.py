@@ -1,5 +1,6 @@
 """Final AskedTo selection is response-backed, not a DOM checked-state read."""
 import importlib
+import json
 
 import pytest
 
@@ -27,7 +28,11 @@ def test_null_choice_with_nonnegative_submitted_amendment_is_proven_not_missing_
 
 @pytest.mark.parametrize('choice', ['CARRY_FORWARD','FAST_REFUND','FORWARD_REFUND'])
 def test_negative_amendment_with_export_preserves_source_choice_without_clock_dependency(choice):
-    result = project('{"VATUnderOrOverPaidDueToAmendment":{"VAT":-1},"A1FormListOfExportTaxableGoodsOrServices":{"Total":1},"AskedTo":"'+choice+'"}')
+    result = project(json.dumps({'VATUnderOrOverPaidDueToAmendment': {'VAT': -1},
+        'A1FormListOfExportTaxableGoodsOrServices': {'Total': 1},
+        'ExportTangibleTaxableGoods': {'SellingPrice': 1}, 'AskedTo': choice,
+        'TaxPeriod': '01012025', 'BookkeepingPeriodEnd': 12,
+        'FacilityRegisters': ['AS.09-01']}))
     assert result['value'] == choice
     assert any(x['path']==['A1FormListOfExportTaxableGoodsOrServices','Total'] for x in result['provenance'])
 
