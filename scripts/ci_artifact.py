@@ -4,9 +4,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 
 from build_desktop import validate_report
+from spt_desktop.build_info import is_valid_build_info
 from spt_desktop.runtime import PYTHON_PROFILES
 
 
@@ -41,13 +41,7 @@ def checked_report(folder, python_version):
 
 
 def validate_build_info(data):
-    if (not isinstance(data, dict) or set(data) != {'schema', 'commit', 'run_id', 'run_attempt'}
-            or type(data.get('schema')) is not int or data['schema'] != 1
-            or not isinstance(data.get('commit'), str)
-            or not re.fullmatch(r'[0-9a-f]{40}', data['commit'])
-            or not isinstance(data.get('run_id'), str)
-            or not re.fullmatch(r'[1-9][0-9]*', data['run_id'])
-            or type(data.get('run_attempt')) is not int or data['run_attempt'] < 1):
+    if not is_valid_build_info(data):
         raise ValueError('Distribution build-info.json identity is missing or invalid.')
     return data
 
