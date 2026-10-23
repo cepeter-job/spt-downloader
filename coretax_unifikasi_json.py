@@ -1,5 +1,6 @@
 """Reviewed Unifikasi catalogs and submitted controls, separate from PPN/PPh21."""
-from coretax_json import JsonSafetyError, _UnsupportedMetadata, _select_reference_version
+from coretax_json import (JsonSafetyError, _UnsupportedMetadata, _select_reference_version,
+                          _reference_consumer_order)
 from coretax_masa_bindings import _source_scalar, project_unifikasi_text
 
 REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'EBUPOT_PAYMENT_METHOD',
@@ -23,6 +24,8 @@ def project_references(payload, *, clock_interval=None):
             raise _UnsupportedMetadata('missing_unifikasi_reference_details')
         evidence.append({'path': [index, 'ReferenceDataType'], 'value': kind, 'type': 'string'})
         groups, descriptions = {}, {}
+        ordered, order_rule = (_reference_consumer_order(details, kind) if kind != 'PERIOD' else
+                               (list(enumerate(details)), 'unique-period-dropdown'))
         for ordinal, entry in enumerate(details):
             if not isinstance(entry, dict) or any(type(entry.get(k)) is not str for k in ('Code', 'CodeDescription')):
                 raise _UnsupportedMetadata('unsupported_unifikasi_reference_scalar')
@@ -31,14 +34,18 @@ def project_references(payload, *, clock_interval=None):
             for key in ('ValidTo', 'ValidFrom'):
                 if key in entry and entry[key] is not None and type(entry[key]) is not str:
                     raise _UnsupportedMetadata('unsupported_unifikasi_reference_validity')
-            groups.setdefault(entry['Code'], []).append((ordinal, entry))
-            for key in ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom'):
+            fields = ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom')
+            if kind != 'PERIOD':
+                fields += ('ParameterData',)
+            for key in fields:
                 value = entry.get(key)
                 item = {'path': [index, 'Details', ordinal, key], 'value': value,
                         'type': 'missing' if key not in entry else 'null' if value is None else 'string'}
                 evidence.append(item)
                 if key == 'CodeDescription':
                     descriptions[ordinal] = item
+        for ordinal, entry in ordered:
+            groups.setdefault(entry['Code'], []).append((ordinal, entry))
         lookup = {}
         for code, versions in groups.items():
             if kind == 'PERIOD' and len(versions) != 1:
@@ -47,6 +54,7 @@ def project_references(payload, *, clock_interval=None):
             lookup[code] = chosen['CodeDescription']
             selected = descriptions[ordinal]
             selected['projection_rule'] = 'reviewed-grid-active-version:' + rule
+            selected['catalog_order_rule'] = order_rule
             if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
                 selected['clock_interval'] = dict(clock_interval)
         lookups[kind] = lookup

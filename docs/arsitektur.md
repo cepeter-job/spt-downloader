@@ -89,6 +89,17 @@ Metadata tersimpan yang rusak, berbeda percobaan, atau tercampur antar-packet
 ditolak sebelum fallback. Ketiadaan bukti mempertahankan batas dukungan lama;
 aturan kode unik dropdown Model/PERIOD tidak dilonggarkan.
 
+Sebelum memilih versi grid, katalog ordinary PPh21/Unifikasi dan COUNTRY_CODE
+corporate mengikuti urutan cache sumber untuk seluruh Details. Default adalah
+CodeDescription literal dalam urutan UTF-16 stabil. Hanya ParameterData baris
+mentah pertama dengan substring tepat `"DisplayIndex":` yang mengaktifkan
+sort DisplayIndex; subset aman menerima satu keluarga integer JSON aman atau
+string literal, tanpa koersi tipe. Kelompok Code dibentuk sesudah sort, sedangkan
+bukti kandidat dan path terpilih tetap memakai urutan/indeks respons asli.
+ParameterData dipertahankan dalam provenance. Metadata malformed atau key yang
+tidak terbukti tetap unsupported; waktu replay, dropdown Model/PERIOD dan
+perizinan request tidak berubah.
+
 Sampel lingkungan akhir juga dapat memompa event jaringan. Request baru pada
 batas itu membuat capture PARTIAL meskipun responsnya sudah dikeluarkan oleh
 filter MIME; hitungan pending dari timeout sebelumnya tetap dipertahankan.
@@ -98,6 +109,12 @@ runner dicatat pada [laporan katalog bertanggal](superpowers/reports/2026-10-23-
 Setiap primary PPN, termasuk Normal, harus menyatakan ReturnSheetStatusCode=SUBMITTED: status hilang tidak eligible, kontradiksi fatal sebelum fallback. Proyeksi pilihan PPN `AskedTo` membuktikan nilai akhir dari lifecycle sumber. Ekspor A1 saja tidak cukup: blok kalender harus mencakup nilai ekspor awal dan akhir, atau predicate quartet invoice/fasilitas yang terbukti, atau interval attempt milik capture yang seluruhnya belum melewati batas tahun/periode pembukuan. Predicate null fasilitas memakai kode literal AS.09-01/AS.09-02. Cabang Normal nonnegative merekonsiliasi dua operand tersimpan terhadap empat/enam komponen VAT berurutan sebelum memakai saldo akhir; sumber atau operasi tidak aman tetap fallback. Helper saldo bersama hanya menerima pecahan langsung yang tepat dalam binary64, selain subset integral, dan setiap operasi antara harus tepat serta dalam batas presisi. FORWARD_REFUND tanpa bukti event clear, kalender aktif dan Normal-negative belum didukung. Semua nilai/path asli, clock luar PeriodYear dan audit tetap dipertahankan. Lihat [ledger dan rencana pilihan PPN](superpowers/plans/2026-10-23-ppn-choice-invariants.md).
 
 ## Batas akses baca
+
+Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk
+checkpoint lama, atau URL identik dengan `?view=true` seperti aksi View yang
+diinspeksi. Route proof harus tetap persis sama dengan frame respons. Perubahan
+ini mempertahankan pemeriksaan identitas, status submitted, sumber, query lain
+dan route history yang sudah ada.
 
 Proyeksi bisnis Badan L7 berada di `coretax_corporate_projection.py`, terpisah dari
 observer struktur dan pemeriksaan custody pada adapter. Cabang native memerlukan

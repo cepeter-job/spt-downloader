@@ -5,7 +5,7 @@ import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
-                          _select_reference_version)
+                          _select_reference_version, _reference_consumer_order)
 from coretax_masa_bindings import _decimal, _number, _evidence
 
 CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
@@ -171,6 +171,7 @@ def project_countries(payload, *, clock_interval=None):
         raise JsonSafetyError('Corporate country locale contradicts observed source')
     evidence.append(_evidence('COUNTRY_CODE', [0, 'ReferenceDataType']))
     descriptions = {}
+    ordered, order_rule = _reference_consumer_order(catalog['Details'], 'COUNTRY_CODE')
     for index, row in enumerate(catalog['Details']):
         if (not isinstance(row, dict) or type(row.get('Code')) is not str or not row['Code']
                 or type(row.get('CodeDescription')) is not str or not row['CodeDescription'].strip()):
@@ -180,19 +181,21 @@ def project_countries(payload, *, clock_interval=None):
         for key in ('ValidFrom', 'ValidTo'):
             if key in row and row[key] is not None and type(row[key]) is not str:
                 raise _UnsupportedMetadata('unsupported_corporate_country_validity')
-        groups.setdefault(row['Code'], []).append((index, row))
-        for key in ('Code', 'CodeDescription', 'ValidFrom', 'ValidTo'):
+        for key in ('Code', 'CodeDescription', 'ValidFrom', 'ValidTo', 'ParameterData'):
             entry = (_evidence(row[key], [0, 'Details', index, key]) if key in row else
                      {'path': [0, 'Details', index, key], 'type': 'missing', 'value': None})
             evidence.append(entry)
             if key == 'CodeDescription':
                 descriptions[index] = entry
+    for index, row in ordered:
+        groups.setdefault(row['Code'], []).append((index, row))
     lookups, selected = {}, {}
     for code, candidates in groups.items():
         index, row, rule = _select_reference_version(candidates, clock_interval)
         lookups[code] = row['CodeDescription']
         entry = descriptions[index]
         entry['rule'] = 'reviewed-country-active-version:' + rule
+        entry['catalog_order_rule'] = order_rule
         if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
             entry['clock_interval'] = dict(clock_interval)
         selected[code] = deepcopy(entry)
@@ -276,7 +279,7 @@ def _apply_l11c(binding, section, observed_forms, *, root, payload, record, even
                                 fields.get('TaxTypeCode'), fields.get('AggregateIdentifier')))
     literal = record.get('meta', {}).get('Model SPT')
     model = 'NORMAL' if literal == 'Normal' else 'AMENDMENT' if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None
-    if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+    if (proof['route'] not in (route, route + '?view=true') or record.get('source_status') != 'SPT Dilaporkan'
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
             or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
@@ -361,7 +364,7 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         literal_model = record.get('meta', {}).get('Model SPT')
         model = ('NORMAL' if literal_model == 'Normal' else 'AMENDMENT'
                  if isinstance(literal_model, str) and re.fullmatch(r'Amendment [0-9]{3}', literal_model) else None)
-        if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+        if (proof['route'] not in (route, route + '?view=true') or record.get('source_status') != 'SPT Dilaporkan'
                 or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
                 or model is None or payload.get('ReturnSheetModel') != model
                 or fields.get('ReturnSheetModel') != literal_model

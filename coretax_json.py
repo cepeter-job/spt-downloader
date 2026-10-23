@@ -86,11 +86,70 @@ def _reference_date_ms(value):
         raise _UnsupportedMetadata('unsupported_grid_reference_date') from None
 
 
+def _reference_consumer_order(details, kind):
+    """Pinned ordinary cache.add order, retaining original response ordinals.
+
+    This is intentionally separate from PERIOD, model dropdowns, Code-sorted
+    ignore types and ECONOMIC_CODE's additional lifecycle. Never sort raw bytes.
+    """
+    ordinary = {'EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS',
+                'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT'}
+    if (kind not in ordinary or not isinstance(details, list)
+            or any(not isinstance(row, dict) or type(row.get('CodeDescription')) is not str for row in details)):
+        raise _UnsupportedMetadata('unsupported_reference_cache_order')
+
+    def string_key(value):
+        if type(value) is not str:
+            raise _UnsupportedMetadata('unsupported_reference_cache_string')
+        try:
+            # Big-endian bytes compare unsigned UTF-16 code units, as JS does.
+            return value.encode('utf-16-be')
+        except UnicodeEncodeError:
+            raise _UnsupportedMetadata('unsupported_reference_cache_string') from None
+
+    if any(row.get('ParameterData') is not None and type(row['ParameterData']) is not str for row in details):
+        raise _UnsupportedMetadata('unsupported_reference_cache_parameter')
+    first = details[0].get('ParameterData') if details else None
+    pairs = list(enumerate(details))
+    rule = 'reviewed-cache-description-utf16'
+    descriptions = [string_key(row['CodeDescription']) for row in details]
+    if first is None or '"DisplayIndex":' not in first:
+        keys = descriptions
+    else:
+        keys, types = [], set()
+        for row in details:
+            parameter = row.get('ParameterData')
+            if type(parameter) is not str:
+                raise _UnsupportedMetadata('unsupported_reference_display_index')
+            try:
+                parsed = json.loads(parameter, object_pairs_hook=_object_pairs, parse_constant=_reject_constant)
+            except (ValueError, JsonSafetyError, RecursionError):
+                raise _UnsupportedMetadata('unsupported_reference_display_index') from None
+            if not isinstance(parsed, dict) or 'DisplayIndex' not in parsed:
+                raise _UnsupportedMetadata('unsupported_reference_display_index')
+            value = parsed['DisplayIndex']
+            if type(value) is int and abs(value) <= 9007199254740991:
+                key = value
+            elif type(value) is str:
+                key = string_key(value)
+            else:
+                raise _UnsupportedMetadata('unsupported_reference_display_index')
+            keys.append(key)
+            types.add(type(value))
+        if len(types) != 1:
+            raise _UnsupportedMetadata('mixed_reference_display_index_types')
+        rule = ('reviewed-cache-display-index-integer' if types == {int} else
+                'reviewed-cache-display-index-utf16')
+    # Python's stable sort preserves the pinned Lodash original-index tie break.
+    return sorted(pairs, key=lambda pair: keys[pair[0]]), rule
+
+
 def _select_reference_version(candidates, clock_interval=None):
     """Pinned getActiveReferenceDataValue; require the same row at every cutoff.
 
-    Candidate order is source order. Future rows can only expire as time moves
-    forward, so the cursor advances at most once per row across all cutoffs.
+    Candidates arrive in proved cache consumer order, carrying original source
+    ordinals. Future rows can only expire as time moves forward, so the cursor
+    advances at most once per row across all cutoffs.
     """
     clock = (_capture_clock_interval(clock_interval, clock_interval.get('attempt'))
              if isinstance(clock_interval, dict) else None)
