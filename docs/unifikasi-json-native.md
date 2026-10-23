@@ -4,6 +4,8 @@ The four-form/five-grid implementation was merged in [PR #40](https://github.com
 
 Native observation, reference custody, projection and connected synthetic Edge-to-Excel already exist. Dated reference branches and later acceptance remain bounded by the [approved completion design](superpowers/specs/2026-10-23-json-mode-completion-design.md); unsupported cases continue to fall back explicitly.
 
+The dated grid-reference extension in draft [PR #86](https://github.com/cepeter-job/spt-downloader/pull/86) is runner-verified with capture-owned clock custody, stable selection across every cutoff, and unchanged PERIOD dropdown uniqueness. [The dated-reference report](superpowers/reports/2026-10-23-dated-reference-catalogs.md) records the exact final tree, 4,083 Windows cases, overlapping portable suite and verified package/bootstrap artifacts. This adds supported catalog cases without claiming current-build live acceptance.
+
 This is static evidence, not live acceptance. Offsets are character offsets in
 UTF-8-decoded public JavaScript. No taxpayer response is included.
 

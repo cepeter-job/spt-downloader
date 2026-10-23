@@ -23,21 +23,24 @@ The bounded parser uses full `YYYY-MM-DD` dates and second-resolution ISO dateti
 
 ## Task 1: Regression contracts and runner RED
 
-- [ ] Add pure projection tests for first-future order, latest ValidFrom/stable ties, first fallback, strict cutoff, UTC/offset/local dates, unchanged sources and candidate-path provenance.
-- [ ] Add interval crossing (including A -> B -> A), absent clock, malformed dates, and invalid clock types/order/timezone/attempt tests; retain old clock-independent behavior.
-- [ ] Add whole-attempt tests for unchanged packet bytes, captured clock provenance, fatal mixed/malformed evidence, and unrelated reference sequences.
-- [ ] Add owned-capture and checkpoint replay tests for before-View/after-drain samples, optional unavailable clocks, invalid samples, Stop, tampered metadata, and identical replay without reading present time.
-- [ ] Publish tests only and record exact-tree GitHub RED before product edits.
+- [x] Add pure projection tests for first-future order, latest ValidFrom/stable ties, first fallback, strict cutoff, UTC/offset/local dates, unchanged sources and candidate-path provenance.
+- [x] Add interval crossing (including A -> B -> A), absent clock, malformed dates, and invalid clock types/order/timezone/attempt tests; retain old clock-independent behavior.
+- [x] Add whole-attempt tests for unchanged packet bytes, captured clock provenance, fatal mixed/malformed evidence, and unrelated reference sequences.
+- [x] Add owned-capture and checkpoint replay tests for before-View/after-drain samples, optional unavailable clocks, invalid samples, Stop, tampered metadata, and identical replay without reading present time.
+- [x] Publish tests only and record exact-tree GitHub RED before product edits.
 
 ## Task 2: Minimal source-bound implementation
 
-- [ ] Add clock validation and reviewed version-selection primitives to existing `coretax_json.py`; avoid a new worker module.
-- [ ] Sample browser clock/timezone at capture enter and after final drain, validate the owned attempt interval, and bind optional metadata through the manifest, live packets and checkpoint packets.
-- [ ] Validate optional packet clocks and whole-attempt consistency before projection or fallback; copy only validated clock metadata into bounded provenance.
-- [ ] Wire only the two reviewed grid catalog consumers. Retain candidate validity paths and selection rule in provenance and leave model/PERIOD uniqueness unchanged.
+- [x] Add clock validation and reviewed version-selection primitives to existing `coretax_json.py`; avoid a new worker module.
+- [x] Sample browser clock/timezone at capture enter and after final drain, validate the owned attempt interval, and bind optional metadata through the manifest, live packets and checkpoint packets.
+- [x] Validate optional packet clocks and whole-attempt consistency before projection or fallback; copy only validated clock metadata into bounded provenance.
+- [x] Wire only the two reviewed grid catalog consumers. Retain candidate validity paths and selection rule in provenance and leave model/PERIOD uniqueness unchanged.
 
 ## Task 3: Verification and delivery
 
-- [ ] Read exact final Windows/portable JUnit and package/bootstrap artifacts, verify hashes/build/tree/allowlist identities, and reconcile every new RED node with a passing successor.
-- [ ] Obtain fresh-context source review; address concrete findings with runner evidence.
-- [ ] Document supported date grammar, source coordinates, exact evidence and remaining live acceptance. Keep corporate semantic and PPN final-lifecycle work explicitly open.
+- [x] Read exact final Windows/portable JUnit and package/bootstrap artifacts, verify hashes/build/tree/allowlist identities, and reconcile every new RED node with a passing successor.
+- [x] Obtain fresh-context source review; address concrete findings with runner evidence.
+- [x] Document supported date grammar, source coordinates, exact evidence and remaining live acceptance. Keep corporate semantic and PPN final-lifecycle work explicitly open.
+
+
+Completed against code/test head 9997c80bc9011b9d5768998b215dd0b7269d8369, merge c099aab8f95ba4cb98f7448ea2e0b994ae98d32b, tree 7e73f1b4c9146594ebc7c2835233dec94c66057e, run 39884865149 attempt 1: 4083 Windows and 696 overlapping portable cases passed; all 57 authoritative RED nodes reconciled; distribution/bootstrap and 44 worker sources read back. See [final evidence](../reports/2026-10-23-dated-reference-catalogs.md). No local product execution or live-account acceptance.

@@ -58,6 +58,21 @@ ditulis ulang agar terlihat berasal dari pemindaian Dilaporkan yang baru.
 
 Metadata scope per-record yang tidak tersedia pada capture lama tidak dapat membuktikan NPWP secara independen. Jangan menyimpulkan provenance legacy yang tidak tersimpan. Capture baru membawa metadata scope; pemeriksaan yang tersedia tetap wajib dilakukan saat ekspor ulang.
 
+Katalog grid PPh21/Unifikasi dapat memakai pemilihan versi bertanggal hanya bila
+interval jam browser milik percobaan capture membuktikan pilihan yang sama pada
+kedua batas dan setiap cutoff di dalamnya. Metadata opsional manifest versi 1
+diambil sebelum View dan setelah drain akhir, lalu diteruskan ke packet serta
+checkpoint tanpa mengubah byte respons. Replay tidak membaca jam mesin saat ini.
+Metadata tersimpan yang rusak, berbeda percobaan, atau tercampur antar-packet
+ditolak sebelum fallback. Ketiadaan bukti mempertahankan batas dukungan lama;
+aturan kode unik dropdown Model/PERIOD tidak dilonggarkan.
+
+Sampel lingkungan akhir juga dapat memompa event jaringan. Request baru pada
+batas itu membuat capture PARTIAL meskipun responsnya sudah dikeluarkan oleh
+filter MIME; hitungan pending dari timeout sebelumnya tetap dipertahankan.
+Byte terlambat tidak dibaca. Grammar tanggal, source pin, batas dukungan dan bukti
+runner dicatat pada [laporan katalog bertanggal](superpowers/reports/2026-10-23-dated-reference-catalogs.md).
+
 ## Batas akses baca
 
 `ListObserver` mengamati respons JSON dari tindakan UI milik browser. Ia menyimpan respons terakhir dan nomor urut yang terus bertambah, bukan seluruh riwayat respons dalam RAM. Ia tidak membaca cookie/header autentikasi dan tidak menjalankan request API penulisan tersendiri.
