@@ -147,7 +147,8 @@ assertion. There were no errors or skips; all setup/teardown phases passed.
 The 710 overlapping portable cases passed. Independent tests source review
 accepted the original-year, captured-tax dependency and saved-export controls.
 Implementation began only after this full actual RED was read and accepted.
-Final GREEN, package readback and whole-branch review remain separate gates.
+Final GREEN, package readback and whole-branch review were separate gates;
+the final evidence below records their completion.
 
 Implementation review found that a valid JSON exponent such as `1e1000000`
 can raise Decimal Overflow in the shared converter before the L8 precision
@@ -169,4 +170,20 @@ baseline and L8 case plus the new unused-control case. The 710 portable cases
 passed, with no errors/skips or setup/teardown failures. Only after this complete
 actual review RED did the L8 guard translate Decimal conversion exceptions to
 unsupported metadata. Shared conversion/projection functions and all tests stay
-unchanged by the repair. Final exact-tree GREEN/package/review remain required.
+unchanged by the repair. Final exact-tree GREEN/package/review were required
+and completed before merging.
+
+## Completed final slice
+
+[PR113](https://github.com/cepeter-job/spt-downloader/pull/113) merged as
+`2a679ffec7f352ff74eab85b848373e710551420`, with exact tested tree
+`e288a19c84f3bed96394529e7dbf75195ff23273`. Final run 40023866774, attempt 1,
+passed all 5,798 Windows cases (5,589 baseline plus 209 L8) and the 710
+overlapping portable cases, with zero failures/errors/skips. All six test
+archives and both package archives were independently read. The 45 embedded
+worker files match the source, package/bootstrap checks pass, and fresh review
+accepted the source and preserved PR108 interaction before merge.
+See the [complete final report](../reports/2026-10-24-corporate-l8-pure.md)
+for exact coordinates, hashes, review regression and remaining native gates.
+This completes the bounded pure helper only. Native L8, broader corporate/PPN
+lifecycles, financial-PDF and authorized live acceptance remain independent.
