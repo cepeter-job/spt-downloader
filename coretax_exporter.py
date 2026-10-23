@@ -699,6 +699,11 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                            'Baris belum dipetakan', 'Hasil', 'Keterangan'])
         ar += 1
         for report in mapping_reports:
+            reviewed_note = ''
+            if report.get('reviewed_redundant_fields') or report.get('reviewed_redundant_tables'):
+                reviewed_note = (f" {report.get('reviewed_redundant_fields', 0)} field dan "
+                    f"{report.get('reviewed_redundant_tables', 0)} tabel disetujui sebagai tampilan redundan; "
+                    'hitungan belum dipetakan tetap mencakupnya.')
             derivation_note = {
                 'missing_average': ' DER belum dihitung: saldo rata-rata utang atau modal belum tersedia.',
                 'unsafe_average': ' DER belum dihitung: saldo rata-rata utang atau modal bukan angka Excel yang aman.',
@@ -707,7 +712,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
             values = ['Pemetaan template', report.get('unmapped_fields', 0),
                       report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),
                       'COMPLETE' if report['complete'] else 'PARTIAL',
-                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat capture sumber pada checkpoint job.{derivation_note}"]
+                      f"{report['file']} / {report['form']}: jumlah field/tabel/baris belum dipetakan; lihat capture sumber pada checkpoint job.{reviewed_note}{derivation_note}"]
             for col, value in enumerate(values, 1):
                 put(audit, ar, col, value)
             ar += 1
