@@ -103,6 +103,44 @@ def test_response_arriving_during_final_clock_sample_remains_partial_and_unread(
         assert len(result['responses']) == 1
 
 
+@pytest.mark.parametrize('content_type', ['application/json', 'text/plain', ''],
+                         ids=['json', 'excluded-text', 'excluded-missing-type'])
+def test_final_clock_sample_preserves_prior_drain_timeout_counts(tmp_path, monkeypatch, content_type):
+    from types import SimpleNamespace
+    import coretax_json_capture as capture_module
+
+    context = Context()
+    page = Page(context, DETAIL_URL)
+    samples, late = [], []
+
+    def sample(_):
+        samples.append(True)
+        if len(samples) == 2:
+            late.append(network_exchange(context, page, raw=RAW, method='GET', url=REFERENCE_URL,
+                                         content_type=content_type))
+        return {'epoch_ms': START, 'timezone': 'Asia/Jakarta'}
+
+    page.evaluate = sample
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        initial = exchange(context, page, finish=False)
+        capture.bind_detail_page(page)
+        # Expire the normal drain immediately without sleeping or changing its
+        # declared production limits. Final environment sampling admits one reply.
+        ticks = iter([0, 21])
+        monkeypatch.setattr(capture_module, 'time', SimpleNamespace(monotonic=lambda: next(ticks)))
+        result = capture.drain()
+        assert len(samples) == 2
+        assert initial.reads == late[0].reads == 0
+        assert len(capture.request_observations()) == 2
+        assert not result['complete']
+        assert result['counts']['pending'] == (2 if content_type == 'application/json' else 1)
+        assert result['counts']['excluded'] == (0 if content_type == 'application/json' else 1)
+        assert result['counts']['accepted'] == 0
+        assert result['responses'] == []
+        assert {'response-pending', 'response-after-final-drain'} <= set(result['reasons'])
+        assert capture.drain() == result
+
+
 @pytest.mark.parametrize('phase', ['start', 'finish'])
 def test_stop_after_clock_sample_prevents_manifest_and_preserves_cleanup(tmp_path, phase):
     from coretax_browser import CaptureCancelled

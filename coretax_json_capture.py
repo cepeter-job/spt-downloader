@@ -408,11 +408,13 @@ class DetailJsonCapture:
         self._requests.clear()
         self._cancel(check_cancel)
         self._verify_binding()
+        seen_before_clock = self._seen
         clock_end = self._sample_clock(self._bound, check_cancel)
         self._verify_binding()
-        if self._requests:
+        if self._requests or self._seen != seen_before_clock:
             # Evaluating environment metadata pumps browser events too. A late
-            # response is outside the final drain, never an empty/complete set.
+            # reply may already be excluded by MIME and absent from _requests.
+            # It is outside the final drain, never an empty/complete set.
             self._counts['pending'] = len(self._requests)
             self._reason('response-after-final-drain')
             self._requests.clear()

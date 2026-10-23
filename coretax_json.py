@@ -70,7 +70,7 @@ def _reference_date_ms(value):
     if value is None or value == '':
         return None
     if (type(value) is not str or not re.fullmatch(
-            r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+            r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
             r'(?:\.[0-9]{3})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])?)?', value)):
         raise _UnsupportedMetadata('unsupported_grid_reference_date')
     try:
