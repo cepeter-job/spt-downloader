@@ -24,10 +24,10 @@
 
 - [x] Inspect both workbook pairs via ZIP/XML, compare all sheets, and verify unchanged input hashes.
 - [x] Add `tests/test_masa_compact_export.py` with literal final positions and real export/proof checks.
-- [ ] Observe regression failures on GitHub before implementation.
-- [ ] Add bounded row compaction and accounting normalization to existing template support; wire PPN/PPh21 after semantic binding.
-- [ ] Add safe L-IA rate conversion and preserve truthful unresolved reports.
-- [ ] Keep existing semantic binding tests on original reference geometry using explicit test helpers. Test actual final saved workbooks independently without suppressing presentation.
-- [ ] Verify empty, populated, growing, duplicate, zero, False, malformed numeric and ambiguous mapping cases; verify source immutability and totals.
+- [x] Observe regression failures on GitHub before implementation (test-only run 39899268058: 22 failures).
+- [x] Add bounded row compaction and accounting normalization to existing template support; wire PPN/PPh21 after semantic binding.
+- [x] Add safe L-IA rate conversion and preserve truthful unresolved reports.
+- [x] Keep existing semantic binding tests on original reference geometry using explicit test helpers. Test actual final saved workbooks independently without suppressing presentation.
+- [x] Verify empty, populated, growing, duplicate, zero, False, malformed numeric and ambiguous mapping cases; verify source immutability and totals. First implementation run 39900540975 passed all new regressions; two model-separation assertions still addressed the original PPN Induk row and are updated to final row 43.
 - [ ] Run full unchanged Windows CI, portable subset, package/source/frozen/bootstrap gates on the exact candidate tree; obtain independent source review.
 - [ ] Merge after all required checks pass, verify main artifact identity/hashes/provenance, deliver ZIP to the requested Downloads folder, and remove this task's merged branch/worktree.
