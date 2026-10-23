@@ -16,8 +16,8 @@ def stages(root):
 
 
 @pytest.mark.parametrize('deferred', [False, True])
-def test_cache_available_before_submitted_navigation_filters_without_draft_rescan(browser, tmp_path, monkeypatch, deferred):
-    # A catalog requiring a second navigation cannot justify revisiting drafts.
+def test_cache_available_on_submitted_navigation_filters_without_draft_rescan(browser, tmp_path, monkeypatch, deferred):
+    # Read the source cache after normal submitted navigation, never revisit drafts.
     original = driver.read_period_catalog
     write_attempts = []
 
@@ -59,13 +59,16 @@ def test_cache_available_before_submitted_navigation_filters_without_draft_resca
         assert {r['record_id'] for r in result['records']} == {
             'fixture-normal', 'fixture-amend-001', 'fixture-monthly', 'fixture-cross-year'}
         assert metrics['submitted_requests']
-        assert all(bool(p['Filters']) is (not deferred) for p in metrics['submitted_requests'])
+        requests = metrics['submitted_requests']
+        assert all(p['Filters'] for p in requests[int(deferred):])
+        if deferred:
+            assert requests[0]['Filters'] == []
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
         # Only the taxpayer-selection landing precedes submitted partitions.
         assert sum('/not-submitted-' in p for p in metrics['list_navigations']) == 1
         submitted_entries = [e for e in result['audit'] if e['status'] == 'SPT Dilaporkan']
-        assert sum('/submitted-' in p for p in metrics['list_navigations']) == len(submitted_entries)
-        assert all(e['filter_mode'] == ('unfiltered' if deferred else 'period-year-candidates') for e in submitted_entries)
+        assert sum('/submitted-' in p for p in metrics['list_navigations']) == len(submitted_entries) + int(deferred)
+        assert all(e['filter_mode'] == 'period-year-candidates' for e in submitted_entries)
     assert write_attempts and not any(write_attempts)
     observed = stages(tmp_path/'logs')
     assert observed.count('readiness') == int(deferred)
@@ -93,7 +96,7 @@ def test_unavailable_cache_keeps_unfiltered_fallback_and_bounded_reads(browser, 
         assert all(not p['Filters'] for p in metrics['submitted_requests'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
         assert len(metrics['list_navigations']) == 2
-    assert len(calls) == (2 if mode == 'expired' else 3)
+    assert len(calls) == {'absent': 4, 'expired': 2, 'expired_deferred': 3, 'retry_error': 3}[mode]
     assert stages(tmp_path/'logs').count('readiness') == (0 if mode == 'expired' else 1)
     assert 'PRIVATE-READINESS-ERROR' not in json.dumps(records(tmp_path/'logs'))
 
@@ -119,14 +122,16 @@ def test_recovered_cache_still_requires_partition_recheck(browser, tmp_path, mon
     monkeypatch.setattr(driver, 'read_period_catalog', read)
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True) as (page, metrics):
         result = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path, max_pages=20)
-        assert metrics['submitted_requests'] and all(p['Filters'] for p in metrics['submitted_requests'])
+        requests = metrics['submitted_requests']
+        assert requests[0]['Filters'] == []
+        assert all(p['Filters'] for p in requests[1:])
         assert not result['inventory_complete']
         assert any('Period catalog changed' in e['message'] for e in result['errors'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
 
 
 @pytest.mark.parametrize('cancel', ['raise', 'callback'])
-def test_stop_during_readiness_prevents_submitted_navigation(browser, tmp_path, monkeypatch, cancel):
+def test_stop_during_readiness_prevents_filtered_restart(browser, tmp_path, monkeypatch, cancel):
     original = driver.read_period_catalog
     calls = []
     stopped = False
@@ -149,6 +154,9 @@ def test_stop_during_readiness_prevents_submitted_navigation(browser, tmp_path, 
         with pytest.raises(driver.CaptureCancelled):
             driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path,
                                      max_pages=20, check_cancel=check_cancel)
-        assert metrics['submitted_requests'] == []
+        assert len(metrics['submitted_requests']) == 1
+        assert metrics['submitted_requests'][0]['Filters'] == []
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
-        assert len(metrics['list_navigations']) == 1
+        assert len(metrics['list_navigations']) == 2
+        assert not (tmp_path/'inventory.json').exists()
+        assert (tmp_path/'inventory-batches.jsonl').read_bytes() == b''

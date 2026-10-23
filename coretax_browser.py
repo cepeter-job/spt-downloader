@@ -16,6 +16,7 @@ from coretax_exporter import in_scope, validate_scope, deduplicate_inventory
 from coretax_json import (JsonSafetyError, LOOKUP_HEADERS, SUBMITTED_ENDPOINT,
                           adapt_inventory_page, validate_inventory_rows)
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Error as PlaywrightError
 from coretax_json import validate_detail_source
 from coretax_corporate import CIT_SOURCE_SHA256
 from coretax_inventory import (InventoryFilterRoute, plan_year_filters, read_period_catalog,
@@ -200,12 +201,13 @@ def wait_idle(page):
 
 
 def maximize_page_size(page, container):
+    """Choose the largest inspected size up to 100; report an actual change."""
     total = container.query_selector('.p-paginator-current')
     if total and re.search(r'(?:dari|of)\s+0\s', total.inner_text(), re.I):
-        return
+        return False
     trigger = container.query_selector('.p-paginator .p-dropdown-trigger')
     if not trigger:
-        return
+        return False
     trigger.evaluate('(e)=>e.click()')
     options = page.locator('.p-dropdown-items li:visible')
     options.first.wait_for(state='visible', timeout=5000)
@@ -216,11 +218,13 @@ def maximize_page_size(page, container):
         if current and current.inner_text().strip() == str(maximum):
             # Re-selecting the same option can trigger another server load.
             page.keyboard.press('Escape')
-            return
+            return False
         options.nth(index).evaluate('(e)=>e.click()')
         wait_idle(page)
+        return True
     else:
         page.keyboard.press('Escape')
+    return False
 
 
 def _click_table_paginator(control, container, check_cancel):
@@ -729,6 +733,18 @@ REFERENCE_ROWS_JS = r'''(table) => {
 }'''.replace('CELL', CELL_JS)
 
 
+def _inventory_context(response, source, taxpayer_id, npwp, year, basis, page_number):
+    """Bind a response for the same pure safety probe in readiness and capture."""
+    if not isinstance(response.get('binding'), dict):
+        raise JsonSafetyError('Submitted response lacks verified request/frame/source binding')
+    return {
+        **response['binding'], 'npwp': npwp, 'year': year, 'year_basis': basis,
+        'taxpayer_id': taxpayer_id, 'source_url': source['url'], 'source_status': source['label'],
+        'page': page_number, 'sequence': response['sequence'], 'after_sequence': response['after_sequence'],
+        'date_format': 'dd-MM-yyyy', 'timezone': None, 'lookup_labels': {},
+    }
+
+
 def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, basis,
                         page_number, folder, source_number, check_cancel):
     """Adapt a bound submitted page; read only reference captions, not its grid."""
@@ -739,14 +755,7 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
         return {'eligible': False, 'reason': 'unobserved_status_schema', 'rows': []}
     if not isinstance(response.get('body'), bytes):
         return {'eligible': False, 'reason': 'unavailable_original_response_bytes', 'rows': []}
-    if not isinstance(response.get('binding'), dict):
-        raise JsonSafetyError('Submitted response lacks verified request/frame/source binding')
-    context = {
-        **response['binding'], 'npwp': npwp, 'year': year, 'year_basis': basis,
-        'taxpayer_id': taxpayer_id, 'source_url': source['url'], 'source_status': source['label'],
-        'page': page_number, 'sequence': response['sequence'], 'after_sequence': response['after_sequence'],
-        'date_format': 'dd-MM-yyyy', 'timezone': None, 'lookup_labels': {},
-    }
+    context = _inventory_context(response, source, taxpayer_id, npwp, year, basis, page_number)
     # Safety is evaluated before even the narrow reference read or fallback.
     probe = adapt_inventory_page(response['body'], context)
     raw_folder = folder / 'listing-responses'
@@ -999,6 +1008,26 @@ def _find_taxpayer_row(page, npwp, check_cancel):
         return row, taxpayer_name
 
 
+def _verify_inventory_source(page, source, taxpayer_id):
+    if (list_taxpayer_id(page.url) != taxpayer_id
+            or urlparse(page.url).path != urlparse(source['url']).path
+            or urlparse(page.url).query != urlparse(source['url']).query):
+        raise RuntimeError('Submitted navigation changed the selected list or taxpayer; refusing capture')
+
+
+def _open_inventory_source(page, source, taxpayer_id, observer):
+    before = observer.sequence
+    try:
+        page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
+    except PlaywrightError as exc:
+        _check_cancel(observer.check_cancel)
+        raise RuntimeError('Submitted navigation failed; refusing inventory capture') from exc
+    _verify_inventory_source(page, source, taxpayer_id)
+    response = observer.wait(before)
+    _verify_inventory_source(page, source, taxpayer_id)
+    return response
+
+
 @diagnostics.traced('inventory')
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
     """Temukan NPWP persis, simpan batch daftar, lalu rekonsiliasi inventaris."""
@@ -1063,23 +1092,42 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
         sources = planned_sources
         for source_index, source in enumerate(sources):
             _check_cancel(check_cancel)
+            ready_response = None
             submitted = (urlparse(source['url']).path.startswith('/returnsheets/id-ID/submitted-returnsheets/')
                          and source['label'] == 'SPT Dilaporkan')
             if retry_missing_catalog and submitted:
-                # The landing page may finish populating its cache. Retry once,
-                # before this source starts; never rewrite completed evidence.
+                # The submitted page can populate a cache absent on landing.
+                # Observe it before saving rows; reuse this page on fallback.
                 retry_missing_catalog = False
+                ready_response = _open_inventory_source(page, source, taxpayer_id, observer)
+                _check_cancel(check_cancel)
+                # Even a page discarded for a recovered filter must prove its
+                # original request/row ownership before any further navigation.
+                ready_page = ready_response['first'] // ready_response['page_size'] + 1
+                adapt_inventory_page(ready_response['body'], _inventory_context(
+                    ready_response, source, taxpayer_id, npwp, year, basis, ready_page))
                 diagnostics.record('catalog.checkpoint', catalog_stage='readiness')
                 try:
                     catalog = read_period_catalog(page)
                     _check_cancel(check_cancel)
+                    if catalog is None:
+                        # One bounded grace period, with Stop checks between
+                        # short waits. Never refresh cache or request metadata.
+                        for _ in range(5):
+                            _check_cancel(check_cancel)
+                            page.wait_for_timeout(100)
+                        _check_cancel(check_cancel)
+                        catalog = read_period_catalog(page)
+                        _check_cancel(check_cancel)
                     filter_plan = plan_year_filters(catalog, year, basis)
                 except Exception:
                     _check_cancel(check_cancel)
                     diagnostics.record('catalog.validation', catalog_reason='evaluation_error')
                     filter_plan = {'eligible': False, 'filters': [], 'reason': 'period_catalog_unavailable'}
                 _check_cancel(check_cancel)
+                _verify_inventory_source(page, source, taxpayer_id)
                 if filter_plan['eligible']:
+                    ready_response = None
                     source = dict(source)
                     source.pop('filter_reason', None)
                     partitions = [
@@ -1109,23 +1157,16 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 if condition is not None:
                     observer.request_filter = source_routes.enter_context(
                         InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
-                before = observer.sequence
-                page.goto(source['url'], wait_until='domcontentloaded', timeout=60000)
-                if (list_taxpayer_id(page.url) != taxpayer_id
-                        or urlparse(page.url).path != urlparse(source['url']).path
-                        or urlparse(page.url).query != urlparse(source['url']).query):
-                    raise RuntimeError('Submitted navigation changed the selected list or taxpayer; refusing capture')
-                response = observer.wait(before)
+                response = (ready_response if ready_response is not None else
+                            _open_inventory_source(page, source, taxpayer_id, observer))
                 entry['total'] = response['total']
                 table = page.locator('.main-content table').first
                 table.wait_for(state='visible', timeout=30000)
                 container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
-                # Memilih ukuran halaman yang sudah aktif belum tentu memicu request.
-                current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
-                if entry['total'] and current_size and current_size.inner_text().strip() != '50':
+                if entry['total']:
                     before = observer.sequence
-                    maximize_page_size(page, container)
-                    response = observer.wait(before)
+                    if maximize_page_size(page, container):
+                        response = observer.wait(before)
                 # Daftar tetap menyediakan Prev walaupun First tersembunyi.
                 previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
                 for _ in range(max_pages):
@@ -1190,7 +1231,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                             record = {'key': urlparse(source['url']).path + '/' + identifier,
                                       'record_id': identifier, 'meta': meta, 'source_status': label,
                                       'list_url': source['url'], 'list_page': page_index + 1, 'row_position': position,
-                                      'list_page_size': int(current_size.inner_text().strip()) if current_size and current_size.inner_text().strip().isdigit() else None,
+                                      'list_page_size': response['page_size'],
                                       'capture_complete': False, 'sections': []}
                             if condition is not None:
                                 record['list_filter'] = condition
@@ -1694,8 +1735,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     desired = record.get('list_page_size')
                                     if desired and current_size and current_size.inner_text().strip() != str(desired):
                                         before = observer.sequence
-                                        maximize_page_size(page, container)
-                                        current_response = observer.wait(before)
+                                        if maximize_page_size(page, container):
+                                            current_response = observer.wait(before)
                                         if current_size.inner_text().strip() != str(desired):
                                             raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
                                     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
