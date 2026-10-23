@@ -81,7 +81,9 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
 
 
 @pytest.mark.parametrize('defect', ['external-context', 'vendor-pin', 'owner', 'header',
-    'duplicate-owner', 'hidden-owner', 'non-services', 'missing-5322', 'wrong-group', 'misplaced-grid'])
+    'duplicate-owner', 'hidden-owner', 'non-services', 'missing-5322', 'wrong-group', 'misplaced-grid',
+    'corporate-fetch-only', 'corporate-preload-only', 'main-fetch-only', 'main-preload-only',
+    'vendor-fetch-only', 'vendor-preload-only', 'financial-wrapper-sibling', 'table-outside-p-table'])
 def test_unproved_live_l1d_structure_or_source_retains_whole_record_fallback(
         browser, tmp_path, monkeypatch, defect):
     fixture = Fixture(browser, monkeypatch, defect=defect)
@@ -97,6 +99,9 @@ def test_unproved_live_l1d_structure_or_source_retains_whole_record_fallback(
             assert fixture.page.evaluate('window.businessReads') == 0
             assert fixture.page.evaluate('window.forbiddenClicks') == 0
             assert fixture.unexpected == []
+            if fixture.non_script is not None:
+                assert fixture.page.evaluate('url=>[...document.scripts].some(s=>s.src===url)',
+                                            fixture.non_script[0]) is False
     finally:
         fixture.close()
 

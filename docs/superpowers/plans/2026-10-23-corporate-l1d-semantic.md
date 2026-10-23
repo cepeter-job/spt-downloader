@@ -261,3 +261,14 @@ three exact component/accordion owners and static table metadata, then dispatche
 to the reviewed pure projector after source lifecycle/parent checks. Generic
 privacy/packet/late-drain/replay checks remain authoritative. Final runner,
 saved-workbook readback, package inspection and fresh source review remain open.
+
+Fresh review found two further proof gaps: generic corporate/main digest readers
+accept matching fetch/preload resources, and descendant counts do not establish
+the actual table -> p-table -> financial-wrapper ancestry. Add eight real Edge
+refusal cases before changing production: corporate/main/vendor fetched-only or
+preloaded-only providers, an empty financial wrapper beside the first p-table,
+and a table beside its empty p-table. Each keeps valid source bytes and all other
+lifetime/structure facts, so refusal cannot rely on a changed digest. Provider
+fixtures prove their actual resource initiator and absence from document.scripts.
+The existing strict vendor controls should already pass; the other six expose
+the reviewed missing predicates. Production is unchanged in this test increment.

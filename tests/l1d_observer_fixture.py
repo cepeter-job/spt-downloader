@@ -14,6 +14,9 @@ import support_json_corpus as corpus
 class Fixture:
     def __init__(self, browser, monkeypatch, *, model='Normal', migrated=False, defect=None):
         self.record, self.defect = selected(model), defect
+        self.non_script = next(((url, mode) for label, url in
+            (('corporate', ASSET), ('main', MAIN), ('vendor', VENDOR))
+            for mode in ('fetch-only', 'preload-only') if defect == label + '-' + mode), None)
         self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta', service_workers='block')
         if defect != 'external-context':
             self.context._spt_financial_route_policy = 'service_workers_blocked'
@@ -35,6 +38,22 @@ class Fixture:
         self.context.route('**/*', self.route)
         self.page = self.context.new_page()
         self.page.goto(corpus.LIST_URL)
+        if self.non_script is not None:
+            url, mode = self.non_script
+            self.page.evaluate('''async ({url, mode}) => {
+                if(mode === 'fetch-only'){await (await fetch(url)).arrayBuffer();return;}
+                await new Promise((resolve,reject)=>{
+                    const link=document.createElement('link');link.rel='preload';link.as='script';link.href=url;
+                    const timer=setTimeout(()=>{link.remove();reject(Error('synthetic preload timeout'));},10000);
+                    link.onload=()=>{clearTimeout(timer);resolve();};
+                    link.onerror=()=>{clearTimeout(timer);reject(Error('synthetic preload failure'));};
+                    document.head.append(link);
+                });
+            }''', {'url': url, 'mode': mode})
+            assert self.page.evaluate('url=>[...document.scripts].some(s=>s.src===url)', url) is False
+            assert self.page.evaluate('url=>performance.getEntriesByType("resource").filter(e=>e.name===url).map(e=>e.initiatorType)',
+                url) == (['fetch'] if mode == 'fetch-only' else ['link'])
+            assert self.requests.count((url, 'GET')) == 1
 
     def close(self):
         self.context.close()
@@ -70,7 +89,11 @@ class Fixture:
                 + '<td>SYNTHETIC DOM BAIT<input value="SYNTHETIC DOM INPUT"></td>' * len(labels)
                 + '</tr></tbody><tfoot><tr>' + '<td>SYNTHETIC DOM BAIT</td>' * len(labels)
                 + '</tr></tfoot></table></p-table>')
-            if index == 0:
+            if self.defect == 'table-outside-p-table' and index == 1:
+                table = table.replace('<p-table><table>', '<p-table></p-table><table>').replace('</table></p-table>', '</table>')
+            if index == 0 and self.defect == 'financial-wrapper-sibling':
+                table = '<rshshr-citr-financial-statement-grid></rshshr-citr-financial-statement-grid>' + table
+            elif index == 0:
                 table = '<rshshr-citr-financial-statement-grid>' + table + '</rshshr-citr-financial-statement-grid>'
             tables.append('<' + owner + '>' + table + '</' + owner + '>')
         if self.defect == 'duplicate-owner':
@@ -98,7 +121,8 @@ class Fixture:
             + '</div></div></div></div></rshshr-corporate-income-tax-return>')
 
     def document(self):
-        assets = ''.join('<script src="' + url + '"></script>' for url in self.assets)
+        assets = ''.join('<script src="' + url + '"></script>' for url in self.assets
+                         if self.non_script is None or self.non_script[0] != url)
         return ('<html><head><link rel="icon" href="data:,"><style>'
             'rshshr-submitted-returnsheets,rshshr-corporate-income-tax-return,rshshr-citr-main-form,'
             'rshshr-citr-l1d-form,rsh-citr-l1d-grid1,rsh-citr-l1d-grid2,rsh-citr-l1d-grid3,'
