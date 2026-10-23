@@ -315,6 +315,19 @@ def test_unused_valid_lifetime_attestation_preserves_l7_and_country_source_event
     assert all(event.get('component_lifetime') == proof for event in result['provenance']['events'])
 
 
+@pytest.mark.parametrize('query', ['', '?view=true'])
+def test_l7_semantic_route_accepts_only_reviewed_current_view_and_legacy(query):
+    import test_corporate_l11c_native as reference
+    from coretax_json import adapt_corporate_detail
+    raw, record, bindings = [reference.l7_packet()], reference.selected(), reference.l7_bindings()
+    frame = reference.FRAME + query
+    raw[0]['context']['frame_url'] = frame
+    bindings[1]['projection']['route'] = frame
+    record['detail_url'] = frame
+    result = adapt_corporate_detail(raw, record, reference.corpus.SCOPE, bindings)
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+
+
 @pytest.mark.parametrize('observed', [False, True])
 @pytest.mark.parametrize('defect', ['attempt', 'record', 'source', 'detail', 'false-fact', 'mixed'])
 def test_packet_lifetime_contradiction_is_fatal_before_structural_fallback(observed, defect):

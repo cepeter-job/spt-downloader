@@ -54,6 +54,13 @@ on untouched rows is restricted to absent/null/empty; only four effective
 BlockFields flags control masking. Missing/null/[] Children are terminal leaves,
 and Expanded never filters the visible flattened table.
 
+Integration source review also found L7's semantic layer still compared against
+only the legacy query-free route, although the inspected current View supplies
+literal ?view=true and the shared reviewed route contract already supports it.
+Add an isolated route regression before repairing that gate; otherwise L7 can
+force fallback in the same return as the new L1-D branch. Keep all other query,
+route identity and source/snapshot checks strict.
+
 ## Pure source projection
 
 Require an explicit nonempty `L1dTreeData`, explicit `L1dAssets` and
