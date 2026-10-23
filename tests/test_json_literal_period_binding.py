@@ -1,5 +1,7 @@
 """Synthetic literal inventory periods must survive native identity binding."""
 from copy import deepcopy
+import json
+from types import SimpleNamespace
 
 import pytest
 from openpyxl import load_workbook
@@ -105,3 +107,102 @@ def test_literal_pph21_period_projects_and_saves_all_five_compacted_forms(tmp_pa
     finally:
         workbook.close()
     assert run['records'][0]['meta']['Masa Pajak'] == '01012025'
+
+
+@pytest.mark.parametrize('basis', ['period', 'submission'])
+@pytest.mark.parametrize('location', ['outer-month', 'inner-month', 'outer-year', 'inner-year'])
+def test_unbound_pph21_primary_rejects_literal_period_conflicts_through_actual_dispatch(basis, location):
+    from masa_json_fixtures import SCOPE as primary_scope
+    from test_pph21_json_primary import case as primary_case, source
+
+    record, outer, form = primary_case()
+    scope = [*primary_scope[:2], basis]
+    record['scope'] = list(scope)
+    record['meta']['Masa Pajak'] = '01012025'
+    del record['source_fields']['TaxPeriodCode']
+    if location == 'outer-month':
+        outer['PeriodMonth'] = 2
+    elif location == 'inner-month':
+        form['TaxPeriodMonth'] = 2
+    elif location == 'outer-year':
+        outer['PeriodYear'] = 2024
+    else:
+        form['TaxPeriodYear'] = 2024
+    outer['FormData'] = json.dumps(form)
+    item = source(outer)
+    item['context']['scope'] = list(scope)
+    before = deepcopy((record, item))
+    with pytest.raises(JsonSafetyError):
+        adapt_masa_detail([item], record=record, scope=scope, observed_forms=[])
+    assert (record, item) == before
+
+
+@pytest.mark.parametrize('basis', ['period', 'submission'])
+def test_consistent_unbound_pph21_literal_period_does_not_grant_native_eligibility(basis):
+    from masa_json_fixtures import SCOPE as primary_scope
+    from test_pph21_json_primary import case as primary_case, source
+
+    record, outer, _ = primary_case()
+    scope = [*primary_scope[:2], basis]
+    record['scope'] = list(scope)
+    record['meta']['Masa Pajak'] = '01012025'
+    del record['source_fields']['TaxPeriodCode']
+    item = source(outer)
+    item['context']['scope'] = list(scope)
+    result = adapt_masa_detail([item], record=record, scope=scope, observed_forms=[])
+    assert not result['eligible'] and not result['coverage']['complete']
+
+
+def test_hybrid_cannot_hide_unbound_pph21_literal_period_conflict_with_dom_fallback(tmp_path, monkeypatch):
+    import coretax_browser as driver
+    import coretax_pph21_observer as observer
+    from masa_json_fixtures import SCOPE as primary_scope
+    from test_pph21_json_primary import case as primary_case, source
+
+    record, outer, _ = primary_case()
+    record['meta']['Masa Pajak'] = '02022025'
+    del record['source_fields']['TaxPeriodCode']
+    item = source(outer)
+    page = SimpleNamespace(url=item['context']['frame_url'])
+    capture = SimpleNamespace(request_observations=lambda: [],
+        drain=lambda **kwargs: {'complete': True, 'reasons': []},
+        iter_bodies=lambda **kwargs: iter([item]))
+    monkeypatch.setattr(observer, 'observe_pph21_forms', lambda *args, **kwargs: [])
+    fallback = []
+    def dom(*args, **kwargs):
+        fallback.append(True)
+        return {'sections': [], 'capture_complete': False, 'errors': [], 'attachments': []}
+    monkeypatch.setattr(driver, 'capture_detail', dom)
+    with pytest.raises(JsonSafetyError):
+        driver._hybrid_detail(page, record, primary_scope, tmp_path, capture, 1000, None)
+    assert fallback == []
+
+
+@pytest.mark.parametrize('basis', ['period', 'submission'])
+@pytest.mark.parametrize('conflict', ['inner-code', 'selected-year'])
+def test_unbound_corporate_primary_rejects_literal_period_conflict(basis, conflict):
+    from coretax_json import adapt_corporate_detail
+    import support_json_corpus as corpus
+
+    record, form = corpus.selected_record(), corpus.current_form()
+    scope = [*corpus.SCOPE[:2], basis]
+    record['scope'] = list(scope)
+    record['meta']['Masa Pajak'] = '01122025' if conflict == 'inner-code' else '01122024'
+    del record['source_fields']['TaxPeriodCode']
+    if conflict == 'inner-code':
+        form['TaxPeriodCode'] = '02022025'
+    item = corpus.primary(form)
+    item['context']['scope'] = list(scope)
+    with pytest.raises(JsonSafetyError):
+        adapt_corporate_detail([item], record, scope, corpus.observed())
+
+
+def test_consistent_unbound_corporate_literal_period_remains_ineligible():
+    from coretax_json import adapt_corporate_detail
+    import support_json_corpus as corpus
+
+    record = corpus.selected_record()
+    record['meta']['Masa Pajak'] = '01122025'
+    del record['source_fields']['TaxPeriodCode']
+    result = adapt_corporate_detail([corpus.primary()], record, corpus.SCOPE, corpus.observed())
+    assert not result['eligible'] and not result['coverage']['complete']
