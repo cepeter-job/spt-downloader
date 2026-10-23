@@ -26,8 +26,10 @@
 
 ## Continuing priorities from the approved program
 
-- [ ] Trace and implement corporate L1-D/L3/L11-A/L11-C and semantic destinations beyond L7 in focused source-proven slices, preserving current/previous/financial dependencies, raw values, ownership, captured totals and approved layouts.
-- [ ] Trace and implement PPN Normal and remaining AskedTo lifecycle branches only with sufficient source/environment evidence; keep unproved branches unsupported.
+- [x] Implement and verify the reviewed corporate L11-C semantic slice in merged PR98; retain independent whole-corporate mapping/PDF/live gates.
+- [ ] Continue corporate L1-D/L3/L11-A and semantic destinations beyond L7/L11-C in focused source-proven slices, preserving current/previous/financial dependencies, raw values, ownership, captured totals and approved layouts. L1-D is active in draft PR102.
+- [x] Implement and verify the source-proven narrow submitted PPN Normal/final-choice invariants in merged PR99, including the reviewed primary-status correction.
+- [ ] Extend remaining PPN lifecycle branches only with sufficient source/environment evidence; active-calendar, Normal-negative and unproved FORWARD_REFUND branches stay unsupported.
 - [x] Add L7 intermediate-overflow-with-safe-final-sum and more-than-ten-row packet-to-workbook regressions.
 - [ ] Complete authorized native acceptance for observed families, final documentation reconciliation and exact-tree runner/artifact verification. Missing live scopes or consumer evidence remain explicit pending requirements, not fabricated success.
 

@@ -246,3 +246,92 @@ def test_actual_inspected_view_tracks_same_document_spa_without_business_reads(t
         finally:
             context.close()
             browser.close()
+
+
+def test_equal_descriptor_lifetime_override_cannot_replace_manifest_attestation(tmp_path):
+    context, page = setup()
+    record = selected()
+    with DetailJsonCapture(context, page, record, SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        observe(capture)
+        result = capture.drain()
+    record['detail_url'] = DETAIL
+    path = tmp_path / result['manifest']
+    saved = json.loads(path.read_bytes())
+    saved['responses'][0]['component_lifetime'] = dict(saved['component_lifetime'])
+    raw = json.dumps(saved).encode()
+    path.write_bytes(raw)
+    wrapper = {**saved, 'manifest': result['manifest'], 'manifest_sha256': hashlib.sha256(raw).hexdigest()}
+    with pytest.raises(JsonSafetyError):
+        checkpoint_bodies(tmp_path, wrapper, record, SCOPE)
+
+
+def test_stop_after_final_lifetime_evaluation_prevents_manifest_and_disposes_handles(tmp_path):
+    from coretax_browser import CaptureCancelled
+    context, page = setup()
+    stopped = [False]
+    def cancel():
+        if stopped[0]:
+            raise CaptureCancelled('SYNTHETIC STOP')
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path, check_cancel=cancel) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        observe(capture)
+        page.documents[0].on_read = lambda: stopped.__setitem__(0, True)
+        with pytest.raises(CaptureCancelled):
+            capture.drain()
+    assert not list(tmp_path.rglob('manifest.json'))
+    assert all(document.disposed for document in page.documents)
+    assert not any(context.listeners.values()) and not any(page.listeners.values())
+
+
+def corporate_packets():
+    import test_corporate_l11c_native as reference
+    raw = [reference.l7_packet(), reference.packets()[1]]
+    record, bindings = reference.selected(), reference.l7_bindings()
+    frame = reference.FRAME + '?view=true'
+    record['detail_url'] = frame
+    proof = {'attempt': reference.corpus.ATTEMPT, 'kind': 'corporate-submitted-spa-v1',
+        'record_id': record['record_id'], 'source_url': record['list_url'], 'detail_url': frame,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True}
+    for packet in raw:
+        packet['context'].update(frame_url=frame, component_lifetime=dict(proof))
+    for binding in bindings:
+        if 'projection' in binding:
+            binding['projection']['route'] = frame
+    return raw, record, reference.corpus.SCOPE, bindings, proof
+
+
+def test_unused_valid_lifetime_attestation_preserves_l7_and_country_source_events():
+    from coretax_json import adapt_corporate_detail
+    raw, record, scope, bindings, proof = corporate_packets()
+    result = adapt_corporate_detail(raw, record, scope, bindings)
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    assert all(event.get('component_lifetime') == proof for event in result['provenance']['events'])
+
+
+@pytest.mark.parametrize('observed', [False, True])
+@pytest.mark.parametrize('defect', ['attempt', 'record', 'source', 'detail', 'false-fact', 'mixed'])
+def test_packet_lifetime_contradiction_is_fatal_before_structural_fallback(observed, defect):
+    from coretax_json import adapt_corporate_detail
+    raw, record, scope, bindings, proof = corporate_packets()
+    changed = raw[1]['context']['component_lifetime']
+    if defect == 'attempt':
+        changed['attempt'] = 'f' * 32
+    elif defect == 'record':
+        changed['record_id'] = 'foreign-record'
+    elif defect == 'source':
+        changed['source_url'] += '/foreign'
+    elif defect == 'detail':
+        changed['detail_url'] += '&unreviewed=true'
+    elif defect == 'false-fact':
+        changed['same_document'] = False
+    else:
+        del raw[1]['context']['component_lifetime']
+    with pytest.raises(JsonSafetyError):
+        adapt_corporate_detail(raw, record, scope, bindings if observed else [])
