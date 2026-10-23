@@ -415,7 +415,7 @@ class DetailJsonCapture:
             # Evaluating environment metadata pumps browser events too. A late
             # reply may already be excluded by MIME and absent from _requests.
             # It is outside the final drain, never an empty/complete set.
-            self._counts['pending'] = len(self._requests)
+            self._counts['pending'] += len(self._requests)
             self._reason('response-after-final-drain')
             self._requests.clear()
         result = {'version': 1, 'attempt': self.attempt, 'record_id': self.record_id,
