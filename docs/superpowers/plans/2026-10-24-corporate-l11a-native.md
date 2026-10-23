@@ -140,3 +140,21 @@ source/count/fatal-error assertions are unchanged. The separate initial audit
 retains the timeout as a fixture failure and explicitly leaves the gate open.
 A corrected tests-only run must fully reconcile the intended count failure
 before native L11-A production changes. No local product execution was used.
+
+## Corrected tests-only RED accepted
+
+Run40003264687 attempt1 tested head
+`6bf315ac0d3d12793c0dfb5f0de92c61ebad90ec` as merge
+`3e59ec19e84829e65f9cd593463ec875f177530d`, tree
+`c1b897afc72c263cc9fb77dacab208c536af9a83`. All six archive hashes/sizes,
+environments, complete inventories, phases, JUnit identities and totals reconcile:
+5,589 Windows cases, 5,297 passes and292 intended feature failures, zero errors
+or skips. All5,265 baseline cases and710 overlapping portable cases passed.
+All54 mandatory RED cases reached their expected assertions. The count test
+completed Next, retained two original responses and reached DID NOT RAISE for
+JsonSafetyError. Independent source/artifact review accepted the corrected gate
+before native product edits; the initial fixture failure remains recorded above.
+
+Implementation is confined to the five existing worker modules plus these
+contracts. Full implementation review, exact-tree GREEN and package readback
+remain required before merge. No new live corporate scope is authorized.

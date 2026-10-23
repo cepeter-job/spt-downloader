@@ -19,6 +19,7 @@ FORMS = {
  'L10-B': ('rshshr-citr-l10b-form', 'L10bFormData'),
  'L10-C': ('rshshr-citr-l10c-form', 'L10cFormData'),
  'L10-D': ('rshshr-citr-l10d-form', 'L10dFormData'),
+ 'L11-A': ('rshshr-citr-l11a-form', 'L11AFormData'),
  'L11-B': ('rshshr-citr-l11b-form', 'L11BFormData'),
  'L11-C': ('rshshr-citr-l11c-form', 'L11CFormData'),
 }
@@ -327,6 +328,117 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
             **environment, 'tables': tables, 'references': references}}
 
 
+def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
+    """Five structural owners and four owned paginators; no DOM business reads."""
+    from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
+    from coretax_corporate_projection import (L11A_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE,
+                                             _L11A_OWNERS, _L11A_GROUPS)
+    from coretax_json import (CORPORATE_L11A_GRID_URLS, CORPORATE_L11A_REFERENCE_URLS,
+                              CORPORATE_REFERENCE_REQUESTS)
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    if digest != L11A_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+        return None
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    _check_cancel(check_cancel)
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if (main_digest != L11A_BUILD_DIGESTS.get(MAIN_SOURCE)
+            or vendor_digest != L11A_BUILD_DIGESTS.get(VENDOR_SOURCE)):
+        return None
+    tables = []
+    for phase in range(2):
+        if form.count() != 1 or not form.is_visible() or form.locator('table').count() != 5:
+            return None
+        observed_tables = []
+        for index, selector in enumerate(_L11A_OWNERS):
+            _check_cancel(check_cancel)
+            grid, ui = form.locator(selector), 'ui-grid-offline' if index == 3 else 'ui-grid'
+            other = 'ui-grid' if index == 3 else 'ui-grid-offline'
+            if (grid.count() != 1 or not grid.is_visible() or grid.locator(ui).count() != 1
+                    or grid.locator(other).count() or grid.locator('p-table').count() != 1
+                    or grid.locator('table').count() != 1):
+                return None
+            table = grid.locator('table')
+            chain = table.evaluate('''(table, {selector, ui}) => {
+                const form=table.closest('rshshr-citr-l11a-form'), grid=table.closest(selector);
+                const owner=table.closest('p-table'), wrapper=table.closest(ui);
+                return !!form && !!grid && grid.closest('rshshr-citr-l11a-form')===form &&
+                    !!owner && !!wrapper && grid.contains(wrapper) && wrapper.contains(owner) &&
+                    owner.closest(ui)===wrapper && owner.closest(selector)===grid &&
+                    wrapper.closest(selector)===grid && wrapper.closest('rshshr-citr-l11a-form')===form;
+            }''', {'selector': selector, 'ui': ui})
+            _check_cancel(check_cancel)
+            if chain is not True:
+                return None
+            structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L11-A')
+            if structure != {'form': 'L11-A', 'component': selector, 'groups': _L11A_GROUPS[index]}:
+                return None
+            metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+            _check_cancel(check_cancel)
+            observed_tables.append({'component': selector, 'source_structure': structure,
+                'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
+        if phase == 0:
+            tables = observed_tables
+            for index, selector in enumerate(_L11A_OWNERS):
+                if index != 3 and not _turn_grid(page, form.locator(selector + ' p-table'), max_pages, check_cancel):
+                    return None
+        elif observed_tables != tables:
+            return None
+    observations = capture.request_observations()
+    responses = []
+    for url in CORPORATE_L11A_GRID_URLS:
+        requests, seen = [], set()
+        for item in observations:
+            if item['url'] != url or item['method'] != 'POST':
+                continue
+            request = item.get('request_json')
+            if not isinstance(request, dict) or 'ReturnSheetRecordId' not in request:
+                return None
+            if request['ReturnSheetRecordId'] != record['record_id']:
+                raise JsonSafetyError('Observed L11-A request contradicts selected return')
+            if type(request.get('First')) is not int or request['First'] < 0:
+                return None
+            key = json.dumps(request, sort_keys=True)
+            if key not in seen:
+                requests.append(request)
+                seen.add(key)
+        if not requests:
+            return None
+        responses.append({'name': 'L11-A/' + url.rsplit('/', 1)[-1], 'endpoint': url,
+                          'requests': sorted(requests, key=lambda request: request['First'])})
+    references, kinds_seen = [], set()
+    for url, kinds in CORPORATE_REFERENCE_REQUESTS.items():
+        if any(kind not in CORPORATE_L11A_REFERENCE_URLS for kind in kinds):
+            continue
+        sequences = [item['sequence'] for item in observations
+            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
+        if sequences:
+            if kinds_seen.intersection(kinds):
+                return None
+            kinds_seen.update(kinds)
+            references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
+    if kinds_seen != set(CORPORATE_L11A_REFERENCE_URLS):
+        return None
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    return {'responses': responses,
+        'projection': {'kind': 'corporate-l11a-v1', 'builds': {CIT_SOURCE_URL: digest,
+            MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
+            **environment, 'tables': tables, 'references': references}}
+
+
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
@@ -368,6 +480,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 if 'Induk' not in names:
                     return None
                 inspected = _observe_l3(page, form, capture, digest, record, max_pages, check_cancel)
+                if inspected is None:
+                    return None
+                binding.update(inspected)
+            if name == 'L11-A':
+                if 'Induk' not in names:
+                    return None
+                inspected = _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel)
                 if inspected is None:
                     return None
                 binding.update(inspected)

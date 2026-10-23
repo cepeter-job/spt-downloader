@@ -205,6 +205,26 @@ inspected submitted-list View. Keep the proof route exactly equal to the capture
 frame; other query spellings, history routes and identity conflicts retain the
 existing rejection rules.
 
+Native current-only L11-A uses the separate corporate-l11a-v1 proof, the exact
+three loaded provider pins, fresh owned submitted ?view=true lifetime, preceding
+Induk and numeric1 IsDeclareEntertainmentExpense in outer/current MainFormData.
+Require explicit PreviousFormData encoding with absent/null L11A predecessor.
+Observe all five exact grid/ui-grid/p-table/form and group/header owners before
+and after the four owned paginators, including the nested IV/IV.A offline table;
+read no DOM business values. Bind the four complete Data/TotalRecords inventories
+with the exact inspected seven-field requests, Rows10 and empty SortField.
+Closed reference admission adds only the five inspected L11-A singleton GETs
+and the literal ordered DEDUCTION_METHOD,TYPE_OF_FULFILLMENT pair. Bind unique
+catalog types while preserving original Payload/catalog/detail indices and
+ordinary ordering/version proof. Never force-fetch a missing catalog. Preserve
+fatal identity/snapshot/query-count checks before fallback, even unbound, and
+compare full typed same-kind catalog content across admitted endpoints before
+overlap fallback, retaining numeric lexemes, metadata and duplicate order.
+Count queries include endpoint and every field except First. Scope L3/L11-A
+auxiliary exact-set checks to each form's endpoints without admitting unrelated
+responses. Keep all twelve IV.B fields canonical and unresolved; template,
+monetary formats, native eligibility/PDF gates and 45-worker allowlist stay intact.
+
 Approved compact Masa presentation: bind against original reference coordinates,
 then remove only declared empty body capacity. Keep populated rows (including
 zero and False), one body slot for an empty table, intentional separators,

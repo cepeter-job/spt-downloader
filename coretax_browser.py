@@ -51,9 +51,9 @@ GROUP_JS = r'''(element) => {
 
 CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  const panel=table.closest('.p-tabview-panel');
- const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form,rshshr-citr-l3-form');
+ const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form,rshshr-citr-l3-form,rshshr-citr-l11a-form');
  if(!panel || !form || form.closest('.p-tabview-panel')!==panel) return null;
- const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':'';
+ const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':name==='L11-A'?'rshshr-citr-l11a-form':'';
  if(form.localName!==expectedForm) return null;
  const roles={
   'rsh-citr-l1d-grid1':['L1-D','A. LAPORAN LABA RUGI'],
@@ -61,6 +61,11 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
   'rsh-citr-l1d-grid3':['L1-D','B. LAPORAN POSISI KEUANGAN'],
   'rsh-citr-l3-grid1':['L3','A. PENGHASILAN DARI LUAR NEGERI'],
   'rshshr-citr-l3-grid2':['L3','B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'],
+  'rshshr-citr-l11a-grid1':['L11-A','I. DAFTAR NOMINATIF BIAYA PROMOSI DAN PENJUALAN, SERTA PENGGANTIAN ATAU IMBALAN DALAM BENTUK NATURA DAN/ATAU KENIKMATAN'],
+  'rshshr-citr-l11a-grid2':['L11-A','II. DAFTAR NOMINATIF BIAYA ENTERTAINMENT'],
+  'rshshr-citr-l11a-grid3':['L11-A','III. DAFTAR PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH'],
+  'rsh-citr-l11a-grid4':['L11-A','IV. RINCIAN BAGI WAJIB PAJAK PEMBERI NATURA DAN/ATAU KENIKMATAN'],
+  'rshshr-citr-l11a-grid5':['L11-A','V. DAFTAR DEBITUR NON-PERFORMING LOAN'],
   'rshshr-citr-l9-form-grid1':['L9','HARTA BERWUJUD'],
   'rshshr-citr-l9-form-grid2':['L9','BANGUNAN'],
   'rshshr-citr-l9-form-grid3':['L9','HARTA TIDAK BERWUJUD']
@@ -80,6 +85,8 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  const component=components[0], role=roles[component];
  if(role[0]!==name || groups[0]!==role[1]) return null;
  if(['L1-D','L3'].includes(name) && groups.length!==1) return null;
+ if(name==='L11-A' && (component==='rsh-citr-l11a-grid4'?
+    groups.length!==2 || groups[1]!=='IV.A DAFTAR SARANA DAN FASILITAS SERTA PENYUSUTANNYA':groups.length!==1)) return null;
  if(name==='L9'){
   const inner=component.endsWith('grid2')?['PERMANEN','TIDAK PERMANEN']:
    ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA','KELOMPOK LAINNYA'];
@@ -1427,10 +1434,12 @@ def capture_financial_detail(page, **kwargs):
 
 def _check_corporate_request_identities(observations, record, scope):
     from coretax_corporate import GRID_ROLES
+    from coretax_json import CORPORATE_L11A_GRID_URLS
     grid_paths = {'/returnsheet/api/loadcit/' + suffix
                   for roles in GRID_ROLES.values() for _, suffix, _ in roles}
     grid_paths.update(('/returnsheet/api/loadcit/l3-table-b-grid',
                        '/returnsheet/api/loadcit/l3-table-b-grid/footer'))
+    grid_paths.update(urlparse(url).path for url in CORPORATE_L11A_GRID_URLS)
     period = record.get('source_fields', {}).get('TaxPeriodCode')
     expected_year = period[-4:] if isinstance(period, str) and re.search(r'[0-9]{4}$', period) else None
     if expected_year is None and scope[2] == 'period':

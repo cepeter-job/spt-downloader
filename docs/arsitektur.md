@@ -149,7 +149,7 @@ memakai fallback seluruh record; kontradiksi lifetime/encoding tetap fatal.
 Replay memerlukan custody manifest yang sama. Pemetaan Induk, PDF keuangan dan
 form corporate lain tetap mempunyai gate tersendiri.
 
-Helper murni L11-A juga belum terhubung ke admission, observer atau dispatcher.
+Helper murni L11-A dipisahkan dari bukti admission, observer dan dispatcher.
 Subset current-only memerlukan predecessor null, empat inventori halaman lengkap,
 Facilities/Recapitulation dan lima struktur tabel tanpa footer. Index sumber,
 identitas dan tahun tetap literal; PartnerName teks tidak diubah menjadi uang.
@@ -158,6 +158,23 @@ clamp nol hanya pada hasil akhir sebelum rekonsiliasi total. Input biaya null
 tetap kosong pada tampilan dan tersimpan sebagai null dalam provenance.
 Dua belas field IV.B tetap canonical serta belum terpetakan; template dan
 rentang format yang disetujui tidak berubah.
+
+Integrasi native L11-A memakai marker corporate-l11a-v1, tiga pin provider
+script termuat, lifetime SPA segar, route submitted literal ?view=true, Induk
+sebelumnya dan flag IsDeclareEntertainmentExpense numerik1 pada outer/current.
+PreviousFormData wajib eksplisit dan tidak boleh memuat predecessor L11A
+nonnull. Observer mengikat lima grid beserta seluruh grup/header/ancestry,
+termasuk IV/IV.A, sebelum dan sesudah empat paginator miliknya. Adapter hanya
+mengizinkan request tujuh field yang diinspeksi, kapasitas10, empat inventori
+Data/TotalRecords lengkap serta lima GET singleton atau pasangan literal
+DEDUCTION_METHOD,TYPE_OF_FULFILLMENT. Tidak membaca nilai bisnis DOM/cache atau
+meminta katalog tambahan. Path Payload/catalog/detail asli tetap dipertahankan
+meskipun urutan dua katalog dalam payload berbeda. Katalog bertipe sama yang
+berubah lintas endpoint tetap fatal sebelum fallback, termasuk metadata, urutan
+duplicate, jenis JSON dan token angka. Identitas/snapshot/count grid diketahui
+juga fatal tanpa binding; count dibedakan per endpoint dan query selain First.
+L3 dan L11-A memeriksa paket auxiliary masing-masing. Tidak mengubah template,
+dua belas field IV.B unresolved, batas capture/PDF atau syarat penerimaan live.
 
 Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
 Ia memproyeksikan body A dari current source dan body B dari page metadata yang
