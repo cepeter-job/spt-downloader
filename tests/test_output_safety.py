@@ -41,6 +41,29 @@ def test_offline_cli_exports_to_relative_output_folder(tmp_path, relative_output
     assert not list(folder.glob('.spt-export-*'))
 
 
+@pytest.mark.parametrize('offline', [False, True])
+@pytest.mark.parametrize('which', ['manifest', 'body'])
+def test_cli_keeps_changed_selected_json_before_replacing_any_output(tmp_path, offline, which):
+    from test_json_output_folder import captured_run, evidence
+    source = tmp_path / 'private-json-job'
+    run = captured_run(source)
+    coretax.save_output(run, source)
+    destination = tmp_path / 'offline-json-result' if offline else source
+    options = {'json_source': source} if offline else {}
+    if offline:
+        coretax.save_output(run, destination, **options)
+    expected = evidence(run, source)
+    assert all((destination / name).exists() for name in expected)
+    name = next(name for name in expected if name.endswith('manifest.json') == (which == 'manifest'))
+    changed = b'{"SYNTHETIC":"KEEP MODIFIED SELECTED EVIDENCE"}'
+    (destination / name).write_bytes(changed)
+    before = snapshot(destination)
+    with pytest.raises((ValueError, RuntimeError)):
+        coretax.save_output(run, destination, **options)
+    assert snapshot(destination) == before
+    assert (destination / name).read_bytes() == changed
+
+
 def test_relative_output_root_reparse_point_cannot_hide_during_normalization(tmp_path, monkeypatch):
     run = fixture_run()
     existing = tmp_path / 'existing-results'
