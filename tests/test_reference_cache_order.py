@@ -1,6 +1,5 @@
 """Pinned cache order precedes version selection; raw paths never move."""
 from copy import deepcopy
-import json
 
 import pytest
 
@@ -35,7 +34,7 @@ def project(family, rows, clock=None):
             result = project_countries(payload, clock_interval=clock)
             label = result['lookups']['0001']
         selected, = [entry for entry in result['provenance']
-                     if entry['path'][-1] == 'CodeDescription'
+                     if entry['path'][0] == 0 and entry['path'][-1] == 'CodeDescription'
                      and entry['path'][2] < len(rows)
                      and rows[entry['path'][2]]['Code'] == '0001'
                      and (entry.get('rule', '').startswith('reviewed-country-active-version:')
