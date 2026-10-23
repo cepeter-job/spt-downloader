@@ -28,6 +28,58 @@ def test_owned_download_context_blocks_service_worker_route_bypass(monkeypatch, 
     assert getattr(context, '_spt_financial_route_policy', None) == 'service_workers_blocked'
 
 
+@pytest.mark.parametrize('browser', ['msedge', 'chrome'])
+@pytest.mark.parametrize('headless', [False, True])
+def test_owned_download_context_binds_native_display_environment(monkeypatch, tmp_path, browser, headless):
+    launches = []
+    page = SimpleNamespace(goto=lambda *args, **kwargs: None)
+    context = SimpleNamespace(pages=[page], close=lambda: None)
+    def launch(profile, **options):
+        launches.append(options)
+        return context
+    engine = SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=launch))
+    monkeypatch.setattr(auth, 'authenticated', lambda current: current is page)
+    actual, selected = auth.authenticate_owned(engine, tmp_path / 'owned-profile', browser, headless,
+        lambda *args: None, lambda: None)
+    assert actual is context and selected is page
+    options, = launches
+    assert options.get('locale') == 'id-ID'
+    assert options.get('timezone_id') == 'Asia/Jakarta'
+    assert options['channel'] == browser and options['headless'] is headless
+    assert options['service_workers'] == 'block'
+
+
+@pytest.mark.parametrize('browser', ['msedge', 'chrome'])
+def test_cli_owned_download_binds_same_native_display_environment(monkeypatch, tmp_path, browser):
+    from contextlib import nullcontext
+    import coretax
+
+    class StopBeforeCapture(BaseException):
+        pass
+    launches, closed = [], []
+    page = SimpleNamespace(set_viewport_size=lambda *args: None, is_closed=lambda: False,
+                           close=lambda: closed.append('page'))
+    context = SimpleNamespace(new_page=lambda: page, close=lambda: closed.append('context'))
+    def launch(profile, **options):
+        launches.append(options)
+        return context
+    engine = SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=launch))
+    monkeypatch.setattr(coretax, 'sync_playwright', lambda: nullcontext(engine))
+    def stop(current, noninteractive):
+        assert current is page and noninteractive is True
+        raise StopBeforeCapture()
+    monkeypatch.setattr(coretax, 'authenticate', stop)
+    with pytest.raises(StopBeforeCapture):
+        coretax._main(['--npwp', '0000000000000001', '--year', '2025', '--browser', browser,
+            '--profile', str(tmp_path / 'owned-profile'), '--output', str(tmp_path / 'output'),
+            '--non-interactive', '--detail-source', 'json-first'])
+    options, = launches
+    assert options.get('locale') == 'id-ID'
+    assert options.get('timezone_id') == 'Asia/Jakarta'
+    assert options['channel'] == browser and options['service_workers'] == 'block'
+    assert closed == ['page', 'context']
+
+
 class Form:
     def __init__(self, page):
         self.page = page
