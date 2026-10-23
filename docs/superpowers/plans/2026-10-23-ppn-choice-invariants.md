@@ -67,13 +67,16 @@ unproved source shapes. No DOM checked-state read or endpoint change is needed.
 
 ## Execution
 
-- [ ] Publish corrected synthetic expectations plus unsafe-preservation,
+- [x] Publish corrected synthetic expectations plus unsafe-preservation,
       facility bounds/spelling, both export stages, invoice/calendar blockers,
       forward-refund, narrow Normal and saved compact workbook regressions.
-- [ ] Read actual runner RED, distinguish fixture failures, then implement only
+- [x] Read actual runner RED, distinguish fixture failures, then implement only
       supported invariants. Preserve earlier source bytes and historical proof.
-- [ ] Pass the complete unchanged Windows/portable suite and package/bootstrap
+- [x] Pass the complete unchanged Windows/portable suite and package/bootstrap
       readback on exact coordinates; update AGENTS/architecture, obtain one
       fresh source review and review preceding other-session main before merge.
-- [ ] Keep active-calendar/Normal-negative/unproved forward-refund cases and
+- [x] Keep active-calendar/Normal-negative/unproved forward-refund cases and
       unselected live scopes explicitly open; no fabricated completion claim.
+
+Merged outcome and exact RED/review/GREEN/artifact coordinates are in the
+[PPN invariant report](../reports/2026-10-23-ppn-choice-invariants.md).

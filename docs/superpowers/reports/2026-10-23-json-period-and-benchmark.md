@@ -120,8 +120,14 @@ through `8391dde2fa78afdbcc9f2ee07502d4f603fa15ee`; their original artifact
 coordinates remain historical evidence. PR95/97 closes the new period/environment
 repairs, matched PPh21 acceptance and deferred L7 tests, while broader corporate
 semantic/native coverage and PPN final-choice branches retain separate gates.
-[PR98](https://github.com/cepeter-job/spt-downloader/pull/98) and
-[PR99](https://github.com/cepeter-job/spt-downloader/pull/99) track focused
-continuations; their draft tests do not certify implementation. Current-build
-live acceptance for other families needs an explicitly selected scope. Missing
-consumer proof or live scope stays open with truthful fallback/PARTIAL.
+[PR98](https://github.com/cepeter-job/spt-downloader/pull/98) merged the
+[reviewed L11-C semantic branch](2026-10-23-corporate-l11c-semantic.md), and
+[PR99](https://github.com/cepeter-job/spt-downloader/pull/99) merged
+[PPN final-choice invariants and the narrow Normal branch](2026-10-23-ppn-choice-invariants.md).
+Both have exact runner/package evidence and separate supported boundaries.
+L1-D continues in draft [PR102](https://github.com/cepeter-job/spt-downloader/pull/102);
+its pure helper and tests do not certify native eligibility. L3/L11-A, remaining
+corporate semantic destinations and unproved PPN lifecycle branches retain
+their own source/runner gates. Current-build live acceptance for other families
+needs an explicitly selected scope. Missing consumer proof or live scope stays
+open with truthful fallback/PARTIAL.
