@@ -27,8 +27,9 @@ def table(form, header, rows, *, footer=None, spans=None, **extra):
             'footer': footer or [], 'footer_spans': spans or [], **extra}
 
 
-def export(tmp_path, sections):
+def export(tmp_path, sections, *, capture_complete=True):
     run = source_run('PPh Badan', sections)
+    run['records'][0]['capture_complete'] = capture_complete
     before = deepcopy(run)
     reports = []
     paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)

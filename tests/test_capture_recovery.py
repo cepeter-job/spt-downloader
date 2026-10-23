@@ -28,7 +28,9 @@ def test_real_disabled_previous_is_never_clicked(page, monkeypatch, tmp_path, ki
 
 
 def test_failed_middle_panel_preserves_later_tab_and_partial(page,monkeypatch):
-    monkeypatch.setattr(driver,'DETAIL_PANEL_TIMEOUT',0.05,raising=False)
+    # Real Edge round trips for a healthy panel may exceed 50 ms. Retain the
+    # strict production deadline tests separately; this fixture tests recovery.
+    monkeypatch.setattr(driver,'DETAIL_PANEL_TIMEOUT',2,raising=False)
     install(page,['First','Middle','Last'])
     page.locator('a[aria-controls="panel-1"]').evaluate('(e)=>e.setAttribute("aria-controls","missing")')
     locator_type=type(page.locator('body'))
@@ -45,7 +47,7 @@ def test_failed_middle_panel_preserves_later_tab_and_partial(page,monkeypatch):
 
 
 def test_stop_while_waiting_for_panel_propagates(page,monkeypatch):
-    monkeypatch.setattr(driver,'DETAIL_PANEL_TIMEOUT',0.1,raising=False)
+    monkeypatch.setattr(driver,'DETAIL_PANEL_TIMEOUT',2,raising=False)
     install(page,['First','Middle','Last'])
     page.locator('a[aria-controls="panel-1"]').evaluate('(e)=>{e.setAttribute("aria-controls","missing");e.onclick=()=>window.middle=true}')
     def cancel():

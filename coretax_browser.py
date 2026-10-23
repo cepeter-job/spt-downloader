@@ -177,7 +177,9 @@ FIELDS_JS = r'''(root) => {
   }
   return result;
  };
- const include=e=>e.closest('.p-tabview-panel')===owner && !e.closest('table') && !e.closest('[hidden],[aria-hidden="true"]');
+ // Paginator inputs are navigation state, not business fields. Keep unnamed
+ // inputs elsewhere: their value alone never proves a paginator origin.
+ const include=e=>e.closest('.p-tabview-panel')===owner && !e.closest('table,.p-paginator') && !e.closest('[hidden],[aria-hidden="true"]');
  [...root.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')].filter(include).forEach(e=>{
   if(e.getAttribute('role')==='combobox')return;
   if(e.type==='radio'||e.type==='checkbox'){

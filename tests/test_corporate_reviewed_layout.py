@@ -151,7 +151,7 @@ def test_empty_l3_remnant_annotation_does_not_relax_table_completion(tmp_path, c
     if changed == 'nonempty': source.update(rows=[['SYNTHETIC VALUE']], body_row_count=1)
     elif changed == 'incomplete': source['complete'] = False
     elif changed == 'foreign': source['group'] = 'SYNTHETIC FOREIGN GROUP'
-    book, reports = export(tmp_path, [section('L3', tables=[source])])
+    book, reports = export(tmp_path, [section('L3', tables=[source])], capture_complete=changed != 'incomplete')
     try:
         assert reports[0].get('reviewed_redundant_tables', 0) == (1 if changed == 'none' else 0)
         assert reports[0]['unmapped_tables'] == 1 and not reports[0]['complete']

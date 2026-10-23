@@ -53,11 +53,47 @@ def _present(value):
     return value is not None and bool(str(value).strip())
 
 
-def _clean_report(fields, tables, **derived):
+def _reviewed_omissions(form, fields, source_tables):
+    """Annotate the reviewed display exceptions, never resolve their binding."""
+    headers = {
+        'l2': ('TaxPeriodYear', 'Tahun Pajak/Bagian Tahun Pajak', 'Nomor Identitas WP'),
+        'l3': ('TaxPeriodYear', 'TAHUN PAJAK', 'Nomor Identitas WP'),
+        'l6': ('TaxPeriodYear', 'TAHUN PAJAK', 'Nomor Identitas WP'),
+        'l8': ('TaxPeriodYear', 'TAHUN PAJAK', 'NPWP'),
+        'l9': ('PeriodYear', 'TAHUN PAJAK', 'NPWP'),
+        'l10-a': ('PeriodYear', 'Tahun Pajak', 'Nomor Identitas WP'),
+    }
+    unnamed = {
+        'l2': {'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',
+               'B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI'},
+        'l3': {'A. PENGHASILAN DARI LUAR NEGERI', 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'},
+        'l9': {'KELOMPOK 1', 'KELOMPOK 2', 'KELOMPOK 3', 'KELOMPOK 4',
+               'KELOMPOK LAINNYA', 'PERMANEN', 'TIDAK PERMANEN'},
+        'l10-a': {'Daftar Transaksi Yang Dipengaruhi Hubungan Istimewa'},
+    }
+    signatures = set()
+    if form in headers:
+        year, caption, tin_caption = headers[form]
+        signatures.update({('HEADER', year, caption), ('HEADER', 'CollectorTin', tin_caption)})
+    signatures.update((group, '', 'Unnamed field') for group in unnamed.get(form, ()))
+    reviewed_fields = sum((f.get('group'), f.get('field', ''), f.get('label')) in signatures for f in fields)
+    reviewed_tables = sum(
+        form == 'l3' and t.get('name') == 'Tabel 2'
+        and t.get('group') == 'A. PENGHASILAN DARI LUAR NEGERI'
+        and t.get('complete') is True and t.get('headers') == [] and t.get('rows') == []
+        and type(t.get('body_row_count')) is int and t['body_row_count'] == 0
+        and t.get('footer', []) == [] and t.get('source_total') in (None, 0)
+        for t in source_tables)
+    return ({'reviewed_redundant_fields': reviewed_fields, 'reviewed_redundant_tables': reviewed_tables}
+            if reviewed_fields or reviewed_tables else {})
+
+
+def _clean_report(fields, tables, *, form=None, source_tables=(), **derived):
     unresolved = [table for table in tables if table.get('rows') or not table.get('complete', True)]
     return {'complete': not fields and not unresolved and derived.get('derived_complete', True),
             'unmapped_fields': len(fields), 'unmapped_tables': len(unresolved),
-            'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved), **derived}
+            'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved),
+            **_reviewed_omissions(form, fields, source_tables), **derived}
 
 
 # Approved clean Induk captions. Match the observed owner, field and caption
@@ -73,6 +109,12 @@ _INDUK_IDENTITY = [
     ('B. INFORMASI LAPORAN KEUANGAN', 'NameAccountant', '2.c. Nama Kantor Akuntan Publik'),
     ('A. IDENTITAS WAJIB PAJAK', 'EmailAddress', '3. Alamat Email'),
     ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
+]
+_INDUK_INCOME_GROUP = ('C. PENGHASILAN YANG DIKENAKAN PPh YANG BERSIFAT FINAL DAN '
+                      'YANG TIDAK TERMASUK OBJEK PAJAK')
+_INDUK_INCOME = [
+    (_INDUK_INCOME_GROUP, '', '2. Apakah Wajib Pajak menerima atau memperoleh penghasilan yang dikenakan PPh yang bersifat final? * / Tidak / Ya'),
+    (_INDUK_INCOME_GROUP, '', '3. Apakah Wajib Pajak menerima atau memperoleh penghasilan yang tidak termasuk objek pajak? * / Tidak / Ya'),
 ]
 _INDUK_CALCULATIONS = [
     ('D. PENGHITUNGAN PPh', '', '4. Penghasilan Neto Fiskal sebelum Fasilitas Pajak'),
@@ -123,7 +165,13 @@ def _induk(sheet, sections):
     sheet['A1'].font = title_font
     fields = [field for section in sections for field in section.get('fields', [])]
     used, blocks = set(), []
-    for slots, strip_number in ((_INDUK_IDENTITY, False), (_INDUK_CALCULATIONS, True)):
+    declarations = [('', _INDUK_IDENTITY),
+        (_INDUK_INCOME_GROUP[3:] + ' ', _INDUK_INCOME),
+        ('PENGHITUNGAN PPh', _INDUK_CALCULATIONS[:4]),
+        ('PENGURANG PPh TERUTANG ', _INDUK_CALCULATIONS[4:8]),
+        ('PPh KURANG/LEBIH BAYAR ', _INDUK_CALCULATIONS[8:])]
+    for heading, slots in declarations:
+        strip_number = bool(heading)
         output = []
         for group, name, caption in slots:
             matches = [(index, field) for index, field in enumerate(fields)
@@ -135,14 +183,35 @@ def _induk(sheet, sections):
             used.add(index)
             if _present(field.get('value')):
                 label = re.sub(r'^[0-9]+(?:\.[a-z])?\.\s+', '', caption) if strip_number else caption
+                if group == _INDUK_INCOME_GROUP:
+                    label = label.removesuffix(' * / Tidak / Ya')
+                    if caption == _INDUK_INCOME[1][2]:
+                        label = ' ' + label  # Literal operator-approved caption.
                 kind = ('money' if strip_number and name != 'TaxRate' and caption != 'Ganti SPT sebelumnya'
                         else 'tariff' if name == 'TaxRate' else 'choice' if strip_number else 'identity')
                 output.append((index, label, field['value'], kind))
-        blocks.append(output)
+        blocks.append((heading, output))
     row = 2
-    for index, block in enumerate(blocks):
-        if index and blocks[0] and block:
-            row += 2  # Approved identity/calculation separator.
+    separated = False
+    for heading, block in blocks:
+        if not block:
+            continue
+        if heading:
+            if blocks[0][1] and not separated:
+                row += 1  # Reviewed single identity/section separator.
+                separated = True
+            _write(sheet, row, 1, heading)
+            horizontal = Side(style='thin', color=Color(indexed=64))
+            for column in (1, 2):
+                cell = sheet.cell(row, column)
+                font = copy(cell.font)
+                font.bold = True
+                cell.font = font
+                if heading != declarations[1][0]:
+                    cell.border = Border(top=horizontal, bottom=horizontal)
+            if heading != declarations[1][0]:
+                sheet.cell(row, 2).number_format = ACCOUNTING_LITERAL
+            row += 1
         first = row
         for field_index, caption, value, kind in block:
             _write(sheet, row, 1, caption)
@@ -235,7 +304,7 @@ def _l8(sheet, sections):
     _thin_grid(sheet, 1, sheet.max_row, 3)
     for row in merges:
         sheet.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
-    return _clean_report(fields, pending)
+    return _clean_report(fields, pending, form='l8', source_tables=tables)
 
 
 def _remove_rows(sheet, first, count):
@@ -509,7 +578,7 @@ def _accounting_format(sheet, form):
         'l6': ['B2:B8'], 'l7': ['C1:I13'],
         'l9': ['D5:E187', 'H5:H188', 'D193:E193', 'G193:H194',
                'H226:H228', 'H259:H261'],
-        'l10-a': ['G3:G33'], 'l11-a': ['E8:E292'],
+        'l10-a': ['G3:G33'], 'l10-c': ['E3:E3'], 'l11-a': ['E8:E292'],
         'l11-b': ['B2:B7', 'D12:P13', 'B18:N23'],
     }
     # The approved reference's rupiah accounting display; only number format
@@ -643,6 +712,7 @@ def render_template_form(sheet, form, sections, *, period=None):
     if form == 'l6':
         _thin_grid(sheet, 2, 8, 2)
     pending = []
+    source_tables = [table for section in sections for table in section.get('tables', [])]
     for section in sections:
         for table in section.get('tables', []):
             rows = table.get('rows', [])
@@ -717,6 +787,10 @@ def render_template_form(sheet, form, sections, *, period=None):
                     sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
                 if form == 'l11-b' and ((block, column) in ((0, 16), (1, 14))):
                     averages[block] = sheet.cell(row, column).coordinate
+                if form == 'l9' and block == 0 and row_offset == 0 and column == 8:
+                    font = copy(sheet.cell(row, column).font)
+                    font.bold = True
+                    sheet.cell(row, column).font = font
             else:
                 _write(sheet, row, column, value)
         if not footer_safe:
@@ -733,5 +807,5 @@ def render_template_form(sheet, form, sections, *, period=None):
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
-        return _clean_report(fields, pending, **derived)
+        return _clean_report(fields, pending, form=form, source_tables=source_tables, **derived)
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)
