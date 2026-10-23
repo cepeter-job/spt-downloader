@@ -5,6 +5,7 @@ renderer round trip. No sleep or machine-speed assertion drives the fault; DOM,
 panel ownership, PDF capture/abort/replay and saved bytes remain real Edge work.
 """
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
@@ -113,3 +114,36 @@ def test_stop_after_slow_panel_read_prevents_capture_and_post(post_routed, tmp_p
 
     assert page.evaluate('window.syntheticClicks') == 0 and wire == []
     assert not list(tmp_path.rglob('*.pdf'))
+
+
+def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypatch):
+    page, wire = post_routed(detail_url=DETAIL)
+    corporate_tabs(page)
+    tab = page.get_by_role('tab', name='Induk', exact=True)
+    tab.click()
+    clock = [0.0]
+    allowances = []
+    locator_type = type(tab)
+    for method in ('inner_text', 'get_attribute', 'wait_for', 'element_handle', 'evaluate'):
+        original = getattr(locator_type, method)
+
+        def read(locator, *args, _original=original, **kwargs):
+            allowance = kwargs.get('timeout')
+            if allowance is not None:
+                allowances.append((clock[0], allowance))
+            result = _original(locator, *args, **kwargs)
+            clock[0] += 0.4
+            return result
+
+        monkeypatch.setattr(locator_type, method, read)
+    monkeypatch.setattr(driver, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 1)
+    # Probe is a separate after-exhaustion diagnostic budget.
+    monkeypatch.setattr(driver, '_record_panel_timeout', lambda *args: None)
+
+    with pytest.raises(driver.PlaywrightTimeoutError):
+        driver._wait_tab_panel(page.locator('.p-tabview'), tab, 'Induk', None)
+
+    assert allowances and all(0 < timeout <= max(1, (1 - at) * 1000)
+                              for at, timeout in allowances)
+    assert page.evaluate('window.syntheticClicks') == 0 and wire == []
