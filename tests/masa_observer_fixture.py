@@ -10,6 +10,7 @@ ASSETS = {
     'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
 }
 BUILD = b'/* synthetic observer build, not portal code */'
+VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
 FRAME = ORIGIN + '/returnsheets/id-ID/synthetic-masa/' + TAXPAYER + '/' + RECORD
 FORMS = {
     'PPN': [('INDUK', None, []),
@@ -29,9 +30,11 @@ FORMS = {
 
 
 class Fixture:
-    def __init__(self, browser, tax, *, defect=None, layout='direct', induk_fields=None):
+    def __init__(self, browser, tax, *, defect=None, layout='direct', induk_fields=None, vendor=None):
         self.tax, self.defect, self.layout = tax, defect, layout
         self.induk_fields = induk_fields
+        self.vendor = vendor
+        self.vendor_requests = []
         self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta')
         self.page = self.context.new_page()
         self.record = selected(tax)
@@ -44,6 +47,9 @@ class Fixture:
             route.fulfill(content_type='text/html', body='<link rel="icon" href="data:,">')
         elif request.url == FRAME:
             route.fulfill(content_type='text/html', body=self.document())
+        elif request.url == VENDOR and self.vendor is not None:
+            self.vendor_requests.append(request.method)
+            route.fulfill(content_type='application/javascript', body=self.vendor)
         elif request.url in (MAIN, ASSETS[self.tax]):
             changed = self.defect == ('changed-main' if request.url == MAIN else 'changed-build')
             route.fulfill(content_type='application/javascript', body=BUILD + (b'/* changed */' if changed else b''))
@@ -116,7 +122,8 @@ class Fixture:
                   'prefix': ORIGIN + '/returnsheet/api', 'defect': self.defect,
                   'primary': '/prefillreturnsheet/nvat' if self.tax == 'PPN' else '/prefillreturnsheet/withholding-tax'}
         return ('<html><head><link rel="icon" href="data:,"><style>p-table,p-panel,p-accordion,p-treetable{display:block}</style>'
-            '<script src="' + MAIN + '"></script><script src="' + ASSETS[self.tax] + '"></script></head>'
+            '<script src="' + MAIN + '"></script><script src="' + ASSETS[self.tax] + '"></script>' +
+            ('<script src="' + VENDOR + '"></script>' if self.vendor is not None else '') + '</head>'
             '<body><div class="main-content"><div class="p-tabview"><ul class="p-tabview-nav">' + ''.join(tabs) +
             '</ul><div class="p-tabview-panels">' + ''.join(panels) + '</div></div></div><script>const cfg=' + json.dumps(config) + ';' + SCRIPT + '</script></body></html>')
 

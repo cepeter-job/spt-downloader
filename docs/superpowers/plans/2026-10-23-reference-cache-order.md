@@ -65,6 +65,41 @@ The repair uses original ordinal/row pairs, retains raw candidate evidence order
 records ParameterData and the selected ordering rule, then applies the existing
 clock selector. Full GREEN/package readback and final source review remain open.
 
+## Review follow-up and latest main
+
+Fresh implementation review found two additional boundaries. An unsupported
+ordering key must not mask an explicitly contradictory catalog/detail language,
+including when form observation is unavailable. Preflight the exact admitted
+reference payload before projection/fallback, and preserve the same rule in
+pure projectors. Mixed-defect tests use valid JSON with unsupported keys so a
+separate parsing/privacy failure cannot conceal the locale check.
+
+The comparator is supplied by the separately reviewed vendor bundle. Preserve
+legacy unique-Code compatibility, but require positive optional Induk
+`reference_order_build` evidence for every ordinary duplicate-Code catalog in
+PPh21/Unifikasi. Pure projectors declare `requires_vendor`; they do not claim
+that an asset was loaded. Observers hash the exact already-loaded vendor through
+the existing bounded public-source reader; omit unavailable/wrong proof and
+never force a missing asset to load. Validate any present proof and preserve it
+with selected-value provenance. Corporate L11-C already requires this vendor.
+PERIOD/model ambiguity stays unsupported even with positive proof.
+
+Tests-first follow-up adds80 cases:54 mixed-defect pure/packet cases with/without
+form observation, six pure dependency declarations, fourteen native gate and
+dropdown controls, and six real Edge observer digest/changed/missing controls.
+Existing dated positive fixtures now supply the required dependency proof, with
+an actually loaded synthetic vendor for the full native PPh21 saved export.
+The follow-up production guards are not implemented in this tests-first commit.
+
+Preceding other-session [PR101](https://github.com/cepeter-job/spt-downloader/pull/101)
+merged as `f45ba79f26eaa923c3afc017eab0458d8be66328`. Reviewed all seven changed
+files, including finite Authorization budget, exact one-request replay,
+first-rejection diagnostics, allowlisted categories and23 synthetic cases.
+It changes no catalog/projection code or source pins. The local integration
+preserves its source/tests/docs and their independent live/PDF claims; this
+JSON work does not reuse the other session's live authorization. The latest-main
+baseline now has4,618 Windows cases; combined follow-up expects4,821.
+
 ## Submitted corporate View integration
 
 The same priority repair includes a separate two-line route compatibility fix:

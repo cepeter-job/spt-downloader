@@ -14,10 +14,14 @@ from support_templates import run_for
 from test_dated_reference_catalogs import CLOCK
 from test_pph21_template import export
 from pph21_observer_fixture import browser
+from test_reference_order_safety import VENDOR_SHA
+
+VENDOR_BUILD = b'/* SYNTHETIC ORDER VENDOR -- no portal code */'
 
 
 def dated_case():
     record, bodies, forms = case()
+    forms[0]['reference_order_build'] = VENDOR_SHA
     expected = []
     for item in bodies:
         item['context']['clock_interval'] = {**CLOCK, 'attempt': item['context']['attempt']}
@@ -90,17 +94,19 @@ def test_real_edge_clock_and_dated_response_reach_native_workbook_without_dom_va
         browser, tmp_path, monkeypatch):
     import coretax_browser as driver
     import coretax_pph21_projection as projection
+    import coretax_json
     from pph21_observer_fixture import MAIN, ARTICLE, BUILD, observed
     from test_pph21_json_observer import feature, assert_no_values_or_actions
     monkeypatch.setattr(projection, 'BUILD_DIGESTS', {
         MAIN: hashlib.sha256(BUILD).hexdigest(), ARTICLE: hashlib.sha256(BUILD).hexdigest()})
     feature(monkeypatch)
+    monkeypatch.setattr(coretax_json, 'REFERENCE_ORDER_SHA256', hashlib.sha256(VENDOR_BUILD).hexdigest(), raising=False)
 
     def forbidden(*args, **kwargs):
         pytest.fail('Dated native source must not read DOM business values')
 
     monkeypatch.setattr(driver, 'capture_detail', forbidden)
-    with observed(browser, tmp_path, native=True) as (fixture, capture):
+    with observed(browser, tmp_path, native=True, vendor=VENDOR_BUILD) as (fixture, capture):
         envelope = json.loads(fixture.source_packets[REFERENCE])
         for catalog in envelope['Payload']:
             catalog['Details'] = [version for entry in catalog['Details'] for version in (
@@ -132,6 +138,7 @@ def test_dated_unifikasi_catalogs_reach_all_forms_and_preserve_period_dropdown(t
     from unifikasi_projection_fixture import case as unifikasi_case, URL
     from support_masa_native import exported
     fixture = unifikasi_case(model=model)
+    next(form for form in fixture['forms'] if form['name'] == 'INDUK')['reference_order_build'] = VENDOR_SHA
     # The projection-only fixture uses placeholder headings for these three
     # grids. Supply approved presentation geometry for this workbook test.
     reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources' / 'unifikasi_format.xlsx')

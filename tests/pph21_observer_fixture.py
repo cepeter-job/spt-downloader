@@ -14,6 +14,7 @@ from support_pph21_dom import appendix_table, induk_tables
 MAIN = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
 ARTICLE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
 BUILD = b'/* synthetic observer build, not portal code */'
+VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
 FRAME = ORIGIN + '/returnsheets/id-ID/article-21-26-tax-return/' + TAXPAYER + '/' + RECORD + '/ICT_WIT/00000000-0000-4000-8000-000000000002'
 REFERENCE = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS'
 MODEL_REFERENCE = REFERENCE.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'
@@ -34,9 +35,11 @@ INDUK_CONTROLS = tuple(article + suffix for article in ('A21', 'A26') for suffix
 
 
 class Fixture:
-    def __init__(self, browser, *, defect=None, native=False):
+    def __init__(self, browser, *, defect=None, native=False, vendor=None):
         self.defect = defect
         self.native = native
+        self.vendor = vendor
+        self.vendor_requests = []
         self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta')
         self.page = self.context.new_page()
         self.record = selected('PPh Pasal 21/26')
@@ -54,6 +57,9 @@ class Fixture:
             route.fulfill(content_type='text/html', body='<link rel="icon" href="data:,">')
         elif request.url == FRAME:
             route.fulfill(content_type='text/html', body=self.document())
+        elif request.url == VENDOR and self.vendor is not None:
+            self.vendor_requests.append(request.method)
+            route.fulfill(content_type='application/javascript', body=self.vendor)
         elif request.url in (MAIN, ARTICLE):
             route.fulfill(content_type='application/javascript', body=BUILD +
                           (b'/* changed */' if self.defect == 'changed-build' else b''))
@@ -165,7 +171,8 @@ class Fixture:
             panels.append(f'<div data-main-panel class="p-tabview-panel" id="p{index}" style="display:{"block" if index == 0 else "none"}">{content}</div>')
         config = {'record': FOREIGN if self.defect == 'foreign-request' else RECORD, 'primary': PRIMARY_URL, 'defect': self.defect}
         return ('<html lang="id-ID"><head><link rel="icon" href="data:,"><style>ui-grid,p-table,p-panel{display:block}</style>'
-                '<script src="' + MAIN + '"></script><script src="' + ARTICLE + '"></script></head><body>'
+                '<script src="' + MAIN + '"></script><script src="' + ARTICLE + '"></script>' +
+                ('<script src="' + VENDOR + '"></script>' if self.vendor is not None else '') + '</head><body>'
                 '<div class="main-content"><div class="p-tabview"><ul class="p-tabview-nav">' + ''.join(tabs) +
                 '</ul><div class="p-tabview-panels">' + ''.join(panels) + '</div></div></div>'
                 '<script>const cfg=' + json.dumps(config) + ';' + SCRIPT + '</script></body></html>')
@@ -206,8 +213,8 @@ def browser():
 
 
 @contextmanager
-def observed(browser, tmp_path, *, defect=None, native=False):
-    fixture = Fixture(browser, defect=defect, native=native)
+def observed(browser, tmp_path, *, defect=None, native=False, vendor=None):
+    fixture = Fixture(browser, defect=defect, native=native, vendor=vendor)
     try:
         fixture.page.goto(fixture.record['list_url'])
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, SCOPE, tmp_path) as capture:
