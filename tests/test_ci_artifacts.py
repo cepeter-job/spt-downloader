@@ -322,6 +322,35 @@ def test_build_info_uses_exact_github_identity_and_rejects_absent_or_invalid_val
                 module.write_build_info(tmp_path, '3.14.8')
 
 
+@pytest.mark.parametrize('run_id,run_attempt,valid', [
+    pytest.param('9' * 24, 1_000_000, True, id='upper-bounds'),
+    pytest.param('9' * 25, 1, False, id='run-id-too-long'),
+    pytest.param('123', 1_000_001, False, id='run-attempt-too-large'),
+])
+def test_build_info_producer_and_readers_enforce_same_bounds(
+        tmp_path, monkeypatch, run_id, run_attempt, valid):
+    from spt_desktop.build_info import read_build_info
+
+    module = verifier()
+    identity = {'schema': 1, 'commit': 'a' * 40, 'run_id': run_id, 'run_attempt': run_attempt}
+    for key, value in {'GITHUB_SHA': identity['commit'], 'GITHUB_RUN_ID': run_id,
+                       'GITHUB_RUN_ATTEMPT': str(run_attempt)}.items():
+        monkeypatch.setenv(key, value)
+    path = tmp_path / 'build-info.json'
+    if valid:
+        module.write_build_info(tmp_path, python_version())
+        assert module.checked_build_info(tmp_path) == identity
+        assert read_build_info(tmp_path) == identity
+    else:
+        with pytest.raises(ValueError, match='build-info'):
+            module.write_build_info(tmp_path, python_version())
+        assert not path.exists()
+        path.write_text(json.dumps(identity), encoding='utf-8')
+        assert read_build_info(tmp_path) is None
+        with pytest.raises(ValueError, match='build-info'):
+            module.checked_build_info(tmp_path)
+
+
 @pytest.mark.parametrize('tcl_name,tk_name,tcl_tk_version', [
     ('tcl86t.dll', 'tk86t.dll', '8.6.15'),
     ('tcl90.dll', 'tcl9tk90.dll', '9.0.2'),

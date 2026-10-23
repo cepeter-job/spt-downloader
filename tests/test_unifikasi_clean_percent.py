@@ -32,7 +32,7 @@ def table(group='BPPU', rate='2,50', count=1):
 
 @pytest.mark.parametrize('group,first', [('BPPU',5),('BPNR',12)])
 @pytest.mark.parametrize('literal,expected', [('2,00','0.02'),('2,50','0.025'),('0','0'),('100','1'),
-                                             ('12,3456789012345','0.123456789012345')])
+    (0,'0'),(2.5,'0.025'),(100,'1'),('12,3456789012345','0.123456789012345')])
 def test_numeric_percent_scale_and_unchanged_adjacent_values(tmp_path,group,first,literal,expected):
     book,reports=export(tmp_path,[section('DAFTAR-I',tables=[table(group,literal)])])
     try:
@@ -48,7 +48,10 @@ def test_numeric_percent_scale_and_unchanged_adjacent_values(tmp_path,group,firs
 
 
 @pytest.mark.parametrize('literal',['abc','2.5','2,50%','-1','101','0,1234567890123456',
-                                            '99,999999999999999999999999999999'])
+    '99,999999999999999999999999999999',
+    pytest.param('0,' + '0' * 400 + '1', id='underflow'),
+    pytest.param('0,' + '0' * 305 + '1', id='subnormal'),
+    pytest.param('100,0000000000000', id='source-precision-before-division')])
 def test_unsupported_rate_preserves_literal_and_partial(tmp_path,literal):
     book,reports=export(tmp_path,[section('DAFTAR-I',tables=[table(rate=literal)])])
     try:
@@ -59,9 +62,13 @@ def test_unsupported_rate_preserves_literal_and_partial(tmp_path,literal):
     finally:book.close()
 
 
-def test_blank_rate_not_zero(tmp_path):
-    book,_=export(tmp_path,[section('DAFTAR-I',tables=[table(rate='')])])
-    try:assert book['DAFTAR-I']['J5'].value is None
+@pytest.mark.parametrize('rate', [None, ''])
+def test_blank_rate_not_zero(tmp_path,rate):
+    book,reports=export(tmp_path,[section('DAFTAR-I',tables=[table(rate=rate)])])
+    try:
+        assert book['DAFTAR-I']['J5'].value is None
+        assert reports[0]['complete'] is True
+        assert reports[0]['unmapped_rows'] == 0
     finally:book.close()
 
 
