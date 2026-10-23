@@ -74,7 +74,7 @@ def post_routed(browser, monkeypatch):
                                       status=status, headers=headers or {})
                 else:
                     intercept.abort('blockedbyclient')
-            elif request.url == detail_url:
+            elif request.url == detail_url.split('#', 1)[0]:
                 intercept.fulfill(body=html, content_type='text/html')
             elif request.url == ORIGIN + SCRIPT_PATH:
                 intercept.fulfill(body=script, content_type='application/javascript')

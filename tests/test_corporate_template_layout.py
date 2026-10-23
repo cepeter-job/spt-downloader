@@ -1,7 +1,13 @@
-"""Approved corporate layout contract, using synthetic captures only."""
+"""Corporate binding against reference geometry, before final row compaction.
+
+These tests keep stable reference coordinates to isolate semantic binding,
+growth and style contracts. test_corporate_compact_export exercises the actual
+exporter without suppressing the final presentation phase.
+"""
 from copy import deepcopy
 from pathlib import Path
 import hashlib
+from unittest.mock import patch
 
 import pytest
 from openpyxl import load_workbook
@@ -31,14 +37,16 @@ def export(tmp_path, sections, *, year=2025, capture_complete=True):
     run['records'][0]['capture_complete'] = capture_complete
     before = deepcopy(run)
     reports = []
-    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    with patch('coretax_badan_template._compact_layout',
+               side_effect=lambda sheet, form, deleted, der_row, averages: (der_row, averages)):
+        paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
     assert run == before
     name, = [name for name in paths if name != 'resume.xlsx']
     coretax.verify_outputs(run, tmp_path)
     return load_workbook(tmp_path / name), reports
 
 
-def test_all_observed_reference_forms_preserve_approved_layout(tmp_path):
+def test_binding_stage_preserves_reference_geometry_and_approved_styles(tmp_path):
     book, _ = export(tmp_path, [section(name) for name in FORMS])
     reference = load_workbook(RESOURCE)
     try:
@@ -57,6 +65,10 @@ def test_all_observed_reference_forms_preserve_approved_layout(tmp_path):
                 for cell in row:
                     if not isinstance(cell, MergedCell):
                         cell.number_format = '0.00%'
+        for address in ('F4', 'G4', 'J4'):
+            reference['L3'][address].number_format = '_-"Rp"* #,##0.00_-;\\-"Rp"* #,##0.00_-;_-"Rp"* "-"??_-;_-@_-'
+        for row in (226, 227, 228):
+            reference['L9'].cell(row, 8).number_format = accounting.replace('0.00', '0')
         der = reference['L11-B']
         der['A26'] = 'PERHITUNGAN DER'
         der['B26'] = 'Jumlah Saldo Rata-Rata Utang'
@@ -124,7 +136,7 @@ def test_unique_table_binds_headers_and_grows_without_changing_identifier(tmp_pa
         book.close()
 
 
-def test_ambiguous_balance_table_stays_visible_and_unresolved(tmp_path):
+def test_ambiguous_balance_table_stays_unresolved_without_raw_display(tmp_path):
     table = {'name': 'Synthetic ambiguous table', 'headers': ['KODE AKUN', 'NAMA AKUN', 'NILAI'],
              'rows': [['0001', 'SYNTHETIC UNBOUND', 'Rp. | 1.234,50']],
              'body_row_count': 1, 'source_total': 1, 'complete': True,
@@ -133,7 +145,7 @@ def test_ambiguous_balance_table_stays_visible_and_unresolved(tmp_path):
     try:
         sheet = book['L1-D']
         assert sheet['C44'].value is None and sheet['C73'].value is None
-        assert any(cell.value == 'Rp. | 1.234,50' for cells in sheet for cell in cells)
+        assert not any(cell.value == 'Rp. | 1.234,50' for cells in sheet for cell in cells)
         assert reports and reports[0]['complete'] is False
         assert reports[0]['unmapped_rows'] == 1
     finally:
@@ -826,8 +838,7 @@ def test_l9_inspected_kelompok_lainnya_alias_requires_source_owner(tmp_path, own
                 assert book['L9'][coord].value in (None, '')
         assert reports[0]['complete'] is owner
         assert reports[0]['unmapped_tables'] == (0 if owner else 2)
-        if not owner:
-            assert any(cell.value == 'Data sumber tambahan / belum dipetakan'
+        assert not any(cell.value == 'Data sumber tambahan / belum dipetakan'
                        for cells in book['L9'] for cell in cells)
     finally:
         book.close()

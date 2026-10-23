@@ -52,3 +52,22 @@ def test_actual_route_scope_change_aborts_before_replay(post_routed, tmp_path):
     result = attachments().download_financial_attachments(page, record(), tmp_path)
     assert result and all(item['status'] == 'PARTIAL' for item in result)
     assert wire == [] and not list(tmp_path.rglob('*.pdf'))
+
+
+@pytest.mark.parametrize('detail', [DETAIL.replace(TAXPAYER, 'OTHER_SYNTHETIC_TAXPAYER'),
+                                    DETAIL.replace(RECORD['record_id'], 'OTHER_SYNTHETIC_RETURN')])
+def test_other_selected_identity_is_rejected_before_discovery(post_routed, tmp_path, detail):
+    page, wire = post_routed(detail_url=detail)
+    with pytest.raises(RuntimeError, match='selected'):
+        attachments().download_financial_attachments(page, record(), tmp_path)
+    assert page.evaluate('window.syntheticClicks') == 0
+    assert wire == [] and not list(tmp_path.rglob('*.pdf'))
+
+
+def test_archive_list_is_not_submitted_post_provenance(post_routed, tmp_path):
+    page, wire = post_routed(detail_url=DETAIL)
+    selected = record()
+    selected['list_url'] = selected['list_url'].replace('submitted-returnsheets', 'archivedreturnsheets')
+    result = attachments().download_financial_attachments(page, selected, tmp_path)
+    assert result and all(item['status'] == 'PARTIAL' for item in result)
+    assert page.evaluate('window.syntheticClicks') == 0 and wire == []

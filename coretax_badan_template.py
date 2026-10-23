@@ -1,4 +1,5 @@
 """Approved corporate layout; ambiguous source blocks remain visible evidence."""
+from copy import copy
 from decimal import Decimal
 from pathlib import Path
 import math
@@ -11,6 +12,8 @@ from coretax_template_cells import load_template_workbook, _write, _grow, _raw_e
 FORMS = ['L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9', 'L10-A', 'L10-C',
          'L11-A', 'L11-B', 'L11-C']
 ACCOUNTING = '_-[$Rp-421]* #,##0.00_-;\\-[$Rp-421]* #,##0.00_-;_-[$Rp-421]* "-"??_-;_-@_-'
+ACCOUNTING_LITERAL = '_-"Rp"* #,##0.00_-;\\-"Rp"* #,##0.00_-;_-"Rp"* "-"??_-;_-@_-'
+ACCOUNTING_WHOLE = ACCOUNTING_LITERAL.replace('0.00', '0')
 # Header and reserved body boundaries in the approved, sanitized reference.
 BLOCKS = {
     'l1-d': [(5, 6, 39), (42, 43, 68), (71, 72, 100)],
@@ -32,7 +35,183 @@ BLOCKS = {
 
 def template_workbook(reserved_titles):
     resource = Path(__file__).resolve().parent / 'resources/corporate_format.xlsx'
-    return load_template_workbook(resource, FORMS, reserved_titles)
+    workbook, templates = load_template_workbook(resource, FORMS, reserved_titles)
+    reserved = {title.casefold() for title in [*reserved_titles, *workbook.sheetnames]}
+    for form in ('induk', 'l8'):
+        counter = 0
+        while f'_reference_{counter}'.casefold() in reserved:
+            counter += 1
+        sheet = workbook.create_sheet(f'_reference_{counter}')
+        reserved.add(sheet.title.casefold())
+        templates[form] = sheet
+    return workbook, templates
+
+
+def _present(value):
+    return value is not None and bool(str(value).strip())
+
+
+def _clean_report(fields, tables, **derived):
+    unresolved = [table for table in tables if table.get('rows') or not table.get('complete', True)]
+    return {'complete': not fields and not unresolved and derived.get('derived_complete', True),
+            'unmapped_fields': len(fields), 'unmapped_tables': len(unresolved),
+            'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved), **derived}
+
+
+# Approved clean Induk captions. Match the observed owner, field and caption
+# together; an ordinal, repeated value or JSON alias is never binding evidence.
+_INDUK_IDENTITY = [
+    ('HEADER', 'TaxYear', 'Tahun Pajak/Bagian Tahun Pajak'),
+    ('HEADER', 'Status', 'Status'),
+    ('HEADER', 'AccountingPeriodStart', 'Periode Pembukuan'),
+    ('HEADER', 'AccountingPeriodEnd', 'Periode Pembukuan'),
+    ('A. IDENTITAS WAJIB PAJAK', 'Tin', '1. NPWP'),
+    ('A. IDENTITAS WAJIB PAJAK', 'Name', '2. Nama'),
+    ('B. INFORMASI LAPORAN KEUANGAN', 'TinAccountant', '2.b. NPWP Kantor Akuntan Publik'),
+    ('B. INFORMASI LAPORAN KEUANGAN', 'NameAccountant', '2.c. Nama Kantor Akuntan Publik'),
+    ('A. IDENTITAS WAJIB PAJAK', 'EmailAddress', '3. Alamat Email'),
+    ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
+]
+_INDUK_CALCULATIONS = [
+    ('D. PENGHITUNGAN PPh', '', '4. Penghasilan Neto Fiskal sebelum Fasilitas Pajak'),
+    ('D. PENGHITUNGAN PPh', '', '7. Penghasilan Neto Fiskal Setelah Fasilitas Pajak'),
+    ('D. PENGHITUNGAN PPh', '', '9. Penghasilan Kena Pajak'),
+    ('D. PENGHITUNGAN PPh', '', '12. PPh Terutang'),
+    ('E. PENGURANG PPh TERUTANG', '', '13. Apakah terdapat kredit pajak yang dibayarkan di luar negeri dan/atau dipotong/pungut oleh pihak lain? / Tidak / Ya'),
+    ('E. PENGURANG PPh TERUTANG', '', '14. Angsuran PPh Pasal 25'),
+    ('E. PENGURANG PPh TERUTANG', '', '15. Surat Tagihan Pajak PPh Pasal 25 (hanya pokok pajak)'),
+    ('E. PENGURANG PPh TERUTANG', '', '16. Apakah Wajib Pajak memperoleh Fasilitas Pengurangan PPh Badan? * / Tidak / Ya'),
+    ('F. PPh KURANG/LEBIH BAYAR', '', '17.a. PPh yang Kurang/Lebih Bayar'),
+    ('F. PPh KURANG/LEBIH BAYAR', '', '17.b. Apakah terdapat Surat Keputusan Persetujuan Pengangsuran atau Penundaan Pembayaran Pajak? / Tidak / Ya'),
+    ('F. PPh KURANG/LEBIH BAYAR', '', '17.c. PPh yang masih harus dibayar atau lebih dibayar'),
+    ('F. PPh KURANG/LEBIH BAYAR', '', 'Ganti SPT sebelumnya'),
+    ('F. PPh KURANG/LEBIH BAYAR', '', '18.a. PPh yang kurang atau lebih bayar pada SPT yang dibetulkan / Ganti SPT sebelumnya'),
+    ('F. PPh KURANG/LEBIH BAYAR', '', '18.b. PPh yang kurang atau lebih bayar karena pembetulan'),
+    ('D. PENGHITUNGAN PPh', 'TaxRate', '11. Tarif Pajak *'),
+]
+_L8_GROUP = ('PERHITUNGAN FASILITAS PENGURANGAN TARIF PPh BAGI WAJIB PAJAK BADAN '
+             'DALAM NEGERI BERDASARKAN PASAL 31E AYAT (1) UNDANG-UNDANG PPh')
+_L8_HEADERS = ['NO.', 'DESKRIPSI', 'AMOUNT (Rupiah)']
+
+
+def _clean_page(sheet, widths):
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+    sheet.page_setup.paperSize = '8'
+    sheet.page_setup.orientation = 'landscape'
+    sheet.page_setup.fitToHeight = 0
+
+
+def _induk(sheet, sections):
+    _clean_page(sheet, {'A': 110.7109375, 'B': 44, 'C': 36})
+    _write(sheet, 1, 1, 'INDUK')
+    _write(sheet, 1, 2, None)
+    fields = [field for section in sections for field in section.get('fields', [])]
+    used, blocks = set(), []
+    for slots, strip_number in ((_INDUK_IDENTITY, False), (_INDUK_CALCULATIONS, True)):
+        output = []
+        for group, name, caption in slots:
+            matches = [(index, field) for index, field in enumerate(fields)
+                       if (field.get('group'), field.get('field', ''), field.get('label'))
+                       == (group, name, caption)]
+            if len(matches) != 1:
+                continue
+            index, field = matches[0]
+            used.add(index)
+            if _present(field.get('value')):
+                label = re.sub(r'^[0-9]+(?:\.[a-z])?\.\s+', '', caption) if strip_number else caption
+                output.append((label, field['value']))
+        blocks.append(output)
+    row = 2
+    for index, block in enumerate(blocks):
+        if index and blocks[0] and block:
+            row += 3  # Intentional identity/calculation separator in the target.
+        for caption, value in block:
+            _write(sheet, row, 1, caption)
+            _write(sheet, row, 2, value)
+            row += 1
+    return _clean_report([field for index, field in enumerate(fields) if index not in used],
+                         [{**table, 'complete': False} for section in sections
+                          for table in section.get('tables', [])])
+
+
+def _l8(sheet, sections):
+    _clean_page(sheet, {'A': 4.42578125, 'B': 96.28515625, 'C': 36})
+    for column in ('A', 'B'):
+        sheet.column_dimensions[column].bestFit = True
+    for column, caption in enumerate(_L8_HEADERS, 1):
+        _write(sheet, 1, column, caption)
+        _write(sheet, 2, column, None)
+    sheet['C2'].number_format = ACCOUNTING_WHOLE
+    fields = [field for section in sections for field in section.get('fields', [])]
+    tables = [table for section in sections for table in section.get('tables', [])]
+    matches = [table for table in tables if table.get('group') == _L8_GROUP
+               and table.get('headers') == _L8_HEADERS]
+    pending = [{**table, 'complete': False} for table in tables]
+    if len(matches) == 1:
+        table = matches[0]
+        rows, footer = table.get('rows', []), table.get('footer', [])
+        count = table.get('body_row_count', len(rows))
+        if (table.get('complete', True) and type(count) is int and 0 <= count <= len(rows)
+                and rows[count:] == footer and len(rows) == count + len(footer)
+                and table.get('source_total', count) in (None, count)
+                and len(footer) <= 1 and table.get('footer_spans', []) == [[1, 1, 1]] * len(footer)
+                and all(len(values) == 3 for values in rows)):
+            pending = [{**item, 'complete': False} for item in tables if item is not table]
+            body = [values for values in rows[:count] if any(map(_present, values))]
+            output = body + ([['', '', '']] if not body else []) + footer
+            for row, values in enumerate(output, 2):
+                _write(sheet, row, 1, values[0])
+                _write(sheet, row, 2, values[1])
+                safe = _write_amount(sheet, row, 3, values[2])
+                sheet.cell(row, 3).number_format = ACCOUNTING_WHOLE
+                if not safe:
+                    pending.append({**table, 'rows': [values], 'complete': False})
+    return _clean_report(fields, pending)
+
+
+def _remove_rows(sheet, first, count):
+    """Delete an approved body range while moving merges and row dimensions."""
+    last = first + count - 1
+    moving = [copy(region) for region in sheet.merged_cells.ranges if region.max_row >= first]
+    if any(region.min_row < first <= region.max_row or region.min_row <= last < region.max_row
+           for region in moving):
+        raise ValueError('Pemadatan body memotong merge template.')
+    for region in moving:
+        sheet.unmerge_cells(str(region))
+    dimensions = [(row, sheet.row_dimensions.pop(row)) for row in list(sheet.row_dimensions) if row >= first]
+    sheet.delete_rows(first, count)
+    for row, dimension in dimensions:
+        if row > last:
+            dimension.index = row - count
+            sheet.row_dimensions[row - count] = dimension
+    for region in moving:
+        if region.min_row > last:
+            region.shift(row_shift=-count)
+            sheet.merge_cells(str(region))
+
+
+def _compact_layout(sheet, form, deleted, der_row, averages):
+    # Mapping is completed against original reference geometry first. Remove
+    # only known body empties, in descending runs, so account-heading merges
+    # travel with their captured rows instead of being guessed at a new index.
+    if form == 'l1-d':
+        deleted.update(range(1, 5))
+    ordered = sorted(deleted)
+    runs = []
+    for row in ordered:
+        if runs and runs[-1][0] + runs[-1][1] == row:
+            runs[-1][1] += 1
+        else:
+            runs.append([row, 1])
+    for first, count in reversed(runs):
+        _remove_rows(sheet, first, count)
+
+    def moved(row):
+        return row - sum(old < row for old in ordered)
+
+    return moved(der_row), {index: re.sub(r'[0-9]+$', lambda match: str(moved(int(match[0]))), address)
+                            for index, address in averages.items()}
 
 
 def _label(value):
@@ -272,6 +451,12 @@ def _accounting_format(sheet, form):
                 for cell in row:
                     if not isinstance(cell, MergedCell):
                         cell.number_format = '0.00%'
+    elif form == 'l3':
+        for address in ('F4', 'G4', 'J4'):
+            sheet[address].number_format = ACCOUNTING_LITERAL
+    elif form == 'l9':
+        for row in (226, 227, 228):
+            sheet.cell(row, 8).number_format = ACCOUNTING.replace('0.00', '0')
 
 
 def _l11b_der(sheet, row, averages):
@@ -339,6 +524,10 @@ def _current_l7_header(sheet, sections, period):
 
 def render_template_form(sheet, form, sections, *, period=None):
     form = form.casefold()
+    if form == 'induk':
+        return _induk(sheet, sections)
+    if form == 'l8':
+        return _l8(sheet, sections)
     _accounting_format(sheet, form)
     if form == 'l7':
         _current_l7_header(sheet, sections, period)
@@ -374,13 +563,14 @@ def render_template_form(sheet, form, sections, *, period=None):
                 continue
             index, columns = candidates[0]
             grouped[index].append((table, columns, rows[:count]))
-    offset = 0
+    offset, deleted = 0, set()
     for block, ((header, first, last), items) in enumerate(zip(blocks, grouped)):
+        header, first, last = header + offset, first + offset, last + offset
         if len(items) != 1:
             pending.extend({**table, 'complete': False} for table, _, _ in items)
+            deleted.update(range(first + 1, last + 1))
             continue
         table, columns, rows = items[0]
-        header, first, last = header + offset, first + offset, last + offset
         money = _money_columns(sheet, form, header, columns, block)
         percentages = {column for column in columns
                        if form == 'l2' and '%' in str(sheet.cell(header, column).value)}
@@ -389,9 +579,14 @@ def render_template_form(sheet, form, sections, *, period=None):
         body, style_row = _body_plan(sheet, form, first, last, columns, rows)
         if foot is None or body is None:
             pending.append({**table, 'complete': False})
+            deleted.update(range(first + 1, last + 1))
             continue
         extra = max(0, len(rows) - (last - first + 1))
         _grow(sheet, last + 1, extra, style_row)
+        occupied = {first + index for index, values in enumerate(rows) if any(map(_present, values))}
+        if not occupied:
+            occupied.add(first)
+        deleted.update(set(range(first, last + extra + 1)) - occupied)
         if form == 'l11-b' and last + 1 <= der_row:
             der_row += extra
         for index, cells in enumerate(body):
@@ -404,6 +599,8 @@ def render_template_form(sheet, form, sections, *, period=None):
                                 and _label(cells.get(2)) == _label(
                                     'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
                     safe = _write_amount(sheet, row, column, value, subtract=subtract) and safe
+                    if form == 'l9' and block >= 2 and column == 8 and _present(value):
+                        sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
                 else:
                     _write(sheet, row, column, value)
             if not safe:
@@ -414,6 +611,8 @@ def render_template_form(sheet, form, sections, *, period=None):
             if numeric:
                 writer = _write_percentage if column in percentages else _write_amount
                 footer_safe = writer(sheet, row, column, value) and footer_safe
+                if form == 'l9' and block >= 2 and column == 8 and _present(value):
+                    sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
                 if form == 'l11-b' and ((block, column) in ((0, 16), (1, 14))):
                     averages[block] = sheet.cell(row, column).coordinate
             else:
@@ -427,13 +626,10 @@ def render_template_form(sheet, form, sections, *, period=None):
                     if cell.value not in (None, ''):
                         cell.number_format = ACCOUNTING
         offset += extra
+    der_row, averages = _compact_layout(sheet, form, deleted, der_row, averages)
     derived = _l11b_der(sheet, der_row, averages) if form == 'l11-b' else {}
-    if form in ('l2', 'l3', 'l4', 'l6', 'l7', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
+    if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
-        unresolved = [table for table in pending if table.get('rows') or not table.get('complete', True)]
-        return {'complete': not fields and not unresolved and derived.get('derived_complete', True),
-                'unmapped_fields': len(fields),
-                'unmapped_tables': len(unresolved),
-                'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved), **derived}
+        return _clean_report(fields, pending, **derived)
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)

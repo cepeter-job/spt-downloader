@@ -60,13 +60,11 @@ def test_corporate_models_have_separate_files_with_all_observed_forms(tmp_path):
             proof = exporter.read_workbook_proof(workbook)
             assert [item['meta']['Model SPT'] for item in proof['records']] == [model]
             assert not any(merged.min_row >= 6 for merged in workbook['Induk'].merged_cells.ranges)
-            reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources/corporate_format.xlsx')
-            try:
-                assert set(map(str, workbook['L1-D'].merged_cells.ranges)) == set(
-                    map(str, reference['L1-D'].merged_cells.ranges))
-            finally:
-                reference.close()
-            assert any(cell.value == '1.234,50' for cells in workbook['L1-D'] for cell in cells)
+            assert workbook['L1-D'].max_row == 11
+            assert 'A2:B2' in workbook['L1-D'].merged_cells
+            assert workbook['L1-D']['A1'].value == 'KODE AKUN'
+            assert not any(cell.value == '1.234,50' for cells in workbook['L1-D'] for cell in cells)
+            assert record['sections'][-1]['fields'] == [{'label': 'Amount', 'value': '1.234,50'}]
         finally:
             workbook.close()
 
