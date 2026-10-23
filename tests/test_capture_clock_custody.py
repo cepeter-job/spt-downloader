@@ -8,9 +8,9 @@ import pytest
 from coretax_json import JsonSafetyError
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from coretax_masa_json import adapt_masa_detail
-from support_json_network import Context
+from support_json_network import Context, exchange as network_exchange
 from test_json_capture import Page, DETAIL_URL, SCOPE
-from test_pph21_reference_capture import selected, exchange, RAW
+from test_pph21_reference_capture import selected, exchange, RAW, URL as REFERENCE_URL
 from test_pph21_reference_packets import reference_packet
 from test_pph21_json_primary import case, source
 from test_dated_reference_catalogs import CLOCK, START
@@ -73,7 +73,9 @@ def test_backwards_browser_clock_does_not_create_evidence(tmp_path):
         assert 'clock_interval' not in capture.drain()
 
 
-def test_response_arriving_during_final_clock_sample_remains_partial_and_unread(tmp_path):
+@pytest.mark.parametrize('content_type', ['application/json', 'text/plain', ''],
+                         ids=['json', 'excluded-text', 'excluded-missing-type'])
+def test_response_arriving_during_final_clock_sample_remains_partial_and_unread(tmp_path, content_type):
     context = Context()
     page = Page(context, DETAIL_URL)
     samples, late = [], []
@@ -81,7 +83,8 @@ def test_response_arriving_during_final_clock_sample_remains_partial_and_unread(
     def sample(_):
         samples.append(True)
         if len(samples) == 2:
-            late.append(exchange(context, page))
+            late.append(network_exchange(context, page, raw=RAW, method='GET', url=REFERENCE_URL,
+                                         content_type=content_type))
         return {'epoch_ms': START, 'timezone': 'Asia/Jakarta'}
 
     page.evaluate = sample
@@ -91,7 +94,10 @@ def test_response_arriving_during_final_clock_sample_remains_partial_and_unread(
         result = capture.drain()
         assert len(samples) == 2
         assert initial.reads == 1 and late[0].reads == 0
-        assert not result['complete'] and result['counts']['pending'] == 1
+        assert len(capture.request_observations()) == 2
+        assert not result['complete']
+        assert result['counts']['pending'] == (1 if content_type == 'application/json' else 0)
+        assert result['counts']['excluded'] == (0 if content_type == 'application/json' else 1)
         assert result['counts']['accepted'] == 1
         assert 'response-after-final-drain' in result['reasons']
         assert len(result['responses']) == 1

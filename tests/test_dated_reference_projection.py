@@ -2,8 +2,10 @@
 from copy import deepcopy
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
+from openpyxl import load_workbook
 
 from coretax_masa_json import adapt_masa_detail
 from masa_json_fixtures import SCOPE, RECORD
@@ -69,7 +71,14 @@ def test_dated_label_ineligibility_keeps_whole_record_fallback(defect):
             del item['context']['clock_interval']
     elif defect == 'cutoff-crossing':
         for item in bodies:
-            item['context']['clock_interval']['end_ms'] = 1893456000000  # 2030-01-01 UTC
+            if item['context']['url'] != REFERENCE:
+                continue
+            envelope = json.loads(item['body'])
+            for catalog in envelope['Payload']:
+                for entry in catalog['Details'][::2]:
+                    entry['ValidTo'] = '2025-01-01T00:00:00.500Z'
+            item['body'] = json.dumps(envelope).encode()
+            item['context'].update(bytes=len(item['body']), sha256=hashlib.sha256(item['body']).hexdigest())
     else:
         forms[0]['references'][0]['sequences'] = [999999]
     result = adapt_masa_detail(bodies, record=record, scope=SCOPE, observed_forms=forms)
@@ -123,6 +132,21 @@ def test_dated_unifikasi_catalogs_reach_all_forms_and_preserve_period_dropdown(t
     from unifikasi_projection_fixture import case as unifikasi_case, URL
     from support_masa_native import exported
     fixture = unifikasi_case(model=model)
+    # The projection-only fixture uses placeholder headings for these three
+    # grids. Supply approved presentation geometry for this workbook test.
+    reference = load_workbook(Path(__file__).resolve().parents[1] / 'resources' / 'unifikasi_format.xlsx')
+    try:
+        header_rows = {'list-ii-sp': ('Daftar II', 4), 'list-ii-cy': ('Daftar II', 13),
+                       'attachment-i': ('Lampiran I', 4)}
+        for form in fixture['forms']:
+            for table in form['tables']:
+                if table['name'] in header_rows:
+                    sheet, row = header_rows[table['name']]
+                    table['headers'] = [reference[sheet].cell(row, col).value
+                                        for col in range(1, len(table['headers']) + 1)]
+                    assert all(isinstance(label, str) for label in table['headers'])
+    finally:
+        reference.close()
     expected = set()
     for item in fixture['packets']:
         item['context']['clock_interval'] = {**CLOCK, 'attempt': item['context']['attempt']}
@@ -148,12 +172,18 @@ def test_dated_unifikasi_catalogs_reach_all_forms_and_preserve_period_dropdown(t
                for binding in result['provenance']['bindings'])
     assert next(field['value'] for field in result['sections'][0]['fields']
                 if field['field'] == 'TaxPeriodCode') == 'Januari 2025'
+    canonical_values = {value for section in result['sections'] for table in section['tables']
+                        for row in table['rows'] for value in row if isinstance(value, str)}
+    assert expected <= canonical_values
     workbook = exported(tmp_path, 'PPh Unifikasi', result['sections'])
     try:
         assert len(workbook.sheetnames) == 4
         values = {cell.value for sheet in workbook for row in sheet for cell in row
                   if isinstance(cell.value, str)}
-        assert expected <= values
+        # The approved clean layout omits the redundant payment-method column;
+        # it remains in the canonical source and unchanged checkpoint above.
+        assert expected - {'DATED EBUPOT_PAYMENT_METHOD'} <= values
+        assert 'DATED EBUPOT_PAYMENT_METHOD' not in values
         assert 'UNSELECTED LABEL' not in values
     finally:
         workbook.close()
