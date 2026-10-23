@@ -20,13 +20,15 @@ def record():
     return result
 
 
-def test_submitted_corporate_route_downloads_existing_pdf_once(post_routed, tmp_path):
-    page, wire = post_routed(detail_url=DETAIL)
+@pytest.mark.parametrize('query', ['', '?view=true'])
+def test_submitted_corporate_route_downloads_existing_pdf_once(post_routed, tmp_path, query):
+    detail = DETAIL + query
+    page, wire = post_routed(detail_url=detail)
     result = attachments().download_financial_attachments(page, record(), tmp_path)
     downloaded(result, tmp_path)
     assert page.evaluate('window.syntheticClicks') == 1
     assert len(wire) == 1
-    assert wire[0]['headers']['request_from'] == DETAIL
+    assert wire[0]['headers']['request_from'] == detail
 
 
 @pytest.mark.parametrize('detail', [
@@ -36,6 +38,13 @@ def test_submitted_corporate_route_downloads_existing_pdf_once(post_routed, tmp_
     DETAIL.replace(CONTEXT, 'not-a-context'),
     DETAIL + '/extra',
     DETAIL + '?next=other',
+    DETAIL + '?view=false',
+    DETAIL + '?view=True',
+    DETAIL + '?view=true&view=true',
+    DETAIL + '?view=true&history=false',
+    DETAIL + '?view=true&',
+    DETAIL + '?%76iew=true',
+    DETAIL + '?view=%74rue',
     DETAIL + '#other',
 ])
 def test_other_routes_never_arm_financial_post(post_routed, tmp_path, detail):
@@ -71,3 +80,32 @@ def test_archive_list_is_not_submitted_post_provenance(post_routed, tmp_path):
     result = attachments().download_financial_attachments(page, selected, tmp_path)
     assert result and all(item['status'] == 'PARTIAL' for item in result)
     assert page.evaluate('window.syntheticClicks') == 0 and wire == []
+
+
+@pytest.mark.parametrize('target', [DETAIL + '?view=false', DETAIL.replace(CONTEXT, '66666666-7777-4888-8999-000000000000') + '?view=true'])
+def test_read_only_query_is_bound_through_click_and_replay(post_routed, tmp_path, target):
+    page, wire = post_routed(detail_url=DETAIL + '?view=true', change_scope=target)
+    result = attachments().download_financial_attachments(page, record(), tmp_path)
+    assert page.evaluate('window.syntheticClicks') == 1
+    assert result and all(item['status'] == 'PARTIAL' for item in result)
+    assert wire == [] and not list(tmp_path.rglob('*.pdf'))
+
+
+def test_financial_guard_failure_retains_safe_originating_frames(post_routed, tmp_path):
+    import json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    from support_financial_post import AUTHORIZATION, DOCUMENT
+
+    page, wire = post_routed(detail_url=DETAIL + '?view=false')
+    with diagnostics.session(tmp_path / 'diagnostics', 'worker') as log:
+        result = attachments().download_financial_attachments(page, record(), tmp_path)
+        assert log.flush()
+    errors = [row['error'] for row in records(tmp_path / 'diagnostics') if row['event'] == 'pdf.partial']
+    assert len(errors) == 1
+    assert any(frame['file'] == 'coretax_financial_post.py' and frame['function'] == 'check'
+               for frame in errors[0]['frames'])
+    safe = json.dumps(records(tmp_path / 'diagnostics'))
+    for private in (DETAIL, TAXPAYER, DOCUMENT, AUTHORIZATION, '?view=false'):
+        assert private not in safe
+    assert all(item['status'] == 'PARTIAL' for item in result) and wire == []
