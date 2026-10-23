@@ -1,5 +1,6 @@
 """Reviewed Unifikasi catalogs and submitted controls, separate from PPN/PPh21."""
-from coretax_json import JsonSafetyError, _UnsupportedMetadata, _select_reference_version
+from coretax_json import (JsonSafetyError, _UnsupportedMetadata, _select_reference_version,
+                          _reference_consumer_order, _reference_locale, _reference_order_proof)
 from coretax_masa_bindings import _source_scalar, project_unifikasi_text
 
 REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'EBUPOT_PAYMENT_METHOD',
@@ -7,9 +8,10 @@ REFERENCE_TYPES = ('EBUPOT_TAX_CERTIFICATE', 'EBUPOT_PAYMENT_METHOD',
 
 
 def project_references(payload, *, clock_interval=None):
+    _reference_locale(payload)
     if not isinstance(payload, list) or len(payload) != len(REFERENCE_TYPES):
         raise _UnsupportedMetadata('incomplete_unifikasi_reference_catalogs')
-    lookups, evidence = {}, []
+    lookups, evidence, requires_vendor = {}, [], False
     for index, catalog in enumerate(payload):
         if not isinstance(catalog, dict):
             raise _UnsupportedMetadata('unsupported_unifikasi_reference_catalog')
@@ -23,6 +25,8 @@ def project_references(payload, *, clock_interval=None):
             raise _UnsupportedMetadata('missing_unifikasi_reference_details')
         evidence.append({'path': [index, 'ReferenceDataType'], 'value': kind, 'type': 'string'})
         groups, descriptions = {}, {}
+        ordered, order_rule = (_reference_consumer_order(details, kind) if kind != 'PERIOD' else
+                               (list(enumerate(details)), 'unique-period-dropdown'))
         for ordinal, entry in enumerate(details):
             if not isinstance(entry, dict) or any(type(entry.get(k)) is not str for k in ('Code', 'CodeDescription')):
                 raise _UnsupportedMetadata('unsupported_unifikasi_reference_scalar')
@@ -31,14 +35,20 @@ def project_references(payload, *, clock_interval=None):
             for key in ('ValidTo', 'ValidFrom'):
                 if key in entry and entry[key] is not None and type(entry[key]) is not str:
                     raise _UnsupportedMetadata('unsupported_unifikasi_reference_validity')
-            groups.setdefault(entry['Code'], []).append((ordinal, entry))
-            for key in ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom'):
+            fields = ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom')
+            if kind != 'PERIOD':
+                fields += ('ParameterData',)
+            for key in fields:
                 value = entry.get(key)
                 item = {'path': [index, 'Details', ordinal, key], 'value': value,
                         'type': 'missing' if key not in entry else 'null' if value is None else 'string'}
                 evidence.append(item)
                 if key == 'CodeDescription':
                     descriptions[ordinal] = item
+        for ordinal, entry in ordered:
+            groups.setdefault(entry['Code'], []).append((ordinal, entry))
+        if kind != 'PERIOD':
+            requires_vendor |= any(len(items) > 1 for items in groups.values())
         lookup = {}
         for code, versions in groups.items():
             if kind == 'PERIOD' and len(versions) != 1:
@@ -47,10 +57,11 @@ def project_references(payload, *, clock_interval=None):
             lookup[code] = chosen['CodeDescription']
             selected = descriptions[ordinal]
             selected['projection_rule'] = 'reviewed-grid-active-version:' + rule
+            selected['catalog_order_rule'] = order_rule
             if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
                 selected['clock_interval'] = dict(clock_interval)
         lookups[kind] = lookup
-    return {'lookups': lookups, 'provenance': evidence}
+    return {'lookups': lookups, 'provenance': evidence, 'requires_vendor': requires_vendor}
 
 
 def project_field(form, outer, control, lookups):
@@ -118,4 +129,8 @@ def reference_projection(observed_forms, packets):
         raise _UnsupportedMetadata('incomplete_unifikasi_reference_binding')
     source = _reference(first[0], UNIFIKASI_REFERENCE_URL, packets)
     projected = project_references(source['payload'], clock_interval=source['event'].get('clock_interval'))
+    induk = [form for form in observed_forms if form.get('name') == 'INDUK']
+    if len(induk) != 1:
+        raise _UnsupportedMetadata('unbound_unifikasi_reference_owner')
+    _reference_order_proof(induk[0], projected)
     return projected['lookups'], projected['provenance'], source

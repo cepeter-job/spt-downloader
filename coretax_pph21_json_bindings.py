@@ -7,7 +7,8 @@ from decimal import Decimal
 import math
 import re
 
-from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, _select_reference_version
+from coretax_json import (JsonSafetyError, _CorporateNumber, _UnsupportedMetadata,
+                          _select_reference_version, _reference_consumer_order, _reference_locale)
 from coretax_masa_bindings import _decimal, _evidence, _number, _source_scalar, render_grid_value, _project_masa_grid
 
 _AMOUNT_SUFFIXES = (
@@ -189,6 +190,7 @@ def project_pph21_references(payload, *, requested_types, locale, clock_interval
     The caller establishes response custody and request locale. Time-dependent
     version selection stays unsupported without an observed browser clock.
     """
+    _reference_locale(payload)
     if (type(requested_types) not in (list, tuple) or tuple(requested_types) != REFERENCE_TYPES
             or locale != 'id-ID' or not isinstance(payload, list)):
         raise _UnsupportedMetadata('unsupported_pph21_reference_binding')
@@ -199,7 +201,7 @@ def project_pph21_references(payload, *, requested_types, locale, clock_interval
             or any(type(item.get('ReferenceDataType')) is not str for item in payload)
             or {item['ReferenceDataType'] for item in payload} != set(REFERENCE_TYPES)):
         raise _UnsupportedMetadata('unsupported_pph21_reference_catalogs')
-    lookups, evidence = {}, []
+    lookups, evidence, requires_vendor = {}, [], False
     for index, catalog in enumerate(payload):
         kind = catalog['ReferenceDataType']
         details = catalog.get('Details')
@@ -209,12 +211,12 @@ def project_pph21_references(payload, *, requested_types, locale, clock_interval
         if 'language' in catalog:
             evidence.append(_evidence(catalog['language'], [index, 'language']))
         versions, descriptions = {}, {}
+        ordered, order_rule = _reference_consumer_order(details, kind)
         for ordinal, item in enumerate(details):
             if (not isinstance(item, dict) or type(item.get('Code')) is not str or not item['Code']
                     or type(item.get('CodeDescription')) is not str):
                 raise _UnsupportedMetadata('unsupported_pph21_reference_scalar')
-            versions.setdefault(item['Code'], []).append((ordinal, item))
-            for key in ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom'):
+            for key in ('Code', 'CodeDescription', 'ValidTo', 'ValidFrom', 'ParameterData'):
                 if key in item:
                     entry = _evidence(item[key], [index, 'Details', ordinal, key])
                 else:
@@ -222,16 +224,20 @@ def project_pph21_references(payload, *, requested_types, locale, clock_interval
                 evidence.append(entry)
                 if key == 'CodeDescription':
                     descriptions[ordinal] = entry
+        for ordinal, item in ordered:
+            versions.setdefault(item['Code'], []).append((ordinal, item))
+        requires_vendor |= any(len(items) > 1 for items in versions.values())
         labels = {}
         for code, candidates in versions.items():
             ordinal, item, rule = _select_reference_version(candidates, clock_interval)
             labels[code] = item['CodeDescription']
             selected = descriptions[ordinal]
             selected['projection_rule'] = 'reviewed-grid-active-version:' + rule
+            selected['catalog_order_rule'] = order_rule
             if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
                 selected['clock_interval'] = dict(clock_interval)
         lookups[_REFERENCE_FIELDS[REFERENCE_TYPES.index(kind)]] = labels
-    return {'lookups': lookups, 'provenance': evidence}
+    return {'lookups': lookups, 'provenance': evidence, 'requires_vendor': requires_vendor}
 
 
 def project_pph21_model_references(payload, *, locale):

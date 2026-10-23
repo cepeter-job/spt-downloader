@@ -196,12 +196,13 @@ def l11c_html():
 
 class L11CFixture(L7Fixture):
     def __init__(self, browser, tmp_path, monkeypatch, *, model='Normal', popup=True,
-                 trap=True, country_available=True, changed_vendor=False):
+                 trap=True, country_available=True, changed_vendor=False, frame_url=FRAME):
         new_context = browser.new_context
         monkeypatch.setattr(browser, 'new_context', lambda **options:
                             new_context(timezone_id='Asia/Jakarta', **options))
         self.country_available, self.changed_vendor = country_available, changed_vendor
-        super().__init__(browser, tmp_path, monkeypatch, model=model, popup=popup, trap=trap)
+        super().__init__(browser, tmp_path, monkeypatch, model=model, popup=popup,
+                         trap=trap, frame_url=frame_url)
         self.extra_form = ('L11-C', 'rshshr-citr-l11c-form')
         self.raw = corpus.wire(envelope(model)).encode()
         projection = importlib.import_module('coretax_corporate_projection')
