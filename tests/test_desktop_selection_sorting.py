@@ -32,9 +32,13 @@ def click_type_heading(root, tree):
     root.update()
 
 
-def source_rows(payload):
-    return {f'record-{ordinal}': tuple(str(record['meta'].get(key, '')) for key in
-             ('Jenis Pajak', 'Masa Pajak', 'Model SPT')) + (record['record_id'],)
+def displayed_fixture_rows(payload):
+    # Literal display oracles for this file's synthetic source captions.
+    captions = {'Januari 2025': 'Januari', 'Februari 2025': 'Februari'}
+    return {f'record-{ordinal}': (record['meta']['Jenis Pajak'],
+             'Tahunan' if record['meta']['Jenis Pajak'].casefold() == 'pph badan'
+             else captions[record['meta']['Masa Pajak']],
+             record['meta']['Model SPT'], record['record_id'])
             for ordinal, record in enumerate(payload['records'])}
 
 
@@ -42,7 +46,7 @@ def source_rows(payload):
 def test_header_toggles_two_directions_and_preserves_source_rows(tmp_path, clicks):
     payload = inventory()
     original = deepcopy(payload)
-    rows = source_rows(payload)
+    rows = displayed_fixture_rows(payload)
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
         assert tree.heading('type', 'text') == 'Jenis pajak'
@@ -108,7 +112,7 @@ def test_sorting_keeps_active_search_and_visible_selection_with_stable_ties(tmp_
 
 def test_search_change_preserves_sort_mode_but_clears_consent_as_before(tmp_path):
     payload = inventory()
-    rows = source_rows(payload)
+    rows = displayed_fixture_rows(payload)
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
         entry = search_in(dialog)
@@ -145,7 +149,7 @@ def test_empty_or_missing_type_sorting_does_not_authorize_records(tmp_path, payl
 
 def test_no_search_matches_can_be_sorted_and_cleared_without_callback_errors(tmp_path):
     payload = inventory()
-    rows = source_rows(payload)
+    rows = displayed_fixture_rows(payload)
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
         entry = search_in(dialog)
@@ -200,7 +204,7 @@ def test_normal_then_numeric_amendments_keep_aliases_and_leading_zero_ties(tmp_p
                                      for identifier, model in models])
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
-        values = source_rows(payload)
+        values = displayed_fixture_rows(payload)
         for _ in range(clicks):
             click_type_heading(root, tree)
         assert visible_ids(tree) == ['normal', 'case-normal', 'zero', 'one-padded',
