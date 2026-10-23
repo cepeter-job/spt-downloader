@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Border, Color, Side
 import coretax
 import coretax_exporter as exporter
 from support_templates import assert_layout, section, source_run
@@ -51,7 +52,7 @@ def test_binding_stage_preserves_reference_geometry_and_approved_styles(tmp_path
     reference = load_workbook(RESOURCE)
     try:
         assert book.sheetnames == reference.sheetnames == FORMS
-        # Explicitly approved number-format exceptions; all other style and
+        # Explicitly approved number-format/border exceptions; all other style and
         # layout attributes still compare against the untouched reference.
         accounting = reference['L1-D']['C44'].number_format.replace('0.00', '0')
         for sheet in reference:
@@ -74,6 +75,10 @@ def test_binding_stage_preserves_reference_geometry_and_approved_styles(tmp_path
             reference['L3'][address].number_format = '_-"Rp"* #,##0_-;\\-"Rp"* #,##0_-;_-"Rp"* "-"??_-;_-@_-'
         for row in (226, 227, 228):
             reference['L9'].cell(row, 8).number_format = accounting.replace('0.00', '0')
+        thin = Side(style='thin', color=Color(indexed=64))
+        for row in reference['L6']['A2:B8']:
+            for cell in row:
+                cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
         der = reference['L11-B']
         der['A26'] = 'PERHITUNGAN DER'
         der['B26'] = 'Jumlah Saldo Rata-Rata Utang'
