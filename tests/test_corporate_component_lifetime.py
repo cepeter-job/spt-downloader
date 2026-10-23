@@ -488,7 +488,7 @@ def test_real_driver_reports_rapid_history_detours_and_same_url_document_replace
                     }''', {'foreign': DETAIL.replace('fixture-record', 'foreign-record'), 'selected': DETAIL})
                     assert events[-2:] == [DETAIL.replace('fixture-record', 'foreign-record'), DETAIL]
                 elif change == 'popstate-detour':
-                    page.evaluate("async () => {const once=()=>new Promise(r=>addEventListener('popstate',r,{once:true})); let p=once(); history.back(); await p; p=once(); history.forward(); await p;}")
+                    page.evaluate("async () => {const once=()=>new Promise((r,j)=>{const t=setTimeout(()=>j(Error('Synthetic history event timeout')),10000);addEventListener('popstate',()=>{clearTimeout(t);r();},{once:true});}); let p=once(); history.back(); await p; p=once(); history.forward(); await p;}")
                     assert events[-2:] == [LIST, DETAIL]
                 else:
                     page.reload(wait_until='domcontentloaded')
