@@ -38,7 +38,11 @@ def test_personal_use_subtitle_is_visible_without_the_removed_punto_footer(tmp_p
         top = subtitle.winfo_rooty() - root.winfo_rooty()
         assert 0 <= left and left + subtitle.winfo_width() <= root.winfo_width()
         assert 0 <= top and top + subtitle.winfo_height() <= root.winfo_height()
+        # Exercise teardown with an owned view callback still queued.
+        window.view.request_reflow()
     finally:
+        if window is not None:
+            window._dispose()
         for callback in root.tk.splitlist(root.tk.call('after', 'info')):
             root.after_cancel(callback)
         root.destroy()
