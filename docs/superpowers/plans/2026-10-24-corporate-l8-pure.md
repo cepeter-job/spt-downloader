@@ -109,11 +109,42 @@ All product imports, tests, fixtures and packages remain GitHub-runner-only.
 
 ## Native lifecycle obligations remain open
 
-Parent async exchange-rate resolution (2474208) consults PERIOD/date/USD/cache
-inputs; grid exchange-rate caller graph (2466049), initialization/change/output
-fixed points and parent/L6 feedback (2694002) need independent proof.
+The independently reviewed pinned graph supports internal grid rate 1 for a
+fresh grid that continuously stays on the literal Rupiah route. Grid constructor
+2461972 initializes 1; `changeValue` 2464338 only assigns the external input for
+non-Rupiah. The other two writes live inside its uncalled rate method. The grid
+has no exported/query exposure; the parent exposes its own instance, binds the
+separate rate input and never invokes the child's rate method. Inspected Angular
+machinery invokes explicit hooks/declared inputs. This conditional source proof
+does not supply the future owned-instance/route admission evidence.
+
+Parent async exchange-rate resolution (2474208) still consults PERIOD/date/USD/
+cache inputs. Its readiness, initialization/change/output fixed points and
+parent/L6 feedback (2694002) need independent proof.
 Main `CalculateTaxableIncome` (2827158) writes from fiscal income/carried-forward
 without a submitted early return; research may be replaced by L13-B (2794046).
-These inputs cannot inherit L7's separate NetIncomeBeforeTax invariant.
+Additional handlers can zero deduction/vocation/carriage/research; their radio
+handlers remain outside read-only capture actions. Initial outer and subsequent
+current flags independently control L7/L13-A/L13-B visibility, including
+IsInvestmentOtherIncome. Hiding these forms does not clear callback caches.
+Research/root absence alone is therefore insufficient. These inputs cannot
+inherit L7's separate NetIncomeBeforeTax invariant.
 This helper alone never enables native L8, nor establishes full corporate
 coverage, live acceptance, financial-PDF completion or Excel visual acceptance.
+
+## Actual tests-first evidence
+
+[Run 40017761585, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/40017761585)
+tested merge `9a38c537a2ece72007ee3dfd65db3676bc447ecc`, tree
+`f04873188b65eec5fb90220fa560efb4c7ac4704`, before any helper implementation.
+All six downloaded inventory/JUnit archives reconcile hashes, sizes, run/attempt,
+Python/platform/workload, complete collections, disjoint Windows partitions,
+setup/call/teardown, full JUnit identities and measurement/suite totals.
+
+The actual collection is 5,781 Windows cases (2,953 plus 2,828): all 5,589 baseline
+cases passed, and exactly 192 new cases failed with the intended absent-helper
+assertion. There were no errors or skips; all setup/teardown phases passed.
+The 710 overlapping portable cases passed. Independent tests source review
+accepted the original-year, captured-tax dependency and saved-export controls.
+Implementation began only after this full actual RED was read and accepted.
+Final GREEN, package readback and whole-branch review remain separate gates.

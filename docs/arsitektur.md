@@ -178,6 +178,22 @@ juga fatal tanpa binding; count dibedakan per endpoint dan query selain First.
 L3 dan L11-A memeriksa paket auxiliary masing-masing. Tidak mengubah template,
 dua belas field IV.B unresolved, batas capture/PDF atau syarat penerimaan live.
 
+Helper murni L8 memproyeksikan delapan baris fisik dan satu footer dari root
+CalculationFacilitiesIncomeTaxRateReduction; helper ini belum memberikan
+kelayakan native, observer, dispatch atau izin transport. Subset ICT_RCIT/id-ID
+memerlukan tahun numerik literal original MainFormData.TaxYear dan outer
+PeriodYear yang sama dalam 2020..2100, operand integral nonnegatif aman tanpa
+signed zero, omzet paling banyak 4,8 miliar serta research nol. Share tangkapan
+harus cocok dengan mask ribuan taxable utama; pajak 11%/nol dan total tangkapan
+wajib rekonsiliasi tanpa mengganti nilai. Provenance mempertahankan token/path
+original, tujuan sel dan kontribusi kedua pajak terhadap footer. ExchangeRateValue
+opsional numerik/null hanya merupakan bukti kontrol parent yang tidak dipakai.
+Caller tetap harus membuktikan input original sama dengan input final stabil,
+rate internal grid sebesar 1 dan lifetime/route Rupiah yang sesuai. Invariant rate 1 pada
+grid segar tidak membuktikan stabilitas main, cache callback, readiness async
+atau admission native. Renderer, template, raw capture dan Audit tetap utuh.
+Lihat [rencana L8 murni](superpowers/plans/2026-10-24-corporate-l8-pure.md).
+
 Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
 Ia memproyeksikan body A dari current source dan body B dari page metadata yang
 sudah dinormalisasi caller, dengan alias aktif IncomeTax/WithholdingSlipsNumber/

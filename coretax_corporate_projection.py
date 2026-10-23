@@ -139,6 +139,119 @@ def project_l7(form, *, main_form, period_year, headers, footer_spans, tax_type,
             'provenance': provenance}
 
 
+L8_ROOT = 'CalculationFacilitiesIncomeTaxRateReduction'
+L8_HEADERS = ['NO.', 'DESKRIPSI', 'AMOUNT (Rupiah)']
+_L8_GROUP = ('PERHITUNGAN FASILITAS PENGURANGAN TARIF PPh BAGI WAJIB PAJAK BADAN DALAM NEGERI '
+             'BERDASARKAN PASAL 31E AYAT (1) UNDANG-UNDANG PPh')
+_L8_KEYS = (
+    'GrossTurnOver',
+    'TaxableIncomeShareOfGrossCirculationGrantedFacility',
+    'TaxableIncomeShareOfGrossCirculationNotGrantedFacility',
+    'IncomeTaxPayableFromTaxableIncomeShareOfGrossCirculationGrantedFacility',
+    'IncomeTaxPayableFromTaxableIncomeShareOfGrossCirculationNotGrantedFacility',
+    'TotalIncomeTax',
+)
+_L8_CAPTIONS = (
+    'Jumlah Peredaran Bruto',
+    'Penghasilan Kena Pajak',
+    'Penghasilan Kena Pajak dari bagian peredaran bruto yang memperoleh fasilitas',
+    'Penghasilan Kena Pajak dari bagian peredaran bruto yang tidak memperoleh fasilitas',
+    'Pajak Terutang',
+    'PPh Terutang atas Penghasilan Kena Pajak dari bagian peredararan bruto yang memperoleh fasilitas',
+    'PPh Terutang atas Penghasilan Kena Pajak dari bagian peredararan bruto yang tidak memperoleh fasilitas',
+)
+_L8_SPANS = ((1, 2), (1, 1, 1), (1, 2), (1, 1, 1), (1, 1, 1), (1, 2), (1, 1, 1), (1, 1, 1))
+
+
+def _l8_integer(value):
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_type')
+    number = _decimal(value)
+    if number.is_signed() or number > _MAX_INTEGER or number != number.to_integral_value():
+        raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_precision')
+    return int(number)
+
+
+def project_l8(form, *, main_form, period_year, headers, footer_spans, tax_type, locale):
+    """Pure projection, never native admission or proof of stable main inputs.
+
+    Caller proves loaded sources, current data, final original main operands and
+    effective grid rate 1 throughout the relevant Rupiah lifecycle. The parent's
+    optional captured exchange control cannot prove the grid rate. Preserve
+    reported values only when initialization and recalculation agree; the
+    reviewed integer bound makes the supported 11% multiplication exact.
+    """
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or headers != L8_HEADERS
+            or footer_spans != [[1, 1, 1]]
+            or any(type(span) is not int for span in footer_spans[0])):
+        raise _UnsupportedMetadata('unverified_corporate_l8_structure')
+    required = set(_L8_KEYS)
+    if (not isinstance(form, dict) or set(form) not in (required, required | {'ExchangeRateValue'})
+            or not isinstance(main_form, dict)
+            or not {'TaxYear', 'TaxableIncome', 'TotalGrossIncomeResearch'} <= set(main_form)
+            or ('ExchangeRateValue' in form and form['ExchangeRateValue'] is not None
+                and type(form['ExchangeRateValue']) is not _CorporateNumber)):
+        raise _UnsupportedMetadata('unsupported_corporate_l8_source_shape')
+    if (type(period_year) is not _CorporateNumber or not re.fullmatch(r'[0-9]{4}', period_year)
+            or not 2020 <= int(period_year) <= 2100
+            or type(main_form['TaxYear']) is not _CorporateNumber or main_form['TaxYear'] != period_year):
+        raise _UnsupportedMetadata('unverified_corporate_l8_rate_year')
+    values = [_l8_integer(form[key]) for key in _L8_KEYS]
+    taxable = _l8_integer(main_form['TaxableIncome'])
+    research = _l8_integer(main_form['TotalGrossIncomeResearch'])
+    if values[0] > 4800000000 or research != 0:
+        raise _UnsupportedMetadata('unverified_corporate_l8_branch')
+    masked = taxable - taxable % 1000
+    tax = (masked // 100) * 11
+    if values[1:5] != [masked, 0, tax, 0]:
+        raise _UnsupportedMetadata('unreconciled_corporate_l8_reported_values')
+    if values[5] != values[3] + values[4] or values[5] != tax:
+        raise _UnsupportedMetadata('unreconciled_corporate_l8_reported_total')
+
+    rendered = [_number(form[key], 0, locale=locale) for key in _L8_KEYS]
+    body = [
+        ['1.', _L8_CAPTIONS[0]], ['', _L8_CAPTIONS[0], rendered[0]],
+        ['2.', _L8_CAPTIONS[1]], ['', _L8_CAPTIONS[2], rendered[1]], ['', _L8_CAPTIONS[3], rendered[2]],
+        ['3.', _L8_CAPTIONS[4]], ['', _L8_CAPTIONS[5], rendered[3]], ['', _L8_CAPTIONS[6], rendered[4]],
+    ]
+    footer = ['', 'Jumlah PPh Terutang', rendered[5]]
+    destinations = [{'table': 'L8', 'row': row, 'column': 2} for row in (1, 3, 4, 6, 7)]
+    destinations.append({'table': 'L8', 'footer': 0, 'column': 2})
+    provenance = []
+    for index, key in enumerate(_L8_KEYS):
+        entry = _evidence(form[key], [L8_ROOT, key])
+        entry.update(source='current', destination=deepcopy(destinations[index]),
+                     rule='reconciled-captured/input-number-integer-id')
+        if index in (3, 4):
+            entry['also_supports'] = [deepcopy(destinations[-1])]
+        provenance.append(entry)
+    for key in ('TaxableIncome', 'TotalGrossIncomeResearch'):
+        entry = _evidence(main_form[key], ['MainFormData', key])
+        entry.update(source='current', destinations=deepcopy(destinations[1:]),
+                     rule='reconciled-original-main-input')
+        provenance.append(entry)
+    for value, path, source, control in (
+            (main_form['TaxYear'], ['MainFormData', 'TaxYear'], 'current', 'rate-year'),
+            (period_year, ['PeriodYear'], 'primary', 'header-year')):
+        entry = _evidence(value, path)
+        entry.update(source=source, destination={'table': 'L8', 'control': control},
+                     rule='matched-original-rate-and-header-years')
+        provenance.append(entry)
+    if 'ExchangeRateValue' in form:
+        entry = _evidence(form['ExchangeRateValue'], [L8_ROOT, 'ExchangeRateValue'])
+        entry.update(source='current', destination={'table': 'L8', 'control': 'unused-rupiah-exchange-rate'},
+                     rule='retained-unused-rupiah-source-control')
+        provenance.append(entry)
+    return {'table': {'name': 'L8', 'group': _L8_GROUP, 'headers': list(headers),
+                     'rows': body + [footer], 'footer': [footer], 'footer_spans': [[1, 1, 1]],
+                     'body_spans': [list(spans) for spans in _L8_SPANS],
+                     'body_rowspans': [[1] * len(row) for row in body],
+                     'source_structure': {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1',
+                                          'groups': [_L8_GROUP]},
+                     'pages': 1, 'body_row_count': 8, 'source_total': 8, 'complete': True},
+            'provenance': provenance}
+
+
 def _l11c_integer(value):
     if type(value) is not _CorporateNumber:
         raise _UnsupportedMetadata('unsupported_corporate_l11c_number_type')

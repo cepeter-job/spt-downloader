@@ -227,6 +227,22 @@ auxiliary exact-set checks to each form's endpoints without admitting unrelated
 responses. Keep all twelve IV.B fields canonical and unresolved; template,
 monetary formats, native eligibility/PDF gates and 45-worker allowlist stay intact.
 
+L8 has a pure source projector only; it does not enable native admission,
+observers, dispatch or transport. Its supported ICT_RCIT/id-ID branch requires
+matching original numeric literal main/outer years 2020..2100, explicit unsigned
+nonnegative safe integral operands, turnover at most 4.8 billion and zero main
+research. Reconcile captured shares with the thousand-masked main taxable input,
+captured 11%/zero taxes and the reported total; never replace a mismatch. Keep
+eight physical body rows, original spans/captions, one footer and typed source
+provenance, including both captured tax operands supporting that footer. Retain
+optional numeric/null ExchangeRateValue as unused parent-control evidence only.
+Caller must prove unchanged original CurrentFormData.MainFormData operands equal
+stable final inputs and that the effective grid rate remains 1. A fresh grid on
+an uninterrupted Rupiah route has that conditional source invariant; it is not
+proved by the parent's saved exchange control. Native lifetime, dependency-cache
+visibility, main recalculation, async readiness and final callback proofs remain
+separate. Preserve the approved renderer/template, 45-worker list and PARTIAL gates.
+
 Approved compact Masa presentation: bind against original reference coordinates,
 then remove only declared empty body capacity. Keep populated rows (including
 zero and False), one body slot for an empty table, intentional separators,
