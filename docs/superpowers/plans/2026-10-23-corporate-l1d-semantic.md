@@ -272,3 +272,25 @@ lifetime/structure facts, so refusal cannot rely on a changed digest. Provider
 fixtures prove their actual resource initiator and absence from document.scripts.
 The existing strict vendor controls should already pass; the other six expose
 the reviewed missing predicates. Production is unchanged in this test increment.
+
+Review RED run39963512715, head
+`8639c4dbf2975a155ae6ab89eeb3e5dbdab42d61`, tested merge
+`190570dadaacc546315812aa480c75f8349180fc`, tree
+`94eeaa1ba8134f531d1d95874487e83fcf7fbca4`:4,990 Windows cases,
+4,984 passes,six expected failures and zero errors/skips. All eight prior
+integration positives and both vendor fetch/preload refusal controls pass;
+four corporate/main provider and two actual-chain controls fail as predicted.
+Both JUnits and inventories were read and reconciled before the guard correction:
+12505948657 SHA256
+`6bf6b9016e2970ea8e5a839baacc7ac95309c04b6fcc398fcfbec7c6791f9f1b`,
+12506871979 SHA256
+`de83c2069366bfaf0bf8ce7ddd3b7add80282abaef5f8ca680ddbd4d00c430ed`.
+
+The narrow correction requires all three exact script providers in one
+value-free evaluation, retaining existing bounded digest readers and one rehash
+per positive asset. It validates actual table/p-table/financial-wrapper element
+ancestry and containment within the observed grid/form, then retains the existing
+component/accordion/header/span checks. Stop checks surround both new probes.
+Fresh review accepted this design under the existing trusted-browser/source-pin
+boundary; final implementation review and exact-tree GREEN/package readback
+remain required. The superseded first implementation run is not final evidence.

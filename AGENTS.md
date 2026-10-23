@@ -103,6 +103,8 @@ Native L1-D additionally requires all three loaded corporate/main/vendor pins,
 the literal submitted current-View route/model, preceding observed Induk, outer
 BC04 classification and an explicit boolean IsMigrated. Observe the unique
 visible L1-D form and all three exact table/component/A-B accordion owners;
+require script-provider evidence for every pinned asset, not fetch/preload alone,
+and validate the actual table's p-table/first-financial-wrapper ancestor chain;
 retain their actual source_structure, headers and footer spans without reading
 body/footer values or inputs. Require explicit valid PreviousFormData encoding,
 the complete current L1dFormData and the reviewed safe code/mask/total projection.

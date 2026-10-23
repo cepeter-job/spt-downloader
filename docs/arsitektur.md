@@ -139,7 +139,9 @@ rute literal submitted `?view=true`, model sumber yang cocok, Induk teramati
 lebih dahulu, klasifikasi luar BC04 dan boolean IsMigrated eksplisit. Observer
 memeriksa satu form L1-D yang terlihat, tiga komponen tabel, rantai grid keuangan
 pertama dan kelompok accordion A/B melalui pemeriksa struktur corporate yang
-sama. Header, colspan footer dan source_structure boleh dibaca; nilai body,
+sama. Ketiga pin memerlukan bukti provider script, bukan fetch/preload saja;
+rantai ancestor p-table dan wrapper keuangan pertama harus memuat tabel yang
+benar-benar diperiksa. Header, colspan footer dan source_structure boleh dibaca; nilai body,
 footer dan input tidak dibaca dari DOM. Adapter memakai CurrentFormData.L1dFormData
 setelah encoding PreviousFormData tervalidasi, memproyeksikan kode/mask/total yang
 terbukti dan mengikat provenance ke respons/container/path asli. Bukti hilang

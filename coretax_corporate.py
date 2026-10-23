@@ -162,6 +162,14 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
         return None
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
         return None
+    _check_cancel(check_cancel)
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
     main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
     _check_cancel(check_cancel)
     vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
@@ -180,6 +188,20 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
                 or grid.locator('rshshr-citr-financial-statement-grid').count() != (1 if index == 0 else 0)):
             return None
         table = grid.locator('table')
+        _check_cancel(check_cancel)
+        chain = table.evaluate('''(table, {selector, financial}) => {
+            const form=table.closest('rshshr-citr-l1d-form'), grid=table.closest(selector);
+            const owner=table.closest('p-table'), wrapper=table.closest('rshshr-citr-financial-statement-grid');
+            if(!form || !grid || grid.closest('rshshr-citr-l1d-form')!==form ||
+               !owner || !grid.contains(owner) || owner.closest(selector)!==grid ||
+               owner.closest('rshshr-citr-l1d-form')!==form)return false;
+            if(!financial)return wrapper===null;
+            return !!wrapper && wrapper.contains(owner) && owner.closest('rshshr-citr-financial-statement-grid')===wrapper &&
+                wrapper.closest(selector)===grid && wrapper.closest('rshshr-citr-l1d-form')===form;
+        }''', {'selector': selector, 'financial': index == 0})
+        _check_cancel(check_cancel)
+        if chain is not True:
+            return None
         structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L1-D')
         if structure != {'form': 'L1-D', 'component': selector,
                          'groups': ['A. LAPORAN LABA RUGI' if index == 0 else 'B. LAPORAN POSISI KEUANGAN']}:
