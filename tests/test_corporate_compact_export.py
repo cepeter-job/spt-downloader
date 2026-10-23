@@ -79,9 +79,9 @@ def test_induk_uses_bound_fields_in_clean_two_column_layout(tmp_path):
         assert sheet.max_column == 2
         rows = list(sheet.values)
         assert rows[:3] == [('INDUK', None), ('Tahun Pajak/Bagian Tahun Pajak', '2025'), ('1. NPWP', '0000000000000002')]
-        assert rows[-1] == ('Angsuran PPh Pasal 25', '0')
-        assert rows[3:6] == [(None, None)] * 3
-        assert sheet.max_row == 7
+        assert rows[-1] == ('Angsuran PPh Pasal 25', 0)
+        assert rows[3:5] == [(None, None)] * 2
+        assert sheet.max_row == 6
         assert reports[0]['unmapped_fields'] == 1 and not reports[0]['complete']
         assert all('Data sumber tambahan' not in str(cell.value) for row in sheet for cell in row)
     finally:
