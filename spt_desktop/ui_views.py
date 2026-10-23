@@ -349,7 +349,10 @@ class MainView(ttk.Frame):
         # even when Windows restores the minimum-size application window.
         tiny = policy.compact and self.window.winfo_height() / self.scale < 480
         padding = self.px(8 if tiny else (16 if policy.compact else 24))
-        self.configure(padding=padding)
+        # Keep the compact summary and inputs visible with the larger contact
+        # footer, retaining the existing horizontal wrapping measurements.
+        vertical_padding = self.px(8 if tiny else (12 if policy.compact else 24))
+        self.configure(padding=(padding, vertical_padding))
         available = self.canvas.winfo_width()
         self.canvas.itemconfigure(self._canvas_window, width=available)
         gap, summary_width = self.px(10 if policy.compact else policy.gap_dip), self.px(policy.summary_width_dip)

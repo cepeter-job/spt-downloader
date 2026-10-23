@@ -408,7 +408,7 @@ def _wait_tab_panel(view, tab, caption, check_cancel, *, initial_panel_id=None):
         _check_cancel(check_cancel)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise PlaywrightTimeoutError('Panel readiness deadline exhausted')
+            raise PlaywrightTimeoutError('Timeout waiting for tab panel: readiness deadline exhausted')
         return min(1000, max(1, int(remaining * 1000)))
 
     while True:

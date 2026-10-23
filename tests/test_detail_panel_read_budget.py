@@ -156,7 +156,7 @@ def test_one_panel_deadline_is_shared_by_successive_reads(post_routed, monkeypat
     # Probe is a separate after-exhaustion diagnostic budget.
     monkeypatch.setattr(driver, '_record_panel_timeout', lambda *args: None)
 
-    with pytest.raises(driver.PlaywrightTimeoutError):
+    with pytest.raises(driver.PlaywrightTimeoutError, match='Timeout'):
         driver._wait_tab_panel(page.locator('.p-tabview'), tab, 'Induk', None)
 
     assert allowances and all(0 < timeout <= max(1, (1 - at) * 1000)
