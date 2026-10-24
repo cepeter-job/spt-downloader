@@ -31,9 +31,9 @@ def test_corporate_identity_is_saved_before_view_or_fails_closed(tmp_path,monkey
     monkeypatch.setattr(protocol,'META',dict(case.record['meta']))
     listing_url=driver.ORIGIN+'/returnsheet/api/returnsheetssubmitted'
     def goto(url,**kwargs):
-        case.page.navigated.append(url);case.page.url=url
+        case.page.commit_navigation(url)
         request=Request(case.page,url=listing_url,post=deepcopy(ctx['request']))
-        case.page.emit('response',SimpleNamespace(url=listing_url,request=request,status=200,
+        case.page.emit_grid_response(SimpleNamespace(url=listing_url,request=request,status=200,
                       headers={'content-type':'application/json'},body=lambda:original))
     monkeypatch.setattr(case.page,'goto',goto)
     real_view=protocol.View.evaluate;bound_before=[]

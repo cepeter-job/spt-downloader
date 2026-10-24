@@ -143,9 +143,8 @@ def test_detail_does_not_substitute_aggregate_or_coerce_record_id_before_view(tm
 
     class InvalidIdentityPage(SourcePage):
         def goto(self, url, **kwargs):
-            self.navigated.append(url)
-            self.url = url
-            self.emit('response', response([{
+            self.commit_navigation(url)
+            self.emit_grid_response(response([{
                 'RecordId': identifier, 'AggregateIdentifier': RECORD,
                 'TaxpayerAggregateIdentifier': TAXPAYER}]))
 
@@ -166,9 +165,8 @@ def test_detail_rejects_foreign_taxpayer_in_fresh_rows_before_view(tmp_path, mon
 
     class ForeignIdentityPage(SourcePage):
         def goto(self, url, **kwargs):
-            self.navigated.append(url)
-            self.url = url
-            self.emit('response', response([{
+            self.commit_navigation(url)
+            self.emit_grid_response(response([{
                 'RecordId': RECORD, 'TaxpayerAggregateIdentifier': 'fixture-other-taxpayer'}]))
 
     result = driver.collect_details(ForeignIdentityPage(), run_fixture(), tmp_path)
@@ -209,9 +207,8 @@ def test_detail_refinds_record_after_reordering_instead_of_clicking_saved_positi
 
     class ReorderedPage(SourcePage):
         def goto(self, url, **kwargs):
-            self.navigated.append(url)
-            self.url = url
-            self.emit('response', response([
+            self.commit_navigation(url)
+            self.emit_grid_response(response([
                 {'RecordId': 'fixture-other-record', 'TaxpayerAggregateIdentifier': TAXPAYER},
                 {'RecordId': RECORD, 'TaxpayerAggregateIdentifier': TAXPAYER}]))
 
@@ -424,7 +421,7 @@ def test_detail_list_reset_obeys_page_limit(tmp_path, monkeypatch):
             self.clicks += 1
             if self.clicks > 2:
                 raise RuntimeError('Synthetic watchdog: unbounded Previous loop')
-            page.emit('response', response())
+            page.emit_grid_response(response())
             return None
 
     previous = StuckPrevious()

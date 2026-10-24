@@ -671,26 +671,61 @@ def verify_detail_url(url, taxpayer_id, record_id=None):
         raise RuntimeError('Return URL does not identify the selected SPT record; provenance cannot be verified')
 
 
+class ListResponseTimeout(RuntimeError):
+    """No fresh, verifiable list response arrived within the existing budget."""
+
+
 class ListObserver:
-    """Keep one owned response/byte buffer and a monotonic freshness marker."""
+    """Keep one response buffer, freshness marker and bounded document custody."""
     def __init__(self, page, check_cancel=None):
         self.page = page
         self.check_cancel = check_cancel
         self.sequence = 0
         self.latest = None
         self.request_filter = None
+        self.navigation_source = None
+        self.navigation_committed = False
+        self.navigation_failed = False
+        self.failed = False
+        self.pending = {}
+        page.on('framenavigated', self.on_navigation)
+        page.on('request', self.on_request)
+        page.on('requestfailed', self.on_request_failed)
         page.on('response', self.on_response)
 
-    def on_response(self, response):
-        request = response.request
-        if (not trusted_origin(response.url) or not urlparse(response.url).path.startswith('/returnsheet/api/returnsheets')
-                or request.resource_type not in ('xhr', 'fetch')):
+    def begin_navigation(self, source_url):
+        # A response sequence cannot distinguish an outstanding old request.
+        # Admit no requests until this attempt's main document has committed.
+        self.navigation_source = source_url
+        self.navigation_committed = False
+        self.navigation_failed = False
+        self.failed = False
+        self.pending.clear()
+        self.latest = None
+
+    def _same_navigation(self, url):
+        expected = urlparse(self.navigation_source)
+        return (trusted_origin(url)
+                and (urlparse(url).path, urlparse(url).query) == (expected.path, expected.query))
+
+    def on_navigation(self, frame):
+        if self.navigation_source is None or frame != self.page.main_frame:
             return
-        if 'json' not in response.headers.get('content-type', '').lower():
+        if self.navigation_committed or not self._same_navigation(frame.url):
+            self.navigation_failed = True
+            self.pending.clear()
             return
+        self.navigation_committed = True
+
+    def _grid_request(self, request, url):
         try:
+            if (not trusted_origin(url) or not urlparse(url).path.startswith('/returnsheet/api/returnsheets')
+                    or request.resource_type not in ('xhr', 'fetch')):
+                return
             frame = getattr(request, 'frame', None)
             main_frame = getattr(self.page, 'main_frame', None)
+            if self.navigation_source is not None and (frame is None or main_frame is None):
+                return
             if frame is not None and main_frame is not None and frame != main_frame:
                 return
             posted = getattr(request, 'post_data_json', None)
@@ -705,10 +740,50 @@ class ListObserver:
                     or type(size) is not int or size < 1 or first % size
                     or not isinstance(posted.get('Filters'), list)):
                 return
+            return posted
+        except Exception:
+            # Invalid/unreadable request shapes cannot establish grid custody.
+            return
+
+    def on_request(self, request):
+        if self.navigation_source is None or not self.navigation_committed or self.navigation_failed:
+            return
+        posted = self._grid_request(request, request.url)
+        if posted is None:
+            return
+        if (not self._same_navigation(self.page.url)
+                or posted['TaxpayerAggregateIdentifier'] != list_taxpayer_id(self.navigation_source)
+                or len(self.pending) >= 128):
+            self.navigation_failed = True
+            self.pending.clear()
+            return
+        self.pending[id(request)] = request
+
+    def on_request_failed(self, request):
+        self.pending.pop(id(request), None)
+
+    def on_response(self, response):
+        request = response.request
+        if self.navigation_source is not None and self.pending.pop(id(request), None) is not request:
+            return
+        try:
+            posted = self._grid_request(request, response.url)
+            if posted is None or self.failed or self.navigation_failed:
+                return
+            # A known owned failure is terminal even without a JSON rows envelope.
+            if not 200 <= response.status < 300:
+                self.failed = True
+                return
+            if 'json' not in response.headers.get('content-type', '').lower():
+                return
             body_reader = getattr(response, 'body', None)
             body = body_reader() if callable(body_reader) else None
             data = json.loads(body) if isinstance(body, bytes) else response.json()
             if not isinstance(data, dict):
+                return
+            if (('IsSuccessful' in data or 'isSuccessful' in data)
+                    and data.get('IsSuccessful', data.get('isSuccessful')) is not True):
+                self.failed = True
                 return
             payload = data.get('Payload', data.get('payload', {}))
             if not isinstance(payload, dict):
@@ -728,7 +803,7 @@ class ListObserver:
                         'isArchieved', 'LanguageId', 'SortField', 'SortOrder')
                 binding = {
                     'response_url': response.url, 'method': getattr(request, 'method', None),
-                    'http_status': response.status, 'frame_url': getattr(frame, 'url', None),
+                    'http_status': response.status, 'frame_url': getattr(getattr(request, 'frame', None), 'url', None),
                     'request': {key: posted[key] for key in keys if key in posted} if isinstance(posted, dict) else None,
                 }
                 if rewrite is not None:
@@ -745,27 +820,67 @@ class ListObserver:
             # wait(after) still requires a newer usable event or fails closed.
             pass
 
+    def _check_state(self):
+        _check_cancel(self.check_cancel)
+        if self.request_filter is not None and self.request_filter.error:
+            raise self.request_filter.error
+        if self.navigation_source is not None and (
+                not self.navigation_committed or self.navigation_failed
+                or not self._same_navigation(self.page.url)):
+            raise RuntimeError('Return-list document or request ownership changed; refusing capture')
+        if self.failed:
+            raise RuntimeError('Coretax reported an unsuccessful return-list request')
+
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
         while self.sequence <= after:
-            _check_cancel(self.check_cancel)
-            if self.request_filter is not None and self.request_filter.error:
-                raise self.request_filter.error
+            self._check_state()
             if time.monotonic() >= deadline:
-                raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
+                raise ListResponseTimeout('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
-        _check_cancel(self.check_cancel)
+        self._check_state()
         wait_idle(self.page)
-        if self.request_filter is not None and self.request_filter.error:
-            raise self.request_filter.error
+        self._check_state()
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
         return {**result, 'after_sequence': after}
 
     def close(self):
+        self.page.remove_listener('framenavigated', self.on_navigation)
+        self.page.remove_listener('request', self.on_request)
+        self.page.remove_listener('requestfailed', self.on_request_failed)
         self.page.remove_listener('response', self.on_response)
         self.latest = None
+        self.pending.clear()
+        self.navigation_source = None
+
+
+def _restore_list_response(page, observer, source_url, taxpayer_id, check_cancel=None):
+    """Retry one absent response, never a changed owner or another failure."""
+    expected = urlparse(source_url)
+
+    def verify_owner():
+        current = urlparse(page.url)
+        if (list_taxpayer_id(page.url) != taxpayer_id
+                or (current.path, current.query) != (expected.path, expected.query)):
+            raise RuntimeError('Return-list navigation changed the selected taxpayer or source route; refusing capture')
+
+    for attempt in range(2):
+        _check_cancel(check_cancel)
+        if attempt:
+            verify_owner()
+        observer.begin_navigation(source_url)
+        before = observer.sequence
+        page.goto(source_url, wait_until='domcontentloaded', timeout=60000)
+        verify_owner()
+        try:
+            return observer.wait(before)
+        except ListResponseTimeout:
+            _check_cancel(check_cancel)
+            verify_owner()
+            if attempt:
+                raise
 
 
 REFERENCE_ROWS_JS = r'''(table) => {
@@ -1779,11 +1894,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     if condition is not None:
                                         observer.request_filter = group_routes.enter_context(
                                             InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
-                                    before = observer.sequence
-                                    page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
-                                    if list_taxpayer_id(page.url) != taxpayer_id:
-                                        raise RuntimeError('Return-list navigation changed the selected taxpayer; refusing capture')
-                                    current_response = observer.wait(before)
+                                    current_response = _restore_list_response(
+                                        page, observer, record['list_url'], taxpayer_id, check_cancel)
                                     table = page.locator('.main-content table').first
                                     container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
                                     current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
