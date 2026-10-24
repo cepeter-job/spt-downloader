@@ -148,3 +148,60 @@ def test_other_restore_failure_is_not_retried(tmp_path, collector, failure):
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL]
     assert not result['complete'] and collector == []
+
+
+@pytest.mark.parametrize('starts_during_retry', [False, True])
+def test_late_old_document_request_cannot_satisfy_retry(tmp_path, collector, starts_during_retry):
+    class LatePage(MissingListPage):
+        def __init__(self):
+            super().__init__(recover=False)
+            self.main_frame = self
+            self.late = response()
+            self.late.request.frame = self
+
+        def goto(self, url, **kwargs):
+            self.navigated.append(url)
+            self.url = url
+            if len(self.navigated) == 1:
+                self.emit('framenavigated', self.main_frame)
+                if not starts_during_retry:
+                    self.emit('request', self.late.request)
+            else:
+                # The previous document can finish/start work before replacement.
+                if starts_during_retry:
+                    self.emit('request', self.late.request)
+                self.emit('response', self.late)
+                self.emit('framenavigated', self.main_frame)
+                # No qualifying request is made by the replacement document.
+
+    page = LatePage()
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert page.navigated == [LIST_URL, LIST_URL]
+    assert not result['complete'] and collector == []
+    assert result['records'][0]['sections'] == []
+
+
+@pytest.mark.parametrize('kind', ['html403', 'html500', 'unsuccessful_without_payload'])
+def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, kind):
+    class ErrorPage(SourcePage):
+        def goto(self, url, **kwargs):
+            self.navigated.append(url)
+            self.url = url
+            self.main_frame = self
+            self.emit('framenavigated', self.main_frame)
+            failed = response()
+            failed.request.frame = self
+            self.emit('request', failed.request)
+            if kind.startswith('html'):
+                failed.status = int(kind[4:])
+                failed.headers = {'content-type': 'text/html'}
+                failed.json = lambda: (_ for _ in ()).throw(ValueError('not JSON'))
+            else:
+                failed.json = lambda: {'IsSuccessful': False, 'Payload': None}
+            self.emit('response', failed)
+
+    page = ErrorPage()
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert page.navigated == [LIST_URL]
+    assert not result['complete'] and collector == []
+    assert 'unsuccessful' in result['errors'][0]['message']
