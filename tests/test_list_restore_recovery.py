@@ -104,6 +104,8 @@ def test_stop_after_timeout_prevents_retry_or_capture(tmp_path, collector):
     LIST_URL.replace(TAXPAYER, 'synthetic-other-taxpayer'),
     driver.ORIGIN + '/returnsheets/id-ID/auth-callback',
     'https://untrusted.invalid/returnsheets/id-ID/submitted-returnsheets/' + TAXPAYER,
+    LIST_URL.replace('/submitted-', '/archived-'),
+    LIST_URL + '?synthetic-unreviewed-query=1',
 ])
 def test_changed_owner_during_missing_wait_is_not_hidden_by_retry(tmp_path, collector, monkeypatch, changed_url):
     original = driver.ListObserver.wait
@@ -119,12 +121,13 @@ def test_changed_owner_during_missing_wait_is_not_hidden_by_retry(tmp_path, coll
     assert not result['complete'] and collector == []
 
 
-def test_unsuccessful_list_response_is_not_a_retryable_timeout(tmp_path, collector):
+@pytest.mark.parametrize('changes', [{'successful': False}, {'status': 403}, {'status': 500}])
+def test_unsuccessful_list_response_is_not_a_retryable_timeout(tmp_path, collector, changes):
     class FailedPage(SourcePage):
         def goto(self, url, **kwargs):
             self.navigated.append(url)
             self.url = url
-            self.emit('response', response(successful=False))
+            self.emit('response', response(**changes))
 
     page = FailedPage()
     result = driver.collect_details(page, run_fixture(), tmp_path)

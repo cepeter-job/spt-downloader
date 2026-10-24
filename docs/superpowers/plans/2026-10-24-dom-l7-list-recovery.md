@@ -16,8 +16,11 @@ period alternative and a distinct list-response timeout with a one-retry helper.
 ## Global constraints
 
 All product tests/imports, browser fixtures and packages are GitHub-runner-only.
-No private data, dependency/CI/resource change, authentication broadening or new
-Induk destinations. Preserve original values, selected record and PARTIAL gates.
+No private data, CI/resource change, authentication broadening or new Induk
+destinations. Preserve original values, selected record and PARTIAL gates.
+The CI-discovered dependency maintenance is limited to audit filelock4.2.1 and
+build setuptools84.1.0 plus their uv0.13.4 universal hashes. Runtime/test locks
+and strict dependency audit/freshness checks stay unchanged.
 
 ## Review focus
 
@@ -44,6 +47,8 @@ Files: `tests/test_corporate_l7_period_export.py`,
 ### Task 2: Minimal repair and green validation
 
 Files: `coretax_badan_template.py`, `coretax_browser.py`, `AGENTS.md`.
+CI maintenance: `requirements-audit.txt`, `requirements-build.txt`,
+`locks/audit.txt`, `locks/build.txt`.
 
 Interfaces: keep `_current_l7_header(sheet, sections, period)` and public
 `collect_details` unchanged; `ListObserver.wait(after, timeout=45)` raises a

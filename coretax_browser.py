@@ -671,6 +671,10 @@ def verify_detail_url(url, taxpayer_id, record_id=None):
         raise RuntimeError('Return URL does not identify the selected SPT record; provenance cannot be verified')
 
 
+class ListResponseTimeout(RuntimeError):
+    """No fresh, verifiable list response arrived within the existing budget."""
+
+
 class ListObserver:
     """Keep one owned response/byte buffer and a monotonic freshness marker."""
     def __init__(self, page, check_cancel=None):
@@ -752,7 +756,7 @@ class ListObserver:
             if self.request_filter is not None and self.request_filter.error:
                 raise self.request_filter.error
             if time.monotonic() >= deadline:
-                raise RuntimeError('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
+                raise ListResponseTimeout('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
         _check_cancel(self.check_cancel)
         wait_idle(self.page)
@@ -766,6 +770,32 @@ class ListObserver:
     def close(self):
         self.page.remove_listener('response', self.on_response)
         self.latest = None
+
+
+def _restore_list_response(page, observer, source_url, taxpayer_id, check_cancel=None):
+    """Retry one absent response, never a changed owner or another failure."""
+    expected = urlparse(source_url)
+
+    def verify_owner():
+        current = urlparse(page.url)
+        if (list_taxpayer_id(page.url) != taxpayer_id
+                or (current.path, current.query) != (expected.path, expected.query)):
+            raise RuntimeError('Return-list navigation changed the selected taxpayer or source route; refusing capture')
+
+    for attempt in range(2):
+        _check_cancel(check_cancel)
+        if attempt:
+            verify_owner()
+        before = observer.sequence
+        page.goto(source_url, wait_until='domcontentloaded', timeout=60000)
+        verify_owner()
+        try:
+            return observer.wait(before)
+        except ListResponseTimeout:
+            _check_cancel(check_cancel)
+            verify_owner()
+            if attempt:
+                raise
 
 
 REFERENCE_ROWS_JS = r'''(table) => {
@@ -1779,11 +1809,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     if condition is not None:
                                         observer.request_filter = group_routes.enter_context(
                                             InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
-                                    before = observer.sequence
-                                    page.goto(record['list_url'], wait_until='domcontentloaded', timeout=60000)
-                                    if list_taxpayer_id(page.url) != taxpayer_id:
-                                        raise RuntimeError('Return-list navigation changed the selected taxpayer; refusing capture')
-                                    current_response = observer.wait(before)
+                                    current_response = _restore_list_response(
+                                        page, observer, record['list_url'], taxpayer_id, check_cancel)
                                     table = page.locator('.main-content table').first
                                     container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
                                     current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')

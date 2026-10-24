@@ -28,6 +28,12 @@ native eligibility, authentication permissions and approved clean layouts stay
 unchanged. The user has classified extra Induk fields as redundant; adding their
 destinations is outside this change.
 
+The initial CI dependency audit independently found six filelock advisories and
+one setuptools advisory in the existing locks. Add only the patched exact pins
+filelock4.2.1 (audit) and setuptools84.1.0 (build), regenerate universal hashed
+locks with uv0.13.4 and retain the existing strict audit/freshness jobs. Runtime
+and test dependency versions and all CI policies stay unchanged.
+
 ## Alternatives considered
 
 Increasing every timeout leaves a one-off missing response unrecovered and adds

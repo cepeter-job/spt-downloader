@@ -671,7 +671,7 @@ def _body_plan(sheet, form, first, last, columns, rows, *, growth=None):
 
 
 def _current_l7_header(sheet, sections, period):
-    match = re.fullmatch(r'Januari - Desember ([0-9]{4})', period or '')
+    match = re.fullmatch(r'(?:Januari - Desember |0112)([0-9]{4})', period or '')
     if not match:
         return
     caption = f'KOMPENSASI KERUGIAN FISKAL / {match[1]} / TAHUN PAJAK INI - NILAI (Rp)'

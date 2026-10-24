@@ -74,15 +74,23 @@ def test_literal_annual_l7_exports_body_total_and_preserves_source(tmp_path, yea
         resume.close()
 
 
-@pytest.mark.parametrize('period,header_year', [
-    ('01122025', 2024), ('01012025', 2025), ('02122025', 2025),
-    ('01112025', 2025), ('01122025 ', 2025), (' 01122025', 2025),
-    ('0112202', 2025), ('011220250', 2025), ('０１１２２０２５', 2025),
+@pytest.mark.parametrize('period,header_year,valid_scope', [
+    ('01122025', 2024, True), ('01012025', 2025, True), ('02122025', 2025, True),
+    ('01112025', 2025, True), ('01122025 ', 2025, False), (' 01122025', 2025, False),
+    ('0112202', 2025, False), ('011220250', 2025, False), ('０１１２２０２５', 2025, False),
 ])
-def test_unproved_l7_period_or_header_stays_unmapped(tmp_path, period, header_year):
+def test_unproved_l7_period_or_header_stays_unmapped(tmp_path, period, header_year, valid_scope):
     run = l7_run(period, header_year=header_year)
     before = deepcopy(run)
     reports = []
+    if not valid_scope:
+        # Invalid source text is already rejected by the export scope gate;
+        # it must not be normalized into an eligible annual period.
+        with pytest.raises(ValueError, match='Cannot establish period year'):
+            exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+        assert run == before and reports == []
+        assert not list(tmp_path.glob('*.xlsx'))
+        return
     files = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
     name, = [name for name in files if name != 'resume.xlsx']
     book = load_workbook(tmp_path / name)
