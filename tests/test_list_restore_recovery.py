@@ -14,10 +14,9 @@ class MissingListPage(SourcePage):
         self.timed_out = False
 
     def goto(self, url, **kwargs):
-        self.navigated.append(url)
-        self.url = url
+        self.commit_navigation(url)
         if self.recover and len(self.navigated) == 2:
-            self.emit('response', self.replay or response())
+            self.emit_grid_response(self.replay or response())
 
 
 @pytest.fixture
@@ -51,7 +50,7 @@ def test_missing_initial_list_response_retries_once_then_captures(tmp_path, coll
     assert page.navigated == [LIST_URL, LIST_URL]
     assert collector == [DETAIL_URL]
     assert result['records'][0]['capture_complete']
-    assert not page.listeners['response']
+    assert not any(page.listeners.values())
 
 
 def test_second_missing_list_response_stays_partial_without_third_navigation(tmp_path, collector):
@@ -125,15 +124,38 @@ def test_changed_owner_during_missing_wait_is_not_hidden_by_retry(tmp_path, coll
 def test_unsuccessful_list_response_is_not_a_retryable_timeout(tmp_path, collector, changes):
     class FailedPage(SourcePage):
         def goto(self, url, **kwargs):
-            self.navigated.append(url)
-            self.url = url
-            self.emit('response', response(**changes))
+            self.commit_navigation(url)
+            self.emit_grid_response(response(**changes))
 
     page = FailedPage()
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL]
     assert not result['complete'] and collector == []
     assert 'unsuccessful' in result['errors'][0]['message']
+
+
+@pytest.mark.parametrize('fault', ['foreign_request', 'extra_commit', 'pending_overflow'])
+def test_changed_or_unbounded_document_requests_never_authorize_view(tmp_path, collector, fault):
+    class ChangedPage(SourcePage):
+        def goto(self, url, **kwargs):
+            self.commit_navigation(url)
+            if fault == 'extra_commit':
+                self.emit('framenavigated', self.main_frame)
+            else:
+                for _ in range(129 if fault == 'pending_overflow' else 1):
+                    item = response()
+                    item.request.frame = self.main_frame
+                    if fault == 'foreign_request':
+                        item.request.post_data_json['TaxpayerAggregateIdentifier'] = 'synthetic-other-taxpayer'
+                    self.emit('request', item.request)
+            self.emit_grid_response(response())
+
+    page = ChangedPage()
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert page.navigated == [LIST_URL]
+    assert not result['complete'] and collector == []
+    assert 'ownership' in result['errors'][0]['message']
+    assert not any(page.listeners.values())
 
 
 @pytest.mark.parametrize('failure', [RuntimeError('synthetic navigation failure'),
@@ -151,7 +173,8 @@ def test_other_restore_failure_is_not_retried(tmp_path, collector, failure):
 
 
 @pytest.mark.parametrize('starts_during_retry', [False, True])
-def test_late_old_document_request_cannot_satisfy_retry(tmp_path, collector, starts_during_retry):
+@pytest.mark.parametrize('finishes_after_commit', [False, True])
+def test_late_old_document_request_cannot_satisfy_retry(tmp_path, collector, starts_during_retry, finishes_after_commit):
     class LatePage(MissingListPage):
         def __init__(self):
             super().__init__(recover=False)
@@ -170,8 +193,11 @@ def test_late_old_document_request_cannot_satisfy_retry(tmp_path, collector, sta
                 # The previous document can finish/start work before replacement.
                 if starts_during_retry:
                     self.emit('request', self.late.request)
-                self.emit('response', self.late)
+                if not finishes_after_commit:
+                    self.emit('response', self.late)
                 self.emit('framenavigated', self.main_frame)
+                if finishes_after_commit:
+                    self.emit('response', self.late)
                 # No qualifying request is made by the replacement document.
 
     page = LatePage()
@@ -182,7 +208,8 @@ def test_late_old_document_request_cannot_satisfy_retry(tmp_path, collector, sta
 
 
 @pytest.mark.parametrize('kind', ['html403', 'html500', 'unsuccessful_without_payload'])
-def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, kind):
+@pytest.mark.parametrize('later_success', [False, True])
+def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, kind, later_success):
     class ErrorPage(SourcePage):
         def goto(self, url, **kwargs):
             self.navigated.append(url)
@@ -199,6 +226,8 @@ def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, k
             else:
                 failed.json = lambda: {'IsSuccessful': False, 'Payload': None}
             self.emit('response', failed)
+            if later_success:
+                self.emit_grid_response(response())
 
     page = ErrorPage()
     result = driver.collect_details(page, run_fixture(), tmp_path)

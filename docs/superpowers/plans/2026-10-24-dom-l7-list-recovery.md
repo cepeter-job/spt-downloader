@@ -24,11 +24,14 @@ and strict dependency audit/freshness checks stay unchanged.
 
 ## Review focus
 
-1. A stale response cannot satisfy the retry's fresh marker.
+1. A stale response cannot satisfy the retry: require actual post-commit request
+   custody, including old-document work started while replacement is pending.
 2. Identity/route changes during the first wait cannot be hidden by navigation.
 3. Stop between timeout and retry prevents the second navigation and capture.
 4. A restored response missing the selected record cannot authorize View.
 5. Literal monthly/partial-year codes or conflicting year headers stay unmapped.
+6. Owned HTTP errors and explicit unsuccessful JSON without rows are terminal,
+   independent of successful-envelope shape or later traffic.
 
 ### Task 1: Pin regressions before implementation
 
@@ -59,6 +62,10 @@ the verified response after at most two navigations, retaining each new marker.
 - [ ] Implement the typed timeout and bounded same-owner restoration retry.
 - [ ] Record actual supported boundaries in AGENTS, run local AST/diff checks,
   then push and read full Windows/portable CI and exact package identities.
+- [ ] Resolve final-review findings with runner RED for late old-document
+  responses and HTML/empty-payload failures, then implement bounded document and
+  request custody plus terminal error classification. Protocol fixtures model
+  real commit/request/response ordering; isolated real Edge cases remain active.
 
 ### Task 3: Review and integrate
 

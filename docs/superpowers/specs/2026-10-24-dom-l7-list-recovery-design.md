@@ -21,6 +21,20 @@ outside Git; fixtures use synthetic records and amounts only.
   authorization contradiction, unsuccessful response, navigation error or Stop
   is never converted into a retry. Exhaustion remains PARTIAL.
 
+Each restoration attempt must observe the main-frame commit to the exact owned
+list route before admitting grid requests. Accept only responses belonging to
+those actual request objects; a previous document's delayed response or request
+started before the replacement commit cannot establish freshness. Keep this
+custody through subsequent grid operations, clear it for the next explicit
+restoration, and release pending request references on response/failure/close.
+Bound pending owned grid requests to 128; overflow or a further document/route
+transition stays unsupported. No request material is added to diagnostics.
+
+For a validated owned grid request, HTTP failure is terminal even when its
+response is HTML. An explicit unsuccessful JSON flag is terminal before parsing
+the successful rows envelope. These failures must not become missing-response
+timeouts or be hidden by later successful traffic.
+
 The existing exact record, metadata, paginator/page-size/filter and selected
 View checks still run after a successful response. No retry of a detail action,
 financial POST or document download is introduced. The 30-second panel budget,

@@ -103,6 +103,15 @@ request identity. Never retry navigation errors, unsuccessful responses, known
 identity/filter/safety contradictions, detail/View actions or financial POSTs.
 All paginator, metadata and selected-record checks still precede View. A second
 missing response stays PARTIAL; production panel readiness remains 30 seconds.
+For restoration and its subsequent grid waits, require an observed main-frame
+commit to that literal list route before admitting actual grid request objects.
+Reset admission before each navigation; pre-commit/old-attempt requests and their
+late responses cannot satisfy a new marker. Require the selected request
+taxpayer, keep at most 128 pending owned grid requests, release references on
+response/failure/close, and reject overflow or another main-frame transition.
+Owned HTTP failures are terminal even for HTML; explicit unsuccessful JSON is
+terminal before successful-row parsing and cannot be cleared by later traffic.
+Keep only fixed failure state, with no new request material in diagnostics.
 
 The approved L7 year header accepts only the exact literal annual `0112YYYY`
 source code or the existing exact `Januari - Desember YYYY` caption, reconciled
