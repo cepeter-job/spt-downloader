@@ -42,6 +42,16 @@
 - [ ] Review test source, AST, private patterns and staged files. Commit tests/docs and publish a draft PR using a GitHub tree exactly matching local Git.
 - [ ] Read all six actual RED archives against the full 5,842-case PR115 baseline, with all phases/identities/metadata/hash/size/measurements reconciled. Only intended missing-feature failures qualify; fix fixtures first if necessary.
 
+Tests-first RED is accepted from all six actual archives of
+[run 40259854888, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/40259854888):
+tested merge `b9220163290df120f3fa71b34e75332c3f87ca22`, tree
+`fe83d774f43df17e43c68169aee13f8aa719c19c`. The 6,090 Windows identities comprise
+all 5,842 passing baseline cases plus 248 new cases (176 native, 42 history,
+30 observer). Exactly 68 intended missing-feature failures, zero errors/skips,
+and all 710 portable overlap cases reconcile. Independent review accepted the
+same six archives and baseline before production changes. GREEN and package
+evidence remain pending.
+
 ## Task 2: Minimal history, replay and native integration
 
 **Files:** Modify coretax_json_capture.py, coretax_json.py, coretax_corporate.py, coretax_corporate_projection.py, AGENTS.md and docs/arsitektur.md. Keep the existing pure projector and every test unchanged from accepted RED.
@@ -49,6 +59,8 @@
 **Interfaces:**
 - `corporate_l8_lifetime` is optional manifest metadata only. It is copied into packet context by held-reader/checkpoint resolution, never accepted from response descriptors. Old captures retain no invented proof.
 - A retained JSHandle guard is armed through the existing retained Document before View; it counts all corporate roots, records exact root identity and inserted/removed forbidden host history, exposes only four booleans (initial_clear, root_seen, root_changed, dependent_seen), and is disconnected/disposed on owned cleanup.
+  Its bounded 4096 record/node budget refuses unavailable proof on exhaustion;
+  no source values or mutation record list are retained in Python or manifests.
 - `_observe_l8(page, form, capture, digest, check_cancel)` validates three loaded script-provider pins, existing/stronger lifetime, one exact owned grid/table, approved group/headers/footer spans and environment. Add L8 to FORMS only with this dedicated branch and preceding Induk.
 - `_apply_l8(...)` validates the spec's original main/outer fixed points and exact proofs, calls unchanged project_l8, and binds every value/control path to original response evidence. Outer year remains primary payload evidence.
 

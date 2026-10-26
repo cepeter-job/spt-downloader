@@ -252,8 +252,8 @@ auxiliary exact-set checks to each form's endpoints without admitting unrelated
 responses. Keep all twelve IV.B fields canonical and unresolved; template,
 monetary formats, native eligibility/PDF gates and 45-worker allowlist stay intact.
 
-L8 has a pure source projector only; it does not enable native admission,
-observers, dispatch or transport. Its supported ICT_RCIT/id-ID branch requires
+The pure L8 helper alone grants no native admission, observation or transport.
+Its supported ICT_RCIT/id-ID branch requires
 matching original numeric literal main/outer years 2020..2100, explicit unsigned
 nonnegative safe integral operands, turnover at most 4.8 billion and zero main
 research. Translate Decimal conversion failures to the same unsupported-input refusal
@@ -269,6 +269,32 @@ an uninterrupted Rupiah route has that conditional source invariant; it is not
 proved by the parent's saved exchange control. Native lifetime, dependency-cache
 visibility, main recalculation, async readiness and final callback proofs remain
 separate. Preserve the approved renderer/template, 45-worker list and PARTIAL gates.
+
+The separate native L8 branch requires loaded corporate/main/vendor script
+providers, id-ID/Asia/Jakarta, the literal submitted selected `?view=true` route,
+preceding observed Induk and both the existing component lifetime and optional
+manifest-owned `corporate_l8_lifetime`. Arm structure-only history before View
+with no corporate root or L7/L13A/L13B host anywhere, including hidden nodes.
+Retain the unique root identity; any removal, replacement or duplication is
+fatal even after reinsertion. Dependent hosts seen transiently remain unsupported.
+One bounded 4096 record/node observation budget may refuse proof; it grants no
+business-value read. Final history sampling stays inside the late-response fence,
+and observers/handles are released on cleanup. Missing proof preserves legacy
+fallback; present malformed, unbound or mixed proof remains fatal before fallback.
+Keep strong facts on the manifest only, never response descriptors, and retain
+their exact attempt/record/source/detail binding during held reads and replay.
+The admitted original main/outer subset has exact TX03 rates, numeric literal
+annual 1/12 bounds, explicit null PreviousFormData/LastSubmittedFormData and
+numeric literal zero on both owners for IsCarriedForward, IsNetIncomeReduction,
+IsInvestmentOtherIncome, IsGrossIncomeVocational and IsGrossIncomeResearch.
+Current L7/L13A/L13B roots must be absent, not null. Require nonnegative safe
+integral net income, identical fiscal net, zero captured reduction/vocational/
+carry/research totals and the exact thousand-truncated taxable input. Copy only
+reconciled original L8 values and preserve every contributing raw input path.
+The fresh Rupiah grid keeps internal rate 1 despite asynchronous parent rate
+references; do not fetch references, inspect Angular state or use a quiet timer.
+Other source/lifecycle branches retain whole-record DOM fallback. Capture,
+mapping, financial PDFs and live acceptance remain independent gates.
 
 Approved compact Masa presentation: bind against original reference coordinates,
 then remove only declared empty body capacity. Keep populated rows (including

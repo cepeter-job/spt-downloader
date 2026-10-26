@@ -153,6 +153,24 @@ def _capture_component_lifetime(value, *, attempt, record_id, source_url, detail
     return dict(value)
 
 
+def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Validate the stronger optional L8 history, never inferred during replay."""
+    keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url',
+            'fresh_root', 'stable_root', 'no_dependent_forms'}
+    if (not isinstance(value, dict) or set(value) != keys
+            or value.get('kind') != 'corporate-l8-spa-v1'
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in
+                   ('fresh_root', 'stable_root', 'no_dependent_forms'))):
+        raise JsonSafetyError('Captured L8 history is invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return dict(value)
+
+
 def _reference_consumer_order(details, kind):
     """Pinned ordinary cache.add order, retaining original response ordinals.
 
@@ -795,6 +813,12 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured component lifetime has an unsupported owner')
         lifetime = _capture_component_lifetime(ctx['component_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l8_lifetime = None
+    if 'corporate_l8_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L8 history lacks its component lifetime')
+        l8_lifetime = _capture_l8_lifetime(ctx['corporate_l8_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     status = ctx.get('status')
     if type(status) is not int or not 100 <= status <= 599 or status in (401, 403):
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
@@ -818,6 +842,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['clock_interval'] = clock
     if lifetime is not None:
         event['component_lifetime'] = lifetime
+    if l8_lifetime is not None:
+        event['corporate_l8_lifetime'] = l8_lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -1053,7 +1079,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     sections, paths, requests, grids, responses, dependencies, primary = _corporate_bindings(observed_forms)
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
-    reasons, sequences, snapshots, clocks, lifetimes = [], set(), {}, set(), set()
+    reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
@@ -1075,6 +1101,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         lifetimes.add(_corporate_request_key(event.get('component_lifetime')))
         if len(lifetimes) != 1:
             raise JsonSafetyError('Corporate component lifetime is missing or mixed within one attempt')
+        l8_lifetimes.add(_corporate_request_key(event.get('corporate_l8_lifetime')))
+        if len(l8_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L8 history is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Corporate source response budget exceeded')
