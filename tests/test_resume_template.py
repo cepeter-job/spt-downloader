@@ -117,7 +117,13 @@ def test_dynamic_rows_chart_and_table_follow_only_actual_records(tmp_path, count
         assert index.max_row == count + 4
         assert index.tables['SPTIndex'].ref == f'A4:K{count + 4}'
         assert index['B5'].border.left.style == 'thin'
-        assert index.row_dimensions[count + 4].height == 36
+        from coretax_resume_layout import RESOURCE
+        reference = load_workbook(RESOURCE)
+        try:
+            assert index.row_dimensions[count + 4].height == reference['Daftar SPT'].row_dimensions[5].height
+            assert index.sheet_format.defaultRowHeight == reference['Daftar SPT'].sheet_format.defaultRowHeight
+        finally:
+            reference.close()
         assert audit['B4'].value == 'Field belum dipetakan'
         assert audit['B5'].value == 0
     finally:

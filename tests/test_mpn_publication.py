@@ -156,3 +156,92 @@ def test_changed_private_mpn_evidence_blocks_publication_before_downloads(monkey
     with pytest.raises(MpnSafetyError):
         output.publish_workbooks(run, private, downloads, 'synthetic-changed')
     assert not downloads.exists()
+
+
+def mpn_replacement(tmp_path):
+    import coretax
+    from support_runs import fixture_run
+    from spt_desktop import output
+    run = fixture_run()
+    run['mpn'] = mpn_run()['mpn']
+    downloads = tmp_path / 'Downloads'
+    coretax.save_output(run, tmp_path / 'old-source')
+    final = output.publish_workbooks(run, tmp_path / 'old-source', downloads, 'old-mpn')
+    selected = deepcopy(run)
+    selected['records'] = selected['records'][2:3]
+    selected['mpn'] = mpn_run(amount='-2500.75')['mpn']
+    source = tmp_path / 'new-source'
+    coretax.save_output(selected, source)
+    return selected, source, downloads, final
+
+
+def test_mpn_replacement_requires_consent_and_preserves_unselected_spt(tmp_path):
+    from spt_desktop import output
+    from test_desktop_overwrite_safety import workbook_bytes
+    run, source, downloads, final = mpn_replacement(tmp_path)
+    before = workbook_bytes(final)
+    snapshot = output.existing_outputs(run, downloads)
+    assert set(snapshot['files']) == {'resume.xlsx', 'MPN_2025.xlsx',
+                                     'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'}
+    with pytest.raises(FileExistsError, match='consent|overwrite'):
+        output.publish_workbooks(run, source, downloads, 'denied-mpn')
+    assert workbook_bytes(final) == before
+    output.publish_workbooks(run, source, downloads, 'accepted-mpn', overwrite=True, expected_outputs=snapshot)
+    assert (final / 'MPN_2025.xlsx').read_bytes() != before['MPN_2025.xlsx']
+    for name in set(before) - set(snapshot['files']):
+        assert (final / name).read_bytes() == before[name]
+
+
+def test_mpn_consent_snapshot_refuses_changed_workbook_bytes(tmp_path):
+    from spt_desktop import output
+    from test_desktop_overwrite_safety import workbook_bytes
+    run, source, downloads, final = mpn_replacement(tmp_path)
+    snapshot = output.existing_outputs(run, downloads)
+    path = final / 'MPN_2025.xlsx'
+    path.write_bytes(path.read_bytes() + b'SYNTHETIC CONCURRENT CHANGE')
+    before = workbook_bytes(final)
+    with pytest.raises(ValueError, match='changed|consent|snapshot'):
+        output.publish_workbooks(run, source, downloads, 'changed-mpn', overwrite=True, expected_outputs=snapshot)
+    assert workbook_bytes(final) == before
+
+
+def test_failure_after_installing_mpn_rolls_back_all_workbook_bytes(tmp_path, monkeypatch):
+    from pathlib import Path
+    from spt_desktop import output
+    from test_desktop_overwrite_safety import workbook_bytes
+    run, source, downloads, final = mpn_replacement(tmp_path)
+    before = workbook_bytes(final)
+    real_move = output._move_no_replace
+    failed = []
+    def move(source_path, destination):
+        result = real_move(source_path, destination)
+        if Path(destination) == final / 'MPN_2025.xlsx' and not failed:
+            failed.append(True)
+            raise OSError('Synthetic failure after MPN installation')
+        return result
+    monkeypatch.setattr(output, '_move_no_replace', move)
+    with pytest.raises(OSError, match='Synthetic failure'):
+        output.publish_workbooks(run, source, downloads, 'rollback-mpn', overwrite=True)
+    assert failed and workbook_bytes(final) == before
+
+
+@pytest.mark.parametrize('boundary', ['displaced', 'installed', 'index'])
+def test_process_death_recovers_mpn_spt_and_resume_as_one_publication(tmp_path, boundary):
+    import subprocess
+    import sys
+    from test_publication_crash_recovery import CRASH_CHILD
+    from test_desktop_overwrite_safety import workbook_bytes
+    from spt_desktop.publication_recovery import recover_publication
+    _, source, downloads, final = mpn_replacement(tmp_path)
+    before = workbook_bytes(final)
+    child_code = CRASH_CHILD.replace(
+        "selected = final / 'SPT Masa 21' / 'SPT_21_Januari 2025_Normal.xlsx'",
+        "selected = final / 'MPN_2025.xlsx'")
+    child = subprocess.run([sys.executable, '-c', child_code, str(source), str(downloads),
+                            str(final), boundary], capture_output=True, text=True, timeout=90)
+    assert child.returncode == 73, child.stderr
+    assert list(source.glob('publication-recovery-*.json'))
+    assert recover_publication(source, downloads) == final
+    assert workbook_bytes(final) == before
+    assert recover_publication(source, downloads) == final
+    assert not list(downloads.rglob('*.json'))
