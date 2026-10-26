@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -162,3 +163,42 @@ def test_stop_precedes_every_mpn_browser_action_and_no_checkpoint_is_created(tmp
     with pytest.raises(CaptureCancelled):
         browser.collect_mpn(object(), scope_run(), tmp_path, check_cancel=stop)
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize('field,value', [('amount', '-17'), ('reference', 'SYNTHETIC MUTATION'),
+                                         ('period_code', '02022025')])
+def test_canonical_rows_must_reconcile_to_held_original_evidence(monkeypatch, tmp_path, field, value):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    run['mpn']['rows'][0][field] = value
+    if field == 'period_code':
+        run['mpn']['rows'][0]['period_label'] = value
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run, tmp_path):
+            pass
+
+
+def test_case_alias_private_evidence_is_refused_before_reading(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    (tmp_path / 'mpn').rename(tmp_path / 'MPN')
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run, tmp_path):
+            pass
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows native deny-write sharing')
+def test_original_mpn_reader_denies_mutation_during_custody(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    path = tmp_path / run['mpn']['evidence'][0]['path']
+    with mpn_custody(run, tmp_path):
+        with pytest.raises(OSError):
+            with path.open('wb') as stream:
+                stream.write(b'{}')

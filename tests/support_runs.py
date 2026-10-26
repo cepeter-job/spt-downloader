@@ -11,6 +11,7 @@ def fixture_run():
     return {'npwp': '0000000000000001', 'year': 2025, 'year_basis': 'period',
             'taxpayer_name': 'SYNTHETIC TEST FIXTURE ONLY', 'complete': False,
             'started_at': 'fixture', 'audit': [], 'errors': [],
+            'sources': synthetic_submitted_sources(),
             'records': [{'key': key, 'record_id': key, 'source_status': 'Fixture',
                          'meta': {'Jenis Pajak': tax, 'Masa Pajak': period, 'Model SPT': model},
                          'capture_complete': True, 'detail_url': '',
@@ -24,6 +25,12 @@ def fixture_run():
                                                    if tax == 'PPh Badan' else
                                                    {'label': 'Record marker', 'field': 'Marker', 'value': key})]}]}
                         for key, tax, period, model in rows]}
+
+
+def synthetic_submitted_sources():
+    return [{'url': 'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/'
+             'submitted-returnsheets/00000000-0000-4000-8000-000000000001',
+             'label': 'SPT Dilaporkan'}]
 
 
 MODELS = ('Normal', 'Pembetulan 1', 'Pembetulan 2')

@@ -25,7 +25,8 @@ from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
 from coretax_resume_layout import summary_scope
-from coretax_mpn import mpn_filename, mpn_custody
+from coretax_mpn import mpn_filename, mpn_custody, require_mpn
+from coretax_mpn_browser import collect_mpn
 from coretax_mpn_export import (read_mpn_proof, verify_mpn_workbook,
                                 read_resume_mpn, resume_mpn_declaration)
 
@@ -531,12 +532,14 @@ def _main(argv=None):
             if args.inventory_only:
                 run['errors'].append({'object': 'Scope', 'message': 'Inventory-only run. Return-detail content not captured.'})
             else:
+                require_mpn(run, args.detail_source)
                 def progress(current_run, ordinal):
                     if ordinal % 5 == 0:
                         current_run['complete'] = False
                         save_output(current_run, folder)
                 collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit,
                                 on_progress=progress, detail_source=args.detail_source)
+                collect_mpn(work_page, run, folder, max_pages=args.max_pages, detail_source=args.detail_source)
             run['finished_at'] = datetime.now().astimezone().isoformat()
             run['duration_seconds'] = round(time.monotonic() - start, 2)
             output_path = save_output(run, folder)

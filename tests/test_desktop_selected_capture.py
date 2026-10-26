@@ -22,7 +22,7 @@ def test_selected_capture_never_opens_unconfirmed_returns_and_can_complete_subse
     assert state['browser_closed'] and state['driver_closed']
     folder = Path(events[-1]['output'])
     assert {path.relative_to(folder).as_posix() for path in folder.rglob('*.xlsx')} == {
-        'resume.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'}
+        'resume.xlsx', 'MPN_2025.xlsx', 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'}
     assert len(inventory['records']) == 5 and not inventory['complete']
     from openpyxl import load_workbook
     workbook = load_workbook(folder / 'resume.xlsx')

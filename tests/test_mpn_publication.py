@@ -133,3 +133,22 @@ def test_legacy_refresh_preserves_mpn_bytes_and_its_resume_reference(tmp_path):
     finally:
         wb.close()
     coretax.verify_outputs(legacy, final, allow_extra=True)
+
+
+def test_changed_private_mpn_evidence_blocks_publication_before_downloads(monkeypatch, tmp_path):
+    import coretax
+    from coretax_mpn import MpnSafetyError
+    from spt_desktop import output
+    from test_mpn_capture_protocol import prepare
+    browser, _ = prepare(monkeypatch)
+    private = tmp_path / 'private'
+    private.mkdir()
+    run = scope_run()
+    browser.collect_mpn(object(), run, private)
+    coretax.save_output(run, private)
+    path = private / run['mpn']['evidence'][0]['path']
+    path.write_bytes(path.read_bytes() + b' ')
+    downloads = tmp_path / 'Downloads'
+    with pytest.raises(MpnSafetyError):
+        output.publish_workbooks(run, private, downloads, 'synthetic-changed')
+    assert not downloads.exists()
