@@ -514,7 +514,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
                               submitted_redirect=False, restored_period_label=False,
                               restored_catalog='valid', restored_metadata=None,
                               restored_api_period=None, page_sizes=None, initial_page_size=2,
-                              readiness_defect=None):
+                              readiness_defect=None, listing_rows=None, listing_displays=None):
     """Return only synthetic pages; abort every unregistered network target."""
     from contextlib import contextmanager
     from urllib.parse import urlsplit
@@ -534,6 +534,10 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
         rows[0]['TaxpayerAggregateIdentifier'] = 'fixture-other-taxpayer'
     displays = [dict(EXPECTED_META), {**EXPECTED_META, 'Model SPT': 'Amendment 001'},
                 {**EXPECTED_META, 'Masa Pajak': 'Januari - Desember 2026'}]
+    if listing_rows is not None:
+        assert listing_displays is not None and len(listing_rows) == len(listing_displays)
+        rows = json.loads(json.dumps(listing_rows))
+        displays = json.loads(json.dumps(listing_displays))
     cache = None
     if year_catalog:
         from datetime import datetime, timedelta, timezone
