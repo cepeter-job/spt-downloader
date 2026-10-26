@@ -753,16 +753,19 @@ class ListObserver:
         if not self._same_navigation(frame.url):
             self._fail_navigation()
             return
+        attempt = self._navigation_attempt
         if self.navigation_committed:
             # A same-document router notification may be delivered while the
             # initial handle is being acquired. Its identity is checked below
             # before wait/View can succeed; route contradictions latch above.
-            if not self._binding_document and not self._same_document():
-                self._fail_navigation()
+            if not self._binding_document:
+                same = self._same_document()
+                if attempt is self._navigation_attempt and not same:
+                    self._fail_navigation()
             return
         self.navigation_committed = True
         self._binding_document = True
-        attempt, document = self._navigation_attempt, None
+        document = None
         try:
             _check_cancel(self.check_cancel)
             document = self.page.evaluate_handle('() => document')
@@ -770,7 +773,8 @@ class ListObserver:
                 return
             self._document = document
             _check_cancel(self.check_cancel)
-            if self.navigation_failed or not self._same_document():
+            same = not self.navigation_failed and self._same_document()
+            if attempt is self._navigation_attempt and not same:
                 self._fail_navigation()
         except CaptureCancelled:
             if attempt is self._navigation_attempt:
@@ -917,34 +921,34 @@ class ListObserver:
 
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
-        saw_pending = pending_identity = False
+        pending_identity = False
 
         def refuse_identity():
             self._fail_navigation()
             raise RuntimeError('Return-list document or request ownership changed; refusing capture')
 
-        def verify_identity_deadline():
-            if saw_pending and time.monotonic() >= deadline:
-                refuse_identity()
+        def finish_identity_wait():
+            nonlocal pending_identity
+            if pending_identity and not self._binding_document:
+                if time.monotonic() >= deadline:
+                    refuse_identity()
+                pending_identity = False
 
         while self.sequence <= after or self._binding_document:
             if self._binding_document:
-                saw_pending = pending_identity = True
+                pending_identity = True
             elif pending_identity:
-                verify_identity_deadline()
-                pending_identity = False
+                finish_identity_wait()
             self._check_state(allow_document_pending=True)
             if time.monotonic() >= deadline:
                 if pending_identity:
                     refuse_identity()
                 raise ListResponseTimeout('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
-        verify_identity_deadline()
+        finish_identity_wait()
         self._check_state()
-        verify_identity_deadline()
         wait_idle(self.page)
         self._check_state()
-        verify_identity_deadline()
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')

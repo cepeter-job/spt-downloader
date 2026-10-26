@@ -153,7 +153,9 @@ def test_json_view_preparation_custody_change_prevents_the_click(tmp_path, monke
     result = scenario.collect()
     assert preparations == [kind]
     assert not result['complete'] and scenario.page.view_calls == 0
-    assert scenario.dom_calls == [] and result['records'][0]['sections'] == []
+    assert scenario.dom_calls == [] and scenario.pdf_calls == []
+    assert result['records'][0]['capture_complete'] is False
+    assert result['records'][0].get('sections', []) == []
     assert all(handle.disposed for handle in scenario.page.document_handles + scenario.page.view_handles)
 
 

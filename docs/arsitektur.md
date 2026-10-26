@@ -261,6 +261,9 @@ sebagai kegagalan ownership tanpa retry; respons yang belum datang sesudah
 identitas terbukti tetap memakai aturan retry timeout lama. Token attempt
 mencegah callback lama memasang handle atau mengubah flag attempt berikutnya,
 termasuk setelah close/reset. Flag pending bertahan sampai validasi selesai.
+Periksa token lagi sesudah RPC validasi sebelum callback mengubah state gagal,
+juga untuk notifikasi berulang. Deadline akuisisi berakhir setelah validasi
+tepat waktu; batas tunggu loading-overlay yang terpisah tetap dipertahankan.
 State dan error filter dibaca ulang setelah RPC; tiap record/metadata dan sumber
 tepat sebelum View diperiksa lagi. Klik memakai elemen View yang ditahan sebelum
 persiapan JSON, lalu handle dilepas tanpa menutupi Stop/error awal. Navigasi View

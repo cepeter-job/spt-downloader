@@ -93,6 +93,17 @@ unchanged-product cases: four stale-validation failures, one slow-idle failure,
 and one passing absent-response control. Require the full5,892 identities,
 exactly five new failures and all preceding5,886 identities passing before
 repairing these gaps. The previous candidate remains not merge-ready.
+Actual run40270973008/attempt1, tested5a816182baf6e68425d5135dfc5c8e11b5f39295,
+treecd7fe75da27787722eca57abdd6c971c561ec432, has5,885 passes/seven call failures,
+zero errors/skips and710 portable passes. Five new failures reproduce the two
+review findings. Two earlier JSON-preparation assertions access `sections`
+unconditionally, although a pre-View partial record may validly omit that field;
+both already prove refusal/no View/no DOM. Correct those assertions to require
+no captured content with an absent field allowed, plus explicit PARTIAL/no PDF.
+Keep all50 test identities and every other accepted test/helper byte unchanged.
+The strict five-failure gate rejected this run; the separate observational
+reader preserves all seven failures and claims only the five target proofs.
+Full GREEN must remove both source and fixture failures before merge.
 
 - [x] Retain a value-free reference to the actual committed Document. Permit
   additional notifications only with the identical active Document and the

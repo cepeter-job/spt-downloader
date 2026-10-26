@@ -126,6 +126,9 @@ completion is a nonretryable ownership refusal; an absent response with identity
 already proved retains the timeout-only retry. Keep acquisition pending through
 validation and bind its returned handle to an attempt token. Close/reset must
 invalidate late callbacks without replacing a newer handle or pending flag.
+Recheck the token after validation RPCs before callback failure mutation, also
+for repeated notifications. Retire the acquisition deadline after timely
+validation; the existing independently bounded loading-overlay wait remains.
 Recheck retained identity, attempt, route and refusal state after the RPC, then
 reread filter errors. Check every reused record and metadata result, and check
 again after JSON preparation immediately before clicking the held inspected
