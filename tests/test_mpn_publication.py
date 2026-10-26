@@ -176,6 +176,28 @@ def mpn_replacement(tmp_path):
     return selected, source, downloads, final
 
 
+def test_published_mpn_proof_preserves_qualified_original_row_provenance(tmp_path, monkeypatch):
+    import coretax
+    from test_mpn_capture_protocol import prepare
+    browser, _ = prepare(monkeypatch)
+    private = tmp_path / 'private'
+    private.mkdir()
+    run = scope_run()
+    browser.collect_mpn(object(), run, private)
+    coretax.save_output(run, private)
+    wb = load_workbook(private / 'MPN_2025.xlsx')
+    try:
+        proof = exporter().read_mpn_proof(wb)
+        assert proof['provenance'] == run['mpn']['provenance']
+        assert len(proof['provenance']) == len(proof['rows']) == 1
+        occurrence = proof['provenance'][0]['occurrences'][0]
+        assert {occurrence['header_sha256'], occurrence['detail_sha256']} <= {
+            item['sha256'] for item in proof['evidence']}
+        assert 'path' not in str(proof['evidence'])
+    finally:
+        wb.close()
+
+
 def test_mpn_replacement_requires_consent_and_preserves_unselected_spt(tmp_path):
     from spt_desktop import output
     from test_desktop_overwrite_safety import workbook_bytes

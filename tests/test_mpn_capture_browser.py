@@ -14,7 +14,8 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 
 
 @contextmanager
-def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False, pending_catalog=False):
+def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
+           pending_catalog=False, delayed_mount=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -47,6 +48,14 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if delayed_mount:
+        main = main.replace("document.addEventListener('DOMContentLoaded',()=>{",
+                            'const initialize=()=>{').replace(
+            'loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});',
+            "loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);};"
+            "document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{"
+            "document.body.append(document.getElementById('late-owner').content.cloneNode(true));"
+            "initialize();},250));")
     reference_path = ('/referencedata/api/currentreferencedata/id-ID/'
         'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
     main = ('const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog else '') + ';'
@@ -67,6 +76,9 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
       <acc-balance-sheet-light-grid><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></acc-balance-sheet-light-grid>
       <p-dialog id="isShowDetail" style="display:none"><div role="dialog"><span class="p-dialog-title">Detail Transaksi</span><button class="p-dialog-header-close">Close</button><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></div></p-dialog>
       </acc-balance-sheet-light></body></html>'''
+    if delayed_mount:
+        html = html.replace('<body>', '<body><template id="late-owner">').replace(
+            '</body>', '</template></body>')
     metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': []}
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
@@ -169,3 +181,13 @@ def test_unsupported_detail_dom_uses_complete_original_json_through_real_dialog(
         assert run['mpn']['rows'][0]['amount'] == '-1250.501'
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
         assert rejected if mode == 'dom' else not rejected
+
+
+def test_accounting_owner_may_mount_after_document_ready(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, delayed_mount=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert run['mpn']['rows'][0]['amount'] == '-1250.501'
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
