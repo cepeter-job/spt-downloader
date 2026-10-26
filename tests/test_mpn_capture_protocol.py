@@ -249,3 +249,26 @@ def test_changed_qualified_row_provenance_is_refused_by_original_custody(monkeyp
     with pytest.raises(MpnSafetyError):
         with mpn_custody(run, tmp_path):
             pass
+
+
+def test_partial_row_budget_keeps_proved_occurrence_prefix_publishable(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody, project_payment
+    browser, _ = prepare(monkeypatch)
+    original = browser.AccountingUI
+    def make(*args, **kwargs):
+        ui = original(*args, **kwargs)
+        first = deepcopy(ui.children[HEADER][-1])
+        second = deepcopy(first)
+        second['RecordId'] = '00000000-0000-4000-8000-000000000005'
+        ui.children = {HEADER: [first, second, deepcopy(first)]}
+        return ui
+    monkeypatch.setattr(browser, 'AccountingUI', make)
+    header, detail = payment_source(amount='-1250.501')
+    row_bytes = len(json.dumps(project_payment(header, detail, year=2025), ensure_ascii=False).encode())
+    monkeypatch.setattr(browser, 'MAX_BODY', row_bytes * 3)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    assert run['mpn']['status'] == 'PARTIAL' and len(run['mpn']['rows']) == 1
+    assert len(run['mpn']['provenance'][0]['occurrences']) == 1
+    with mpn_custody(run, tmp_path):
+        pass
