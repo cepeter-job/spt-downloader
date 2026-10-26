@@ -140,7 +140,7 @@ def test_changed_or_unbounded_document_requests_never_authorize_view(tmp_path, c
         def goto(self, url, **kwargs):
             self.commit_navigation(url)
             if fault == 'extra_commit':
-                self.emit('framenavigated', self.main_frame)
+                self.replace_document()
             else:
                 for _ in range(129 if fault == 'pending_overflow' else 1):
                     item = response()
