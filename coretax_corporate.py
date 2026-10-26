@@ -14,6 +14,7 @@ FORMS = {
  'L4': ('rshshr-citr-l4-form', 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject'),
  'L6': ('rshshr-citr-l6-form', 'FiscalYearIncomeTax'),
  'L7': ('rshshr-citr-l7-form', 'CalculationOfFiscalLossCompensation'),
+ 'L8': ('rshshr-citr-l8-form', 'CalculationFacilitiesIncomeTaxRateReduction'),
  'L9': ('rshshr-citr-l9-form', 'RecapitulationFiscalDepreciationAmortization'),
  'L10-A': ('rshshr-citr-l10a-form', 'DeclarationTransactionRelatedParties'),
  'L10-B': ('rshshr-citr-l10b-form', 'L10bFormData'),
@@ -219,6 +220,68 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
     return {'kind': 'corporate-l1d-v1', 'builds': {
         CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
         'route': page.url, **environment, 'tables': tables}
+
+
+def _observe_l8(page, form, capture, digest, check_cancel):
+    """Bind the single L8 structure without reading amounts or business controls."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import L8_BUILD_DIGESTS, L8_HEADERS, _L8_GROUP, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    if digest != L8_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+        return None
+    if capture.observe_l8_lifetime(check_cancel=check_cancel) is None:
+        return None
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    grid = form.locator('rsh-citr-l8-form-grid1')
+    if (main_digest != L8_BUILD_DIGESTS.get(MAIN_SOURCE)
+            or vendor_digest != L8_BUILD_DIGESTS.get(VENDOR_SOURCE)
+            or form.locator('table').count() != 1 or grid.count() != 1 or not grid.is_visible()
+            or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
+        return None
+    table = grid.locator('table')
+    structure = table.evaluate('''table => {
+        const form=table.closest('rshshr-citr-l8-form'), grid=table.closest('rsh-citr-l8-form-grid1');
+        const panel=table.closest('.p-tabview-panel'), owner=table.closest('p-table');
+        if(!form||!grid||!panel||!owner||form.closest('.p-tabview-panel')!==panel||
+           grid.closest('rshshr-citr-l8-form')!==form||!grid.contains(owner)||
+           owner.closest('rsh-citr-l8-form-grid1')!==grid)return null;
+        const groups=[];
+        for(let node=table.parentElement;node&&node!==form;node=node.parentElement){
+            if(node.localName.startsWith('rsh')&&node!==grid)return null;
+            if(!['p-panel','p-accordiontab'].includes(node.localName))continue;
+            const selector=node.localName==='p-panel'?'.p-panel-title':'.p-accordion-header-text';
+            let headings=[...node.querySelectorAll(selector)].filter(e=>e.closest(node.localName)===node);
+            if(!headings.length&&node.localName==='p-accordiontab')
+                headings=[...node.querySelectorAll('.p-accordion-header a')].filter(e=>e.closest('p-accordiontab')===node);
+            if(headings.length!==1)return null;
+            groups.unshift((headings[0].textContent||'').replace(/\\s+/g,' ').trim());
+        }
+        return {form:'L8',component:'rsh-citr-l8-form-grid1',groups};
+    }''')
+    _check_cancel(check_cancel)
+    if structure != {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1', 'groups': [_L8_GROUP]}:
+        return None
+    metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if (metadata['headers'] != L8_HEADERS or metadata['footer_spans'] != [[1, 1, 1]]
+            or capture.observe_l8_lifetime(check_cancel=check_cancel) is None):
+        return None
+    return {'kind': 'corporate-l8-v1', 'builds': {
+        CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+        'route': page.url, **environment, 'tables': [{'component': 'rsh-citr-l8-form-grid1',
+            'headers': metadata['headers'], 'footer_spans': metadata['footer_spans'],
+            'source_structure': structure}]}
 
 
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
@@ -494,6 +557,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 if 'Induk' not in names:
                     return None
                 projection = _observe_l1d(page, form, capture, digest, check_cancel)
+                if projection is None:
+                    return None
+                binding['projection'] = projection
+            if name == 'L8':
+                if 'Induk' not in names:
+                    return None
+                projection = _observe_l8(page, form, capture, digest, check_cancel)
                 if projection is None:
                     return None
                 binding['projection'] = projection

@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
                           CORPORATE_REFERENCE_REQUESTS, ORIGIN,
-                          _capture_clock_interval, _capture_component_lifetime,
+                          _capture_clock_interval, _capture_component_lifetime, _capture_l8_lifetime,
                           _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
@@ -37,6 +37,45 @@ _COMPONENT_OWNERS = """() => {
  const count=s=>Array.from(document.querySelectorAll(s)).filter(visible).length;
  return {source_owner:count('rshshr-submitted-returnsheets')===1,
          detail_owner:count('rshshr-corporate-income-tax-return')===1};
+}"""
+_L8_HISTORY = """(d) => {
+ const rootSelector='rshshr-corporate-income-tax-return';
+ const dependents='rshshr-citr-l7-form,rshshr-citr-l13a-form,rshshr-citr-l13b-form';
+ const state={initial_clear:d===document&&!d.querySelector(rootSelector+','+dependents),
+   root_seen:false,root_changed:false,dependent_seen:false};
+ let root=null,remaining=4096;
+ const visit=(node,removed)=>{
+   if(--remaining<0){state.initial_clear=false;return;}
+   if(node.nodeType!==1)return;
+   if(node.matches(dependents))state.dependent_seen=true;
+   if(node.matches(rootSelector)){
+     if(removed)state.root_changed=true;
+     else if(root&&root!==node)state.root_changed=true;
+     else {root=node;state.root_seen=true;}
+   }
+ };
+ const inspect=(node,removed)=>{
+   visit(node,removed);
+   if(!state.initial_clear||!node.firstChild)return;
+   const walker=d.createTreeWalker(node,NodeFilter.SHOW_ELEMENT);
+   while(state.initial_clear){const next=walker.nextNode();if(!next)break;visit(next,removed);}
+ };
+ const process=records=>{
+   if(!state.initial_clear)return;
+   for(const record of records){
+     if(--remaining<0){state.initial_clear=false;break;}
+     for(const node of record.removedNodes){inspect(node,true);if(!state.initial_clear)break;}
+     for(const node of record.addedNodes){inspect(node,false);if(!state.initial_clear)break;}
+     if(!state.initial_clear)break;
+   }
+ };
+ const observer=new MutationObserver(process);
+ observer.observe(d,{childList:true,subtree:true});
+ return {sample:()=>{
+   process(observer.takeRecords());
+   if(state.initial_clear&&root&&(!root.isConnected||root.ownerDocument!==d))state.root_changed=true;
+   return {...state};
+ },disconnect:()=>observer.disconnect()};
 }"""
 
 
@@ -157,6 +196,8 @@ class DetailJsonCapture:
         self._component_invalid = False
         self._component_observed = False
         self._component_started = False
+        self._l8_history = None
+        self._l8_requested = False
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -264,6 +305,8 @@ class DetailJsonCapture:
         self._component_probe(retain_document)
         if self._component_document is None:
             return None
+        self._l8_history = self._component_probe(
+            lambda: self._component_document.evaluate_handle(_L8_HISTORY))
         owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
         same = self._component_probe(lambda: self._component_document.evaluate('(d) => d === document'))
         if owners != {'source_owner': True, 'detail_owner': False} or same is not True:
@@ -316,6 +359,29 @@ class DetailJsonCapture:
             attempt=self.attempt, record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
         self._component_observed = True
         return proof
+
+    def observe_l8_lifetime(self, *, check_cancel=None):
+        """Stronger L8-only structural history, armed before the inspected View."""
+        self._cancel(check_cancel)
+        self._verify_binding()
+        self._l8_requested = True
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None or self._l8_history is None:
+            return None
+        state = self._component_probe(lambda: self._l8_history.evaluate('(h) => h.sample()'), check_cancel)
+        self._verify_binding()
+        if (not isinstance(state, dict) or set(state) != {
+                'initial_clear', 'root_seen', 'root_changed', 'dependent_seen'}
+                or any(type(value) is not bool for value in state.values())):
+            return None
+        if state['root_changed']:
+            raise JsonSafetyError('Observed corporate L8 root history changed')
+        if not state['initial_clear'] or not state['root_seen'] or state['dependent_seen']:
+            return None
+        return _capture_l8_lifetime({'kind': 'corporate-l8-spa-v1', 'attempt': self.attempt,
+            'record_id': self.record_id, 'source_url': self.source_url, 'detail_url': self._bound_url,
+            'fresh_root': True, 'stable_root': True, 'no_dependent_forms': True},
+            attempt=self.attempt, record_id=self.record_id,
+            source_url=self.source_url, detail_url=self._bound_url)
 
     def _candidate(self, target, frame):
         return (target.context is self.context and frame is target.main_frame
@@ -535,6 +601,7 @@ class DetailJsonCapture:
         seen_before_clock = self._seen
         clock_end = self._sample_clock(self._bound, check_cancel)
         lifetime = self.observe_component_lifetime(check_cancel=check_cancel)
+        l8_lifetime = self.observe_l8_lifetime(check_cancel=check_cancel) if self._l8_requested else None
         self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:
@@ -552,6 +619,8 @@ class DetailJsonCapture:
                   'primary_identity_validated': False}
         if lifetime is not None:
             result['component_lifetime'] = lifetime
+        if l8_lifetime is not None:
+            result['corporate_l8_lifetime'] = l8_lifetime
         if self._clock_start is not None and clock_end is not None:
             try:
                 result['clock_interval'] = _capture_clock_interval({
@@ -593,12 +662,17 @@ class DetailJsonCapture:
             lifetime = (_capture_component_lifetime(saved['component_lifetime'], attempt=self.attempt,
                 record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
                 if 'component_lifetime' in saved else None)
+            l8_lifetime = (_capture_l8_lifetime(saved['corporate_l8_lifetime'], attempt=self.attempt,
+                record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
+                if 'corporate_l8_lifetime' in saved else None)
+            if l8_lifetime is not None and lifetime is None:
+                raise JsonSafetyError('Private L8 history lacks its component lifetime')
             for descriptor in saved['responses']:
                 self._cancel(check_cancel)
                 relative = Path(descriptor['relative_path'])
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
                         or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor
-                        or 'component_lifetime' in descriptor):
+                        or 'component_lifetime' in descriptor or 'corporate_l8_lifetime' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -616,6 +690,8 @@ class DetailJsonCapture:
                     context['clock_interval'] = dict(clock)
                 if lifetime is not None:
                     context['component_lifetime'] = dict(lifetime)
+                if l8_lifetime is not None:
+                    context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 yield {'body': raw, 'payload': payload, 'context': context}
                 del raw, payload
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -625,6 +701,16 @@ class DetailJsonCapture:
         self._active = False
         self._requests.clear()
         self._observations.clear()
+        if self._l8_history is not None:
+            try:
+                self._l8_history.evaluate('(h) => h.disconnect()')
+            except Exception:
+                pass
+            try:
+                self._l8_history.dispose()
+            except Exception:
+                pass
+            self._l8_history = None
         if self._component_listener is not None:
             try:
                 self.page.remove_listener('framenavigated', self._component_listener)
@@ -711,6 +797,11 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
             lifetime = (_capture_component_lifetime(saved['component_lifetime'], attempt=saved['attempt'],
                 record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
                 if 'component_lifetime' in saved else None)
+            l8_lifetime = (_capture_l8_lifetime(saved['corporate_l8_lifetime'], attempt=saved['attempt'],
+                record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
+                if 'corporate_l8_lifetime' in saved else None)
+            if l8_lifetime is not None and lifetime is None:
+                raise JsonSafetyError('Private L8 history lacks its component lifetime')
             descriptors = saved.get('responses')
             if not isinstance(descriptors, list) or len(descriptors) > MAX_RESPONSES:
                 raise JsonSafetyError('Private checkpoint response budget changed')
@@ -722,6 +813,7 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
                         or not re.fullmatch(r'response-[0-9]{4,}\.json', PurePosixPath(name).name)
                         or name in seen or descriptor.get('attempt') != saved['attempt']
                         or 'clock_interval' in descriptor or 'component_lifetime' in descriptor
+                        or 'corporate_l8_lifetime' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -742,6 +834,8 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
                     context['clock_interval'] = dict(clock)
                 if lifetime is not None:
                     context['component_lifetime'] = dict(lifetime)
+                if l8_lifetime is not None:
+                    context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 packets.append({'body': body, 'payload': payload, 'context': context})
             return packets
     except (OSError, ValueError, TypeError, KeyError, IndexError):

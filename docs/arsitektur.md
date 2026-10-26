@@ -194,6 +194,31 @@ grid segar tidak membuktikan stabilitas main, cache callback, readiness async
 atau admission native. Renderer, template, raw capture dan Audit tetap utuh.
 Lihat [rencana L8 murni](superpowers/plans/2026-10-24-corporate-l8-pure.md).
 
+Integrasi native L8 terpisah memakai tiga provider script corporate/main/vendor,
+id-ID/Asia/Jakarta, route submitted literal `?view=true` dan Induk sebelumnya.
+Capture mempersenjatai pengamatan struktur sebelum View: tidak ada root Badan
+atau host L7/L13A/L13B, termasuk yang tersembunyi. Identitas root yang kemudian
+muncul harus tetap unik dan tersambung; pelepasan/replacement/duplikasi tetap
+fatal setelah reinsertion, sedangkan host dependen yang sempat muncul tetap
+unsupported. Budget 4096 record/node dapat membuat bukti tidak tersedia. Tidak
+ada pembacaan input, body/footer bisnis atau state Angular. Sampling akhir
+tetap di dalam fence respons terlambat; observer/handle dilepas saat cleanup.
+Metadata opsional `corporate_l8_lifetime` dimiliki manifest dan memerlukan bukti
+component lifetime lama. Replay memvalidasi seluruh binding serta kesamaan
+antar-paket; descriptor override atau bukti hadir yang rusak tetap fatal.
+
+Adapter L8 membatasi current fresh rupiah: rate outer/main TX03, annual literal
+numerik 1/12, kedua predecessor eksplisit null dan lima flag visibility literal
+numerik nol pada kedua owner. Root dependen harus tidak hadir, termasuk menolak
+null yang belum dipetakan. Net integral nonnegatif aman harus sama dengan fiscal
+net; empat total pengurang harus nol dan taxable harus cocok dengan truncation
+ribuan. Helper murni tetap memeriksa seluruh share/pajak/footer asli. Semua path
+operand/control original mengikat response sequence dan container asal; outer
+PeriodYear tetap pada Payload. Tidak ada fetch katalog/timer quietness, perubahan
+template atau izin transport baru. Cabang lain memakai fallback satu record;
+capture, mapping Induk, PDF dan penerimaan live tetap terpisah. Lihat
+[desain native L8](superpowers/specs/2026-10-26-corporate-l8-native-design.md).
+
 Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
 Ia memproyeksikan body A dari current source dan body B dari page metadata yang
 sudah dinormalisasi caller, dengan alias aktif IncomeTax/WithholdingSlipsNumber/
@@ -243,6 +268,31 @@ artefak, batas cabang dan pekerjaan lain tercatat pada
 Cabang semantik L11-C terpisah memakai pin corporate/main/vendor yang termuat, rute submitted rupiah biasa, struktur offline enam belas kolom dan footer fisik dengan prefix nomor kosong. Enam total tangkapan harus cocok dengan operasi integral berurutan yang aman; source tidak diganti hasil hitungan. Tanggal terbatas pada subset ISO tervalidasi di Asia/Jakarta, dengan Number dan Number2 tetap berbeda. Label negara hanya berasal dari GET COUNTRY_CODE id-ID yang benar-benar teramati, ber-byte custody dan berurutan pada attempt yang sama; tidak ada fetch buatan atau pembacaan cache. Katalog tambahan yang tidak dipakai L7/legacy tetap melewati seluruh pemeriksaan keselamatan dan snapshot tanpa menjadi respons bisnis tak terikat. Bentuk tak terbukti tetap fallback seluruh record. Lihat [rencana dan ledger L11-C](superpowers/plans/2026-10-23-corporate-l11c-semantic.md).
 
 `ListObserver` mengamati respons JSON dari tindakan UI milik browser. Ia menyimpan respons terakhir dan nomor urut yang terus bertambah, bukan seluruh riwayat respons dalam RAM. Ia tidak membaca cookie/header autentikasi dan tidak menjalankan request API penulisan tersendiri.
+
+Pemulihan daftar menahan handle identitas Document yang pertama kali commit pada
+route/path/query submitted yang diinspeksi. Notifikasi router pada Document yang
+sama dapat diterima; reload atau perpindahan route/query/taxpayer tetap ditolak,
+termasuk detour yang kembali ke URL asal. Request document main-frame berikutnya
+langsung memveto attempt, juga saat pengambilan handle memompa event. Request
+grid post-commit tetap ditahan secara terbatas selama pengambilan identitas,
+tetapi wait/View memerlukan identitas yang terbukti. Probe tidak membaca nilai
+bisnis dan tetap memeriksa Stop; handle dilepas pada retry, failure dan close.
+Fresh marker, request lama yang dikecualikan, batas 128 pending, error terminal,
+satu retry khusus timeout, metadata dan RecordId tidak dilonggarkan.
+RPC identitas boleh masih pending sesudah goto selesai. Hanya wait respons yang
+menunggu keadaan itu dalam deadline yang sama, sambil memeriksa Stop, route,
+request, filter dan error terminal. Identitas terlambat/tidak selesai ditolak
+sebagai kegagalan ownership tanpa retry; respons yang belum datang sesudah
+identitas terbukti tetap memakai aturan retry timeout lama. Token attempt
+mencegah callback lama memasang handle atau mengubah flag attempt berikutnya,
+termasuk setelah close/reset. Flag pending bertahan sampai validasi selesai.
+Periksa token lagi sesudah RPC validasi sebelum callback mengubah state gagal,
+juga untuk notifikasi berulang. Deadline akuisisi berakhir setelah validasi
+tepat waktu; batas tunggu loading-overlay yang terpisah tetap dipertahankan.
+State dan error filter dibaca ulang setelah RPC; tiap record/metadata dan sumber
+tepat sebelum View diperiksa lagi. Klik memakai elemen View yang ditahan sebelum
+persiapan JSON, lalu handle dilepas tanpa menutupi Stop/error awal. Navigasi View
+pada tab yang sama tetap dinilai oleh guard detail dan lifecycle yang sudah ada.
 
 Capture memakai kontrol baca yang sudah dikenali: pencarian wajib pajak, Pilih, navigasi status, View, tab, accordion, ukuran halaman, serta paginasi. Tombol submit, batal SPT, kirim email, pembuatan dokumen, dan aksi baris yang tidak dikenal tidak boleh dijadikan fallback. Bila selector View berubah, hasil tetap terblokir/parsial sampai layout baru diperiksa dan fixture regresinya tersedia.
 
