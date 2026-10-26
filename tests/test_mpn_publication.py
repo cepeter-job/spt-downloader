@@ -90,6 +90,10 @@ def test_full_empty_spt_job_publishes_mpn_and_one_relative_resume_link(tmp_path)
         assert len(links) == 1 and links[0].target == 'MPN_2025.xlsx'
         assert links[0].location == "'MPN'!A1"
         assert exporter().read_resume_mpn(wb)['filename'] == 'MPN_2025.xlsx'
+        rows = [row for row in wb['Audit'] if row[0].value == 'MPN' and row[5].hyperlink]
+        assert len(rows) == 1
+        assert [cell.value for cell in rows[0]][:5] == ['MPN', 1, 1, 1, 'COMPLETE']
+        assert rows[0][5].hyperlink.target == 'MPN_2025.xlsx'
     finally:
         wb.close()
 
