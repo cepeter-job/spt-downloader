@@ -231,6 +231,18 @@ Recovery fixtures use a two-second synthetic budget with a slow healthy read,
 failed middle panel, later-panel recovery and Stop propagation. Production's
 shared 30-second readiness deadline and diagnostic budget are unchanged.
 
+MPN published proof also retains qualified-row original response hashes and
+page-local indices, including duplicate occurrences, without private paths or
+raw bodies. Reconcile those bindings against held original pages. COMPLETE
+requires exact occurrence/coverage reconciliation; PARTIAL may retain only a
+proved processed prefix when a capture budget stops processing. Audit reports
+requested mode, qualified DOM/JSON rows, excluded/unresolved/duplicate detail
+counts separately. Preserve absent legacy counters as blank rather than guessing.
+Accounting's route owner may mount after DOMContentLoaded: wait inside one
+45-second Stop-aware deadline before requiring uniqueness/visibility. Unsupported
+detail DOM shape/readiness uses the complete owned JSON detail inventory; dialog,
+paginator, source and identity contradictions retain their independent gates.
+
 ## Verification
 
 The source-proven full L1-D profit table has35 slots including account5322.

@@ -419,7 +419,8 @@ def validate_provenance(rows, provenance, evidence):
         for item in occurrences:
             if (not isinstance(item, dict) or set(item) != {
                     'header_sha256', 'header_index', 'detail_sha256', 'detail_index'}
-                    or any(item[key] not in hashes for key in ('header_sha256', 'detail_sha256'))
+                    or any(type(item[key]) is not str or item[key] not in hashes
+                           for key in ('header_sha256', 'detail_sha256'))
                     or any(type(item[key]) is not int or not 0 <= item[key] < 50
                            for key in ('header_index', 'detail_index'))):
                 raise MpnSafetyError('MPN qualified provenance has an invalid original row binding')
@@ -550,9 +551,12 @@ def _reconcile_held(run, readers):
             'excluded': len(detail_hashes) - len(expected_ids), 'unresolved': 0,
             'duplicates': sum(offset[1] for offset in detail_offsets.values()) - len(detail_hashes)}:
         raise MpnSafetyError('MPN coverage differs from its original inventories')
-    if value.get('provenance') != [{'record_id': identifier, 'occurrences': occurrences[identifier]}
-                                   for identifier in actual_ids]:
-        raise MpnSafetyError('MPN qualified row provenance differs from original evidence')
+    for entry in value.get('provenance', []):
+        expected_occurrences = occurrences[entry['record_id']]
+        actual_occurrences = entry['occurrences']
+        if actual_occurrences != (expected_occurrences if complete
+                                  else expected_occurrences[:len(actual_occurrences)]):
+            raise MpnSafetyError('MPN qualified row provenance differs from original evidence')
     for row in value['rows']:
         detail, expected = originals[row['record_id']]
         if row['source'] == 'dom':
