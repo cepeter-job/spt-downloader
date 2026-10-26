@@ -1,6 +1,7 @@
 """MPN is an independent workbook, never an SPT row or public raw archive."""
 from copy import deepcopy
 import importlib
+import sys
 
 from openpyxl import load_workbook
 import pytest
@@ -226,6 +227,7 @@ def test_failure_after_installing_mpn_rolls_back_all_workbook_bytes(tmp_path, mo
 
 
 @pytest.mark.parametrize('boundary', ['displaced', 'installed', 'index'])
+@pytest.mark.skipif(sys.platform != 'win32', reason='Process-death recovery requires native Windows custody')
 def test_process_death_recovers_mpn_spt_and_resume_as_one_publication(tmp_path, boundary):
     import subprocess
     import sys

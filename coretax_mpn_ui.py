@@ -362,7 +362,6 @@ class AccountingUI:
         try:
             for snapshot in self._pages('detail', owners, initial, max_pages):
                 self._stop()
-                self._table(owners, DETAIL_HEADERS, len(snapshot['rows']))
                 dom = self._detail_dom(owners, snapshot) if self.run['mpn']['detail_source'] == 'dom' else None
                 yield snapshot, dom
         finally:

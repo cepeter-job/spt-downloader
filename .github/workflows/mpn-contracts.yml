@@ -91,6 +91,7 @@ jobs:
         run: >-
           .venv/Scripts/python.exe -m pytest tests/test_mpn_capture_browser.py
           tests/test_mpn_capture_protocol.py -q
+          tests/test_mpn_publication.py
           --basetemp "$env:RUNNER_TEMP/mpn-browser-tests"
           --junitxml "$env:RUNNER_TEMP/mpn-browser-results.xml"
           -o junit_logging=no -o junit_log_passing_tests=false
