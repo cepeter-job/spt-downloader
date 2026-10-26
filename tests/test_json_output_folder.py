@@ -15,9 +15,10 @@ from support_runs import model_run
 from test_json_capture import Page, LIST_URL, DETAIL_URL, RECORD, RAW
 
 
-def captured_run(source, *, partial=False, fallback=False, identifier=RECORD):
+def captured_run(source, *, partial=False, fallback=False, identifier=RECORD,
+                 tax="PPh Badan", ordinal=1):
     source.mkdir(parents=True, exist_ok=True)
-    run = model_run(models=('Normal',))
+    run = model_run(tax=tax, models=('Normal',))
     record = run['records'][0]
     scope = [run['npwp'], run['year'], run['year_basis']]
     detail_url = DETAIL_URL.removesuffix(RECORD) + identifier
@@ -25,7 +26,7 @@ def captured_run(source, *, partial=False, fallback=False, identifier=RECORD):
                   detail_url=detail_url, scope=scope, source_status='SPT Dilaporkan')
     context = Context()
     page = Page(context, detail_url)
-    with DetailJsonCapture(context, page, record, scope, source, ordinal=1) as capture:
+    with DetailJsonCapture(context, page, record, scope, source, ordinal=ordinal) as capture:
         exchange(context, page, raw=RAW.replace(RECORD.encode(), identifier.encode()))
         capture.bind_detail_page(page)
         saved = capture.drain()
@@ -40,7 +41,14 @@ def captured_run(source, *, partial=False, fallback=False, identifier=RECORD):
 def evidence(run, source):
     capture = run['records'][0]['detail_source']['capture']
     references = [capture['manifest'], *[r['relative_path'] for r in capture['responses']]]
-    return {name.removeprefix('returns/'): (source / name).read_bytes() for name in references}
+    prefix = 'json/'
+    if run.get('json_output_layout') == 'tax-kind-v1':
+        tax = run['records'][0]['meta']['Jenis Pajak']
+        label = {'PPh Badan': 'PPh Badan', 'PPh Pasal 21/26': 'SPT PPh 21',
+                 'PPh Unifikasi': 'SPT PPh Unifikasi', 'PPN': 'PPN'}.get(tax, 'SPT Lainnya')
+        prefix += label + '/'
+    return {prefix + name.removeprefix('returns/json/'): (source / name).read_bytes()
+            for name in references}
 
 
 def assert_evidence(run, source, final):
