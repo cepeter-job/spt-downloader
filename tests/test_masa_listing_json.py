@@ -216,3 +216,47 @@ def test_unknown_period_caption_uses_whole_page_fallback(browser, tmp_path, corp
     result = adapt_current_grid(browser, tmp_path, [row], [meta])
     assert result['eligible'] is False
     assert result['rows'] == []
+
+
+@pytest.mark.parametrize('corporate', [False, True], ids=['masa', 'corporate'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_one_period_code_retains_both_reviewed_renderings_per_row(browser, tmp_path, corporate, reverse):
+    if corporate:
+        first, first_meta = api_row('fixture-literal'), {**EXPECTED_META, 'Masa Pajak': '01122024'}
+        second, second_meta = api_row('fixture-caption', 'Amendment 001'), {**EXPECTED_META, 'Model SPT': 'Amendment 001'}
+    else:
+        first, first_meta = sample(identifier='fixture-literal')
+        second, second_meta = sample(literal=False, identifier='fixture-caption', model='Amendment 001')
+    rows, displays = [first, second], [first_meta, second_meta]
+    if reverse:
+        rows.reverse()
+        displays.reverse()
+    result = adapt_current_grid(browser, tmp_path, rows, displays)
+    assert result['eligible'] is True, result['reason']
+    assert [r['meta'] for r in result['rows']] == displays
+    assert [r['record_id'] for r in result['rows']] == [r['RecordId'] for r in rows]
+    assert all(r['source_fields']['TaxPeriodCode'] == first['TaxPeriodCode'] for r in result['rows'])
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_shared_reviewed_period_does_not_promote_an_unknown_family(browser, tmp_path, reverse):
+    unknown, literal = sample(identifier='fixture-unreviewed-literal')
+    unknown['TaxTypeCode'] = 'SYNTHETIC_UNREVIEWED'
+    known, caption = sample(literal=False, identifier='fixture-reviewed-caption')
+    rows, displays = [unknown, known], [literal, caption]
+    if reverse:
+        rows.reverse()
+        displays.reverse()
+    result = adapt_current_grid(browser, tmp_path, rows, displays)
+    assert result['eligible'] is False
+    assert result['rows'] == []
+
+
+def test_shared_period_does_not_equate_an_unreviewed_caption(browser, tmp_path):
+    from coretax_json import JsonSafetyError
+
+    first, opaque = sample(identifier='fixture-opaque-period')
+    opaque['Masa Pajak'] = 'fixture-unreviewed-period'
+    second, caption = sample(literal=False, identifier='fixture-reviewed-period')
+    with pytest.raises(JsonSafetyError, match='Conflicting captions'):
+        adapt_current_grid(browser, tmp_path, [first, second], [opaque, caption])

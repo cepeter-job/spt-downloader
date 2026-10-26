@@ -37,7 +37,12 @@ reviewed Indonesian caption without normalizing metadata. Unknown pairs,
 monthly ranges, null codes and unproved layouts retain whole-page DOM fallback.
 Known contradictory pairs, reordered known family captions, period/model
 conflicts and conflicting captions for one code remain fatal, including after
-an earlier unsupported row. Preserve original bytes, source fields, selected
+an earlier unsupported row. Check source-only known pairs before layout fallback.
+Unreviewed period text is unsupported; recognizable different literal codes or
+reviewed month/year captions remain fatal. The exact literal period and its
+reviewed caption may coexist for one code; retain each row's observed display
+and reject other conflicting captions after collecting the page's bound aliases.
+Preserve original bytes, source fields, selected
 scope, pagination, Stop and all detail/export/publication gates.
 
 Native observers read navigation and inspected structure, never business input values, checked state or table body/footer values. Follow the current owned tab binding through one bounded panel wait; keep paginator ownership, page limits and Stop checks. A safely unsupported native attempt falls back as a whole record. Privacy, authorization, known identity contradictions and changed snapshots remain fatal; Stop remains cancellation.

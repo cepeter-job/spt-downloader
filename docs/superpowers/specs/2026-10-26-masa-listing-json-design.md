@@ -34,6 +34,15 @@ contradictions are fatal. Inspect all rows for known contradictions before any
 unsupported-shape fallback can hide them. Conflicting captions for one code
 remain fatal. Unknown locale/caption or null channel remains unsupported.
 
+Source-only known-pair validation precedes structural refusal. Recognizable
+different literal codes or reviewed Indonesian month/year captions remain
+contradictions; opaque/unreviewed period text does not establish one. A code and
+its exact independently derived caption are equivalent renderings, including
+when both appear on one page; preserve each bound row's display. Collect these
+aliases before checking conflicting period captions, so an unsupported early
+row cannot mask or prematurely contradict later reviewed evidence. Other
+conflicting captions remain fatal; no catalog or metadata is normalized.
+
 ## Approaches and decision
 
 Reconstructing labels from the workbook alone would lose current UI binding.

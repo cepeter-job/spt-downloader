@@ -1021,6 +1021,8 @@ _INVENTORY_FAMILIES = {
 }
 _INVENTORY_MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember')
+_INVENTORY_PERIOD_CAPTION = re.compile(
+    r'(?:' + '|'.join((*_INVENTORY_MONTHS, 'Januari - Desember')) + r') [0-9]{4}')
 
 
 def _inventory_context(response, source, taxpayer_id, npwp, year, basis, page_number):
@@ -1056,18 +1058,27 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
     _check_cancel(check_cancel)
     if not response['rows']:
         return probe
-    references = table.evaluate(REFERENCE_ROWS_JS)
-    if not references.get('supported'):
-        return {'eligible': False, 'reason': 'unsupported_reference_layout', 'rows': []}
-    if len(references['rows']) != len(response['rows']):
-        raise JsonSafetyError('Reference DOM rows contradict source count')
-    labels = {field: {} for field in LOOKUP_HEADERS}
     verified_labels = {
         'TaxTypeCode': {code: family[1] for code, family in _INVENTORY_FAMILIES.items()},
         'ReturnSheetTypeCode': {family[0]: family[2] for family in _INVENTORY_FAMILIES.values()},
         'ReturnSheetStatusCode': {'SUBMITTED': 'Dilaporkan'},
         'ChannelCode': {'TAXPAYER_PORTAL': 'Portal Wajib Pajak'},
     }
+    # Source-only contradictions remain fatal even when no DOM layout is usable.
+    for api_row in response['rows']:
+        _check_cancel(check_cancel)
+        tax_code, form_code = api_row.get('TaxTypeCode'), api_row.get('ReturnSheetTypeCode')
+        family = _INVENTORY_FAMILIES.get(tax_code) if isinstance(tax_code, str) else None
+        if (family and isinstance(form_code, str)
+                and form_code in verified_labels['ReturnSheetTypeCode'] and form_code != family[0]):
+            raise JsonSafetyError('Return type contradicts source tax family')
+    references = table.evaluate(REFERENCE_ROWS_JS)
+    if not references.get('supported'):
+        return {'eligible': False, 'reason': 'unsupported_reference_layout', 'rows': []}
+    if len(references['rows']) != len(response['rows']):
+        raise JsonSafetyError('Reference DOM rows contradict source count')
+    labels = {field: {} for field in LOOKUP_HEADERS}
+    period_aliases, period_labels = {}, {}
     unsupported = None
     for api_row, captions in zip(response['rows'], references['rows']):
         _check_cancel(check_cancel)
@@ -1079,9 +1090,7 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
             unsupported = unsupported or 'unobserved_tax_metadata_schema'
         else:
             form_code = api_row.get('ReturnSheetTypeCode')
-            if isinstance(form_code, str) and form_code != family[0]:
-                if form_code in verified_labels['ReturnSheetTypeCode']:
-                    raise JsonSafetyError('Return type contradicts source tax family')
+            if form_code != family[0]:
                 unsupported = unsupported or 'unobserved_tax_metadata_schema'
             period = api_row.get('TaxPeriodCode')
             pattern = (r'0112([0-9]{4})' if tax_code == 'ICT_RCIT'
@@ -1092,8 +1101,13 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
             else:
                 caption = ('Januari - Desember ' if tax_code == 'ICT_RCIT'
                            else _INVENTORY_MONTHS[int(period[:2])-1] + ' ') + period[-4:]
-                if captions['Masa Pajak'] not in (period, caption):
-                    raise JsonSafetyError('Period reference caption contradicts source code')
+                period_aliases[period] = {period, caption}
+                observed = captions['Masa Pajak']
+                if observed not in period_aliases[period]:
+                    if (re.fullmatch(r'[0-9]{8}', observed)
+                            or _INVENTORY_PERIOD_CAPTION.fullmatch(observed)):
+                        raise JsonSafetyError('Period reference caption contradicts source code')
+                    unsupported = unsupported or 'unsupported_reference_locale'
         for field, header in LOOKUP_HEADERS.items():
             code = api_row.get(field)
             caption = captions[header]
@@ -1105,9 +1119,14 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
                 if field in ('TaxTypeCode', 'ReturnSheetTypeCode') and caption in known.values():
                     raise JsonSafetyError('Reference row family differs from source identity')
                 unsupported = unsupported or 'unsupported_reference_locale'
-            if code in labels[field] and labels[field][code] != caption:
+            if field == 'TaxPeriodCode':
+                period_labels.setdefault(code, set()).add(caption)
+            elif code in labels[field] and labels[field][code] != caption:
                 raise JsonSafetyError('Conflicting captions for a source reference code')
-            labels[field][code] = caption
+            labels[field].setdefault(code, caption)
+    for code, captions in period_labels.items():
+        if len(captions) > 1 and not captions <= period_aliases.get(code, set()):
+            raise JsonSafetyError('Conflicting captions for a source reference code')
     # Unsupported rows cannot hide a later known identity/caption contradiction.
     if unsupported:
         return {'eligible': False, 'reason': unsupported, 'rows': []}
@@ -1115,7 +1134,10 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
     context['timezone'] = page.evaluate('() => Intl.DateTimeFormat().resolvedOptions().timeZone')
     _check_cancel(check_cancel)
     result = adapt_inventory_page(response['body'], context)
-    for row in result['rows']:
+    for row, captions in zip(result['rows'], references['rows']):
+        # One code can have both reviewed renderings on the same page. Keep each
+        # bound row's literal display rather than normalizing it to one label.
+        row['meta']['Masa Pajak'] = captions['Masa Pajak']
         row['source_identity']['body_file'] = 'listing-responses/' + raw_name
         row['source_identity']['rendering'] = {'date_format': context['date_format'], 'timezone': context['timezone'],
                                              'reference_source': 'bound-current-grid-reference-cells'}
