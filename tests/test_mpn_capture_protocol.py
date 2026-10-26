@@ -251,6 +251,17 @@ def test_changed_qualified_row_provenance_is_refused_by_original_custody(monkeyp
             pass
 
 
+def test_captured_attempt_cannot_omit_qualified_provenance(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    run['mpn'].pop('provenance')
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run, tmp_path):
+            pass
+
+
 def test_partial_row_budget_keeps_proved_occurrence_prefix_publishable(monkeypatch, tmp_path):
     from coretax_mpn import mpn_custody, project_payment
     browser, _ = prepare(monkeypatch)

@@ -1,6 +1,6 @@
 # Automatic MPN and supplied resume template Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a verified negative-payment MPN companion to each full live SPT job and generate resume.xlsx using the operator's supplied presentation.
 
@@ -48,11 +48,11 @@
 - Canonical payment keys: record_id, header_id, period_code, period_label, transaction_date, posting_date, transaction_number, accounting_type, accounting_detail, currency, currency_amount, exchange_rate, amount, reference, parent_reference, revenue_code, source. Monetary values are original numeric lexemes; original response hashes/provenance remain separate.
 - `require_mpn(run, detail_source)`, `validate_mpn(run)`, `mpn_filename(run)` and `mpn_custody(run, folder)` own version/scope/completeness/evidence bounds. A missing MPN key remains legacy scope; a required but missing/partial capture cannot certify COMPLETE.
 
-- [ ] Write qualification tests for own-year versus parent/payment year, negative/zero/positive, fractional/unsafe precision, duplicate/foreign identities, malformed period and secret/duplicate-key JSON.
-- [ ] Commit tests before implementation and run through the unmodified GitHub workflow; confirm the missing adapter fails as expected.
-- [ ] Implement the pure adapter and private held-reader/hash validation, with bounded raw-evidence paths and fixed safe errors.
-- [ ] Runner verification: `python -m pytest tests/test_mpn.py -q` through GitHub Actions; expected all cases pass.
-- [ ] Commit the verified contract and record exact runner evidence in the execution ledger.
+- [x] Write qualification tests for own-year versus parent/payment year, negative/zero/positive, fractional/unsafe precision, duplicate/foreign identities, malformed period and secret/duplicate-key JSON.
+- [x] Commit tests before implementation and run through the unmodified GitHub workflow; confirm the missing adapter fails as expected.
+- [x] Implement the pure adapter and private held-reader/hash validation, with bounded raw-evidence paths and fixed safe errors.
+- [x] Runner verification: `python -m pytest tests/test_mpn.py -q` through GitHub Actions; expected all cases pass.
+- [x] Commit the verified contract and record exact runner evidence in the execution ledger.
 
 ### Task 2: Owned Accounting capture
 
@@ -60,15 +60,15 @@
 
 **Interfaces:** `collect_mpn(page, run, folder, *, detail_source='dom', max_pages=1000, on_progress=None, check_cancel=None) -> dict` updates run['mpn'] and overall completeness; `on_progress(done, total, qualified)` contains counts only. The collector derives taxpayer id from the unique verified submitted-list source, including empty SPT inventories.
 
-- [ ] Write synthetic browser tests: literal route/source ownership, stale request objects, successful/failed response envelopes, all-page traversal, source-year cross-allocation, missing month-filter removal and zero-header coverage.
-- [ ] Observe failing runner cases before adding their behavior.
-- [ ] Implement exact route/owner/loaded-source checks; attach observer before navigation; bind committed main-frame request objects and at most 128 pending requests; release request references on response/failure/close.
-- [ ] Configure the inspected ShowZeroValue=Yes, non-cancelled scope and subsequent Cari action; reject any unexpected date/amount/period restriction rather than claiming full coverage. Select the largest offered page size at most 50.
-- [ ] Traverse owned paginator pages sequentially. Before each pi-list action verify its selected row against the current list response; own the one Detail Transaksi dialog and original response bytes. Capture all detail pages before filtering negatives by the detail year.
-- [ ] Test and implement exact DOM monetary comparison, hidden-metadata binding and whole-detail JSON fallback. Verify Stop before every action/read, bounded final drain and failure/cap truthfulness.
-- [ ] Save exclusive attempt evidence/checkpoints in private mpn/ paths; never log raw URLs, bodies, identities or headers. Runner browser fixtures must use synthetic data only.
-- [ ] Runner verification: `python -m pytest tests/test_mpn_browser.py -q`; expected all ownership/fallback/cancellation cases pass.
-- [ ] Commit the collector and record exact runner evidence.
+- [x] Write synthetic browser tests: literal route/source ownership, stale request objects, successful/failed response envelopes, all-page traversal, source-year cross-allocation, missing month-filter removal and zero-header coverage.
+- [x] Observe failing runner cases before adding their behavior.
+- [x] Implement exact route/owner/loaded-source checks; attach observer before navigation; bind committed main-frame request objects and at most 128 pending requests; release request references on response/failure/close.
+- [x] Configure the inspected ShowZeroValue=Yes, non-cancelled scope and subsequent Cari action; reject any unexpected date/amount/period restriction rather than claiming full coverage. Select the largest offered page size at most 50.
+- [x] Traverse owned paginator pages sequentially. Before each pi-list action verify its selected row against the current list response; own the one Detail Transaksi dialog and original response bytes. Capture all detail pages before filtering negatives by the detail year.
+- [x] Test and implement exact DOM monetary comparison, hidden-metadata binding and whole-detail JSON fallback. Verify Stop before every action/read, bounded final drain and failure/cap truthfulness.
+- [x] Save exclusive attempt evidence/checkpoints in private mpn/ paths; never log raw URLs, bodies, identities or headers. Runner browser fixtures must use synthetic data only.
+- [x] Runner verification: `python -m pytest tests/test_mpn_browser.py -q`; expected all ownership/fallback/cancellation cases pass.
+- [x] Commit the collector and record exact runner evidence.
 
 ### Task 3: Reference resume and MPN workbook proofs
 
@@ -80,12 +80,12 @@
 - `export_mpn_workbook(run, path)`, `read_mpn_proof(workbook)` and `verify_mpn_workbook(run, path)` separate MPN scope/ordered rows/audit from SPT record proofs.
 - `resume_mpn_declaration(run)` / `read_resume_mpn(workbook)` carry a bounded MPN link/status/scope declaration without duplicating raw Accounting JSON into resume.
 
-- [ ] Add failing tests for B2/B3/B5/B6 bindings, the three approved sheets, Audit row-3 header, print/freeze/merge/width preservation and dynamic SPTIndex/chart ranges.
-- [ ] Add MPN export tests for literal identifiers, signed fractional numbers, unsafe precision text/unresolved audit, relative links and independent physical proof tampering.
-- [ ] Sanitize the reference through standalone OOXML package processing outside product imports: remove operational values/links/shared strings/chart caches/private metadata/printer binary while preserving approved safe styles/geometry. Verify all retained parts before Git; never commit the original private workbook.
-- [ ] Implement layout/proof helpers and invoke them only for administrative sheets; keep existing form renderers/filenames/model grouping unchanged. Explicitly support old administrative layout on reads without rewriting retained workbooks.
-- [ ] Runner verification: `python -m pytest tests/test_resume_template.py tests/test_mpn.py -q`; expected passing round-trip layout/proof cases and no sample values in zero/one/many-record exports.
-- [ ] Commit sanitized resource and verified renderer changes.
+- [x] Add failing tests for B2/B3/B5/B6 bindings, the three approved sheets, Audit row-3 header, print/freeze/merge/width preservation and dynamic SPTIndex/chart ranges.
+- [x] Add MPN export tests for literal identifiers, signed fractional numbers, unsafe precision text/unresolved audit, relative links and independent physical proof tampering.
+- [x] Sanitize the reference through standalone OOXML package processing outside product imports: remove operational values/links/shared strings/chart caches/private metadata/printer binary while preserving approved safe styles/geometry. Verify all retained parts before Git; never commit the original private workbook.
+- [x] Implement layout/proof helpers and invoke them only for administrative sheets; keep existing form renderers/filenames/model grouping unchanged. Explicitly support old administrative layout on reads without rewriting retained workbooks.
+- [x] Runner verification: `python -m pytest tests/test_resume_template.py tests/test_mpn.py -q`; expected passing round-trip layout/proof cases and no sample values in zero/one/many-record exports.
+- [x] Commit sanitized resource and verified renderer changes.
 
 ### Task 4: Full-job and publication integration
 
@@ -93,18 +93,18 @@
 
 **Interfaces:** A full live job declares MPN required, captures after SPT details before closing the browser, and gates overall COMPLETE on both captures plus publication/cleanup. Inventory-only and offline legacy export retain their declared limited scopes. MPN names/proofs never enter workbook_groups as SPT records.
 
-- [ ] Add runner failures for desktop/CLI orchestration, valid empty SPT inventory, MPN partial with preserved SPT, Stop, inventory-only/offline behavior and required-MPN completeness rejection.
-- [ ] Extend declared workbook names and verification to MPN, including existing-folder physical proofs, refreshed resume references, consent snapshots and file replacement/recovery. Preserve earlier unselected SPT/JSON/PDF bytes.
-- [ ] Add MPN progress and allowlisted worker/resource files; preserve GUI dependency/process boundaries and current build identity contracts.
-- [ ] Add scope/consent/collision/rollback/death-recovery tests for existing MPN alongside SPT; update only actual approved new-layout assertions in old tests. Keep separate legacy fixtures for old coordinates.
+- [x] Add runner failures for desktop/CLI orchestration, valid empty SPT inventory, MPN partial with preserved SPT, Stop, inventory-only/offline behavior and required-MPN completeness rejection.
+- [x] Extend declared workbook names and verification to MPN, including existing-folder physical proofs, refreshed resume references, consent snapshots and file replacement/recovery. Preserve earlier unselected SPT/JSON/PDF bytes.
+- [x] Add MPN progress and allowlisted worker/resource files; preserve GUI dependency/process boundaries and current build identity contracts.
+- [x] Add scope/consent/collision/rollback/death-recovery tests for existing MPN alongside SPT; update only actual approved new-layout assertions in old tests. Keep separate legacy fixtures for old coordinates.
 - [ ] Runner verification: full unmodified workflow; expected every Windows shard, portable suite, packaging, frozen self-tests, audit and aggregate checks pass.
-- [ ] Commit integration, tests and actual AGENTS.md/docs boundaries.
+- [x] Commit integration, tests and actual AGENTS.md/docs boundaries.
 
 ### Task 5: Review, artifact verification and integration
 
 **Files:** Documentation/report and any reproduced substantive review fixes.
 
-- [ ] Fetch latest main; review preceding merged PRs and their actual changed functions/tests, especially PR115 committed-list restoration. Reconcile interactions without weakening existing checks.
+- [x] Fetch latest main; review preceding merged PRs and their actual changed functions/tests, especially PR115 committed-list restoration. Reconcile interactions without weakening existing checks.
 - [ ] Run a fresh independent whole-branch review using requesting-code-review; fix reproduced important issues with runner RED/GREEN evidence. Record scope/rulings and exact commits.
 - [ ] Verify final PR head/tested merge tree and read back exact run/attempt/artifact: manifests, hashes, WORKER_FILES/resources, source/frozen tests, package/bootstrap cleanup evidence and no private artifacts.
 - [ ] Update PR title/body around final behavior and validation, attach it to this task, and carry it to merge readiness under the user's authorized PR workflow. If merging, recheck latest main/preceding PR and verify the resulting main build before reporting a usable EXE.

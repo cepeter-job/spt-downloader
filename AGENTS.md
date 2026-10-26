@@ -237,7 +237,8 @@ raw bodies. Reconcile those bindings against held original pages. COMPLETE
 requires exact occurrence/coverage reconciliation; PARTIAL may retain only a
 proved processed prefix when a capture budget stops processing. Audit reports
 requested mode, qualified DOM/JSON rows, excluded/unresolved/duplicate detail
-counts separately. Preserve absent legacy counters as blank rather than guessing.
+counts separately, plus held details not yet processed at a partial budget.
+Preserve absent legacy counters as blank rather than guessing.
 Accounting's route owner may mount after DOMContentLoaded: wait inside one
 45-second Stop-aware deadline before requiring uniqueness/visibility. Unsupported
 detail DOM shape/readiness uses the complete owned JSON detail inventory; dialog,

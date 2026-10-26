@@ -62,7 +62,9 @@ def _audit_entries(proof):
             ('Sumber DOM', sum(row['source'] == 'dom' for row in proof['rows'])),
             ('Sumber JSON', sum(row['source'] == 'json' for row in proof['rows'])),
             ('Detail dikecualikan', counts.get('excluded')), ('Detail unresolved', counts.get('unresolved')),
-            ('Detail duplikat', counts.get('duplicates'))]
+            ('Detail duplikat', counts.get('duplicates')),
+            ('Detail belum diproses', proof['details'] - len(proof['rows']) - sum(counts.values())
+             if proof.get('coverage') is not None else None)]
 
 
 def export_mpn_workbook(run, path):
