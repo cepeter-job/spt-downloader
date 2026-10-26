@@ -101,7 +101,8 @@ def test_dynamic_rows_chart_and_table_follow_only_actual_records(tmp_path, count
         assert summary.cell(14 + count, 2).value == 'PARTIAL'
         chart = summary._charts[0]
         assert chart.anchor._from.col == 3 and chart.anchor._from.row == 12
-        assert chart.series[0].val.numRef.f == f"'Ringkasan'!$B$14:$B${13 + count}"
+        expected = "'Ringkasan'!$B$14" + (f':$B${13 + count}' if count > 1 else '')
+        assert chart.series[0].val.numRef.f == expected
         assert chart.series[0].val.numRef.numCache is None
         assert index.max_row == count + 4
         assert index.tables['SPTIndex'].ref == f'A4:K{count + 4}'
