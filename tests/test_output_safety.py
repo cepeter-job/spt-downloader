@@ -78,7 +78,9 @@ def test_resume_accepts_reused_and_new_json_attempts_in_one_selection(tmp_path):
     run = deepcopy(first)
     run.update(complete=True, records=first['records'] + second['records'])
     coretax.save_output(run, source)
-    incoming = evidence(second, source)
+    # Destination layout belongs to the aggregate export, not the fresh capture.
+    incoming = evidence({**run, 'records': second['records']}, source)
+    assert set(incoming) <= set(run['output_json'])
     assert all(not (final / name).exists() for name in incoming)
     consent = output.existing_outputs(run, downloads)
     assert consent['target'] == str(final)

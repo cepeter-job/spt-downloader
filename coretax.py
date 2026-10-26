@@ -23,7 +23,8 @@ from coretax_exporter import (validate_scope, validate_export_run, export_split_
                              export_workbook)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
-from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
+from coretax_json_capture import (JSON_OUTPUT_LAYOUT, json_output_names, json_custody,
+                                  copy_held_json, verify_existing_json)
 from coretax_resume_layout import summary_scope
 from coretax_mpn import mpn_filename, mpn_custody, require_mpn
 from coretax_mpn_browser import collect_mpn
@@ -373,14 +374,16 @@ def save_output(run, folder, *, json_source=None):
     retain_recovery = False
     try:
         current = {**run, 'output_attachments': attachment_declarations(run),
-                   'output_json': json_output_names(run)}
+                   'json_output_layout': JSON_OUTPUT_LAYOUT}
+        current['output_json'] = json_output_names(current)
         evidence_source = Path(json_source) if json_source is not None else folder
         with mpn_custody(current, evidence_source), pdf_custody(current, folder) as (attachments, streams):
             # Unduhan sudah menempatkan PDF sumber privat. Tahan stream terverifikasi
             # selama publikasi workbook/checkpoint; ekspor ulang Excel tidak mengganti PDF.
             copy_held_pdfs(attachments, streams, staging)
             with json_custody(run, evidence_source,
-                    published=json_source is not None and 'output_json' in run) as (json_items, json_streams):
+                    published=json_source is not None and 'output_json' in run,
+                    target_layout=JSON_OUTPUT_LAYOUT) as (json_items, json_streams):
                 copy_held_json(json_items, json_streams, staging)
             current['template_mapping'] = []
             files = export_split_workbooks(current, staging, mapping_reports=current['template_mapping'])
@@ -396,6 +399,7 @@ def save_output(run, folder, *, json_source=None):
             run['output_files'] = list(files)
             run['output_attachments'] = current['output_attachments']
             run['output_json'] = current['output_json']
+            run['json_output_layout'] = current['json_output_layout']
             run['template_mapping'] = current.get('template_mapping', [])
     finally:
         if not retain_recovery:
