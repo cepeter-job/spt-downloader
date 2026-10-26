@@ -25,6 +25,9 @@ from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
 from coretax_resume_layout import summary_scope
+from coretax_mpn import mpn_filename, mpn_custody
+from coretax_mpn_export import (read_mpn_proof, verify_mpn_workbook,
+                                read_resume_mpn, resume_mpn_declaration)
 
 BASE = Path(__file__).resolve().parent
 
@@ -128,6 +131,8 @@ def _legacy_resume_proof(workbook, run):
 def folder_resume_run(run, folder):
     """Extend the index from verified retained form proofs, never inferred records."""
     selected = set(workbook_groups(run)) | {'resume.xlsx'}
+    if mpn_filename(run) is not None:
+        selected.add(mpn_filename(run))
     retained = sorted(workbook_files(folder) - selected)
     if not retained:
         return run
@@ -137,6 +142,15 @@ def folder_resume_run(run, folder):
         with output_path(folder, name).open('rb') as stream:
             wb = load_workbook(stream, data_only=False)
             try:
+                mpn_proof = read_mpn_proof(wb)
+                if mpn_proof is not None:
+                    if (mpn_proof['scope'] != [run['npwp'], run['year'], run['year_basis']]
+                            or name != f"MPN_{run['year']}.xlsx" or 'retained_mpn' in combined):
+                        raise ValueError('Retained MPN scope/filename cannot authorize global index')
+                    combined['retained_mpn'] = {'filename': name, 'status': mpn_proof['status'],
+                                                'scope': mpn_proof['scope']}
+                    combined['complete'] = combined['complete'] and mpn_proof['status'] == 'COMPLETE'
+                    continue
                 proof = read_workbook_proof(wb)
                 if proof is None:
                     proof = _legacy_resume_proof(wb, run)
@@ -191,6 +205,9 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     grouped = workbook_groups(run)
     selected_files = set(grouped)
     expected = {'resume.xlsx', *grouped}
+    mpn_name = mpn_filename(run)
+    if mpn_name is not None:
+        expected.add(mpn_name)
     declared = run.get('output_files', list(expected))
     if (not isinstance(declared, list) or
             any(not isinstance(n, str) or not n.endswith('.xlsx') for n in declared)):
@@ -210,6 +227,8 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         filename: verify_workbook(folder / filename, {**run, 'records': records}, include_administration=False)
         for filename, records in grouped.items()
     }
+    if mpn_name is not None:
+        verify_mpn_workbook(run, output_path(folder, mpn_name))
     grouped = workbook_groups(index_run)
     for filename in grouped.keys() - sheet_names.keys():
         wb = load_workbook(output_path(folder, filename), read_only=True)
@@ -231,6 +250,8 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
     resume = load_workbook(folder / 'resume.xlsx')
     try:
+        if read_resume_mpn(resume) != resume_mpn_declaration(index_run):
+            raise ValueError('MPN resume declaration differs from its physical workbook')
         for ordinal, record in enumerate(index_run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
             expected_file = next(name for name, records in grouped.items() if any(r is record for r in records))
@@ -266,6 +287,8 @@ def _check_output_scope(run, folder, staging=None):
                 any(previous.get(key) != run.get(key) for key in scope_keys)):
             raise FileExistsError('Output scope differs from existing run.json; use a new output folder')
     expected = {'resume.xlsx', *workbook_groups(run)}
+    if mpn_filename(run) is not None:
+        expected.add(mpn_filename(run))
     folded = {name.casefold(): name for name in expected}
     for relative in workbook_files(folder, exclude=staging):
         path = output_path(folder, relative)
@@ -282,8 +305,12 @@ def _check_output_scope(run, folder, staging=None):
         try:
             workbook = load_workbook(path, read_only=True)
             try:
-                proof = read_workbook_proof(workbook)
-                if proof is not None:
+                mpn_proof = read_mpn_proof(workbook)
+                proof = None if mpn_proof is not None else read_workbook_proof(workbook)
+                if mpn_proof is not None:
+                    matches = (relative == f"MPN_{run['year']}.xlsx"
+                               and mpn_proof['scope'] == [run['npwp'], run['year'], run['year_basis']])
+                elif proof is not None:
                     matches = (all(proof[key] == run[key] for key in ('npwp', 'year', 'year_basis'))
                                and set(workbook_groups(proof)) == {relative})
                 else:
@@ -347,7 +374,7 @@ def save_output(run, folder, *, json_source=None):
         current = {**run, 'output_attachments': attachment_declarations(run),
                    'output_json': json_output_names(run)}
         evidence_source = Path(json_source) if json_source is not None else folder
-        with pdf_custody(current, folder) as (attachments, streams):
+        with mpn_custody(current, evidence_source), pdf_custody(current, folder) as (attachments, streams):
             # Unduhan sudah menempatkan PDF sumber privat. Tahan stream terverifikasi
             # selama publikasi workbook/checkpoint; ekspor ulang Excel tidak mengganti PDF.
             copy_held_pdfs(attachments, streams, staging)

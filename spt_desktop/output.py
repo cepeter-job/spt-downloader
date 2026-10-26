@@ -126,12 +126,22 @@ def _selected(run):
     validate_export_run(run)
     groups = workbook_groups(run)
     names = sorted(groups) + ['resume.xlsx']  # Publish the new index last.
+    mpn_name = coretax.mpn_filename(run)
+    if mpn_name is not None:
+        names.insert(-1, mpn_name)
     declared = run.get('output_files', names)
     if (not isinstance(declared, list) or any(not isinstance(name, str) for name in declared)
             or len(declared) != len(set(declared)) or set(declared) != set(names)):
         raise ValueError('Invalid workbook filename declaration')
     pdf_names = [item['relative_path'] for item in verified_declarations(run)]
-    return [*pdf_names, *verified_json_names(run), *names], _group_identities(groups)
+    identities = _group_identities(groups)
+    if mpn_name is not None:
+        identities[mpn_name] = _mpn_identity(run)
+    return [*pdf_names, *verified_json_names(run), *names], identities
+
+
+def _mpn_identity(run):
+    return ('mpn', (('MPN', str(run['year']), ''),))
 
 
 def _group_identities(groups, *, legacy=False):
@@ -153,6 +163,13 @@ def _workbook_scope(run, path, relative):
         with _open_workbook(path) as stream:
             workbook = coretax.load_workbook(stream, data_only=False)
             try:
+                mpn_proof = coretax.read_mpn_proof(workbook)
+                if mpn_proof is not None:
+                    if (relative != f"MPN_{run['year']}.xlsx"
+                            or mpn_proof['scope'] != [run['npwp'], run['year'], run['year_basis']]):
+                        raise ValueError('Existing MPN scope/NPWP cannot authorize overwrite')
+                    identity = ('MPN', str(run['year']), '')
+                    return ({relative: _mpn_identity(run)}, [(relative, identity, "'MPN'!A1")], False, [])
                 proof = read_workbook_proof(workbook)
                 targets = None
                 locations = []
@@ -221,7 +238,13 @@ def _workbook_scope(run, path, relative):
                         references.append((filename, identity, location))
                         if proof is not None and 'record_id' in record:
                             record_identities.append((record['record_id'], identity))
-                    return _group_identities(groups, legacy=legacy), references, nested_pdfs, record_identities
+                    identities = _group_identities(groups, legacy=legacy)
+                    if relative == 'resume.xlsx':
+                        mpn = coretax.read_resume_mpn(workbook)
+                        if mpn is not None:
+                            identities[mpn['filename']] = _mpn_identity(run)
+                            references.append((mpn['filename'], ('MPN', str(run['year']), ''), "'MPN'!A1"))
+                    return identities, references, nested_pdfs, record_identities
                 raise ValueError('Unknown workbook filename or literal period/model scope')
             finally:
                 workbook.close()

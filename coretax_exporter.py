@@ -794,6 +794,12 @@ def export_split_workbooks(run, folder, *, mapping_reports=None):
     targets = {}
     reports = []
     files = {'resume.xlsx': folder / 'resume.xlsx'}
+    from coretax_mpn_export import export_mpn_workbook
+    from coretax_mpn import mpn_filename
+    mpn_name = mpn_filename(run)
+    if mpn_name is not None:
+        files[mpn_name] = folder / mpn_name
+        export_mpn_workbook(run, files[mpn_name])
     ordinals = {id(record): index for index, record in enumerate(run['records'], 1)}
     for filename, records in groups.items():
         for record, titles in zip(records, workbook_sheet_titles(records)):

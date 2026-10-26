@@ -137,6 +137,8 @@ def apply_resume_layout(workbook, run):
             _literal(summary.cell(mapping_row, 1), source['A18'].value)
             _literal(summary.cell(mapping_row, 2),
                      'COMPLETE' if all(report['complete'] for report in reports) else 'PARTIAL')
+        from coretax_mpn_export import apply_resume_mpn
+        apply_resume_mpn(workbook, run, mapping_row + 1)
         if counts:
             chart = deepcopy(source._charts[0])
             chart.series = []
