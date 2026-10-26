@@ -190,3 +190,29 @@ def test_stop_surrounds_supported_reference_binding(browser, tmp_path):
     with pytest.raises(driver.CaptureCancelled):
         adapt_current_grid(browser, tmp_path, [row], [meta], check_cancel=stop)
     assert not (tmp_path / 'listing-responses').exists()
+
+
+@pytest.mark.parametrize('unknown_first', [False, True])
+def test_source_pair_conflict_is_fatal_before_unsupported_reference_layout(browser, tmp_path, unknown_first):
+    from coretax_json import JsonSafetyError
+
+    row, meta = sample()
+    row['ReturnSheetTypeCode'] = 'ICT_WITR'
+    rows, displays = [row], [meta]
+    if unknown_first:
+        unknown, caption = sample(identifier='fixture-unreviewed-layout')
+        unknown['TaxTypeCode'] = 'SYNTHETIC_UNREVIEWED'
+        rows.insert(0, unknown)
+        displays.insert(0, caption)
+    with pytest.raises(JsonSafetyError):
+        adapt_current_grid(browser, tmp_path, rows, displays, span=True)
+
+
+@pytest.mark.parametrize('corporate', [False, True], ids=['masa', 'corporate'])
+@pytest.mark.parametrize('caption', ['December 2024', 'fixture-unreviewed-period', ''])
+def test_unknown_period_caption_uses_whole_page_fallback(browser, tmp_path, corporate, caption):
+    row, meta = (api_row(), dict(EXPECTED_META)) if corporate else sample()
+    meta['Masa Pajak'] = caption
+    result = adapt_current_grid(browser, tmp_path, [row], [meta])
+    assert result['eligible'] is False
+    assert result['rows'] == []
