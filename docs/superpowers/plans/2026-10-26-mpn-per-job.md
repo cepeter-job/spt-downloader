@@ -1,6 +1,6 @@
 # Automatic MPN and supplied resume template Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a verified negative-payment MPN companion to each full live SPT job and generate resume.xlsx using the operator's supplied presentation.
 

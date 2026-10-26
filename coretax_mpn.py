@@ -397,8 +397,8 @@ def validate_mpn(run):
         size += item['bytes']
     if size > MAX_EVIDENCE:
         raise ValueError('MPN private evidence byte budget exceeded')
-    if 'provenance' in value:
-        validate_provenance(value['rows'], value['provenance'], value['evidence'])
+    if 'attempt' in value or 'provenance' in value:
+        validate_provenance(value['rows'], value.get('provenance'), value['evidence'])
 
 
 def validate_provenance(rows, provenance, evidence):
