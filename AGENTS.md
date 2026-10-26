@@ -119,6 +119,19 @@ but never authorize wait/View before identity is proved. Missing/unreadable
 identity stays refused; Stop surrounds identity probes. Dispose handles before
 retry and on failure/close. Do not read business values or relax old-request,
 fresh-marker, pending-budget, timeout-only retry or selected-record checks.
+An identity RPC may remain pending after navigation returns. Only the response
+wait may tolerate that pending state, inside its existing deadline and with
+Stop/route/request/filter/terminal-error checks intact. Identity expiry or late
+completion is a nonretryable ownership refusal; an absent response with identity
+already proved retains the timeout-only retry. Keep acquisition pending through
+validation and bind its returned handle to an attempt token. Close/reset must
+invalidate late callbacks without replacing a newer handle or pending flag.
+Recheck retained identity, attempt, route and refusal state after the RPC, then
+reread filter errors. Check every reused record and metadata result, and check
+again after JSON preparation immediately before clicking the held inspected
+View element. Release that element without masking Stop or an original failure.
+The authorized View may navigate the same tab; subsequent detail checks retain
+their existing selected-record and lifecycle gates.
 Owned HTTP failures are terminal even for HTML; explicit unsuccessful JSON is
 terminal before successful-row parsing and cannot be cleared by later traffic.
 Keep only fixed failure state, with no new request material in diagnostics.

@@ -254,6 +254,17 @@ tetapi wait/View memerlukan identitas yang terbukti. Probe tidak membaca nilai
 bisnis dan tetap memeriksa Stop; handle dilepas pada retry, failure dan close.
 Fresh marker, request lama yang dikecualikan, batas 128 pending, error terminal,
 satu retry khusus timeout, metadata dan RecordId tidak dilonggarkan.
+RPC identitas boleh masih pending sesudah goto selesai. Hanya wait respons yang
+menunggu keadaan itu dalam deadline yang sama, sambil memeriksa Stop, route,
+request, filter dan error terminal. Identitas terlambat/tidak selesai ditolak
+sebagai kegagalan ownership tanpa retry; respons yang belum datang sesudah
+identitas terbukti tetap memakai aturan retry timeout lama. Token attempt
+mencegah callback lama memasang handle atau mengubah flag attempt berikutnya,
+termasuk setelah close/reset. Flag pending bertahan sampai validasi selesai.
+State dan error filter dibaca ulang setelah RPC; tiap record/metadata dan sumber
+tepat sebelum View diperiksa lagi. Klik memakai elemen View yang ditahan sebelum
+persiapan JSON, lalu handle dilepas tanpa menutupi Stop/error awal. Navigasi View
+pada tab yang sama tetap dinilai oleh guard detail dan lifecycle yang sudah ada.
 
 Capture memakai kontrol baca yang sudah dikenali: pencarian wajib pajak, Pilih, navigasi status, View, tab, accordion, ukuran halaman, serta paginasi. Tombol submit, batal SPT, kirim email, pembuatan dokumen, dan aksi baris yang tidak dikenal tidak boleh dijadikan fallback. Bila selector View berubah, hasil tetap terblokir/parsial sampai layout baru diperiksa dan fixture regresinya tersedia.
 

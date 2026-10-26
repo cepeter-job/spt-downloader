@@ -690,6 +690,7 @@ class ListObserver:
         self.pending = {}
         self._document = None
         self._binding_document = False
+        self._navigation_attempt = None
         page.on('framenavigated', self.on_navigation)
         page.on('request', self.on_request)
         page.on('requestfailed', self.on_request_failed)
@@ -699,14 +700,17 @@ class ListObserver:
         # A response sequence cannot distinguish an outstanding old request.
         # Admit no requests until this attempt's main document has committed.
         _check_cancel(self.check_cancel)
-        self._release_document()
-        _check_cancel(self.check_cancel)
-        self.navigation_source = source_url
+        self._navigation_attempt = object()
+        self._binding_document = False
+        self.navigation_source = None
         self.navigation_committed = False
         self.navigation_failed = False
         self.failed = False
         self.pending.clear()
         self.latest = None
+        self._release_document()
+        _check_cancel(self.check_cancel)
+        self.navigation_source = source_url
 
     def _release_document(self):
         document, self._document = self._document, None
@@ -724,12 +728,17 @@ class ListObserver:
 
     def _same_document(self):
         _check_cancel(self.check_cancel)
+        document, attempt = self._document, self._navigation_attempt
         try:
-            same = self._document is not None and self._document.evaluate('(d) => d === document') is True
+            same = document is not None and document.evaluate('(d) => d === document') is True
         except Exception:
             same = False
         _check_cancel(self.check_cancel)
-        return same
+        # The RPC can pump a refusal or a newer attempt after computing True.
+        return (same and attempt is not None and attempt is self._navigation_attempt
+                and document is self._document and self.navigation_committed
+                and not self.navigation_failed and self.navigation_source is not None
+                and self._same_navigation(self.page.url))
 
     def _same_navigation(self, url):
         expected = urlparse(self.navigation_source)
@@ -753,16 +762,33 @@ class ListObserver:
             return
         self.navigation_committed = True
         self._binding_document = True
+        attempt, document = self._navigation_attempt, None
         try:
             _check_cancel(self.check_cancel)
-            self._document = self.page.evaluate_handle('() => document')
+            document = self.page.evaluate_handle('() => document')
+            if attempt is not self._navigation_attempt:
+                return
+            self._document = document
+            _check_cancel(self.check_cancel)
+            if self.navigation_failed or not self._same_document():
+                self._fail_navigation()
+        except CaptureCancelled:
+            if attempt is self._navigation_attempt:
+                self._fail_navigation()
+            raise
         except Exception:
-            self._fail_navigation()
+            if attempt is self._navigation_attempt:
+                self._fail_navigation()
         finally:
-            self._binding_document = False
-        _check_cancel(self.check_cancel)
-        if self.navigation_failed or not self._same_document():
-            self._fail_navigation()
+            if attempt is self._navigation_attempt:
+                self._binding_document = False
+                if self.navigation_failed:
+                    self._release_document()
+            elif document is not None:
+                try:
+                    document.dispose()
+                except Exception:
+                    pass  # A stale callback owns only its own returned handle.
 
     def _grid_request(self, request, url):
         try:
@@ -873,13 +899,17 @@ class ListObserver:
             # wait(after) still requires a newer usable event or fails closed.
             pass
 
-    def _check_state(self):
+    def _check_state(self, *, allow_document_pending=False):
         _check_cancel(self.check_cancel)
         if self.request_filter is not None and self.request_filter.error:
             raise self.request_filter.error
-        if self.navigation_source is not None and (
+        invalid = self.navigation_source is not None and (
                 not self.navigation_committed or self.navigation_failed
-                or not self._same_navigation(self.page.url) or not self._same_document()):
+                or not self._same_navigation(self.page.url)
+                or (not (allow_document_pending and self._binding_document) and not self._same_document()))
+        if self.request_filter is not None and self.request_filter.error:
+            raise self.request_filter.error
+        if invalid:
             self._fail_navigation()
             raise RuntimeError('Return-list document or request ownership changed; refusing capture')
         if self.failed:
@@ -887,27 +917,50 @@ class ListObserver:
 
     def wait(self, after, timeout=45):
         deadline = time.monotonic() + timeout
-        while self.sequence <= after:
-            self._check_state()
+        saw_pending = pending_identity = False
+
+        def refuse_identity():
+            self._fail_navigation()
+            raise RuntimeError('Return-list document or request ownership changed; refusing capture')
+
+        def verify_identity_deadline():
+            if saw_pending and time.monotonic() >= deadline:
+                refuse_identity()
+
+        while self.sequence <= after or self._binding_document:
+            if self._binding_document:
+                saw_pending = pending_identity = True
+            elif pending_identity:
+                verify_identity_deadline()
+                pending_identity = False
+            self._check_state(allow_document_pending=True)
             if time.monotonic() >= deadline:
+                if pending_identity:
+                    refuse_identity()
                 raise ListResponseTimeout('No verifiable return-list response. Login expired, access denied, or list API layout changed.')
             self.page.wait_for_timeout(100)
+        verify_identity_deadline()
         self._check_state()
+        verify_identity_deadline()
         wait_idle(self.page)
         self._check_state()
+        verify_identity_deadline()
         result = self.latest
         if not result['successful']:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
         return {**result, 'after_sequence': after}
 
     def close(self):
+        self._navigation_attempt = None
+        self._binding_document = False
+        self.navigation_source = None
+        self.navigation_committed = False
         self.page.remove_listener('framenavigated', self.on_navigation)
         self.page.remove_listener('request', self.on_request)
         self.page.remove_listener('requestfailed', self.on_request_failed)
         self.page.remove_listener('response', self.on_response)
         self.latest = None
         self.pending.clear()
-        self.navigation_source = None
         self._release_document()
 
 
@@ -1552,7 +1605,7 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
     return result
 
 
-def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture=None):
+def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture=None, verify_source=None):
     """Buka satu kontrol View yang dikenali dan verifikasi asal detailnya."""
     # Hanya tombol View persis yang telah diamati; jangan menebak aksi baris lain.
     view = row.locator('button[id=ViewButton]')
@@ -1563,11 +1616,17 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture
     previous_url = page.url
     page.on('popup', callback)
     verified = False
+    inspected_view = None
     try:
+        inspected_view = view.element_handle()
+        if inspected_view is None:
+            raise RuntimeError('The inspected View control is unavailable; refusing capture')
         begin_view = getattr(json_capture, 'begin_readonly_view', None)
         if callable(begin_view):
             begin_view()
-        view.click()
+        if verify_source is not None:
+            verify_source()
+        inspected_view.click()
         deadline = time.monotonic() + 20
         while not opened and page.url == previous_url:
             if time.monotonic() > deadline:
@@ -1583,6 +1642,11 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture
         verified = True
         return detail, bool(opened)
     finally:
+        if inspected_view is not None:
+            try:
+                inspected_view.dispose()
+            except Exception:
+                pass  # Cleanup cannot replace Stop or the originating failure.
         page.remove_listener('popup', callback)
         if not verified:
             for tab in opened:
@@ -1986,6 +2050,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                         raise RuntimeError('Restored list response has an unexpected page offset')
                                     container.dispose()
                                     active_group = group
+                            observer._check_state()
                             if condition is not None:
                                 validate_partition_response(current_response, condition)
                                 if current_response['binding']['request']['Rows'] != record.get('list_page_size'):
@@ -2000,6 +2065,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             current_meta = dict(zip(data['headers'], data['rows'][position]))
                             _verify_restored_metadata(page, run, record, current_meta,
                                 current_response['rows'][position], folder, ordinal, check_cancel)
+                            observer._check_state()
                             if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
                                                                bind_unifikasi_listing_identity, bind_corporate_listing_identity)
@@ -2035,7 +2101,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             with session as json_capture:
                                 with diagnostics.measure('open_detail'):
                                     detail, is_popup = open_return_readonly(page, source_row, taxpayer_id, record['record_id'],
-                                                                            json_capture=json_capture)
+                                                                            json_capture=json_capture,
+                                                                            verify_source=observer._check_state)
                                     detail.set_viewport_size({'width': 1600, 'height': 1000})
                                 if json_capture is None:
                                     timing['source_used'] = 'dom'

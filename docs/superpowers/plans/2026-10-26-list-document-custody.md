@@ -75,10 +75,20 @@ it never authorizes View or relaxes route/request/failure/cancellation gates.
 
 ## Bounded repair after reproduced RED
 
-- [ ] Retain a value-free reference to the actual committed Document. Permit
+The target RED is independently accepted from all six archives of
+[run40268648974, attempt1](https://github.com/cepeter-job/spt-downloader/actions/runs/40268648974),
+tested83e236c8b69edba8ca833d016bf15e30803ac3c3/tree
+df5b55da3e702117a12d07845b53b6a8af00d6ec:5,809 Windows passes,
+77 call failures, zero errors/skips, and710 portable passes. Exactly17 target
+regressions and60 known prior failures remain visible. All5,868 prior identities
+are present; collection, phases, JUnit identities, measurements, environment,
+hashes and sizes reconcile. This proves the target failures; the candidate is
+still rejected until all5,886 identities pass after repair.
+
+- [x] Retain a value-free reference to the actual committed Document. Permit
   additional notifications only with the identical active Document and the
   original authorized path/query. Missing or unreadable identity stays refused.
-- [ ] Preserve post-commit request custody, pending-request limits, fresh markers,
+- [x] Preserve post-commit request custody, pending-request limits, fresh markers,
   one timeout-only retry, terminal errors, selected metadata/RecordId and Stop.
   Release handles on retry and close. Do not weaken another-document detection.
 - [ ] Add fixed allowlisted diagnostic categories if the reproduced event cannot
