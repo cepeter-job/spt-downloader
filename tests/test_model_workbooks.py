@@ -106,7 +106,7 @@ def test_resume_links_to_the_correct_model_file_and_first_form(tmp_path, tax, pe
     targets = []
     try:
         assert resume.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit']
-        assert resume['Ringkasan']['B9'].value == 3
+        assert resume['Ringkasan']['B7'].value == 3
         for ordinal, expected in enumerate(run['records'], 5):
             link = resume['Daftar SPT'].cell(ordinal, 1).hyperlink
             assert link and link.location == "'Induk'!A1"
@@ -201,7 +201,7 @@ def test_partial_capture_remains_partial_in_each_model_proof_and_resume(tmp_path
         workbook = load_workbook(path)
         try:
             if filename == 'resume.xlsx':
-                assert workbook['Ringkasan']['B8'].value == 'PARTIAL'
+                assert workbook['Ringkasan']['B6'].value == 'PARTIAL'
                 assert workbook['Daftar SPT']['I6'].value == 'PARTIAL'
             else:
                 proof = exporter.read_workbook_proof(workbook)

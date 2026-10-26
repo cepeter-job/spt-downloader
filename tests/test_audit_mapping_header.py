@@ -17,14 +17,14 @@ def test_resume_mapping_header_is_separate_from_inventory_and_pdf_headers(tmp_pa
     book=load_workbook(tmp_path/'resume.xlsx')
     try:
         sheet=book['Audit']
-        assert [cell.value for cell in sheet[4]][:6]==['Status / Objek','Total sumber','Baris dibaca','Dipilih','Hasil','Keterangan']
+        assert [cell.value for cell in sheet[3]][:6]==['Status / Objek','Total sumber','Baris dibaca','Dipilih','Hasil','Keterangan']
         headers=[cell.row for row in sheet for cell in row if cell.value=='Field belum dipetakan']
         assert len(headers)==1
         row=headers[0]
         assert [sheet.cell(row,c).value for c in range(1,7)]==[
             'Status / Objek','Field belum dipetakan','Tabel belum dipetakan','Baris belum dipetakan','Hasil','Keterangan']
         assert [sheet.cell(row+1,c).value for c in range(1,6)]==['Pemetaan template',2,1,9,'PARTIAL']
-        assert sheet['E5'].value=='RECONCILED'
+        assert sheet['E4'].value=='RECONCILED'
         assert any(cell.value=='SYNTHETIC LIMITATION' for cells in sheet for cell in cells)
         links=[cell for cells in sheet for cell in cells if cell.hyperlink]
         assert len(links)==1 and links[0].hyperlink.target==run['records'][0]['attachments'][0]['relative_path']

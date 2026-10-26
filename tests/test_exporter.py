@@ -14,10 +14,10 @@ def test_workbook_preserves_npwp_as_text(tmp_path):
     path = tmp_path / 'report.xlsx'
     app.export_workbook(run, path)
     wb = load_workbook(path)
-    assert wb['Ringkasan']['B4'].value == run['npwp']
-    assert wb['Ringkasan']['B4'].data_type == 's'
-    assert wb['Ringkasan']['B5'].value == 2025
-    assert wb['Ringkasan']['B8'].value == 'PARTIAL'
+    assert wb['Ringkasan']['B2'].value == run['npwp']
+    assert wb['Ringkasan']['B2'].data_type == 's'
+    assert wb['Ringkasan']['B3'].value == 2025
+    assert wb['Ringkasan']['B6'].value == 'PARTIAL'
 
 
 def test_detail_workbook_is_navigable_and_treats_source_formulas_as_text(tmp_path):
@@ -35,10 +35,10 @@ def test_detail_workbook_is_navigable_and_treats_source_formulas_as_text(tmp_pat
     wb = load_workbook(path)
     assert 'Daftar SPT' in wb.sheetnames, 'SPT index missing'
     assert 'Audit' in wb.sheetnames
-    assert wb['Ringkasan']['B13'].value == run['scope_description']
+    assert wb['Ringkasan']['B11'].value == run['scope_description']
     index = wb['Daftar SPT']
     assert index['A5'].hyperlink is not None, 'Detail navigation missing'
-    assert index.freeze_panes == 'D5'
+    assert index.freeze_panes is None
     detail = wb[wb.sheetnames[3]]
     source_cells = [c for row in detail for c in row if c.value == '=1+1']
     assert source_cells and all(c.data_type == 's' for c in source_cells)

@@ -139,6 +139,8 @@ def test_cli_continuation_consumes_saved_desktop_selection_and_mode(tmp_path, mo
         run['output_files'] = ['resume.xlsx']
         return destination / 'resume.xlsx'
     monkeypatch.setattr(coretax, 'collect_details', capture)
+    from test_mpn_job_flow import capture_result
+    monkeypatch.setattr(coretax, 'collect_mpn', lambda page, run, folder, **kwargs: capture_result(run))
     monkeypatch.setattr(coretax, 'save_output', save)
     assert coretax._main(['--resume', str(folder), '--non-interactive']) == 0
     assert observed == [(['21-january'], 'json-first')]

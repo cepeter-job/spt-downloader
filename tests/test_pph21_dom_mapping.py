@@ -187,7 +187,7 @@ def test_full_five_form_export_reports_mapping_and_preserves_scope_links(tmp_pat
         assert workbook.sheetnames == ['Induk', 'L-IA', 'L-IB', 'L-II', 'L-III']
         assert exporter.read_workbook_proof(workbook)['records'][0]['record_id'] == 'synthetic-21-normal'
         assert resume['Daftar SPT']['A5'].hyperlink.target == 'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx'
-        assert resume['Ringkasan']['B23'].value == 'COMPLETE'
+        assert resume['Ringkasan']['B15'].value == 'COMPLETE'
     finally:
         workbook.close()
         resume.close()

@@ -26,8 +26,8 @@ def test_save_output_separates_resume_and_period_files(tmp_path):
     resume = load_workbook(path)
     assert resume.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit'], 'Detailed SPT must not be embedded in resume.xlsx'
     assert resume['Daftar SPT'].max_row == 4 + len(run['records'])
-    assert resume['Ringkasan']['B4'].value == run['npwp']
-    assert resume['Ringkasan']['B4'].data_type == 's'
+    assert resume['Ringkasan']['B2'].value == run['npwp']
+    assert resume['Ringkasan']['B2'].data_type == 's'
     expected = {'SPT_Badan_Januari - Desember 2025_Normal.xlsx': run['records'][:1],
         'SPT_Badan_Januari - Desember 2025_Amendment 001.xlsx': run['records'][1:2],
         'SPT Masa 21/SPT_21_Januari 2025_Normal.xlsx': run['records'][2:3],
@@ -85,7 +85,7 @@ def test_empty_scope_produces_only_resume_and_no_fake_type_files(tmp_path):
     assert [p.name for p in tmp_path.glob('*.xlsx')] == ['resume.xlsx']
     wb = load_workbook(path)
     assert wb.sheetnames == ['Ringkasan', 'Daftar SPT', 'Audit']
-    assert wb['Ringkasan']['B9'].value == 0
+    assert wb['Ringkasan']['B7'].value == 0
     wb.close()
 
 
