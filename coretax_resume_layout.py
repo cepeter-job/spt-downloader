@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 
 from openpyxl import load_workbook
-from openpyxl.chart import Reference
 from openpyxl.utils import get_column_letter
 
 RESOURCE = Path(__file__).resolve().parent / 'resources' / 'resume_format.xlsx'
@@ -27,6 +26,8 @@ def summary_scope(workbook):
     if not {'Ringkasan', 'Daftar SPT', 'Audit'}.issubset(workbook.sheetnames):
         raise ValueError('Workbook scope/NPWP has no supported administrative layout')
     summary, index, audit = (workbook[name] for name in ('Ringkasan', 'Daftar SPT', 'Audit'))
+    if any(sheet.sheet_state != 'visible' for sheet in (summary, index, audit)):
+        raise ValueError('Workbook scope requires visible administrative sheets')
     candidates = [start for start, labels in ((2, LABELS), (4, LEGACY_LABELS))
                   if tuple(summary.cell(start + i, 1).value for i in range(8)) == labels]
     if len(candidates) != 1:
@@ -81,7 +82,7 @@ def _reset_sheet(sheet, reference):
     for key, dimension in reference.row_dimensions.items():
         sheet.row_dimensions[key] = copy(dimension)
     for attribute in ('sheet_format', 'sheet_properties', 'views', 'page_setup',
-                      'page_margins', 'print_options'):
+                      'page_margins', 'print_options', 'HeaderFooter'):
         setattr(sheet, attribute, deepcopy(getattr(reference, attribute)))
     sheet.freeze_panes = reference.freeze_panes
     for merged in reference.merged_cells.ranges:
@@ -137,18 +138,26 @@ def apply_resume_layout(workbook, run):
             _literal(summary.cell(mapping_row, 1), source['A18'].value)
             _literal(summary.cell(mapping_row, 2),
                      'COMPLETE' if all(report['complete'] for report in reports) else 'PARTIAL')
-        from coretax_mpn_export import apply_resume_mpn
-        apply_resume_mpn(workbook, run, mapping_row + 1)
         if counts:
             chart = deepcopy(source._charts[0])
-            chart.series = []
-            chart.add_data(Reference(summary, min_col=2, min_row=13, max_row=13 + len(counts)),
-                           titles_from_data=True)
-            chart.set_categories(Reference(summary, min_col=1, min_row=14, max_row=13 + len(counts)))
-            summary.add_chart(chart, 'D13')
+            # The reader omits ChartSpace.style. Preserve the approved style
+            # explicitly and retain its series formatting and original anchor.
+            chart.style = 2
+            series = chart.series[0]
+            series.val.numRef.f = "'Ringkasan'!$B$14" + (f':$B${13 + len(counts)}' if len(counts) > 1 else '')
+            series.val.numRef.numCache = None
+            categories = series.cat.strRef or series.cat.numRef
+            categories.f = "'Ringkasan'!$A$14" + (f':$A${13 + len(counts)}' if len(counts) > 1 else '')
+            if series.cat.strRef is not None:
+                categories.strCache = None
+            else:
+                categories.numCache = None
+            summary.add_chart(chart)
         index = workbook['Daftar SPT']
         source = reference['Daftar SPT']
         last = 4 + len(records)
+        for row in range(5, last + 1):
+            index.row_dimensions[row].height = source.row_dimensions[5].height
         for row, col, value, kind, link in data['Daftar SPT']:
             if row > last:
                 continue
@@ -181,10 +190,13 @@ def apply_resume_layout(workbook, run):
             _literal(cell, value)
             cell.data_type = kind
             cell.hyperlink = link
+        _literal(audit['A1'], source['A1'].value)
+        from coretax_mpn_export import apply_resume_mpn
+        apply_resume_mpn(workbook, run, mapping_row + 1)
         index.print_title_rows = '1:4'
         audit.print_title_rows = '1:3'
-        for name, width in (('Ringkasan', 8), ('Daftar SPT', 11), ('Audit', 6)):
+        for name, width, minimum in (('Ringkasan', 8, 18), ('Daftar SPT', 11, 8), ('Audit', 6, 11)):
             sheet = workbook[name]
-            sheet.print_area = f'A1:{get_column_letter(width)}{sheet.max_row}'
+            sheet.print_area = f'A1:{get_column_letter(width)}{max(minimum, sheet.max_row)}'
     finally:
         reference.close()

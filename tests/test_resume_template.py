@@ -105,7 +105,12 @@ def test_dynamic_rows_chart_and_table_follow_only_actual_records(tmp_path, count
         chart = summary._charts[0]
         assert chart.anchor._from.col == 3 and chart.anchor._from.row == 12
         assert (chart.anchor.ext.cx, chart.anchor.ext.cy) == (6480000, 3240000)
-        assert chart.style == 2
+        # ChartSpace.style is persisted but not restored by openpyxl's reader.
+        import zipfile
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(path) as archive:
+            root = ET.fromstring(archive.read('xl/charts/chart1.xml'))
+            assert root.find('{http://schemas.openxmlformats.org/drawingml/2006/chart}style').get('val') == '2'
         expected = "'Ringkasan'!$B$14" + (f':$B${13 + count}' if count > 1 else '')
         assert chart.series[0].val.numRef.f == expected
         assert chart.series[0].val.numRef.numCache is None

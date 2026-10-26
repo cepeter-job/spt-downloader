@@ -207,6 +207,25 @@ def apply_resume_mpn(workbook, run, row):
     cell = sheet.cell(row, 3)
     cell.hyperlink = Hyperlink(ref=cell.coordinate, target=value['filename'], location="'MPN'!A1")
     cell.font = Font(name=cell.font.name, size=cell.font.sz, color='2463A0', underline='single')
+    audit = workbook['Audit']
+    ar = audit.max_row + 2
+    from coretax_resume_layout import _style
+    for col, content in enumerate(('Status / Objek', 'Induk dibaca', 'Detail dibaca',
+                                    'Pembayaran dipilih', 'Hasil', 'Berkas / Keterangan'), 1):
+        cell = put(audit, ar, col, content)
+        _style(cell, audit.cell(3, col))
+    captured = run.get('mpn')
+    counts = (captured['headers'], captured['details'], len(captured['rows'])) if captured else (None,) * 3
+    for col, content in enumerate(('MPN', *counts, value['status'], value['filename']), 1):
+        cell = put(audit, ar + 1, col, content)
+        _style(cell, audit.cell(4, col))
+    cell = audit.cell(ar + 1, 6)
+    cell.hyperlink = Hyperlink(ref=cell.coordinate, target=value['filename'], location="'MPN'!A1")
+    cell.font = Font(name=cell.font.name, size=cell.font.sz, color='2463A0', underline='single')
+    for offset, item in enumerate(captured['audit'] if captured else (), ar + 2):
+        for col, content in ((1, 'MPN'), (5, 'PARTIAL'), (6, item['message'])):
+            cell = put(audit, offset, col, content)
+            _style(cell, audit.cell(4, col))
 
 
 def read_resume_mpn(workbook):

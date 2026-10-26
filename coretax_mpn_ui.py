@@ -49,16 +49,26 @@ class AccountingUI:
         self.pins, self.catalogs, self.catalog = {}, {}, {}
         self.source_failed = False
         self.source_safety = False
+        self.source_pending = {}
+        self.source_sequence = 0
+        self.catalog_frozen = False
+        self.closed = False
         self.reference_raw = None
         self.list_snapshot = None
         self.list_owner = None
 
     def __enter__(self):
+        self.page.on('request', self._source_request)
+        self.page.on('requestfailed', self._source_request_failed)
         self.page.on('requestfinished', self._source_finished)
         return self
 
     def __exit__(self, *args):
+        self.closed = True
+        self.page.remove_listener('request', self._source_request)
+        self.page.remove_listener('requestfailed', self._source_request_failed)
         self.page.remove_listener('requestfinished', self._source_finished)
+        self.source_pending.clear()
         self.observer.close()
 
     def _stop(self):
@@ -69,8 +79,9 @@ class AccountingUI:
         if self.source_failed:
             raise MpnUnsupported('MPN loaded source is unsupported')
 
-    def _source_finished(self, request):
-        if not self.observer.committed or request.frame is not self.page.main_frame:
+    def _source_request(self, request):
+        if (self.closed or not self.observer.committed
+                or request.frame is not self.page.main_frame):
             return
         url = request.url
         pin = SOURCE_PINS.get(url.removeprefix(ORIGIN)) if url.startswith(ORIGIN + '/') else None
@@ -82,8 +93,28 @@ class AccountingUI:
             return
         if pin is None and not catalog:
             return
+        if len(self.source_pending) >= 16:
+            self.source_failed = True
+            return
+        self.source_sequence += 1
+        self.source_pending[id(request)] = (request, pin, catalog)
+
+    def _source_request_failed(self, request):
+        entry = self.source_pending.pop(id(request), None)
+        if entry is not None and entry[0] is request:
+            self.source_sequence += 1
+            self.source_failed = True
+
+    def _source_finished(self, request):
+        entry = self.source_pending.pop(id(request), None)
+        if entry is None or entry[0] is not request or self.closed:
+            return
+        self.source_sequence += 1
+        _, pin, catalog = entry
+        url = request.url
         try:
-            if (request.method != 'GET' or self.page.url != self.url
+            if (not self.observer.committed or request.frame is not self.page.main_frame
+                    or request.method != 'GET' or self.page.url != self.url
                     or pin is not None and request.resource_type != 'script'):
                 raise MpnSafetyError('MPN source request ownership changed')
             response = request.response()
@@ -101,6 +132,8 @@ class AccountingUI:
                 if self.reference_raw != raw:
                     raise MpnSafetyError('MPN reference snapshot changed')
             else:
+                if self.catalog_frozen:
+                    raise MpnUnsupported('MPN first reference reply arrived after catalog binding')
                 self.reference_raw = raw
                 self._catalog(raw)
         except MpnSafetyError:
@@ -166,6 +199,8 @@ class AccountingUI:
         if self.list_snapshot is None:
             raise MpnUnsupported('MPN unfiltered non-cancelled inventory is unproved')
         self._page_size()
+        self._stop()
+        self.catalog_frozen = True
 
     @staticmethod
     def _unfiltered(snapshot):
@@ -225,7 +260,7 @@ class AccountingUI:
         snapshot = initial
         binding = {key: value for key, value in snapshot['request'].items() if key != 'First'}
         expected_first, total = 0, snapshot['total']
-        for _ in range(max_pages):
+        for page_index in range(max_pages):
             self._stop()
             self.observer._check_state()
             if (snapshot['first'] != expected_first or snapshot['total'] != total
@@ -246,6 +281,8 @@ class AccountingUI:
                 return
             if next_button.count() != 1 or not next_button.is_visible():
                 raise MpnUnsupported('MPN next page control is unavailable')
+            if page_index + 1 == max_pages:
+                raise MpnUnsupported('MPN owned paginator page cap reached')
             marker = self.observer.sequence
             self._stop()
             next_button.click(timeout=1000)
@@ -340,15 +377,17 @@ class AccountingUI:
         self._stop()
         self.observer._check_state()
         sequence = self.observer.sequence
+        source_sequence = self.source_sequence
         # An already pending reply cannot become COMPLETE by arriving in drain.
-        if self.observer.pending:
+        if self.observer.pending or self.source_pending:
             raise MpnUnsupported('MPN has pending owned replies at final sampling')
         deadline = time.monotonic() + .5
         while time.monotonic() < deadline:
             self._stop()
             self.page.wait_for_timeout(100)
             self.observer._check_state()
-            if self.observer.pending or self.observer.sequence != sequence:
+            if (self.observer.pending or self.observer.sequence != sequence
+                    or self.source_pending or self.source_sequence != source_sequence):
                 raise MpnUnsupported('MPN received a late owned reply during final drain')
         providers = self.page.evaluate('''() => [...document.scripts].filter(e=>e.isConnected).map(e=>e.src)''')
         actual = {url for url in providers if re.match(

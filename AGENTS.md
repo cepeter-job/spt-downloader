@@ -53,6 +53,36 @@ legacy label/header maps. Keep old workbooks readable without rewriting them;
 new coordinates must be used consistently by scope verification/publication.
 These presentation changes do not alter form templates or capture completion.
 
+Full live CLI/desktop jobs additionally require a separate owned Accounting MPN
+capture after SPT details and before browser cleanup, including valid empty SPT
+inventories. Inventory-only and offline legacy exports do not acquire MPN scope.
+The inspected same-taxpayer list/listdetail UI reads remain separate from SPT
+native admission. Enumerate the unfiltered non-cancelled parents, including zero
+amounts and other parent years, then qualify strictly negative original detail
+Amounts by the detail's literal tax period/year. Never substitute payment date
+or parent year. Same-year ranges need the exact captured PERIOD meaning;
+cross-year/malformed/missing meanings remain unresolved. Only original same-
+attempt id-ID reference bytes with unique codes and explicit null ValidTo supply
+labels; no cache clock/version selection or extra catalog fetch is admitted.
+Keep loaded Accounting main/vendor pins, committed request-object ownership,
+owned pagination, Stop, terminal failures, source/privacy budgets and final drain.
+DOM needs complete ordered visible binding and exact decimal validation of all
+three amounts/rate; otherwise replace the whole detail with verified JSON.
+
+MPN_<year>.xlsx has its own physical scope/ordered-row proof and Audit; it never
+enters SPT workbook_groups, tax-type counts or model grouping. Keep original
+numeric lexemes in proof and unsafe Excel numbers literal with a presentation
+audit. Required MPN partial/failure keeps the full job PARTIAL. Publish the
+verified workbook and resume link/status under existing consent, collision,
+rollback and process-death recovery; preserve unselected existing workbooks.
+Original Accounting JSON stays under private mpn/<attempt>/ only, outside public
+SPT JSON namespaces. Bind every page to its exact query and scope, reconcile
+qualified rows against original held bytes, pin ordinary directories and deny
+write/delete sharing during publication. Bounds are 4096 responses, 20MiB per
+body, 256MiB raw evidence and 10000/10MiB canonical rows; a reached capture cap
+stays PARTIAL. New MPN/resume modules and the sanitized resource belong only to
+the explicit worker allowlist; GUI dependencies and native SPT gates are intact.
+
 The pure current-only L11-A helper grants no native admission or dispatch.
 Require explicit null predecessor, four complete normalized endpoint inventories,
 current Facilities/Recapitulation, exact five-table headers with no footers and

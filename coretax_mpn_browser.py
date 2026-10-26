@@ -371,6 +371,11 @@ No partial DOM page is combined with another source. Raw pages stay private.
                     flat_dom = [row for rows in dom_pages for row in rows] if use_dom else None
                     from coretax_mpn import dom_numbers_match
                     use_dom = bool(use_dom and dom_numbers_match(flat_dom, detail_rows))
+                    if use_dom:
+                        identities = {}
+                        for rendered, detail in zip(flat_dom, detail_rows):
+                            identities.setdefault(tuple(rendered), set()).add(detail.get('RecordId'))
+                        use_dom = all(len(ids) == 1 for ids in identities.values())
                     for index, (detail, (item, source_index)) in enumerate(zip(detail_rows, detail_events)):
                         stop()
                         detail_id = detail.get('RecordId')

@@ -90,12 +90,23 @@ def decode_mpn(raw):
         elif isinstance(value, list):
             pending.extend((item, depth + 1) for item in value)
         elif isinstance(value, str) and not isinstance(value, MpnNumber):
-            if (len(value) > 32767 or re.search(r'(?:^|\s)(?:Bearer|Basic)\s+\S+', value, re.I)
+            if (len(value) > 32767 or _credential_text(value)
                     or re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]', value)):
                 raise MpnSafetyError('MPN JSON contains unsafe text')
     if not isinstance(body, dict):
         raise MpnUnsupported('MPN response root is unsupported')
     return body
+
+
+def _credential_text(value):
+    if re.search(r'\bauthorization\s*:\s*(?:Bearer|Basic)\s+\S+', value, re.I):
+        return True
+    match = re.fullmatch(r'\s*(Bearer|Basic)\s+(\S+)\s*', value, re.I)
+    if match is None:
+        return False
+    scheme, token = match.groups()
+    return (len(token) >= 16 if scheme.lower() == 'basic'
+            else len(token) >= 24 or re.search(r'[^A-Za-z]', token) is not None)
 
 
 def source_number(value):
