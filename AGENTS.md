@@ -108,7 +108,33 @@ commit to that literal list route before admitting actual grid request objects.
 Reset admission before each navigation; pre-commit/old-attempt requests and their
 late responses cannot satisfy a new marker. Require the selected request
 taxpayer, keep at most 128 pending owned grid requests, release references on
-response/failure/close, and reject overflow or another main-frame transition.
+response/failure/close, and reject overflow or another main-frame Document.
+Retain the first committed Document with a value-free identity handle. Router
+replaceState/pushState/fragment notifications are allowed only while the same
+actual Document and original authorized path/query remain current. A temporary
+route/query/taxpayer contradiction remains fatal after returning to the source.
+Veto subsequent main-frame document requests even while the first handle is
+being acquired. Keep bounded post-commit grid-request custody during acquisition
+but never authorize wait/View before identity is proved. Missing/unreadable
+identity stays refused; Stop surrounds identity probes. Dispose handles before
+retry and on failure/close. Do not read business values or relax old-request,
+fresh-marker, pending-budget, timeout-only retry or selected-record checks.
+An identity RPC may remain pending after navigation returns. Only the response
+wait may tolerate that pending state, inside its existing deadline and with
+Stop/route/request/filter/terminal-error checks intact. Identity expiry or late
+completion is a nonretryable ownership refusal; an absent response with identity
+already proved retains the timeout-only retry. Keep acquisition pending through
+validation and bind its returned handle to an attempt token. Close/reset must
+invalidate late callbacks without replacing a newer handle or pending flag.
+Recheck the token after validation RPCs before callback failure mutation, also
+for repeated notifications. Retire the acquisition deadline after timely
+validation; the existing independently bounded loading-overlay wait remains.
+Recheck retained identity, attempt, route and refusal state after the RPC, then
+reread filter errors. Check every reused record and metadata result, and check
+again after JSON preparation immediately before clicking the held inspected
+View element. Release that element without masking Stop or an original failure.
+The authorized View may navigate the same tab; subsequent detail checks retain
+their existing selected-record and lifecycle gates.
 Owned HTTP failures are terminal even for HTML; explicit unsuccessful JSON is
 terminal before successful-row parsing and cannot be cleared by later traffic.
 Keep only fixed failure state, with no new request material in diagnostics.

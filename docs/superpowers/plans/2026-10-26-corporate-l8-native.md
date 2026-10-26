@@ -78,3 +78,18 @@ evidence remain pending.
 - [ ] Refresh actual main and preceding other-session merges; read changed functions/tests/contracts and verify candidate interaction, especially PR115.
 - [ ] Require all applicable CI/CodeQL checks complete, no unresolved findings, exact API head/tested tree and expected-head merge lease. Verify the actual merge tree.
 - [ ] Publish sanitized final evidence and reconcile this checklist; keep native eligibility, capture, mapping, PDF, live and Excel acceptance separate. Do not describe the old benchmark as a current-build result.
+
+
+## Submitted-list guard integration
+
+The original L8 tree f88db6553dacaddbd5bc62cfc952855a16b43fb8 passed
+run40263858362 with6090 Windows and710 portable cases, independently read back
+with both exact packages. This integration retains every native product/test
+byte from317d2468 and incorporates the separately reviewed submitted-list repair
+2065e3de, including its50case addition. The combined collection should contain
+6140 Windows identities and710 portable overlap. Both PRs remain draft pending
+full combined GREEN/package custody and latest-main interaction checks.
+
+No live Coretax, financial-PDF, Induk-mapping or interactive Excel acceptance is
+claimed by this source merge. No transport, renderer, resource, dependency, CI,
+license or worker-allowlist change is introduced.
