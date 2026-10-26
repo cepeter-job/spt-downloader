@@ -40,6 +40,17 @@ passing, with zero errors/skips. Full collection, phase outcomes, JUnit identiti
 measurements, environment and archive SHA256/size checks reconcile. Only after
 this gate is the retained-Document repair implemented; final GREEN is pending.
 
+Fresh implementation review found two Important authorization gaps before merge:
+the final identity probe can pump a fatal event after the earlier flag/route
+read, and metadata/JSON preparation or cached-group reuse can occur after the
+last wait without a View-boundary custody check. The first candidate is not
+merge-ready. Add ten protocol cases with unchanged production code to reproduce
+the nine expected failures and a valid same-document control, while all prior
+5,868 cases remain passing. Require full 5,878-case RED reconciliation before
+repairing either gap. Recheck the retained handle/latch/route after every probe;
+check each record after metadata and inside View preparation, retaining the
+actual inspected control rather than allowing locator rebinding on replacement.
+
 ## Bounded repair after reproduced RED
 
 - [ ] Retain a value-free reference to the actual committed Document. Permit

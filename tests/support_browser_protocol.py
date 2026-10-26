@@ -63,6 +63,11 @@ class View:
     def count(self):
         return 1
 
+    def element_handle(self):
+        handle = InspectedView(self)
+        self.page.view_handles.append(handle)
+        return handle
+
     def click(self, **kwargs):
         # Retain the same event observers when the real driver uses a pointer.
         return self.evaluate('(e)=>e.click()')
@@ -72,6 +77,22 @@ class View:
             self.page.context.emit('page', self.page.unrelated_popup)
         self.page.emit('popup', self.page.popup)
         self.page.context.emit('page', self.page.popup)
+
+
+class InspectedView:
+    """An actual held node cannot rebind to a replacement Document's control."""
+    def __init__(self, locator):
+        self.locator = locator
+        self.token = locator.page.document_token
+        self.disposed = False
+
+    def click(self, **kwargs):
+        if self.disposed or self.token is not self.locator.page.document_token:
+            raise RuntimeError('SYNTHETIC INSPECTED VIEW DETACHED')
+        return self.locator.click(**kwargs)
+
+    def dispose(self):
+        self.disposed = True
 
 
 class Table:
@@ -122,6 +143,7 @@ class SourcePage(SignalSource):
         self.unrelated_popup = None
         self.document_token = object()
         self.document_handles = []
+        self.view_handles = []
 
     def evaluate_handle(self, script):
         assert script == '() => document'
