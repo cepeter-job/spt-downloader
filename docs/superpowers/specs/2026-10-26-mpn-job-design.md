@@ -208,6 +208,61 @@ and process-death recovery. Preserve unrelated existing SPT workbooks and JSON.
 Update worker progress and the explicit WORKER_FILES allowlist without importing
 Playwright/openpyxl into the GUI. Update AGENTS.md for the actual new boundaries.
 
+## Operator-provided resume template
+
+On 26 October the operator supplied `resume shouldbe.xlsx` from Downloads as
+the required presentation reference for generated `resume.xlsx`. This is a
+direct template choice, not an MPN data source. The file is 18,174 bytes with
+SHA-256 `5335be67adfd604ca02bb284ae9dcf98fe4830cc951a7a9b72040f7a6904b280`.
+Read-only ZIP/XML inspection passed archive CRC checks. The original remains
+outside Git and must not be edited or uploaded as a live-data CI fixture.
+
+The three visible sheets are Ringkasan, Daftar SPT and Audit. Preserve their
+names, order, approved static captions, fonts, borders, fills, column widths,
+merged regions, row dimensions, print configuration and the summary chart's
+presentation. This replaces the current generated administration layout; it
+does not change the separate SPT-form templates or capture eligibility.
+
+Observed layout anchors:
+
+| Sheet | Reference layout | Dynamic content |
+| --- | --- | --- |
+| Ringkasan | A1:H18; merges A1:H1 and B11:H11; chart anchored D13 | NPWP B2, year B3, taxpayer B4, year basis B5, overall status B6, SPT count B7, captured count B8, start time B9; type-count header A13:B13 and body from row 14; mapping status below that body |
+| Daftar SPT | A1:K8; merges A1:K1 and A2:K2; SPTIndex table A4:K8 | Regenerate the title, every source row from row 5 and all hyperlinks; resize the table to actual inventory |
+| Audit | A1:F11; first audit header at row 3; freeze A4 | Inventory/errors below row 3, followed by the dedicated mapping-count header and mapping audit; append required PDF/JSON/MPN evidence without dropping unresolved counts |
+
+The reference Ringkasan/Daftar SPT have no frozen pane. Keep Audit's frozen
+pane and its repeated print rows 1:3, with Daftar SPT repeated print rows 1:4.
+All sheets use the inspected landscape/paper settings. Expand print areas and
+relevant table/chart ranges when content grows. The reference contains no cell
+formulas; do not introduce formulas merely to implement existing run counts.
+
+The summary chart currently references A14:A17 / B14:B17, with B13 as the
+series title. Rebuild its data references and caches from actual verified
+counts; never preserve the example's cached counts or invent absent tax types.
+Grow/move the mapping-status row with the actual count table. Place the MPN
+status and relative workbook link directly below that row, reusing adjacent
+styles. Expand the print area accordingly without overlaying the chart.
+
+The source file contains real operational values and four example SPT rows.
+Use a sanitized presentation resource, not the unmodified supplied workbook.
+Remove source identity/year/timestamps/counts/statuses, data rows, old source and
+workbook hyperlinks, unused shared strings, chart caches, private document
+properties and opaque printerSettings material. Preserve safe page-setup
+attributes while removing the printer-specific binary/relationship. The clean
+resource may contain only reviewed static captions, styles, geometry and empty
+dynamic slots. Verify every retained OOXML part and relationship, not just
+visible cells, before committing it. Synthetic runner tests must verify that
+no source sample reappears in zero-, one- or many-record exports.
+
+Existing helpers currently read NPWP/year/basis/status from the old summary
+coordinates, including status B8. Centralize the new layout binding and update
+writer, verifier and publication readers together. Keep explicit support for
+the old layout only when its complete known header/proof contract matches;
+never guess scope from a convenient cell or silently rewrite old workbooks.
+Proof, NPWP-as-text, year and completeness checks must remain independent of
+appearance. Dynamic counts, mapping summaries and relative links remain truthful.
+
 ## Verification and remaining builder work
 
 Product imports, fixtures, pytest, builds, source/frozen self-tests and EXE
@@ -222,7 +277,9 @@ failed responses, default date reapplication, zero-valued headers, all pages,
 DOM success/whole-detail JSON fallback, caps and Stop. Integration tests must
 cover CLI/desktop entry points, no-SPT inventory, legacy/offline scope, required
 MPN completeness, workbook proof, existing-output consent, rollback/recovery
-and current SPT Excel/JSON/PDF preservation. Read back the exact CI artifacts.
+and current SPT Excel/JSON/PDF preservation. Add independent saved-workbook
+checks for the supplied resume layout, dynamic table/chart/print ranges, old
+layout compatibility and sample-data sanitization. Read back exact CI artifacts.
 
 The builder chooses internal schemas/helper names, bounded budgets, test split,
 safe parser reuse and concrete progress percentages. Before merging, review
