@@ -44,6 +44,18 @@ widget Tk dan GUI tidak mengimpor Playwright/openpyxl.
 
 ## 2. Ikuti satu pekerjaan ekspor
 
+Job live penuh menambahkan `require_mpn` sebelum capture, lalu `collect_mpn`
+setelah detail SPT dan sebelum browser ditutup. [Proyeksi dan custody MPN](../coretax_mpn.py)
+memegang aturan nilai negatif/tahun detail; [observer](../coretax_mpn_browser.py)
+mengikat request asli dan checkpoint; [UI Accounting](../coretax_mpn_ui.py)
+memegang sumber terpin, filter, dialog dan paginator baca yang diperiksa.
+[Workbook MPN](../coretax_mpn_export.py) memiliki proof/coverage sendiri dan
+bergabung ke publikasi tanpa masuk `workbook_groups`. [Layout resume](../coretax_resume_layout.py)
+mengikat template statis bersih dan reader scope lama/baru. Tes `test_mpn*` dan
+`test_resume_template.py` memakai data sintetis; tes browser dan recovery native
+dijalankan pada runner Windows. Desain dan batasnya ada pada
+[spesifikasi MPN](superpowers/specs/2026-10-26-mpn-job-design.md).
+
 1. **Siapkan sesi dan scope.** CLI memakai [`authenticate`](../coretax.py);
    desktop memakai [`authenticate_owned`](../spt_desktop/auth.py).
    [`validate_scope`](../coretax_exporter.py) memeriksa NPWP/tahun tanpa memperbaiki

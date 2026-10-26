@@ -115,7 +115,7 @@ def test_verification_remains_enabled_under_python_optimization(tmp_path):
     run = fixture_run()
     path = coretax.save_output(run, tmp_path)
     wb = load_workbook(path)
-    wb['Ringkasan']['B4'] = '0000000000000002'
+    wb['Ringkasan']['B2'] = '0000000000000002'
     wb.save(path)
     wb.close()
     script = (

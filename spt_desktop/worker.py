@@ -12,6 +12,8 @@ from coretax_exporter import validate_scope
 from coretax_json import validate_detail_source
 from coretax_browser import CaptureCancelled,TaxpayerSearchTimeout,collect_inventory,collect_details,_atomic_checkpoint
 from coretax_resume import persist_selection
+from coretax_mpn import require_mpn
+from coretax_mpn_browser import collect_mpn
 from .auth import AuthBlocked,authenticate_owned
 from .events import Progress
 from . import diagnostics
@@ -59,6 +61,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     on_progress=lambda item:progress.inventory(item['completed'],item['total'],item['scanned']),
                     check_cancel=check_cancel)
                 check_cancel()
+                require_mpn(run, detail_source)
                 if requests is None:
                     raise RuntimeError('A private selection channel is required before detail capture')
                 if run['records']:
@@ -86,6 +89,11 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                 run=collect_details(page,run,folder,on_progress=details_progress,check_cancel=check_cancel,
                                     **source_options)
                 if not run['records']:progress.details(0,0,0)
+                check_cancel()
+                progress.mpn(0, 0, 0)
+                run = collect_mpn(page, run, folder, detail_source=detail_source,
+                                  on_progress=progress.mpn, check_cancel=check_cancel)
+                progress.mpn(run['mpn']['headers'], run['mpn']['headers'], len(run['mpn']['rows']))
             finally:
                 context.close()
         # Browser dan driver sudah ditutup sebelum ekspor workbook dimulai;

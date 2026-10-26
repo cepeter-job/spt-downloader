@@ -33,9 +33,16 @@ class Progress:
 
     def details(self,done,total,verified):
         if not 0 <= verified <= done: raise ValueError('Invalid verified count')
-        self._send('details',20+70*self._fraction(done,total,empty=1),
+        self._send('details',20+55*self._fraction(done,total,empty=1),
                    f'SPT diproses {done}/{total}; terverifikasi {verified}.',
                    processed=done,total=total,verified=verified)
+
+    def mpn(self,done,total,qualified):
+        if type(qualified) is not int or qualified < 0:
+            raise ValueError('Invalid MPN qualified count')
+        self._send('mpn',75+15*self._fraction(done,total),
+                   f'MPN: induk dibaca {done}/{total}; pembayaran terpilih {qualified}.',
+                   processed=done,total=total,verified=qualified)
 
     def exported(self):
         self._send('export',95,'Workbook telah diekspor dan diverifikasi.')

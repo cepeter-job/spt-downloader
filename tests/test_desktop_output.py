@@ -26,8 +26,8 @@ def test_publish_preserves_raw_name_links_and_only_excel_files(tmp_path):
     assert not list(downloads.rglob('*.json'))
     wb = load_workbook(final/'resume.xlsx')
     try:
-        assert wb['Ringkasan']['B6'].value == run['taxpayer_name']
-        assert wb['Ringkasan']['B8'].value == 'PARTIAL'
+        assert wb['Ringkasan']['B4'].value == run['taxpayer_name']
+        assert wb['Ringkasan']['B6'].value == 'PARTIAL'
         assert (final / wb['Daftar SPT']['A5'].hyperlink.target).is_file()
     finally: wb.close()
     coretax.verify_outputs(run, final)

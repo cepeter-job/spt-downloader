@@ -17,6 +17,22 @@ def synthetic_browser(module,monkeypatch,state):
         state['browser_started'] = True
         return Context(), object()
     monkeypatch.setattr(module,'authenticate_owned',authenticate)
+    synthetic_mpn(module, monkeypatch, state)
+
+
+def synthetic_mpn(module, monkeypatch, state):
+    """Replace only the authorized portal component with an explicit empty MPN."""
+    def capture(page, run, folder, *, on_progress=None, check_cancel=None, **kwargs):
+        if check_cancel:
+            check_cancel()
+        assert not state.get('browser_closed') and not state.get('driver_closed')
+        state['mpn_captured'] = True
+        value = run['mpn']
+        value.update(status='COMPLETE', inventory_complete=True, details_complete=True)
+        if on_progress:
+            on_progress(0, 0, 0)
+        return run
+    monkeypatch.setattr(module, 'collect_mpn', capture, raising=False)
 
 
 def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on_choice=False, marker=None,

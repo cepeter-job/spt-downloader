@@ -24,6 +24,8 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.chart import BarChart, Reference
 from openpyxl.utils import get_column_letter
+from coretax_resume_layout import apply_resume_layout
+from coretax_mpn import validate_mpn
 
 NAVY, BLUE, PALE, GRAY = '17365D', '2463A0', 'EDF3FA', '64748B'
 INVALID_XML_TEXT = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
@@ -171,6 +173,7 @@ def _validate_financial_attachments(record, scope, seen_paths):
 def validate_export_run(run):
     """Periksa scope, flag kelengkapan, dan nilai sel sebelum menulis hasil."""
     validate_scope(run.get('npwp'), run.get('year'))
+    validate_mpn(run)
     basis = run.get('year_basis')
     if basis not in ('period', 'submission'):
         raise ValueError('Year basis must be period or submission.')
@@ -775,6 +778,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
         ws.print_area = f'A1:{get_column_letter(ws.max_column)}{ws.max_row}'
     index.print_title_rows = '1:4'
     audit.print_title_rows = '1:4'
+    apply_resume_layout(wb, run)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
@@ -790,6 +794,12 @@ def export_split_workbooks(run, folder, *, mapping_reports=None):
     targets = {}
     reports = []
     files = {'resume.xlsx': folder / 'resume.xlsx'}
+    from coretax_mpn_export import export_mpn_workbook
+    from coretax_mpn import mpn_filename
+    mpn_name = mpn_filename(run)
+    if mpn_name is not None:
+        files[mpn_name] = folder / mpn_name
+        export_mpn_workbook(run, files[mpn_name])
     ordinals = {id(record): index for index, record in enumerate(run['records'], 1)}
     for filename, records in groups.items():
         for record, titles in zip(records, workbook_sheet_titles(records)):

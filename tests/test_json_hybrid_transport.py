@@ -23,6 +23,8 @@ def worker_job():
 @pytest.mark.parametrize('mode', MODES)
 def test_worker_selected_scope_forwards_literal_mode_to_collector(tmp_path, monkeypatch, mode):
     worker = worker_job()
+    from support_selected_capture import synthetic_mpn
+    synthetic_mpn(worker, monkeypatch, {})
     from support_runs import fixture_run
     run = fixture_run()
     run.update(inventory_complete=True)

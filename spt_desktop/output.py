@@ -126,12 +126,22 @@ def _selected(run):
     validate_export_run(run)
     groups = workbook_groups(run)
     names = sorted(groups) + ['resume.xlsx']  # Publish the new index last.
+    mpn_name = coretax.mpn_filename(run)
+    if mpn_name is not None:
+        names.insert(-1, mpn_name)
     declared = run.get('output_files', names)
     if (not isinstance(declared, list) or any(not isinstance(name, str) for name in declared)
             or len(declared) != len(set(declared)) or set(declared) != set(names)):
         raise ValueError('Invalid workbook filename declaration')
     pdf_names = [item['relative_path'] for item in verified_declarations(run)]
-    return [*pdf_names, *verified_json_names(run), *names], _group_identities(groups)
+    identities = _group_identities(groups)
+    if mpn_name is not None:
+        identities[mpn_name] = _mpn_identity(run)
+    return [*pdf_names, *verified_json_names(run), *names], identities
+
+
+def _mpn_identity(run):
+    return ('mpn', (('MPN', str(run['year']), ''),))
 
 
 def _group_identities(groups, *, legacy=False):
@@ -153,6 +163,13 @@ def _workbook_scope(run, path, relative):
         with _open_workbook(path) as stream:
             workbook = coretax.load_workbook(stream, data_only=False)
             try:
+                mpn_proof = coretax.read_mpn_proof(workbook)
+                if mpn_proof is not None:
+                    if (relative != f"MPN_{run['year']}.xlsx"
+                            or mpn_proof['scope'] != [run['npwp'], run['year'], run['year_basis']]):
+                        raise ValueError('Existing MPN scope/NPWP cannot authorize overwrite')
+                    identity = ('MPN', str(run['year']), '')
+                    return ({relative: _mpn_identity(run)}, [(relative, identity, "'MPN'!A1")], False, [])
                 proof = read_workbook_proof(workbook)
                 targets = None
                 locations = []
@@ -173,17 +190,13 @@ def _workbook_scope(run, path, relative):
                         locations.append(f"'{title}'!A1")
                         offset += len(record_forms(record))
                 else:
-                    summary = workbook['Ringkasan']
-                    basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-                    if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
-                            or summary['B5'].value != run['year'] or summary['B7'].value != basis
-                            or summary['B8'].value not in ('COMPLETE', 'PARTIAL')
-                            or 'Audit' not in workbook.sheetnames):
+                    scope = coretax.summary_scope(workbook)
+                    if any(scope[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
                         raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
                     rows = list(workbook['Daftar SPT'].iter_rows(min_row=5, min_col=1, max_col=5))
                     records = [{'meta': {'Jenis Pajak': row[1].value, 'Masa Pajak': row[3].value,
                                          'Model SPT': row[4].value}} for row in rows]
-                    if summary['B9'].value != len(records):
+                    if scope['record_count'] != len(records):
                         raise ValueError('Existing workbook scope count cannot be verified')
                     source = {'records': records}
                     links = [row[0].hyperlink for row in rows]
@@ -225,7 +238,13 @@ def _workbook_scope(run, path, relative):
                         references.append((filename, identity, location))
                         if proof is not None and 'record_id' in record:
                             record_identities.append((record['record_id'], identity))
-                    return _group_identities(groups, legacy=legacy), references, nested_pdfs, record_identities
+                    identities = _group_identities(groups, legacy=legacy)
+                    if relative == 'resume.xlsx':
+                        mpn = coretax.read_resume_mpn(workbook)
+                        if mpn is not None:
+                            identities[mpn['filename']] = _mpn_identity(run)
+                            references.append((mpn['filename'], ('MPN', str(run['year']), ''), "'MPN'!A1"))
+                    return identities, references, nested_pdfs, record_identities
                 raise ValueError('Unknown workbook filename or literal period/model scope')
             finally:
                 workbook.close()
@@ -272,7 +291,9 @@ def _approved_existing_pdfs(run, target, actual, corporate_files, *, validate_al
                             old[relative] = dict(attachment)
                             record_ids[relative] = record.get('record_id')
                 else:
-                    for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+                    scope = coretax.summary_scope(workbook)
+                    for row in workbook['Audit'].iter_rows(
+                            min_row=4 if scope['layout'] == 'operator-v1' else 5, max_col=6):
                         relative = row[5].value
                         if relative not in selected and not (validate_all and row[2].value == 'COMPLETE'):
                             continue
@@ -724,6 +745,14 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
 @diagnostics.traced('publish')
 def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                       overwrite=False, expected_outputs=None):
+    # Accounting JSON stays private, held across the workbook-only publication.
+    with coretax.mpn_custody(run, source, check_cancel):
+        return _publish_workbooks(run, source, downloads, job_id, check_cancel,
+                                  overwrite=overwrite, expected_outputs=expected_outputs)
+
+
+def _publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
+                       overwrite=False, expected_outputs=None):
     """Publish a new export, or replace only selected files with explicit consent."""
     if not isinstance(job_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', job_id):
         raise ValueError('Invalid job identifier')

@@ -63,6 +63,9 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
     from contextlib import nullcontext
     from types import SimpleNamespace
     from spt_desktop import worker
+    from support_runs import synthetic_submitted_sources
+    from support_selected_capture import synthetic_mpn
+    synthetic_mpn(worker, monkeypatch, {})
 
     reads = 0
 
@@ -78,7 +81,8 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
     run = {'records': [Record(record_id=f'synthetic-{ordinal}',meta={},capture_complete=value)
                        for ordinal,value in enumerate(outcomes)],
            'npwp':'0000000000000001','year':2025,'year_basis':'period',
-           'taxpayer_name':'SYNTHETIC WP','complete':False}
+           'taxpayer_name':'SYNTHETIC WP','complete':False,
+           'sources':synthetic_submitted_sources()}
     emitted = []
     monkeypatch.setattr(worker, 'playwright_factory', lambda: nullcontext(object()))
     context = SimpleNamespace(close=lambda: None)

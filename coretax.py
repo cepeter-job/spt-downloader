@@ -24,6 +24,11 @@ from coretax_exporter import (validate_scope, validate_export_run, export_split_
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
+from coretax_resume_layout import summary_scope
+from coretax_mpn import mpn_filename, mpn_custody, require_mpn
+from coretax_mpn_browser import collect_mpn
+from coretax_mpn_export import (read_mpn_proof, verify_mpn_workbook,
+                                read_resume_mpn, resume_mpn_declaration)
 
 BASE = Path(__file__).resolve().parent
 
@@ -37,14 +42,13 @@ def verify_workbook(path, run, *, include_details=True, include_administration=T
             if proof is None or proof != workbook_proof(run):
                 raise ValueError('Workbook scope/PDF proof differs from selected records')
             return set(wb.sheetnames)
+        scope = summary_scope(wb)
         checks = (
-            (wb['Ringkasan']['B4'].value == run['npwp'], 'NPWP mismatch in output'),
-            (wb['Ringkasan']['B4'].data_type == 's', 'NPWP was not preserved as text'),
-            (wb['Ringkasan']['B5'].value == run['year'], 'Tax year mismatch in output'),
-            (wb['Ringkasan']['B7'].value == ('Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'),
-             'Year basis mismatch in output'),
-            (wb['Ringkasan']['B8'].value == ('COMPLETE' if run['complete'] else 'PARTIAL'),
-             'Incorrect completion status'),
+            (scope['npwp'] == run['npwp'], 'NPWP mismatch in output'),
+            (scope['year'] == run['year'], 'Tax year mismatch in output'),
+            (scope['year_basis'] == run['year_basis'], 'Year basis mismatch in output'),
+            (scope['complete'] == run['complete'], 'Incorrect completion status'),
+            (scope['record_count'] == len(run['records']), 'Excel scope count mismatch'),
             (wb['Daftar SPT'].max_row == 4 + len(run['records']), 'Excel index count mismatch'),
             (len(wb.sheetnames) == (3 + sum(len(record_sheet_titles(i, r)) for i, r in enumerate(run['records'], 1)) if include_details else 3),
              'Incorrect worksheet count'),
@@ -99,11 +103,8 @@ def _legacy_resume_proof(workbook, run):
     """Read the old administrative layout without inventing form or PDF metadata."""
     if not {'Ringkasan', 'Daftar SPT', 'Audit'}.issubset(workbook.sheetnames):
         raise ValueError('Retained workbook has no supported scope proof')
-    summary = workbook['Ringkasan']
-    basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-    if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
-            or summary['B5'].value != run['year'] or summary['B7'].value != basis
-            or summary['B8'].value not in ('COMPLETE', 'PARTIAL')):
+    scope = summary_scope(workbook)
+    if any(scope[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
         raise ValueError('Retained workbook scope/NPWP cannot authorize global index')
     rows = list(workbook['Daftar SPT'].iter_rows(min_row=5, max_col=11))
     forms = [s for s in workbook.sheetnames if s not in {'Ringkasan', 'Daftar SPT', 'Audit'}]
@@ -115,7 +116,7 @@ def _legacy_resume_proof(workbook, run):
             raise ValueError('Retained legacy first-form link or capture status cannot be verified')
         starts.append(locations[link.target])
     if (not starts or starts[0] != 0 or starts != sorted(set(starts))
-            or summary['B9'].value != len(rows)):
+            or scope['record_count'] != len(rows)):
         raise ValueError('Retained legacy index count/order cannot be verified')
     records = []
     for row, first, end in zip(rows, starts, starts[1:] + [len(forms)]):
@@ -125,12 +126,14 @@ def _legacy_resume_proof(workbook, run):
                         'source_status': row[5].value or '',
                         'sections': [{'name': name} for name in forms[first:end]]})
     return {'npwp': run['npwp'], 'year': run['year'], 'year_basis': run['year_basis'],
-            'records': records, 'complete': summary['B8'].value == 'COMPLETE'}
+            'records': records, 'complete': scope['complete']}
 
 
 def folder_resume_run(run, folder):
     """Extend the index from verified retained form proofs, never inferred records."""
     selected = set(workbook_groups(run)) | {'resume.xlsx'}
+    if mpn_filename(run) is not None:
+        selected.add(mpn_filename(run))
     retained = sorted(workbook_files(folder) - selected)
     if not retained:
         return run
@@ -140,6 +143,15 @@ def folder_resume_run(run, folder):
         with output_path(folder, name).open('rb') as stream:
             wb = load_workbook(stream, data_only=False)
             try:
+                mpn_proof = read_mpn_proof(wb)
+                if mpn_proof is not None:
+                    if (mpn_proof['scope'] != [run['npwp'], run['year'], run['year_basis']]
+                            or name != f"MPN_{run['year']}.xlsx" or 'retained_mpn' in combined):
+                        raise ValueError('Retained MPN scope/filename cannot authorize global index')
+                    combined['retained_mpn'] = {'filename': name, 'status': mpn_proof['status'],
+                                                'scope': mpn_proof['scope']}
+                    combined['complete'] = combined['complete'] and mpn_proof['status'] == 'COMPLETE'
+                    continue
                 proof = read_workbook_proof(wb)
                 if proof is None:
                     proof = _legacy_resume_proof(wb, run)
@@ -194,6 +206,9 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     grouped = workbook_groups(run)
     selected_files = set(grouped)
     expected = {'resume.xlsx', *grouped}
+    mpn_name = mpn_filename(run)
+    if mpn_name is not None:
+        expected.add(mpn_name)
     declared = run.get('output_files', list(expected))
     if (not isinstance(declared, list) or
             any(not isinstance(n, str) or not n.endswith('.xlsx') for n in declared)):
@@ -213,6 +228,8 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         filename: verify_workbook(folder / filename, {**run, 'records': records}, include_administration=False)
         for filename, records in grouped.items()
     }
+    if mpn_name is not None:
+        verify_mpn_workbook(run, output_path(folder, mpn_name))
     grouped = workbook_groups(index_run)
     for filename in grouped.keys() - sheet_names.keys():
         wb = load_workbook(output_path(folder, filename), read_only=True)
@@ -234,6 +251,8 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
     # Mode read-only openpyxl tidak menyediakan hyperlink; baca indeks secara normal.
     resume = load_workbook(folder / 'resume.xlsx')
     try:
+        if read_resume_mpn(resume) != resume_mpn_declaration(index_run):
+            raise ValueError('MPN resume declaration differs from its physical workbook')
         for ordinal, record in enumerate(index_run['records'], 1):
             link = resume['Daftar SPT'].cell(ordinal + 4, 1).hyperlink
             expected_file = next(name for name, records in grouped.items() if any(r is record for r in records))
@@ -269,6 +288,8 @@ def _check_output_scope(run, folder, staging=None):
                 any(previous.get(key) != run.get(key) for key in scope_keys)):
             raise FileExistsError('Output scope differs from existing run.json; use a new output folder')
     expected = {'resume.xlsx', *workbook_groups(run)}
+    if mpn_filename(run) is not None:
+        expected.add(mpn_filename(run))
     folded = {name.casefold(): name for name in expected}
     for relative in workbook_files(folder, exclude=staging):
         path = output_path(folder, relative)
@@ -285,15 +306,17 @@ def _check_output_scope(run, folder, staging=None):
         try:
             workbook = load_workbook(path, read_only=True)
             try:
-                proof = read_workbook_proof(workbook)
-                if proof is not None:
+                mpn_proof = read_mpn_proof(workbook)
+                proof = None if mpn_proof is not None else read_workbook_proof(workbook)
+                if mpn_proof is not None:
+                    matches = (relative == f"MPN_{run['year']}.xlsx"
+                               and mpn_proof['scope'] == [run['npwp'], run['year'], run['year_basis']])
+                elif proof is not None:
                     matches = (all(proof[key] == run[key] for key in ('npwp', 'year', 'year_basis'))
                                and set(workbook_groups(proof)) == {relative})
                 else:
-                    summary = workbook['Ringkasan']
-                    expected_basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-                    matches = (summary['B4'].value == run['npwp'] and summary['B4'].data_type == 's'
-                               and summary['B5'].value == run['year'] and summary['B7'].value == expected_basis)
+                    scope = summary_scope(workbook)
+                    matches = all(scope[key] == run[key] for key in ('npwp', 'year', 'year_basis'))
             finally:
                 workbook.close()
         except Exception as error:
@@ -352,7 +375,7 @@ def save_output(run, folder, *, json_source=None):
         current = {**run, 'output_attachments': attachment_declarations(run),
                    'output_json': json_output_names(run)}
         evidence_source = Path(json_source) if json_source is not None else folder
-        with pdf_custody(current, folder) as (attachments, streams):
+        with mpn_custody(current, evidence_source), pdf_custody(current, folder) as (attachments, streams):
             # Unduhan sudah menempatkan PDF sumber privat. Tahan stream terverifikasi
             # selama publikasi workbook/checkpoint; ekspor ulang Excel tidak mengganti PDF.
             copy_held_pdfs(attachments, streams, staging)
@@ -509,12 +532,14 @@ def _main(argv=None):
             if args.inventory_only:
                 run['errors'].append({'object': 'Scope', 'message': 'Inventory-only run. Return-detail content not captured.'})
             else:
+                require_mpn(run, args.detail_source)
                 def progress(current_run, ordinal):
                     if ordinal % 5 == 0:
                         current_run['complete'] = False
                         save_output(current_run, folder)
                 collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit,
                                 on_progress=progress, detail_source=args.detail_source)
+                collect_mpn(work_page, run, folder, max_pages=args.max_pages, detail_source=args.detail_source)
             run['finished_at'] = datetime.now().astimezone().isoformat()
             run['duration_seconds'] = round(time.monotonic() - start, 2)
             output_path = save_output(run, folder)

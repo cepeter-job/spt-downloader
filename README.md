@@ -73,9 +73,29 @@ Setiap detail dibuka hanya melalui kontrol **View** yang dikenali. URL detail ha
 
 ## Susunan workbook
 
+Setiap job live penuh CLI/desktop mengambil MPN setelah detail SPT, termasuk saat
+inventaris SPT Dilaporkan yang sah kosong. Tahun mengikuti **masa/tahun pajak
+detail**, sehingga pembayaran tahun berikutnya tetap dapat masuk. Semua induk
+non-cancelled diperiksa, termasuk nilai nol dan masa induk berbeda. Mode DOM
+memakai tampilan detail hanya jika identitas dan seluruh nilai presisinya cocok;
+satu detail induk memakai JSON asli seluruhnya bila DOM tidak lengkap atau ambigu.
+Mode JSON memakai respons XHR asli `list`/`listdetail` dari navigasi baca UI.
+
+Audit MPN mencatat jumlah induk/detail, pembayaran terpilih, sumber DOM/JSON,
+detail dikecualikan, unresolved, duplikat dan status komponen. Batas atau kegagalan
+MPN membuat keseluruhan job **PARTIAL** meskipun detail SPT berhasil. `--inventory-only`
+dan ekspor offline capture lama tidak menambahkan cakupan MPN. Checkpoint dan
+respons Accounting asli tetap privat di folder job; JSON MPN mentah tidak disalin
+ke folder hasil. File MPN yang sudah ada masuk daftar persetujuan penggantian.
+
+Resume baru mengikuti template operator: Ringkasan, Daftar SPT dan Audit, dengan
+label Total Pilihan SPT, jumlah capture COMPLETE, grafik dinamis dan tautan MPN.
+Layout administratif lama tetap dapat diverifikasi saat hasil lama dipertahankan.
+
 | Berkas | Isi |
 | --- | --- |
 | `resume.xlsx` | Ringkasan proses saat ini, Daftar SPT, dan Audit; indeks menaut ke workbook serta lembar detail yang tepat. Pada desktop, ringkasan menyatakan pilihan pengguna. |
+| `MPN_<tahun>.xlsx` | Pembayaran Accounting dengan `Amount` detail negatif dan masa/tahun pajak detail sesuai tahun job; sheet MPN dan Audit terpisah dari hitungan SPT. |
 | `SPT_Badan_<masa-tahun>_<model>.xlsx` | Normal, Pembetulan 1, Pembetulan 2, dan seterusnya memiliki file terpisah; setiap file berisi seluruh form teramati milik model itu. |
 | `SPT Masa 21/SPT_21_<masa>_<model>.xlsx` | Satu file per masa literal dan model PPh Pasal 21/26, satu sheet per form/tab teramati. |
 | `SPT Masa Unifikasi/SPT_Unifikasi_<masa>_<model>.xlsx` | Satu file per masa literal dan model PPh Unifikasi, satu sheet per form/tab teramati. |

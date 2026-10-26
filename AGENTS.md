@@ -59,6 +59,48 @@ The separate L11-C semantic branch requires loaded corporate/main/vendor pins, t
 
 ## Output contract
 
+Resume administration uses the approved sanitized `resources/resume_format.xlsx`
+presentation: Ringkasan identity/year/basis/status/counts are B2/B3/B5/B6/B7:B8,
+type counts start at row14 and move the mapping summary below actual types;
+Daftar SPT keeps header row4 with dynamic SPTIndex rows and original links;
+Audit has inventory header row3 and freeze A4, followed by dedicated mapping
+and PDF headers. Rebuild chart ranges from actual counts at D13; never retain
+reference data, cached counts, links, private document properties or opaque
+printer settings. Shared `summary_scope` admits only the complete operator or
+legacy label/header maps. Keep old workbooks readable without rewriting them;
+new coordinates must be used consistently by scope verification/publication.
+These presentation changes do not alter form templates or capture completion.
+
+Full live CLI/desktop jobs additionally require a separate owned Accounting MPN
+capture after SPT details and before browser cleanup, including valid empty SPT
+inventories. Inventory-only and offline legacy exports do not acquire MPN scope.
+The inspected same-taxpayer list/listdetail UI reads remain separate from SPT
+native admission. Enumerate the unfiltered non-cancelled parents, including zero
+amounts and other parent years, then qualify strictly negative original detail
+Amounts by the detail's literal tax period/year. Never substitute payment date
+or parent year. Same-year ranges need the exact captured PERIOD meaning;
+cross-year/malformed/missing meanings remain unresolved. Only original same-
+attempt id-ID reference bytes with unique codes and explicit null ValidTo supply
+labels; no cache clock/version selection or extra catalog fetch is admitted.
+Keep loaded Accounting main/vendor pins, committed request-object ownership,
+owned pagination, Stop, terminal failures, source/privacy budgets and final drain.
+DOM needs complete ordered visible binding and exact decimal validation of all
+three amounts/rate; otherwise replace the whole detail with verified JSON.
+
+MPN_<year>.xlsx has its own physical scope/ordered-row proof and Audit; it never
+enters SPT workbook_groups, tax-type counts or model grouping. Keep original
+numeric lexemes in proof and unsafe Excel numbers literal with a presentation
+audit. Required MPN partial/failure keeps the full job PARTIAL. Publish the
+verified workbook and resume link/status under existing consent, collision,
+rollback and process-death recovery; preserve unselected existing workbooks.
+Original Accounting JSON stays under private mpn/<attempt>/ only, outside public
+SPT JSON namespaces. Bind every page to its exact query and scope, reconcile
+qualified rows against original held bytes, pin ordinary directories and deny
+write/delete sharing during publication. Bounds are 4096 responses, 20MiB per
+body, 256MiB raw evidence and 10000/10MiB canonical rows; a reached capture cap
+stays PARTIAL. New MPN/resume modules and the sanitized resource belong only to
+the explicit worker allowlist; GUI dependencies and native SPT gates are intact.
+
 The pure current-only L11-A helper grants no native admission or dispatch.
 Require explicit null predecessor, four complete normalized endpoint inventories,
 current Facilities/Recapitulation, exact five-table headers with no footers and
@@ -206,6 +248,19 @@ until informative source evidence is available; preserve DER availability gates.
 Recovery fixtures use a two-second synthetic budget with a slow healthy read,
 failed middle panel, later-panel recovery and Stop propagation. Production's
 shared 30-second readiness deadline and diagnostic budget are unchanged.
+
+MPN published proof also retains qualified-row original response hashes and
+page-local indices, including duplicate occurrences, without private paths or
+raw bodies. Reconcile those bindings against held original pages. COMPLETE
+requires exact occurrence/coverage reconciliation; PARTIAL may retain only a
+proved processed prefix when a capture budget stops processing. Audit reports
+requested mode, qualified DOM/JSON rows, excluded/unresolved/duplicate detail
+counts separately, plus held details not yet processed at a partial budget.
+Preserve absent legacy counters as blank rather than guessing.
+Accounting's route owner may mount after DOMContentLoaded: wait inside one
+45-second Stop-aware deadline before requiring uniqueness/visibility. Unsupported
+detail DOM shape/readiness uses the complete owned JSON detail inventory; dialog,
+paginator, source and identity contradictions retain their independent gates.
 
 ## Verification
 

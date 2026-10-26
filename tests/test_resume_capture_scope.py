@@ -20,7 +20,7 @@ def test_resume_indexes_retained_workbooks_after_selected_refresh(tmp_path):
     assert all((final/name).read_bytes() == data for name,data in kept.items())
     wb = load_workbook(final/'resume.xlsx')
     try:
-        assert wb['Ringkasan']['B9'].value == len(run['records'])
+        assert wb['Ringkasan']['B7'].value == len(run['records'])
         assert wb['Daftar SPT'].max_row == 4 + len(run['records'])
         links = [wb['Daftar SPT'].cell(r,1).hyperlink for r in range(5,wb['Daftar SPT'].max_row+1)]
         assert {link.target for link in links} == {p.relative_to(final).as_posix() for p in final.rglob('*.xlsx') if p.name != 'resume.xlsx'}

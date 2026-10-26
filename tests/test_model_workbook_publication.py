@@ -118,7 +118,7 @@ def test_old_layout_migration_does_not_ignore_wrong_taxpayer_scope(tmp_path, for
     path = old / 'resume.xlsx'
     workbook = load_workbook(path)
     try:
-        workbook['Ringkasan']['B4'] = '0000000000000002'
+        workbook['Ringkasan']['B2'] = '0000000000000002'
         workbook.save(path)
     finally:
         workbook.close()

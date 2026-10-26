@@ -261,7 +261,7 @@ def test_resume_auto_overwrite_keeps_snapshot_race_guards(tmp_path):
     snapshot = output.existing_outputs(run, tmp_path / 'Downloads')
     resume_path = final / 'resume.xlsx'
     workbook = load_workbook(resume_path)
-    workbook['Ringkasan']['B3'] = 'SYNTHETIC CONCURRENT CHANGE'
+    workbook['Ringkasan']['B4'] = 'SYNTHETIC CONCURRENT CHANGE'
     workbook.save(resume_path)
     workbook.close()
     concurrent = resume_path.read_bytes()
@@ -276,7 +276,7 @@ def test_resume_auto_overwrite_refuses_foreign_scope_without_new_period_writes(t
     run, source = second_period_source(tmp_path)
     resume_path = final / 'resume.xlsx'
     workbook = load_workbook(resume_path)
-    workbook['Ringkasan']['B4'] = '0000000000000002'
+    workbook['Ringkasan']['B2'] = '0000000000000002'
     workbook.save(resume_path)
     workbook.close()
     foreign = resume_path.read_bytes()
