@@ -31,12 +31,12 @@
 
 **Interfaces:** consume the existing bound response and six-column reference result; preserve `_inventory_metadata`'s signature and adapter result. No new worker module.
 
-- [ ] Write synthetic real-browser tests for the four known pairs, twelve months, literal/caption periods, mixed pagination, identity/caption contradictions, unknown/null/range fallback, control exclusion and Stop.
-- [ ] Commit tests/design/plan only; open draft PR and inspect runner RED. New supported Masa cases must fail for missing admission, not fixture or collection errors.
-- [ ] Replace the corporate-only admission with reviewed pair/period validation. Scan all reference rows for contradictions before returning an unsupported result; preserve all existing safety, custody and rendering behavior.
-- [ ] Remove controls from reference clones without inspecting their values; refuse body spans/layout ambiguity.
-- [ ] Record the exact supported boundary in `AGENTS.md` and commit implementation.
-- [ ] Inspect runner GREEN for the new suite, complete Windows/portable regression suites and unchanged packaging gates.
+- [x] Write synthetic real-browser tests for the four known pairs, twelve months, literal/caption periods, mixed pagination, identity/caption contradictions, unknown/null/range fallback, control exclusion and Stop.
+- [x] Commit tests/design/plan only; open draft PR and inspect runner RED. New supported Masa cases must fail for missing admission, not fixture or collection errors.
+- [x] Replace the corporate-only admission with reviewed pair/period validation. Scan all reference rows for contradictions before returning an unsupported result; preserve all existing safety, custody and rendering behavior.
+- [x] Remove controls from reference clones without inspecting their values; refuse body spans/layout ambiguity.
+- [x] Record the exact supported boundary in `AGENTS.md` and commit implementation.
+- [x] Inspect runner GREEN for the new suite, complete Windows/portable regression suites and unchanged packaging gates.
 
 ### Task 2: Review, integration and delivery
 
@@ -44,7 +44,11 @@
 
 **Interfaces:** consumes exact head/tree/run/artifact evidence from Task 1; produces a reviewed PR and verified latest-main package.
 
-- [ ] Request one fresh whole-branch review; address material findings with tests.
+- [x] Request one fresh whole-branch review; address material findings with tests.
 - [ ] Review the preceding other-session merge and latest main, then satisfy exact latest-base CI/ruleset gates and merge under existing authorization.
 - [ ] Read back the exact main build/package and deliver the complete versioned package to Downloads, verifying hashes and identity without local execution.
 - [ ] Report the job audit, terminal ERROR distinction, implemented listing scope, remaining unsupported detail branches and runner-only acceptance limits.
+
+Verification through the latest-base PR build is recorded in
+[the evidence report](../reports/2026-10-26-masa-listing-json.md).
+Merge and latest-main delivery receipts remain pending at this documentation snapshot.
