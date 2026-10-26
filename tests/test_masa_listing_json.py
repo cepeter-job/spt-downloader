@@ -51,10 +51,20 @@ def adapt_current_grid(browser, folder, rows, displays, *, control=False, span=F
     with browser.new_context(timezone_id='Asia/Jakarta') as owned:
         page = owned.new_page()
         page.set_content('<table><thead><tr>' + headers + '</tr></thead><tbody>' + body + '</tbody></table>')
-        return driver._inventory_metadata(page, page.locator('table'), response,
-                                          {'url': SOURCE_URL, 'label': 'SPT Dilaporkan'},
-                                          TAXPAYER, ctx['npwp'], 2024, 'period', 1,
-                                          folder, 1, check_cancel)
+        if control:
+            page.evaluate('''() => {
+              window.fixtureControlReads=0;
+              for(const input of document.querySelectorAll('input'))
+                for(const key of ['value','checked'])Object.defineProperty(input,key,{
+                  get(){window.fixtureControlReads++;throw Error('Synthetic forbidden control read');}
+                });
+            }''')
+        result = driver._inventory_metadata(page, page.locator('table'), response,
+                                             {'url': SOURCE_URL, 'label': 'SPT Dilaporkan'},
+                                             TAXPAYER, ctx['npwp'], 2024, 'period', 1,
+                                             folder, 1, check_cancel)
+        assert page.evaluate('() => window.fixtureControlReads || 0') == 0
+        return result
 
 
 @pytest.mark.parametrize('family', FAMILIES, ids=['ppn', 'pph21', 'unifikasi'])
@@ -172,11 +182,11 @@ def test_reference_caption_reader_excludes_control_values_and_checked_state(brow
 
 
 def test_stop_surrounds_supported_reference_binding(browser, tmp_path):
-    from coretax_browser import CaptureCancelled
+    import coretax_browser as driver
 
     row, meta = sample()
     def stop():
-        raise CaptureCancelled('Synthetic Stop')
-    with pytest.raises(CaptureCancelled):
+        raise driver.CaptureCancelled('Synthetic Stop')
+    with pytest.raises(driver.CaptureCancelled):
         adapt_current_grid(browser, tmp_path, [row], [meta], check_cancel=stop)
     assert not (tmp_path / 'listing-responses').exists()

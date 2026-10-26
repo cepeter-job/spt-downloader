@@ -996,7 +996,11 @@ def _restore_list_response(page, observer, source_url, taxpayer_id, check_cancel
 
 
 REFERENCE_ROWS_JS = r'''(table) => {
- const value=CELL;
+ const value=cell=>{
+  const clone=cell.cloneNode(true);
+  clone.querySelectorAll('.p-column-title,button,script,style,.p-hidden-accessible,input,textarea,select').forEach(e=>e.remove());
+  return (clone.textContent||'').replace(/\s+/g,' ').trim();
+ };
  const headerRows=table.tHead ? [...table.tHead.rows].filter(r=>![...r.cells].some(c=>c.querySelector('p-columnfilter,input,select'))) : [];
  if(headerRows.length!==1 || [...headerRows[0].cells].some(c=>c.colSpan!==1||c.rowSpan!==1))return {supported:false};
  const headers=[...headerRows[0].cells].map(value);
@@ -1004,8 +1008,19 @@ REFERENCE_ROWS_JS = r'''(table) => {
  if(wanted.some(h=>headers.filter(v=>v===h).length!==1))return {supported:false};
  const rows=[...table.tBodies].flatMap(b=>[...b.rows]).filter(r=>!r.classList.contains('p-datatable-emptymessage'))
  .filter(r=>!(r.cells.length===1&&r.cells[0].colSpan>1&&/tidak ada data|no records|no data/i.test(r.textContent)));
+ if(rows.some(r=>r.cells.length!==headers.length || [...r.cells].some(c=>c.colSpan!==1||c.rowSpan!==1||c.querySelector('table'))))return {supported:false};
  return {supported:true,rows:rows.map(row=>Object.fromEntries(wanted.map(h=>[h,value(row.cells[headers.indexOf(h)])])))};
-}'''.replace('CELL', CELL_JS)
+}'''
+
+
+_INVENTORY_FAMILIES = {
+    'ICT_RCIT': ('ICT_RCITR', 'PPh Badan', 'SPT PPh Badan Rupiah'),
+    'VAT_VAT': ('VAT_VATR', 'PPN', 'SPT Masa PPN'),
+    'ICT_WIT': ('ICT_WITR', 'PPh Pasal 21/26', 'SPT Masa PPh Pasal 21/26'),
+    'ICT_WT': ('ICT_WTR', 'PPh Unifikasi', 'SPT Masa PPh Unifikasi'),
+}
+_INVENTORY_MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember')
 
 
 def _inventory_context(response, source, taxpayer_id, npwp, year, basis, page_number):
@@ -1041,39 +1056,61 @@ def _inventory_metadata(page, table, response, source, taxpayer_id, npwp, year, 
     _check_cancel(check_cancel)
     if not response['rows']:
         return probe
-    # Only annual corporate codes have an observed native metadata contract.
-    if any(row.get('TaxTypeCode') != 'ICT_RCIT' or row.get('ReturnSheetTypeCode') != 'ICT_RCITR'
-           for row in response['rows']):
-        return {'eligible': False, 'reason': 'unobserved_tax_metadata_schema', 'rows': []}
     references = table.evaluate(REFERENCE_ROWS_JS)
     if not references.get('supported'):
         return {'eligible': False, 'reason': 'unsupported_reference_layout', 'rows': []}
     if len(references['rows']) != len(response['rows']):
         raise JsonSafetyError('Reference DOM rows contradict source count')
     labels = {field: {} for field in LOOKUP_HEADERS}
-    verified_labels = {'TaxTypeCode': ('ICT_RCIT', 'PPh Badan'),
-                       'ReturnSheetTypeCode': ('ICT_RCITR', 'SPT PPh Badan Rupiah'),
-                       'ReturnSheetStatusCode': ('SUBMITTED', 'Dilaporkan'),
-                       'ChannelCode': ('TAXPAYER_PORTAL', 'Portal Wajib Pajak')}
+    verified_labels = {
+        'TaxTypeCode': {code: family[1] for code, family in _INVENTORY_FAMILIES.items()},
+        'ReturnSheetTypeCode': {family[0]: family[2] for family in _INVENTORY_FAMILIES.values()},
+        'ReturnSheetStatusCode': {'SUBMITTED': 'Dilaporkan'},
+        'ChannelCode': {'TAXPAYER_PORTAL': 'Portal Wajib Pajak'},
+    }
+    unsupported = None
     for api_row, captions in zip(response['rows'], references['rows']):
         _check_cancel(check_cancel)
         if 'ReturnSheetModel' in api_row and captions['Model SPT'] != api_row['ReturnSheetModel']:
             raise JsonSafetyError('Reference row order/model differs from source identity')
-        period = api_row.get('TaxPeriodCode')
-        if not isinstance(period, str) or not re.fullmatch(r'0112\d{4}', period):
-            return {'eligible': False, 'reason': 'unobserved_period_schema', 'rows': []}
-        if captions['Masa Pajak'] != 'Januari - Desember ' + period[-4:]:
-            raise JsonSafetyError('Period reference caption contradicts source code')
+        tax_code = api_row.get('TaxTypeCode')
+        family = _INVENTORY_FAMILIES.get(tax_code) if isinstance(tax_code, str) else None
+        if family is None:
+            unsupported = unsupported or 'unobserved_tax_metadata_schema'
+        else:
+            form_code = api_row.get('ReturnSheetTypeCode')
+            if isinstance(form_code, str) and form_code != family[0]:
+                if form_code in verified_labels['ReturnSheetTypeCode']:
+                    raise JsonSafetyError('Return type contradicts source tax family')
+                unsupported = unsupported or 'unobserved_tax_metadata_schema'
+            period = api_row.get('TaxPeriodCode')
+            pattern = (r'0112([0-9]{4})' if tax_code == 'ICT_RCIT'
+                       else r'(0[1-9]|1[0-2])\1([0-9]{4})')
+            match = re.fullmatch(pattern, period) if isinstance(period, str) else None
+            if not match or period[-4:] == '0000':
+                unsupported = unsupported or 'unobserved_period_schema'
+            else:
+                caption = ('Januari - Desember ' if tax_code == 'ICT_RCIT'
+                           else _INVENTORY_MONTHS[int(period[:2])-1] + ' ') + period[-4:]
+                if captions['Masa Pajak'] not in (period, caption):
+                    raise JsonSafetyError('Period reference caption contradicts source code')
         for field, header in LOOKUP_HEADERS.items():
             code = api_row.get(field)
             caption = captions[header]
             if not isinstance(code, str) or not caption:
-                return {'eligible': False, 'reason': 'unsupported_reference_code', 'rows': []}
-            if field in verified_labels and code == verified_labels[field][0] and caption != verified_labels[field][1]:
-                return {'eligible': False, 'reason': 'unsupported_reference_locale', 'rows': []}
+                unsupported = unsupported or 'unsupported_reference_code'
+                continue
+            known = verified_labels.get(field, {})
+            if code in known and caption != known[code]:
+                if field in ('TaxTypeCode', 'ReturnSheetTypeCode') and caption in known.values():
+                    raise JsonSafetyError('Reference row family differs from source identity')
+                unsupported = unsupported or 'unsupported_reference_locale'
             if code in labels[field] and labels[field][code] != caption:
                 raise JsonSafetyError('Conflicting captions for a source reference code')
             labels[field][code] = caption
+    # Unsupported rows cannot hide a later known identity/caption contradiction.
+    if unsupported:
+        return {'eligible': False, 'reason': unsupported, 'rows': []}
     context['lookup_labels'] = labels
     context['timezone'] = page.evaluate('() => Intl.DateTimeFormat().resolvedOptions().timeZone')
     _check_cancel(check_cancel)

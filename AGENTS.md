@@ -27,6 +27,19 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 
 ## Native JSON boundaries
 
+Submitted-list JSON metadata supports the reviewed `ICT_RCIT/ICT_RCITR`,
+`VAT_VAT/VAT_VATR`, `ICT_WIT/ICT_WITR` and `ICT_WT/ICT_WTR` pairs, including mixed
+pages. Bind the six current reference/model captions without reading control
+values or checked state; require flat unspanned rows. Corporate periods remain
+January-to-December; Masa periods require the same valid month at both ends of
+the eight ASCII digit code and a nonzero year. Accept its exact literal code or
+reviewed Indonesian caption without normalizing metadata. Unknown pairs,
+monthly ranges, null codes and unproved layouts retain whole-page DOM fallback.
+Known contradictory pairs, reordered known family captions, period/model
+conflicts and conflicting captions for one code remain fatal, including after
+an earlier unsupported row. Preserve original bytes, source fields, selected
+scope, pagination, Stop and all detail/export/publication gates.
+
 Native observers read navigation and inspected structure, never business input values, checked state or table body/footer values. Follow the current owned tab binding through one bounded panel wait; keep paginator ownership, page limits and Stop checks. A safely unsupported native attempt falls back as a whole record. Privacy, authorization, known identity contradictions and changed snapshots remain fatal; Stop remains cancellation.
 
 Native listing period binding accepts the exact literal source code or its already reviewed exact caption, after source custody, month bounds and scope-year checks. Preserve inventory/checkpoint metadata without normalization. Corporate annual codes must still be January-to-December. Monthly ranges remain unsupported. Primary-source period codes must also equal a selected literal code even when listing evidence is unavailable; a different code/year is a contradiction, never a caption repair or a successful DOM fallback.
