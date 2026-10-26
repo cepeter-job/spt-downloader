@@ -238,3 +238,14 @@ def test_complete_capture_cannot_drop_original_negative_rows_from_its_proof(monk
     with pytest.raises(MpnSafetyError):
         with mpn_custody(run, tmp_path):
             pass
+
+
+def test_changed_qualified_row_provenance_is_refused_by_original_custody(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    run['mpn']['provenance'][0]['occurrences'][0]['detail_index'] = 9
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run, tmp_path):
+            pass

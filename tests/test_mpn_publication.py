@@ -194,6 +194,11 @@ def test_published_mpn_proof_preserves_qualified_original_row_provenance(tmp_pat
         assert {occurrence['header_sha256'], occurrence['detail_sha256']} <= {
             item['sha256'] for item in proof['evidence']}
         assert 'path' not in str(proof['evidence'])
+        audit = {row[0].value: row[1].value for row in wb['Audit'] if len(row) >= 2}
+        assert audit['Pembayaran dipilih'] == 1
+        assert audit['Detail dikecualikan'] == 1
+        assert audit['Detail unresolved'] == 0
+        assert audit['Sumber JSON'] == 1 and audit['Sumber DOM'] == 0
     finally:
         wb.close()
 
