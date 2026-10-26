@@ -167,7 +167,20 @@ class AccountingUI:
             raise MpnUnsupported('MPN requires the reviewed owned browser context')
         self.observer.begin_navigation(self.url)
         self.page.goto(self.url, wait_until='domcontentloaded', timeout=60000)
-        self._one('acc-balance-sheet-light').wait_for(state='visible', timeout=45000)
+        # Angular may mount its route owner after DOMContentLoaded. Short
+        # value-free probes keep Stop and the original deadline authoritative.
+        owner = self.page.locator('acc-balance-sheet-light')
+        deadline = time.monotonic() + 45
+        while True:
+            self._stop()
+            count = owner.count()
+            if count > 1:
+                raise MpnUnsupported('MPN Accounting owner is ambiguous')
+            if count == 1 and owner.is_visible():
+                break
+            if time.monotonic() >= deadline:
+                raise MpnUnsupported('MPN Accounting owner did not become visible')
+            self.page.wait_for_timeout(100)
         environment = self.page.evaluate('''() => ({language:navigator.language,
             timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
             scripts:[...document.scripts].filter(e=>e.isConnected).map(e=>e.src)})''')

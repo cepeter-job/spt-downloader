@@ -10,7 +10,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 from openpyxl.worksheet.hyperlink import Hyperlink
 
-from coretax_mpn import validate_mpn, mpn_filename, MAX_BODY
+from coretax_mpn import validate_mpn, validate_provenance, mpn_filename, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES
 from coretax_resume_layout import summary_scope
 
 COLUMNS = (
@@ -49,7 +49,20 @@ def _proof(run):
             **{key: deepcopy(value[key]) for key in (
                 'scope', 'taxpayer_id', 'detail_source', 'status', 'inventory_complete',
                 'details_complete', 'headers', 'details', 'rows', 'audit')},
-            'evidence': [{key: item[key] for key in ('sha256', 'bytes')} for item in value['evidence']]}
+            'evidence': [{key: item[key] for key in ('sha256', 'bytes')} for item in value['evidence']],
+            'provenance': deepcopy(value.get('provenance')), 'coverage': deepcopy(value.get('coverage'))}
+
+
+def _audit_entries(proof):
+    counts = proof.get('coverage') or {}
+    return [('NPWP', proof['scope'][0]), ('Tahun', proof['scope'][1]),
+            ('Dasar Tahun', proof['scope'][2]), ('Status MPN', proof['status']),
+            ('Induk dibaca', proof['headers']), ('Detail dibaca', proof['details']),
+            ('Mode diminta', proof['detail_source']), ('Pembayaran dipilih', len(proof['rows'])),
+            ('Sumber DOM', sum(row['source'] == 'dom' for row in proof['rows'])),
+            ('Sumber JSON', sum(row['source'] == 'json' for row in proof['rows'])),
+            ('Detail dikecualikan', counts.get('excluded')), ('Detail unresolved', counts.get('unresolved')),
+            ('Detail duplikat', counts.get('duplicates'))]
 
 
 def export_mpn_workbook(run, path):
@@ -63,16 +76,15 @@ def export_mpn_workbook(run, path):
     put(sheet, 2, 1, f"NPWP {run['npwp']} | {proof['status']} | non-cancelled; Amount < 0")
     header(sheet, 4, [label for _, label in COLUMNS])
     audit = wb.create_sheet('Audit')
-    setup_sheet(audit, [28, 32, 28, 80], 'A10')
+    entries = _audit_entries(proof)
+    audit_header = len(entries) + 3
+    setup_sheet(audit, [28, 32, 28, 80], f'A{audit_header + 1}')
     band(audit, 1, 'MPN | Audit dan lingkup', 4)
-    entries = [('NPWP', run['npwp']), ('Tahun', run['year']),
-               ('Dasar Tahun', run['year_basis']), ('Status MPN', proof['status']),
-               ('Induk dibaca', proof['headers']), ('Detail dibaca', proof['details'])]
     for row, (label, value) in enumerate(entries, 2):
         put(audit, row, 1, label)
         put(audit, row, 2, value)
-    header(audit, 9, ['No. / Objek', 'Hasil', 'Field', 'Keterangan'])
-    ar = 10
+    header(audit, audit_header, ['No. / Objek', 'Hasil', 'Field', 'Keterangan'])
+    ar = audit_header + 1
     for ordinal, row in enumerate(proof['rows'], 5):
         for col, ((key, _), value) in enumerate(zip(COLUMNS, _row_values(row)), 1):
             cell = put(sheet, ordinal, col, value)
@@ -126,16 +138,27 @@ def read_mpn_proof(workbook):
         if isinstance(proof, dict) and proof.get('format') != 'spt-downloader-mpn':
             return None
         required = {'format', 'version', 'scope', 'taxpayer_id', 'detail_source', 'status',
-                    'inventory_complete', 'details_complete', 'headers', 'details', 'rows', 'audit', 'evidence'}
+                    'inventory_complete', 'details_complete', 'headers', 'details', 'rows', 'audit', 'evidence',
+                    'provenance', 'coverage'}
         if (not isinstance(proof, dict) or set(proof) != required or type(proof['version']) is not int
                 or proof['version'] != 1 or not isinstance(proof['scope'], list) or len(proof['scope']) != 3):
             raise ValueError('MPN proof schema is unsupported')
         from coretax_exporter import validate_scope, validate_excel_value
         npwp, year, basis = proof['scope']
         validate_scope(npwp, year)
-        value = {key: deepcopy(proof[key]) for key in required - {'format'}}
+        value = {key: deepcopy(proof[key]) for key in required - {'format', 'provenance'}}
         value.update(required=True, evidence=[])
         validate_mpn({'npwp': npwp, 'year': year, 'year_basis': basis, 'complete': False, 'mpn': value})
+        import re
+        evidence = proof['evidence']
+        if (not isinstance(evidence, list) or len(evidence) > MAX_RESPONSES
+                or any(not isinstance(item, dict) or set(item) != {'sha256', 'bytes'}
+                       or type(item['sha256']) is not str or not re.fullmatch(r'[0-9a-f]{64}', item['sha256'])
+                       or type(item['bytes']) is not int or not 0 < item['bytes'] <= MAX_BODY for item in evidence)
+                or sum(item['bytes'] for item in evidence) > MAX_EVIDENCE):
+            raise ValueError('MPN proof original evidence declaration is invalid')
+        if proof['provenance'] is not None:
+            validate_provenance(proof['rows'], proof['provenance'], evidence)
         if basis not in ('period', 'submission') or workbook.sheetnames != ['MPN', 'Audit']:
             raise ValueError('MPN scope/sheets are unsupported')
         if any(ws.sheet_state != 'visible' for ws in workbook):
@@ -152,9 +175,7 @@ def read_mpn_proof(workbook):
                 if (actual.value != (None if value == '' else value)
                         or isinstance(value, str) and value != '' and actual.data_type != 's'):
                     raise ValueError('MPN physical row differs from its original lexical proof')
-        expected = [('NPWP', npwp), ('Tahun', year), ('Dasar Tahun', basis),
-                    ('Status MPN', proof['status']), ('Induk dibaca', proof['headers']),
-                    ('Detail dibaca', proof['details'])]
+        expected = _audit_entries(proof)
         if (any(audit.cell(row, 1).value != label or audit.cell(row, 2).value != value
                 for row, (label, value) in enumerate(expected, 2)) or audit['B2'].data_type != 's'):
             raise ValueError('MPN physical audit scope differs from proof')

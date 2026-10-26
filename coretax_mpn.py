@@ -362,6 +362,14 @@ def validate_mpn(run):
         raise MpnSafetyError('MPN COMPLETE has no owned original inventory evidence')
     if run.get('complete') and value['status'] != 'COMPLETE':
         raise ValueError('MPN capture is required before a COMPLETE job')
+    coverage = value.get('coverage')
+    if coverage is not None:
+        if (not isinstance(coverage, dict) or set(coverage) != {'excluded', 'unresolved', 'duplicates'}
+                or any(type(number) is not int or number < 0 for number in coverage.values())
+                or sum(coverage.values()) + len(value['rows']) > value['details']
+                or value['status'] == 'COMPLETE' and (
+                    coverage['unresolved'] or sum(coverage.values()) + len(value['rows']) != value['details'])):
+            raise MpnSafetyError('MPN coverage counters do not reconcile')
     seen = set()
     for row in value['rows']:
         if (not isinstance(row, dict) or set(row) != set(ROW_KEYS)
@@ -389,6 +397,32 @@ def validate_mpn(run):
         size += item['bytes']
     if size > MAX_EVIDENCE:
         raise ValueError('MPN private evidence byte budget exceeded')
+    if 'provenance' in value:
+        validate_provenance(value['rows'], value['provenance'], value['evidence'])
+
+
+def validate_provenance(rows, provenance, evidence):
+    if (not isinstance(provenance, list) or len(provenance) != len(rows)
+            or any(not isinstance(entry, dict) or set(entry) != {'record_id', 'occurrences'}
+                   for entry in provenance)
+            or [entry['record_id'] for entry in provenance] != [row['record_id'] for row in rows]):
+        raise MpnSafetyError('MPN qualified provenance identity/count is invalid')
+    hashes = {item['sha256'] for item in evidence}
+    count = 0
+    for entry in provenance:
+        occurrences = entry['occurrences']
+        if not isinstance(occurrences, list) or not occurrences:
+            raise MpnSafetyError('MPN qualified provenance has no original occurrence')
+        count += len(occurrences)
+        if count > MAX_RESPONSES * 50:
+            raise MpnSafetyError('MPN qualified provenance exceeds its budget')
+        for item in occurrences:
+            if (not isinstance(item, dict) or set(item) != {
+                    'header_sha256', 'header_index', 'detail_sha256', 'detail_index'}
+                    or any(item[key] not in hashes for key in ('header_sha256', 'detail_sha256'))
+                    or any(type(item[key]) is not int or not 0 <= item[key] < 50
+                           for key in ('header_index', 'detail_index'))):
+                raise MpnSafetyError('MPN qualified provenance has an invalid original row binding')
 
 
 def _reconcile_held(run, readers):
@@ -401,6 +435,7 @@ def _reconcile_held(run, readers):
     by_path = {item['path']: stream for item, stream in readers}
     by_item = {item['path']: item for item, _ in readers}
     catalogs, headers, header_hashes, details, detail_hashes = {}, {}, {}, {}, {}
+    header_locations, occurrences = {}, {}
     list_first, list_total, detail_offsets = 0, None, {}
     seen_paths = set()
     for binding in bindings:
@@ -452,7 +487,7 @@ def _reconcile_held(run, readers):
                 raise MpnSafetyError('MPN held parent inventory query changed')
             list_first += len(rows)
             list_total = total
-            for header in rows:
+            for header_index, header in enumerate(rows):
                 if (not isinstance(header, dict) or not _identity(header.get('RecordId'))
                         or header.get('TaxpayerAggregateIdentifier') != value['taxpayer_id']
                         or header.get('TaxpayerTIN') != run['npwp'] or header.get('IsCancelled') is not False):
@@ -462,6 +497,7 @@ def _reconcile_held(run, readers):
                     raise MpnSafetyError('MPN held duplicate parent changed')
                 header_hashes[identifier] = fingerprint
                 headers.setdefault(identifier, header)
+                header_locations.setdefault(identifier, (by_item[path]['sha256'], header_index))
         else:
             parent = request[identity]
             previous_first, previous_total = detail_offsets.get(parent, (0, total))
@@ -470,11 +506,15 @@ def _reconcile_held(run, readers):
                 raise MpnSafetyError('MPN held detail query/parent changed')
             detail_offsets[parent] = (previous_first + len(rows), total)
             values = details.setdefault(parent, [])
-            for detail in rows:
+            for detail_index, detail in enumerate(rows):
                 if (not isinstance(detail, dict) or not _identity(detail.get('RecordId'))
                         or detail.get('HeaderRecordId') != parent):
                     raise MpnSafetyError('MPN held detail identity changed')
                 identifier, fingerprint = detail['RecordId'], _source_digest(detail)
+                header_sha, header_index = header_locations[parent]
+                occurrences.setdefault(identifier, []).append({
+                    'header_sha256': header_sha, 'header_index': header_index,
+                    'detail_sha256': by_item[path]['sha256'], 'detail_index': detail_index})
                 if identifier in detail_hashes:
                     if detail_hashes[identifier] != (parent, fingerprint):
                         raise MpnSafetyError('MPN held duplicate detail changed')
@@ -506,6 +546,13 @@ def _reconcile_held(run, readers):
     actual_ids = [row['record_id'] for row in value['rows']]
     if actual_ids != (expected_ids if complete else expected_ids[:len(actual_ids)]):
         raise MpnSafetyError('MPN qualified row inventory differs from original evidence')
+    if complete and value.get('coverage') != {
+            'excluded': len(detail_hashes) - len(expected_ids), 'unresolved': 0,
+            'duplicates': sum(offset[1] for offset in detail_offsets.values()) - len(detail_hashes)}:
+        raise MpnSafetyError('MPN coverage differs from its original inventories')
+    if value.get('provenance') != [{'record_id': identifier, 'occurrences': occurrences[identifier]}
+                                   for identifier in actual_ids]:
+        raise MpnSafetyError('MPN qualified row provenance differs from original evidence')
     for row in value['rows']:
         detail, expected = originals[row['record_id']]
         if row['source'] == 'dom':

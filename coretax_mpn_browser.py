@@ -271,6 +271,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
     value = require_mpn(run, detail_source)
     value.update(status='PENDING', inventory_complete=False, details_complete=False,
                  headers=0, details=0, rows=[], audit=[], evidence=[], provenance=[],
+                 coverage={'excluded': 0, 'unresolved': 0, 'duplicates': 0},
                  attempt=uuid.uuid4().hex, source_pins={}, bindings=[])
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -389,11 +390,13 @@ No partial DOM page is combined with another source. Raw pages stay private.
                                 raise MpnSafetyError('MPN repeated detail identity/content changed')
                             if detail_id in provenance:
                                 provenance[detail_id]['occurrences'].append(occurrence)
+                            value['coverage']['duplicates'] += 1
                             continue
                         seen_details[detail_id] = (identifier, fingerprint)
                         try:
                             row = project_payment(header, detail, year=run['year'], catalog=ui.catalog)
                         except MpnUnsupported:
+                            value['coverage']['unresolved'] += 1
                             value['audit'].append({'message': 'Detail MPN tidak dapat dipastikan dalam lingkup masa/tahun; lihat checkpoint privat.'})
                             continue
                         if row is not None:
@@ -412,6 +415,8 @@ No partial DOM page is combined with another source. Raw pages stay private.
                             entry = {'record_id': detail_id, 'occurrences': [occurrence]}
                             value['provenance'].append(entry)
                             provenance[detail_id] = entry
+                        else:
+                            value['coverage']['excluded'] += 1
                     if value['headers'] % 25 == 0 or time.monotonic() - last_checkpoint >= 5:
                         checkpoint()
                         last_checkpoint = time.monotonic()
