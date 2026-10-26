@@ -194,6 +194,31 @@ grid segar tidak membuktikan stabilitas main, cache callback, readiness async
 atau admission native. Renderer, template, raw capture dan Audit tetap utuh.
 Lihat [rencana L8 murni](superpowers/plans/2026-10-24-corporate-l8-pure.md).
 
+Integrasi native L8 terpisah memakai tiga provider script corporate/main/vendor,
+id-ID/Asia/Jakarta, route submitted literal `?view=true` dan Induk sebelumnya.
+Capture mempersenjatai pengamatan struktur sebelum View: tidak ada root Badan
+atau host L7/L13A/L13B, termasuk yang tersembunyi. Identitas root yang kemudian
+muncul harus tetap unik dan tersambung; pelepasan/replacement/duplikasi tetap
+fatal setelah reinsertion, sedangkan host dependen yang sempat muncul tetap
+unsupported. Budget 4096 record/node dapat membuat bukti tidak tersedia. Tidak
+ada pembacaan input, body/footer bisnis atau state Angular. Sampling akhir
+tetap di dalam fence respons terlambat; observer/handle dilepas saat cleanup.
+Metadata opsional `corporate_l8_lifetime` dimiliki manifest dan memerlukan bukti
+component lifetime lama. Replay memvalidasi seluruh binding serta kesamaan
+antar-paket; descriptor override atau bukti hadir yang rusak tetap fatal.
+
+Adapter L8 membatasi current fresh rupiah: rate outer/main TX03, annual literal
+numerik 1/12, kedua predecessor eksplisit null dan lima flag visibility literal
+numerik nol pada kedua owner. Root dependen harus tidak hadir, termasuk menolak
+null yang belum dipetakan. Net integral nonnegatif aman harus sama dengan fiscal
+net; empat total pengurang harus nol dan taxable harus cocok dengan truncation
+ribuan. Helper murni tetap memeriksa seluruh share/pajak/footer asli. Semua path
+operand/control original mengikat response sequence dan container asal; outer
+PeriodYear tetap pada Payload. Tidak ada fetch katalog/timer quietness, perubahan
+template atau izin transport baru. Cabang lain memakai fallback satu record;
+capture, mapping Induk, PDF dan penerimaan live tetap terpisah. Lihat
+[desain native L8](superpowers/specs/2026-10-26-corporate-l8-native-design.md).
+
 Helper murni L3 belum memberikan kelayakan native atau izin transport baru.
 Ia memproyeksikan body A dari current source dan body B dari page metadata yang
 sudah dinormalisasi caller, dengan alias aktif IncomeTax/WithholdingSlipsNumber/

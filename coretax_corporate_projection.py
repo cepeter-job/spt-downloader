@@ -25,6 +25,7 @@ L11C_BUILD_DIGESTS = {**BUILD_DIGESTS,
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+L8_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -532,6 +533,84 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
             'route': proof['route'], 'values': result['provenance']}
 
 
+def _apply_l8(binding, section, observed_forms, *, root, payload, record, event):
+    proof = binding['projection']
+    if (not isinstance(proof, dict)
+            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
+            or proof['kind'] != 'corporate-l8-v1' or proof['builds'] != L8_BUILD_DIGESTS
+            or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
+            or proof['timezone'] != 'Asia/Jakarta' or binding.get('paths') != [[L8_ROOT]]
+            or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])
+            or event.get('component_lifetime') is None or event.get('corporate_l8_lifetime') is None):
+        raise _UnsupportedMetadata('unverified_corporate_l8_semantic_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    main = root.get('MainFormData')
+    if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
+            or not isinstance(main, dict) or payload.get('TaxRate') != 'TX03' or main.get('TaxRate') != 'TX03'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or any(key in root for key in ('CalculationOfFiscalLossCompensation',
+                   'L13AListOfTaxFacilityInInvestment', 'L13BListOfAdditionalGrossIncomeDeduction'))):
+        raise _UnsupportedMetadata('unverified_corporate_l8_fresh_submitted_lifecycle')
+    flags = ('IsCarriedForward', 'IsNetIncomeReduction', 'IsInvestmentOtherIncome',
+             'IsGrossIncomeVocational', 'IsGrossIncomeResearch')
+    for source in (main, payload):
+        if any(type(source.get(key)) is not _CorporateNumber or source[key] != '0' for key in flags):
+            raise _UnsupportedMetadata('unverified_corporate_l8_visibility_flags')
+    for source, start, end in ((main, 'AccountingPeriodStart', 'AccountingPeriodEnd'),
+                                (payload, 'PeriodMonthStart', 'PeriodMonthEnd')):
+        if (type(source.get(start)) is not _CorporateNumber or source[start] != '1'
+                or type(source.get(end)) is not _CorporateNumber or source[end] != '12'):
+            raise _UnsupportedMetadata('unverified_corporate_l8_original_annual_bounds')
+    zeros = ('TotalNetIncomeReduction', 'TotalGrossIncomeVocational',
+             'TotalCarriedForward', 'TotalGrossIncomeResearch')
+    net = _l8_integer(main.get('NetIncomeBeforeTax'))
+    if (any(_l8_integer(main.get(key)) != 0 for key in zeros)
+            or _l8_integer(main.get('FiscalNetIncomeAfterTax')) != net
+            or _l8_integer(main.get('TaxableIncome')) != net - net % 1000):
+        raise _UnsupportedMetadata('unreconciled_corporate_l8_original_main_fixed_points')
+    tables = proof['tables']
+    structure = {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1', 'groups': [_L8_GROUP]}
+    if (not isinstance(tables, list) or len(tables) != 1 or not isinstance(tables[0], dict)
+            or set(tables[0]) != {'component', 'headers', 'footer_spans', 'source_structure'}
+            or tables[0]['component'] != structure['component'] or tables[0]['source_structure'] != structure):
+        raise _UnsupportedMetadata('unverified_corporate_l8_grid_owner')
+    result = project_l8(root.get(L8_ROOT), main_form=main, period_year=payload.get('PeriodYear'),
+        headers=tables[0]['headers'], footer_spans=tables[0]['footer_spans'],
+        tax_type=fields.get('TaxTypeCode'), locale=proof['locale'])
+    # Keep every original fixed-point operand/control, including overwritten
+    # outer/main annual and rate inputs. Never replace captured values by net.
+    retained = {(entry['source'], tuple(entry['path'])) for entry in result['provenance']}
+    for source, values, prefix, keys in (
+            ('current', main, ['MainFormData'], ('NetIncomeBeforeTax', 'FiscalNetIncomeAfterTax',
+                'TaxableIncome', *zeros, *flags, 'AccountingPeriodStart', 'AccountingPeriodEnd', 'TaxRate')),
+            ('primary', payload, [], (*flags, 'PeriodMonthStart', 'PeriodMonthEnd', 'TaxRate',
+                'PreviousFormData', 'LastSubmittedFormData'))):
+        for key in keys:
+            path = prefix + [key]
+            if (source, tuple(path)) in retained:
+                continue
+            entry = _evidence(values[key], path)
+            entry.update(source=source, destination={'table': 'L8', 'control': 'original-fixed-point'},
+                         rule='retained-original-submitted-fixed-point')
+            result['provenance'].append(entry)
+    section['tables'] = [result['table']]
+    for entry in result['provenance']:
+        entry.update(response_sequence=event['sequence'],
+                     container=['Payload'] if entry['source'] == 'primary' else ['Payload', 'CurrentFormData'])
+    return {'form': 'L8', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -551,6 +630,10 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
             continue
         if binding['name'] == 'L1-D':
             projected.append(_apply_l1d(binding, section, observed_forms, root=root, payload=payload,
+                record=record, event=event))
+            continue
+        if binding['name'] == 'L8':
+            projected.append(_apply_l8(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event))
             continue
         if binding['name'] == 'L11-C':
