@@ -146,3 +146,26 @@ def test_pending_admitted_reference_cannot_become_complete_at_final_sampling(bro
         collect_mpn(page, run, tmp_path)
         assert len(metrics['references']) == 1
         assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+
+
+@pytest.mark.parametrize('mode', ['dom', 'json-first'])
+def test_unsupported_detail_dom_uses_complete_original_json_through_real_dialog(browser, tmp_path, monkeypatch, mode):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnUnsupported
+    import coretax_mpn_ui as ui
+    original = ui.AccountingUI._table
+    rejected = []
+    def table(self, owner, headers, count):
+        if headers == ui.DETAIL_HEADERS:
+            rejected.append(True)
+            raise MpnUnsupported('Synthetic incomplete DOM table')
+        return original(self, owner, headers, count)
+    monkeypatch.setattr(ui.AccountingUI, '_table', table)
+    with portal(browser, monkeypatch) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path, detail_source=mode)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert run['mpn']['rows'][0]['source'] == 'json'
+        assert run['mpn']['rows'][0]['amount'] == '-1250.501'
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+        assert rejected if mode == 'dom' else not rejected
