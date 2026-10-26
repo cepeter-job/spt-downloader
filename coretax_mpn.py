@@ -4,7 +4,6 @@ Numeric source tokens stay distinct from JSON strings until projection. Nothing
 in this module accesses a browser, fetches a catalog or changes source values.
 """
 from contextlib import contextmanager, ExitStack
-from copy import deepcopy
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 import hashlib

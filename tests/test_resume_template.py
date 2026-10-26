@@ -1,5 +1,4 @@
 """The operator layout is exercised using invented scope and zero source rows."""
-from pathlib import Path
 
 from openpyxl import load_workbook
 import pytest

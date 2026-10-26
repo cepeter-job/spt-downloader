@@ -2,7 +2,6 @@
 from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
 import sys
 
 import pytest
