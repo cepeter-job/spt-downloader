@@ -270,7 +270,7 @@ def validate_mpn(run):
     paths, size = set(), 0
     for item in value['evidence']:
         name = item.get('path') if isinstance(item, dict) else None
-        if (type(name) is not str or not re.fullmatch(r'mpn/[0-9a-f]{32}/[0-9]{6}-(?:list|detail)\.json', name)
+        if (type(name) is not str or not re.fullmatch(r'mpn/[0-9a-f]{32}/[0-9]{6}-(?:list|detail|catalog)\.json', name)
                 or name.casefold() in paths or type(item.get('bytes')) is not int or not 0 < item['bytes'] <= MAX_BODY
                 or not isinstance(item.get('sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', item['sha256'])):
             raise ValueError('MPN private evidence declaration is invalid')

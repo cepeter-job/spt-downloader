@@ -1,10 +1,17 @@
 """Owned Accounting observers, separate from all native SPT admission rules."""
 from copy import deepcopy
+import hashlib
+import json
+import os
+from pathlib import Path
 import time
+import uuid
 from urllib.parse import urlsplit
+from playwright.sync_api import Error as PlaywrightError
 
 from coretax_mpn import (ORIGIN, MpnSafetyError, MpnUnsupported, decode_mpn,
-                         source_integer, _identity)
+                         source_integer, _identity, MpnNumber, require_mpn,
+                         project_payment, validate_mpn, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES)
 
 LIST_PATH = '/accounting/api/taxpayeraccounting/list'
 DETAIL_PATH = '/accounting/api/taxpayeraccounting/listdetail'
@@ -200,3 +207,217 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.latest.clear()
         self.parent_id = self.navigation_source = None
         self.closed = True
+
+
+def AccountingUI(*args, **kwargs):
+    # Lazy to keep source qualification/observer imports independent of UI code.
+    from coretax_mpn_ui import AccountingUI as owned_ui
+    return owned_ui(*args, **kwargs)
+
+
+def _typed(value):
+    if type(value) is MpnNumber:
+        return ['number', str(value)]
+    if isinstance(value, dict):
+        return ['object', [[key, _typed(item)] for key, item in sorted(value.items())]]
+    if isinstance(value, list):
+        return ['array', [_typed(item) for item in value]]
+    return [type(value).__name__, value]
+
+
+def _digest(value):
+    return hashlib.sha256(json.dumps(_typed(value), ensure_ascii=False,
+                                      separators=(',', ':')).encode('utf-8')).hexdigest()
+
+
+def _accept_snapshot(snapshot, kind, first, total=None):
+    if not isinstance(snapshot, dict) or snapshot.get('kind') != kind:
+        raise MpnUnsupported('MPN owned page snapshot is unavailable')
+    decoded = decode_mpn(snapshot.get('raw'))
+    payload = decoded.get('Payload')
+    if decoded.get('IsSuccessful') is not True or not isinstance(payload, dict):
+        raise MpnUnsupported('MPN original page envelope is unsuccessful')
+    actual_total = source_integer(payload.get('TotalRecords'))
+    size = snapshot.get('page_size')
+    rows = payload.get('Data')
+    if (type(size) is not int or size not in (10, 25, 50) or snapshot.get('first') != first
+            or actual_total != snapshot.get('total') or total is not None and total != actual_total
+            or not isinstance(rows, list) or len(rows) != min(size, max(0, actual_total - first))
+            or not all(isinstance(row, dict) for row in rows)
+            or _digest(rows) != _digest(snapshot.get('rows'))):
+        raise MpnSafetyError('MPN page snapshot/count changed during capture')
+    return rows, actual_total
+
+
+def collect_mpn(page, run, folder, *, detail_source='dom', max_pages=1000,
+                on_progress=None, check_cancel=None):
+    """Capture all owned non-cancelled parents, then qualify complete details.
+
+The preceding SPT component's completion is separate from the required MPN gate.
+No partial DOM page is combined with another source. Raw pages stay private.
+"""
+    def stop():
+        if check_cancel:
+            check_cancel()
+    stop()
+    if type(max_pages) is not int or not 1 <= max_pages <= 100000:
+        raise ValueError('MPN page cap must be a positive bounded integer')
+    spt_complete = run.get('complete') is True
+    run['complete'] = False
+    value = require_mpn(run, detail_source)
+    value.update(status='PENDING', inventory_complete=False, details_complete=False,
+                 headers=0, details=0, rows=[], audit=[], evidence=[], provenance=[],
+                 attempt=uuid.uuid4().hex, source_pins={})
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    private = folder / 'mpn' / value['attempt']
+    # Exclusive attempt; never replace/delete a preceding private capture.
+    private.mkdir(parents=True, exist_ok=False)
+    budget = 0
+    canonical_bytes = 0
+    last_checkpoint = time.monotonic()
+
+    def checkpoint():
+        from coretax_browser import _atomic_checkpoint
+        stop()
+        validate_mpn(run)
+        _atomic_checkpoint(private / 'manifest.json', {
+            'format': 'spt-downloader-mpn-private', 'version': 1, 'mpn': value})
+        _atomic_checkpoint(folder / 'run.json', run)
+
+    def evidence(snapshot, kind):
+        nonlocal budget
+        stop()
+        raw = snapshot['raw']
+        decode_mpn(raw)
+        if len(value['evidence']) >= MAX_RESPONSES or budget + len(raw) > MAX_EVIDENCE:
+            raise MpnUnsupported('MPN capture evidence budget reached')
+        ordinal = len(value['evidence']) + 1
+        name = f'{ordinal:06d}-{kind}.json'
+        with (private / name).open('xb') as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        item = {'path': f"mpn/{value['attempt']}/{name}", 'bytes': len(raw),
+                'sha256': hashlib.sha256(raw).hexdigest()}
+        value['evidence'].append(item)
+        budget += len(raw)
+        return item
+
+    seen_headers, seen_details, provenance = {}, {}, {}
+    try:
+        with AccountingUI(page, run, folder, check_cancel=check_cancel) as ui:
+            ui.open()
+            value['source_pins'] = deepcopy(ui.pins)
+            if getattr(ui, 'reference_raw', None) is not None:
+                evidence({'raw': ui.reference_raw}, 'catalog')
+            first, total, pages = 0, None, 0
+            for snapshot in ui.list_pages(max_pages):
+                stop()
+                pages += 1
+                if pages > max_pages:
+                    raise MpnUnsupported('MPN parent page cap reached')
+                headers, total = _accept_snapshot(snapshot, 'list', first, total)
+                list_item = evidence(snapshot, 'list')
+                for header_index, header in enumerate(headers):
+                    stop()
+                    identifier = header.get('RecordId')
+                    if (not _identity(identifier) or header.get('TaxpayerAggregateIdentifier') != value['taxpayer_id']
+                            or header.get('TaxpayerTIN') != run['npwp']):
+                        raise MpnSafetyError('MPN parent taxpayer/scope identity changed')
+                    if header.get('IsCancelled') is not False:
+                        raise MpnSafetyError('MPN parent violates the non-cancelled inventory')
+                    digest = _digest(header)
+                    if identifier in seen_headers:
+                        if seen_headers[identifier] != digest:
+                            raise MpnSafetyError('MPN repeated parent content changed')
+                        continue
+                    seen_headers[identifier] = digest
+                    value['headers'] += 1
+                    detail_rows, detail_events, dom_pages = [], [], []
+                    detail_first, detail_total, detail_page_count = 0, None, 0
+                    for detail_snapshot, dom in ui.detail_pages(header, max_pages):
+                        stop()
+                        detail_page_count += 1
+                        if detail_page_count > max_pages:
+                            raise MpnUnsupported('MPN detail page cap reached')
+                        if detail_snapshot.get('parent_id') != identifier:
+                            raise MpnSafetyError('MPN detail snapshot parent changed')
+                        rows, detail_total = _accept_snapshot(detail_snapshot, 'detail', detail_first, detail_total)
+                        item = evidence(detail_snapshot, 'detail')
+                        detail_rows.extend(rows)
+                        detail_events.extend((item, index) for index in range(len(rows)))
+                        dom_pages.append(dom)
+                        detail_first += len(rows)
+                    if detail_total is None or detail_first != detail_total:
+                        raise MpnUnsupported('MPN complete detail inventory is unavailable')
+                    value['details'] += detail_first
+                    # UI returns only a complete, fully source-bound DOM projection;
+                    # any unqualified page replaces this entire parent's DOM attempt.
+                    use_dom = detail_source == 'dom' and all(isinstance(rows, list) for rows in dom_pages)
+                    flat_dom = [row for rows in dom_pages for row in rows] if use_dom else None
+                    from coretax_mpn import dom_numbers_match
+                    use_dom = bool(use_dom and dom_numbers_match(flat_dom, detail_rows))
+                    for index, (detail, (item, source_index)) in enumerate(zip(detail_rows, detail_events)):
+                        stop()
+                        detail_id = detail.get('RecordId')
+                        if not _identity(detail_id) or detail.get('HeaderRecordId') != identifier:
+                            raise MpnSafetyError('MPN detail identity contradicts its inspected parent')
+                        fingerprint = _digest(detail)
+                        occurrence = {'header_sha256': list_item['sha256'], 'header_index': header_index,
+                                      'detail_sha256': item['sha256'], 'detail_index': source_index}
+                        if detail_id in seen_details:
+                            if seen_details[detail_id] != (identifier, fingerprint):
+                                raise MpnSafetyError('MPN repeated detail identity/content changed')
+                            if detail_id in provenance:
+                                provenance[detail_id]['occurrences'].append(occurrence)
+                            continue
+                        seen_details[detail_id] = (identifier, fingerprint)
+                        try:
+                            row = project_payment(header, detail, year=run['year'], catalog=ui.catalog)
+                        except MpnUnsupported:
+                            value['audit'].append({'message': 'Detail MPN tidak dapat dipastikan dalam lingkup masa/tahun; lihat checkpoint privat.'})
+                            continue
+                        if row is not None:
+                            row_bytes = len(json.dumps(row, ensure_ascii=False).encode('utf-8'))
+                            if len(value['rows']) >= 10000 or canonical_bytes + row_bytes > MAX_BODY // 2:
+                                raise MpnUnsupported('MPN canonical row budget reached')
+                            canonical_bytes += row_bytes
+                            if use_dom:
+                                # Numeric lexemes/identifiers always come from original
+                                # JSON. Only verified display date/classification text
+                                # uses the DOM projection; raw JSON stays in evidence.
+                                row.update(source='dom', transaction_date=flat_dom[index][0],
+                                           posting_date=flat_dom[index][1],
+                                           accounting_type=flat_dom[index][3], accounting_detail=flat_dom[index][4])
+                            value['rows'].append(row)
+                            entry = {'record_id': detail_id, 'occurrences': [occurrence]}
+                            value['provenance'].append(entry)
+                            provenance[detail_id] = entry
+                    if value['headers'] % 25 == 0 or time.monotonic() - last_checkpoint >= 5:
+                        checkpoint()
+                        last_checkpoint = time.monotonic()
+                    if on_progress:
+                        on_progress(value['headers'], total, len(value['rows']))
+                first += len(headers)
+            if total is None or first != total:
+                raise MpnUnsupported('MPN complete parent inventory is unavailable')
+            value['inventory_complete'] = True
+            value['details_complete'] = True
+            ui.finish()
+            value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
+    except MpnSafetyError:
+        value['status'] = 'PARTIAL'
+        value['audit'].append({'message': 'Identitas atau snapshot MPN berubah; pengambilan ditolak.'})
+        checkpoint()
+        raise
+    except (MpnUnsupported, PlaywrightError):
+        value['status'] = 'PARTIAL'
+        value['audit'].append({'message': 'Pengambilan MPN belum lengkap; lihat checkpoint privat dan coba kembali.'})
+    except KeyboardInterrupt:
+        value['status'] = 'PARTIAL'
+        raise
+    stop()
+    run['complete'] = spt_complete and value['status'] == 'COMPLETE'
+    checkpoint()
+    return run

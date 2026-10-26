@@ -24,7 +24,7 @@ WORKER_FILES = (
     'coretax_resume.py',
     'coretax_resume_layout.py', 'resources/resume_format.xlsx',
     'coretax_mpn.py', 'coretax_mpn_browser.py',
-    'coretax_mpn_export.py',
+    'coretax_mpn_export.py', 'coretax_mpn_ui.py',
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
     'coretax_corporate_projection.py',
     'coretax_pph21_json_bindings.py', 'coretax_pph21_observer.py', 'coretax_pph21_projection.py',
