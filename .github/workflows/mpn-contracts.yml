@@ -43,6 +43,7 @@ jobs:
           .venv/bin/python -m pytest tests/test_mpn.py tests/test_mpn_browser.py
           tests/test_resume_template.py tests/test_mpn_publication.py
           tests/test_mpn_capture_protocol.py
+          tests/test_mpn_job_flow.py
           tests/test_exporter.py tests/test_audit_mapping_header.py
           tests/test_split_output.py tests/test_output_safety.py
           tests/test_desktop_output.py tests/test_desktop_overwrite.py -q
