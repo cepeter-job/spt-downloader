@@ -30,7 +30,7 @@ def interrupt(page, kind):
         page.emit('framenavigated', page.main_frame)
 
 
-@pytest.mark.parametrize('kind', ['document-request', 'route', 'query', 'taxpayer', 'same'])
+@pytest.mark.parametrize('kind', ['document-request', 'route', 'query', 'taxpayer', 'same', 'filter-error'])
 def test_final_wait_probe_cannot_override_an_event_it_pumps(tmp_path, monkeypatch, collector, kind):
     class ProbePage(SourcePage):
         probes = 0
@@ -48,7 +48,10 @@ def test_final_wait_probe_cannot_override_an_event_it_pumps(tmp_path, monkeypatc
                     # Inject during the final post-idle identity gate, even
                     # if earlier acquisition/probe counts change. The old Document
                     # can still compare True before a replacement commits.
-                    interrupt(self, kind)
+                    if kind == 'filter-error':
+                        self.inject_filter_error()
+                    else:
+                        interrupt(self, kind)
                 return same
             handle.evaluate = interrupted
             return handle
@@ -56,13 +59,17 @@ def test_final_wait_probe_cannot_override_an_event_it_pumps(tmp_path, monkeypatc
     page = ProbePage()
     monkeypatch.setattr(driver, 'wait_idle', lambda target: setattr(target, 'idle_completed', True))
     observer = driver.ListObserver(page)
+    if kind == 'filter-error':
+        observer.request_filter = SimpleNamespace(error=None)
+        error = driver.JsonSafetyError('Owned inventory filter request was rejected')
+        page.inject_filter_error = lambda: setattr(observer.request_filter, 'error', error)
     try:
         observer.begin_navigation(LIST_URL)
         page.goto(LIST_URL)
         if kind == 'same':
             assert observer.wait(0)['rows'] == [{'RecordId': RECORD}]
         else:
-            with pytest.raises(RuntimeError, match='ownership'):
+            with pytest.raises(RuntimeError, match='filter' if kind == 'filter-error' else 'ownership'):
                 observer.wait(0)
         assert page.injected and page.probes >= 3
     finally:
@@ -148,3 +155,126 @@ def test_json_view_preparation_custody_change_prevents_the_click(tmp_path, monke
     assert not result['complete'] and scenario.page.view_calls == 0
     assert scenario.dom_calls == [] and result['records'][0]['sections'] == []
     assert all(handle.disposed for handle in scenario.page.document_handles + scenario.page.view_handles)
+
+
+def deferred_page(monkeypatch, outcome):
+    from greenlet import greenlet, getcurrent
+
+    class DeferredPage(SourcePage):
+        elapsed = 0
+        stopped = False
+
+        def __init__(self):
+            super().__init__()
+            self.acquisitions = []
+
+        def evaluate_handle(self, script):
+            handle = super().evaluate_handle(script)
+            # The event callback yields its identity RPC before goto returns.
+            getcurrent().parent.switch()
+            return handle
+
+        def goto(self, url, **kwargs):
+            self.navigated.append(url)
+            self.url = url
+            self.document_token = object()
+            task = greenlet(lambda: self.emit('framenavigated', self.main_frame))
+            self.acquisitions.append(task)
+            task.switch()
+            self.emit_grid_response(response())
+
+        def wait_for_timeout(self, milliseconds):
+            self.elapsed += 1.1 if outcome == 'late' else milliseconds / 1000
+            if outcome in ('complete', 'late') and not self.acquisitions[-1].dead:
+                self.acquisitions[-1].switch()
+            elif outcome == 'stop':
+                self.stopped = True
+
+        def drain(self):
+            self.stopped = False
+            for task in self.acquisitions:
+                if not task.dead:
+                    task.switch()
+
+    page = DeferredPage()
+    monkeypatch.setattr(driver.time, 'monotonic', lambda: page.elapsed)
+    monkeypatch.setattr(driver, 'wait_idle', lambda page: None)
+    return page
+
+
+@pytest.mark.parametrize('outcome', ['complete', 'timeout', 'stop', 'late'])
+def test_wait_keeps_document_acquisition_pending_without_authorizing_or_failing_early(monkeypatch, outcome):
+    page = deferred_page(monkeypatch, outcome)
+    def cancel():
+        if page.stopped:
+            raise driver.CaptureCancelled()
+    observer = driver.ListObserver(page, check_cancel=cancel)
+    try:
+        observer.begin_navigation(LIST_URL)
+        page.goto(LIST_URL)
+        assert observer._binding_document and observer._document is None
+        assert observer.sequence == 1 and not observer.navigation_failed
+        if outcome == 'complete':
+            assert observer.wait(0, timeout=1)['rows'] == [{'RecordId': RECORD}]
+            assert page.acquisitions[-1].dead
+        elif outcome in ('timeout', 'late'):
+            with pytest.raises(RuntimeError, match='ownership') as caught:
+                observer.wait(0, timeout=1)
+            assert not isinstance(caught.value, driver.ListResponseTimeout)
+            assert 1 <= page.elapsed <= 1.1 and observer.navigation_failed
+        else:
+            with pytest.raises(driver.CaptureCancelled):
+                observer.wait(0, timeout=1)
+        assert page.navigated == [LIST_URL]
+    finally:
+        observer.close()
+        page.drain()
+        disposed_after_close = all(handle.disposed for handle in page.document_handles)
+        for handle in page.document_handles:
+            if not handle.disposed:
+                handle.dispose()  # Clean a rejected late handle after sampling.
+    assert disposed_after_close and not any(page.listeners.values())
+
+
+@pytest.mark.parametrize('action', ['close', 'reset', 'new-pending'])
+def test_late_acquisition_cannot_attach_to_closed_or_newer_attempt(monkeypatch, action):
+    page = deferred_page(monkeypatch, 'complete')
+    observer = driver.ListObserver(page)
+    closed = False
+    try:
+        observer.begin_navigation(LIST_URL)
+        page.goto(LIST_URL)
+        old_task = page.acquisitions[0]
+        old_handle = page.document_handles[0]
+        assert observer._binding_document and not old_task.dead
+        if action == 'close':
+            observer.close()
+            closed = True
+        else:
+            observer.begin_navigation(LIST_URL)
+            if action == 'new-pending':
+                page.goto(LIST_URL)
+                assert observer._binding_document and observer.navigation_committed
+        old_task.switch()
+        assert old_task.dead and old_handle.disposed
+        assert observer._document is None
+        if action == 'close':
+            assert observer.navigation_source is None and not observer._binding_document
+        elif action == 'reset':
+            assert observer.navigation_failed is False
+            assert not observer.navigation_committed and not observer._binding_document
+        else:
+            assert observer.navigation_failed is False
+            assert observer.navigation_committed and observer._binding_document
+            page.acquisitions[-1].switch()
+            assert observer._document is page.document_handles[-1]
+            assert observer.wait(1, timeout=1)['rows'] == [{'RecordId': RECORD}]
+    finally:
+        if not closed:
+            observer.close()
+        page.drain()
+        disposed_after_close = all(handle.disposed for handle in page.document_handles)
+        for handle in page.document_handles:
+            if not handle.disposed:
+                handle.dispose()
+    assert disposed_after_close and not any(page.listeners.values())

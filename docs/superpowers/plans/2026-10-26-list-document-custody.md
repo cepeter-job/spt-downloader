@@ -50,6 +50,28 @@ the nine expected failures and a valid same-document control, while all prior
 repairing either gap. Recheck the retained handle/latch/route after every probe;
 check each record after metadata and inside View preparation, retaining the
 actual inspected control rather than allowing locator rebinding on replacement.
+The same post-probe rule also applies to a routed filter error delivered during
+identity evaluation. Add that eleventh case with production still unchanged;
+require 5,879 Windows cases, exactly ten intended failures and all previous
+5,868 cases passing before repairing the state rereads and View boundary.
+
+The 5,878-case run40266319370 is rejected as an acceptance gate: its actual
+archives contain 5,808 Windows passes, 69 call failures and one teardown error.
+Nine call failures reproduce the new authorization gaps; sixty affect prior
+identities, including real-Edge unchanged-document controls. The teardown error
+is retained separately and is not counted as a call failure. The initial repair
+must also accommodate a navigation callback whose identity RPC yields before
+goto returns. Add three deterministic suspended-greenlet cases for completion,
+deadline and Stop with production unchanged, alongside the filter-error case.
+Reconcile the full 5,882-case runner collection before the next product edit;
+retain every prior failure/error and require all identities to pass in GREEN.
+Extend those pending cases to reject late completion and stale acquisitions
+after close/reset or a newer pending attempt, producing 5,886 total cases.
+Pending identity expiry is a nonretryable ownership refusal, not a missing-list
+response retry. Check deadline after a yielding completion, retain pending
+through validation, and bind late completion/disposal to the original attempt.
+Pending acquisition may be waited only inside the existing response deadline;
+it never authorizes View or relaxes route/request/failure/cancellation gates.
 
 ## Bounded repair after reproduced RED
 
