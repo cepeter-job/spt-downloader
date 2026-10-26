@@ -94,6 +94,31 @@ Financial PDFs are limited to ordinary inspected read-only links or the reviewed
 
 Tab-panel readiness uses one shared 30-second deadline. Each locator read gets at most 1000 ms and the remaining budget, checks Stop first, and must not authorize capture after the final read exceeds the deadline. Keep caption/current control binding, controlled-binding history, unique owning view and actual visibility checks. One separate 1000 ms value-free timeout probe is diagnostic evidence only; it cannot authorize capture or a PDF request.
 
+Initial detail-list restoration may repeat its same inspected list navigation
+once only for `ListResponseTimeout`, the absent-fresh-response RuntimeError
+subtype. Keep each existing 60-second navigation/45-second response bound, a new
+sequence marker, Stop checks and the same filter. Recheck authorized taxpayer
+and exact list path/query after navigation and around retry; fragments are not
+request identity. Never retry navigation errors, unsuccessful responses, known
+identity/filter/safety contradictions, detail/View actions or financial POSTs.
+All paginator, metadata and selected-record checks still precede View. A second
+missing response stays PARTIAL; production panel readiness remains 30 seconds.
+For restoration and its subsequent grid waits, require an observed main-frame
+commit to that literal list route before admitting actual grid request objects.
+Reset admission before each navigation; pre-commit/old-attempt requests and their
+late responses cannot satisfy a new marker. Require the selected request
+taxpayer, keep at most 128 pending owned grid requests, release references on
+response/failure/close, and reject overflow or another main-frame transition.
+Owned HTTP failures are terminal even for HTML; explicit unsuccessful JSON is
+terminal before successful-row parsing and cannot be cleared by later traffic.
+Keep only fixed failure state, with no new request material in diagnostics.
+
+The approved L7 year header accepts only the exact literal annual `0112YYYY`
+source code or the existing exact `Januari - Desember YYYY` caption, reconciled
+with the single captured table's complete header set. Monthly/partial-year and
+malformed periods do not qualify. Preserve the literal period/model and captured
+body/footer values; footer ownership, accounting and PARTIAL gates are unchanged.
+
 The inspected submitted corporate financial-POST detail also supports exactly the literal read-only query `view=true`. Reject duplicate/additional/encoded query variants, fragments and changed complete document URLs. Legacy corporate routes remain query-free. Preserve every existing request/body/authentication/source/selected-identity gate. Financial guard diagnostics expose only allowlisted module/function/line frames, never exception text, request URLs, headers or bodies.
 
 The financial route callback records its first rejection immediately as

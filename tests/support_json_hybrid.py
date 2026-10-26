@@ -60,10 +60,10 @@ class HybridSource(protocol.SourcePage):
         self.rows = [deepcopy(corpus.selected_record()['source_fields'])]
 
     def goto(self, url, **kwargs):
-        self.navigated.append(url)
-        self.url = url
-        self.emit('response', protocol.response(
-            rows=self.rows, url=corpus.ORIGIN + '/returnsheet/api/returnsheetssubmitted'))
+        self.commit_navigation(url)
+        listing = protocol.response(rows=self.rows, url=corpus.ORIGIN + '/returnsheet/api/returnsheetssubmitted')
+        listing.request.post_data_json['TaxpayerAggregateIdentifier'] = corpus.TAXPAYER_ID
+        self.emit_grid_response(listing)
 
 
 class StopRequested(driver.CaptureCancelled):

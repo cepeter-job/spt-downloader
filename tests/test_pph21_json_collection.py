@@ -30,12 +30,11 @@ def test_collect_attaches_original_listing_identity_and_replays_native_checkpoin
     original = json.dumps({'IsSuccessful': True, 'Payload': {'Data': [row], 'TotalRecords': 1}}).encode()
     listing_url = driver.ORIGIN + '/returnsheet/api/returnsheetssubmitted'
     def goto(url, **kwargs):
-        case.page.navigated.append(url)
-        case.page.url = url
+        case.page.commit_navigation(url)
         request = Request(case.page, url=listing_url, post={
             'TaxpayerAggregateIdentifier': TAXPAYER, 'First': 0, 'Rows': 50, 'Filters': [],
             'isArchieved': False, 'LanguageId': 1, 'SortField': None, 'SortOrder': None})
-        case.page.emit('response', SimpleNamespace(url=listing_url, request=request, status=200,
+        case.page.emit_grid_response(SimpleNamespace(url=listing_url, request=request, status=200,
                         headers={'content-type': 'application/json'}, body=lambda: original))
     monkeypatch.setattr(case.page, 'goto', goto)
     case.page.exchanges = [{'raw': p['body'], 'url': p['context']['url'], 'status': 200,

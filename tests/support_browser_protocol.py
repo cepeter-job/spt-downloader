@@ -40,7 +40,8 @@ def response(rows=None, *, url=None, total=None, successful=True, status=200):
         'Data': rows, 'TotalRecords': len(rows) if total is None else total}}
     return SimpleNamespace(
         url=url or driver.ORIGIN + '/returnsheet/api/returnsheetsfixture',
-        request=SimpleNamespace(resource_type='xhr', method='POST', post_data_json={
+        request=SimpleNamespace(url=url or driver.ORIGIN + '/returnsheet/api/returnsheetsfixture',
+                                resource_type='xhr', method='POST', post_data_json={
             'TaxpayerAggregateIdentifier': TAXPAYER, 'First': 0, 'Rows': 50, 'Filters': []}),
         headers={'content-type': 'application/json'}, status=status,
         json=lambda: payload,
@@ -114,15 +115,26 @@ class SourcePage(SignalSource):
     def __init__(self, popup_url=DETAIL_URL):
         super().__init__()
         self.context = SignalSource()
+        self.main_frame = self
         self.url = LIST_URL
         self.navigated = []
         self.popup = DetailPage(popup_url)
         self.unrelated_popup = None
 
-    def goto(self, url, **kwargs):
+    def commit_navigation(self, url):
         self.navigated.append(url)
         self.url = url
-        self.emit('response', response())
+        self.emit('framenavigated', self.main_frame)
+
+    def emit_grid_response(self, item):
+        if not hasattr(item.request, 'frame'):
+            item.request.frame = self.main_frame
+        self.emit('request', item.request)
+        self.emit('response', item)
+
+    def goto(self, url, **kwargs):
+        self.commit_navigation(url)
+        self.emit_grid_response(response())
 
     def locator(self, selector):
         return Table(self)
