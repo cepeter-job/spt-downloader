@@ -1,6 +1,7 @@
 # Automatic MPN companion workbook for SPT jobs
 
-Status: proposed design; awaiting operator review. No product implementation yet.
+Status: approved by the operator on 26 October 2026, including the supplied
+resume template. Implementation and runner verification follow the plan.
 Baseline inspected: `main` at `1d3999f026d4ed82ad6c31eff9272ecb4540717d`.
 
 ## Intent and agreed requirements
@@ -286,8 +287,9 @@ safe parser reuse and concrete progress percentages. Before merging, review
 the preceding PRs merged by other sessions, including the current list
 restoration behavior, and reverify the latest main baseline and interactions.
 
-Approval of this design is still pending. Manual page/source inspection above
-does not establish a completed feature, tested application or delivered EXE.
+Manual page/source inspection above does not establish a completed feature,
+tested application or delivered EXE. Operator approval authorizes implementing
+the described feature and reference template.
 
 Independent builder check identified hidden period/currency metadata and DOM
 rounding as the two material gaps. The explicit metadata-enrichment and exact
