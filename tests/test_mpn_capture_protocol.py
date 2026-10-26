@@ -25,8 +25,13 @@ def snapshot(rows, *, kind='list', first=0, total=None, parent=None):
     total = len(rows) if total is None else total
     raw = wire({'IsSuccessful': True, 'Payload': {'TotalRecords': total, 'Data': rows}}).encode()
     data = decode_mpn(raw)['Payload']['Data']
+    request = {'First': first, 'Rows': 10, 'SortField': 'PostingDate' if kind == 'list' else 'TransactionDate',
+               'SortOrder': -1, 'LanguageId': 'en-US', 'Filters': [] if kind == 'detail' else
+               [{'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals'}]}
+    from test_mpn import TAXPAYER
+    request['TaxpayerAggregateIdentifier' if kind == 'list' else 'RecordId'] = TAXPAYER if kind == 'list' else parent
     return {'kind': kind, 'rows': data, 'raw': raw, 'total': total,
-            'first': first, 'page_size': 10, 'sequence': first + 1, 'parent_id': parent}
+            'first': first, 'page_size': 10, 'sequence': first + 1, 'parent_id': parent, 'request': request}
 
 
 class SyntheticUI:

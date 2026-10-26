@@ -11,7 +11,8 @@ from playwright.sync_api import Error as PlaywrightError
 
 from coretax_mpn import (ORIGIN, MpnSafetyError, MpnUnsupported, decode_mpn,
                          source_integer, _identity, MpnNumber, require_mpn,
-                         project_payment, validate_mpn, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES)
+                         project_payment, validate_mpn, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES,
+                         _mpn_directories, _source_digest)
 
 LIST_PATH = '/accounting/api/taxpayeraccounting/list'
 DETAIL_PATH = '/accounting/api/taxpayeraccounting/listdetail'
@@ -99,10 +100,12 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         first, size = source_integer(data['First']), source_integer(data['Rows'])
         if (size not in (10, 25, 50) or first % size or data['LanguageId'] != 'en-US'
                 or data['SortField'] != ('PostingDate' if kind == 'list' else 'TransactionDate')
-                or str(data['SortOrder']) != '-1' or not isinstance(data['Filters'], list)
+                or type(data['SortOrder']) is not MpnNumber or str(data['SortOrder']) != '-1'
+                or not isinstance(data['Filters'], list)
                 or (kind == 'detail' and data['Filters'] != [])):
             raise MpnUnsupported('MPN grid pagination/language/filter shape is unsupported')
         data['First'], data['Rows'] = first, size
+        data['SortOrder'] = -1
         return data
 
     def on_request(self, request):
@@ -215,19 +218,8 @@ def AccountingUI(*args, **kwargs):
     return owned_ui(*args, **kwargs)
 
 
-def _typed(value):
-    if type(value) is MpnNumber:
-        return ['number', str(value)]
-    if isinstance(value, dict):
-        return ['object', [[key, _typed(item)] for key, item in sorted(value.items())]]
-    if isinstance(value, list):
-        return ['array', [_typed(item) for item in value]]
-    return [type(value).__name__, value]
-
-
 def _digest(value):
-    return hashlib.sha256(json.dumps(_typed(value), ensure_ascii=False,
-                                      separators=(',', ':')).encode('utf-8')).hexdigest()
+    return _source_digest(value)
 
 
 def _accept_snapshot(snapshot, kind, first, total=None):
@@ -251,6 +243,18 @@ def _accept_snapshot(snapshot, kind, first, total=None):
 
 def collect_mpn(page, run, folder, *, detail_source='dom', max_pages=1000,
                 on_progress=None, check_cancel=None):
+    if check_cancel:
+        check_cancel()
+    from spt_desktop.output_windows import DirectoryGuard
+    root = Path(folder).absolute()
+    with DirectoryGuard() as guard:
+        guard.include(_mpn_directories(root))
+        return _collect_mpn_owned(page, run, root, detail_source=detail_source,
+            max_pages=max_pages, on_progress=on_progress, check_cancel=check_cancel, guard=guard)
+
+
+def _collect_mpn_owned(page, run, folder, *, detail_source, max_pages,
+                       on_progress, check_cancel, guard):
     """Capture all owned non-cancelled parents, then qualify complete details.
 
 The preceding SPT component's completion is separate from the required MPN gate.
@@ -267,12 +271,17 @@ No partial DOM page is combined with another source. Raw pages stay private.
     value = require_mpn(run, detail_source)
     value.update(status='PENDING', inventory_complete=False, details_complete=False,
                  headers=0, details=0, rows=[], audit=[], evidence=[], provenance=[],
-                 attempt=uuid.uuid4().hex, source_pins={})
+                 attempt=uuid.uuid4().hex, source_pins={}, bindings=[])
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     private = folder / 'mpn' / value['attempt']
     # Exclusive attempt; never replace/delete a preceding private capture.
-    private.mkdir(parents=True, exist_ok=False)
+    if any(child.name.casefold() == 'mpn' and child.name != 'mpn' for child in folder.iterdir()):
+        raise MpnSafetyError('MPN private capture root has a case alias')
+    private.parent.mkdir(exist_ok=True)
+    guard.include(_mpn_directories(private.parent))
+    private.mkdir(exist_ok=False)
+    guard.include(_mpn_directories(private))
     budget = 0
     canonical_bytes = 0
     last_checkpoint = time.monotonic()
@@ -301,6 +310,10 @@ No partial DOM page is combined with another source. Raw pages stay private.
         item = {'path': f"mpn/{value['attempt']}/{name}", 'bytes': len(raw),
                 'sha256': hashlib.sha256(raw).hexdigest()}
         value['evidence'].append(item)
+        binding = {'path': item['path'], 'kind': kind}
+        if kind != 'catalog':
+            binding.update(request=deepcopy(snapshot['request']), parent_id=snapshot.get('parent_id'))
+        value['bindings'].append(binding)
         budget += len(raw)
         return item
 

@@ -1,11 +1,11 @@
 """Inspected Accounting UI navigation only; never manufacture/replay a POST."""
-from datetime import datetime, timedelta, timezone
 import hashlib
 import re
 import time
 
 from coretax_mpn import (ORIGIN, MpnUnsupported, MpnSafetyError, decode_mpn,
-                         dom_numbers_match, taxpayer_id)
+                         dom_numbers_match, taxpayer_id, captured_catalogs,
+                         source_display_date as _date)
 from coretax_mpn_browser import AccountingObserver, _digest
 
 SOURCE_PINS = {
@@ -37,21 +37,6 @@ TABLE_JS = r'''table => {
  if(body.some(row=>[...row.cells].some(cell=>cell.colSpan!==1||cell.rowSpan!==1))) return null;
  return {headers,rows:body.map(row=>[...row.cells].map(text))};
 }'''
-
-
-def _date(value):
-    if type(value) is not str:
-        return None
-    try:
-        if re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', value):
-            day = datetime.strptime(value, '%Y-%m-%d')
-        elif re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?Z', value):
-            day = datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(timezone(timedelta(hours=7)))
-        else:
-            return None
-        return day.strftime('%d-%m-%Y') if 1970 <= day.year <= 2100 else None
-    except ValueError:
-        return None
 
 
 class AccountingUI:
@@ -112,8 +97,9 @@ class AccountingUI:
                 if digest != pin:
                     raise MpnUnsupported('MPN loaded script differs from reviewed source')
                 self.pins[url.removeprefix(ORIGIN)] = digest
-            elif self.reference_raw is not None and self.reference_raw != raw:
-                raise MpnSafetyError('MPN reference snapshot changed')
+            elif self.reference_raw is not None:
+                if self.reference_raw != raw:
+                    raise MpnSafetyError('MPN reference snapshot changed')
             else:
                 self.reference_raw = raw
                 self._catalog(raw)
@@ -123,40 +109,7 @@ class AccountingUI:
             self.source_failed = True
 
     def _catalog(self, raw):
-        decoded = decode_mpn(raw)
-        payload = decoded.get('Payload')
-        if decoded.get('IsSuccessful') is not True or not isinstance(payload, list):
-            return
-        expected = {'ACCOUNTING_TYPE', 'ACCOUNTING_TYPE_DETAIL', 'REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT', 'PERIOD'}
-        for group in payload:
-            if not isinstance(group, dict) or group.get('ReferenceDataType') not in expected:
-                continue
-            name = group['ReferenceDataType']
-            if (name in self.catalogs or not isinstance(group.get('Details'), list)
-                    or type(group.get('Checksum')) is not str or not group['Checksum']):
-                raise MpnUnsupported('MPN reference group is ambiguous')
-            details = group['Details']
-            labels, ambiguous = {}, set()
-            for detail in details:
-                if not isinstance(detail, dict):
-                    continue
-                language = detail.get('AppLanguageId')
-                if language is not None and language != 'id-ID':
-                    raise MpnSafetyError('MPN reference language contradicts its original route')
-                # The inspected PERIOD/type catalogs have explicit null ValidTo.
-                # Other lifecycles do not acquire a clock/version interpretation.
-                if language != 'id-ID' or 'ValidTo' not in detail or detail['ValidTo'] is not None:
-                    continue
-                code, caption = detail.get('Code'), detail.get('CodeDescription')
-                if type(code) is not str or type(caption) is not str or not caption:
-                    continue
-                if code in labels:
-                    ambiguous.add(code)
-                labels[code] = caption
-            # No version selection or expired/duplicate-Code inference.
-            for code in ambiguous:
-                labels.pop(code, None)
-            self.catalogs[name] = labels
+        self.catalogs = captured_catalogs(decode_mpn(raw))
         self.catalog = self.catalogs.get('PERIOD', {})
 
     def _one(self, selector):

@@ -745,6 +745,14 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
 @diagnostics.traced('publish')
 def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                       overwrite=False, expected_outputs=None):
+    # Accounting JSON stays private, held across the workbook-only publication.
+    with coretax.mpn_custody(run, source, check_cancel):
+        return _publish_workbooks(run, source, downloads, job_id, check_cancel,
+                                  overwrite=overwrite, expected_outputs=expected_outputs)
+
+
+def _publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
+                       overwrite=False, expected_outputs=None):
     """Publish a new export, or replace only selected files with explicit consent."""
     if not isinstance(job_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', job_id):
         raise ValueError('Invalid job identifier')
