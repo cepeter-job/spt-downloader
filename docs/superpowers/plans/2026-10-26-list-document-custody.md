@@ -31,6 +31,15 @@ produce a replacement Document rather than an identical notification. The
 original seventeen Edge cases remain unchanged. Before product edits, require
 all 5,868 cases to reconcile with exactly sixteen intended failures.
 
+The extended RED is accepted from all six archives of
+[run 40263240018, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/40263240018),
+tested merge `6520d1ceb3faf8f1ccd47cf98442db567b5493b3`, tree
+`4b11b153316bfadf3added009e34d8a80e6e6be3`: 5,852 Windows passes and exactly
+16 intended failures, all 5,842 baseline identities and 710 portable overlap
+passing, with zero errors/skips. Full collection, phase outcomes, JUnit identities,
+measurements, environment and archive SHA256/size checks reconcile. Only after
+this gate is the retained-Document repair implemented; final GREEN is pending.
+
 ## Bounded repair after reproduced RED
 
 - [ ] Retain a value-free reference to the actual committed Document. Permit

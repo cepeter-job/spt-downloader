@@ -688,6 +688,8 @@ class ListObserver:
         self.navigation_failed = False
         self.failed = False
         self.pending = {}
+        self._document = None
+        self._binding_document = False
         page.on('framenavigated', self.on_navigation)
         page.on('request', self.on_request)
         page.on('requestfailed', self.on_request_failed)
@@ -696,12 +698,38 @@ class ListObserver:
     def begin_navigation(self, source_url):
         # A response sequence cannot distinguish an outstanding old request.
         # Admit no requests until this attempt's main document has committed.
+        _check_cancel(self.check_cancel)
+        self._release_document()
+        _check_cancel(self.check_cancel)
         self.navigation_source = source_url
         self.navigation_committed = False
         self.navigation_failed = False
         self.failed = False
         self.pending.clear()
         self.latest = None
+
+    def _release_document(self):
+        document, self._document = self._document, None
+        if document is not None:
+            try:
+                document.dispose()
+            except Exception:
+                pass  # Cleanup never records browser exception material.
+
+    def _fail_navigation(self):
+        self.navigation_failed = True
+        self.pending.clear()
+        if not self._binding_document:
+            self._release_document()
+
+    def _same_document(self):
+        _check_cancel(self.check_cancel)
+        try:
+            same = self._document is not None and self._document.evaluate('(d) => d === document') is True
+        except Exception:
+            same = False
+        _check_cancel(self.check_cancel)
+        return same
 
     def _same_navigation(self, url):
         expected = urlparse(self.navigation_source)
@@ -711,11 +739,30 @@ class ListObserver:
     def on_navigation(self, frame):
         if self.navigation_source is None or frame != self.page.main_frame:
             return
-        if self.navigation_committed or not self._same_navigation(frame.url):
-            self.navigation_failed = True
-            self.pending.clear()
+        if self.navigation_failed:
+            return
+        if not self._same_navigation(frame.url):
+            self._fail_navigation()
+            return
+        if self.navigation_committed:
+            # A same-document router notification may be delivered while the
+            # initial handle is being acquired. Its identity is checked below
+            # before wait/View can succeed; route contradictions latch above.
+            if not self._binding_document and not self._same_document():
+                self._fail_navigation()
             return
         self.navigation_committed = True
+        self._binding_document = True
+        try:
+            _check_cancel(self.check_cancel)
+            self._document = self.page.evaluate_handle('() => document')
+        except Exception:
+            self._fail_navigation()
+        finally:
+            self._binding_document = False
+        _check_cancel(self.check_cancel)
+        if self.navigation_failed or not self._same_document():
+            self._fail_navigation()
 
     def _grid_request(self, request, url):
         try:
@@ -746,6 +793,13 @@ class ListObserver:
             return
 
     def on_request(self, request):
+        # Evaluate replacement navigation before grid-admission early returns:
+        # acquisition can pump a reload and return its newer Document handle.
+        if (self.navigation_source is not None and self.navigation_committed
+                and getattr(request, 'resource_type', None) == 'document'
+                and getattr(request, 'frame', None) == self.page.main_frame):
+            self._fail_navigation()
+            return
         if self.navigation_source is None or not self.navigation_committed or self.navigation_failed:
             return
         posted = self._grid_request(request, request.url)
@@ -754,8 +808,7 @@ class ListObserver:
         if (not self._same_navigation(self.page.url)
                 or posted['TaxpayerAggregateIdentifier'] != list_taxpayer_id(self.navigation_source)
                 or len(self.pending) >= 128):
-            self.navigation_failed = True
-            self.pending.clear()
+            self._fail_navigation()
             return
         self.pending[id(request)] = request
 
@@ -826,7 +879,8 @@ class ListObserver:
             raise self.request_filter.error
         if self.navigation_source is not None and (
                 not self.navigation_committed or self.navigation_failed
-                or not self._same_navigation(self.page.url)):
+                or not self._same_navigation(self.page.url) or not self._same_document()):
+            self._fail_navigation()
             raise RuntimeError('Return-list document or request ownership changed; refusing capture')
         if self.failed:
             raise RuntimeError('Coretax reported an unsuccessful return-list request')
@@ -854,6 +908,7 @@ class ListObserver:
         self.latest = None
         self.pending.clear()
         self.navigation_source = None
+        self._release_document()
 
 
 def _restore_list_response(page, observer, source_url, taxpayer_id, check_cancel=None):

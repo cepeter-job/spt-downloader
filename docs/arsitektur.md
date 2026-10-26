@@ -244,6 +244,17 @@ Cabang semantik L11-C terpisah memakai pin corporate/main/vendor yang termuat, r
 
 `ListObserver` mengamati respons JSON dari tindakan UI milik browser. Ia menyimpan respons terakhir dan nomor urut yang terus bertambah, bukan seluruh riwayat respons dalam RAM. Ia tidak membaca cookie/header autentikasi dan tidak menjalankan request API penulisan tersendiri.
 
+Pemulihan daftar menahan handle identitas Document yang pertama kali commit pada
+route/path/query submitted yang diinspeksi. Notifikasi router pada Document yang
+sama dapat diterima; reload atau perpindahan route/query/taxpayer tetap ditolak,
+termasuk detour yang kembali ke URL asal. Request document main-frame berikutnya
+langsung memveto attempt, juga saat pengambilan handle memompa event. Request
+grid post-commit tetap ditahan secara terbatas selama pengambilan identitas,
+tetapi wait/View memerlukan identitas yang terbukti. Probe tidak membaca nilai
+bisnis dan tetap memeriksa Stop; handle dilepas pada retry, failure dan close.
+Fresh marker, request lama yang dikecualikan, batas 128 pending, error terminal,
+satu retry khusus timeout, metadata dan RecordId tidak dilonggarkan.
+
 Capture memakai kontrol baca yang sudah dikenali: pencarian wajib pajak, Pilih, navigasi status, View, tab, accordion, ukuran halaman, serta paginasi. Tombol submit, batal SPT, kirim email, pembuatan dokumen, dan aksi baris yang tidak dikenal tidak boleh dijadikan fallback. Bila selector View berubah, hasil tetap terblokir/parsial sampai layout baru diperiksa dan fixture regresinya tersedia.
 
 PDF keuangan/auditan didukung melalui href baca biasa atau kontrol Unduh pada grid FinancialStatement yang teramati pada Induk Badan terverifikasi. [Adapter POST](pdf-keuangan-post.md) memverifikasi source pin, kepemilikan kontrol serta request akhir, membatalkan request aplikasi sebelum satu replay stream terbatas, dan menolak perpindahan scope/redirect. Identitas, origin, byte, ukuran, signature/hash dan custody tetap diperiksa; metadata saja bukan unduhan. PDF/BPE/lampiran lain, pembuatan dokumen jarak jauh dan drill-down per baris tetap di luar cakupan. Tab dinonaktifkan tidak dijelajahi. Capture detail harus memiliki field atau tabel terstruktur yang bermakna; halaman kosong atau layout tak dikenal tidak disertifikasi lengkap.
