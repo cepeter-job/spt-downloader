@@ -85,6 +85,15 @@ are present; collection, phases, JUnit identities, measurements, environment,
 hashes and sizes reconcile. This proves the target failures; the candidate is
 still rejected until all5,886 identities pass after repair.
 
+Review of cbe28b4 found two further Important gaps before acceptance: a stale
+validation RPC can still invoke failure mutation on a newer attempt (also on a
+repeated notification), and the acquisition deadline continues through the
+independently bounded healthy idle wait after identity has settled. Add six
+unchanged-product cases: four stale-validation failures, one slow-idle failure,
+and one passing absent-response control. Require the full5,892 identities,
+exactly five new failures and all preceding5,886 identities passing before
+repairing these gaps. The previous candidate remains not merge-ready.
+
 - [x] Retain a value-free reference to the actual committed Document. Permit
   additional notifications only with the identical active Document and the
   original authorized path/query. Missing or unreadable identity stays refused.
