@@ -36,8 +36,14 @@ Bagian ini menjelaskan tanggung jawab modul; bagian berikutnya menetapkan kontra
 GUI memakai stdlib/Tkinter dan tidak mengimpor Playwright atau openpyxl ke prosesnya. Worker memasang dependensi pada runtime terisolasi. `WORKER_FILES` merupakan allowlist eksplisit; modul worker baru harus ditambahkan di sana bersama tes kontraknya. Jangan menggantinya dengan penyalinan direktori rekursif, karena checkout dapat berdampingan dengan profil, hasil, atau environment lokal.
 
 Hasil mode JSON-hybrid menyimpan manifest capture dan byte respons asli yang
-dideklarasikan record terpilih di `json/<ordinal>/<attempt>/` dalam folder hasil
-SPT, baik melalui CLI maupun publikasi desktop ke Downloads. Penyimpanan checkpoint
+dideklarasikan record terpilih di `json/<nama SPT>/<ordinal>/<attempt>/` dalam folder hasil
+SPT, baik melalui CLI maupun publikasi desktop ke Downloads. Nama tetapnya adalah
+`PPh Badan`, `SPT PPh 21`, `SPT PPh Unifikasi`, dan `PPN`; jenis lain memakai
+`SPT Lainnya`. Ordinal asli tetap memisahkan setiap record. Metadata run baru
+mendeklarasikan `json_output_layout=tax-kind-v1`; tanpa field ini pembaca memakai
+layout lama `json/<ordinal>/<attempt>/`. Layout eksplisit lain ditolak. Ekspor
+ulang membaca layout sumber dan menghasilkan layout baru, tanpa menghapus bukti
+lama; kedua lokasi bukti terpilih diperiksa sebelum penggantian. Penyimpanan checkpoint
 privat `returns/json/` tetap kompatibel; hanya prefix lokasi salinan publikasi
 yang berubah. Isi manifest tetap literal, termasuk reference checkpoint asal;
 salinan ini merupakan bukti, bukan job mandiri untuk resume. Deklarasi `output_json`

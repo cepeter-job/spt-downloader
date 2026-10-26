@@ -740,7 +740,33 @@ class DetailJsonCapture:
         return False
 
 
-def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_cancel=None):
+JSON_OUTPUT_LAYOUT = 'tax-kind-v1'
+_JSON_TAX_FOLDERS = {'PPh Badan': 'PPh Badan', 'PPh Pasal 21/26': 'SPT PPh 21',
+                     'PPh Unifikasi': 'SPT PPh Unifikasi', 'PPN': 'PPN'}
+
+
+def _json_output_layout(run):
+    if 'json_output_layout' not in run:
+        return None  # Existing published jobs retain the original ordinal layout.
+    layout = run['json_output_layout']
+    if not isinstance(layout, str) or layout != JSON_OUTPUT_LAYOUT:
+        raise JsonSafetyError('Unsupported JSON output layout')
+    return layout
+
+
+def _published_json_path(name, record, layout):
+    if layout is None:
+        return name.removeprefix('returns/')
+    if not isinstance(layout, str) or layout != JSON_OUTPUT_LAYOUT:
+        raise JsonSafetyError('Unsupported JSON output layout')
+    # Directory names are fixed presentation labels, never source path fragments.
+    tax = record.get('meta', {}).get('Jenis Pajak')
+    label = _JSON_TAX_FOLDERS.get(tax, 'SPT Lainnya')
+    return 'json/' + label + '/' + name.removeprefix('returns/json/')
+
+
+def checkpoint_bodies(folder, capture, record, scope, *, published=False,
+                      output_layout=None, check_cancel=None):
     """Reacquire original private bytes; reject lexical escapes before any read."""
     from pathlib import PurePosixPath
     if not isinstance(capture, dict):
@@ -762,7 +788,7 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
         if check_cancel:
             check_cancel()
         if published:
-            name = name.removeprefix('returns/')
+            name = _published_json_path(name, record, output_layout)
         hold(guard, (root / name).parent)
         with locked_file(root / name) as stream:
             raw = stream.read(maximum + 1)
@@ -845,7 +871,8 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False, check_
 def _json_output_entries(run):
     """Derive a closed file set; never enumerate private job directories."""
     from pathlib import PurePosixPath
-    entries, seen = [], set()
+    layout = _json_output_layout(run)
+    entries, seen, sources = [], set(), set()
     for record in run['records']:
         audit = record.get('detail_source')
         if audit is None:
@@ -875,12 +902,14 @@ def _json_output_entries(run):
             items.append({'source_path': name, 'sha256': descriptor.get('sha256'),
                           'maximum': MAX_BODY_BYTES, 'bytes': descriptor.get('bytes')})
         for item in items:
-            name = item['source_path'].removeprefix('returns/')
+            name = _published_json_path(item['source_path'], record, layout)
             digest = item['sha256']
-            if (name.casefold() in seen or not isinstance(digest, str)
+            if (name.casefold() in seen or item['source_path'] in sources
+                    or not isinstance(digest, str)
                     or not re.fullmatch(r'[0-9a-f]{64}', digest)):
                 raise JsonSafetyError('Duplicate or invalid JSON evidence declaration')
             seen.add(name.casefold())
+            sources.add(item['source_path'])
             item['relative_path'] = name
         entries.append((record, capture, items))
     return entries
@@ -914,11 +943,14 @@ def _verify_json_stream(stream, item, check_cancel=None):
 
 
 @contextmanager
-def json_custody(run, folder, *, published=True, check_cancel=None):
-    """Hold selected original bytes through copying or output verification."""
+def json_custody(run, folder, *, published=True, target_layout=None, check_cancel=None):
+    """Hold source-layout bytes; optionally relocate the same declared evidence."""
     if published:
         verified_json_names(run)
     entries = _json_output_entries(run)
+    destinations = (_json_output_entries({**run, 'json_output_layout': target_layout})
+                    if target_layout is not None else entries)
+    target_items = {item['source_path']: item for _, _, items in destinations for item in items}
     if not entries:
         yield [], {}
         return
@@ -931,7 +963,7 @@ def json_custody(run, folder, *, published=True, check_cancel=None):
             # Bind every byte to the unchanged manifest and literal selected scope.
             packets = checkpoint_bodies(root, capture, record,
                 [run['npwp'], run['year'], run['year_basis']],
-                published=published, check_cancel=check_cancel)
+                published=published, output_layout=_json_output_layout(run), check_cancel=check_cancel)
             del packets
             for item in record_items:
                 if check_cancel:
@@ -941,8 +973,9 @@ def json_custody(run, folder, *, published=True, check_cancel=None):
                 guard.include({p: _ordinary_directory(p) for p in reversed([parent, *parent.parents])})
                 stream = readers.enter_context(locked_file(root / name))
                 _verify_json_stream(stream, item, check_cancel)
-                streams[item['relative_path']] = stream
-                items.append(item)
+                destination = target_items[item['source_path']]
+                streams[destination['relative_path']] = stream
+                items.append(destination)
         yield items, streams
         for item in items:
             _verify_json_stream(streams[item['relative_path']], item, check_cancel)
@@ -954,31 +987,35 @@ def verify_existing_json(run, folder):
     A destination can contain only some selected attempts. Missing new files
     are allowed; every existing selected file must match its declared bytes.
     """
-    entries = _json_output_entries(run)
+    entries = _json_output_entries(run)  # Validate the declared source layout first.
     if not entries:
         return
+    legacy = {key: value for key, value in run.items() if key != 'json_output_layout'}
+    # A migration must not hide changed selected evidence left at its old path.
+    variants = (legacy, {**legacy, 'json_output_layout': JSON_OUTPUT_LAYOUT})
+    selected = {item['relative_path']: item for variant in variants
+                for _, _, items in _json_output_entries(variant) for item in items}
     root = Path(folder).absolute()
     if '..' in root.parts:
         raise JsonSafetyError('Unsafe JSON evidence destination')
     with DirectoryGuard() as guard:
         guard.include({p: _ordinary_directory(p) for p in reversed([root, *root.parents])})
-        for _, _, items in entries:
-            for item in items:
-                parent = root
-                parts = Path(item['relative_path']).parts
-                for index, component in enumerate(parts):
-                    if any(p.name.casefold() == component.casefold() and p.name != component
-                           for p in parent.iterdir()):
-                        raise JsonSafetyError('JSON evidence destination has a case alias')
-                    target = parent / component
-                    if not target.exists() and not target.is_symlink():
-                        break
-                    if index == len(parts) - 1:
-                        with locked_file(target) as stream:
-                            _verify_json_stream(stream, item)
-                    else:
-                        guard.include({target: _ordinary_directory(target)})
-                        parent = target
+        for item in selected.values():
+            parent = root
+            parts = Path(item['relative_path']).parts
+            for index, component in enumerate(parts):
+                if any(p.name.casefold() == component.casefold() and p.name != component
+                       for p in parent.iterdir()):
+                    raise JsonSafetyError('JSON evidence destination has a case alias')
+                target = parent / component
+                if not target.exists() and not target.is_symlink():
+                    break
+                if index == len(parts) - 1:
+                    with locked_file(target) as stream:
+                        _verify_json_stream(stream, item)
+                else:
+                    guard.include({target: _ordinary_directory(target)})
+                    parent = target
 
 
 def copy_held_json(items, streams, folder, check_cancel=None):

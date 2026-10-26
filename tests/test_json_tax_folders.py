@@ -182,3 +182,24 @@ def test_missing_layout_keeps_legacy_reader_and_declaration_contract(tmp_path):
     assert all(Path(n).parts[1] == '0001' for n in run['output_json'])
     final = output.publish_workbooks(run, source, tmp_path / 'Downloads', 'old-reader')
     coretax.verify_outputs(run, final)
+
+
+def test_desktop_legacy_to_named_overwrite_preserves_both_evidence_sets(tmp_path):
+    source = tmp_path / 'private'
+    run = captured_run(source, tax='PPh Unifikasi', ordinal=4)
+    legacy_export(run, source)
+    downloads = tmp_path / 'Downloads'
+    final = output.publish_workbooks(run, source, downloads, 'legacy')
+    old = {name: (final / name).read_bytes() for name in run['output_json']}
+    before = deepcopy(run['records'])
+    expected = named_bytes(run, source, 'SPT PPh Unifikasi')
+    coretax.save_output(run, source, json_source=source)
+    assert run.get('json_output_layout') == LAYOUT
+    snapshot = output.existing_outputs(run, downloads)
+    assert set(snapshot['json']) == set(old)
+    migrated = output.publish_workbooks(run, source, downloads, 'named', overwrite=True,
+                                        expected_outputs=snapshot)
+    assert migrated == final and run['records'] == before
+    assert {p.relative_to(final).as_posix(): p.read_bytes()
+            for p in (final / 'json').rglob('*.json')} == {**old, **expected}
+    coretax.verify_outputs(run, final)
