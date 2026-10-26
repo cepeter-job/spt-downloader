@@ -20,6 +20,17 @@ changing production code; do not guess that the live request or login failed.
   the 5,842-case PR115 baseline before implementation. Expect only the eight
   same-document cases to fail at the current ownership guard.
 
+The initial RED is accepted: [run 40261254624, attempt 1](https://github.com/cepeter-job/spt-downloader/actions/runs/40261254624),
+tested merge `6950203ea53f60c23ade1492dd48463b4bde7d63`, exact tree
+`3877a266f4f191f9f8b31272a12874deb58f0754`. All six archives reconcile 5,859 Windows cases with precisely
+eight intended failures; all 5,842 baseline cases and 710 portable overlap pass.
+Review adds nine deterministic protocol cases for identity availability,
+acquisition reentrancy, Stop and handle release. Model actual Document identity
+in the shared synthetic fixture, and make its existing extra-commit control
+produce a replacement Document rather than an identical notification. The
+original seventeen Edge cases remain unchanged. Before product edits, require
+all 5,868 cases to reconcile with exactly sixteen intended failures.
+
 ## Bounded repair after reproduced RED
 
 - [ ] Retain a value-free reference to the actual committed Document. Permit

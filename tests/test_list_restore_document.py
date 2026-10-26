@@ -1,12 +1,15 @@
 """Restore the submitted grid across same-document router notifications only."""
 import html
 import json
+from types import SimpleNamespace
 
 import pytest
 
 import coretax_browser as driver
 from support_browser_protocol import DETAIL_URL, LIST_URL, META, RECORD, TAXPAYER, run_fixture
 from support_isolated_browser import browser, context
+from support_browser_protocol import SourcePage, response
+from test_list_restore_recovery import MissingListPage, collector
 
 
 @pytest.mark.parametrize('mutation,after_response', [
@@ -97,3 +100,106 @@ def test_owned_submitted_list_keeps_same_document_but_refuses_replacements_and_d
         assert len(visits) <= 2
         assert result['records'][0]['sections'] == []
         assert len(result['errors']) == 1
+
+
+@pytest.mark.parametrize('failure', ['capture', 'sample', 'false'])
+def test_unreadable_committed_document_never_authorizes_view(tmp_path, collector, failure):
+    class UnreadablePage(SourcePage):
+        def evaluate_handle(self, script):
+            if failure == 'capture':
+                raise RuntimeError('SYNTHETIC DOCUMENT UNAVAILABLE')
+            handle = super().evaluate_handle(script)
+            def sample(_):
+                if failure == 'sample':
+                    raise RuntimeError('SYNTHETIC DOCUMENT UNAVAILABLE')
+                return False
+            handle.evaluate = sample
+            return handle
+
+    page = UnreadablePage()
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert not result['complete'] and collector == []
+    assert page.navigated == [LIST_URL]
+    assert all(handle.disposed for handle in page.document_handles)
+    assert not any(page.listeners.values())
+
+
+@pytest.mark.parametrize('mutation', ['same', 'replacement', 'navigation-request'])
+def test_document_acquisition_reentrancy_keeps_only_the_same_owned_document(
+        tmp_path, collector, mutation):
+    class AcquiringPage(SourcePage):
+        queued = None
+
+        def evaluate_handle(self, script):
+            self.queued = response()
+            self.queued.request.frame = self.main_frame
+            # Identity acquisition pumps events. This actual post-commit grid
+            # request is the only one whose response will arrive after goto.
+            self.emit('request', self.queued.request)
+            if mutation == 'navigation-request':
+                self.emit('request', SimpleNamespace(url=LIST_URL, resource_type='document',
+                    frame=self.main_frame, is_navigation_request=lambda: True))
+                self.replace_document()
+                return super().evaluate_handle(script)
+            handle = super().evaluate_handle(script)
+            if mutation == 'replacement':
+                self.replace_document()
+            else:
+                self.emit('framenavigated', self.main_frame)
+            return handle
+
+        def goto(self, url, **kwargs):
+            self.commit_navigation(url)
+            if self.queued is None:
+                # The old implementation never asks for Document identity.
+                self.emit_grid_response(response())
+            else:
+                self.emit('response', self.queued)
+
+    page = AcquiringPage()
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert result['complete'] is (mutation == 'same')
+    assert collector == ([DETAIL_URL] if mutation == 'same' else [])
+    assert page.navigated == [LIST_URL]
+    assert all(handle.disposed for handle in page.document_handles)
+    assert not any(page.listeners.values())
+
+
+def test_stop_during_document_identity_probe_prevents_view_and_releases_handle(tmp_path, collector):
+    class StoppingPage(SourcePage):
+        stopped = False
+
+        def evaluate_handle(self, script):
+            handle = super().evaluate_handle(script)
+            sample = handle.evaluate
+            def stop_on_sample(source):
+                result = sample(source)
+                self.stopped = True
+                return result
+            handle.evaluate = stop_on_sample
+            return handle
+
+    page = StoppingPage()
+    def cancel():
+        if page.stopped:
+            raise driver.CaptureCancelled()
+    with pytest.raises(driver.CaptureCancelled):
+        driver.collect_details(page, run_fixture(), tmp_path, check_cancel=cancel)
+    assert collector == [] and page.navigated == [LIST_URL]
+    assert len(page.document_handles) == 1 and page.document_handles[0].disposed
+    assert not any(page.listeners.values())
+
+
+@pytest.mark.parametrize('retry', [False, True])
+def test_document_handles_are_released_before_retry_and_on_close(tmp_path, collector, retry):
+    class CustodyPage(MissingListPage if retry else SourcePage):
+        def evaluate_handle(self, script):
+            assert all(handle.disposed for handle in self.document_handles)
+            return super().evaluate_handle(script)
+
+    page = CustodyPage()
+    result = driver.collect_details(page, run_fixture(), tmp_path)
+    assert result['complete'] and collector == [DETAIL_URL]
+    assert len(page.document_handles) == (2 if retry else 1)
+    assert all(handle.disposed for handle in page.document_handles)
+    assert not any(page.listeners.values())

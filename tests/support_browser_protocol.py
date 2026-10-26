@@ -120,11 +120,23 @@ class SourcePage(SignalSource):
         self.navigated = []
         self.popup = DetailPage(popup_url)
         self.unrelated_popup = None
+        self.document_token = object()
+        self.document_handles = []
+
+    def evaluate_handle(self, script):
+        assert script == '() => document'
+        handle = Document(self)
+        self.document_handles.append(handle)
+        return handle
+
+    def replace_document(self):
+        self.document_token = object()
+        self.emit('framenavigated', self.main_frame)
 
     def commit_navigation(self, url):
         self.navigated.append(url)
         self.url = url
-        self.emit('framenavigated', self.main_frame)
+        self.replace_document()
 
     def emit_grid_response(self, item):
         if not hasattr(item.request, 'frame'):
@@ -138,6 +150,22 @@ class SourcePage(SignalSource):
 
     def locator(self, selector):
         return Table(self)
+
+
+class Document:
+    """A value-free identity handle; replacement invalidates existing handles."""
+    def __init__(self, page):
+        self.page = page
+        self.token = page.document_token
+        self.disposed = False
+
+    def evaluate(self, script):
+        assert script == '(d) => d === document'
+        assert not self.disposed
+        return self.token is self.page.document_token
+
+    def dispose(self):
+        self.disposed = True
 
 
 def run_fixture(list_url=LIST_URL):
