@@ -207,3 +207,34 @@ def test_original_mpn_reader_denies_mutation_during_custody(monkeypatch, tmp_pat
         with pytest.raises(OSError):
             with path.open('wb') as stream:
                 stream.write(b'{}')
+
+
+def test_identical_dom_rows_with_different_hidden_periods_require_whole_json_fallback(monkeypatch, tmp_path):
+    browser, _ = prepare(monkeypatch)
+    original = browser.AccountingUI
+    def make(*args, **kwargs):
+        ui = original(*args, **kwargs)
+        row = deepcopy(ui.children[HEADER][-1])
+        other = deepcopy(row)
+        other.update(RecordId='00000000-0000-4000-8000-000000000005', PeriodCode='01012024')
+        ui.children = {HEADER: [row, other]}
+        visible = ['01-02-2026', '01-02-2026', '0000000000000007', 'OtherTaxReturn',
+                   'DBP', '-1.250,501', '1,00', '-1.250,501', '=SYNTHETIC-REFERENCE']
+        ui.dom = [visible, deepcopy(visible)]
+        return ui
+    monkeypatch.setattr(browser, 'AccountingUI', make)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    assert len(run['mpn']['rows']) == 1 and run['mpn']['rows'][0]['source'] == 'json'
+
+
+def test_complete_capture_cannot_drop_original_negative_rows_from_its_proof(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    run['mpn']['rows'] = []
+    run['mpn']['provenance'] = []
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run, tmp_path):
+            pass

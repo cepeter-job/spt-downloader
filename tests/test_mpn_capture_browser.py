@@ -14,7 +14,7 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 
 
 @contextmanager
-def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False):
+def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False, pending_catalog=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -45,9 +45,12 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     const payload=(kind,id,filters)=>({[kind==='list'?'TaxpayerAggregateIdentifier':'RecordId']:id,First:0,Rows:10,SortField:kind==='list'?'PostingDate':'TransactionDate',SortOrder:-1,LanguageId:'en-US',Filters:filters});
     async function loadList(){searches++;const filters=[{PropertyName:'IsCancelled',Value:'0',MatchMode:'equals',CaseSensitive:true,AsString:false}];if(searches<=2||STUCK)filters.push({PropertyName:'TransactionDate',Value:['2026/09/01','2026/10/26'],MatchMode:'between'});const response=await fetch('/accounting/api/taxpayeraccounting/list',{method:'POST',body:JSON.stringify(payload('list',TAXPAYER,filters))});const body=await response.json();const table=document.querySelector('acc-balance-sheet-light-grid table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){const tr=document.createElement('tr');const td=document.createElement('td');const button=document.createElement('button');button.title='Detail Transaksi';button.innerHTML='<span class="pi pi-list"></span>';button.onclick=()=>detail(row.RecordId);td.append(button);tr.append(td);cells(tr,['01-02-2026','01-02-2026','OtherTaxReturn','DBP',row.CurrencyCode,'Kredit','0','0','1','0','0','SYNTHETIC REF',row.RevenueCode,'SYNTHETIC KAP',row.PaymentCode,row.PeriodCode,row.TransactionNumber,'','','','','','']);table.tBodies[0].append(tr);}}
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
-    document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();});
+    document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
-    main = ('const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
+    reference_path = ('/referencedata/api/currentreferencedata/id-ID/'
+        'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
+    main = ('const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog else '') + ';'
+            + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
             + 'const ROUNDED=' + json.dumps(rounded) + ';const STUCK=' + json.dumps(default_stuck) + ';' + main).encode()
     vendor = b'/* Synthetic vendor only; no portal source or taxpayer data. */'
@@ -64,7 +67,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
       <acc-balance-sheet-light-grid><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></acc-balance-sheet-light-grid>
       <p-dialog id="isShowDetail" style="display:none"><div role="dialog"><span class="p-dialog-title">Detail Transaksi</span><button class="p-dialog-header-close">Close</button><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></div></p-dialog>
       </acc-balance-sheet-light></body></html>'''
-    metrics = {'list': [], 'detail': [], 'unknown': 0}
+    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': []}
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
@@ -82,6 +85,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         elif path == '/accounting/api/taxpayeraccounting/listdetail':
             metrics['detail'].append(request.post_data_json)
             request_route.fulfill(body=detail_raw, content_type='application/json')
+        elif path == reference_path and pending_catalog:
+            metrics['references'].append(request_route)  # Intentionally unresolved dependency.
         else:
             metrics['unknown'] += 1
             request_route.abort()
@@ -132,3 +137,12 @@ def test_real_foreign_detail_parent_is_fatal_before_fallback(browser, tmp_path, 
         with pytest.raises(MpnSafetyError):
             collect_mpn(page, run, tmp_path)
         assert not run['complete'] and run['mpn']['status'] != 'COMPLETE'
+
+
+def test_pending_admitted_reference_cannot_become_complete_at_final_sampling(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert len(metrics['references']) == 1
+        assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'

@@ -99,6 +99,12 @@ def test_unsafe_json_is_refused_without_source_excerpt(raw):
     assert 'synthetic-secret' not in str(caught.value)
 
 
+@pytest.mark.parametrize('text', ['Basic authorized taxpayer', 'Bearer bonds paid'])
+def test_ordinary_business_text_is_not_misclassified_as_an_authentication_header(text):
+    body = json.dumps({'TaxpayerName': text}).encode()
+    assert adapter().decode_mpn(body)['TaxpayerName'] == text
+
+
 def test_dom_rounding_requires_whole_detail_json_fallback():
     _, detail = payment_source(amount='-1250.501')
     row = ['01-02-2026', '01-02-2026', '0000000000000007', 'OtherTaxReturn',

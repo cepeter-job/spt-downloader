@@ -31,11 +31,14 @@ def test_resume_uses_the_operator_reference_coordinates_without_sample_rows(tmp_
         assert summary.column_dimensions['B'].width == 58
         assert 'A1:H1' in summary.merged_cells
         assert summary.freeze_panes is None
+        assert summary.print_area.endswith('$H$18')
         index = wb['Daftar SPT']
         assert index.max_row == 4
         assert index.freeze_panes is None
+        assert index.print_area.endswith('$K$8')
         assert index['A5'].hyperlink is None
         assert wb['Audit']['A3'].value == 'Status / Objek'
+        assert wb['Audit']['A1'].value == 'AUDIT | Kelengkapan'
         assert wb['Audit'].freeze_panes == 'A4'
     finally:
         wb.close()
@@ -101,14 +104,31 @@ def test_dynamic_rows_chart_and_table_follow_only_actual_records(tmp_path, count
         assert summary.cell(14 + count, 2).value == 'PARTIAL'
         chart = summary._charts[0]
         assert chart.anchor._from.col == 3 and chart.anchor._from.row == 12
+        assert (chart.anchor.ext.cx, chart.anchor.ext.cy) == (6480000, 3240000)
+        assert chart.style == 2
         expected = "'Ringkasan'!$B$14" + (f':$B${13 + count}' if count > 1 else '')
         assert chart.series[0].val.numRef.f == expected
         assert chart.series[0].val.numRef.numCache is None
         assert index.max_row == count + 4
         assert index.tables['SPTIndex'].ref == f'A4:K{count + 4}'
         assert index['B5'].border.left.style == 'thin'
+        assert index.row_dimensions[count + 4].height == 36
         assert audit['B4'].value == 'Field belum dipetakan'
         assert audit['B5'].value == 0
+    finally:
+        wb.close()
+
+
+def test_hidden_administrative_sheet_cannot_prove_a_visible_export_scope(tmp_path):
+    from coretax_exporter import export_workbook
+    from coretax_resume_layout import summary_scope
+    path = tmp_path / 'resume.xlsx'
+    export_workbook(empty_run(), path, include_details=False)
+    wb = load_workbook(path)
+    try:
+        wb['Ringkasan'].sheet_state = 'hidden'
+        with pytest.raises(ValueError, match='scope|NPWP|visible'):
+            summary_scope(wb)
     finally:
         wb.close()
 
