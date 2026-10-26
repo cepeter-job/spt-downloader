@@ -100,7 +100,7 @@ def test_resume_reports_unmapped_template_evidence(tmp_path):
     exporter.export_split_workbooks(run,tmp_path)
     wb = load_workbook(tmp_path/'resume.xlsx')
     try:
-        assert wb['Ringkasan']['B23'].value == 'PARTIAL'
+        assert wb['Ringkasan']['B15'].value == 'PARTIAL'
         assert any(c.value == 'Pemetaan template' for cells in wb['Audit'] for c in cells)
         hints = [c.value for cells in wb['Audit'] for c in cells
                  if isinstance(c.value, str) and 'jumlah field/tabel/baris belum dipetakan' in c.value]

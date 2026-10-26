@@ -54,3 +54,94 @@ def test_new_resume_scope_is_verified_independently_from_display_status(tmp_path
     wb.close()
     with pytest.raises(ValueError, match='NPWP'):
         verify_workbook(path, run, include_details=False)
+
+
+def test_resource_contains_only_static_cells_and_no_retained_operational_parts():
+    from coretax_resume_layout import RESOURCE
+    import zipfile
+    import xml.etree.ElementTree as ET
+    wb = load_workbook(RESOURCE)
+    try:
+        populated = {name: {cell.coordinate for row in wb[name] for cell in row
+                            if cell.value is not None} for name in wb.sheetnames}
+        assert populated['Ringkasan'] == {'A1', *{f'A{i}' for i in range(2, 10)},
+                                         'A13', 'B13', 'A18'}
+        assert populated['Daftar SPT'] == {'A1', 'A2', *{f'{c}4' for c in 'ABCDEFGHIJK'}}
+        assert populated['Audit'] == {'A1', *{f'{c}{r}' for c in 'ABCDEF' for r in (3, 10)}}
+        assert not any(cell.hyperlink for sheet in wb for row in sheet for cell in row)
+    finally:
+        wb.close()
+    with zipfile.ZipFile(RESOURCE) as archive:
+        assert not any('printerSettings' in name or 'sharedStrings' in name
+                       or name.startswith('docProps/') for name in archive.namelist())
+        for name in archive.namelist():
+            root = ET.fromstring(archive.read(name))
+            assert not any(item.get('TargetMode') == 'External' for item in root.iter())
+            if name.startswith('xl/charts/'):
+                assert not any(item.tag.rsplit('}', 1)[-1] in ('strCache', 'numCache')
+                               for item in root.iter())
+
+
+@pytest.mark.parametrize('count', [1, 4, 9])
+def test_dynamic_rows_chart_and_table_follow_only_actual_records(tmp_path, count):
+    from coretax_exporter import export_workbook
+    run = empty_run()
+    run['records'] = [{'meta': {'Jenis Pajak': f'Synthetic tax {i}', 'Masa Pajak': '2025',
+                              'Model SPT': 'Normal'}, 'sections': [], 'capture_complete': False}
+                      for i in range(count)]
+    run['template_mapping'] = [{'file': 'synthetic.xlsx', 'form': 'Induk', 'complete': False}]
+    path = tmp_path / 'resume.xlsx'
+    export_workbook(run, path, include_details=False)
+    wb = load_workbook(path)
+    try:
+        summary, index, audit = (wb[name] for name in ('Ringkasan', 'Daftar SPT', 'Audit'))
+        assert summary['B7'].value == count
+        assert [summary.cell(row, 2).value for row in range(14, 14 + count)] == [1] * count
+        assert summary.cell(14 + count, 1).value == 'mapping template sedot terbaru'
+        assert summary.cell(14 + count, 2).value == 'PARTIAL'
+        chart = summary._charts[0]
+        assert chart.anchor._from.col == 3 and chart.anchor._from.row == 12
+        assert chart.series[0].val.numRef.f == f"'Ringkasan'!$B$14:$B${13 + count}"
+        assert chart.series[0].val.numRef.numCache is None
+        assert index.max_row == count + 4
+        assert index.tables['SPTIndex'].ref == f'A4:K{count + 4}'
+        assert index['B5'].border.left.style == 'thin'
+        assert audit['B4'].value == 'Field belum dipetakan'
+        assert audit['B5'].value == 0
+    finally:
+        wb.close()
+
+
+def legacy_administration():
+    from openpyxl import Workbook
+    from coretax_resume_layout import LEGACY_LABELS, INDEX_HEADERS, AUDIT_HEADERS
+    wb = Workbook()
+    wb.active.title = 'Ringkasan'
+    wb.create_sheet('Daftar SPT')
+    wb.create_sheet('Audit')
+    values = ['0000000000000001', 2025, 'Synthetic legacy taxpayer',
+              'Masa/Tahun Pajak', 'PARTIAL', 0, 0, 'synthetic']
+    for row, (label, value) in enumerate(zip(LEGACY_LABELS, values), 4):
+        wb['Ringkasan'].cell(row, 1, label)
+        wb['Ringkasan'].cell(row, 2, value)
+    for col, value in enumerate(INDEX_HEADERS, 1):
+        wb['Daftar SPT'].cell(4, col, value)
+    for col, value in enumerate(AUDIT_HEADERS, 1):
+        wb['Audit'].cell(4, col, value)
+    return wb
+
+
+def test_complete_legacy_labels_remain_readable_without_rewriting():
+    from coretax_resume_layout import summary_scope
+    wb = legacy_administration()
+    try:
+        scope = summary_scope(wb)
+        assert scope['layout'] == 'legacy' and scope['npwp'] == '0000000000000001'
+        assert scope['year'] == 2025 and scope['record_count'] == 0
+        assert wb['Ringkasan']['A4'].value == 'NPWP'
+        assert wb['Ringkasan']['B2'].value is None
+        wb['Ringkasan']['A5'] = 'Status'
+        with pytest.raises(ValueError, match='scope|NPWP'):
+            summary_scope(wb)
+    finally:
+        wb.close()

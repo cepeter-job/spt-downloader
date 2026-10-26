@@ -27,7 +27,7 @@ def test_selected_capture_never_opens_unconfirmed_returns_and_can_complete_subse
     from openpyxl import load_workbook
     workbook = load_workbook(folder / 'resume.xlsx')
     try:
-        assert workbook['Ringkasan']['B9'].value == 1
+        assert workbook['Ringkasan']['B7'].value == 1
         assert any('Pilihan pengguna: 1 dari 5' in str(cell.value)
                    for row in workbook['Ringkasan'] for cell in row)
     finally:

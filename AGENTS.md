@@ -41,6 +41,18 @@ The separate L11-C semantic branch requires loaded corporate/main/vendor pins, t
 
 ## Output contract
 
+Resume administration uses the approved sanitized `resources/resume_format.xlsx`
+presentation: Ringkasan identity/year/basis/status/counts are B2/B3/B5/B6/B7:B8,
+type counts start at row14 and move the mapping summary below actual types;
+Daftar SPT keeps header row4 with dynamic SPTIndex rows and original links;
+Audit has inventory header row3 and freeze A4, followed by dedicated mapping
+and PDF headers. Rebuild chart ranges from actual counts at D13; never retain
+reference data, cached counts, links, private document properties or opaque
+printer settings. Shared `summary_scope` admits only the complete operator or
+legacy label/header maps. Keep old workbooks readable without rewriting them;
+new coordinates must be used consistently by scope verification/publication.
+These presentation changes do not alter form templates or capture completion.
+
 The pure current-only L11-A helper grants no native admission or dispatch.
 Require explicit null predecessor, four complete normalized endpoint inventories,
 current Facilities/Recapitulation, exact five-table headers with no footers and

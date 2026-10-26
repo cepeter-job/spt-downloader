@@ -24,6 +24,7 @@ from coretax_exporter import (validate_scope, validate_export_run, export_split_
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 from coretax_json_capture import json_output_names, json_custody, copy_held_json, verify_existing_json
+from coretax_resume_layout import summary_scope
 
 BASE = Path(__file__).resolve().parent
 
@@ -37,14 +38,13 @@ def verify_workbook(path, run, *, include_details=True, include_administration=T
             if proof is None or proof != workbook_proof(run):
                 raise ValueError('Workbook scope/PDF proof differs from selected records')
             return set(wb.sheetnames)
+        scope = summary_scope(wb)
         checks = (
-            (wb['Ringkasan']['B4'].value == run['npwp'], 'NPWP mismatch in output'),
-            (wb['Ringkasan']['B4'].data_type == 's', 'NPWP was not preserved as text'),
-            (wb['Ringkasan']['B5'].value == run['year'], 'Tax year mismatch in output'),
-            (wb['Ringkasan']['B7'].value == ('Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'),
-             'Year basis mismatch in output'),
-            (wb['Ringkasan']['B8'].value == ('COMPLETE' if run['complete'] else 'PARTIAL'),
-             'Incorrect completion status'),
+            (scope['npwp'] == run['npwp'], 'NPWP mismatch in output'),
+            (scope['year'] == run['year'], 'Tax year mismatch in output'),
+            (scope['year_basis'] == run['year_basis'], 'Year basis mismatch in output'),
+            (scope['complete'] == run['complete'], 'Incorrect completion status'),
+            (scope['record_count'] == len(run['records']), 'Excel scope count mismatch'),
             (wb['Daftar SPT'].max_row == 4 + len(run['records']), 'Excel index count mismatch'),
             (len(wb.sheetnames) == (3 + sum(len(record_sheet_titles(i, r)) for i, r in enumerate(run['records'], 1)) if include_details else 3),
              'Incorrect worksheet count'),
@@ -99,11 +99,8 @@ def _legacy_resume_proof(workbook, run):
     """Read the old administrative layout without inventing form or PDF metadata."""
     if not {'Ringkasan', 'Daftar SPT', 'Audit'}.issubset(workbook.sheetnames):
         raise ValueError('Retained workbook has no supported scope proof')
-    summary = workbook['Ringkasan']
-    basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-    if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
-            or summary['B5'].value != run['year'] or summary['B7'].value != basis
-            or summary['B8'].value not in ('COMPLETE', 'PARTIAL')):
+    scope = summary_scope(workbook)
+    if any(scope[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
         raise ValueError('Retained workbook scope/NPWP cannot authorize global index')
     rows = list(workbook['Daftar SPT'].iter_rows(min_row=5, max_col=11))
     forms = [s for s in workbook.sheetnames if s not in {'Ringkasan', 'Daftar SPT', 'Audit'}]
@@ -115,7 +112,7 @@ def _legacy_resume_proof(workbook, run):
             raise ValueError('Retained legacy first-form link or capture status cannot be verified')
         starts.append(locations[link.target])
     if (not starts or starts[0] != 0 or starts != sorted(set(starts))
-            or summary['B9'].value != len(rows)):
+            or scope['record_count'] != len(rows)):
         raise ValueError('Retained legacy index count/order cannot be verified')
     records = []
     for row, first, end in zip(rows, starts, starts[1:] + [len(forms)]):
@@ -125,7 +122,7 @@ def _legacy_resume_proof(workbook, run):
                         'source_status': row[5].value or '',
                         'sections': [{'name': name} for name in forms[first:end]]})
     return {'npwp': run['npwp'], 'year': run['year'], 'year_basis': run['year_basis'],
-            'records': records, 'complete': summary['B8'].value == 'COMPLETE'}
+            'records': records, 'complete': scope['complete']}
 
 
 def folder_resume_run(run, folder):
@@ -290,10 +287,8 @@ def _check_output_scope(run, folder, staging=None):
                     matches = (all(proof[key] == run[key] for key in ('npwp', 'year', 'year_basis'))
                                and set(workbook_groups(proof)) == {relative})
                 else:
-                    summary = workbook['Ringkasan']
-                    expected_basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-                    matches = (summary['B4'].value == run['npwp'] and summary['B4'].data_type == 's'
-                               and summary['B5'].value == run['year'] and summary['B7'].value == expected_basis)
+                    scope = summary_scope(workbook)
+                    matches = all(scope[key] == run[key] for key in ('npwp', 'year', 'year_basis'))
             finally:
                 workbook.close()
         except Exception as error:

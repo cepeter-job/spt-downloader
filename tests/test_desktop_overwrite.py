@@ -40,7 +40,7 @@ def test_unknown_foreign_scope_is_not_overwritten_even_with_consent(tmp_path):
     from openpyxl import load_workbook
     path=final/'resume.xlsx'
     wb=load_workbook(path)
-    wb['Ringkasan']['B4']='0000000000000002'
+    wb['Ringkasan']['B2']='0000000000000002'
     wb.save(path);wb.close()
     before=path.read_bytes()
     with pytest.raises(ValueError,match='scope|NPWP'):

@@ -222,7 +222,7 @@ def test_explicit_incomplete_inventory_can_be_exported_as_partial(tmp_path):
 
     wb = load_workbook(path)
     try:
-        assert wb['Ringkasan']['B8'].value == 'PARTIAL'
+        assert wb['Ringkasan']['B6'].value == 'PARTIAL'
     finally:
         wb.close()
 

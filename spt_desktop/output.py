@@ -173,17 +173,13 @@ def _workbook_scope(run, path, relative):
                         locations.append(f"'{title}'!A1")
                         offset += len(record_forms(record))
                 else:
-                    summary = workbook['Ringkasan']
-                    basis = 'Masa/Tahun Pajak' if run['year_basis'] == 'period' else 'Tanggal Submit SPT'
-                    if (summary['B4'].value != run['npwp'] or summary['B4'].data_type != 's'
-                            or summary['B5'].value != run['year'] or summary['B7'].value != basis
-                            or summary['B8'].value not in ('COMPLETE', 'PARTIAL')
-                            or 'Audit' not in workbook.sheetnames):
+                    scope = coretax.summary_scope(workbook)
+                    if any(scope[key] != run[key] for key in ('npwp', 'year', 'year_basis')):
                         raise ValueError('Existing workbook scope/NPWP cannot authorize overwrite')
                     rows = list(workbook['Daftar SPT'].iter_rows(min_row=5, min_col=1, max_col=5))
                     records = [{'meta': {'Jenis Pajak': row[1].value, 'Masa Pajak': row[3].value,
                                          'Model SPT': row[4].value}} for row in rows]
-                    if summary['B9'].value != len(records):
+                    if scope['record_count'] != len(records):
                         raise ValueError('Existing workbook scope count cannot be verified')
                     source = {'records': records}
                     links = [row[0].hyperlink for row in rows]
@@ -272,7 +268,9 @@ def _approved_existing_pdfs(run, target, actual, corporate_files, *, validate_al
                             old[relative] = dict(attachment)
                             record_ids[relative] = record.get('record_id')
                 else:
-                    for row in workbook['Audit'].iter_rows(min_row=5, max_col=6):
+                    scope = coretax.summary_scope(workbook)
+                    for row in workbook['Audit'].iter_rows(
+                            min_row=4 if scope['layout'] == 'operator-v1' else 5, max_col=6):
                         relative = row[5].value
                         if relative not in selected and not (validate_all and row[2].value == 'COMPLETE'):
                             continue

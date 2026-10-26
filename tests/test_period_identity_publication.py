@@ -44,9 +44,9 @@ def test_same_id_new_literal_period_publishes_separately_without_rewriting_old_f
     coretax.verify_outputs(new, final)
     wb = load_workbook(final / 'resume.xlsx')
     try:
-        assert wb['Ringkasan']['B8'].value == 'PARTIAL'
-        assert wb['Ringkasan']['B9'].value == 1
-        assert wb['Ringkasan']['B10'].value == int(captured)
+        assert wb['Ringkasan']['B6'].value == 'PARTIAL'
+        assert wb['Ringkasan']['B7'].value == 1
+        assert wb['Ringkasan']['B8'].value == int(captured)
         assert wb['Daftar SPT']['D5'].value == '01122025'
         assert (final / wb['Daftar SPT']['A5'].hyperlink.target).is_file()
     finally:
