@@ -19,6 +19,22 @@ class Page:
         self.url = SOURCE
         self.main_frame = SimpleNamespace(url=SOURCE, parent_frame=None)
         self.handlers = {}
+        self.document = object()
+        self.handles = []
+
+    def evaluate_handle(self, script):
+        assert script == '() => document'
+        page, identity = self, self.document
+        class Handle:
+            disposed = False
+            def evaluate(self, script):
+                assert script == '(d) => d === document'
+                return identity is page.document
+            def dispose(self):
+                self.disposed = True
+        handle = Handle()
+        self.handles.append(handle)
+        return handle
 
     def on(self, event, callback):
         self.handlers.setdefault(event, []).append(callback)
@@ -130,6 +146,7 @@ def test_second_main_frame_transition_invalidates_owned_capture(tmp_path):
     from coretax_mpn import MpnSafetyError
     page, capture = observer(tmp_path)
     capture.on_navigation(page.main_frame)
+    page.document = object()  # A new Document at the same literal URL is a reload.
     capture.on_navigation(page.main_frame)
     with pytest.raises(MpnSafetyError):
         capture.wait(0, 'list')

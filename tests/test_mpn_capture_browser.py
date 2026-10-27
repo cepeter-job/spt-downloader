@@ -15,7 +15,8 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 
 @contextmanager
 def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
-           pending_catalog=False, delayed_mount=False, unrelated_sources=False):
+           pending_catalog=False, delayed_mount=False, unrelated_sources=False,
+           router_notification=False, grid_after_search=False, delayed_options=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -48,6 +49,20 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if grid_after_search:
+        main = main.replace('async function loadList(){searches++;',
+            "async function loadList(){if(!document.querySelector('acc-balance-sheet-light-grid')){"
+            "await new Promise(resolve=>setTimeout(resolve,250));document.querySelector('form').after(savedGrid);}searches++;")
+        main = 'let savedGrid;' + main.replace(
+            'loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
+            "savedGrid=document.querySelector('acc-balance-sheet-light-grid');savedGrid.remove();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);")
+        # The real grid is first created by Cari, so only that search gets the default date filter.
+        main = main.replace('searches<=2||STUCK', 'searches<=1||STUCK')
+    if delayed_options:
+        main = main.replace('document.body.append(panel);', 'setTimeout(()=>document.body.append(panel),250);')
+    if router_notification:
+        main = main.replace("document.addEventListener('DOMContentLoaded',()=>{",
+            "document.addEventListener('DOMContentLoaded',()=>{history.replaceState(null,'',location.href);")
     if delayed_mount:
         main = main.replace("document.addEventListener('DOMContentLoaded',()=>{",
                             'const initialize=()=>{').replace(
@@ -209,4 +224,14 @@ def test_accounting_owner_may_mount_after_document_ready(browser, tmp_path, monk
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
         assert run['mpn']['rows'][0]['amount'] == '-1250.501'
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+@pytest.mark.parametrize('case', ['router_notification', 'grid_after_search', 'delayed_options'])
+def test_accounting_preparation_follows_owned_async_ui(browser, tmp_path, monkeypatch, case):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, **{case: True}) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
