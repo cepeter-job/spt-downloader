@@ -379,3 +379,23 @@ def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(br
         assert sum(binding['kind']=='catalog' for binding in run['mpn']['bindings']) == 1
         with mpn_custody(run,tmp_path):
             pass
+
+
+def test_parent_binding_uses_dom_snapshot_after_catalog_labels_finish(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    import coretax_mpn_ui as module
+    original = module.AccountingUI._freeze_catalog
+    with portal(browser, monkeypatch) as (page, metrics):
+        def freeze(self):
+            # Model the existing catalog response completing during its wait.
+            result = original(self)
+            code = self.list_snapshot['rows'][0]['PeriodCode']
+            self.catalog[code] = 'SYNTHETIC PERIOD'
+            self.list_owner.locator('tbody tr td').nth(16).evaluate(
+                "cell => cell.textContent='SYNTHETIC PERIOD'")
+            return result
+        monkeypatch.setattr(module.AccountingUI, '_freeze_catalog', freeze)
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert len(metrics['detail']) == 1

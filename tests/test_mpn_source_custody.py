@@ -87,6 +87,59 @@ def test_source_refusal_pumped_by_final_identity_rpc_prevents_actual_click(tmp_p
     ui.observer.close()
 
 
+@pytest.mark.parametrize('entry', ['action', 'wait', 'readiness'])
+def test_combined_fatal_source_and_grid_failure_pumped_by_identity_rpc_stays_fatal(tmp_path, monkeypatch, entry):
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    actual = []
+    class Control:
+        def click(self, **kwargs):
+            if not kwargs.get('trial'):
+                actual.append(True)
+    handle = ui.page.handles[-1]
+    original = handle.evaluate
+    def evaluate(script):
+        ui._reject_source('ownership', safety=True, ownership_reason='page_route')
+        ui.observer._reject()
+        return original(script)
+    handle.evaluate = evaluate
+    with pytest.raises(MpnSafetyError):
+        if entry == 'action':
+            ui._click_ready(Control())
+        elif entry == 'wait':
+            # The first search response wait is an observer RPC boundary too.
+            ui._wait(0, 'list')
+        else:
+            ui._ready_one('synthetic')
+    assert actual == []
+    ui.observer.close()
+
+
+@pytest.mark.parametrize('late', ['source_safety', 'document', 'grid_failure', 'pending', 'sequence', 'source_sequence'])
+def test_final_provider_rpc_cannot_hide_owned_failure_or_late_evidence(tmp_path, monkeypatch, late):
+    import coretax_mpn_ui as module
+    ui, path, _ = source_ui(tmp_path, monkeypatch)
+    clock = iter([10, 11])
+    monkeypatch.setattr(module.time, 'monotonic', lambda: next(clock, 11))
+    def evaluate(script):
+        if late == 'source_safety':
+            ui._reject_source('catalog_snapshot', safety=True)
+        elif late == 'document':
+            ui.observer._reject(safety=True)
+        elif late == 'grid_failure':
+            ui.observer._reject()
+        elif late == 'pending':
+            ui.source_pending[7] = object()
+        elif late == 'sequence':
+            ui.observer.sequence += 1
+        else:
+            ui.source_sequence += 1
+        return [ORIGIN + path]
+    ui.page.evaluate = evaluate
+    with pytest.raises(MpnSafetyError if late in ('source_safety', 'document') else MpnUnsupported):
+        ui.finish()
+    ui.observer.close()
+
+
 def request(ui, path, raw, *, method='GET', kind='script'):
     value = SimpleNamespace(url=ORIGIN + path, frame=ui.page.main_frame,
                             method=method, resource_type=kind)
