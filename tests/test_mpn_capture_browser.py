@@ -33,6 +33,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     header, detail = payment_source(amount='-1250.501')
     header.update(Amount=0, CurrencyCode='IDR', RevenueCode='411211', PaymentCode='100',
                   AccountingTypeCode='OtherTaxReturn', AccountingTypeDetailCode='DBP',
+                  Reference='SYNTHETIC REF',
                   TransactionNumber='SYNTHETIC-PARENT-0007')
     positive = deepcopy(detail)
     positive.update(RecordId='00000000-0000-4000-8000-000000000004')
@@ -46,6 +47,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         second['RecordId'] = '00000000-0000-4000-8000-000000000005'
         if duplicate_parent == 'distinct':
             second['AccountingTypeCode'] = 'SYNTHETIC-SECOND-TYPE'
+        elif duplicate_parent == 'distinct-reference':
+            second['Reference'] = 'SYNTHETIC SECOND REF'
         parents.append(second)
     list_raw = snapshot([] if empty else parents)['raw']
     detail_raw = snapshot([positive, detail], kind='detail', parent=HEADER)['raw']
@@ -63,6 +66,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
     main = main.replace("'OtherTaxReturn','DBP',row.CurrencyCode", "row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode")
+    main = main.replace("'SYNTHETIC REF',row.RevenueCode", "row.Reference,row.RevenueCode")
     if body_dialog:
         main = main.replace("const host=document.getElementById('isShowDetail');host.style.display='block';",
             "const component=document.getElementById('isShowDetail');"
@@ -412,6 +416,15 @@ def test_parent_identity_includes_observed_accounting_type_captions(browser, tmp
         collect_mpn(page, run, tmp_path)
         assert (run['mpn']['status'] == 'COMPLETE') is distinct
         assert len(metrics['detail']) == (2 if distinct else 0)
+
+
+def test_parent_identity_binds_literal_reference_caption_when_other_columns_repeat(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, duplicate_parent='distinct-reference') as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert len(metrics['detail']) == 2
 
 
 def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):
