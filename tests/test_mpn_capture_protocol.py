@@ -71,6 +71,39 @@ class SyntheticUI:
             self.check_cancel()
 
 
+def test_absent_parent_pages_are_not_a_verified_empty_inventory(monkeypatch, tmp_path):
+    import coretax_mpn_browser as browser
+    class MissingPages(SyntheticUI):
+        def list_pages(self, max_pages):
+            return iter(())
+    monkeypatch.setattr(browser, 'AccountingUI', MissingPages, raising=False)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    assert run['mpn']['status'] == 'PARTIAL', 'Absent pages were certified as empty'
+    assert not run['complete'] and not run['mpn']['inventory_complete']
+
+
+def test_owned_zero_row_response_still_proves_a_complete_empty_inventory(monkeypatch, tmp_path):
+    import coretax_mpn_browser as browser
+    monkeypatch.setattr(browser, 'AccountingUI', SyntheticUI, raising=False)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    assert run['mpn']['status'] == 'COMPLETE' and run['mpn']['rows'] == []
+    assert len(run['mpn']['evidence']) == 1 and len(run['mpn']['bindings']) == 1
+
+
+def test_complete_empty_attempt_cannot_discard_its_original_inventory_evidence(monkeypatch, tmp_path):
+    import coretax_mpn_browser as browser
+    from coretax_mpn import validate_mpn
+    monkeypatch.setattr(browser, 'AccountingUI', SyntheticUI, raising=False)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    run['mpn']['evidence'] = []
+    run['mpn']['bindings'] = []
+    with pytest.raises(MpnSafetyError, match='original inventory evidence'):
+        validate_mpn(run)
+
+
 def prepare(monkeypatch, *, dom=None, duplicate=False):
     import coretax_mpn_browser as browser
     header, detail = payment_source(amount='-1250.501')

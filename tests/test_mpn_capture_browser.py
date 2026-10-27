@@ -15,7 +15,7 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 
 @contextmanager
 def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
-           pending_catalog=False, delayed_mount=False):
+           pending_catalog=False, delayed_mount=False, unrelated_sources=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -58,6 +58,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             "initialize();},250));")
     reference_path = ('/referencedata/api/currentreferencedata/id-ID/'
         'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
+    if unrelated_sources:
+        main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
+            "loadList();fetch('/accounting/id-ID/main.synthetic.js');fetch("
+            + json.dumps(reference_path) + ",{method:'POST'});if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);")
     main = ('const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog else '') + ';'
             + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
@@ -79,7 +83,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     if delayed_mount:
         html = html.replace('<body>', '<body><template id="late-owner">').replace(
             '</body>', '</template></body>')
-    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': []}
+    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': []}
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
@@ -90,6 +94,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         if path == '/accounting/id-ID/balancesheet/' + scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]:
             request_route.fulfill(body=html, content_type='text/html')
         elif path in pins:
+            if request.resource_type != 'script':
+                metrics['unrelated'].append(request.resource_type)
             request_route.fulfill(body=main if 'main.' in path else vendor, content_type='application/javascript')
         elif path == '/accounting/api/taxpayeraccounting/list':
             metrics['list'].append(request.post_data_json)
@@ -99,6 +105,9 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             request_route.fulfill(body=detail_raw, content_type='application/json')
         elif path == reference_path and pending_catalog:
             metrics['references'].append(request_route)  # Intentionally unresolved dependency.
+        elif path == reference_path and unrelated_sources and request.method == 'POST':
+            metrics['unrelated'].append('POST')
+            request_route.fulfill(body=b'{}', content_type='application/json')
         else:
             metrics['unknown'] += 1
             request_route.abort()
@@ -130,6 +139,16 @@ def test_real_empty_inventory_can_complete_only_after_unfiltered_owned_response(
         collect_mpn(page, run, tmp_path)
         assert run['mpn']['status'] == 'COMPLETE' and run['mpn']['rows'] == []
         assert metrics['detail'] == [] and metrics['unknown'] == 0
+
+
+def test_nonqualifying_asset_observations_do_not_abort_a_verified_real_capture(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, unrelated_sources=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert sorted(metrics['unrelated']) == ['POST', 'fetch']
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
 
 
 def test_stuck_default_date_filter_never_certifies_empty_or_complete_mpn(browser, tmp_path, monkeypatch):

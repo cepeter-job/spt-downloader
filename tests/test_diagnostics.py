@@ -23,6 +23,22 @@ def records(root):
             for line in file.read_text(encoding='utf-8').splitlines()]
 
 
+def test_mpn_source_rejection_schema_keeps_only_fixed_stage_and_safe_error(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_MPN_VALUE'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('mpn.source_rejected', mpn_source_stage='ownership', error=ValueError(secret),
+                 url=secret, headers=secret, body=secret, message=secret, npwp=secret)
+        d.record('mpn.source_rejected', mpn_source_stage=secret)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert len(rows) == 2, 'MPN source rejection schema is missing'
+    assert rows[0]['mpn_source_stage'] == 'ownership'
+    assert rows[0]['error']['type'] == 'ValueError'
+    assert 'mpn_source_stage' not in rows[1]
+    assert secret not in json.dumps(rows)
+
+
 def test_search_schema_keeps_bounded_metadata_and_discards_request_material(tmp_path):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_SEARCH_VALUE'
