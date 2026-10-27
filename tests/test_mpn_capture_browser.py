@@ -19,7 +19,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            router_notification=False, grid_after_search=False, delayed_options=False,
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
-           body_dialog=False, existing_dialog=False):
+           body_dialog=False, existing_dialog=False, duplicate_parent=None):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -32,6 +32,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         'Nilai Tukar Transaksi Induk', 'Jumlah', 'Referensi']
     header, detail = payment_source(amount='-1250.501')
     header.update(Amount=0, CurrencyCode='IDR', RevenueCode='411211', PaymentCode='100',
+                  AccountingTypeCode='OtherTaxReturn', AccountingTypeDetailCode='DBP',
                   TransactionNumber='SYNTHETIC-PARENT-0007')
     positive = deepcopy(detail)
     positive.update(RecordId='00000000-0000-4000-8000-000000000004')
@@ -39,7 +40,14 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     positive['Amount'] = MpnNumber('40')
     if foreign:
         detail['HeaderRecordId'] = '00000000-0000-4000-8000-000000000099'
-    list_raw = snapshot([] if empty else [header])['raw']
+    parents = [header]
+    if duplicate_parent:
+        second = deepcopy(header)
+        second['RecordId'] = '00000000-0000-4000-8000-000000000005'
+        if duplicate_parent == 'distinct':
+            second['AccountingTypeCode'] = 'SYNTHETIC-SECOND-TYPE'
+        parents.append(second)
+    list_raw = snapshot([] if empty else parents)['raw']
     detail_raw = snapshot([positive, detail], kind='detail', parent=HEADER)['raw']
     main = r'''
     let searches=0;
@@ -54,6 +62,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     '''
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
+    main = main.replace("'OtherTaxReturn','DBP',row.CurrencyCode", "row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode")
     if body_dialog:
         main = main.replace("const host=document.getElementById('isShowDetail');host.style.display='block';",
             "const component=document.getElementById('isShowDetail');"
@@ -171,7 +180,12 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             request_route.fulfill(body=list_raw, content_type='application/json')
         elif path == '/accounting/api/taxpayeraccounting/listdetail':
             metrics['detail'].append(request.post_data_json)
-            request_route.fulfill(body=detail_raw, content_type='application/json')
+            raw = detail_raw
+            if duplicate_parent and request.post_data_json['RecordId'] != HEADER:
+                raw = raw.replace(HEADER.encode(),request.post_data_json['RecordId'].encode()).replace(
+                    b'00000000-0000-4000-8000-000000000003',b'00000000-0000-4000-8000-000000000008').replace(
+                    b'00000000-0000-4000-8000-000000000004',b'00000000-0000-4000-8000-000000000009')
+            request_route.fulfill(body=raw, content_type='application/json')
         elif path == reference_path and pending_catalog:
             metrics['references'].append(request_route)  # Intentionally unresolved dependency.
         elif path == reference_path and unrelated_sources and request.method == 'POST':
@@ -388,6 +402,16 @@ def test_existing_visible_dialog_refuses_detail_action(browser, tmp_path, monkey
         collect_mpn(page, run, tmp_path)
         assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
         assert metrics['detail'] == []
+
+
+@pytest.mark.parametrize('distinct', [True,False])
+def test_parent_identity_includes_observed_accounting_type_captions(browser, tmp_path, monkeypatch, distinct):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, duplicate_parent='distinct' if distinct else 'ambiguous') as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert (run['mpn']['status'] == 'COMPLETE') is distinct
+        assert len(metrics['detail']) == (2 if distinct else 0)
 
 
 def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):
