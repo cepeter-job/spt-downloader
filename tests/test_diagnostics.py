@@ -60,12 +60,16 @@ def test_mpn_ownership_reason_schema_rejects_arbitrary_values_without_stringifyi
     class Untrusted:
         def __str__(self):
             raise AssertionError('An ownership diagnostic must not stringify arbitrary values')
+    class UntrustedString(str):
+        def __hash__(self):
+            raise AssertionError('Diagnostic categories must be exact strings')
     with d.session(tmp_path, 'worker') as log:
-        for value in ['SYNTHETIC_PRIVATE_MPN_OWNERSHIP', Untrusted(), True, None]:
+        for value in ['SYNTHETIC_PRIVATE_MPN_OWNERSHIP', Untrusted(), True, None,
+                      UntrustedString('frame'), [], {}]:
             d.record('mpn.source_rejected', mpn_source_stage='ownership', mpn_ownership_reason=value)
         assert log.flush()
     events = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
-    assert len(events) == 4
+    assert len(events) == 7
     assert all('mpn_ownership_reason' not in e for e in events)
     assert 'SYNTHETIC_PRIVATE_MPN_OWNERSHIP' not in json.dumps(events)
 

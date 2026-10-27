@@ -212,6 +212,12 @@ response and final drain. An iterator yielding no pages remains PARTIAL, and a
 capture attempt cannot omit original inventory evidence even when headers are zero.
 These rules grant no new source pins, requests, locale or native admission.
 
+MPN source ownership refusals additionally report only the first failed fixed
+`mpn_ownership_reason`: navigation, frame, method, page_route, request_url or
+resource_kind, in the existing short-circuit order. Keep the original first
+refusal event and sticky fatal escalation. Other source stages omit the reason;
+never log the compared values or infer a live repair from the new diagnostic.
+
 The approved L7 year header accepts only the exact literal annual `0112YYYY`
 source code or the existing exact `Januari - Desember YYYY` caption, reconciled
 with the single captured table's complete header set. Monthly/partial-year and

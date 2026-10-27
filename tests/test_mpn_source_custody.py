@@ -177,18 +177,42 @@ def test_ownership_refusal_identifies_failed_predicate_before_reading_response(t
     assert reads == [] and ui.pins == {} and not ui.source_pending
 
 
-def test_multiple_ownership_conflicts_keep_original_short_circuit_and_first_event(tmp_path, monkeypatch):
+@pytest.mark.parametrize('first', [
+    'navigation', 'frame', 'method', 'page_route', 'request_url', 'resource_kind',
+])
+def test_multiple_ownership_conflicts_keep_original_short_circuit_and_first_event(tmp_path, monkeypatch, first):
     from spt_desktop import diagnostics as d
     from test_diagnostics import records
     ui, path, raw = source_ui(tmp_path, monkeypatch)
-    observed, reads = request(ui, path, raw)
+    original, reads = request(ui, path, raw)
+    class GuardedRequest(SimpleNamespace):
+        def __getattribute__(self, name):
+            if name in object.__getattribute__(self, 'forbidden'):
+                pytest.fail('Ownership guard read a later predicate')
+            return super().__getattribute__(name)
+    observed = GuardedRequest(**vars(original), forbidden=set())
     ui._source_request(observed)
-    ui.observer.committed = False
-    observed.frame = SimpleNamespace()
-    observed.method = 'POST'
-    ui.page.url += '?synthetic=changed'
-    observed.url += '?synthetic=changed'
-    observed.resource_type = 'fetch'
+    order = ['navigation', 'frame', 'method', 'page_route', 'request_url', 'resource_kind']
+    conflicts = set(order[order.index(first):])
+    if 'navigation' in conflicts:
+        ui.observer.committed = False
+    if 'frame' in conflicts:
+        observed.frame = SimpleNamespace()
+    if 'method' in conflicts:
+        observed.method = 'POST'
+    if 'page_route' in conflicts:
+        ui.page.url += '?synthetic=changed'
+    if 'request_url' in conflicts:
+        observed.url += '?synthetic=changed'
+    if 'resource_kind' in conflicts:
+        observed.resource_type = 'fetch'
+    observed.forbidden = {field for reason, field in [
+        ('frame', 'frame'), ('method', 'method'), ('resource_kind', 'resource_type')]
+        if order.index(reason) > order.index(first)}
+    if order.index(first) < order.index('page_route'):
+        def later_route(page):
+            pytest.fail('Ownership guard read the later page route')
+        monkeypatch.setattr(type(ui.page), 'url', property(later_route), raising=False)
     with d.session(tmp_path, 'worker') as log:
         ui._source_finished(observed)
         ui._reject_source('provider')
@@ -196,8 +220,26 @@ def test_multiple_ownership_conflicts_keep_original_short_circuit_and_first_even
             ui._stop()
         assert log.flush()
     event, = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
-    assert event.get('mpn_ownership_reason') == 'navigation'
+    assert event.get('mpn_ownership_reason') == first
     assert event['mpn_source_stage'] == 'ownership' and reads == []
+
+
+def test_earlier_nonownership_event_stays_first_when_later_ownership_failure_becomes_fatal(tmp_path, monkeypatch):
+    from spt_desktop import diagnostics as d
+    from test_diagnostics import records
+    ui, path, raw = source_ui(tmp_path, monkeypatch)
+    observed, reads = request(ui, path, raw)
+    with d.session(tmp_path, 'worker') as log:
+        ui._reject_source('pending_budget')
+        ui._source_request(observed)
+        observed.method = 'POST'
+        ui._source_finished(observed)
+        with pytest.raises(MpnSafetyError):
+            ui._stop()
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert event['mpn_source_stage'] == 'pending_budget'
+    assert 'mpn_ownership_reason' not in event and reads == []
 
 
 def test_nonownership_source_refusal_has_no_ownership_reason(tmp_path, monkeypatch):

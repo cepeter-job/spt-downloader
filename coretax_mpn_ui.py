@@ -81,7 +81,7 @@ class AccountingUI:
         if self.source_failed:
             raise MpnUnsupported('MPN loaded source is unsupported')
 
-    def _reject_source(self, stage, error=None, *, safety=False):
+    def _reject_source(self, stage, error=None, *, safety=False, ownership_reason=None):
         # Keep fatal refusals sticky and summarize the originating callback now.
         # Retain neither exceptions/tracebacks nor request/response material.
         if safety:
@@ -91,7 +91,8 @@ class AccountingUI:
         if not self.source_rejection_recorded:
             self.source_rejection_recorded = True
             diagnostics.record('mpn.source_rejected', level='WARNING', phase='mpn',
-                               mpn_source_stage=stage, error=error, status='PARTIAL')
+                               mpn_source_stage=stage, error=error, status='PARTIAL',
+                               mpn_ownership_reason=ownership_reason if stage == 'ownership' else None)
 
     def _source_request(self, request):
         if (self.closed or not self.observer.committed
@@ -131,10 +132,21 @@ class AccountingUI:
         _, pin, catalog, expected_url, expected_kind = entry
         url = request.url
         stage = 'ownership'
+        ownership_reason = None
         try:
-            if (not self.observer.committed or request.frame is not self.page.main_frame
-                    or request.method != 'GET' or self.page.url != self.url
-                    or url != expected_url or request.resource_type != expected_kind):
+            if not self.observer.committed:
+                ownership_reason = 'navigation'
+            elif request.frame is not self.page.main_frame:
+                ownership_reason = 'frame'
+            elif request.method != 'GET':
+                ownership_reason = 'method'
+            elif self.page.url != self.url:
+                ownership_reason = 'page_route'
+            elif url != expected_url:
+                ownership_reason = 'request_url'
+            elif request.resource_type != expected_kind:
+                ownership_reason = 'resource_kind'
+            if ownership_reason is not None:
                 raise MpnSafetyError('MPN source request ownership changed')
             stage = 'response'
             response = request.response()
@@ -163,9 +175,9 @@ class AccountingUI:
                 stage = 'catalog_decode'
                 self._catalog(raw)
         except MpnSafetyError as error:
-            self._reject_source(stage, error, safety=True)
+            self._reject_source(stage, error, safety=True, ownership_reason=ownership_reason)
         except Exception as error:
-            self._reject_source(stage, error)
+            self._reject_source(stage, error, ownership_reason=ownership_reason)
 
     def _catalog(self, raw):
         self.catalogs = captured_catalogs(decode_mpn(raw))
