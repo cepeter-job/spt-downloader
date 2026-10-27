@@ -92,7 +92,7 @@ jobs:
         run: python -m scripts.ci_report start
       - name: Set up pinned uv, wheel cache and managed Python cache
         id: uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: '0.13.4'
           checksum: '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f'
@@ -187,7 +187,7 @@ jobs:
         run: python -m scripts.ci_report start
       - name: Set up pinned uv, wheel cache and managed Python cache
         id: uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: '0.13.4'
           checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
@@ -278,7 +278,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up pinned uv and audit dependency cache
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: '0.13.4'
           checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
@@ -348,7 +348,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up pinned uv, build wheel cache and managed Python cache
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version: '0.13.4'
           checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
