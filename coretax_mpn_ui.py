@@ -3,11 +3,11 @@ import hashlib
 import re
 import time
 from urllib.parse import urlsplit
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 from coretax_mpn import (ORIGIN, MpnUnsupported, MpnSafetyError, decode_mpn,
                          dom_numbers_match, taxpayer_id, captured_catalogs,
-                         source_display_date as _date)
+                         source_display_date as _date, validate_page_total)
 from coretax_mpn_browser import AccountingObserver, _digest
 from spt_desktop import diagnostics
 
@@ -160,9 +160,25 @@ class AccountingUI:
 
     def _owned(self):
         self._stop()
-        self.observer._check_state()
+        self._state()
         # The Document RPC can dispatch source refusals. No unchecked RPC follows.
         self._stop()
+
+    def _observer_call(self, method, *args, **kwargs):
+        try:
+            result = method(*args, **kwargs)
+        except (MpnUnsupported, PlaywrightError):
+            # Reconcile fatal source/Stop state on exceptional RPC exits too.
+            self._stop()
+            raise
+        self._stop()
+        return result
+
+    def _state(self, **kwargs):
+        return self._observer_call(self.observer._check_state, **kwargs)
+
+    def _wait(self, *args, **kwargs):
+        return self._observer_call(self.observer.wait, *args, **kwargs)
 
     def _reject_source(self, stage, error=None, *, safety=False, ownership_reason=None):
         # Keep fatal refusals sticky and summarize the originating callback now.
@@ -299,7 +315,7 @@ class AccountingUI:
 
     def _one(self, selector):
         self._stop()
-        self.observer._check_state()
+        self._state()
         locator = self.page.locator(selector)
         if locator.count() != 1:
             raise MpnUnsupported('MPN unique inspected UI owner/control is unavailable')
@@ -309,17 +325,17 @@ class AccountingUI:
         deadline = deadline if deadline is not None else self.preparation_deadline or time.monotonic() + 5
         while True:
             self._stop()
-            self.observer._check_state(allow_document_pending=True)
+            self._state(allow_document_pending=True)
             if not self.observer._binding_document:
                 locator = self.page.locator(selector) if isinstance(selector, str) else selector
                 count = locator.count()
                 self._stop()
-                self.observer._check_state()
+                self._state()
                 if count > 1:
                     raise MpnUnsupported('MPN inspected readiness owner is ambiguous')
                 visible = count == 1 and locator.is_visible()
                 self._stop()
-                self.observer._check_state()
+                self._state()
                 if time.monotonic() >= deadline:
                     raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
                 if visible:
@@ -371,7 +387,7 @@ class AccountingUI:
             timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
             scripts:[...document.scripts].filter(e=>e.isConnected).map(e=>e.src)})''')
         self._stop()
-        self.observer._check_state()
+        self._state()
         if environment.get('language') != 'id-ID' or environment.get('timezone') != 'Asia/Jakarta':
             raise MpnUnsupported('MPN display environment is unsupported')
         if (set(self.pins) != set(SOURCE_PINS)
@@ -389,7 +405,7 @@ class AccountingUI:
             self._stop()
             marker = self.observer.sequence
             self._click_ready(search)
-            snapshot = self.observer.wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
+            snapshot = self._wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
             self._stop()
             self.list_owner = self._ready_one('acc-balance-sheet-light-grid ui-grid p-table')
             if self._unfiltered(snapshot):
@@ -453,14 +469,23 @@ class AccountingUI:
     def _pages(self, kind, owner, initial, max_pages):
         snapshot = initial
         binding = {key: value for key, value in snapshot['request'].items() if key != 'First'}
-        expected_first, total = 0, snapshot['total']
+        payload = decode_mpn(initial['raw'])['Payload']
+        mode = ('frontier-v1' if payload.get('Index', False) is None
+                and initial['total'] == initial['page_size'] + 1
+                and len(initial['rows']) == initial['page_size'] else 'fixed-v1')
+        expected_first, total = 0, None
         for page_index in range(max_pages):
             self._stop()
-            self.observer._check_state()
-            if (snapshot['first'] != expected_first or snapshot['total'] != total
+            self._state()
+            if (snapshot['first'] != expected_first
                     or {key: value for key, value in snapshot['request'].items() if key != 'First'} != binding
                     or kind == 'list' and not self._unfiltered(snapshot)):
                 raise MpnSafetyError('MPN paginator query/total/offset changed')
+            total = validate_page_total(decode_mpn(snapshot['raw'])['Payload'], expected_first,
+                                        snapshot['page_size'], total, mode=mode)
+            if snapshot['total'] != total:
+                raise MpnSafetyError('MPN paginator total differs from its original response')
+            snapshot['total_mode'] = mode
             if kind == 'list':
                 self.list_snapshot = snapshot
             yield snapshot
@@ -480,7 +505,7 @@ class AccountingUI:
             marker = self.observer.sequence
             self._owned()
             next_button.click(timeout=1000)
-            snapshot = self.observer.wait(marker, kind)
+            snapshot = self._wait(marker, kind)
         raise MpnUnsupported('MPN owned paginator page cap reached')
 
     def list_pages(self, max_pages):
@@ -494,12 +519,16 @@ class AccountingUI:
 
     def _header_projection(self, header):
         code = header.get('PeriodCode')
-        return (self._literal(header.get('CurrencyCode')), self._literal(header.get('RevenueCode')),
+        classifications = tuple(self._literal(self.catalogs.get(catalog, {}).get(header.get(field), header.get(field)))
+            for catalog, field in (('ACCOUNTING_TYPE', 'AccountingTypeCode'),
+                                   ('ACCOUNTING_TYPE_DETAIL', 'AccountingTypeDetailCode')))
+        return classifications + (self._literal(header.get('CurrencyCode')), self._literal(header.get('RevenueCode')),
                 self._literal(header.get('PaymentCode')), self.catalog.get(code, code),
                 self._literal(header.get('TransactionNumber')))
 
     def _bind_header(self, header):
         self._stop()
+        self._freeze_catalog()
         snapshot = self.list_snapshot
         if self.observer.latest.get('list', {}).get('sequence') != snapshot['sequence']:
             raise MpnSafetyError('MPN parent list changed before the detail action')
@@ -508,13 +537,15 @@ class AccountingUI:
             raise MpnUnsupported('MPN selected parent position is ambiguous')
         index = candidates[0]
         _, rendered = self._table(self.list_owner, LIST_HEADERS, len(snapshot['rows']))
-        self._freeze_catalog()
+        self._owned()
+        if self.observer.latest.get('list', {}).get('sequence') != snapshot['sequence']:
+            raise MpnSafetyError('MPN parent list changed while binding the rendered row')
         expected = self._header_projection(header)
         if (any(value is None for value in expected) or not expected[-1]
                 or {row['RecordId'] for row in snapshot['rows'] if self._header_projection(row) == expected}
                     != {header['RecordId']}):
             raise MpnUnsupported('MPN parent visible identity is not independently unique')
-        actual = tuple(rendered[index][column] for column in (5, 13, 15, 16, 17))
+        actual = tuple(rendered[index][column] for column in (3, 4, 5, 13, 15, 16, 17))
         if actual != expected:
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')
         row = self.list_owner.locator('tbody tr').nth(index)
@@ -548,16 +579,27 @@ class AccountingUI:
 
     def detail_pages(self, header, max_pages):
         button = self._bind_header(header)
-        self.observer.begin_detail(header['RecordId'])
+        host = self._one('p-dialog#isShowDetail')
+        if self.page.locator('[role="dialog"]:visible').count():
+            raise MpnUnsupported('MPN detail action has a pre-existing visible dialog')
+        self._observer_call(self.observer.begin_detail, header['RecordId'])
         marker = self.observer.sequence
         self._owned()
         button.click(timeout=1000)
-        initial = self.observer.wait(marker, 'detail')
+        initial = self._wait(marker, 'detail')
         deadline = time.monotonic() + 5
-        dialog = self._ready_one('p-dialog#isShowDetail [role="dialog"]:visible', deadline=deadline)
+        dialog = self._ready_one('p-dialog#isShowDetail [role="dialog"]:visible, '
+            'body > .p-dialog-mask.p-component-overlay > .p-dialog.p-component[role="dialog"]:visible', deadline=deadline)
         title = self._ready_one(dialog.locator('.p-dialog-title'), deadline=deadline)
         if title.count() != 1 or title.inner_text(timeout=1000).strip() != 'Detail Transaksi':
             raise MpnUnsupported('MPN inspected detail dialog changed')
+        if self.page.locator('[role="dialog"]:visible').count() != 1:
+            raise MpnUnsupported('MPN detail dialog ownership is ambiguous')
+        if dialog.locator('xpath=ancestor::p-dialog[@id="isShowDetail"]').count() == 0:
+            title_id = title.get_attribute('id')
+            if (host.get_attribute('header') != 'Detail Transaksi' or not title_id
+                    or dialog.get_attribute('aria-labelledby') != title_id):
+                raise MpnUnsupported('MPN body-mounted detail dialog lacks its inspected title binding')
         owners = self._ready_one(dialog.locator('ui-grid p-table'), deadline=deadline)
         try:
             for snapshot in self._pages('detail', owners, initial, max_pages):
@@ -577,7 +619,7 @@ class AccountingUI:
         pending = bool(self.observer.pending or self.source_pending)
         self.catalog_frozen = True
         self._stop()
-        self.observer._check_state()
+        self._state()
         sequence = self.observer.sequence
         source_sequence = self.source_sequence
         # An already pending reply cannot become COMPLETE by arriving in drain.
@@ -587,11 +629,15 @@ class AccountingUI:
         while time.monotonic() < deadline:
             self._stop()
             self.page.wait_for_timeout(100)
-            self.observer._check_state()
+            self._state()
             if (self.observer.pending or self.observer.sequence != sequence
                     or self.source_pending or self.source_sequence != source_sequence):
                 raise MpnUnsupported('MPN received a late owned reply during final drain')
         providers = self.page.evaluate('''() => [...document.scripts].filter(e=>e.isConnected).map(e=>e.src)''')
+        self._owned()
+        if (pending or self.observer.pending or self.source_pending
+                or self.observer.sequence != sequence or self.source_sequence != source_sequence):
+            raise MpnUnsupported('MPN received late owned traffic during final provider validation')
         actual = {url for url in providers if re.match(
             re.escape(ORIGIN) + r'/accounting/id-ID/(?:main|vendor)\.', url)}
         if actual != {ORIGIN + path for path in SOURCE_PINS}:

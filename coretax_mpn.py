@@ -121,6 +121,39 @@ def source_integer(value):
     return int(value)
 
 
+def validate_page_total(payload, first, size, previous=None, *, mode='fixed-v1'):
+    """Reconcile literal fixed totals or the original null-Index frontier.
+
+    A frontier is only a promise of at least one more row. It is never a final
+    inventory count until an original terminal page closes it.
+    """
+    if mode not in ('fixed-v1', 'frontier-v1'):
+        raise MpnSafetyError('MPN original page total mode is unknown')
+    if (not isinstance(payload, dict) or type(first) is not int or first < 0
+            or type(size) is not int or size not in (10, 25, 50) or first % size
+            or previous is not None and (type(previous) is not int or previous < 0)):
+        raise MpnSafetyError('MPN original page position/size is invalid')
+    total = source_integer(payload.get('TotalRecords'))
+    rows = payload.get('Data')
+    if (not isinstance(rows, list) or first > total
+            or len(rows) != min(size, total - first)):
+        raise MpnSafetyError('MPN original page rows do not reconcile with its total')
+    if mode == 'fixed-v1':
+        if previous is not None and previous != total:
+            raise MpnSafetyError('MPN fixed original page total changed')
+    else:
+        if 'Index' not in payload or payload['Index'] is not None:
+            raise MpnSafetyError('MPN continuation lacks its original null Index')
+        if first == 0:
+            valid = previous is None and len(rows) == size and total == size + 1
+        else:
+            valid = (previous == first + 1 and bool(rows)
+                     and total in (first + len(rows), first + size + 1))
+        if not valid:
+            raise MpnSafetyError('MPN original continuation frontier changed')
+    return total
+
+
 def _text(data, key, *, optional=False):
     value = data.get(key)
     if optional and value is None:
@@ -438,6 +471,7 @@ def _reconcile_held(run, readers):
     catalogs, headers, header_hashes, details, detail_hashes = {}, {}, {}, {}, {}
     header_locations, occurrences = {}, {}
     list_first, list_total, detail_offsets = 0, None, {}
+    list_mode, list_query, detail_modes, detail_queries = None, None, {}, {}
     request_language = None
     seen_paths = set()
     for binding in bindings:
@@ -482,18 +516,23 @@ def _reconcile_held(run, readers):
             request_language = request['LanguageId']
         elif request['LanguageId'] != request_language:
             raise MpnSafetyError('MPN held original request language changed')
+        mode = binding.get('total_mode', 'fixed-v1')
+        query = {key: item for key, item in request.items() if key != 'First'}
         if kind == 'list':
             filters = request['Filters']
             if (request[identity] != value['taxpayer_id'] or request['First'] != list_first
-                    or list_total is not None and list_total != total
+                    or list_mode is not None and list_mode != mode
+                    or list_query is not None and list_query != query
                     or not isinstance(filters, list) or len(filters) != 1
                     or not isinstance(filters[0], dict) or filters[0].get('PropertyName') != 'IsCancelled'
                     or filters[0].get('Value') != '0' or filters[0].get('MatchMode') != 'equals'
                     or set(filters[0]) - {'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'}
                     or filters[0].get('CaseSensitive', True) is not True or filters[0].get('AsString', False) is not False):
                 raise MpnSafetyError('MPN held parent inventory query changed')
+            validate_page_total(payload, request['First'], request['Rows'], list_total, mode=mode)
             list_first += len(rows)
             list_total = total
+            list_mode, list_query = mode, query
             for header_index, header in enumerate(rows):
                 if (not isinstance(header, dict) or not _identity(header.get('RecordId'))
                         or header.get('TaxpayerAggregateIdentifier') != value['taxpayer_id']
@@ -507,11 +546,15 @@ def _reconcile_held(run, readers):
                 header_locations.setdefault(identifier, (by_item[path]['sha256'], header_index))
         else:
             parent = request[identity]
-            previous_first, previous_total = detail_offsets.get(parent, (0, total))
+            previous_first, previous_total = detail_offsets.get(parent, (0, None))
             if (parent not in headers or request['Filters'] != [] or request['First'] != previous_first
-                    or previous_total != total or binding.get('parent_id') != parent):
+                    or parent in detail_modes and detail_modes[parent] != mode
+                    or parent in detail_queries and detail_queries[parent] != query
+                    or binding.get('parent_id') != parent):
                 raise MpnSafetyError('MPN held detail query/parent changed')
+            validate_page_total(payload, request['First'], request['Rows'], previous_total, mode=mode)
             detail_offsets[parent] = (previous_first + len(rows), total)
+            detail_modes[parent], detail_queries[parent] = mode, query
             values = details.setdefault(parent, [])
             for detail_index, detail in enumerate(rows):
                 if (not isinstance(detail, dict) or not _identity(detail.get('RecordId'))

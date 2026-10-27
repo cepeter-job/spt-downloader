@@ -276,6 +276,39 @@ no more evidence/actions. After the final Document RPC, recheck local Stop/sourc
 observer state before every actual action; no callback-pumped refusal may be
 masked as a successful click or a new identity contradiction.
 
+The same fatal-state reconciliation applies when observer RPCs/waits raise;
+never demote a callback-pumped source safety refusal to recoverable PARTIAL.
+After final provider reads and retained-Document validation, recheck local flags,
+original pending latch, current pending objects and both sampling sequences.
+Freeze admitted catalogs before reading the parent DOM snapshot used for
+identity. Parent binding includes the observed accounting type/detail captions
+from those same original catalogs (literal codes remain a bound fallback), plus
+the existing currency/KAP/KJS/period/transaction columns. Repeated projections
+that still identify distinct records remain unsupported.
+
+The inspected detail dialog may render below a direct body-level
+`.p-dialog-mask.p-component-overlay` wrapper. Require the unique selected
+`p-dialog#isShowDetail` host, no visible role=dialog before clicking, the owned
+selected-parent response, exactly one new visible dialog, the exact Detail
+Transaksi host/title with matching aria-labelledby/title id, and its unique
+grid. Keep the legacy descendant dialog branch. No pre-existing/ambiguous
+overlay, foreign caption or absent title binding authorizes a detail action.
+
+Accounting original null-Index/full-page totals may declare the bounded
+`frontier-v1` continuation contract: the first total must be Rows+1 and every
+continuation total First+Rows+1. Bind identical queries, page sizes and languages,
+contiguous offsets and previous frontier=next First+1. Only an original nonempty
+terminal page with total=First+row count closes it, including a full terminal
+page. A promised continuation followed by an empty page contradicts that proof.
+Missing/non-null Index, arbitrary total changes, gaps, changed identities/content,
+pending replies and reached caps remain refused/PARTIAL. Derive each list or
+parent-detail mode from its first original response; persist literal totals and
+an explicit per-page descriptor, never a fabricated final count. Missing mode
+retains legacy `fixed-v1` exact-total semantics. Held readers independently
+reconcile eligibility, mode consistency, every transition and terminal counts;
+unknown/mixed descriptors are fatal. These rules admit no extra route or request
+and do not relax selected taxpayer, source pins, privacy or publication gates.
+
 MPN source ownership refusals additionally report only the first failed fixed
 `mpn_ownership_reason`: navigation, frame, method, page_route, request_url or
 resource_kind, in the existing short-circuit order. Keep the original first

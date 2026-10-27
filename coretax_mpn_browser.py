@@ -12,7 +12,7 @@ from playwright.sync_api import Error as PlaywrightError
 from coretax_mpn import (ORIGIN, MpnSafetyError, MpnUnsupported, decode_mpn,
                          source_integer, _identity, MpnNumber, require_mpn,
                          project_payment, validate_mpn, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES,
-                         _mpn_directories, _source_digest, REQUEST_LANGUAGES)
+                         _mpn_directories, _source_digest, REQUEST_LANGUAGES, validate_page_total)
 
 LIST_PATH = '/accounting/api/taxpayeraccounting/list'
 DETAIL_PATH = '/accounting/api/taxpayeraccounting/listdetail'
@@ -342,18 +342,18 @@ def _digest(value):
     return _source_digest(value)
 
 
-def _accept_snapshot(snapshot, kind, first, total=None):
+def _accept_snapshot(snapshot, kind, first, total=None, *, total_mode='fixed-v1'):
     if not isinstance(snapshot, dict) or snapshot.get('kind') != kind:
         raise MpnUnsupported('MPN owned page snapshot is unavailable')
     decoded = decode_mpn(snapshot.get('raw'))
     payload = decoded.get('Payload')
     if decoded.get('IsSuccessful') is not True or not isinstance(payload, dict):
         raise MpnUnsupported('MPN original page envelope is unsuccessful')
-    actual_total = source_integer(payload.get('TotalRecords'))
     size = snapshot.get('page_size')
+    actual_total = validate_page_total(payload, first, size, total, mode=total_mode)
     rows = payload.get('Data')
     if (type(size) is not int or size not in (10, 25, 50) or snapshot.get('first') != first
-            or actual_total != snapshot.get('total') or total is not None and total != actual_total
+            or actual_total != snapshot.get('total') or snapshot.get('total_mode', 'fixed-v1') != total_mode
             or not isinstance(rows, list) or len(rows) != min(size, max(0, actual_total - first))
             or not all(isinstance(row, dict) for row in rows)
             or _digest(rows) != _digest(snapshot.get('rows'))):
@@ -434,6 +434,8 @@ No partial DOM page is combined with another source. Raw pages stay private.
         binding = {'path': item['path'], 'kind': kind}
         if kind != 'catalog':
             binding.update(request=deepcopy(snapshot['request']), parent_id=snapshot.get('parent_id'))
+            if 'total_mode' in snapshot:
+                binding['total_mode'] = snapshot['total_mode']
         value['bindings'].append(binding)
         budget += len(raw)
         return item
@@ -450,14 +452,16 @@ No partial DOM page is combined with another source. Raw pages stay private.
                     evidence({'raw': ui.reference_raw}, 'catalog')
                     catalog_saved = True
             retain_catalog()
-            first, total, pages = 0, None, 0
+            first, total, pages, total_mode = 0, None, 0, None
             for snapshot in ui.list_pages(max_pages):
                 stop()
                 retain_catalog()
                 pages += 1
                 if pages > max_pages:
                     raise MpnUnsupported('MPN parent page cap reached')
-                headers, total = _accept_snapshot(snapshot, 'list', first, total)
+                if total_mode is None:
+                    total_mode = snapshot.get('total_mode', 'fixed-v1')
+                headers, total = _accept_snapshot(snapshot, 'list', first, total, total_mode=total_mode)
                 list_item = evidence(snapshot, 'list')
                 for header_index, header in enumerate(headers):
                     stop()
@@ -475,7 +479,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
                     seen_headers[identifier] = digest
                     value['headers'] += 1
                     detail_rows, detail_events, dom_pages = [], [], []
-                    detail_first, detail_total, detail_page_count = 0, None, 0
+                    detail_first, detail_total, detail_page_count, detail_mode = 0, None, 0, None
                     for detail_snapshot, dom in ui.detail_pages(header, max_pages):
                         stop()
                         retain_catalog()
@@ -484,7 +488,10 @@ No partial DOM page is combined with another source. Raw pages stay private.
                             raise MpnUnsupported('MPN detail page cap reached')
                         if detail_snapshot.get('parent_id') != identifier:
                             raise MpnSafetyError('MPN detail snapshot parent changed')
-                        rows, detail_total = _accept_snapshot(detail_snapshot, 'detail', detail_first, detail_total)
+                        if detail_mode is None:
+                            detail_mode = detail_snapshot.get('total_mode', 'fixed-v1')
+                        rows, detail_total = _accept_snapshot(detail_snapshot, 'detail', detail_first, detail_total,
+                                                              total_mode=detail_mode)
                         item = evidence(detail_snapshot, 'detail')
                         detail_rows.extend(rows)
                         detail_events.extend((item, index) for index in range(len(rows)))
