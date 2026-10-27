@@ -100,6 +100,10 @@ def test_unproved_owned_l11a_provider_owner_structure_or_dependency_cannot_grant
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
+            if defect == 'hidden-owner':
+                # This fixture is statically malformed; preserve the production readiness budget.
+                assert page.locator('rshshr-citr-l11a-form').get_attribute('style') == 'display:none'
+                monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             capture.drain()
             if defect.startswith('changed-'):
