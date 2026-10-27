@@ -17,7 +17,7 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
            pending_catalog=False, delayed_mount=False, unrelated_sources=False,
            router_notification=False, grid_after_search=False, delayed_options=False,
-           session_redirect=False, withheld_fresh_sources=False):
+           session_redirect=False, withheld_fresh_sources=False, request_language='en-US'):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -45,7 +45,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     function dropdown(id){const parent=document.getElementById(id);const panel=document.createElement('div');panel.className='p-dropdown-panel';for(const text of ['Yes','No']){let o=document.createElement('div');o.setAttribute('role','option');o.textContent=text;o.onclick=()=>{parent.querySelector('.p-dropdown-label').textContent=text;panel.remove();};panel.append(o);}document.body.append(panel);}
     const number=n=>Number(n).toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:ROUNDED?2:3});
     const cells=(tr,values)=>{for(const value of values){let td=document.createElement('td');td.textContent=value;tr.append(td);}};
-    const payload=(kind,id,filters)=>({[kind==='list'?'TaxpayerAggregateIdentifier':'RecordId']:id,First:0,Rows:10,SortField:kind==='list'?'PostingDate':'TransactionDate',SortOrder:-1,LanguageId:'en-US',Filters:filters});
+    const payload=(kind,id,filters)=>({[kind==='list'?'TaxpayerAggregateIdentifier':'RecordId']:id,First:0,Rows:10,SortField:kind==='list'?'PostingDate':'TransactionDate',SortOrder:-1,LanguageId:LANGUAGE,Filters:filters});
     async function loadList(){searches++;const filters=[{PropertyName:'IsCancelled',Value:'0',MatchMode:'equals',CaseSensitive:true,AsString:false}];if(searches<=2||STUCK)filters.push({PropertyName:'TransactionDate',Value:['2026/09/01','2026/10/26'],MatchMode:'between'});const response=await fetch('/accounting/api/taxpayeraccounting/list',{method:'POST',body:JSON.stringify(payload('list',TAXPAYER,filters))});const body=await response.json();const table=document.querySelector('acc-balance-sheet-light-grid table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){const tr=document.createElement('tr');const td=document.createElement('td');const button=document.createElement('button');button.title='Detail Transaksi';button.innerHTML='<span class="pi pi-list"></span>';button.onclick=()=>detail(row.RecordId);td.append(button);tr.append(td);cells(tr,['01-02-2026','01-02-2026','OtherTaxReturn','DBP',row.CurrencyCode,'Kredit','0','0','1','0','0','SYNTHETIC REF',row.RevenueCode,'SYNTHETIC KAP',row.PaymentCode,row.PeriodCode,row.TransactionNumber,'','','','','','']);table.tBodies[0].append(tr);}}
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
@@ -78,7 +78,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
             "loadList();fetch('/accounting/id-ID/main.synthetic.js');fetch("
             + json.dumps(reference_path) + ",{method:'POST'});if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);")
-    main = ('const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog else '') + ';'
+    main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog else '') + ';'
             + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
             + 'const ROUNDED=' + json.dumps(rounded) + ';const STUCK=' + json.dumps(default_stuck) + ';' + main).encode()
@@ -250,10 +250,11 @@ def test_accounting_preparation_follows_owned_async_ui(browser, tmp_path, monkey
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
 
 
-def test_full_session_and_asynchronous_real_ui_branch_share_one_complete_capture(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize('language', ['en-US', 'id-ID'])
+def test_full_session_and_asynchronous_real_ui_branch_share_one_complete_capture(browser, tmp_path, monkeypatch, language):
     from coretax_mpn_browser import collect_mpn
     with portal(browser, monkeypatch, session_redirect=True, router_notification=True,
-                grid_after_search=True, delayed_options=True) as (page, metrics):
+                grid_after_search=True, delayed_options=True, request_language=language) as (page, metrics):
         run = scope_run()
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'

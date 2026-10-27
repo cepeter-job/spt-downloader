@@ -10,7 +10,7 @@ from coretax_mpn import decode_mpn, MpnUnsupported, MpnSafetyError, require_mpn
 from test_mpn import scope_run, payment_source, HEADER, DETAIL
 
 
-def snapshot(rows, *, kind='list', first=0, total=None, parent=None):
+def snapshot(rows, *, kind='list', first=0, total=None, parent=None, language='en-US'):
     # Encode numeric markers as original numeric literals, including their scale.
     from coretax_mpn import MpnNumber
     def wire(value):
@@ -25,7 +25,7 @@ def snapshot(rows, *, kind='list', first=0, total=None, parent=None):
     raw = wire({'IsSuccessful': True, 'Payload': {'TotalRecords': total, 'Data': rows}}).encode()
     data = decode_mpn(raw)['Payload']['Data']
     request = {'First': first, 'Rows': 10, 'SortField': 'PostingDate' if kind == 'list' else 'TransactionDate',
-               'SortOrder': -1, 'LanguageId': 'en-US', 'Filters': [] if kind == 'detail' else
+               'SortOrder': -1, 'LanguageId': language, 'Filters': [] if kind == 'detail' else
                [{'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals'}]}
     from test_mpn import TAXPAYER
     request['TaxpayerAggregateIdentifier' if kind == 'list' else 'RecordId'] = TAXPAYER if kind == 'list' else parent
@@ -38,6 +38,7 @@ class SyntheticUI:
     children = {}
     dom = None
     failure = None
+    language = 'en-US'
 
     def __init__(self, page, run, folder, *, check_cancel=None):
         self.check_cancel = check_cancel
@@ -59,12 +60,12 @@ class SyntheticUI:
     def list_pages(self, max_pages):
         if self.check_cancel:
             self.check_cancel()
-        yield snapshot(deepcopy(self.headers))
+        yield snapshot(deepcopy(self.headers), language=self.language)
 
     def detail_pages(self, header, max_pages):
         self.opened.append(header['RecordId'])
         rows = deepcopy(self.children[header['RecordId']])
-        yield snapshot(rows, kind='detail', parent=header['RecordId']), deepcopy(self.dom)
+        yield snapshot(rows, kind='detail', parent=header['RecordId'], language=self.language), deepcopy(self.dom)
 
     def finish(self):
         if self.check_cancel:
@@ -104,7 +105,7 @@ def test_complete_empty_attempt_cannot_discard_its_original_inventory_evidence(m
         validate_mpn(run)
 
 
-def prepare(monkeypatch, *, dom=None, duplicate=False):
+def prepare(monkeypatch, *, dom=None, duplicate=False, language='en-US'):
     import coretax_mpn_browser as browser
     header, detail = payment_source(amount='-1250.501')
     # A zero-valued, later-year header still owns the selected-year payment.
@@ -116,6 +117,7 @@ def prepare(monkeypatch, *, dom=None, duplicate=False):
         headers = [header]
         children = {HEADER: [positive, detail, deepcopy(detail)] if duplicate else [positive, detail]}
     UI.dom = dom
+    UI.language = language
     instances = []
     def make(*args, **kwargs):
         ui = UI(*args, **kwargs)
@@ -123,6 +125,29 @@ def prepare(monkeypatch, *, dom=None, duplicate=False):
         return ui
     monkeypatch.setattr(browser, 'AccountingUI', make, raising=False)
     return browser, instances
+
+
+@pytest.mark.parametrize('language', ['en-US', 'id-ID'])
+def test_reviewed_literal_request_language_survives_original_custody(monkeypatch, tmp_path, language):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch, language=language)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    assert run['complete']
+    assert {binding['request']['LanguageId'] for binding in run['mpn']['bindings']} == {language}
+    with mpn_custody(run, tmp_path):
+        pass
+
+
+def test_mixed_reviewed_request_languages_cannot_reconcile_as_one_attempt(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, _ = prepare(monkeypatch)
+    run = scope_run()
+    browser.collect_mpn(object(), run, tmp_path)
+    run['mpn']['bindings'][-1]['request']['LanguageId'] = 'id-ID'
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run, tmp_path):
+            pass
 
 
 def test_all_zero_later_year_headers_are_inspected_and_raw_bytes_stay_private(monkeypatch, tmp_path):

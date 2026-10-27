@@ -153,6 +153,39 @@ def test_second_main_frame_transition_invalidates_owned_capture(tmp_path):
     capture.close()
 
 
+@pytest.mark.parametrize('language', ['en-US', 'id-ID'])
+def test_reviewed_request_language_is_preserved_for_list_and_detail(tmp_path, language):
+    page, capture = observer(tmp_path)
+    capture.on_navigation(page.main_frame)
+    for kind in ('list', 'detail'):
+        if kind == 'detail':
+            capture.begin_detail(PARENT)
+        request = Request(page, kind=kind)
+        request.post_data_json['LanguageId'] = language
+        request.post_data = json.dumps(request.post_data_json)
+        marker = capture.sequence
+        capture.on_request(request)
+        capture.on_response(Response(request))
+        assert capture.wait(marker, kind)['request']['LanguageId'] == language
+    capture.close()
+
+
+def test_changed_reviewed_request_language_is_fatal_before_response(tmp_path):
+    from coretax_mpn import MpnSafetyError
+    page, capture = observer(tmp_path)
+    capture.on_navigation(page.main_frame)
+    first = Request(page)
+    capture.on_request(first)
+    capture.on_response(Response(first))
+    changed = Request(page)
+    changed.post_data_json['LanguageId'] = 'id-ID'
+    changed.post_data = json.dumps(changed.post_data_json)
+    capture.on_request(changed)
+    with pytest.raises(MpnSafetyError):
+        capture._check_state()
+    capture.close()
+
+
 def test_close_releases_request_references_and_registered_handlers(tmp_path):
     page, capture = observer(tmp_path)
     capture.on_navigation(page.main_frame)

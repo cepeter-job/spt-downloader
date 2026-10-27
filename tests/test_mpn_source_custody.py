@@ -23,36 +23,51 @@ def source_ui(tmp_path, monkeypatch):
     return ui, path, raw
 
 
-def test_grid_failure_cannot_mask_an_earlier_fatal_source_refusal(tmp_path, monkeypatch):
+@pytest.mark.parametrize('later', ['grid_failure', 'deadline'])
+def test_grid_failure_cannot_mask_an_earlier_fatal_source_refusal(tmp_path, monkeypatch, later):
     ui, _, _ = source_ui(tmp_path, monkeypatch)
     ui._reject_source('ownership', safety=True, ownership_reason='page_route')
-    ui.observer._reject()
+    if later == 'grid_failure':
+        ui.observer._reject()
+    else:
+        ui.preparation_deadline = 0
     with pytest.raises(MpnSafetyError):
         ui._stop()
     ui.observer.close()
 
 
-def test_grid_failure_during_original_source_read_is_not_an_identity_contradiction(tmp_path, monkeypatch):
+@pytest.mark.parametrize('stage', ['before', 'response', 'body'])
+def test_grid_failure_during_original_source_read_is_not_an_identity_contradiction(tmp_path, monkeypatch, stage):
     from test_mpn_browser import Request, Response
     ui, path, raw = source_ui(tmp_path, monkeypatch)
     bad = Request(ui.page)
     ui.observer.on_request(bad)
-    observed, _ = request(ui, path, raw)
+    observed, reads = request(ui, path, raw)
     response = observed.response()
     def body():
+        reads.append(True)
         ui.observer.on_response(Response(bad, status=403, html=True))
         return raw
-    response.body = body
-    observed.response = lambda: response
+    if stage == 'body':
+        response.body = body
+    def get_response():
+        if stage == 'response':
+            ui.observer.on_response(Response(bad, status=403, html=True))
+        return response
+    observed.response = get_response
     ui._source_request(observed)
+    if stage == 'before':
+        ui.observer.on_response(Response(bad, status=403, html=True))
     ui._source_finished(observed)
     with pytest.raises(MpnUnsupported):
         ui._stop()
     assert not ui.source_safety and ui.pins == {}
+    assert len(reads) == (1 if stage == 'body' else 0)
     ui.observer.close()
 
 
-def test_source_refusal_pumped_by_final_identity_rpc_prevents_actual_click(tmp_path, monkeypatch):
+@pytest.mark.parametrize('safety', [False, True])
+def test_source_refusal_pumped_by_final_identity_rpc_prevents_actual_click(tmp_path, monkeypatch, safety):
     ui, _, _ = source_ui(tmp_path, monkeypatch)
     trials, actual = [], []
     class Control:
@@ -62,10 +77,11 @@ def test_source_refusal_pumped_by_final_identity_rpc_prevents_actual_click(tmp_p
     original = handle.evaluate
     def evaluate(script):
         if trials:
-            ui._reject_source('ownership', safety=True, ownership_reason='page_route')
+            ui._reject_source('ownership' if safety else 'response', safety=safety,
+                              ownership_reason='page_route' if safety else None)
         return original(script)
     handle.evaluate = evaluate
-    with pytest.raises(MpnSafetyError):
+    with pytest.raises(MpnSafetyError if safety else MpnUnsupported):
         ui._click_ready(Control())
     assert trials and actual == []
     ui.observer.close()
