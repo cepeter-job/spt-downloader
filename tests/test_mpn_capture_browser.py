@@ -18,7 +18,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            pending_catalog=False, delayed_mount=False, unrelated_sources=False,
            router_notification=False, grid_after_search=False, delayed_options=False,
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
-           delayed_page_size=False, tooltip_action=False, delayed_dialog=False):
+           delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
+           body_dialog=False, existing_dialog=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -53,6 +54,15 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     '''
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
+    if body_dialog:
+        main = main.replace("const host=document.getElementById('isShowDetail');host.style.display='block';",
+            "const component=document.getElementById('isShowDetail');"
+            "const host=component.querySelector('[role=dialog]');const mask=document.createElement('div');"
+            "mask.className='p-dialog-mask p-component-overlay';host.classList.add('p-dialog','p-component');"
+            "host.setAttribute('aria-labelledby','synthetic-detail-title');host.querySelector('.p-dialog-title').id='synthetic-detail-title';"
+            "mask.append(host);document.body.append(mask);host.style.display='block';")
+        main = main.replace("document.getElementById('isShowDetail').style.display='none'",
+            "document.querySelector('body>.p-dialog-mask').remove()")
     if delayed_dialog:
         main = main.replace("host.style.display='block';", "setTimeout(()=>host.style.display='block',250);")
     if delayed_page_size:
@@ -118,6 +128,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         html = html.replace('</table></p-table>', '</table><div class="p-paginator">'
             '<span class="p-dropdown-label">10</span><button type="button" class="p-dropdown-trigger">Size</button>'
             '</div></p-table>', 1)
+    if body_dialog:
+        html = html.replace('<p-dialog id="isShowDetail"', '<p-dialog header="Detail Transaksi" id="isShowDetail"')
+    if existing_dialog:
+        html = html.replace('</body>', '<div class="p-dialog-mask p-component-overlay"><div role="dialog" class="p-dialog p-component">SYNTHETIC OLD DIALOG</div></div></body>')
     if delayed_mount:
         html = html.replace('<body>', '<body><template id="late-owner">').replace(
             '</body>', '</template></body>')
@@ -355,6 +369,25 @@ def test_owned_detail_dialog_may_mount_after_its_original_response(browser, tmp_
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+def test_inspected_body_overlay_binds_only_after_owned_detail_action(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, tooltip_action=True, body_dialog=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert len(metrics['detail']) == 1
+        assert page.locator('body>.p-dialog-mask').count() == 0
+
+
+def test_existing_visible_dialog_refuses_detail_action(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, tooltip_action=True, existing_dialog=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+        assert metrics['detail'] == []
 
 
 def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):
