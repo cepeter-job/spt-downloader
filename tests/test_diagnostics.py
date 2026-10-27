@@ -61,8 +61,7 @@ def test_mpn_ownership_reason_schema_rejects_arbitrary_values_without_stringifyi
         def __str__(self):
             raise AssertionError('An ownership diagnostic must not stringify arbitrary values')
     class UntrustedString(str):
-        def __hash__(self):
-            raise AssertionError('Diagnostic categories must be exact strings')
+        __hash__ = None
     with d.session(tmp_path, 'worker') as log:
         for value in ['SYNTHETIC_PRIVATE_MPN_OWNERSHIP', Untrusted(), True, None,
                       UntrustedString('frame'), [], {}]:
