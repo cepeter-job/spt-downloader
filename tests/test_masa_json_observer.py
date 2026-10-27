@@ -105,6 +105,11 @@ def test_cancellation_propagates_instead_of_fallback(browser, tmp_path, monkeypa
 @pytest.mark.parametrize('layout', ['direct', 'wrapped'])
 def test_aria_controls_must_identify_one_panel_owned_by_the_main_view(browser, tmp_path, monkeypatch, defect, layout):
     with observed(browser, tmp_path, monkeypatch, defect=defect, layout=layout) as (module, fixture, capture):
+        if defect == 'nested-panel-target':
+            # The owned panel is already present; a nested target cannot become its owner.
+            assert fixture.page.locator('[data-main-panel]#outer0').count() == 1
+            assert fixture.page.locator('[id="p0"]').count() == 1
+            monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
         assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
         assert fixture.page.evaluate('window.forbiddenClicks') == 0
         assert fixture.page.evaluate('window.valueReads') == 0

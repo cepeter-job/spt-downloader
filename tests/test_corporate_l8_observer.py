@@ -3,6 +3,8 @@ from copy import deepcopy
 
 import pytest
 
+import coretax_browser as driver
+
 from coretax_corporate import observe_forms
 from coretax_json import JsonSafetyError, adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
@@ -62,6 +64,10 @@ def test_l8_unproved_owner_history_or_provider_uses_whole_record_fallback(browse
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
+            if defect == 'hidden-owner':
+                # This fixture is statically malformed; preserve the production readiness budget.
+                assert page.locator('rshshr-citr-l8-form').get_attribute('style') == 'display:none'
+                monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             assert forms is None
             assert page.evaluate('window.businessReads') == 0
