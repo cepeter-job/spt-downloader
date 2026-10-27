@@ -40,7 +40,7 @@ def fixture(page, *, total=4654, sizes=(10, 25, 50, 100, 250, 500), selected=100
       window.at=0;window.moves=0;window.sizeChanges=[];window.noAdvance=false;
       window.draw=()=>{
         document.querySelector('tbody').innerHTML=Array.from(
-          {length:Math.min(size,total-at*size)},(_,i)=>'<tr><td>'+String(at*size+i+1)+
+          {length:Math.min(size,total-at*size)},(_,i)=>'<tr><td>'+String(Math.floor((at*size+i)/2)+1)+
           '</td><td>0</td></tr>').join('');
         document.querySelector('.p-highlight').textContent=String(at+1);
         document.querySelector('.p-paginator-first').disabled=at===0;
@@ -90,7 +90,7 @@ def captured_table(result):
 def assert_rows(table, total):
     assert table['complete'], table.get('warning')
     assert table['source_total'] == table['body_row_count'] == total
-    assert table['rows'] == [[str(i), '0'] for i in range(1, total + 1)] + [['TOTAL', '0']]
+    assert table['rows'] == [[str(i // 2 + 1), '0'] for i in range(total)] + [['TOTAL', '0']]
     assert table['footer'] == [['TOTAL', '0']]
     assert 'source_structure' not in table  # No new output/eligibility declaration.
 

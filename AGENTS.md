@@ -154,6 +154,17 @@ Financial PDFs are limited to ordinary inspected read-only links or the reviewed
 
 Tab-panel readiness uses one shared 30-second deadline. Each locator read gets at most 1000 ms and the remaining budget, checks Stop first, and must not authorize capture after the final read exceeds the deadline. Keep caption/current control binding, controlled-binding history, unique owning view and actual visibility checks. One separate 1000 ms value-free timeout probe is diagnostic evidence only; it cannot authorize capture or a PDF request.
 
+Corporate DOM capture may select an actually visible numeric page-size option
+up to 500 only for a selected `PPh Badan` record, exact `L3` tab and the existing
+structure observer's exact `rshshr-citr-l3-grid2` owner with sole group
+`B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN`. All other DOM tables, inventory
+callers and native observers retain their existing limits. Never synthesize a
+size or request; absent larger options keep the available smaller choice and
+an already selected maximum causes no reload. Preserve Stop, page limits,
+owned pagination, progress checks, row order/duplicates, footer-once capture
+and source-count reconciliation. This optimization grants no native eligibility
+or capture/PDF/job completion and changes no output metadata.
+
 Initial detail-list restoration may repeat its same inspected list navigation
 once only for `ListResponseTimeout`, the absent-fresh-response RuntimeError
 subtype. Keep each existing 60-second navigation/45-second response bound, a new
