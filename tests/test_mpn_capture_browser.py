@@ -361,18 +361,17 @@ def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(br
     from coretax_mpn_browser import collect_mpn
     from coretax_mpn import mpn_custody
     import coretax_mpn_ui as module
-    original = module.AccountingUI._table
+    original = module.AccountingUI._freeze_catalog
     with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
         served = []
-        def table(self, owner, headers, count):
-            result = original(self, owner, headers, count)
-            if headers == module.LIST_HEADERS and not served:
+        def freeze(self):
+            if not served:
                 served.append(True)
                 metrics['references'][-1].fulfill(content_type='application/json',body=json.dumps({
                     'IsSuccessful':True,'Payload':[{'ReferenceDataType':name,'Checksum':'synthetic-version','Details':[]}
                     for name in ('ACCOUNTING_TYPE','ACCOUNTING_TYPE_DETAIL','REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT','PERIOD')]}))
-            return result
-        monkeypatch.setattr(module.AccountingUI, '_table', table)
+            return original(self)
+        monkeypatch.setattr(module.AccountingUI, '_freeze_catalog', freeze)
         run = scope_run()
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
@@ -385,12 +384,16 @@ def test_parent_binding_uses_dom_snapshot_after_catalog_labels_finish(browser, t
     from coretax_mpn_browser import collect_mpn
     import coretax_mpn_ui as module
     original = module.AccountingUI._freeze_catalog
-    with portal(browser, monkeypatch) as (page, metrics):
+    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
         def freeze(self):
-            # Model the existing catalog response completing during its wait.
-            result = original(self)
             code = self.list_snapshot['rows'][0]['PeriodCode']
-            self.catalog[code] = 'SYNTHETIC PERIOD'
+            metrics['references'][-1].fulfill(content_type='application/json',body=json.dumps({
+                'IsSuccessful':True,'Payload':[{'ReferenceDataType':name,'Checksum':'synthetic-version',
+                    'Details':[{'Code':code,'CodeDescription':'SYNTHETIC PERIOD','AppLanguageId':'id-ID','ValidTo':None}]
+                        if name=='PERIOD' else []}
+                for name in ('ACCOUNTING_TYPE','ACCOUNTING_TYPE_DETAIL','REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT','PERIOD')]}))
+            result = original(self)
+            assert self.catalog[code] == 'SYNTHETIC PERIOD'
             self.list_owner.locator('tbody tr td').nth(16).evaluate(
                 "cell => cell.textContent='SYNTHETIC PERIOD'")
             return result
