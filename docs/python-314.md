@@ -62,7 +62,7 @@ kontributor. Gunakan `--upgrade` hanya ketika versi transitif perlu dinaikkan
 dengan sengaja. Hash memastikan kesesuaian paket, bukan ketiadaan advisory;
 pemeriksaan keamanan tetap wajib.
 
-`playwright==1.64.0` memakai `pyee==14.0.0` pada profil produksi CPython 3.14.8. Regenerasi lock menggunakan versi produksi yang tepat supaya tidak menyertakan cabang Python 3.11 yang sudah tidak didukung, tetapi tetap memakai resolusi universal, wheel saja, dan hash SHA-256.
+`playwright==1.64.1` memerlukan `pyee>=13,<15`; profil produksi mengunci `pyee==14.0.0` pada profil produksi CPython 3.14.8. Regenerasi lock menggunakan versi produksi yang tepat supaya tidak menyertakan cabang Python 3.11 yang sudah tidak didukung, tetapi tetap memakai resolusi universal, wheel saja, dan hash SHA-256.
 
 ## Verifikasi produksi
 
