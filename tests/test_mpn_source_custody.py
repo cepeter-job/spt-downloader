@@ -23,6 +23,54 @@ def source_ui(tmp_path, monkeypatch):
     return ui, path, raw
 
 
+def test_grid_failure_cannot_mask_an_earlier_fatal_source_refusal(tmp_path, monkeypatch):
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    ui._reject_source('ownership', safety=True, ownership_reason='page_route')
+    ui.observer._reject()
+    with pytest.raises(MpnSafetyError):
+        ui._stop()
+    ui.observer.close()
+
+
+def test_grid_failure_during_original_source_read_is_not_an_identity_contradiction(tmp_path, monkeypatch):
+    from test_mpn_browser import Request, Response
+    ui, path, raw = source_ui(tmp_path, monkeypatch)
+    bad = Request(ui.page)
+    ui.observer.on_request(bad)
+    observed, _ = request(ui, path, raw)
+    response = observed.response()
+    def body():
+        ui.observer.on_response(Response(bad, status=403, html=True))
+        return raw
+    response.body = body
+    observed.response = lambda: response
+    ui._source_request(observed)
+    ui._source_finished(observed)
+    with pytest.raises(MpnUnsupported):
+        ui._stop()
+    assert not ui.source_safety and ui.pins == {}
+    ui.observer.close()
+
+
+def test_source_refusal_pumped_by_final_identity_rpc_prevents_actual_click(tmp_path, monkeypatch):
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    trials, actual = [], []
+    class Control:
+        def click(self, *, trial=False, timeout):
+            (trials if trial else actual).append(True)
+    handle = ui.page.handles[-1]
+    original = handle.evaluate
+    def evaluate(script):
+        if trials:
+            ui._reject_source('ownership', safety=True, ownership_reason='page_route')
+        return original(script)
+    handle.evaluate = evaluate
+    with pytest.raises(MpnSafetyError):
+        ui._click_ready(Control())
+    assert trials and actual == []
+    ui.observer.close()
+
+
 def request(ui, path, raw, *, method='GET', kind='script'):
     value = SimpleNamespace(url=ORIGIN + path, frame=ui.page.main_frame,
                             method=method, resource_type=kind)

@@ -90,3 +90,21 @@ def test_rejected_observer_prevents_ui_preparation(tmp_path):
         ui._dropdown('acc-balance-sheet-light form ui-dropdown#ShowZeroValue', 'Yes')
     ui.__exit__()
     capture.close()
+
+
+def test_owned_http_failure_during_document_rpc_stays_recoverable(tmp_path):
+    from coretax_mpn import MpnUnsupported
+    page, capture = observer(tmp_path)
+    capture.on_navigation(page.main_frame)
+    bad = Request(page)
+    capture.on_request(bad)
+    handle = page.handles[-1]
+    original = handle.evaluate
+    def evaluate(script):
+        capture.on_response(Response(bad, status=403, html=True))
+        return original(script)
+    handle.evaluate = evaluate
+    with pytest.raises(MpnUnsupported):
+        capture._check_state()
+    assert capture.failed and not capture.safety_failed
+    capture.close()
