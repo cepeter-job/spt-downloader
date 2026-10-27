@@ -224,8 +224,8 @@ def wait_idle(page):
     page.wait_for_timeout(180)
 
 
-def maximize_page_size(page, container):
-    """Choose the largest inspected size up to 100; report an actual change."""
+def maximize_page_size(page, container, *, max_page_size=100):
+    """Choose the largest inspected option within the caller's bounded limit."""
     total = container.query_selector('.p-paginator-current')
     if total and re.search(r'(?:dari|of)\s+0\s', total.inner_text(), re.I):
         return False
@@ -235,7 +235,7 @@ def maximize_page_size(page, container):
     trigger.evaluate('(e)=>e.click()')
     options = page.locator('.p-dropdown-items li:visible')
     options.first.wait_for(state='visible', timeout=5000)
-    numeric = [(int(text.strip()), i) for i, text in enumerate(options.all_inner_texts()) if text.strip().isdigit() and int(text.strip()) <= 100]
+    numeric = [(int(text.strip()), i) for i, text in enumerate(options.all_inner_texts()) if text.strip().isdigit() and int(text.strip()) <= max_page_size]
     if numeric:
         maximum, index = max(numeric)
         current = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
@@ -270,12 +270,12 @@ def _click_table_paginator(control, container, check_cancel):
         raise RuntimeError('Unavailable or unsupported pagination control')
 
 
-def capture_table(page, table, ordinal, max_pages, check_cancel=None):
+def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca seluruh halaman tabel dan rekonsiliasi jumlah baris sebelum footer."""
     _check_cancel(check_cancel)
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
-    maximize_page_size(page, container_handle)
+    maximize_page_size(page, container_handle, max_page_size=max_page_size)
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
         _click_table_paginator(first, container_handle, check_cancel)
@@ -551,8 +551,16 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
             if belongs != owner:
                 continue
             try:
+                max_page_size = 100
+                if financial_required and name == 'L3' and table.evaluate(CORPORATE_STRUCTURE_JS, name) == {
+                        'form': 'L3', 'component': 'rshshr-citr-l3-grid2',
+                        'groups': ['B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
+                    # The reviewed L3-B UI offers 250/500. Other tables/callers
+                    # retain 100; never synthesize an option or a grid request.
+                    max_page_size = 500
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
-                    captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel)
+                    captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
+                                             max_page_size=max_page_size)
                     timing.update(body_rows=captured.get('body_row_count'), pages=captured.get('pages'),
                                   status='COMPLETE' if captured['complete'] else 'PARTIAL')
                 if financial_required and name in ('L1-D', 'L9'):
