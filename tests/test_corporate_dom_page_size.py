@@ -36,7 +36,7 @@ def fixture(page, *, total=4654, sizes=(10, 25, 50, 100, 250, 500), selected=100
       <button class="p-dropdown-trigger" type="button">Size</button></div></div></div></p-table>
       </rshshr-citr-l3-grid2></div></p-accordiontab></rshshr-citr-l3-form>
       </div></p-tabpanel></div></div></main><ul class="p-dropdown-items" hidden></ul>
-      <script>
+      <script>(()=>{
       window.at=0;window.moves=0;window.sizeChanges=[];window.noAdvance=false;
       window.draw=()=>{
         document.querySelector('tbody').innerHTML=Array.from(
@@ -68,7 +68,7 @@ def fixture(page, *, total=4654, sizes=(10, 25, 50, 100, 250, 500), selected=100
         };
         rename('rshshr-citr-l3-grid2',c.component);rename('rshshr-citr-l3-form',c.form);draw();
       };
-      </script>''', wait_until='domcontentloaded')
+      })();</script>''', wait_until='domcontentloaded')
     page.evaluate('c=>configure(c)', dict(total=total, sizes=list(sizes), selected=selected,
                   component=component, caption=caption, form=form, tab=tab,
                   reported=total if reported is None else reported))

@@ -163,7 +163,7 @@ size or request; absent larger options keep the available smaller choice and
 an already selected maximum causes no reload. Preserve Stop, page limits,
 owned pagination, progress checks, row order/duplicates, footer-once capture
 and source-count reconciliation. This optimization grants no native eligibility
-or capture/PDF/job completion and changes no output metadata.
+or capture/PDF/job completion and adds no output metadata fields.
 
 Initial detail-list restoration may repeat its same inspected list navigation
 once only for `ListResponseTimeout`, the absent-fresh-response RuntimeError
