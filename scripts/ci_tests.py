@@ -51,9 +51,27 @@ def workload_for(nodeid):
             and test not in WINDOWS_TESTS else 'windows')
 
 
+# Empirical, exact-node rebalancing for the two Windows shards.
+# Baseline: successful main run 40449321039 on 2026-10-27; shard-0 was
+# 1056.48s, shard-1 968.73s. These four shard-0 cases totalled ~42s.
+# Moving ~42s between shards can reduce the ~88s gap without redistributing
+# the other 6,375 collected tests or changing serial Windows coverage.
+# Update only with measured successful-run evidence; unknown/renamed node IDs
+# continue to use the stable hash partition.
+_TIMED_SHARD_ONE = frozenset({
+    'tests/test_corporate_template_layout.py::test_binding_stage_preserves_reference_geometry_and_approved_styles',
+    'tests/test_desktop_dialog_layout.py::test_selection_reflow_preserves_data_and_owned_resources',
+    'tests/test_native_panel_readiness.py::test_native_observer_retries_stale_post_click_binding[PPh Pasal 21/26]',
+    'tests/test_masa_json_observer.py::test_all_masa_tabs_bind_real_requests_without_reading_tax_values[direct-PPN]',
+})
+
+
 def shard_for(nodeid, count):
     # SHA-256 memberi partisi yang sama di setiap runner; hash() bawaan Python
     # dapat berbeda antarproses dan membuat tes terlewat atau dijalankan ganda.
+    # Hanya profil tepat 2-shard yang menerima pengecualian berdasarkan timing.
+    if count == 2 and nodeid in _TIMED_SHARD_ONE:
+        return 1
     digest = hashlib.sha256(nodeid.encode('utf-8')).digest()
     return int.from_bytes(digest[:8], 'big') % count
 
