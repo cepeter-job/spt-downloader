@@ -357,7 +357,7 @@ def validate_mpn(run):
         raise MpnSafetyError('MPN declaration contains unsafe text or exceeds its budget') from None
     if value['status'] == 'COMPLETE' and (not value['inventory_complete'] or not value['details_complete'] or value['audit']):
         raise ValueError('MPN COMPLETE requires complete inventories without unresolved audit')
-    if 'attempt' in value and value['status'] == 'COMPLETE' and not value['evidence']:
+    if 'attempt' in value and value['status'] == 'COMPLETE' and not value['evidence'] and value['headers'] != 0:
         raise MpnSafetyError('MPN COMPLETE has no owned original inventory evidence')
     if run.get('complete') and value['status'] != 'COMPLETE':
         raise ValueError('MPN capture is required before a COMPLETE job')
