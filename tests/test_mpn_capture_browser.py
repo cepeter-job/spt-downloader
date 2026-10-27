@@ -17,7 +17,8 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
            pending_catalog=False, delayed_mount=False, unrelated_sources=False,
            router_notification=False, grid_after_search=False, delayed_options=False,
-           session_redirect=False, withheld_fresh_sources=False, request_language='en-US'):
+           session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
+           delayed_page_size=False, tooltip_action=False, delayed_dialog=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -50,6 +51,23 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if tooltip_action:
+        main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
+    if delayed_dialog:
+        main = main.replace("host.style.display='block';", "setTimeout(()=>host.style.display='block',250);")
+    if delayed_page_size:
+        main = 'let selectedSize=10;' + main.replace('Rows:10,SortField:', 'Rows:selectedSize,SortField:')
+        main = main.replace('async function loadList(){searches++;',
+            "async function loadList(){searches++;const trigger=document.querySelector('.p-paginator .p-dropdown-trigger');"
+            "trigger.disabled=true;setTimeout(()=>trigger.disabled=false,1200);")
+        main = main.replace("document.addEventListener('DOMContentLoaded',()=>{",
+            "document.addEventListener('DOMContentLoaded',()=>{"
+            "document.querySelector('.p-paginator .p-dropdown-trigger').onclick=()=>{"
+            "const panel=document.createElement('div');panel.className='p-dropdown-panel';"
+            "for(const size of [10,25,50]){const option=document.createElement('div');"
+            "option.setAttribute('role','option');option.textContent=String(size);"
+            "option.onclick=()=>{selectedSize=size;document.querySelector('.p-paginator .p-dropdown-label').textContent=String(size);panel.remove();loadList();};"
+            "panel.append(option);}setTimeout(()=>document.body.append(panel),250);};")
     if grid_after_search:
         main = main.replace('async function loadList(){searches++;',
             "async function loadList(){if(!document.querySelector('acc-balance-sheet-light-grid')){"
@@ -96,14 +114,23 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
       <acc-balance-sheet-light-grid><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></acc-balance-sheet-light-grid>
       <p-dialog id="isShowDetail" style="display:none"><div role="dialog"><span class="p-dialog-title">Detail Transaksi</span><button class="p-dialog-header-close">Close</button><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></div></p-dialog>
       </acc-balance-sheet-light></body></html>'''
+    if delayed_page_size:
+        html = html.replace('</table></p-table>', '</table><div class="p-paginator">'
+            '<span class="p-dropdown-label">10</span><button type="button" class="p-dropdown-trigger">Size</button>'
+            '</div></p-table>', 1)
     if delayed_mount:
         html = html.replace('<body>', '<body><template id="late-owner">').replace(
             '</body>', '</template></body>')
-    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': [], 'documents': 0}
+    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': [], 'documents': 0, 'initiations': 0}
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
     page = context.new_page()
+    original_goto = page.goto
+    def goto(*args, **kwargs):
+        metrics['initiations'] += 1
+        return original_goto(*args, **kwargs)
+    monkeypatch.setattr(page, 'goto', goto)
     def route(request_route):
         request = request_route.request
         path = request.url.removeprefix(ORIGIN)
@@ -175,7 +202,7 @@ def test_nonqualifying_asset_observations_do_not_abort_a_verified_real_capture(b
         run = scope_run()
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
-        assert sorted(metrics['unrelated']) == ['POST', 'fetch']
+        assert sorted(metrics['unrelated']) == ['POST', 'POST', 'fetch', 'fetch']
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
 
 
@@ -203,7 +230,7 @@ def test_pending_admitted_reference_cannot_become_complete_at_final_sampling(bro
     with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
         run = scope_run()
         collect_mpn(page, run, tmp_path)
-        assert len(metrics['references']) == 1
+        assert len(metrics['references']) == 2
         assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
 
 
@@ -280,4 +307,75 @@ def test_session_redirect_during_fresh_capture_remains_fatal_without_retry(brows
         with pytest.raises(MpnSafetyError):
             collect_mpn(page, run, tmp_path)
         assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
-        assert metrics['documents'] == 3 and metrics['detail'] == []
+        assert metrics['documents'] in (3, 4) and metrics['detail'] == []
+        assert metrics['initiations'] == 2  # Only session preparation and fresh capture; no retry.
+
+
+def test_owned_capture_keeps_original_size_without_touching_unready_optional_size_control(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, delayed_page_size=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert {request['Rows'] for request in metrics['list']} == {10}
+        assert page.locator('.p-dropdown-panel').count() == 0
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+def test_pinned_source_named_detail_action_does_not_require_html_title(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, tooltip_action=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+@pytest.mark.parametrize('attribute,value', [('id','DeleteButton'), ('title','Ubah'), ('aria-label','Hapus')])
+def test_source_named_detail_action_rejects_contradictory_metadata(browser, tmp_path, monkeypatch, attribute, value):
+    from coretax_mpn_browser import collect_mpn
+    import coretax_mpn_ui as module
+    original = module.AccountingUI._bind_header
+    with portal(browser, monkeypatch, tooltip_action=True) as (page, metrics):
+        def bind(self, header):
+            self.list_owner.locator('button#ViewButton').evaluate(
+                '(button, pair) => button.setAttribute(pair[0],pair[1])', [attribute,value])
+            return original(self, header)
+        monkeypatch.setattr(module.AccountingUI, '_bind_header', bind)
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+        assert metrics['detail'] == []
+
+
+def test_owned_detail_dialog_may_mount_after_its_original_response(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, tooltip_action=True, delayed_dialog=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import mpn_custody
+    import coretax_mpn_ui as module
+    original = module.AccountingUI._table
+    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
+        served = []
+        def table(self, owner, headers, count):
+            result = original(self, owner, headers, count)
+            if headers == module.LIST_HEADERS and not served:
+                served.append(True)
+                metrics['references'][-1].fulfill(content_type='application/json',body=json.dumps({
+                    'IsSuccessful':True,'Payload':[{'ReferenceDataType':name,'Checksum':'synthetic-version','Details':[]}
+                    for name in ('ACCOUNTING_TYPE','ACCOUNTING_TYPE_DETAIL','REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT','PERIOD')]}))
+            return result
+        monkeypatch.setattr(module.AccountingUI, '_table', table)
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert sum(binding['kind']=='catalog' for binding in run['mpn']['bindings']) == 1
+        with mpn_custody(run,tmp_path):
+            pass

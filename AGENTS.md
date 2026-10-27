@@ -252,6 +252,30 @@ default dates/period filters and require the exact unfiltered non-cancelled
 query. Source pins, genuine-empty inventory, Stop, budgets and final drain
 remain independent completion gates.
 
+Accounting grid requests preserve either reviewed literal `en-US` or `id-ID`
+LanguageId. Bind one language throughout the owned attempt and held original
+query reconciliation; a change between known languages is fatal, unknown codes
+remain unsupported. The reference GET stays strictly id-ID. Retain the already
+verified initial page size and owned pagination instead of changing its optional
+picker. The pinned read-only detail action may use the exact source-named
+`button#ViewButton[type=button]` with `.pi-list` and no HTML title; retain the
+legacy exact Detail Transaksi title branch and reject contradictory action
+metadata. Bind the selected row first, and require the unique visible Detail
+Transaksi dialog/title/grid within one five-second readiness deadline.
+
+The original admitted reference response may finish before the first parent
+binding, including after initial UI preparation. Wait at most five seconds for
+already owned pending sources before freezing that binding; never fetch a
+missing catalog or use browser cache. Retain its original bytes once in private
+evidence even if they were unavailable at open. Changed snapshots stay fatal;
+first catalogs arriving after binding stay unsupported. Preserve the earlier
+pending-reply latch at final sampling, including valid empty inventories.
+Sticky source/observer safety failures outrank transport failures and deadlines.
+Recoverable grid failures preserve Document custody for classification but admit
+no more evidence/actions. After the final Document RPC, recheck local Stop/source/
+observer state before every actual action; no callback-pumped refusal may be
+masked as a successful click or a new identity contradiction.
+
 MPN source ownership refusals additionally report only the first failed fixed
 `mpn_ownership_reason`: navigation, frame, method, page_route, request_url or
 resource_kind, in the existing short-circuit order. Keep the original first

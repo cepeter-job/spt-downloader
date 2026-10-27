@@ -18,6 +18,7 @@ GUID = r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}'
 MAX_BODY = 20 * 1024 * 1024
 MAX_EVIDENCE = 256 * 1024 * 1024
 MAX_RESPONSES = 4096
+REQUEST_LANGUAGES = ('en-US', 'id-ID')
 NUMBER = re.compile(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z')
 SENSITIVE_KEYS = frozenset(('authorization', 'cookie', 'setcookie', 'password',
                             'accesstoken', 'refreshtoken', 'idtoken', 'clientsecret'))
@@ -437,6 +438,7 @@ def _reconcile_held(run, readers):
     catalogs, headers, header_hashes, details, detail_hashes = {}, {}, {}, {}, {}
     header_locations, occurrences = {}, {}
     list_first, list_total, detail_offsets = 0, None, {}
+    request_language = None
     seen_paths = set()
     for binding in bindings:
         if not isinstance(binding, dict) or binding.get('path') not in by_path:
@@ -471,10 +473,15 @@ def _reconcile_held(run, readers):
                 or type(request['First']) is not int or request['First'] < 0
                 or type(request['Rows']) is not int or request['Rows'] not in (10, 25, 50)
                 or request['First'] % request['Rows'] or request['First'] > total
-                or request['LanguageId'] != 'en-US' or type(request['SortOrder']) is not int or request['SortOrder'] != -1
+                or type(request['LanguageId']) is not str or request['LanguageId'] not in REQUEST_LANGUAGES
+                or type(request['SortOrder']) is not int or request['SortOrder'] != -1
                 or request['SortField'] != ('PostingDate' if kind == 'list' else 'TransactionDate')
                 or not isinstance(rows, list) or len(rows) != min(request['Rows'], max(0, total - request['First']))):
             raise MpnSafetyError('MPN held original query/count is invalid')
+        if request_language is None:
+            request_language = request['LanguageId']
+        elif request['LanguageId'] != request_language:
+            raise MpnSafetyError('MPN held original request language changed')
         if kind == 'list':
             filters = request['Filters']
             if (request[identity] != value['taxpayer_id'] or request['First'] != list_first

@@ -34,6 +34,9 @@
 - [ ] Adapt retained Document/attempt custody; refuse second document requests and sticky state before UI actions.
 - [ ] Add separate bounded session preparation using only the observed roots/auth-callback and selected ledger; start fresh navigation/request custody afterward.
 - [ ] Correct Cari/grid ordering and bounded readiness with unchanged source/filter gates.
+- [ ] Preserve fatal precedence and recoverable classification across pumped RPCs; fence every actual action after its final identity check.
+- [ ] Admit only reviewed literal en-US/id-ID request languages with per-attempt consistency, preserved held queries and unchanged id-ID catalogs.
+- [ ] Retain verified initial page size; bind pinned ViewButton metadata, await the detail dialog, and retain original catalogs arriving before first parent binding.
 - [ ] Read runner GREEN, exact test inventories/package proof; independently review final branch.
 - [ ] Validate the same actual job in a new private folder under the granted local exception.
 - [ ] Review preceding other-session merge/latest main before merging; deliver exact merged-main package with verified hashes.

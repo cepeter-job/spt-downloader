@@ -47,3 +47,39 @@ callback query/token. Capture still refuses every subsequent route contradiction
 
 Actual authorized same-job validation must establish successful owned capture;
 session preflight alone does not establish capture or full-job completion.
+
+The subsequent authorized owned-browser probe observed an exact standard list
+request with literal `LanguageId=id-ID`, otherwise the reviewed keys, ten rows,
+PostingDate and numeric -1 sort. The pinned shared ui-grid source assigns this
+field from `gridService.getCurrentUserSelectedLanguage()`; the earlier en-US
+sample is one supported branch, not an invariant of the endpoint. Admit both
+reviewed literal codes, preserving each original request. Bind one language for
+the whole owned attempt and held evidence reconciliation; a change between the
+two known languages is fatal. Other/missing codes remain unsupported. This
+does not change the id-ID reference GET, DOM environment or source pins.
+
+All sticky safety failures outrank later recoverable grid/source failures and
+readiness deadlines. A transport failure pumped during identity/source RPCs
+must remain recoverable without a false ownership rejection or accepted proof.
+After the final Document RPC, recheck all local source/observer/Stop flags before
+any actual action; the action guard must not leave another unchecked RPC gap.
+
+Keep the already verified initial Rows value and its owned pagination. The
+optional page-size picker adds an unnecessary animated action to preparation;
+the authorized probe reproduced its click timeout. This leaves the separate
+SPT L3-B pagination optimization unchanged.
+
+Pinned source names the read-only detail action ViewButton/Detail Transaksi with
+the pi-list icon; its renderer supplies pTooltip and id, without an HTML title.
+Bind that exact button/type/icon within the independently verified parent row,
+retain the legacy exact-title branch and reject contradictory id/title/aria
+metadata. After its original detail response, wait for the unique visible
+dialog, exact title and grid within one shared five-second deadline.
+
+The owned original reference GET may finish after open but before the first
+parent is bound. Give already admitted pending sources at most five seconds to
+finish before freezing that binding. Retain the accepted original bytes once
+even when unavailable at open; reconcile held labels against those bytes. Do
+not force a request or read cache. Changed snapshots stay fatal, first catalogs
+after binding stay unsupported, and final sampling preserves earlier pending
+counts rather than promoting late replies to COMPLETE.
