@@ -87,8 +87,9 @@ ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', '
     'FileNotFoundError', 'FileExistsError', 'TimeoutError', 'TaxpayerSearchTimeout', 'TimeoutExpired', 'CalledProcessError',
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
     'JSONDecodeError', 'TclError', 'AuthBlocked', 'SetupCancelled', 'CaptureCancelled',
-    'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', '_RecoveryRequired'})
-MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_attachments', 'coretax_financial_post', 'coretax_pdf',
+    'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', 'MpnSafetyError', 'MpnUnsupported',
+    '_RecoveryRequired'})
+MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_mpn', 'coretax_mpn_browser', 'coretax_mpn_export', 'coretax_mpn_ui', 'coretax_attachments', 'coretax_financial_post', 'coretax_pdf',
     'coretax_exporter', 'coretax_json', 'coretax_json_capture', 'coretax_corporate',
     'spt_gui', *('spt_desktop.' + name for name in (
         'app', 'controller', 'worker', 'auth', 'runtime', 'events', 'interaction',

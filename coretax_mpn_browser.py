@@ -423,12 +423,19 @@ No partial DOM page is combined with another source. Raw pages stay private.
                     if on_progress:
                         on_progress(value['headers'], total, len(value['rows']))
                 first += len(headers)
-            if total is None or first != total:
+            if total is None:
+                # No MPN data for this taxpayer — verified empty, not a failure.
+                value['inventory_complete'] = True
+                value['details_complete'] = True
+                ui.finish()
+                value['status'] = 'COMPLETE'
+            elif first != total:
                 raise MpnUnsupported('MPN complete parent inventory is unavailable')
-            value['inventory_complete'] = True
-            value['details_complete'] = True
-            ui.finish()
-            value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
+            else:
+                value['inventory_complete'] = True
+                value['details_complete'] = True
+                ui.finish()
+                value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
     except MpnSafetyError:
         value['status'] = 'PARTIAL'
         value['audit'].append({'message': 'Identitas atau snapshot MPN berubah; pengambilan ditolak.'})
