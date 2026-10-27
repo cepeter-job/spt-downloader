@@ -1,4 +1,5 @@
 """Prove serial and sharded Windows evidence cannot silently omit tests."""
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -40,6 +41,51 @@ def test_two_shards_partition_every_node():
     assert left and right
     assert left.isdisjoint(right)
     assert left | right == set(nodes)
+
+
+
+@pytest.mark.parametrize('nodeid', sorted(ci_tests._TIMED_SHARD_ONE))
+def test_measured_slow_windows_cases_move_from_hash_shard_zero_to_one(nodeid):
+    # These are exact collected IDs from the successful 2026-10-27 Windows run.
+    digest = hashlib.sha256(nodeid.encode('utf-8')).digest()
+    original = int.from_bytes(digest[:8], 'big')
+    assert original % 2 == 0
+    assert ci_tests.workload_for(nodeid) == 'windows'
+    assert ci_tests.shard_for(nodeid, 2) == 1
+    # The 2-shard performance profile must never alter other partition modes.
+    assert ci_tests.shard_for(nodeid, 3) == original % 3
+
+
+def test_unmeasured_cases_keep_original_deterministic_hash_partition():
+    nodes = [f'tests/test_future_feature.py::test_new_case[{i}]' for i in range(128)]
+    nodes += ['tests/test_corporate_template_layout.py::test_another_case',
+              'tests/test_desktop_dialog_layout.py::test_selection_reflow_preserves_data_and_owned_resources[other]']
+    for node in nodes:
+        digest = hashlib.sha256(node.encode('utf-8')).digest()
+        baseline = int.from_bytes(digest[:8], 'big')
+        for count in (1, 2, 3):
+            assert ci_tests.shard_for(node, count) == baseline % count
+
+
+def test_production_gate_enforces_timed_shard_override():
+    portable, _, shards = production_evidence()
+    slow = next(iter(sorted(ci_tests._TIMED_SHARD_ONE)))
+    for report in (portable, *shards):
+        report['all'].append(slow)
+    shards[1]['selected'].append(slow)
+    for report in shards:
+        report['outcomes'] = completed_outcomes(report)
+    assert ci_tests.check_inventories(
+        portable, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT) == 16
+    # An accidentally reverted hash-only assignment must fail even if the
+    # resulting aggregate coverage still contains exactly the same tests.
+    shards[1]['selected'].remove(slow)
+    shards[0]['selected'].append(slow)
+    for report in shards:
+        report['outcomes'] = completed_outcomes(report)
+    with pytest.raises(ValueError, match='partition'):
+        ci_tests.check_inventories(
+            portable, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
 
 
 def test_evidence_checks_exact_coverage_and_records_elapsed_time():
