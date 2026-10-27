@@ -23,6 +23,26 @@ def source_ui(tmp_path, monkeypatch):
     return ui, path, raw
 
 
+@pytest.mark.parametrize('reference_type,kind,detail,number,expected', [
+    ('Payment','OtherTaxReturn','DBP','0007','0007'),
+    ('ICT_RCIT','OtherTaxReturn','DBP','0007','Tax Return Reference'),
+    ('ICT_RCIT Replacement','OtherTaxReturn','DBP','0007','Tax Return Reference'),
+    ('ICT_RCIT Replacement','TaxNotice','DBP','0007','0007'),
+    ('ICT_RCIT','Adjustment','AIP','0007','0007'),
+    (None,'OtherTaxReturn','DBP','0007',None),
+    ('Payment',None,'DBP','0007',None),
+    ('Payment','OtherTaxReturn','DBP',None,None)])
+def test_parent_reference_caption_uses_pinned_defined_string_branch_without_raw_alias(
+        reference_type,kind,detail,number,expected):
+    from copy import deepcopy
+    ui=AccountingUI.__new__(AccountingUI)
+    header={'ReferenceType':reference_type,'AccountingTypeCode':kind,'AccountingTypeDetailCode':detail,
+            'ReferenceNumber':number,'Reference':'SYNTHETIC RAW LINK FIELD'}
+    before=deepcopy(header)
+    assert ui._reference_caption(header)==expected
+    assert header==before
+
+
 @pytest.mark.parametrize('later', ['grid_failure', 'deadline'])
 def test_grid_failure_cannot_mask_an_earlier_fatal_source_refusal(tmp_path, monkeypatch, later):
     ui, _, _ = source_ui(tmp_path, monkeypatch)

@@ -284,7 +284,13 @@ Freeze admitted catalogs before reading the parent DOM snapshot used for
 identity. Parent binding includes the observed accounting type/detail captions
 from those same original catalogs (literal codes remain a bound fallback), plus
 the existing currency/KAP/KJS/period/transaction columns. Repeated projections
-that still identify distinct records remain unsupported.
+may use the additional Referensi caption only through the pinned helper's
+present-string ReferenceType branch with populated classification codes. Start
+from literal ReferenceNumber, apply its exact reviewed tax-type/Replacement
+caption and TaxNotice/Adjustment-AIP overrides; never copy the raw Reference
+link field, follow that link or guess another source alias. Require every
+matching peer's caption and a unique selected-record match. Still-identical or
+unproved captions remain unsupported; original source fields stay unchanged.
 
 The inspected detail dialog may render below a direct body-level
 `.p-dialog-mask.p-component-overlay` wrapper. Require the unique selected

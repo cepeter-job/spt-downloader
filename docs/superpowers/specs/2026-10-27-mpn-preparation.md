@@ -114,3 +114,17 @@ Alternatives considered: selecting fifty only postpones the same refusal;
 ignoring count changes loses the terminal proof. The bounded formula plus an
 original terminal page resolves the observed branch while preserving fixed
 totals and all source/identity/completion gates.
+
+## Repeated visible parent captions
+
+The actual function now reaches 110 parents before refusing a repeated seven-
+column identity. Original peers have distinct reference numbers. The pinned
+AccountingGridHelperService renderer does not display the raw Reference link
+field: its present-string ReferenceType branch starts from ReferenceNumber,
+uses the exact enumerated tax-type/Replacement caption and the TaxNotice and
+Adjustment/AIP overrides. Use that bounded caption only when the existing
+seven-column projection is ambiguous. Require a proved caption for every peer,
+a unique selected-record caption and exact current DOM equality. Do not bind
+an action using hidden reference numbers when the renderer replaces both with
+Tax Return Reference. Missing/unproved/still-identical captions stay unsupported;
+do not follow a reference link, guess an alias or change original metadata.

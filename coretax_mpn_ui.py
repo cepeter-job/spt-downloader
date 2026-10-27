@@ -26,6 +26,12 @@ LIST_HEADERS = ('Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatata
 DETAIL_HEADERS = ('Tanggal Transaksi', 'Tanggal Posting', 'Nomor Transaksi',
                   'Jenis Pencatatan', 'Detail Jenis Pencatatan', 'Nilai Mata Uang',
                   'Nilai Tukar Transaksi Induk', 'Jumlah', 'Referensi')
+REFERENCE_TAX_TYPES = frozenset((
+    'LBT_LBT', 'ICT_OGT', 'ICT_WT', 'SDT_SDT', 'ICT_PIT', 'ICT_RCIT', 'ICT_DCIT',
+    'ICT_NADFIT', 'ICT_ITA25ICDM', 'ICT_ITA25ICDQ', 'ICT_ITA25ICDA', 'VAT_VAT',
+    'VAT_DVAT', 'VAT_VATTNTEVATC', 'LBT_LBTR', 'ICT_OGTR', 'SDT_SDTR', 'ICT_WTR',
+    'ICT_PITR', 'ICT_RCITR', 'ICT_DCITR', 'VAT_VATR', 'VAT_DVATR',
+    'VAT_VATTRNTEVATC', 'ICT_WIT', 'AUDIT'))
 TABLE_JS = r'''table => {
  const text=e=>{
    const copy=e.cloneNode(true);
@@ -526,6 +532,21 @@ class AccountingUI:
                 self._literal(header.get('PaymentCode')), self.catalog.get(code, code),
                 self._literal(header.get('TransactionNumber')))
 
+    def _reference_caption(self, header):
+        # Bounded defined-string branch of the loaded helper's dataColumnRender.
+        # Reference is a link input, not the displayed ReferenceNumber caption.
+        reference_type = header.get('ReferenceType')
+        if (type(reference_type) is not str
+                or not header.get('AccountingTypeCode') or not header.get('AccountingTypeDetailCode')):
+            return None
+        number = self._literal(header.get('ReferenceNumber'))
+        caption = ('Tax Return Reference' if reference_type.replace(' Replacement', '', 1)
+                   in REFERENCE_TAX_TYPES else number)
+        if (header.get('AccountingTypeCode') == 'TaxNotice' and reference_type not in REFERENCE_TAX_TYPES
+                or header.get('AccountingTypeCode') == 'Adjustment' and header.get('AccountingTypeDetailCode') == 'AIP'):
+            caption = number
+        return caption if caption else None
+
     def _bind_header(self, header):
         self._stop()
         self._freeze_catalog()
@@ -541,10 +562,17 @@ class AccountingUI:
         if self.observer.latest.get('list', {}).get('sequence') != snapshot['sequence']:
             raise MpnSafetyError('MPN parent list changed while binding the rendered row')
         expected = self._header_projection(header)
-        if (any(value is None for value in expected) or not expected[-1]
-                or {row['RecordId'] for row in snapshot['rows'] if self._header_projection(row) == expected}
-                    != {header['RecordId']}):
+        if any(value is None for value in expected) or not expected[-1]:
             raise MpnUnsupported('MPN parent visible identity is not independently unique')
+        matching = [row for row in snapshot['rows'] if self._header_projection(row) == expected]
+        if {row['RecordId'] for row in matching} != {header['RecordId']}:
+            captions = [(row['RecordId'], self._reference_caption(row)) for row in matching]
+            caption = self._reference_caption(header)
+            if (any(value is None for _, value in captions) or caption is None
+                    or {identifier for identifier, value in captions if value == caption} != {header['RecordId']}):
+                raise MpnUnsupported('MPN repeated parent captions lack a unique original reference binding')
+            if rendered[index][12] != caption:
+                raise MpnSafetyError('MPN selected parent reference caption differs from its original source')
         actual = tuple(rendered[index][column] for column in (3, 4, 5, 13, 15, 16, 17))
         if actual != expected:
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')

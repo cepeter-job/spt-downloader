@@ -19,7 +19,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            router_notification=False, grid_after_search=False, delayed_options=False,
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
-           body_dialog=False, existing_dialog=False, duplicate_parent=None):
+           body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment'):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -33,7 +33,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     header, detail = payment_source(amount='-1250.501')
     header.update(Amount=0, CurrencyCode='IDR', RevenueCode='411211', PaymentCode='100',
                   AccountingTypeCode='OtherTaxReturn', AccountingTypeDetailCode='DBP',
-                  Reference='SYNTHETIC REF',
+                  Reference='SYNTHETIC RAW REF', ReferenceNumber='SYNTHETIC REF', ReferenceType=reference_type,
                   TransactionNumber='SYNTHETIC-PARENT-0007')
     positive = deepcopy(detail)
     positive.update(RecordId='00000000-0000-4000-8000-000000000004')
@@ -48,7 +48,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         if duplicate_parent == 'distinct':
             second['AccountingTypeCode'] = 'SYNTHETIC-SECOND-TYPE'
         elif duplicate_parent == 'distinct-reference':
-            second['Reference'] = 'SYNTHETIC SECOND REF'
+            second['ReferenceNumber'] = 'SYNTHETIC SECOND REF'
         parents.append(second)
     list_raw = snapshot([] if empty else parents)['raw']
     detail_raw = snapshot([positive, detail], kind='detail', parent=HEADER)['raw']
@@ -66,7 +66,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
     main = main.replace("'OtherTaxReturn','DBP',row.CurrencyCode", "row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode")
-    main = main.replace("'SYNTHETIC REF',row.RevenueCode", "row.Reference,row.RevenueCode")
+    main = main.replace("'SYNTHETIC REF',row.RevenueCode", "row.ReferenceType==='ICT_RCIT'?'Tax Return Reference':row.ReferenceNumber,row.RevenueCode")
     if body_dialog:
         main = main.replace("const host=document.getElementById('isShowDetail');host.style.display='block';",
             "const component=document.getElementById('isShowDetail');"
@@ -425,6 +425,15 @@ def test_parent_identity_binds_literal_reference_caption_when_other_columns_repe
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
         assert len(metrics['detail']) == 2
+
+
+def test_different_hidden_references_do_not_disambiguate_the_same_rendered_tax_caption(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, duplicate_parent='distinct-reference', reference_type='ICT_RCIT') as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+        assert metrics['detail'] == []
 
 
 def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):

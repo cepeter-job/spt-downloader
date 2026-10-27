@@ -90,7 +90,7 @@ def source_rows(count, *, parent=None):
     values=[]
     for index in range(count):
         row=deepcopy(detail if parent else header)
-        row['RecordId']=f'00000000-0000-4000-8000-{index+100:012d}'
+        row['RecordId']=f'00000000-0000-4000-8000-{index+(1000 if parent else 100):012d}'
         if parent:
             row['HeaderRecordId']=parent
         values.append(row)
