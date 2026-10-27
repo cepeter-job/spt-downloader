@@ -2,6 +2,8 @@
 import hashlib
 import re
 import time
+from urllib.parse import urlsplit
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from coretax_mpn import (ORIGIN, MpnUnsupported, MpnSafetyError, decode_mpn,
                          dom_numbers_match, taxpayer_id, captured_catalogs,
@@ -40,6 +42,61 @@ TABLE_JS = r'''table => {
 }'''
 
 
+def prepare_accounting_session(page, run, *, check_cancel=None):
+    """Finish the observed normal session transition before capture exists.
+
+    No source/grid bytes, credentials, callback query or browser storage are read.
+    The caller constructs its observer only after this listener has been removed.
+    """
+    if getattr(page.context, '_spt_financial_route_policy', None) != 'service_workers_blocked':
+        raise MpnUnsupported('MPN requires the reviewed owned browser context')
+    selected = ORIGIN + '/accounting/id-ID/balancesheet/' + taxpayer_id(run)
+    refused = False
+    deadline = time.monotonic() + 60
+
+    def allowed(url):
+        if '#' in url:
+            return False
+        if url in (selected, ORIGIN + '/', ORIGIN + '/accounting/id-ID/'):
+            return True
+        parts = urlsplit(url)
+        return (parts.scheme == 'https' and parts.netloc == urlsplit(ORIGIN).netloc
+                and parts.path == '/accounting/id-ID/auth-callback' and not parts.fragment)
+
+    def navigation(frame):
+        nonlocal refused
+        if frame is page.main_frame and not allowed(frame.url):
+            refused = True
+
+    def check():
+        if check_cancel:
+            check_cancel()
+        if refused or not allowed(page.url):
+            raise MpnSafetyError('MPN session preparation left its inspected routes')
+        if time.monotonic() >= deadline:
+            raise MpnUnsupported('MPN session preparation deadline exceeded')
+
+    if check_cancel:
+        check_cancel()
+    page.on('framenavigated', navigation)
+    try:
+        page.goto(selected, wait_until='domcontentloaded', timeout=60000)
+        while True:
+            check()
+            owner = page.locator('acc-balance-sheet-light')
+            count = owner.count()
+            check()
+            if count > 1:
+                raise MpnUnsupported('MPN session owner is ambiguous')
+            visible = count == 1 and owner.is_visible()
+            check()
+            if visible and page.url == selected:
+                return
+            page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
+    finally:
+        page.remove_listener('framenavigated', navigation)
+
+
 class AccountingUI:
     def __init__(self, page, run, folder, *, check_cancel=None):
         self.page, self.run, self.folder = page, run, folder
@@ -52,12 +109,14 @@ class AccountingUI:
         self.source_safety = False
         self.source_rejection_recorded = False
         self.source_pending = {}
+        self.source_ready = {}
         self.source_sequence = 0
         self.catalog_frozen = False
         self.closed = False
         self.reference_raw = None
         self.list_snapshot = None
         self.list_owner = None
+        self.preparation_deadline = None
 
     def __enter__(self):
         self.page.on('request', self._source_request)
@@ -71,11 +130,21 @@ class AccountingUI:
         self.page.remove_listener('requestfailed', self._source_request_failed)
         self.page.remove_listener('requestfinished', self._source_finished)
         self.source_pending.clear()
+        self.source_ready.clear()
         self.observer.close()
 
     def _stop(self):
         if self.check_cancel:
             self.check_cancel()
+        if getattr(self.observer, 'safety_failed', False):
+            raise MpnSafetyError('MPN owned document/request identity changed')
+        if getattr(self.observer, 'failed', False):
+            raise MpnUnsupported('MPN owned grid capture failed')
+        if getattr(self, 'preparation_deadline', None) is not None and time.monotonic() >= self.preparation_deadline:
+            raise MpnUnsupported('MPN UI preparation deadline exceeded')
+        if not getattr(self.observer, '_binding_document', False):
+            for request in list(getattr(self, 'source_ready', {}).values()):
+                self._source_finished(request)
         if self.source_safety:
             raise MpnSafetyError('MPN loaded source/catalog identity changed')
         if self.source_failed:
@@ -96,6 +165,7 @@ class AccountingUI:
 
     def _source_request(self, request):
         if (self.closed or not self.observer.committed
+                or self.observer.safety_failed or self.observer.failed
                 or request.frame is not self.page.main_frame or request.method != 'GET'):
             return
         url = request.url
@@ -116,25 +186,32 @@ class AccountingUI:
             self._reject_source('pending_budget')
             return
         self.source_sequence += 1
-        self.source_pending[id(request)] = (request, pin, catalog, url, kind)
+        self.source_pending[id(request)] = (request, pin, catalog, url, kind, self.observer._navigation_attempt)
 
     def _source_request_failed(self, request):
         entry = self.source_pending.pop(id(request), None)
+        self.source_ready.pop(id(request), None)
         if entry is not None and entry[0] is request:
             self.source_sequence += 1
             self._reject_source('request_failed')
 
     def _source_finished(self, request):
+        if (not self.closed and self.observer._binding_document
+                and id(request) in self.source_pending):
+            self.source_ready[id(request)] = request
+            return
         entry = self.source_pending.pop(id(request), None)
+        self.source_ready.pop(id(request), None)
         if entry is None or entry[0] is not request or self.closed:
             return
         self.source_sequence += 1
-        _, pin, catalog, expected_url, expected_kind = entry
+        _, pin, catalog, expected_url, expected_kind, attempt = entry
         url = request.url
         stage = 'ownership'
         ownership_reason = None
         try:
-            if not self.observer.committed:
+            if (not self.observer.committed or self.observer.safety_failed or self.observer.failed
+                    or attempt is not self.observer._navigation_attempt):
                 ownership_reason = 'navigation'
             elif request.frame is not self.page.main_frame:
                 ownership_reason = 'frame'
@@ -148,12 +225,19 @@ class AccountingUI:
                 ownership_reason = 'resource_kind'
             if ownership_reason is not None:
                 raise MpnSafetyError('MPN source request ownership changed')
+            if not self.observer._same_document():
+                ownership_reason = 'navigation'
+                raise MpnSafetyError('MPN source document ownership changed')
             stage = 'response'
             response = request.response()
             if response is None or response.url != url or response.status != 200 or response.from_service_worker:
                 raise MpnUnsupported('MPN original loaded source response unavailable')
             stage = 'body'
             raw = response.body()
+            if (attempt is not self.observer._navigation_attempt or self.observer.safety_failed
+                    or self.observer.failed or self.page.url != self.url):
+                stage, ownership_reason = 'ownership', 'navigation'
+                raise MpnSafetyError('MPN source document changed while reading original bytes')
             stage = 'body_budget'
             if len(raw) > 8 * 1024 * 1024:
                 raise MpnUnsupported('MPN loaded source byte budget exceeded')
@@ -185,19 +269,66 @@ class AccountingUI:
 
     def _one(self, selector):
         self._stop()
+        self.observer._check_state()
         locator = self.page.locator(selector)
         if locator.count() != 1:
             raise MpnUnsupported('MPN unique inspected UI owner/control is unavailable')
         return locator
 
+    def _ready_one(self, selector):
+        deadline = self.preparation_deadline or time.monotonic() + 5
+        while True:
+            self._stop()
+            self.observer._check_state(allow_document_pending=True)
+            if not self.observer._binding_document:
+                locator = self.page.locator(selector) if isinstance(selector, str) else selector
+                count = locator.count()
+                self._stop()
+                self.observer._check_state()
+                if count > 1:
+                    raise MpnUnsupported('MPN inspected readiness owner is ambiguous')
+                visible = count == 1 and locator.is_visible()
+                self._stop()
+                self.observer._check_state()
+                if time.monotonic() >= deadline:
+                    raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
+                if visible:
+                    return locator
+            if time.monotonic() >= deadline:
+                raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
+            self.page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
+
+    def _click_ready(self, locator):
+        deadline = self.preparation_deadline or time.monotonic() + 5
+        while True:
+            self._stop()
+            self.observer._check_state()
+            remaining = int((deadline - time.monotonic()) * 1000)
+            if remaining <= 0:
+                raise MpnUnsupported('MPN inspected action readiness deadline exceeded')
+            try:
+                locator.click(trial=True, timeout=min(1000, remaining))
+            except PlaywrightTimeoutError:
+                continue  # Only actionability is retried; the actual click occurs once.
+            self._stop()
+            self.observer._check_state()
+            remaining = int((deadline - time.monotonic()) * 1000)
+            if remaining <= 0:
+                raise MpnUnsupported('MPN inspected action readiness deadline exceeded')
+            locator.click(timeout=min(1000, remaining))
+            self._stop()
+            self.observer._check_state()
+            return
+
     def _dropdown(self, selector, caption):
-        trigger = self._one(selector + ' .p-dropdown-trigger')
-        trigger.click(timeout=1000)
-        self._stop()
-        option = self.page.locator('.p-dropdown-panel:visible').get_by_role('option', name=caption, exact=True)
-        if option.count() != 1:
-            raise MpnUnsupported('MPN inspected dropdown option is unavailable')
-        option.click(timeout=1000)
+        # Only the two reviewed fixed captions are used by this preparation path.
+        if caption not in ('Yes', 'No'):
+            raise MpnUnsupported('MPN inspected dropdown caption is unsupported')
+        trigger = self._ready_one(selector + ' .p-dropdown-trigger')
+        self._click_ready(trigger)
+        option = self._ready_one(self.page.locator('.p-dropdown-panel:visible').get_by_role(
+            'option', name=caption, exact=True))
+        self._click_ready(option)
 
     def open(self):
         self._stop()
@@ -205,23 +336,15 @@ class AccountingUI:
             raise MpnUnsupported('MPN requires the reviewed owned browser context')
         self.observer.begin_navigation(self.url)
         self.page.goto(self.url, wait_until='domcontentloaded', timeout=60000)
+        self.preparation_deadline = time.monotonic() + 45
         # Angular may mount its route owner after DOMContentLoaded. Short
         # value-free probes keep Stop and the original deadline authoritative.
-        owner = self.page.locator('acc-balance-sheet-light')
-        deadline = time.monotonic() + 45
-        while True:
-            self._stop()
-            count = owner.count()
-            if count > 1:
-                raise MpnUnsupported('MPN Accounting owner is ambiguous')
-            if count == 1 and owner.is_visible():
-                break
-            if time.monotonic() >= deadline:
-                raise MpnUnsupported('MPN Accounting owner did not become visible')
-            self.page.wait_for_timeout(100)
+        self._ready_one('acc-balance-sheet-light')
         environment = self.page.evaluate('''() => ({language:navigator.language,
             timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
             scripts:[...document.scripts].filter(e=>e.isConnected).map(e=>e.src)})''')
+        self._stop()
+        self.observer._check_state()
         if environment.get('language') != 'id-ID' or environment.get('timezone') != 'Asia/Jakarta':
             raise MpnUnsupported('MPN display environment is unsupported')
         if (set(self.pins) != set(SOURCE_PINS)
@@ -231,27 +354,33 @@ class AccountingUI:
             raise MpnUnsupported('MPN reviewed loaded script providers are unavailable')
         self._dropdown('acc-balance-sheet-light form ui-dropdown#ShowZeroValue', 'Yes')
         self._dropdown('acc-balance-sheet-light form ui-dropdown#ShowCancelledTransaction', 'No')
-        self.list_owner = self._one('acc-balance-sheet-light-grid ui-grid p-table')
-        clear = self.list_owner.locator('#filterPeriodCode .p-dropdown-clear-icon')
-        if clear.count() == 1 and clear.is_visible():
-            clear.click(timeout=1000)
-        search = self._one('acc-balance-sheet-light form button#submit')
+        search = self._ready_one('acc-balance-sheet-light form button#submit')
         if search.inner_text(timeout=1000).strip() != 'Cari':
             raise MpnUnsupported('MPN inspected search control changed')
         # The first submit may still add its initial default date interval.
         for _ in range(2):
             self._stop()
             marker = self.observer.sequence
-            search.click(timeout=1000)
-            snapshot = self.observer.wait(marker, 'list')
+            self._click_ready(search)
+            snapshot = self.observer.wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
+            self._stop()
+            self.list_owner = self._ready_one('acc-balance-sheet-light-grid ui-grid p-table')
             if self._unfiltered(snapshot):
                 self.list_snapshot = snapshot
                 break
+            clear = self.list_owner.locator('#filterPeriodCode .p-dropdown-clear-icon')
+            count = clear.count()
+            self._stop()
+            if count > 1:
+                raise MpnUnsupported('MPN period clear control is ambiguous')
+            if count == 1 and clear.is_visible():
+                self._click_ready(clear)
         if self.list_snapshot is None:
             raise MpnUnsupported('MPN unfiltered non-cancelled inventory is unproved')
         self._page_size()
         self._stop()
         self.catalog_frozen = True
+        self.preparation_deadline = None
 
     @staticmethod
     def _unfiltered(snapshot):

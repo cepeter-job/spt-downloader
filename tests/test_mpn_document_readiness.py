@@ -82,6 +82,7 @@ def test_rejected_observer_prevents_ui_preparation(tmp_path):
     from test_mpn import scope_run
     page, capture = observer(tmp_path)
     ui = AccountingUI(page, scope_run(), tmp_path)
+    ui.__enter__()
     ui.observer.begin_navigation(ui.url)
     ui.observer.on_navigation(page.main_frame)
     ui.observer._reject(safety=True)

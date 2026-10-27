@@ -17,7 +17,7 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
            pending_catalog=False, delayed_mount=False, unrelated_sources=False,
            router_notification=False, grid_after_search=False, delayed_options=False,
-           session_redirect=False):
+           session_redirect=False, withheld_fresh_sources=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -109,14 +109,19 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         path = request.url.removeprefix(ORIGIN)
         if path == '/accounting/id-ID/balancesheet/' + scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]:
             metrics['documents'] += 1
-            if session_redirect and metrics['documents'] == 1:
-                request_route.fulfill(body="<script>location.replace('/accounting/id-ID/auth-callback?code=SYNTHETIC')</script>", content_type='text/html')
+            if session_redirect and (metrics['documents'] == 1 or session_redirect == 'recurs' and metrics['documents'] == 3):
+                request_route.fulfill(body="<script>location.replace('/accounting/id-ID/')</script>", content_type='text/html')
             else:
                 request_route.fulfill(body=html, content_type='text/html')
+        elif session_redirect and path == '/accounting/id-ID/':
+            request_route.fulfill(body="<script>location.replace('/accounting/id-ID/auth-callback?code=SYNTHETIC')</script>", content_type='text/html')
         elif session_redirect and path == '/accounting/id-ID/auth-callback?code=SYNTHETIC':
             target = '/accounting/id-ID/balancesheet/' + scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]
             request_route.fulfill(body="<script>history.replaceState({},'','/');location.replace(" + json.dumps(target) + ")</script>", content_type='text/html')
         elif path in pins:
+            if withheld_fresh_sources and metrics['documents'] > 1:
+                request_route.fulfill(status=404, body='Synthetic absent provider', content_type='text/plain')
+                return
             if request.resource_type != 'script':
                 metrics['unrelated'].append(request.resource_type)
             request_route.fulfill(body=main if 'main.' in path else vendor, content_type='application/javascript')
@@ -151,7 +156,7 @@ def test_real_ui_uses_full_dom_or_whole_detail_json_without_losing_source_precis
         assert run['mpn']['rows'][0]['source'] == expected
         assert run['mpn']['rows'][0]['amount'] == '-1250.501'
         assert len(metrics['detail']) == 1
-        assert len(metrics['list']) == 3 and metrics['unknown'] == 0
+        assert len(metrics['list']) == 4 and metrics['unknown'] == 0
         assert [f['PropertyName'] for f in metrics['list'][-1]['Filters']] == ['IsCancelled']
 
 
@@ -243,3 +248,35 @@ def test_accounting_preparation_follows_owned_async_ui(browser, tmp_path, monkey
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+def test_full_session_and_asynchronous_real_ui_branch_share_one_complete_capture(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, session_redirect=True, router_notification=True,
+                grid_after_search=True, delayed_options=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert metrics['documents'] == 3  # session entry, post-callback ledger, fresh owned capture
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+def test_preparation_provider_bytes_cannot_supply_missing_fresh_capture_proof(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, withheld_fresh_sources=True) as (page, metrics):
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+        assert run['mpn']['source_pins'] == {} and run['mpn']['evidence'] == []
+        assert metrics['documents'] == 2 and metrics['detail'] == []
+
+
+def test_session_redirect_during_fresh_capture_remains_fatal_without_retry(browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    with portal(browser, monkeypatch, session_redirect='recurs') as (page, metrics):
+        run = scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page, run, tmp_path)
+        assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+        assert metrics['documents'] == 3 and metrics['detail'] == []

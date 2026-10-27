@@ -24,6 +24,7 @@
 - Stop/source/observer failure interrupts readiness before another action.
 - First-search grid absence is normal; missing or duplicate mounted grids remain unsupported.
 - Delayed options require waiting, never another trigger click or guessed selection.
+- Session callbacks are accepted only before capture; never reset a rejected capture into success.
 
 ### Task 1: Owned preparation regression and repair
 
@@ -31,6 +32,7 @@
 
 - [ ] Add protocol and real synthetic browser regressions and read runner RED.
 - [ ] Adapt retained Document/attempt custody; refuse second document requests and sticky state before UI actions.
+- [ ] Add separate bounded session preparation using only the observed roots/auth-callback and selected ledger; start fresh navigation/request custody afterward.
 - [ ] Correct Cari/grid ordering and bounded readiness with unchanged source/filter gates.
 - [ ] Read runner GREEN, exact test inventories/package proof; independently review final branch.
 - [ ] Validate the same actual job in a new private folder under the granted local exception.

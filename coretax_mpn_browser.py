@@ -39,6 +39,10 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.failed = False
         self.parent_id = None
         self.closed = False
+        self._document = None
+        self._binding_document = False
+        self._navigation_attempt = None
+        self._identity_deadline = None
         self.handlers = {'framenavigated': self.on_navigation, 'request': self.on_request,
                          'requestfailed': self.on_request_failed, 'response': self.on_response}
         for event, callback in self.handlers.items():
@@ -55,12 +59,44 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             self.failed = True
         self.pending.clear()
         self.latest.clear()
+        self._navigation_attempt = None
+        self._binding_document = False
+        self._identity_deadline = None
+        self._release_document()
+
+    def _release_document(self):
+        document, self._document = self._document, None
+        if document is not None:
+            try:
+                document.dispose()
+            except Exception:
+                pass
+
+    def _same_document(self):
+        self._stop()
+        document, attempt = self._document, self._navigation_attempt
+        try:
+            same = document is not None and document.evaluate('(d) => d === document') is True
+        except Exception:
+            same = False
+        self._stop()
+        return (same and attempt is not None and attempt is self._navigation_attempt
+                and document is self._document and self.committed and not self.closed
+                and not self.safety_failed and not self.failed
+                and self.page.url == self.navigation_source
+                and (self._identity_deadline is None or time.monotonic() < self._identity_deadline))
 
     def begin_navigation(self, url):
         self._stop()
         expected = ORIGIN + '/accounting/id-ID/balancesheet/' + self.taxpayer_id
         if url != expected or self.closed:
             raise MpnSafetyError('MPN navigation is outside its literal owned route')
+        self.navigation_source = None
+        self._navigation_attempt = object()
+        self._binding_document = False
+        self._identity_deadline = None
+        self._release_document()
+        self._stop()
         self.navigation_source = expected
         self.committed = self.safety_failed = self.failed = False
         self.pending.clear()
@@ -70,10 +106,51 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
     def on_navigation(self, frame):
         if self.closed or self.navigation_source is None or frame is not self.page.main_frame:
             return
-        if self.committed or frame.url != self.navigation_source:
+        if self.safety_failed or self.failed:
+            return
+        if frame.url != self.navigation_source or self.page.url != self.navigation_source:
             self._reject(safety=True)
             return
+        attempt = self._navigation_attempt
+        if self.committed:
+            if not self._binding_document:
+                same = self._same_document()
+                if attempt is self._navigation_attempt and not same:
+                    self._reject(safety=True)
+            return
         self.committed = True
+        self._binding_document = True
+        self._identity_deadline = time.monotonic() + 45
+        document = None
+        try:
+            self._stop()
+            try:
+                document = self.page.evaluate_handle('() => document')
+            except Exception:
+                if attempt is self._navigation_attempt:
+                    self._reject(safety=True)
+                return
+            if attempt is not self._navigation_attempt:
+                return
+            self._document = document
+            same = self._same_document()
+            if attempt is self._navigation_attempt:
+                if same:
+                    self._identity_deadline = None
+                else:
+                    self._reject(safety=True)
+        except BaseException:
+            if attempt is self._navigation_attempt:
+                self._reject(safety=True)
+            raise
+        finally:
+            if attempt is self._navigation_attempt:
+                self._binding_document = False
+            elif document is not None and document is not self._document:
+                try:
+                    document.dispose()
+                except Exception:
+                    pass
 
     def _kind(self, request):
         if getattr(request, 'frame', None) is not self.page.main_frame:
@@ -109,6 +186,11 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         return data
 
     def on_request(self, request):
+        if (not self.closed and self.committed and self.navigation_source is not None
+                and getattr(request, 'frame', None) is self.page.main_frame
+                and getattr(request, 'resource_type', None) == 'document'):
+            self._reject(safety=True)
+            return
         if self.closed or not self.committed or self.safety_failed or self.failed:
             return
         try:
@@ -135,6 +217,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         if entry is None or entry[0] is not request or self.closed or self.safety_failed or self.failed:
             return
         _, kind, posted = entry
+        attempt = self._navigation_attempt
         try:
             if (self.page.url != self.navigation_source or response.url != request.url
                     or self._posted(request, kind) != posted):
@@ -142,6 +225,11 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             if not 200 <= response.status < 300 or 'json' not in response.headers.get('content-type', '').lower():
                 raise MpnUnsupported('MPN owned grid response failed')
             raw = response.body()
+            if attempt is not self._navigation_attempt:
+                return
+            if (self.safety_failed or self.failed or self.page.url != self.navigation_source):
+                self._reject(safety=True)
+                return
             decoded = decode_mpn(raw)
             if decoded.get('IsSuccessful') is not True:
                 raise MpnUnsupported('MPN owned grid response is unsuccessful')
@@ -180,22 +268,36 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.latest.pop('detail', None)
         self.parent_id = parent_id
 
-    def _check_state(self):
+    def _check_state(self, *, allow_document_pending=False):
         self._stop()
         if (self.closed or self.safety_failed or not self.committed
                 or self.page.url != self.navigation_source):
+            self._reject(safety=True)
             raise MpnSafetyError('MPN owned document/request identity changed')
         if self.failed:
             raise MpnUnsupported('MPN owned grid capture failed')
+        attempt = self._navigation_attempt
+        if self._binding_document and allow_document_pending:
+            if self._identity_deadline is not None and time.monotonic() < self._identity_deadline:
+                return
+        elif not self._binding_document and self._same_document():
+            return
+        if attempt is not self._navigation_attempt:
+            raise MpnSafetyError('MPN document attempt changed during validation')
+        if self.failed and not self.safety_failed:
+            raise MpnUnsupported('MPN owned grid capture failed')
+        self._reject(safety=True)
+        raise MpnSafetyError('MPN retained document identity is unproved')
 
     def wait(self, after, kind, timeout=45):
         if kind not in ('list', 'detail'):
             raise ValueError('Unsupported MPN grid kind')
         deadline = time.monotonic() + timeout
         while True:
-            self._check_state()
+            self._check_state(allow_document_pending=True)
             snapshot = self.latest.get(kind)
-            if snapshot is not None and snapshot['sequence'] > after:
+            if not self._binding_document and snapshot is not None and snapshot['sequence'] > after:
+                self._check_state()
                 return snapshot
             if time.monotonic() >= deadline:
                 raise MpnUnsupported('MPN fresh grid response timed out')
@@ -210,12 +312,17 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.latest.clear()
         self.parent_id = self.navigation_source = None
         self.closed = True
+        self._navigation_attempt = None
+        self._binding_document = False
+        self._identity_deadline = None
+        self._release_document()
 
 
-def AccountingUI(*args, **kwargs):
+def AccountingUI(page, run, folder, *, check_cancel=None):
     # Lazy to keep source qualification/observer imports independent of UI code.
-    from coretax_mpn_ui import AccountingUI as owned_ui
-    return owned_ui(*args, **kwargs)
+    from coretax_mpn_ui import AccountingUI as owned_ui, prepare_accounting_session
+    prepare_accounting_session(page, run, check_cancel=check_cancel)
+    return owned_ui(page, run, folder, check_cancel=check_cancel)
 
 
 def _digest(value):

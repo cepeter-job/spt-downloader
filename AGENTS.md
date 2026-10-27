@@ -223,6 +223,35 @@ response and final drain. An iterator yielding no pages remains PARTIAL, and a
 capture attempt cannot omit original inventory evidence even when headers are zero.
 These rules grant no new source pins, requests, locale or native admission.
 
+Accounting first completes a separate bounded session-preparation navigation
+before constructing any capture observer. Only the literal selected ledger,
+query-free origin root and `/accounting/id-ID/` root, and exact same-origin
+`/accounting/id-ID/auth-callback` path are admitted during preparation; every
+fragment, foreign route/origin or selected-identity contradiction stays fatal
+after returning. Never read or retain callback queries, tokens or browser
+storage. Recheck Stop, refusal, literal ledger and the original 60-second
+deadline after readiness reads, and remove the listener on every exit. Begin a
+fresh literal navigation and request custody afterward; preparation bytes,
+scripts, catalogs and grid responses grant no capture proof or completion.
+This is session initialization, never a retry/reset of a rejected capture.
+
+Owned Accounting capture retains the first committed actual Document through a
+value-free handle and attempt token. Same-literal-route router notifications
+require that identical Document; new main-frame Document requests, temporary
+route/query/fragment changes, unreadable identity and late acquisition remain
+fatal. Pending identity may only hold bounded request objects inside the
+existing deadline; defer source reads until identity is proved. Reset/close
+invalidates late callbacks and releases handles. Sticky observer failures stop
+UI preparation before another action. The shared 45-second UI-preparation
+deadline covers owned component/control/grid readiness and searches. Wait for
+zero matching controls to become unique/visible, reject duplicates, and retry
+only value-free actionability probes; each actual inspected click occurs once.
+The real list grid is created by the first Cari, so bind it only after that
+owned original response. Retain at most the existing second Cari to remove
+default dates/period filters and require the exact unfiltered non-cancelled
+query. Source pins, genuine-empty inventory, Stop, budgets and final drain
+remain independent completion gates.
+
 MPN source ownership refusals additionally report only the first failed fixed
 `mpn_ownership_reason`: navigation, frame, method, page_route, request_url or
 resource_kind, in the existing short-circuit order. Keep the original first

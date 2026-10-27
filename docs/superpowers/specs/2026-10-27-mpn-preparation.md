@@ -27,6 +27,23 @@ Never repeat or force a mutating click, read business control values, invent a
 request or accept missing/filtered inventory as empty. Source, capture, mapping,
 MPN completion and final publication remain separate gates.
 
-The initial cross-route failure is not declared repaired by these changes alone.
+Fresh isolated-profile probes reproduced the originating contradiction. The
+observed sequence is the selected ledger, exact Accounting root, its
+`auth-callback` (query not retained), origin root, then the selected ledger.
+The same reviewed script's normal authentication lifecycle causes this sequence.
+A throwaway preflight probe lets that lifecycle finish before a fresh literal
+ledger navigation; the original source guards then pass unchanged.
+
+Prepare the session before beginning Accounting observation: navigate only the
+selected existing ledger route; permit only that literal route, the two observed
+query-free roots, and the exact Accounting auth-callback path during this bounded
+phase. Any other committed route/origin, fragment, root query or selected-identity
+contradiction is fatal even after returning. Read only unique visible component
+structure and wait for the literal ledger route. Remove the preparation listener
+before beginning the fresh owned navigation. No preparation script/grid response
+can certify capture or cross the new request-object boundary. Do not fill login
+forms, solve challenges, change permissions, read browser storage or retain any
+callback query/token. Capture still refuses every subsequent route contradiction.
+
 Actual authorized same-job validation must establish successful owned capture;
-any remaining authentication redirect requires separate observed navigation proof.
+session preflight alone does not establish capture or full-job completion.
