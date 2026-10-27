@@ -16,7 +16,8 @@ ORIGIN = 'https://coretax.intranet.pajak.go.id'
 @contextmanager
 def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=False, foreign=False,
            pending_catalog=False, delayed_mount=False, unrelated_sources=False,
-           router_notification=False, grid_after_search=False, delayed_options=False):
+           router_notification=False, grid_after_search=False, delayed_options=False,
+           session_redirect=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -98,7 +99,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     if delayed_mount:
         html = html.replace('<body>', '<body><template id="late-owner">').replace(
             '</body>', '</template></body>')
-    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': []}
+    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': [], 'documents': 0}
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
@@ -107,7 +108,14 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         request = request_route.request
         path = request.url.removeprefix(ORIGIN)
         if path == '/accounting/id-ID/balancesheet/' + scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]:
-            request_route.fulfill(body=html, content_type='text/html')
+            metrics['documents'] += 1
+            if session_redirect and metrics['documents'] == 1:
+                request_route.fulfill(body="<script>location.replace('/accounting/id-ID/auth-callback?code=SYNTHETIC')</script>", content_type='text/html')
+            else:
+                request_route.fulfill(body=html, content_type='text/html')
+        elif session_redirect and path == '/accounting/id-ID/auth-callback?code=SYNTHETIC':
+            target = '/accounting/id-ID/balancesheet/' + scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]
+            request_route.fulfill(body="<script>history.replaceState({},'','/');location.replace(" + json.dumps(target) + ")</script>", content_type='text/html')
         elif path in pins:
             if request.resource_type != 'script':
                 metrics['unrelated'].append(request.resource_type)
@@ -227,7 +235,7 @@ def test_accounting_owner_may_mount_after_document_ready(browser, tmp_path, monk
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
 
 
-@pytest.mark.parametrize('case', ['router_notification', 'grid_after_search', 'delayed_options'])
+@pytest.mark.parametrize('case', ['router_notification', 'grid_after_search', 'delayed_options', 'session_redirect'])
 def test_accounting_preparation_follows_owned_async_ui(browser, tmp_path, monkeypatch, case):
     from coretax_mpn_browser import collect_mpn
     with portal(browser, monkeypatch, **{case: True}) as (page, metrics):
