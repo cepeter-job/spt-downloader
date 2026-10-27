@@ -199,6 +199,19 @@ Owned HTTP failures are terminal even for HTML; explicit unsuccessful JSON is
 terminal before successful-row parsing and cannot be cleared by later traffic.
 Keep only fixed failure state, with no new request material in diagnostics.
 
+Accounting source admission requires post-commit main-frame GET script requests
+for the exact reviewed providers, or GET xhr/fetch requests for the exact reviewed
+reference route. Nonqualifying asset/catalog observations establish no proof and
+do not enter source-response custody. Retain admitted URL and resource kind and
+reject later ownership changes before reading bytes. Safety refusals are sticky;
+later unsupported traffic cannot clear them. Record only the first source refusal
+as `mpn.source_rejected`, with a fixed `mpn_source_stage` and sanitized error frames;
+never retain an exception, traceback, URL, header or body for deferred logging.
+A COMPLETE empty MPN capture requires its owned original zero-row inventory
+response and final drain. An iterator yielding no pages remains PARTIAL, and a
+capture attempt cannot omit original inventory evidence even when headers are zero.
+These rules grant no new source pins, requests, locale or native admission.
+
 The approved L7 year header accepts only the exact literal annual `0112YYYY`
 source code or the existing exact `Januari - Desember YYYY` caption, reconciled
 with the single captured table's complete header set. Monthly/partial-year and

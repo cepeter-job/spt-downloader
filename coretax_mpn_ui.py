@@ -7,6 +7,7 @@ from coretax_mpn import (ORIGIN, MpnUnsupported, MpnSafetyError, decode_mpn,
                          dom_numbers_match, taxpayer_id, captured_catalogs,
                          source_display_date as _date)
 from coretax_mpn_browser import AccountingObserver, _digest
+from spt_desktop import diagnostics
 
 SOURCE_PINS = {
     '/accounting/id-ID/main.fedea3c4d025195e.js': '7a76f131ac13b124087c4c968154d0f73c26a92069dc8d6dd59791f908d4bdf1',
@@ -49,6 +50,7 @@ class AccountingUI:
         self.pins, self.catalogs, self.catalog = {}, {}, {}
         self.source_failed = False
         self.source_safety = False
+        self.source_rejection_recorded = False
         self.source_pending = {}
         self.source_sequence = 0
         self.catalog_frozen = False
@@ -79,67 +81,91 @@ class AccountingUI:
         if self.source_failed:
             raise MpnUnsupported('MPN loaded source is unsupported')
 
+    def _reject_source(self, stage, error=None, *, safety=False):
+        # Keep fatal refusals sticky and summarize the originating callback now.
+        # Retain neither exceptions/tracebacks nor request/response material.
+        if safety:
+            self.source_safety = True
+        else:
+            self.source_failed = True
+        if not self.source_rejection_recorded:
+            self.source_rejection_recorded = True
+            diagnostics.record('mpn.source_rejected', level='WARNING', phase='mpn',
+                               mpn_source_stage=stage, error=error, status='PARTIAL')
+
     def _source_request(self, request):
         if (self.closed or not self.observer.committed
-                or request.frame is not self.page.main_frame):
+                or request.frame is not self.page.main_frame or request.method != 'GET'):
             return
         url = request.url
         pin = SOURCE_PINS.get(url.removeprefix(ORIGIN)) if url.startswith(ORIGIN + '/') else None
-        catalog = url == ORIGIN + REFERENCE_PATH
+        kind = request.resource_type
+        catalog = url == ORIGIN + REFERENCE_PATH and kind in ('xhr', 'fetch')
+        # A fetch/preload of script bytes does not prove an executable provider.
+        # Nonqualifying traffic must not enter the later ownership checks.
+        if pin is not None and kind != 'script':
+            return
         if pin is None and request.resource_type == 'script' and re.match(
                 re.escape(ORIGIN) + r'/accounting/id-ID/(?:main|vendor)\.', url):
-            self.source_safety = bool(self.pins)
-            self.source_failed = True
+            self._reject_source('provider', safety=bool(self.pins))
             return
         if pin is None and not catalog:
             return
         if len(self.source_pending) >= 16:
-            self.source_failed = True
+            self._reject_source('pending_budget')
             return
         self.source_sequence += 1
-        self.source_pending[id(request)] = (request, pin, catalog)
+        self.source_pending[id(request)] = (request, pin, catalog, url, kind)
 
     def _source_request_failed(self, request):
         entry = self.source_pending.pop(id(request), None)
         if entry is not None and entry[0] is request:
             self.source_sequence += 1
-            self.source_failed = True
+            self._reject_source('request_failed')
 
     def _source_finished(self, request):
         entry = self.source_pending.pop(id(request), None)
         if entry is None or entry[0] is not request or self.closed:
             return
         self.source_sequence += 1
-        _, pin, catalog = entry
+        _, pin, catalog, expected_url, expected_kind = entry
         url = request.url
+        stage = 'ownership'
         try:
             if (not self.observer.committed or request.frame is not self.page.main_frame
                     or request.method != 'GET' or self.page.url != self.url
-                    or pin is not None and request.resource_type != 'script'):
+                    or url != expected_url or request.resource_type != expected_kind):
                 raise MpnSafetyError('MPN source request ownership changed')
+            stage = 'response'
             response = request.response()
             if response is None or response.url != url or response.status != 200 or response.from_service_worker:
                 raise MpnUnsupported('MPN original loaded source response unavailable')
+            stage = 'body'
             raw = response.body()
+            stage = 'body_budget'
             if len(raw) > 8 * 1024 * 1024:
                 raise MpnUnsupported('MPN loaded source byte budget exceeded')
             digest = hashlib.sha256(raw).hexdigest()
             if pin is not None:
+                stage = 'script_digest'
                 if digest != pin:
                     raise MpnUnsupported('MPN loaded script differs from reviewed source')
                 self.pins[url.removeprefix(ORIGIN)] = digest
             elif self.reference_raw is not None:
+                stage = 'catalog_snapshot'
                 if self.reference_raw != raw:
                     raise MpnSafetyError('MPN reference snapshot changed')
             else:
+                stage = 'catalog_late'
                 if self.catalog_frozen:
                     raise MpnUnsupported('MPN first reference reply arrived after catalog binding')
                 self.reference_raw = raw
+                stage = 'catalog_decode'
                 self._catalog(raw)
-        except MpnSafetyError:
-            self.source_safety = True
-        except Exception:
-            self.source_failed = True
+        except MpnSafetyError as error:
+            self._reject_source(stage, error, safety=True)
+        except Exception as error:
+            self._reject_source(stage, error)
 
     def _catalog(self, raw):
         self.catalogs = captured_catalogs(decode_mpn(raw))

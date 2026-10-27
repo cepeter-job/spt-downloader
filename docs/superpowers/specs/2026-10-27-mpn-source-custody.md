@@ -3,6 +3,11 @@
 The latest job stopped in `AccountingUI._stop()` before MPN collection or export.
 Its old diagnostics identify the deferred safety refusal, but do not identify
 the original callback. This change must not claim to establish that live cause.
+Manual read-only observation of the same taxpayer's ledger confirmed the reviewed
+asset names and 24-column header. The reused browser reports en-US, not the native
+id-ID environment, and supplied no fresh original main reference response. This
+observation does not establish native capture acceptance; do not force a fetch,
+read cached catalogs or weaken the display environment contract.
 
 Admit only main-frame, post-commit GET script requests for the reviewed exact
 Accounting providers and GET xhr/fetch requests for the exact reference route.

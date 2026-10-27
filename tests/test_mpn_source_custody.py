@@ -1,6 +1,7 @@
 """Source request admission uses synthetic bytes and protocol objects only."""
 from types import SimpleNamespace
 import hashlib
+import json
 
 import pytest
 
@@ -63,6 +64,26 @@ def test_actual_reviewed_get_script_establishes_original_byte_proof(tmp_path, mo
     ui._source_finished(observed)
     ui._stop()
     assert reads == [True] and ui.pins == {path: hashlib.sha256(raw).hexdigest()}
+
+
+@pytest.mark.parametrize('kind', ['xhr', 'fetch'])
+def test_exact_get_reference_still_binds_original_bytes_and_reviewed_catalogs(tmp_path, monkeypatch, kind):
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    raw = json.dumps({'IsSuccessful': True, 'Payload': [
+        {'ReferenceDataType': name, 'Checksum': 'synthetic-version', 'Details': []}
+        for name in ('ACCOUNTING_TYPE', 'ACCOUNTING_TYPE_DETAIL',
+                     'REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT', 'PERIOD')]}).encode()
+    observed, reads = request(ui, REFERENCE_PATH, raw, kind=kind)
+    ui._source_request(observed)
+    ui._source_finished(observed)
+    ui._stop()
+    assert reads == [True] and ui.reference_raw == raw
+    assert len(ui.catalogs) == 4 and ui.catalog == {}
+    changed, _ = request(ui, REFERENCE_PATH, raw + b' ', kind=kind)
+    ui._source_request(changed)
+    ui._source_finished(changed)
+    with pytest.raises(MpnSafetyError):
+        ui._stop()
 
 
 @pytest.mark.parametrize('field,value', [('method', 'POST'), ('resource_type', 'fetch'),
