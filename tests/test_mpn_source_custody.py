@@ -138,3 +138,79 @@ def test_unsupported_script_digest_remains_partial_not_identity_failure(tmp_path
     with pytest.raises(MpnUnsupported):
         ui._stop()
     assert ui.pins == {}
+
+
+@pytest.mark.parametrize('reason', [
+    'navigation', 'frame', 'method', 'page_route', 'request_url', 'resource_kind',
+])
+def test_ownership_refusal_identifies_failed_predicate_before_reading_response(tmp_path, monkeypatch, reason):
+    from spt_desktop import diagnostics as d
+    from test_diagnostics import records
+    ui, path, raw = source_ui(tmp_path, monkeypatch)
+    observed, reads = request(ui, path, raw)
+    ui._source_request(observed)
+    if reason == 'navigation':
+        ui.observer.committed = False
+    elif reason == 'frame':
+        observed.frame = SimpleNamespace()
+    elif reason == 'method':
+        observed.method = 'POST'
+    elif reason == 'page_route':
+        ui.page.url += '?synthetic=changed'
+    elif reason == 'request_url':
+        observed.url += '?synthetic=changed'
+    else:
+        observed.resource_type = 'fetch'
+
+    def response():
+        pytest.fail('A refused source request must not acquire a response')
+    observed.response = response
+    with d.session(tmp_path, 'worker') as log:
+        ui._source_finished(observed)
+        with pytest.raises(MpnSafetyError):
+            ui._stop()
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert event.get('mpn_ownership_reason') == reason, 'Exact failed ownership predicate is missing'
+    assert event['mpn_source_stage'] == 'ownership'
+    assert event['error']['type'] == 'MpnSafetyError'
+    assert reads == [] and ui.pins == {} and not ui.source_pending
+
+
+def test_multiple_ownership_conflicts_keep_original_short_circuit_and_first_event(tmp_path, monkeypatch):
+    from spt_desktop import diagnostics as d
+    from test_diagnostics import records
+    ui, path, raw = source_ui(tmp_path, monkeypatch)
+    observed, reads = request(ui, path, raw)
+    ui._source_request(observed)
+    ui.observer.committed = False
+    observed.frame = SimpleNamespace()
+    observed.method = 'POST'
+    ui.page.url += '?synthetic=changed'
+    observed.url += '?synthetic=changed'
+    observed.resource_type = 'fetch'
+    with d.session(tmp_path, 'worker') as log:
+        ui._source_finished(observed)
+        ui._reject_source('provider')
+        with pytest.raises(MpnSafetyError):
+            ui._stop()
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert event.get('mpn_ownership_reason') == 'navigation'
+    assert event['mpn_source_stage'] == 'ownership' and reads == []
+
+
+def test_nonownership_source_refusal_has_no_ownership_reason(tmp_path, monkeypatch):
+    from spt_desktop import diagnostics as d
+    from test_diagnostics import records
+    ui, path, _ = source_ui(tmp_path, monkeypatch)
+    observed, _ = request(ui, path, b'/* synthetic changed source */')
+    with d.session(tmp_path, 'worker') as log:
+        ui._source_request(observed)
+        ui._source_finished(observed)
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert event['mpn_source_stage'] == 'script_digest'
+    assert 'mpn_ownership_reason' not in event
+    with pytest.raises(MpnUnsupported):
+        ui._stop()

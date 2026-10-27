@@ -39,6 +39,37 @@ def test_mpn_source_rejection_schema_keeps_only_fixed_stage_and_safe_error(tmp_p
     assert secret not in json.dumps(rows)
 
 
+@pytest.mark.parametrize('reason', [
+    'navigation', 'frame', 'method', 'page_route', 'request_url', 'resource_kind',
+])
+def test_mpn_ownership_reason_schema_keeps_only_reviewed_fixed_category(tmp_path, reason):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_MPN_OWNERSHIP'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('mpn.source_rejected', mpn_source_stage='ownership',
+                 mpn_ownership_reason=reason, url=secret, headers=secret,
+                 body=secret, expected_url=secret, observed_url=secret)
+        assert log.flush()
+    event, = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert event.get('mpn_ownership_reason') == reason, 'Reviewed ownership reason was discarded'
+    assert secret not in json.dumps(records(tmp_path))
+
+
+def test_mpn_ownership_reason_schema_rejects_arbitrary_values_without_stringifying(tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('An ownership diagnostic must not stringify arbitrary values')
+    with d.session(tmp_path, 'worker') as log:
+        for value in ['SYNTHETIC_PRIVATE_MPN_OWNERSHIP', Untrusted(), True, None]:
+            d.record('mpn.source_rejected', mpn_source_stage='ownership', mpn_ownership_reason=value)
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'mpn.source_rejected']
+    assert len(events) == 4
+    assert all('mpn_ownership_reason' not in e for e in events)
+    assert 'SYNTHETIC_PRIVATE_MPN_OWNERSHIP' not in json.dumps(events)
+
+
 def test_search_schema_keeps_bounded_metadata_and_discards_request_material(tmp_path):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_SEARCH_VALUE'
