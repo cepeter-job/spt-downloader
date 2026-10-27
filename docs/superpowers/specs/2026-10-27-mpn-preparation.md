@@ -83,3 +83,34 @@ even when unavailable at open; reconcile held labels against those bytes. Do
 not force a request or read cache. Changed snapshots stay fatal, first catalogs
 after binding stay unsupported, and final sampling preserves earlier pending
 counts rather than promoting late replies to COMPLETE.
+
+## Original continuation totals
+
+Authorized same-job probes observed identical unfiltered list queries except
+First, with original null Index and ten rows/TotalRecords 11 then ten rows/21;
+the inspected offered fifty-row action likewise produced fifty/51 then fifty/101.
+The pinned grid consumes TotalRecords as its paginator bound. These responses
+describe a continuation frontier, not a proved final count. Keep the initial
+page size; increasing it does not resolve the contract.
+
+Implementation choice under the operator's autonomous-work instruction: add an
+explicit per-inventory `frontier-v1` evidence descriptor for the original null-
+Index/full-page/First+Rows+1 branch. Each subsequent full continuation must have
+that exact formula, contiguous owned offsets and identical query/size/language;
+the previous frontier must equal the next First+1. Only a nonempty terminal
+page whose original total equals First+row count closes the inventory. An empty
+initial response still needs original zero evidence; an empty page after a
+continuation contradicts its promised next row. No arbitrary count change,
+missing Index, gap, changed content/identity, pending reply or reached cap can
+become COMPLETE. Each parent's detail inventory chooses and binds its own mode.
+
+Keep `fixed-v1` as the missing-descriptor legacy contract, with unchanged exact
+totals. Derive frontier eligibility from the first original response, never a
+user option or fabricated final total. Persist original totals/queries/bytes;
+reconcile the descriptor, every transition and terminal count again from held
+readers before export/publication. Unknown or mixed descriptors are fatal.
+
+Alternatives considered: selecting fifty only postpones the same refusal;
+ignoring count changes loses the terminal proof. The bounded formula plus an
+original terminal page resolves the observed branch while preserving fixed
+totals and all source/identity/completion gates.

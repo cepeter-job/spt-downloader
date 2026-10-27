@@ -37,6 +37,7 @@
 - [ ] Preserve fatal precedence and recoverable classification across pumped RPCs; fence every actual action after its final identity check.
 - [ ] Admit only reviewed literal en-US/id-ID request languages with per-attempt consistency, preserved held queries and unchanged id-ID catalogs.
 - [ ] Retain verified initial page size; bind pinned ViewButton metadata, await the detail dialog, and retain original catalogs arriving before first parent binding.
+- [ ] Reconcile the observed original null-Index continuation totals under explicit per-inventory frontier-v1 custody; retain legacy fixed totals and terminal-page proof.
 - [ ] Read runner GREEN, exact test inventories/package proof; independently review final branch.
 - [ ] Validate the same actual job in a new private folder under the granted local exception.
 - [ ] Review preceding other-session merge/latest main before merging; deliver exact merged-main package with verified hashes.
