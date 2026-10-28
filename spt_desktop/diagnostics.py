@@ -1,4 +1,12 @@
-"""Explicit, best-effort diagnostics. No raw messages, payloads or console sink."""
+"""Explicit, best-effort diagnostics. No raw messages, payloads or console sink.
+
+Exception-handling policy for this module:
+- Diagnostic instrumentation must never replace the product outcome.
+  Broad `except Exception` is intentional here for shutdown, queue, and
+  fallback-path operations, but every occurrence must be justified in a comment.
+- Diagnostic records must never contain credentials, tokens, tax IDs, or
+  response payloads.
+"""
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -167,6 +175,9 @@ def _safe_fields(fields):
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)
+    value = fields.get('error_type')
+    if type(value) is str and len(value) <= 64 and value.replace('_', '').isalnum():
+        result['error_type'] = value
     for name in ('headless', 'accepted', 'submitted', 'cached', 'panel_controlled', 'href_present', 'handler_present'):
         if type(fields.get(name)) is bool:
             result[name] = fields[name]
@@ -334,7 +345,7 @@ def default_root(workspace=None):
             from .paths import workspace_root
             return workspace_root()
         return Path.home() / '.local' / 'state' / 'spt-downloader'
-    except Exception:
+    except (OSError, TypeError):
         # Resolving diagnostics is optional too. Relative roots are disabled,
         # never interpreted as permission to write into the working directory.
         return Path('.')

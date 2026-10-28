@@ -3,6 +3,11 @@
 Callbacks retain bounded driver metadata only. A completed response is read once
 on the caller's thread, checked, and written immediately. Driver body() and JSON
 parsing can still allocate a whole body; budgets are not hard RAM/interrupt caps.
+
+Exception-handling policy for this module:
+- Playwright/CDP failures are expected when probing an obfuscated SPA.
+  Catch Playwright errors explicitly; fall back to `None`/unavailable proof.
+- Never forward exception text into captured JSON or diagnostics.
 """
 from contextlib import contextmanager, ExitStack
 import hashlib
@@ -18,6 +23,7 @@ from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFER
                           CORPORATE_REFERENCE_REQUESTS, ORIGIN,
                           _capture_clock_interval, _capture_component_lifetime, _capture_l8_lifetime,
                           _object_pairs, _reject_constant, _trusted_origin)
+from playwright.sync_api import Error as PlaywrightError
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
@@ -221,7 +227,7 @@ class DetailJsonCapture:
         self._cancel(check_cancel)
         try:
             sample = page.evaluate(_BROWSER_CLOCK)
-        except Exception:
+        except PlaywrightError:
             sample = None
         self._cancel(check_cancel)
         if not isinstance(sample, dict) or set(sample) != {'epoch_ms', 'timezone'}:
@@ -277,7 +283,7 @@ class DetailJsonCapture:
         self._cancel(check_cancel)
         try:
             value = operation()
-        except Exception:
+        except PlaywrightError:
             value = None  # Driver failure is unavailable proof; no exception text.
         self._cancel(check_cancel)
         return value

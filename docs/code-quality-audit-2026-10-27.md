@@ -21,8 +21,9 @@ Base: `origin/main` (`3e46baec`)
 - Aturan dipertahankan minimal: F821/F822/F823 + E9/W6.
 
 ## Rencana tindak lanjut (disarankan)
-1. PR ini: tambahkan `pyproject.toml` dan pertahankan gate ruff minimum.
-2. PR `chore/ruff-bugbear`: perbaiki B007/B008/B023 (12 masalah, semua bug potensial).
+1. PR ini: tambahkan `pyproject.toml` dan pertahankan gate ruff minimum. ✅ (PR #131)
+2. PR `fix/broad-exception-handling`:persempit handler `except Exception`, ganti `error=exc` dengan `error_type`, tambahkan policy comment. (sedang dikerjakan)
+3. PR `chore/ruff-bugbear`: perbaiki B007/B008/B023 (12 masalah, semua bug potensial).
 3. PR `chore/ruff-simplifications`: perbaiki SIM102/SIM105/SIM117/SIM300.
 4. PR `chore/ruff-pyupgrade`: ganti `datetime.timezone.utc` -> `UTC`, format string, dsb.
 5. PR `chore/ruff-comprehensions`: C401/C408/C414/C416/C420.

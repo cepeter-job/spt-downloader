@@ -3,6 +3,18 @@
 Modul ini tidak memasukkan password, mengambil token, atau menjalankan aksi
 penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
 """
+
+# Exception-handling policy for this module:
+# - Capture code may interact with a remote, obfuscated, single-page application.
+#   Transient DOM/CDP failures are therefore common. Broad exception containment
+#   is used deliberately when the only safe fallback is to degrade a capture and
+#   record a diagnostic event.
+# - Every `except` block must be justified in a comment: cleanup, diagnostics, or
+#   an explicit graceful-degradation contract. Never swallow exceptions that can
+#   hide auth, privacy, provenance or stop-signal failures.
+# - Capture diagnostics must not forward exception text or request payloads.
+#   Use `error_type` (the exception class name) instead of `error=exc`.
+
 from spt_desktop import diagnostics
 import time
 import re
@@ -571,8 +583,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if not captured['complete']:
                     errors.append({'object': name, 'message': captured['warning']})
             except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error=exc)
-                errors.append({'object': f'{name}/table {i+1}', 'message': str(exc).split('\n')[0]})
+                diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
+                errors.append({'object': f'{name}/table {i+1}', 'message': 'capture_failed'})
         sections.append(section)
         # Another form hides Induk; read its inspected href before traversal advances.
         if financial_required and not financial_attempted and name.rsplit(' / ', 1)[-1] == 'Induk':
@@ -615,8 +627,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 _check_cancel(check_cancel)
                 capture_panel(panel, name)
             except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error=exc)
-                errors.append({'object': name, 'message': str(exc).split('\n')[0]})
+                diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
+                errors.append({'object': name, 'message': 'capture_failed'})
 
     view = root.locator('.p-tabview').first
     try:
@@ -625,8 +637,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
         else:
             capture_panel(root, 'Halaman SPT')
     except Exception as exc:
-        diagnostics.record('capture.partial', level='WARNING', error=exc)
-        errors.append({'object': 'SPT detail', 'message': str(exc).split('\n')[0]})
+        diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
+        errors.append({'object': 'SPT detail', 'message': 'capture_failed'})
     if financial_required and not financial_attempted:
         attachments.append({'label': 'Laporan Keuangan', 'relative_path': None,
                             'status': 'PARTIAL', 'bytes': 0, 'hash': None})
@@ -826,7 +838,7 @@ class ListObserver:
                     or not isinstance(posted.get('Filters'), list)):
                 return
             return posted
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             # Invalid/unreadable request shapes cannot establish grid custody.
             return
 
@@ -1226,7 +1238,7 @@ class _SearchDiagnostics:
             # of their private request material. Clear them on every exit.
             self.tracked[key] = [request, 0]
             self.counts['search_requests'] += 1
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             self.observation = 'unavailable'
 
     def _response(self, response):
@@ -1246,7 +1258,7 @@ class _SearchDiagnostics:
             self.counts[f'search_http_{status // 100}xx'] += 1
             if status in (401, 403, 429):
                 self.counts[f'search_http_{status}'] += 1
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             self.observation = 'unavailable'
 
     def _failed(self, request):
@@ -1257,7 +1269,7 @@ class _SearchDiagnostics:
             if entry is not None and entry[0] is request and not entry[1] & 2:
                 entry[1] |= 2
                 self.counts['search_failed'] += 1
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             self.observation = 'unavailable'
 
     def timeout_error(self):
@@ -1612,9 +1624,9 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
             except CaptureCancelled:
                 raise
             except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error=exc)
-                errors.append({'object': label, 'message': str(exc).split('\n')[0]})
-                print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
+                diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
+                errors.append({'object': label, 'message': 'capture_failed'})
+                print(f"Inventory partial: {label}: capture_failed", flush=True)
             finally:
                 observer.request_filter = None
                 source_routes.close()
@@ -2195,7 +2207,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             record.pop('detail_source', None)
                             raise
                         except Exception as exc:
-                            diagnostics.record('capture.partial', level='WARNING', error=exc)
+                            diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
                             active_group = None
                             record['capture_complete'] = False
                             if isinstance(exc, JsonSafetyError) and json_capture is not None:
