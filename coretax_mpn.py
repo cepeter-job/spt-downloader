@@ -229,6 +229,34 @@ def _dom_number(value):
     return Decimal(value.replace('.', '').replace(',', '.'))
 
 
+def parent_numeric_binding(row, header):
+    """Exact integer-only identity for the five inspected parent number cells."""
+    if not isinstance(row, list) or len(row) != 24 or not isinstance(header, dict):
+        return None
+    columns = ((7, 'CurrencyAmount'), (8, 'CurrencyAmountLeft'), (9, 'ExchangeRate'),
+               (10, 'Amount'), (11, 'AmountLeft'))
+    values, unsupported = [], False
+    for column, field in columns:
+        try:
+            value = source_number(header.get(field))
+        except (MpnUnsupported, InvalidOperation):
+            unsupported = True
+            continue
+        if (not value.is_finite() or value.copy_abs() > 999999999999999
+                or value != value.to_integral_value()):
+            unsupported = True
+            continue
+        try:
+            observed = _dom_number(row[column])
+        except (MpnUnsupported, InvalidOperation):
+            unsupported = True
+            continue
+        if observed != value:
+            raise MpnSafetyError('MPN parent numeric identity differs from its original source')
+        values.append(value)
+    return None if unsupported else tuple(values)
+
+
 def dom_numbers_match(rows, details):
     if not isinstance(rows, list) or len(rows) != len(details):
         return False

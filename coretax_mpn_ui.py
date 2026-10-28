@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 from coretax_mpn import (ORIGIN, MpnUnsupported, MpnSafetyError, decode_mpn,
-                         dom_numbers_match, taxpayer_id, captured_catalogs,
+                         dom_numbers_match, parent_numeric_binding, taxpayer_id, captured_catalogs,
                          source_display_date as _date, validate_page_total)
 from coretax_mpn_browser import AccountingObserver, _digest
 from spt_desktop import diagnostics
@@ -566,13 +566,36 @@ class AccountingUI:
             raise MpnUnsupported('MPN parent visible identity is not independently unique')
         matching = [row for row in snapshot['rows'] if self._header_projection(row) == expected]
         if {row['RecordId'] for row in matching} != {header['RecordId']}:
+            for peer in matching:
+                if (any(peer.get(field) != header.get(field)
+                        for field in ('TaxpayerAggregateIdentifier', 'TaxpayerTIN'))
+                        or peer.get('IsCancelled') is not False):
+                    raise MpnSafetyError('MPN participating parent source identity contradicts its owner')
             captions = [(row['RecordId'], self._reference_caption(row)) for row in matching]
             caption = self._reference_caption(header)
-            if (any(value is None for _, value in captions) or caption is None
-                    or {identifier for identifier, value in captions if value == caption} != {header['RecordId']}):
+            if any(value is None for _, value in captions) or caption is None:
                 raise MpnUnsupported('MPN repeated parent captions lack a unique original reference binding')
             if rendered[index][12] != caption:
                 raise MpnSafetyError('MPN selected parent reference caption differs from its original source')
+            if {identifier for identifier, value in captions if value == caption} != {header['RecordId']}:
+                numeric, unsupported = [], False
+                for position, peer in enumerate(snapshot['rows']):
+                    if self._header_projection(peer) != expected or self._reference_caption(peer) != caption:
+                        continue
+                    observed = rendered[position]
+                    if (tuple(observed[column] for column in (3, 4, 5, 13, 15, 16, 17)) != expected
+                            or observed[12] != caption):
+                        raise MpnSafetyError('MPN repeated parent visible identity differs from its source')
+                    values = parent_numeric_binding(observed, peer)
+                    if values is None:
+                        unsupported = True
+                    else:
+                        numeric.append((peer['RecordId'], values))
+                if unsupported:
+                    raise MpnUnsupported('MPN repeated parent numeric identity is unproved')
+                selected = next(values for identifier, values in numeric if identifier == header['RecordId'])
+                if {identifier for identifier, values in numeric if values == selected} != {header['RecordId']}:
+                    raise MpnUnsupported('MPN repeated parent numeric identity is not independently unique')
         actual = tuple(rendered[index][column] for column in (3, 4, 5, 13, 15, 16, 17))
         if actual != expected:
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')
@@ -613,7 +636,7 @@ class AccountingUI:
         self._observer_call(self.observer.begin_detail, header['RecordId'])
         marker = self.observer.sequence
         self._owned()
-        button.click(timeout=1000)
+        self._observer_call(button.click, timeout=5000, no_wait_after=True)
         initial = self._wait(marker, 'detail')
         deadline = time.monotonic() + 5
         dialog = self._ready_one('p-dialog#isShowDetail [role="dialog"]:visible, '
@@ -640,8 +663,8 @@ class AccountingUI:
             if close.count() != 1 or not close.is_visible():
                 raise MpnUnsupported('MPN inspected dialog close control is unavailable')
             self._owned()
-            close.click(timeout=1000)
-            dialog.wait_for(state='hidden', timeout=1000)
+            self._observer_call(close.click, timeout=5000, no_wait_after=True)
+            self._observer_call(dialog.wait_for, state='hidden', timeout=1000)
 
     def finish(self):
         pending = bool(self.observer.pending or self.source_pending)

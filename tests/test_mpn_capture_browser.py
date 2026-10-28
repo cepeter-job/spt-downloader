@@ -19,7 +19,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            router_notification=False, grid_after_search=False, delayed_options=False,
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
-           body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment'):
+           body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
+           parent_amounts=None, contradictory_parent=None, pending_child_navigation=None):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -50,6 +51,15 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         elif duplicate_parent == 'distinct-reference':
             second['ReferenceNumber'] = 'SYNTHETIC SECOND REF'
         parents.append(second)
+        if contradictory_parent=='tin':
+            second['TaxpayerTIN']='0000000000000999'
+        elif contradictory_parent=='cancelled':
+            second['IsCancelled']=True
+    if parent_amounts is not None:
+        assert len(parents)==len(parent_amounts)
+        for parent, amount in zip(parents,parent_amounts):
+            parent.update(CurrencyAmount=MpnNumber(amount), CurrencyAmountLeft=MpnNumber('0'),
+                ExchangeRate=MpnNumber('1'), Amount=MpnNumber(amount), AmountLeft=MpnNumber('0'))
     list_raw = snapshot([] if empty else parents)['raw']
     detail_raw = snapshot([positive, detail], kind='detail', parent=HEADER)['raw']
     main = r'''
@@ -63,6 +73,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if parent_amounts is not None:
+        main = main.replace("'Kredit','0','0','1','0','0',",
+            "'Kredit',number(row.CurrencyAmount),number(row.CurrencyAmountLeft),"
+            "number(row.ExchangeRate),number(row.Amount),number(row.AmountLeft),")
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
     main = main.replace("'OtherTaxReturn','DBP',row.CurrencyCode", "row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode")
@@ -113,6 +127,18 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             "document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{"
             "document.body.append(document.getElementById('late-owner').content.cloneNode(true));"
             "initialize();},250));")
+    if pending_child_navigation is not None:
+        main += '''
+        document.addEventListener('click',event=>{
+          const button=event.target.closest('button');
+          if(!button)return;
+          const selected=CHILD_ACTION==='open' ?
+            button.closest('acc-balance-sheet-light-grid')&&button.querySelector('.pi-list') :
+            button.classList.contains('p-dialog-header-close');
+          if(selected){window.syntheticActionClicks=(window.syntheticActionClicks||0)+1;
+            document.getElementById('synthetic-child').src='/synthetic-pending-child';}
+        },true);
+        '''.replace('CHILD_ACTION',json.dumps(pending_child_navigation))
     reference_path = ('/referencedata/api/currentreferencedata/id-ID/'
         'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
     if unrelated_sources:
@@ -145,10 +171,13 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         html = html.replace('<p-dialog id="isShowDetail"', '<p-dialog header="Detail Transaksi" id="isShowDetail"')
     if existing_dialog:
         html = html.replace('</body>', '<div class="p-dialog-mask p-component-overlay"><div role="dialog" class="p-dialog p-component">SYNTHETIC OLD DIALOG</div></div></body>')
+    if pending_child_navigation is not None:
+        html = html.replace('</body>', '<iframe id="synthetic-child"></iframe></body>')
     if delayed_mount:
         html = html.replace('<body>', '<body><template id="late-owner">').replace(
             '</body>', '</template></body>')
-    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': [], 'documents': 0, 'initiations': 0}
+    metrics = {'list': [], 'detail': [], 'unknown': 0, 'references': [], 'unrelated': [], 'documents': 0, 'initiations': 0,
+               'pending_children': []}
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
@@ -190,6 +219,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
                     b'00000000-0000-4000-8000-000000000003',b'00000000-0000-4000-8000-000000000008').replace(
                     b'00000000-0000-4000-8000-000000000004',b'00000000-0000-4000-8000-000000000009')
             request_route.fulfill(body=raw, content_type='application/json')
+        elif path == '/synthetic-pending-child' and pending_child_navigation is not None:
+            metrics['pending_children'].append(request_route)
         elif path == reference_path and pending_catalog:
             metrics['references'].append(request_route)  # Intentionally unresolved dependency.
         elif path == reference_path and unrelated_sources and request.method == 'POST':
@@ -389,6 +420,123 @@ def test_owned_detail_dialog_may_mount_after_its_original_response(browser, tmp_
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
 
 
+@pytest.mark.parametrize('action', ['open','close'])
+def test_inspected_detail_click_does_not_wait_for_unrelated_child_navigation_or_repeat(
+        browser,tmp_path,monkeypatch,action):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,pending_child_navigation=action) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] and run['mpn']['status']=='COMPLETE'
+        assert len(metrics['detail'])==1 and len(metrics['pending_children'])==1
+        assert page.evaluate('window.syntheticActionClicks')==1
+        assert metrics['unknown']==0
+
+
+@pytest.mark.parametrize('action', ['open','close'])
+def test_owned_detail_reply_survives_post_action_driver_wait_without_a_second_click(
+        browser,tmp_path,monkeypatch,action):
+    from coretax_mpn_browser import collect_mpn
+    from playwright.sync_api import TimeoutError as DriverTimeout
+    import coretax_mpn_ui as module
+    original_bind=module.AccountingUI._bind_header
+    active=[];clicks=[]
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_click=locator_type.click
+        def delayed_driver_wait(locator,*args,**kwargs):
+            target=active and (locator.get_attribute('title')=='Detail Transaksi' if action=='open'
+                else 'p-dialog-header-close' in (locator.get_attribute('class') or ''))
+            result=original_click(locator,*args,**kwargs)
+            if target:
+                clicks.append(action)
+                # Model the observed driver's failure after its real action,
+                # unless the caller disabled that implicit navigation wait.
+                if not kwargs.get('no_wait_after',False):
+                    raise DriverTimeout('SYNTHETIC_POST_ACTION_NAVIGATION_WAIT')
+            return result
+        monkeypatch.setattr(locator_type,'click',delayed_driver_wait)
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] and run['mpn']['status']=='COMPLETE'
+        assert clicks==[action] and len(metrics['detail'])==1
+
+
+@pytest.mark.parametrize('action', ['open','close'])
+@pytest.mark.parametrize('delay_ms,complete', [(1500,True),(5500,False)])
+def test_inspected_detail_action_has_a_bounded_dispatch_budget_without_repeating(
+        browser,tmp_path,monkeypatch,action,delay_ms,complete):
+    from coretax_mpn_browser import collect_mpn
+    import coretax_mpn_ui as module
+    original_bind=module.AccountingUI._bind_header
+    active=[];calls=[]
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_click=locator_type.click
+        def slow_dispatch(locator,*args,**kwargs):
+            target=active and (locator.get_attribute('title')=='Detail Transaksi' if action=='open'
+                else 'p-dialog-header-close' in (locator.get_attribute('class') or ''))
+            if target:
+                calls.append(action)
+                locator.evaluate('''(button,delay) => {
+                    window.syntheticDispatchClicks=0;
+                    button.addEventListener('click',() => {
+                        window.syntheticDispatchClicks++;
+                        const until=performance.now()+delay;
+                        while(performance.now()<until) {}
+                    },{capture:true,once:true});
+                }''',delay_ms)
+            return original_click(locator,*args,**kwargs)
+        monkeypatch.setattr(locator_type,'click',slow_dispatch)
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] is complete
+        assert run['mpn']['status']==('COMPLETE' if complete else 'PARTIAL')
+        assert calls==[action] and page.evaluate('window.syntheticDispatchClicks')==1
+        assert len(metrics['detail'])==1 and metrics['unknown']==0
+
+
+@pytest.mark.parametrize('action', ['open','close'])
+def test_detail_click_exception_reconciles_callback_pumped_source_safety_before_partial(
+        browser,tmp_path,monkeypatch,action):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    from playwright.sync_api import TimeoutError as DriverTimeout
+    import coretax_mpn_ui as module
+    original_bind=module.AccountingUI._bind_header
+    active=[];clicks=[]
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_click=locator_type.click
+        def failed_click(locator,*args,**kwargs):
+            target=active and (locator.get_attribute('title')=='Detail Transaksi' if action=='open'
+                else 'p-dialog-header-close' in (locator.get_attribute('class') or ''))
+            result=original_click(locator,*args,**kwargs)
+            if target:
+                clicks.append(action)
+                active[-1].source_safety=True
+                raise DriverTimeout('SYNTHETIC_POST_CLICK_TIMEOUT')
+            return result
+        monkeypatch.setattr(locator_type,'click',failed_click)
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert clicks==[action]
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+
+
 def test_inspected_body_overlay_binds_only_after_owned_detail_action(browser, tmp_path, monkeypatch):
     from coretax_mpn_browser import collect_mpn
     with portal(browser, monkeypatch, tooltip_action=True, body_dialog=True) as (page, metrics):
@@ -434,6 +582,94 @@ def test_different_hidden_references_do_not_disambiguate_the_same_rendered_tax_c
         collect_mpn(page, run, tmp_path)
         assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
         assert metrics['detail'] == []
+
+
+@pytest.mark.parametrize('amounts', [('1250','2500'),('0','-2500'),
+    ('999999999999999','-999999999999999')])
+def test_same_parent_captions_require_exact_unique_visible_integer_tuples(browser, tmp_path, monkeypatch, amounts):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=amounts) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] and run['mpn']['status']=='COMPLETE'
+        assert run['mpn']['headers']==2 and len(metrics['detail'])==2
+        assert len({q['RecordId'] for q in metrics['detail']})==2
+        assert metrics['unknown']==0
+
+
+@pytest.mark.parametrize('amounts', [('1250','1250.0'),('0','-0'),('1250.01','2500'),
+    ('1000000000000000','2500')])
+def test_same_or_unproved_parent_numeric_tuples_remain_partial_before_actions(browser, tmp_path, monkeypatch, amounts):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=amounts) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
+
+
+@pytest.mark.parametrize('mutation', ['selected','peer','reordered'])
+def test_all_repeated_parent_numbers_are_reconciled_before_any_detail_action(browser, tmp_path, monkeypatch, mutation):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    import coretax_mpn_ui as module
+    original=module.AccountingUI._bind_header
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=('1250','2500')) as (page,metrics):
+        def changed(self,header):
+            body=self.list_owner.locator('tbody')
+            if mutation=='reordered':
+                body.evaluate('(body)=>[...body.children].reverse().forEach(row=>body.append(row))')
+            else:
+                body.locator('tr').nth(0 if mutation=='selected' else 1).locator('td').nth(10).evaluate(
+                    "cell=>cell.textContent='999,00'")
+            return original(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',changed)
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
+
+
+@pytest.mark.parametrize('contradiction', ['tin','cancelled'])
+@pytest.mark.parametrize('reference_type', ['ICT_RCIT',None])
+def test_contradictory_participating_source_peer_is_fatal_before_first_detail(
+        browser,tmp_path,monkeypatch,contradiction,reference_type):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type=reference_type,
+                parent_amounts=('1250','2500'),contradictory_parent=contradiction) as (page,metrics):
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
+
+
+@pytest.mark.parametrize('unsupported_first', [True,False])
+@pytest.mark.parametrize('changed', ['number','caption'])
+def test_unproved_peer_cannot_hide_another_peers_known_visible_contradiction(
+        browser,tmp_path,monkeypatch,unsupported_first,changed):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    import coretax_mpn_ui as module
+    original=module.AccountingUI._bind_header
+    amounts=('1250.01','2500') if unsupported_first else ('1250','2500.01')
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=amounts) as (page,metrics):
+        def changed_peer(self,header):
+            self.list_owner.locator('tbody tr').nth(1 if unsupported_first else 0).locator('td').nth(
+                10 if changed=='number' else 3).evaluate("cell=>cell.textContent='999'")
+            return original(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',changed_peer)
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
 
 
 def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):

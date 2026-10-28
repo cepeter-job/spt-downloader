@@ -300,6 +300,31 @@ Transaksi host/title with matching aria-labelledby/title id, and its unique
 grid. Keep the legacy descendant dialog branch. No pre-existing/ambiguous
 overlay, foreign caption or absent title binding authorizes a detail action.
 
+Accounting detail open/close clicks each occur once within a five-second
+action bound and no implicit driver navigation wait. Explicit owned-response,
+retained Document/route, five-second dialog readiness and hidden-dialog checks
+remain required; the hidden-dialog wait retains its one-second bound. Reconcile
+Stop and callback-pumped source/observer refusals
+after both clicks and the hidden wait, including RPC exceptions. Never retry a
+completed or uncertain click or admit a new main-frame Document through this
+wait policy.
+
+If the existing seven-column parent identity and supported original Referensi
+caption still repeat, the five inspected list number cells may supply a final
+bounded identity. Bind CurrencyAmount/CurrencyAmountLeft/ExchangeRate/Amount/
+AmountLeft at cells7..11 for every matching peer in the same ordered snapshot.
+Require original numeric literals, exact finite integers within fifteen digits
+and exact strict id-ID DOM equality. Missing, fractional, unsafe or malformed
+proof stays unsupported; known differing values/row order remain fatal. One
+RecordId alone must have the selected numeric tuple; equivalent lexemes and
+signed zero never manufacture uniqueness. This grants only the already
+inspected detail action, adds no source/request or output metadata, and retains
+Document/Stop/final-action fences and independent completion/publication gates.
+Validate every participating peer's original taxpayer/cancellation ownership
+before caption or numeric fallback. Latch unsupported numeric fields/peers while
+still checking every independently supported value and visible binding; an
+earlier unsupported field/peer cannot hide a later known contradiction.
+
 Accounting original null-Index/full-page totals may declare the bounded
 `frontier-v1` continuation contract: the first total must be Rows+1 and every
 continuation total First+Rows+1. Bind identical queries, page sizes and languages,
