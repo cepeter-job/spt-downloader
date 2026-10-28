@@ -20,7 +20,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
            body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
-           parent_amounts=None, contradictory_parent=None, pending_child_navigation=None):
+           parent_amounts=None, contradictory_parent=None, pending_child_navigation=None,
+           dropdown_close_delay=0):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -73,6 +74,13 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if dropdown_close_delay != 0:
+        removal = ("panel.classList.add('synthetic-closing');" if dropdown_close_delay is None else
+                   "panel.classList.add('synthetic-closing');setTimeout(()=>panel.remove()," + str(dropdown_close_delay) + ");")
+        main = main.replace("textContent=text;panel.remove();", "textContent=text;" + removal)
+    main = "window.syntheticDropdownClicks=0;" + main.replace(
+        "o.onclick=()=>{parent.querySelector", "o.onclick=()=>{window.syntheticDropdownClicks++;parent.querySelector").replace(
+        "onclick=()=>dropdown(id);", "onclick=()=>{window.syntheticDropdownClicks++;dropdown(id);};")
     if parent_amounts is not None:
         main = main.replace("'Kredit','0','0','1','0','0',",
             "'Kredit',number(row.CurrencyAmount),number(row.CurrencyAmountLeft),"
@@ -418,6 +426,28 @@ def test_owned_detail_dialog_may_mount_after_its_original_response(browser, tmp_
         collect_mpn(page, run, tmp_path)
         assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
         assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+
+
+@pytest.mark.parametrize('delay,complete', [(0,True),(1200,True),(None,False)])
+def test_inspected_dropdown_close_readiness_precedes_the_next_action(
+        browser,tmp_path,monkeypatch,delay,complete):
+    import time
+    import coretax_mpn_ui as module
+    from coretax_mpn_browser import collect_mpn
+    if delay is None:
+        original_dropdown=module.AccountingUI._dropdown
+        def shortened_deadline(self,selector,caption):
+            self.preparation_deadline=min(self.preparation_deadline,time.monotonic()+2)
+            return original_dropdown(self,selector,caption)
+        monkeypatch.setattr(module.AccountingUI,'_dropdown',shortened_deadline)
+    with portal(browser,monkeypatch,dropdown_close_delay=delay) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] is complete
+        assert run['mpn']['status']==('COMPLETE' if complete else 'PARTIAL')
+        assert page.evaluate('window.syntheticDropdownClicks')==(4 if complete else 2)
+        assert len(metrics['detail'])==(1 if complete else 0)
+        assert metrics['unknown']==0
 
 
 @pytest.mark.parametrize('action', ['open','close'])

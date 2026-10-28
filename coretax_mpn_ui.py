@@ -378,6 +378,20 @@ class AccountingUI:
         option = self._ready_one(self.page.locator('.p-dropdown-panel:visible').get_by_role(
             'option', name=caption, exact=True))
         self._click_ready(option)
+        # PrimeNG may keep the selected panel visible during its close animation.
+        # Do not open the next inspected dropdown while its options still exist.
+        deadline = self.preparation_deadline or time.monotonic() + 5
+        while True:
+            self._owned()
+            count = self._observer_call(self.page.locator('.p-dropdown-panel:visible').count)
+            if count > 1:
+                raise MpnUnsupported('MPN inspected dropdown close owner is ambiguous')
+            remaining = int((deadline - time.monotonic()) * 1000)
+            if remaining <= 0:
+                raise MpnUnsupported('MPN inspected dropdown close readiness deadline exceeded')
+            if count == 0:
+                return
+            self._observer_call(self.page.wait_for_timeout, min(100, remaining))
 
     def open(self):
         self._stop()
