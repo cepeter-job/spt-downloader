@@ -36,4 +36,3 @@ def test_original_code_inventory_distinguishes_absence_from_ineligible_labels(de
     assert labels==default
     assert codes['ACCOUNTING_TYPE_DETAIL']==expected
     assert body==original
-

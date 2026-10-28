@@ -769,7 +769,7 @@ def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(br
     from coretax_mpn import mpn_custody
     import coretax_mpn_ui as module
     original = module.AccountingUI._freeze_catalog
-    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
+    with portal(browser, monkeypatch, pending_catalog=True, parent_detail_display='') as (page, metrics):
         served = []
         def freeze(self):
             if not served:
@@ -791,7 +791,7 @@ def test_parent_binding_uses_dom_snapshot_after_catalog_labels_finish(browser, t
     from coretax_mpn_browser import collect_mpn
     import coretax_mpn_ui as module
     original = module.AccountingUI._freeze_catalog
-    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
+    with portal(browser, monkeypatch, pending_catalog=True, parent_detail_display='') as (page, metrics):
         def freeze(self):
             code = self.list_snapshot['rows'][0]['PeriodCode']
             metrics['references'][-1].fulfill(content_type='application/json',body=json.dumps({
