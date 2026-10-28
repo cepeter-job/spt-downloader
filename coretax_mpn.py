@@ -285,14 +285,14 @@ def source_display_date(value):
         return None
 
 
-def captured_catalogs(body):
+def captured_catalogs(body, *, include_codes=False):
     """Only unique, explicit id-ID/null-ValidTo rows need no cache clock choice."""
     expected = {'ACCOUNTING_TYPE', 'ACCOUNTING_TYPE_DETAIL',
                 'REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT', 'PERIOD'}
     payload = body.get('Payload')
     if body.get('IsSuccessful') is not True or not isinstance(payload, list):
         raise MpnUnsupported('MPN original reference envelope is unsupported')
-    result = {}
+    result, inventories = {}, {}
     for group in payload:
         if not isinstance(group, dict) or not isinstance(group.get('Details'), list):
             raise MpnUnsupported('MPN original reference group is unsupported')
@@ -305,8 +305,10 @@ def captured_catalogs(body):
                 or not 0 < len(group['Checksum']) <= 1024):
             raise MpnUnsupported('MPN reference identity/version is unsupported')
         labels, seen, ambiguous = {}, set(), set()
+        complete_codes = True
         for detail in group['Details']:
             if not isinstance(detail, dict) or type(detail.get('Code')) is not str:
+                complete_codes = False
                 continue
             code = detail['Code']
             if code in seen:
@@ -320,9 +322,11 @@ def captured_catalogs(body):
         for code in ambiguous:
             labels.pop(code, None)
         result[name] = labels
+        if include_codes:
+            inventories[name] = frozenset(seen) if complete_codes else None
     if set(result) != expected:
         raise MpnUnsupported('MPN reference response is not the inspected exact type set')
-    return result
+    return (result, inventories) if include_codes else result
 
 
 def _source_digest(value):

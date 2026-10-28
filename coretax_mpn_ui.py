@@ -111,6 +111,7 @@ class AccountingUI:
         self.url = ORIGIN + '/accounting/id-ID/balancesheet/' + self.taxpayer
         self.observer = AccountingObserver(page, self.taxpayer, folder, check_cancel)
         self.pins, self.catalogs, self.catalog = {}, {}, {}
+        self.catalog_codes = {}
         self.source_failed = False
         self.source_safety = False
         self.source_rejection_recorded = False
@@ -316,7 +317,7 @@ class AccountingUI:
             self._reject_source(stage, error, ownership_reason=ownership_reason)
 
     def _catalog(self, raw):
-        self.catalogs = captured_catalogs(decode_mpn(raw))
+        self.catalogs, self.catalog_codes = captured_catalogs(decode_mpn(raw), include_codes=True)
         self.catalog = self.catalogs.get('PERIOD', {})
 
     def _one(self, selector):
@@ -539,10 +540,19 @@ class AccountingUI:
 
     def _header_projection(self, header):
         code = header.get('PeriodCode')
-        classifications = tuple(self._literal(self.catalogs.get(catalog, {}).get(header.get(field), header.get(field)))
-            for catalog, field in (('ACCOUNTING_TYPE', 'AccountingTypeCode'),
-                                   ('ACCOUNTING_TYPE_DETAIL', 'AccountingTypeDetailCode')))
-        return classifications + (self._literal(header.get('CurrencyCode')), self._literal(header.get('RevenueCode')),
+        classifications = []
+        for catalog, field in (('ACCOUNTING_TYPE', 'AccountingTypeCode'),
+                               ('ACCOUNTING_TYPE_DETAIL', 'AccountingTypeDetailCode')):
+            literal = header.get(field)
+            label = self.catalogs.get(catalog, {}).get(literal, literal)
+            inventory = getattr(self, 'catalog_codes', {}).get(catalog)
+            # The ordinary pinned reference template leaves an absent detail
+            # description blank; ineligible present rows prove no such absence.
+            if (catalog == 'ACCOUNTING_TYPE_DETAIL' and type(literal) is str and literal
+                    and inventory is not None and literal not in inventory):
+                label = ''
+            classifications.append(self._literal(label))
+        return tuple(classifications) + (self._literal(header.get('CurrencyCode')), self._literal(header.get('RevenueCode')),
                 self._literal(header.get('PaymentCode')), self.catalog.get(code, code),
                 self._literal(header.get('TransactionNumber')))
 
