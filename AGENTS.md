@@ -300,6 +300,18 @@ Transaksi host/title with matching aria-labelledby/title id, and its unique
 grid. Keep the legacy descendant dialog branch. No pre-existing/ambiguous
 overlay, foreign caption or absent title binding authorizes a detail action.
 
+If the existing seven-column parent identity and supported original Referensi
+caption still repeat, the five inspected list number cells may supply a final
+bounded identity. Bind CurrencyAmount/CurrencyAmountLeft/ExchangeRate/Amount/
+AmountLeft at cells7..11 for every matching peer in the same ordered snapshot.
+Require original numeric literals, exact finite integers within fifteen digits
+and exact strict id-ID DOM equality. Missing, fractional, unsafe or malformed
+proof stays unsupported; known differing values/row order remain fatal. One
+RecordId alone must have the selected numeric tuple; equivalent lexemes and
+signed zero never manufacture uniqueness. This grants only the already
+inspected detail action, adds no source/request or output metadata, and retains
+Document/Stop/final-action fences and independent completion/publication gates.
+
 Accounting original null-Index/full-page totals may declare the bounded
 `frontier-v1` continuation contract: the first total must be Rows+1 and every
 continuation total First+Rows+1. Bind identical queries, page sizes and languages,
