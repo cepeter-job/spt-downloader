@@ -51,3 +51,13 @@ AccountingUI._bind_header consumes this only for still-repeated reference peers.
   deliver actual main artifact and validate the same private job under the
   existing operator-authorized local exception. Keep any remaining limit or
   unsupported branch explicitly PARTIAL.
+
+### Task 2: Preserve owned detail replies across post-action driver waits
+
+The next live probe proved click completion followed by an implicit navigation
+wait timeout. Runner regressions must reproduce the driver boundary and fatal
+callback precedence before implementation. Use the existing _observer_call for
+the single inspected open/close clicks with no_wait_after=True and for the
+hidden-dialog wait. Keep all action budgets and explicit ownership/response/
+readiness gates. Verify focused GREEN and refresh full exact-head CI, then rerun
+the same-job owned diagnostic before claiming live acceptance.

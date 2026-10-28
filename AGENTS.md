@@ -300,6 +300,14 @@ Transaksi host/title with matching aria-labelledby/title id, and its unique
 grid. Keep the legacy descendant dialog branch. No pre-existing/ambiguous
 overlay, foreign caption or absent title binding authorizes a detail action.
 
+Accounting detail open/close clicks each occur once with the same one-second
+action bound and no implicit driver navigation wait. Explicit owned-response,
+retained Document/route, five-second dialog readiness and hidden-dialog checks
+remain required. Reconcile Stop and callback-pumped source/observer refusals
+after both clicks and the hidden wait, including RPC exceptions. Never retry a
+completed or uncertain click or admit a new main-frame Document through this
+wait policy.
+
 If the existing seven-column parent identity and supported original Referensi
 caption still repeat, the five inspected list number cells may supply a final
 bounded identity. Bind CurrencyAmount/CurrencyAmountLeft/ExchangeRate/Amount/

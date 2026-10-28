@@ -636,7 +636,7 @@ class AccountingUI:
         self._observer_call(self.observer.begin_detail, header['RecordId'])
         marker = self.observer.sequence
         self._owned()
-        button.click(timeout=1000)
+        self._observer_call(button.click, timeout=1000, no_wait_after=True)
         initial = self._wait(marker, 'detail')
         deadline = time.monotonic() + 5
         dialog = self._ready_one('p-dialog#isShowDetail [role="dialog"]:visible, '
@@ -663,8 +663,8 @@ class AccountingUI:
             if close.count() != 1 or not close.is_visible():
                 raise MpnUnsupported('MPN inspected dialog close control is unavailable')
             self._owned()
-            close.click(timeout=1000)
-            dialog.wait_for(state='hidden', timeout=1000)
+            self._observer_call(close.click, timeout=1000, no_wait_after=True)
+            self._observer_call(dialog.wait_for, state='hidden', timeout=1000)
 
     def finish(self):
         pending = bool(self.observer.pending or self.source_pending)
