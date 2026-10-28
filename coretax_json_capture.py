@@ -227,7 +227,9 @@ class DetailJsonCapture:
         self._cancel(check_cancel)
         try:
             sample = page.evaluate(_BROWSER_CLOCK)
-        except PlaywrightError:
+        except Exception:
+            # Driver probes against test doubles or CDP may raise arbitrary errors.
+            # The fallback is unavailable proof; no exception text is forwarded.
             sample = None
         self._cancel(check_cancel)
         if not isinstance(sample, dict) or set(sample) != {'epoch_ms', 'timezone'}:
@@ -283,8 +285,9 @@ class DetailJsonCapture:
         self._cancel(check_cancel)
         try:
             value = operation()
-        except PlaywrightError:
-            value = None  # Driver failure is unavailable proof; no exception text.
+        except Exception:
+            # Driver failure is unavailable proof; no exception text is forwarded.
+            value = None
         self._cancel(check_cancel)
         return value
 

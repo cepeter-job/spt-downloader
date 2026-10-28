@@ -45,6 +45,10 @@ class FakeListRequest:
     """Request double for ListObserver._grid_request shape validation."""
     def __init__(self, post_data_json):
         self._post_data = post_data_json
+        self.resource_type = 'xhr'
+        self.method = 'POST'
+        self.frame = None
+        self.url = 'https://coretax.intranet.pajak.go.id/returnsheet/api/returnsheets/list'
 
     def post_data_json(self):
         if isinstance(self._post_data, BaseException):
@@ -78,14 +82,16 @@ class _NullMeasure:
 
 def test_grid_request_returns_none_for_structural_errors():
     observer = ListObserver.__new__(ListObserver)
+    observer.page = FakePage()
+    observer.navigation_source = None
     # malformed JSON shapes should be rejected gracefully
     for exc in (ValueError, TypeError, KeyError):
         request = FakeListRequest(exc('bad shape'))
-        assert observer._grid_request(request, 'https://coretax.example/list') is None
+        assert observer._grid_request(request, 'https://coretax.intranet.pajak.go.id/returnsheet/api/returnsheets/list') is None
     # RuntimeError is not in the narrowed handler; it should propagate
     request = FakeListRequest(RuntimeError('unexpected'))
     with pytest.raises(RuntimeError):
-        observer._grid_request(request, 'https://coretax.example/list')
+        observer._grid_request(request, 'https://coretax.intranet.pajak.go.id/returnsheet/api/returnsheets/list')
 
 
 def test_search_diagnostics_degrades_on_structural_errors():
@@ -97,11 +103,26 @@ def test_search_diagnostics_degrades_on_structural_errors():
     assert diag.observation == 'unavailable'
 
     diag.observation = 'complete'
-    diag._response(BrokenResponse(TypeError))
+    # Seed tracked so _response reaches the status check that raises
+    fake_req = BrokenRequest(TypeError)
+    diag.tracked[id(fake_req)] = [fake_req, 0]
+    broken_resp = BrokenResponse.__new__(BrokenResponse)
+    broken_resp._exc_type = TypeError
+    broken_resp.request = fake_req
+    diag._response(broken_resp)
     assert diag.observation == 'unavailable'
 
     diag.observation = 'complete'
-    diag._failed(BrokenRequest(AttributeError))
+    # _failed with BrokenRequest alone won't trigger structural error since
+    # tracked.get and int ops don't touch BrokenRequest attributes.
+    # Test with a broken counts dict that raises on access.
+    class BrokenCounts(dict):
+        def __getitem__(self, key):
+            raise AttributeError('synthetic counts failure')
+    diag.counts = BrokenCounts(diag.counts)
+    normal_req = type('Req', (), {})()
+    diag.tracked[id(normal_req)] = [normal_req, 0]
+    diag._failed(normal_req)
     assert diag.observation == 'unavailable'
 
 
@@ -110,7 +131,12 @@ def test_search_diagnostics_recovers_after_degrade():
     diag = _SearchDiagnostics(page)
     diag._request(BrokenRequest(KeyError))
     # subsequent structural errors keep it unavailable, never crash
-    diag._response(BrokenResponse(AttributeError))
+    fake_req2 = BrokenRequest(AttributeError)
+    diag.tracked[id(fake_req2)] = [fake_req2, 0]
+    broken_resp2 = BrokenResponse.__new__(BrokenResponse)
+    broken_resp2._exc_type = AttributeError
+    broken_resp2.request = fake_req2
+    diag._response(broken_resp2)
     diag._failed(BrokenRequest(TypeError))
     assert diag.observation == 'unavailable'
 
@@ -148,3 +174,15 @@ def test_module_has_exception_policy_comment():
     import coretax_browser, coretax_json_capture, spt_desktop.diagnostics
     for mod in (coretax_browser, coretax_json_capture, spt_desktop.diagnostics):
         assert 'Exception-handling policy' in mod.__doc__
+
+
+def test_json_capture_driver_probe_swallows_arbitrary_driver_errors():
+    """Driver probes must fallback gracefully even against broken doubles."""
+    import coretax_json_capture as jcap
+
+    class BrokenPage:
+        def evaluate(self, *args, **kwargs):
+            raise AttributeError("no evaluate")
+
+    sampler = jcap._ClockSampler.__new__(jcap._ClockSampler)
+    assert sampler._sample_clock(BrokenPage()) is None

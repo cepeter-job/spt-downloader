@@ -2,18 +2,18 @@
 
 Modul ini tidak memasukkan password, mengambil token, atau menjalankan aksi
 penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
-"""
 
-# Exception-handling policy for this module:
-# - Capture code may interact with a remote, obfuscated, single-page application.
-#   Transient DOM/CDP failures are therefore common. Broad exception containment
-#   is used deliberately when the only safe fallback is to degrade a capture and
-#   record a diagnostic event.
-# - Every `except` block must be justified in a comment: cleanup, diagnostics, or
-#   an explicit graceful-degradation contract. Never swallow exceptions that can
-#   hide auth, privacy, provenance or stop-signal failures.
-# - Capture diagnostics must not forward exception text or request payloads.
-#   Use `error_type` (the exception class name) instead of `error=exc`.
+Exception-handling policy for this module:
+- Capture code may interact with a remote, obfuscated, single-page application.
+  Transient DOM/CDP failures are therefore common. Broad exception containment
+  is used deliberately when the only safe fallback is to degrade a capture and
+  record a diagnostic event.
+- Every `except` block must be justified in a comment: cleanup, diagnostics, or
+  an explicit graceful-degradation contract. Never swallow exceptions that can
+  hide auth, privacy, provenance or stop-signal failures.
+- Capture diagnostics must not forward exception text or request payloads.
+  Use `error_type` (the exception class name) instead of `error=exc`.
+"""
 
 from spt_desktop import diagnostics
 import time
@@ -819,13 +819,17 @@ class ListObserver:
             if (not trusted_origin(url) or not urlparse(url).path.startswith('/returnsheet/api/returnsheets')
                     or request.resource_type not in ('xhr', 'fetch')):
                 return
-            frame = getattr(request, 'frame', None)
-            main_frame = getattr(self.page, 'main_frame', None)
+            try:
+                frame = getattr(request, 'frame', None)
+                main_frame = getattr(self.page, 'main_frame', None)
+            except AttributeError:
+                return
             if self.navigation_source is not None and (frame is None or main_frame is None):
                 return
             if frame is not None and main_frame is not None and frame != main_frame:
                 return
-            posted = getattr(request, 'post_data_json', None)
+            raw_posted = getattr(request, 'post_data_json', None)
+            posted = raw_posted() if callable(raw_posted) else raw_posted
             if request.method != 'POST' or not isinstance(posted, dict):
                 return
             taxpayer = posted.get('TaxpayerAggregateIdentifier')
@@ -838,7 +842,7 @@ class ListObserver:
                     or not isinstance(posted.get('Filters'), list)):
                 return
             return posted
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, AttributeError):
             # Invalid/unreadable request shapes cannot establish grid custody.
             return
 
