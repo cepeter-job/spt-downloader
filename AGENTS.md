@@ -321,7 +321,7 @@ overlay, foreign caption or absent title binding authorizes a detail action.
 Accounting detail open/close clicks each occur once within a five-second
 action bound and no implicit driver navigation wait. Explicit owned-response,
 retained Document/route, five-second dialog readiness and hidden-dialog checks
-remain required; the hidden-dialog wait retains its one-second bound. Reconcile
+remain required; the single hidden-dialog wait has a five-second bound. Reconcile
 Stop and callback-pumped source/observer refusals
 after both clicks and the hidden wait, including RPC exceptions. Never retry a
 completed or uncertain click or admit a new main-frame Document through this

@@ -688,7 +688,7 @@ class AccountingUI:
                 raise MpnUnsupported('MPN inspected dialog close control is unavailable')
             self._owned()
             self._observer_call(close.click, timeout=5000, no_wait_after=True)
-            self._observer_call(dialog.wait_for, state='hidden', timeout=1000)
+            self._observer_call(dialog.wait_for, state='hidden', timeout=5000)
 
     def finish(self):
         pending = bool(self.observer.pending or self.source_pending)

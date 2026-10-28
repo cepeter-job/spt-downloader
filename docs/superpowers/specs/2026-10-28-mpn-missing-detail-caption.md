@@ -24,3 +24,12 @@ as blank. Retain reference/numeric ambiguity refusal and fatal known mismatch.
 Preserve raw codes, labels, bytes, output schema, pins, requests, Stop, budgets,
 Document and capture/publication gates. Other missing labels retain existing
 behavior; no cache read, extra GET or replay clock is introduced.
+
+Normal live validation subsequently exposed a separate timeout after the single
+close action had returned: the inspected dialog remained visible beyond the
+existing one-second hidden wait. Give that visibility completion one bounded
+five-second wait. Keep the single close click, owned Document/route and response
+checks unchanged. Reconcile Stop and callback source/observer refusals after
+both successful and exceptional waits; a still-visible dialog stays PARTIAL.
+Delayed-hide browser regressions must prove a 1500 ms close succeeds, a 5500 ms
+close refuses, and callback Stop/source failures cannot become success.
