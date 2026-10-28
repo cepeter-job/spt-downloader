@@ -28,14 +28,14 @@ in an ExitStack with active-error preservation; checkpoint-only failure recovery
 Files: coretax.py; tests/test_cli_failure_recovery.py; AGENTS.md.
 Interfaces: _main(argv) keeps existing integer exit codes; save_output unchanged.
 
-- [ ] Add behavior tests of _main with synthetic I/O/browser boundaries and real
+- [x] Add behavior tests of _main with synthetic I/O/browser boundaries and real
   checkpoint bytes; expected exit1/130, no error-handler publication, complete=False,
   preserved sentinels, safe diagnostics and every owned resource cleanup.
-- [ ] Run tests on a temporary branch-only diagnostic workflow; verify failures
+- [x] Run tests on a temporary branch-only diagnostic workflow; verify failures
   caused by current save_output/cleanup behavior before writing production code.
-- [ ] Add _cli_cleanup, page-close and failure-checkpoint helpers in coretax.py;
+- [x] Add _cli_cleanup, page-close and failure-checkpoint helpers in coretax.py;
   move live execution under their ownership without changing successful export.
-- [ ] Run focused runner GREEN and existing output/MPN-flow tests; add the actual
+- [x] Run focused runner GREEN and existing output/MPN-flow tests; add the actual
   CLI failure contract to AGENTS.md and operator troubleshooting documentation.
 - [ ] Remove temporary diagnostic workflow, run full unmodified PR CI/package,
   review original response/MPN/publication interactions and obtain fresh review.
@@ -43,10 +43,16 @@ Interfaces: _main(argv) keeps existing integer exit codes; save_output unchanged
 
 ## Task 2: Record corrected audit recommendations
 
-- [ ] Add a short source-linked follow-up to the audit documentation, preserving
+- [x] Add a short source-linked follow-up to the audit documentation, preserving
   original historical evidence. Distinguish eager/lazy/package imports, remaining
   recovery dependencies, version fallback, monkeypatch ownership and unmeasured
   timing. Do not claim the absent attachment docs were edited or merged.
-- [ ] Index it in docs/README.md and identify deferred issue134 work explicitly.
+- [x] Index it in docs/README.md and identify deferred issue134 work explicitly.
+
+Focused proof: run40731921975 at285689d had28 expected failures and41 passes.
+Review found an existing-output scope bypass; run40732705158 at4ab499b proved
+both differing-checkpoint and differing-physical-workbook cases fail. Applying
+the existing scope guard gave71/71 in run40732957753 atf098545. Full final PR
+CI/package and artifact readback remain independent gates.
 
 No claim of live/Excel acceptance, no issue-wide closure and no unrelated cleanup.
