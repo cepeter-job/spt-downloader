@@ -19,7 +19,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            router_notification=False, grid_after_search=False, delayed_options=False,
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
-           body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment'):
+           body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
+           parent_amounts=None):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -50,6 +51,11 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         elif duplicate_parent == 'distinct-reference':
             second['ReferenceNumber'] = 'SYNTHETIC SECOND REF'
         parents.append(second)
+    if parent_amounts is not None:
+        assert len(parents)==len(parent_amounts)
+        for parent, amount in zip(parents,parent_amounts):
+            parent.update(CurrencyAmount=MpnNumber(amount), CurrencyAmountLeft=MpnNumber('0'),
+                ExchangeRate=MpnNumber('1'), Amount=MpnNumber(amount), AmountLeft=MpnNumber('0'))
     list_raw = snapshot([] if empty else parents)['raw']
     detail_raw = snapshot([positive, detail], kind='detail', parent=HEADER)['raw']
     main = r'''
@@ -63,6 +69,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if parent_amounts is not None:
+        main = main.replace("'Kredit','0','0','1','0','0',",
+            "'Kredit',number(row.CurrencyAmount),number(row.CurrencyAmountLeft),"
+            "number(row.ExchangeRate),number(row.Amount),number(row.AmountLeft),")
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
     main = main.replace("'OtherTaxReturn','DBP',row.CurrencyCode", "row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode")
@@ -434,6 +444,56 @@ def test_different_hidden_references_do_not_disambiguate_the_same_rendered_tax_c
         collect_mpn(page, run, tmp_path)
         assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
         assert metrics['detail'] == []
+
+
+@pytest.mark.parametrize('amounts', [('1250','2500'),('0','-2500'),
+    ('999999999999999','-999999999999999')])
+def test_same_parent_captions_require_exact_unique_visible_integer_tuples(browser, tmp_path, monkeypatch, amounts):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=amounts) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] and run['mpn']['status']=='COMPLETE'
+        assert run['mpn']['headers']==2 and len(metrics['detail'])==2
+        assert len({q['RecordId'] for q in metrics['detail']})==2
+        assert metrics['unknown']==0
+
+
+@pytest.mark.parametrize('amounts', [('1250','1250.0'),('0','-0'),('1250.01','2500'),
+    ('1000000000000000','2500')])
+def test_same_or_unproved_parent_numeric_tuples_remain_partial_before_actions(browser, tmp_path, monkeypatch, amounts):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=amounts) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
+
+
+@pytest.mark.parametrize('mutation', ['selected','peer','reordered'])
+def test_all_repeated_parent_numbers_are_reconciled_before_any_detail_action(browser, tmp_path, monkeypatch, mutation):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    import coretax_mpn_ui as module
+    original=module.AccountingUI._bind_header
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=('1250','2500')) as (page,metrics):
+        def changed(self,header):
+            body=self.list_owner.locator('tbody')
+            if mutation=='reordered':
+                body.evaluate('(body)=>[...body.children].reverse().forEach(row=>body.append(row))')
+            else:
+                body.locator('tr').nth(0 if mutation=='selected' else 1).locator('td').nth(10).evaluate(
+                    "cell=>cell.textContent='999,00'")
+            return original(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',changed)
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
 
 
 def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(browser, tmp_path, monkeypatch):
