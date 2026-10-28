@@ -467,6 +467,44 @@ def test_owned_detail_reply_survives_post_action_driver_wait_without_a_second_cl
 
 
 @pytest.mark.parametrize('action', ['open','close'])
+@pytest.mark.parametrize('delay_ms,complete', [(1500,True),(5500,False)])
+def test_inspected_detail_action_has_a_bounded_dispatch_budget_without_repeating(
+        browser,tmp_path,monkeypatch,action,delay_ms,complete):
+    from coretax_mpn_browser import collect_mpn
+    import coretax_mpn_ui as module
+    original_bind=module.AccountingUI._bind_header
+    active=[];calls=[]
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_click=locator_type.click
+        def slow_dispatch(locator,*args,**kwargs):
+            target=active and (locator.get_attribute('title')=='Detail Transaksi' if action=='open'
+                else 'p-dialog-header-close' in (locator.get_attribute('class') or ''))
+            if target:
+                calls.append(action)
+                locator.evaluate('''(button,delay) => {
+                    window.syntheticDispatchClicks=0;
+                    button.addEventListener('click',() => {
+                        window.syntheticDispatchClicks++;
+                        const until=performance.now()+delay;
+                        while(performance.now()<until) {}
+                    },{capture:true,once:true});
+                }''',delay_ms)
+            return original_click(locator,*args,**kwargs)
+        monkeypatch.setattr(locator_type,'click',slow_dispatch)
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] is complete
+        assert run['mpn']['status']==('COMPLETE' if complete else 'PARTIAL')
+        assert calls==[action] and page.evaluate('window.syntheticDispatchClicks')==1
+        assert len(metrics['detail'])==1 and metrics['unknown']==0
+
+
+@pytest.mark.parametrize('action', ['open','close'])
 def test_detail_click_exception_reconciles_callback_pumped_source_safety_before_partial(
         browser,tmp_path,monkeypatch,action):
     from coretax_mpn_browser import collect_mpn
