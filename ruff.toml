@@ -1,5 +1,13 @@
-# Mulai dari nama yang tidak terdefinisi; perubahan gaya tidak termasuk gate ini.
+# Gate minimum yang lolos saat ini.
+# Perluasan seleksi disengaja dibatasi supaya CI tetap hijau;
+# daftar aturan yang masih memiliki pelanggaran ditangani di PR tindak lanjut.
 target-version = "py314"
 
 [lint]
-select = ["F821", "F822", "F823"]
+select = [
+    "F821", "F822", "F823",   # nama yang tidak terdefinisi / forward reference
+    "E9", "W6",              # syntax / runtime errors
+]
+
+[lint.pydocstyle]
+convention = "google"
