@@ -566,6 +566,11 @@ class AccountingUI:
             raise MpnUnsupported('MPN parent visible identity is not independently unique')
         matching = [row for row in snapshot['rows'] if self._header_projection(row) == expected]
         if {row['RecordId'] for row in matching} != {header['RecordId']}:
+            for peer in matching:
+                if (any(peer.get(field) != header.get(field)
+                        for field in ('TaxpayerAggregateIdentifier', 'TaxpayerTIN'))
+                        or peer.get('IsCancelled') is not False):
+                    raise MpnSafetyError('MPN participating parent source identity contradicts its owner')
             captions = [(row['RecordId'], self._reference_caption(row)) for row in matching]
             caption = self._reference_caption(header)
             if any(value is None for _, value in captions) or caption is None:
@@ -573,7 +578,7 @@ class AccountingUI:
             if rendered[index][12] != caption:
                 raise MpnSafetyError('MPN selected parent reference caption differs from its original source')
             if {identifier for identifier, value in captions if value == caption} != {header['RecordId']}:
-                numeric = []
+                numeric, unsupported = [], False
                 for position, peer in enumerate(snapshot['rows']):
                     if self._header_projection(peer) != expected or self._reference_caption(peer) != caption:
                         continue
@@ -583,8 +588,11 @@ class AccountingUI:
                         raise MpnSafetyError('MPN repeated parent visible identity differs from its source')
                     values = parent_numeric_binding(observed, peer)
                     if values is None:
-                        raise MpnUnsupported('MPN repeated parent numeric identity is unproved')
-                    numeric.append((peer['RecordId'], values))
+                        unsupported = True
+                    else:
+                        numeric.append((peer['RecordId'], values))
+                if unsupported:
+                    raise MpnUnsupported('MPN repeated parent numeric identity is unproved')
                 selected = next(values for identifier, values in numeric if identifier == header['RecordId'])
                 if {identifier for identifier, values in numeric if values == selected} != {header['RecordId']}:
                     raise MpnUnsupported('MPN repeated parent numeric identity is not independently unique')

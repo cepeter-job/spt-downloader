@@ -311,6 +311,10 @@ RecordId alone must have the selected numeric tuple; equivalent lexemes and
 signed zero never manufacture uniqueness. This grants only the already
 inspected detail action, adds no source/request or output metadata, and retains
 Document/Stop/final-action fences and independent completion/publication gates.
+Validate every participating peer's original taxpayer/cancellation ownership
+before caption or numeric fallback. Latch unsupported numeric fields/peers while
+still checking every independently supported value and visible binding; an
+earlier unsupported field/peer cannot hide a later known contradiction.
 
 Accounting original null-Index/full-page totals may declare the bounded
 `frontier-v1` continuation contract: the first total must be Rows+1 and every

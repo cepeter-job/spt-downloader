@@ -235,20 +235,26 @@ def parent_numeric_binding(row, header):
         return None
     columns = ((7, 'CurrencyAmount'), (8, 'CurrencyAmountLeft'), (9, 'ExchangeRate'),
                (10, 'Amount'), (11, 'AmountLeft'))
-    try:
-        values = tuple(source_number(header.get(field)) for _, field in columns)
-    except MpnUnsupported:
-        return None
-    if any(not value.is_finite() or value.copy_abs() > 999999999999999
-           or value != value.to_integral_value() for value in values):
-        return None
-    try:
-        observed = tuple(_dom_number(row[column]) for column, _ in columns)
-    except (MpnUnsupported, InvalidOperation):
-        return None
-    if observed != values:
-        raise MpnSafetyError('MPN parent numeric identity differs from its original source')
-    return values
+    values, unsupported = [], False
+    for column, field in columns:
+        try:
+            value = source_number(header.get(field))
+        except (MpnUnsupported, InvalidOperation):
+            unsupported = True
+            continue
+        if (not value.is_finite() or value.copy_abs() > 999999999999999
+                or value != value.to_integral_value()):
+            unsupported = True
+            continue
+        try:
+            observed = _dom_number(row[column])
+        except (MpnUnsupported, InvalidOperation):
+            unsupported = True
+            continue
+        if observed != value:
+            raise MpnSafetyError('MPN parent numeric identity differs from its original source')
+        values.append(value)
+    return None if unsupported else tuple(values)
 
 
 def dom_numbers_match(rows, details):
