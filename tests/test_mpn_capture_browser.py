@@ -21,7 +21,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
            body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
            parent_amounts=None, contradictory_parent=None, pending_child_navigation=None,
-           dropdown_close_delay=0):
+           dropdown_close_delay=0, catalog_response=None, parent_detail_codes=None,
+           parent_detail_display=None, dialog_close_delay=0):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -61,6 +62,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         for parent, amount in zip(parents,parent_amounts):
             parent.update(CurrencyAmount=MpnNumber(amount), CurrencyAmountLeft=MpnNumber('0'),
                 ExchangeRate=MpnNumber('1'), Amount=MpnNumber(amount), AmountLeft=MpnNumber('0'))
+    if parent_detail_codes is not None:
+        assert len(parent_detail_codes)==len(parents)
+        for parent,code in zip(parents,parent_detail_codes):
+            parent['AccountingTypeDetailCode']=code
     list_raw = snapshot([] if empty else parents)['raw']
     detail_raw = snapshot([positive, detail], kind='detail', parent=HEADER)['raw']
     main = r'''
@@ -74,6 +79,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if dialog_close_delay:
+        main = main.replace("document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';",
+            "document.querySelector('.p-dialog-header-close').onclick=()=>{window.syntheticCloseClicks=(window.syntheticCloseClicks||0)+1;"
+            "setTimeout(()=>document.getElementById('isShowDetail').style.display='none',"+str(dialog_close_delay)+");};")
     if dropdown_close_delay != 0:
         removal = ("panel.classList.add('synthetic-closing');" if dropdown_close_delay is None else
                    "panel.classList.add('synthetic-closing');setTimeout(()=>panel.remove()," + str(dropdown_close_delay) + ");")
@@ -88,6 +97,9 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     if tooltip_action:
         main = main.replace("button.title='Detail Transaksi';", "button.type='button';button.id='ViewButton';")
     main = main.replace("'OtherTaxReturn','DBP',row.CurrencyCode", "row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode")
+    if parent_detail_display is not None:
+        main=main.replace('row.AccountingTypeCode,row.AccountingTypeDetailCode,row.CurrencyCode',
+            'row.AccountingTypeCode,'+json.dumps(parent_detail_display)+',row.CurrencyCode')
     main = main.replace("'SYNTHETIC REF',row.RevenueCode", "row.ReferenceType==='ICT_RCIT'?'Tax Return Reference':row.ReferenceNumber,row.RevenueCode")
     if body_dialog:
         main = main.replace("const host=document.getElementById('isShowDetail');host.style.display='block';",
@@ -153,7 +165,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
             "loadList();fetch('/accounting/id-ID/main.synthetic.js');fetch("
             + json.dumps(reference_path) + ",{method:'POST'});if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);")
-    main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog else '') + ';'
+    main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog or catalog_response is not None else '') + ';'
             + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
             + 'const ROUNDED=' + json.dumps(rounded) + ';const STUCK=' + json.dumps(default_stuck) + ';' + main).encode()
@@ -229,6 +241,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             request_route.fulfill(body=raw, content_type='application/json')
         elif path == '/synthetic-pending-child' and pending_child_navigation is not None:
             metrics['pending_children'].append(request_route)
+        elif path == reference_path and catalog_response is not None:
+            request_route.fulfill(body=json.dumps(catalog_response),content_type='application/json')
         elif path == reference_path and pending_catalog:
             metrics['references'].append(request_route)  # Intentionally unresolved dependency.
         elif path == reference_path and unrelated_sources and request.method == 'POST':
@@ -265,6 +279,58 @@ def test_real_empty_inventory_can_complete_only_after_unfiltered_owned_response(
         collect_mpn(page, run, tmp_path)
         assert run['mpn']['status'] == 'COMPLETE' and run['mpn']['rows'] == []
         assert metrics['detail'] == [] and metrics['unknown'] == 0
+
+
+def test_original_absent_detail_code_binds_blank_without_rewriting_its_source(browser,tmp_path,monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    from test_mpn_catalog_inventory import original_catalog
+    with portal(browser,monkeypatch,catalog_response=original_catalog([]),
+                parent_detail_codes=['SYNTHETIC-MISSING'],parent_detail_display='') as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] and run['mpn']['status']=='COMPLETE'
+        assert len(metrics['detail'])==1 and metrics['unknown']==0
+        binding=next(b for b in run['mpn']['bindings'] if b['kind']=='list')
+        raw=json.loads((tmp_path/binding['path']).read_text())
+        assert raw['Payload']['Data'][0]['AccountingTypeDetailCode']=='SYNTHETIC-MISSING'
+
+
+def test_absent_detail_code_cannot_treat_a_nonblank_caption_as_its_source(browser,tmp_path,monkeypatch):
+    from coretax_mpn import MpnSafetyError
+    from coretax_mpn_browser import collect_mpn
+    from test_mpn_catalog_inventory import original_catalog
+    with portal(browser,monkeypatch,catalog_response=original_catalog([]),
+                parent_detail_codes=['SYNTHETIC-MISSING'],parent_detail_display='SYNTHETIC-MISSING') as (page,metrics):
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not metrics['detail'] and run['mpn']['status']=='PARTIAL'
+
+
+def test_different_absent_detail_codes_do_not_manufacture_blank_row_uniqueness(browser,tmp_path,monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    from test_mpn_catalog_inventory import original_catalog
+    with portal(browser,monkeypatch,catalog_response=original_catalog([]),duplicate_parent='same',
+                parent_amounts=('0','0'),parent_detail_codes=['SYNTHETIC-A','SYNTHETIC-B'],
+                parent_detail_display='') as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['mpn']['status']=='PARTIAL' and not run['complete']
+        assert not metrics['detail']
+
+
+@pytest.mark.parametrize('details', [[{'Code':'SYNTHETIC-MISSING','ValidTo':'2020-01-01'}],
+                                    [{'Code':1}], [{}]])
+def test_unproved_detail_catalog_absence_does_not_authorize_a_blank_row(browser,tmp_path,monkeypatch,details):
+    from coretax_mpn import MpnSafetyError
+    from coretax_mpn_browser import collect_mpn
+    from test_mpn_catalog_inventory import original_catalog
+    with portal(browser,monkeypatch,catalog_response=original_catalog(details),
+                parent_detail_codes=['SYNTHETIC-MISSING'],parent_detail_display='') as (page,metrics):
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not metrics['detail'] and not run['complete']
 
 
 def test_nonqualifying_asset_observations_do_not_abort_a_verified_real_capture(browser, tmp_path, monkeypatch):
@@ -461,6 +527,51 @@ def test_inspected_detail_click_does_not_wait_for_unrelated_child_navigation_or_
         assert len(metrics['detail'])==1 and len(metrics['pending_children'])==1
         assert page.evaluate('window.syntheticActionClicks')==1
         assert metrics['unknown']==0
+
+
+@pytest.mark.parametrize('delay_ms,complete', [(1500,True),(5500,False)])
+def test_single_detail_close_allows_bounded_visibility_completion(
+        browser,tmp_path,monkeypatch,delay_ms,complete):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,dialog_close_delay=delay_ms) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] is complete
+        assert run['mpn']['status']==('COMPLETE' if complete else 'PARTIAL')
+        assert page.evaluate('window.syntheticCloseClicks')==1
+        assert len(metrics['detail'])==1 and metrics['unknown']==0
+
+
+@pytest.mark.parametrize('refusal', ['stop','source'])
+def test_hidden_dialog_wait_reconciles_callback_refusal_before_success(
+        browser,tmp_path,monkeypatch,refusal):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    from coretax_browser import CaptureCancelled
+    import coretax_mpn_ui as module
+    active=[]; stopped=[]
+    original_bind=module.AccountingUI._bind_header
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_wait=locator_type.wait_for
+        def waited(locator,*args,**kwargs):
+            result=original_wait(locator,*args,**kwargs)
+            if active and kwargs.get('state')=='hidden':
+                if refusal=='source': active[-1].source_safety=True
+                else: stopped.append(True)
+            return result
+        monkeypatch.setattr(locator_type,'wait_for',waited)
+        def stop():
+            if stopped: raise CaptureCancelled('SYNTHETIC_STOP')
+        run=scope_run()
+        with pytest.raises(MpnSafetyError if refusal=='source' else CaptureCancelled):
+            collect_mpn(page,run,tmp_path,check_cancel=stop)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert len(metrics['detail'])==1
 
 
 @pytest.mark.parametrize('action', ['open','close'])
@@ -707,7 +818,7 @@ def test_owned_catalog_can_finish_before_first_parent_binding_and_is_retained(br
     from coretax_mpn import mpn_custody
     import coretax_mpn_ui as module
     original = module.AccountingUI._freeze_catalog
-    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
+    with portal(browser, monkeypatch, pending_catalog=True, parent_detail_display='') as (page, metrics):
         served = []
         def freeze(self):
             if not served:
@@ -729,7 +840,7 @@ def test_parent_binding_uses_dom_snapshot_after_catalog_labels_finish(browser, t
     from coretax_mpn_browser import collect_mpn
     import coretax_mpn_ui as module
     original = module.AccountingUI._freeze_catalog
-    with portal(browser, monkeypatch, pending_catalog=True) as (page, metrics):
+    with portal(browser, monkeypatch, pending_catalog=True, parent_detail_display='') as (page, metrics):
         def freeze(self):
             code = self.list_snapshot['rows'][0]['PeriodCode']
             metrics['references'][-1].fulfill(content_type='application/json',body=json.dumps({

@@ -299,6 +299,17 @@ link field, follow that link or guess another source alias. Require every
 matching peer's caption and a unique selected-record match. Still-identical or
 unproved captions remain unsupported; original source fields stay unchanged.
 
+The ordinary Accounting parent detail-caption column may bind blank for a
+nonempty literal AccountingTypeDetailCode only when the complete same-attempt
+original ACCOUNTING_TYPE_DETAIL code inventory proves that code absent. Retain
+all original codes separately from eligible null-ValidTo labels; malformed or
+non-string code entries leave absence unproved, and present ineligible codes
+never become absent. Default catalog readers remain unchanged. Recompute every
+peer's projected caption before uniqueness/reference/numeric binding, so missing
+codes that both display blank cannot manufacture identity. Other columns and
+fallbacks retain their boundaries; preserve raw metadata/bytes, source/catalog
+custody, Document, Stop and all independent completion/publication gates.
+
 The inspected detail dialog may render below a direct body-level
 `.p-dialog-mask.p-component-overlay` wrapper. Require the unique selected
 `p-dialog#isShowDetail` host, no visible role=dialog before clicking, the owned
@@ -310,7 +321,7 @@ overlay, foreign caption or absent title binding authorizes a detail action.
 Accounting detail open/close clicks each occur once within a five-second
 action bound and no implicit driver navigation wait. Explicit owned-response,
 retained Document/route, five-second dialog readiness and hidden-dialog checks
-remain required; the hidden-dialog wait retains its one-second bound. Reconcile
+remain required; the single hidden-dialog wait has a five-second bound. Reconcile
 Stop and callback-pumped source/observer refusals
 after both clicks and the hidden wait, including RPC exceptions. Never retry a
 completed or uncertain click or admit a new main-frame Document through this
