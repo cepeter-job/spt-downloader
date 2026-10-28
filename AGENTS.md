@@ -386,6 +386,14 @@ paginator, source and identity contradictions retain their independent gates.
 
 ## Verification
 
+Capture table/panel/view failures and the inventory catch use only fixed
+`capture_timeout`, `capture_safety_refusal` or `capture_failed` messages. Keep
+their existing PARTIAL/Stop/filter/PDF behavior and later-panel recovery.
+Diagnostic `error=exception` uses the closed type/frame sanitizer; never replace
+it with arbitrary exception class names or serialize exception text. Optional
+diagnostic root lookup, including RuntimeError and logging OFF, cannot prevent
+CLI execution. Keep old private checkpoints readable.
+
 The source-proven full L1-D profit table has35 slots including account5322.
 Its approved34-slot reference may grow only at the verified internal account
 position after exact component/group, ten-column, account/group sequence and

@@ -126,7 +126,7 @@ def test_recovered_cache_still_requires_partition_recheck(browser, tmp_path, mon
         assert requests[0]['Filters'] == []
         assert all(p['Filters'] for p in requests[1:])
         assert not result['inventory_complete']
-        assert any('Period catalog changed' in e['message'] for e in result['errors'])
+        assert any(e['message'] == 'capture_safety_refusal' for e in result['errors'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
 
 

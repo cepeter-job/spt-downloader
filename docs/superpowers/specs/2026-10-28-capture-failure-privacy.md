@@ -5,7 +5,7 @@ including RuntimeError, cannot prevent the CLI from running, even with logging
 OFF. Keep the existing closed exception-type/frame sanitizer; it reads no
 exception message, args, locals or chain. Never serialize arbitrary class names.
 
-Capture checkpoints and inventory progress use only the fixed failure messages
+The table/panel/view capture catches and inventory progress use fixed messages
 `capture_timeout`, `capture_safety_refusal`, and `capture_failed`. Classify the
 actual caught Playwright TimeoutError and JsonSafetyError by type, never by text.
 Sanitized diagnostic frames identify the failing owned operation. Existing

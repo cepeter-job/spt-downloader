@@ -11,8 +11,8 @@ Exception-handling policy for this module:
 - Every `except` block must be justified in a comment: cleanup, diagnostics, or
   an explicit graceful-degradation contract. Never swallow exceptions that can
   hide auth, privacy, provenance or stop-signal failures.
-- Capture diagnostics must not forward exception text or request payloads.
-  Use `error_type` (the exception class name) instead of `error=exc`.
+- Capture diagnostics use `error=exc` only through the existing closed type/frame
+  sanitizer, which never reads exception text, args, locals or payloads.
 """
 
 from spt_desktop import diagnostics
@@ -518,6 +518,15 @@ def _ppn_catalog_ready(page, check_cancel=None):
         page.wait_for_timeout(100)
 
 
+def _capture_failure_message(error):
+    """Fixed categories only; never inspect an exception's private message."""
+    if isinstance(error, PlaywrightTimeoutError):
+        return 'capture_timeout'
+    if isinstance(error, JsonSafetyError):
+        return 'capture_safety_refusal'
+    return 'capture_failed'
+
+
 @diagnostics.traced('detail')
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
@@ -583,8 +592,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if not captured['complete']:
                     errors.append({'object': name, 'message': captured['warning']})
             except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
-                errors.append({'object': f'{name}/table {i+1}', 'message': 'capture_failed'})
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
+                errors.append({'object': f'{name}/table {i+1}', 'message': _capture_failure_message(exc)})
         sections.append(section)
         # Another form hides Induk; read its inspected href before traversal advances.
         if financial_required and not financial_attempted and name.rsplit(' / ', 1)[-1] == 'Induk':
@@ -627,8 +636,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 _check_cancel(check_cancel)
                 capture_panel(panel, name)
             except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
-                errors.append({'object': name, 'message': 'capture_failed'})
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
+                errors.append({'object': name, 'message': _capture_failure_message(exc)})
 
     view = root.locator('.p-tabview').first
     try:
@@ -637,8 +646,8 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
         else:
             capture_panel(root, 'Halaman SPT')
     except Exception as exc:
-        diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
-        errors.append({'object': 'SPT detail', 'message': 'capture_failed'})
+        diagnostics.record('capture.partial', level='WARNING', error=exc)
+        errors.append({'object': 'SPT detail', 'message': _capture_failure_message(exc)})
     if financial_required and not financial_attempted:
         attachments.append({'label': 'Laporan Keuangan', 'relative_path': None,
                             'status': 'PARTIAL', 'bytes': 0, 'hash': None})
@@ -1628,9 +1637,10 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
             except CaptureCancelled:
                 raise
             except Exception as exc:
-                diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
-                errors.append({'object': label, 'message': 'capture_failed'})
-                print(f"Inventory partial: {label}: capture_failed", flush=True)
+                diagnostics.record('capture.partial', level='WARNING', error=exc)
+                message = _capture_failure_message(exc)
+                errors.append({'object': label, 'message': message})
+                print(f"Inventory partial: {label}: {message}", flush=True)
             finally:
                 observer.request_filter = None
                 source_routes.close()
@@ -2211,7 +2221,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             record.pop('detail_source', None)
                             raise
                         except Exception as exc:
-                            diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
+                            diagnostics.record('capture.partial', level='WARNING', error=exc)
                             active_group = None
                             record['capture_complete'] = False
                             if isinstance(exc, JsonSafetyError) and json_capture is not None:

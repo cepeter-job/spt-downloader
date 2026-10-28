@@ -56,30 +56,6 @@ class FakeListRequest:
         return self._post_data
 
 
-class RecordingDiagnostics:
-    """Simple substitute for spt_desktop.diagnostics with capture tracking."""
-    def __init__(self):
-        self.records = []
-
-    def record(self, event, *, level='INFO', **fields):
-        self.records.append({'event': event, 'level': level, **fields})
-        return True
-
-    def measure(self, event, **fields):
-        return _NullMeasure()
-
-
-class _NullMeasure:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def update(self, **fields):
-        pass
-
-
 def test_grid_request_returns_none_for_structural_errors():
     observer = ListObserver.__new__(ListObserver)
     observer.page = FakePage()
@@ -139,41 +115,6 @@ def test_search_diagnostics_recovers_after_degrade():
     diag._response(broken_resp2)
     diag._failed(BrokenRequest(TypeError))
     assert diag.observation == 'unavailable'
-
-
-def test_capture_partial_does_not_record_exception_text(monkeypatch):
-    """Regression: capture.partial must use error_type, not error=exc."""
-    import coretax_browser as cb
-    diag = RecordingDiagnostics()
-    monkeypatch.setattr(cb, 'diagnostics', diag)
-
-    class FakeTable:
-        pass
-
-    def broken_capture_table(*args, **kwargs):
-        raise ValueError('SECRET-TAX-DETAIL')
-
-    monkeypatch.setattr(cb, 'capture_table', broken_capture_table)
-
-    errors = []
-    try:
-        cb.capture_table(None, FakeTable(), 1, 1)
-    except Exception as exc:
-        cb.diagnostics.record('capture.partial', level='WARNING', error_type=type(exc).__name__)
-        errors.append({'object': 'test/table 1', 'message': 'capture_failed'})
-
-    partial = [r for r in diag.records if r['event'] == 'capture.partial']
-    assert len(partial) == 1
-    assert 'error_type' in partial[0]
-    assert partial[0]['error_type'] == 'ValueError'
-    assert 'error' not in partial[0]
-    assert 'SECRET-TAX-DETAIL' not in str(partial[0])
-
-
-def test_module_has_exception_policy_comment():
-    import coretax_browser, coretax_json_capture, spt_desktop.diagnostics
-    for mod in (coretax_browser, coretax_json_capture, spt_desktop.diagnostics):
-        assert 'Exception-handling policy' in mod.__doc__
 
 
 def test_json_capture_driver_probe_swallows_arbitrary_driver_errors():

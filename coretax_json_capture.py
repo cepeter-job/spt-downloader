@@ -5,8 +5,8 @@ on the caller's thread, checked, and written immediately. Driver body() and JSON
 parsing can still allocate a whole body; budgets are not hard RAM/interrupt caps.
 
 Exception-handling policy for this module:
-- Playwright/CDP failures are expected when probing an obfuscated SPA.
-  Catch Playwright errors explicitly; fall back to `None`/unavailable proof.
+- Driver probes can fail through Playwright/CDP or an adapter. Preserve the
+  bounded unavailable-proof fallback and surrounding Stop checks.
 - Never forward exception text into captured JSON or diagnostics.
 """
 from contextlib import contextmanager, ExitStack
@@ -23,7 +23,6 @@ from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFER
                           CORPORATE_REFERENCE_REQUESTS, ORIGIN,
                           _capture_clock_interval, _capture_component_lifetime, _capture_l8_lifetime,
                           _object_pairs, _reject_constant, _trusted_origin)
-from playwright.sync_api import Error as PlaywrightError
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
