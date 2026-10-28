@@ -63,7 +63,12 @@ def cli(tmp_path, monkeypatch):
     monkeypatch.setattr(coretax, 'save_output', export)
     args = ['--npwp', state.run['npwp'], '--year', '2025', '--output', str(folder),
             '--non-interactive']
-    state.invoke = lambda *extra: coretax._main([*args, *extra])
+    def invoke(*extra):
+        try:
+            return coretax._main([*args, *extra])
+        except KeyboardInterrupt:
+            pytest.fail('CLI leaked interruption instead of returning exit 130')
+    state.invoke = invoke
     state.folder, state.old, state.page = folder, old, page
     return state
 
