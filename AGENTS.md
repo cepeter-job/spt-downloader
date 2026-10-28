@@ -252,6 +252,13 @@ default dates/period filters and require the exact unfiltered non-cancelled
 query. Source pins, genuine-empty inventory, Stop, budgets and final drain
 remain independent completion gates.
 
+After selecting either inspected Accounting preparation dropdown option, wait
+for its visible panel to close before the next action. Use value-free structure
+and the same shared 45-second deadline, with retained Document, Stop and sticky
+source/observer checks before and after each bounded RPC. Multiple panels stay
+unsupported; a stuck panel stays PARTIAL. Never repeat an option click, add a
+fixed settling sleep, read a selected value or extend preparation's deadline.
+
 Accounting grid requests preserve either reviewed literal `en-US` or `id-ID`
 LanguageId. Bind one language throughout the owned attempt and held original
 query reconciliation; a change between known languages is fatal, unknown codes
