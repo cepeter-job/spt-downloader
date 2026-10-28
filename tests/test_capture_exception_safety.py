@@ -184,5 +184,6 @@ def test_json_capture_driver_probe_swallows_arbitrary_driver_errors():
         def evaluate(self, *args, **kwargs):
             raise AttributeError("no evaluate")
 
-    sampler = jcap._ClockSampler.__new__(jcap._ClockSampler)
+    sampler = jcap.DetailJsonCapture.__new__(jcap.DetailJsonCapture)
+    sampler.check_cancel = None
     assert sampler._sample_clock(BrokenPage()) is None
