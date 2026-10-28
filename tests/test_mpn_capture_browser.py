@@ -434,6 +434,39 @@ def test_inspected_detail_click_does_not_wait_for_unrelated_child_navigation_or_
 
 
 @pytest.mark.parametrize('action', ['open','close'])
+def test_owned_detail_reply_survives_post_action_driver_wait_without_a_second_click(
+        browser,tmp_path,monkeypatch,action):
+    from coretax_mpn_browser import collect_mpn
+    from playwright.sync_api import TimeoutError as DriverTimeout
+    import coretax_mpn_ui as module
+    original_bind=module.AccountingUI._bind_header
+    active=[];clicks=[]
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_click=locator_type.click
+        def delayed_driver_wait(locator,*args,**kwargs):
+            target=active and (locator.get_attribute('title')=='Detail Transaksi' if action=='open'
+                else 'p-dialog-header-close' in (locator.get_attribute('class') or ''))
+            result=original_click(locator,*args,**kwargs)
+            if target:
+                clicks.append(action)
+                # Model the observed driver's failure after its real action,
+                # unless the caller disabled that implicit navigation wait.
+                if not kwargs.get('no_wait_after',False):
+                    raise DriverTimeout('SYNTHETIC_POST_ACTION_NAVIGATION_WAIT')
+            return result
+        monkeypatch.setattr(locator_type,'click',delayed_driver_wait)
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] and run['mpn']['status']=='COMPLETE'
+        assert clicks==[action] and len(metrics['detail'])==1
+
+
+@pytest.mark.parametrize('action', ['open','close'])
 def test_detail_click_exception_reconciles_callback_pumped_source_safety_before_partial(
         browser,tmp_path,monkeypatch,action):
     from coretax_mpn_browser import collect_mpn
