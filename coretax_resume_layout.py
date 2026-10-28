@@ -172,6 +172,8 @@ def apply_resume_layout(workbook, run):
             table.ref = f'A4:K{last}'
             if table.autoFilter is not None:
                 table.autoFilter.ref = table.ref
+            # Table dxfIds reference workbook differential styles - copy them.
+            workbook._differential_styles = deepcopy(reference._differential_styles)
             index.add_table(table)
         audit = workbook['Audit']
         source = reference['Audit']
