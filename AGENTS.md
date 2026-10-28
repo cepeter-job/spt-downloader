@@ -607,6 +607,7 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 ## Desktop boundaries
 
 CLI live failure/Stop recovery writes only a normally validated PARTIAL run.json
+after the existing checkpoint/physical-workbook scope and selected-JSON checks,
 through the existing guarded atomic checkpoint; never retry save_output from
 an error handler. Invalid runs and storage failures preserve the last durable
 checkpoint and existing workbooks. Keep fixed public/checkpoint error messages

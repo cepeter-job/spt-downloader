@@ -516,6 +516,7 @@ def _failed_cli_run(run, folder, *, interrupted=False):
                 'message': ('Interrupted. Resume this output folder to retry incomplete returns.'
                             if interrupted else 'Capture/export failed. Inspect diagnostics and original checkpoints.')})
             validate_export_run(run)
+            _check_output_scope(run, folder)
             _atomic_checkpoint(folder / 'run.json', run)
         except KeyboardInterrupt as error:
             interrupted = True

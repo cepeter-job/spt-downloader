@@ -7,7 +7,8 @@ proof, PR132's safe diagnostics and PR133-136 capture contracts stay intact.
 
 Keep successful export unchanged. On failure/Stop, set the in-memory run PARTIAL
 and attempt only the existing guarded atomic run.json checkpoint after normal
-export-run validation. Never retry workbook publication from an error handler.
+export-run and existing folder/physical-workbook/selected-JSON scope validation.
+Never retry workbook publication from an error handler.
 An invalid run or failed checkpoint leaves the prior durable bytes untouched.
 Use fixed error messages and the existing sanitized exception diagnostics.
 
