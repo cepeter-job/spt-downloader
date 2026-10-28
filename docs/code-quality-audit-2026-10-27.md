@@ -22,7 +22,7 @@ Base: `origin/main` (`3e46baec`)
 
 ## Rencana tindak lanjut (disarankan)
 1. PR ini: tambahkan `pyproject.toml` dan pertahankan gate ruff minimum. ✅ (PR #131)
-2. PR `fix/broad-exception-handling`:persempit handler `except Exception`, ganti `error=exc` dengan `error_type`, tambahkan policy comment. ✅ Selesai (f473aa7 + 45757ee + 45c9366; driver probes tetap Exception defensif per 45757ee).
+2. PR `fix/broad-exception-handling`: batasi handler struktural dan pertahankan sanitizer tipe/frame `error=exc` yang tidak membaca pesan exception; checkpoint DOM/inventory memakai kategori kegagalan tetap. Driver probe dan lookup diagnostik tetap defensif. Verifikasi regresi dan hook opt-in wajib selesai sebelum merge.
 3. PR `chore/ruff-bugbear`: perbaiki B007/B008/B023 (12 masalah, semua bug potensial).
 3. PR `chore/ruff-simplifications`: perbaiki SIM102/SIM105/SIM117/SIM300.
 4. PR `chore/ruff-pyupgrade`: ganti `datetime.timezone.utc` -> `UTC`, format string, dsb.

@@ -831,14 +831,19 @@ class ListObserver:
             try:
                 frame = getattr(request, 'frame', None)
                 main_frame = getattr(self.page, 'main_frame', None)
-            except AttributeError:
+            except (AttributeError, PlaywrightError):
                 return
             if self.navigation_source is not None and (frame is None or main_frame is None):
                 return
             if frame is not None and main_frame is not None and frame != main_frame:
                 return
-            raw_posted = getattr(request, 'post_data_json', None)
-            posted = raw_posted() if callable(raw_posted) else raw_posted
+            try:
+                raw_posted = getattr(request, 'post_data_json', None)
+                posted = raw_posted() if callable(raw_posted) else raw_posted
+            except PlaywrightError:
+                # The real accessor translates malformed/non-JSON bodies to a
+                # driver Error; such traffic supplies no original grid proof.
+                return
             if request.method != 'POST' or not isinstance(posted, dict):
                 return
             taxpayer = posted.get('TaxpayerAggregateIdentifier')
