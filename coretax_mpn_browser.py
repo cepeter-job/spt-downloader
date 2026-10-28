@@ -12,7 +12,7 @@ from playwright.sync_api import Error as PlaywrightError
 from coretax_mpn import (ORIGIN, MpnSafetyError, MpnUnsupported, decode_mpn,
                          source_integer, _identity, MpnNumber, require_mpn,
                          project_payment, validate_mpn, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES,
-                         _mpn_directories, _source_digest)
+                         _mpn_directories, _source_digest, REQUEST_LANGUAGES, validate_page_total)
 
 LIST_PATH = '/accounting/api/taxpayeraccounting/list'
 DETAIL_PATH = '/accounting/api/taxpayeraccounting/listdetail'
@@ -39,6 +39,11 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.failed = False
         self.parent_id = None
         self.closed = False
+        self._document = None
+        self._binding_document = False
+        self._navigation_attempt = None
+        self._identity_deadline = None
+        self.request_language = None
         self.handlers = {'framenavigated': self.on_navigation, 'request': self.on_request,
                          'requestfailed': self.on_request_failed, 'response': self.on_response}
         for event, callback in self.handlers.items():
@@ -55,25 +60,100 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             self.failed = True
         self.pending.clear()
         self.latest.clear()
+        if safety:
+            self._navigation_attempt = None
+            self._binding_document = False
+            self._identity_deadline = None
+            self._release_document()
+
+    def _release_document(self):
+        document, self._document = self._document, None
+        if document is not None:
+            try:
+                document.dispose()
+            except Exception:
+                pass
+
+    def _same_document(self):
+        self._stop()
+        document, attempt = self._document, self._navigation_attempt
+        try:
+            same = document is not None and document.evaluate('(d) => d === document') is True
+        except Exception:
+            same = False
+        self._stop()
+        return (same and attempt is not None and attempt is self._navigation_attempt
+                and document is self._document and self.committed and not self.closed
+                and not self.safety_failed
+                and self.page.url == self.navigation_source
+                and (self._identity_deadline is None or time.monotonic() < self._identity_deadline))
 
     def begin_navigation(self, url):
         self._stop()
         expected = ORIGIN + '/accounting/id-ID/balancesheet/' + self.taxpayer_id
         if url != expected or self.closed:
             raise MpnSafetyError('MPN navigation is outside its literal owned route')
+        self.navigation_source = None
+        self._navigation_attempt = object()
+        self._binding_document = False
+        self._identity_deadline = None
+        self._release_document()
+        self._stop()
         self.navigation_source = expected
         self.committed = self.safety_failed = self.failed = False
         self.pending.clear()
         self.latest.clear()
         self.parent_id = None
+        self.request_language = None
 
     def on_navigation(self, frame):
         if self.closed or self.navigation_source is None or frame is not self.page.main_frame:
             return
-        if self.committed or frame.url != self.navigation_source:
+        if self.safety_failed:
+            return
+        if frame.url != self.navigation_source or self.page.url != self.navigation_source:
             self._reject(safety=True)
             return
+        attempt = self._navigation_attempt
+        if self.committed:
+            if not self._binding_document:
+                same = self._same_document()
+                if attempt is self._navigation_attempt and not same:
+                    self._reject(safety=True)
+            return
         self.committed = True
+        self._binding_document = True
+        self._identity_deadline = time.monotonic() + 45
+        document = None
+        try:
+            self._stop()
+            try:
+                document = self.page.evaluate_handle('() => document')
+            except Exception:
+                if attempt is self._navigation_attempt:
+                    self._reject(safety=True)
+                return
+            if attempt is not self._navigation_attempt:
+                return
+            self._document = document
+            same = self._same_document()
+            if attempt is self._navigation_attempt:
+                if same:
+                    self._identity_deadline = None
+                else:
+                    self._reject(safety=True)
+        except BaseException:
+            if attempt is self._navigation_attempt:
+                self._reject(safety=True)
+            raise
+        finally:
+            if attempt is self._navigation_attempt:
+                self._binding_document = False
+            elif document is not None and document is not self._document:
+                try:
+                    document.dispose()
+                except Exception:
+                    pass
 
     def _kind(self, request):
         if getattr(request, 'frame', None) is not self.page.main_frame:
@@ -98,17 +178,25 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         if data[key] != (self.taxpayer_id if kind == 'list' else self.parent_id):
             raise MpnSafetyError('MPN grid request contradicts its owned identity')
         first, size = source_integer(data['First']), source_integer(data['Rows'])
-        if (size not in (10, 25, 50) or first % size or data['LanguageId'] != 'en-US'
+        if (size not in (10, 25, 50) or first % size
+                or type(data['LanguageId']) is not str or data['LanguageId'] not in REQUEST_LANGUAGES
                 or data['SortField'] != ('PostingDate' if kind == 'list' else 'TransactionDate')
                 or type(data['SortOrder']) is not MpnNumber or str(data['SortOrder']) != '-1'
                 or not isinstance(data['Filters'], list)
                 or (kind == 'detail' and data['Filters'] != [])):
             raise MpnUnsupported('MPN grid pagination/language/filter shape is unsupported')
+        if self.request_language is not None and data['LanguageId'] != self.request_language:
+            raise MpnSafetyError('MPN owned request language changed')
         data['First'], data['Rows'] = first, size
         data['SortOrder'] = -1
         return data
 
     def on_request(self, request):
+        if (not self.closed and self.committed and self.navigation_source is not None
+                and getattr(request, 'frame', None) is self.page.main_frame
+                and getattr(request, 'resource_type', None) == 'document'):
+            self._reject(safety=True)
+            return
         if self.closed or not self.committed or self.safety_failed or self.failed:
             return
         try:
@@ -118,6 +206,8 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             if self.page.url != self.navigation_source or len(self.pending) >= 128:
                 raise MpnSafetyError('MPN request document/pending custody changed')
             posted = self._posted(request, kind)
+            if self.request_language is None:
+                self.request_language = posted['LanguageId']
             self.pending[id(request)] = (request, kind, posted)
         except MpnSafetyError:
             self._reject(safety=True)
@@ -135,6 +225,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         if entry is None or entry[0] is not request or self.closed or self.safety_failed or self.failed:
             return
         _, kind, posted = entry
+        attempt = self._navigation_attempt
         try:
             if (self.page.url != self.navigation_source or response.url != request.url
                     or self._posted(request, kind) != posted):
@@ -142,6 +233,13 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             if not 200 <= response.status < 300 or 'json' not in response.headers.get('content-type', '').lower():
                 raise MpnUnsupported('MPN owned grid response failed')
             raw = response.body()
+            if attempt is not self._navigation_attempt:
+                return
+            if self.safety_failed or self.failed:
+                return
+            if self.page.url != self.navigation_source:
+                self._reject(safety=True)
+                return
             decoded = decode_mpn(raw)
             if decoded.get('IsSuccessful') is not True:
                 raise MpnUnsupported('MPN owned grid response is unsuccessful')
@@ -180,22 +278,38 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.latest.pop('detail', None)
         self.parent_id = parent_id
 
-    def _check_state(self):
+    def _check_state(self, *, allow_document_pending=False):
         self._stop()
         if (self.closed or self.safety_failed or not self.committed
                 or self.page.url != self.navigation_source):
+            self._reject(safety=True)
             raise MpnSafetyError('MPN owned document/request identity changed')
         if self.failed:
             raise MpnUnsupported('MPN owned grid capture failed')
+        attempt = self._navigation_attempt
+        if self._binding_document and allow_document_pending:
+            if self._identity_deadline is not None and time.monotonic() < self._identity_deadline:
+                return
+        elif not self._binding_document and self._same_document():
+            if self.failed:
+                raise MpnUnsupported('MPN owned grid capture failed')
+            return
+        if attempt is not self._navigation_attempt:
+            raise MpnSafetyError('MPN document attempt changed during validation')
+        if self.failed and not self.safety_failed:
+            raise MpnUnsupported('MPN owned grid capture failed')
+        self._reject(safety=True)
+        raise MpnSafetyError('MPN retained document identity is unproved')
 
     def wait(self, after, kind, timeout=45):
         if kind not in ('list', 'detail'):
             raise ValueError('Unsupported MPN grid kind')
         deadline = time.monotonic() + timeout
         while True:
-            self._check_state()
+            self._check_state(allow_document_pending=True)
             snapshot = self.latest.get(kind)
-            if snapshot is not None and snapshot['sequence'] > after:
+            if not self._binding_document and snapshot is not None and snapshot['sequence'] > after:
+                self._check_state()
                 return snapshot
             if time.monotonic() >= deadline:
                 raise MpnUnsupported('MPN fresh grid response timed out')
@@ -210,30 +324,36 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.latest.clear()
         self.parent_id = self.navigation_source = None
         self.closed = True
+        self._navigation_attempt = None
+        self._binding_document = False
+        self._identity_deadline = None
+        self._release_document()
+        self.request_language = None
 
 
-def AccountingUI(*args, **kwargs):
+def AccountingUI(page, run, folder, *, check_cancel=None):
     # Lazy to keep source qualification/observer imports independent of UI code.
-    from coretax_mpn_ui import AccountingUI as owned_ui
-    return owned_ui(*args, **kwargs)
+    from coretax_mpn_ui import AccountingUI as owned_ui, prepare_accounting_session
+    prepare_accounting_session(page, run, check_cancel=check_cancel)
+    return owned_ui(page, run, folder, check_cancel=check_cancel)
 
 
 def _digest(value):
     return _source_digest(value)
 
 
-def _accept_snapshot(snapshot, kind, first, total=None):
+def _accept_snapshot(snapshot, kind, first, total=None, *, total_mode='fixed-v1'):
     if not isinstance(snapshot, dict) or snapshot.get('kind') != kind:
         raise MpnUnsupported('MPN owned page snapshot is unavailable')
     decoded = decode_mpn(snapshot.get('raw'))
     payload = decoded.get('Payload')
     if decoded.get('IsSuccessful') is not True or not isinstance(payload, dict):
         raise MpnUnsupported('MPN original page envelope is unsuccessful')
-    actual_total = source_integer(payload.get('TotalRecords'))
     size = snapshot.get('page_size')
+    actual_total = validate_page_total(payload, first, size, total, mode=total_mode)
     rows = payload.get('Data')
     if (type(size) is not int or size not in (10, 25, 50) or snapshot.get('first') != first
-            or actual_total != snapshot.get('total') or total is not None and total != actual_total
+            or actual_total != snapshot.get('total') or snapshot.get('total_mode', 'fixed-v1') != total_mode
             or not isinstance(rows, list) or len(rows) != min(size, max(0, actual_total - first))
             or not all(isinstance(row, dict) for row in rows)
             or _digest(rows) != _digest(snapshot.get('rows'))):
@@ -314,6 +434,8 @@ No partial DOM page is combined with another source. Raw pages stay private.
         binding = {'path': item['path'], 'kind': kind}
         if kind != 'catalog':
             binding.update(request=deepcopy(snapshot['request']), parent_id=snapshot.get('parent_id'))
+            if 'total_mode' in snapshot:
+                binding['total_mode'] = snapshot['total_mode']
         value['bindings'].append(binding)
         budget += len(raw)
         return item
@@ -323,15 +445,23 @@ No partial DOM page is combined with another source. Raw pages stay private.
         with AccountingUI(page, run, folder, check_cancel=check_cancel) as ui:
             ui.open()
             value['source_pins'] = deepcopy(ui.pins)
-            if getattr(ui, 'reference_raw', None) is not None:
-                evidence({'raw': ui.reference_raw}, 'catalog')
-            first, total, pages = 0, None, 0
+            catalog_saved = False
+            def retain_catalog():
+                nonlocal catalog_saved
+                if not catalog_saved and getattr(ui, 'reference_raw', None) is not None:
+                    evidence({'raw': ui.reference_raw}, 'catalog')
+                    catalog_saved = True
+            retain_catalog()
+            first, total, pages, total_mode = 0, None, 0, None
             for snapshot in ui.list_pages(max_pages):
                 stop()
+                retain_catalog()
                 pages += 1
                 if pages > max_pages:
                     raise MpnUnsupported('MPN parent page cap reached')
-                headers, total = _accept_snapshot(snapshot, 'list', first, total)
+                if total_mode is None:
+                    total_mode = snapshot.get('total_mode', 'fixed-v1')
+                headers, total = _accept_snapshot(snapshot, 'list', first, total, total_mode=total_mode)
                 list_item = evidence(snapshot, 'list')
                 for header_index, header in enumerate(headers):
                     stop()
@@ -349,15 +479,19 @@ No partial DOM page is combined with another source. Raw pages stay private.
                     seen_headers[identifier] = digest
                     value['headers'] += 1
                     detail_rows, detail_events, dom_pages = [], [], []
-                    detail_first, detail_total, detail_page_count = 0, None, 0
+                    detail_first, detail_total, detail_page_count, detail_mode = 0, None, 0, None
                     for detail_snapshot, dom in ui.detail_pages(header, max_pages):
                         stop()
+                        retain_catalog()
                         detail_page_count += 1
                         if detail_page_count > max_pages:
                             raise MpnUnsupported('MPN detail page cap reached')
                         if detail_snapshot.get('parent_id') != identifier:
                             raise MpnSafetyError('MPN detail snapshot parent changed')
-                        rows, detail_total = _accept_snapshot(detail_snapshot, 'detail', detail_first, detail_total)
+                        if detail_mode is None:
+                            detail_mode = detail_snapshot.get('total_mode', 'fixed-v1')
+                        rows, detail_total = _accept_snapshot(detail_snapshot, 'detail', detail_first, detail_total,
+                                                              total_mode=detail_mode)
                         item = evidence(detail_snapshot, 'detail')
                         detail_rows.extend(rows)
                         detail_events.extend((item, index) for index in range(len(rows)))
@@ -429,6 +563,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
                 raise MpnUnsupported('MPN complete parent inventory is unavailable')
             value['inventory_complete'] = True
             value['details_complete'] = True
+            retain_catalog()
             ui.finish()
             value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
     except MpnSafetyError:

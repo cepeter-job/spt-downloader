@@ -30,6 +30,8 @@ EVENTS = frozenset({
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'mpn_ownership_reason': frozenset({'navigation', 'frame', 'method',
+        'page_route', 'request_url', 'resource_kind'}),
     'mpn_source_stage': frozenset({'provider', 'pending_budget', 'request_failed',
         'ownership', 'response', 'body', 'body_budget', 'script_digest',
         'catalog_snapshot', 'catalog_late', 'catalog_decode'}),

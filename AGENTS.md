@@ -223,6 +223,104 @@ response and final drain. An iterator yielding no pages remains PARTIAL, and a
 capture attempt cannot omit original inventory evidence even when headers are zero.
 These rules grant no new source pins, requests, locale or native admission.
 
+Accounting first completes a separate bounded session-preparation navigation
+before constructing any capture observer. Only the literal selected ledger,
+query-free origin root and `/accounting/id-ID/` root, and exact same-origin
+`/accounting/id-ID/auth-callback` path are admitted during preparation; every
+fragment, foreign route/origin or selected-identity contradiction stays fatal
+after returning. Never read or retain callback queries, tokens or browser
+storage. Recheck Stop, refusal, literal ledger and the original 60-second
+deadline after readiness reads, and remove the listener on every exit. Begin a
+fresh literal navigation and request custody afterward; preparation bytes,
+scripts, catalogs and grid responses grant no capture proof or completion.
+This is session initialization, never a retry/reset of a rejected capture.
+
+Owned Accounting capture retains the first committed actual Document through a
+value-free handle and attempt token. Same-literal-route router notifications
+require that identical Document; new main-frame Document requests, temporary
+route/query/fragment changes, unreadable identity and late acquisition remain
+fatal. Pending identity may only hold bounded request objects inside the
+existing deadline; defer source reads until identity is proved. Reset/close
+invalidates late callbacks and releases handles. Sticky observer failures stop
+UI preparation before another action. The shared 45-second UI-preparation
+deadline covers owned component/control/grid readiness and searches. Wait for
+zero matching controls to become unique/visible, reject duplicates, and retry
+only value-free actionability probes; each actual inspected click occurs once.
+The real list grid is created by the first Cari, so bind it only after that
+owned original response. Retain at most the existing second Cari to remove
+default dates/period filters and require the exact unfiltered non-cancelled
+query. Source pins, genuine-empty inventory, Stop, budgets and final drain
+remain independent completion gates.
+
+Accounting grid requests preserve either reviewed literal `en-US` or `id-ID`
+LanguageId. Bind one language throughout the owned attempt and held original
+query reconciliation; a change between known languages is fatal, unknown codes
+remain unsupported. The reference GET stays strictly id-ID. Retain the already
+verified initial page size and owned pagination instead of changing its optional
+picker. The pinned read-only detail action may use the exact source-named
+`button#ViewButton[type=button]` with `.pi-list` and no HTML title; retain the
+legacy exact Detail Transaksi title branch and reject contradictory action
+metadata. Bind the selected row first, and require the unique visible Detail
+Transaksi dialog/title/grid within one five-second readiness deadline.
+
+The original admitted reference response may finish before the first parent
+binding, including after initial UI preparation. Wait at most five seconds for
+already owned pending sources before freezing that binding; never fetch a
+missing catalog or use browser cache. Retain its original bytes once in private
+evidence even if they were unavailable at open. Changed snapshots stay fatal;
+first catalogs arriving after binding stay unsupported. Preserve the earlier
+pending-reply latch at final sampling, including valid empty inventories.
+Sticky source/observer safety failures outrank transport failures and deadlines.
+Recoverable grid failures preserve Document custody for classification but admit
+no more evidence/actions. After the final Document RPC, recheck local Stop/source/
+observer state before every actual action; no callback-pumped refusal may be
+masked as a successful click or a new identity contradiction.
+
+The same fatal-state reconciliation applies when observer RPCs/waits raise;
+never demote a callback-pumped source safety refusal to recoverable PARTIAL.
+After final provider reads and retained-Document validation, recheck local flags,
+original pending latch, current pending objects and both sampling sequences.
+Freeze admitted catalogs before reading the parent DOM snapshot used for
+identity. Parent binding includes the observed accounting type/detail captions
+from those same original catalogs (literal codes remain a bound fallback), plus
+the existing currency/KAP/KJS/period/transaction columns. Repeated projections
+may use the additional Referensi caption only through the pinned helper's
+present-string ReferenceType branch with populated classification codes. Start
+from literal ReferenceNumber, apply its exact reviewed tax-type/Replacement
+caption and TaxNotice/Adjustment-AIP overrides; never copy the raw Reference
+link field, follow that link or guess another source alias. Require every
+matching peer's caption and a unique selected-record match. Still-identical or
+unproved captions remain unsupported; original source fields stay unchanged.
+
+The inspected detail dialog may render below a direct body-level
+`.p-dialog-mask.p-component-overlay` wrapper. Require the unique selected
+`p-dialog#isShowDetail` host, no visible role=dialog before clicking, the owned
+selected-parent response, exactly one new visible dialog, the exact Detail
+Transaksi host/title with matching aria-labelledby/title id, and its unique
+grid. Keep the legacy descendant dialog branch. No pre-existing/ambiguous
+overlay, foreign caption or absent title binding authorizes a detail action.
+
+Accounting original null-Index/full-page totals may declare the bounded
+`frontier-v1` continuation contract: the first total must be Rows+1 and every
+continuation total First+Rows+1. Bind identical queries, page sizes and languages,
+contiguous offsets and previous frontier=next First+1. Only an original nonempty
+terminal page with total=First+row count closes it, including a full terminal
+page. A promised continuation followed by an empty page contradicts that proof.
+Missing/non-null Index, arbitrary total changes, gaps, changed identities/content,
+pending replies and reached caps remain refused/PARTIAL. Derive each list or
+parent-detail mode from its first original response; persist literal totals and
+an explicit per-page descriptor, never a fabricated final count. Missing mode
+retains legacy `fixed-v1` exact-total semantics. Held readers independently
+reconcile eligibility, mode consistency, every transition and terminal counts;
+unknown/mixed descriptors are fatal. These rules admit no extra route or request
+and do not relax selected taxpayer, source pins, privacy or publication gates.
+
+MPN source ownership refusals additionally report only the first failed fixed
+`mpn_ownership_reason`: navigation, frame, method, page_route, request_url or
+resource_kind, in the existing short-circuit order. Keep the original first
+refusal event and sticky fatal escalation. Other source stages omit the reason;
+never log the compared values or infer a live repair from the new diagnostic.
+
 The approved L7 year header accepts only the exact literal annual `0112YYYY`
 source code or the existing exact `Januari - Desember YYYY` caption, reconciled
 with the single captured table's complete header set. Monthly/partial-year and

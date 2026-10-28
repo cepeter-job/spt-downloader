@@ -44,6 +44,31 @@ Pesan exception, chain, locals, baris kode, path lengkap, URL, NPWP, tahun/nama 
 
 `phase.completed` berarti fungsi keluar normal, **bukan** bukti hasil pajak COMPLETE. Gunakan `worker.finished` yang berasal dari rekonsiliasi controller, beserta Audit hasil untuk lingkup data. Error yang sudah ditangani sebagai PARTIAL tetap mempunyai event diagnostik tanpa mengubah status bisnis.
 
+## Diagnostik sumber MPN
+
+`mpn.source_rejected` menyimpan penolakan sumber pertama dengan tahap tetap
+`mpn_source_stage`. Untuk tahap `ownership`, build baru juga mencatat
+`mpn_ownership_reason` dari pemeriksaan pertama yang gagal:
+
+- `navigation`: komit, identitas Document, atau attempt milik capture belum
+  terbukti atau berubah.
+- `frame`: frame request berbeda dari frame utama saat pemeriksaan.
+- `method`: metode request bukan GET.
+- `page_route`: halaman saat ini berbeda dari rute ledger yang diikat.
+- `request_url`: URL request berbeda dari URL yang ditahan saat admission.
+- `resource_kind`: jenis resource berbeda dari jenis saat admission.
+
+Kategori awal mengikuti urutan pemeriksaan yang sudah ada sebelum pembacaan
+response/body. Pemeriksaan ulang setelah RPC, termasuk pembacaan body, dapat
+menolak perubahan kepemilikan yang terjadi selama pembacaan; byte tersebut
+tidak diterima sebagai bukti sumber. Nilai yang dibandingkan tidak dicatat.
+Penolakan pada tahap lain tidak menerima kategori ownership. Penolakan fatal
+berikutnya tetap menghentikan capture meskipun event pertama sudah tercatat.
+Log lama yang hanya menyebut `ownership` belum membuktikan predicate tertentu;
+diagnostik ini sendiri belum membuktikan masalah live telah selesai. Penyiapan
+sesi Accounting mendahului capture dan tidak menyumbangkan bukti sumber;
+status akhir tetap memerlukan inventaris MPN, detail, drain, dan publikasi.
+
 ## Diagnostik Cek Kredensial
 
 Pada build dengan perbaikan redirect, INFO mencatat `auth.state` dan `auth.result` untuk pengecekan yang sudah membuka browser. Log versi sebelumnya hanya mempunyai fase/status terminal; `LOGIN_BLOCKED` atau `LOGIN_MANUAL` saja tidak membuktikan penyebabnya. Perubahan ini tidak menambahkan informasi ke log lama.
