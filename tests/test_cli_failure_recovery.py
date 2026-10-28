@@ -1,5 +1,4 @@
 """CLI terminal outcomes survive failed checkpoints and owned resource cleanup."""
-from copy import deepcopy
 import errno
 import json
 from pathlib import Path
