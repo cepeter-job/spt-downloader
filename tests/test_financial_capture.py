@@ -164,7 +164,7 @@ def test_induk_timeout_records_structure_without_private_dom_or_repairing_captur
     assert len(result['attachments']) == 1
     assert result['attachments'][0]['status'] == 'PARTIAL'
     assert result['attachments'][0]['relative_path'] is None
-    assert len(result['errors']) == 2 and 'Timeout' in result['errors'][0]['message']
+    assert len(result['errors']) == 2 and result['errors'][0]['message'] == 'capture_timeout'
     assert 'No inspected corporate Induk' in result['errors'][1]['message']
     assert requests == [('GET', DETAIL)] and page.evaluate('window.indukClicks') == 1
     events = [row for row in diagnostic_records(tmp_path) if row['event'] == 'capture.panel_timeout']
@@ -200,7 +200,7 @@ def test_induk_timeout_probe_failure_keeps_original_timeout_and_later_appendix(r
         # preservation instead of assuming which locator operation expired.
         error = sys.exc_info()[1]
         assert isinstance(error, driver.PlaywrightTimeoutError)
-        original_timeouts.append(str(error).split('\n')[0])
+        original_timeouts.append(type(error).__name__)
         return original_probe(*args, **kwargs)
 
     def fail_snapshot(locator, expression, arg=None, **kwargs):
@@ -218,7 +218,10 @@ def test_induk_timeout_probe_failure_keeps_original_timeout_and_later_appendix(r
     assert [section['name'] for section in result['sections']] == ['L1D']
     assert result['capture_complete'] is False
     assert len(original_timeouts) == 1
-    assert result['errors'][0]['message'] == original_timeouts[0]
+    assert original_timeouts == ['TimeoutError']
+    assert result['errors'][0]['message'] == 'capture_timeout'
+    partial = [row for row in diagnostic_records(tmp_path) if row['event'] == 'capture.partial']
+    assert partial[0]['error']['type'] == 'TimeoutError'
     assert requests == [('GET', DETAIL)]
     events = [row for row in diagnostic_records(tmp_path) if row['event'] == 'capture.panel_timeout']
     assert len(events) == 1 and events[0]['panel_state'] == 'unavailable'

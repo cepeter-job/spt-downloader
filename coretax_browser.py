@@ -2,7 +2,19 @@
 
 Modul ini tidak memasukkan password, mengambil token, atau menjalankan aksi
 penulisan. Login desktop ditangani terpisah oleh spt_desktop.auth.
+
+Exception-handling policy for this module:
+- Capture code may interact with a remote, obfuscated, single-page application.
+  Transient DOM/CDP failures are therefore common. Broad exception containment
+  is used deliberately when the only safe fallback is to degrade a capture and
+  record a diagnostic event.
+- Every `except` block must be justified in a comment: cleanup, diagnostics, or
+  an explicit graceful-degradation contract. Never swallow exceptions that can
+  hide auth, privacy, provenance or stop-signal failures.
+- Capture diagnostics use `error=exc` only through the existing closed type/frame
+  sanitizer, which never reads exception text, args, locals or payloads.
 """
+
 from spt_desktop import diagnostics
 import time
 import re
@@ -506,6 +518,15 @@ def _ppn_catalog_ready(page, check_cancel=None):
         page.wait_for_timeout(100)
 
 
+def _capture_failure_message(error):
+    """Fixed categories only; never inspect an exception's private message."""
+    if isinstance(error, PlaywrightTimeoutError):
+        return 'capture_timeout'
+    if isinstance(error, JsonSafetyError):
+        return 'capture_safety_refusal'
+    return 'capture_failed'
+
+
 @diagnostics.traced('detail')
 def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, folder=None):
     """Baca panel, field, dan tabel yang didukung; layout tak dikenal tetap parsial."""
@@ -572,7 +593,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                     errors.append({'object': name, 'message': captured['warning']})
             except Exception as exc:
                 diagnostics.record('capture.partial', level='WARNING', error=exc)
-                errors.append({'object': f'{name}/table {i+1}', 'message': str(exc).split('\n')[0]})
+                errors.append({'object': f'{name}/table {i+1}', 'message': _capture_failure_message(exc)})
         sections.append(section)
         # Another form hides Induk; read its inspected href before traversal advances.
         if financial_required and not financial_attempted and name.rsplit(' / ', 1)[-1] == 'Induk':
@@ -616,7 +637,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 capture_panel(panel, name)
             except Exception as exc:
                 diagnostics.record('capture.partial', level='WARNING', error=exc)
-                errors.append({'object': name, 'message': str(exc).split('\n')[0]})
+                errors.append({'object': name, 'message': _capture_failure_message(exc)})
 
     view = root.locator('.p-tabview').first
     try:
@@ -626,7 +647,7 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
             capture_panel(root, 'Halaman SPT')
     except Exception as exc:
         diagnostics.record('capture.partial', level='WARNING', error=exc)
-        errors.append({'object': 'SPT detail', 'message': str(exc).split('\n')[0]})
+        errors.append({'object': 'SPT detail', 'message': _capture_failure_message(exc)})
     if financial_required and not financial_attempted:
         attachments.append({'label': 'Laporan Keuangan', 'relative_path': None,
                             'status': 'PARTIAL', 'bytes': 0, 'hash': None})
@@ -807,13 +828,22 @@ class ListObserver:
             if (not trusted_origin(url) or not urlparse(url).path.startswith('/returnsheet/api/returnsheets')
                     or request.resource_type not in ('xhr', 'fetch')):
                 return
-            frame = getattr(request, 'frame', None)
-            main_frame = getattr(self.page, 'main_frame', None)
+            try:
+                frame = getattr(request, 'frame', None)
+                main_frame = getattr(self.page, 'main_frame', None)
+            except (AttributeError, PlaywrightError):
+                return
             if self.navigation_source is not None and (frame is None or main_frame is None):
                 return
             if frame is not None and main_frame is not None and frame != main_frame:
                 return
-            posted = getattr(request, 'post_data_json', None)
+            try:
+                raw_posted = getattr(request, 'post_data_json', None)
+                posted = raw_posted() if callable(raw_posted) else raw_posted
+            except PlaywrightError:
+                # The real accessor translates malformed/non-JSON bodies to a
+                # driver Error; such traffic supplies no original grid proof.
+                return
             if request.method != 'POST' or not isinstance(posted, dict):
                 return
             taxpayer = posted.get('TaxpayerAggregateIdentifier')
@@ -826,7 +856,7 @@ class ListObserver:
                     or not isinstance(posted.get('Filters'), list)):
                 return
             return posted
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError):
             # Invalid/unreadable request shapes cannot establish grid custody.
             return
 
@@ -1226,7 +1256,7 @@ class _SearchDiagnostics:
             # of their private request material. Clear them on every exit.
             self.tracked[key] = [request, 0]
             self.counts['search_requests'] += 1
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             self.observation = 'unavailable'
 
     def _response(self, response):
@@ -1246,7 +1276,7 @@ class _SearchDiagnostics:
             self.counts[f'search_http_{status // 100}xx'] += 1
             if status in (401, 403, 429):
                 self.counts[f'search_http_{status}'] += 1
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             self.observation = 'unavailable'
 
     def _failed(self, request):
@@ -1257,7 +1287,7 @@ class _SearchDiagnostics:
             if entry is not None and entry[0] is request and not entry[1] & 2:
                 entry[1] |= 2
                 self.counts['search_failed'] += 1
-        except Exception:
+        except (KeyError, TypeError, AttributeError):
             self.observation = 'unavailable'
 
     def timeout_error(self):
@@ -1613,8 +1643,9 @@ def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progre
                 raise
             except Exception as exc:
                 diagnostics.record('capture.partial', level='WARNING', error=exc)
-                errors.append({'object': label, 'message': str(exc).split('\n')[0]})
-                print(f"Inventory partial: {label}: {str(exc).splitlines()[0]}", flush=True)
+                message = _capture_failure_message(exc)
+                errors.append({'object': label, 'message': message})
+                print(f"Inventory partial: {label}: {message}", flush=True)
             finally:
                 observer.request_filter = None
                 source_routes.close()

@@ -64,7 +64,7 @@ def test_collector_rechecks_freshness_and_semantics_not_cache_timestamp(browser,
         assert len(reads) >= 2
         assert result['inventory_complete'] is (change == 'renewal'), result['errors']
         if change != 'renewal':
-            assert any('Period catalog changed' in e['message'] for e in result['errors'])
+            assert any(e['message'] == 'capture_safety_refusal' for e in result['errors'])
         assert metrics['unregistered_requests'] == metrics['detail_actions'] == 0
 
 
