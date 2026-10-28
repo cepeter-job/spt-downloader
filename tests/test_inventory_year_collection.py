@@ -44,7 +44,7 @@ def test_filtered_dom_fallback_rejects_server_ignoring_declared_filter(browser, 
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, ignore_source_filter=True) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
     assert run['inventory_complete'] is False
-    assert any('filter' in e['message'].lower() for e in run['errors'])
+    assert any(e['message'] == 'capture_safety_refusal' for e in run['errors'])
     assert metrics['detail_actions'] == 0
 
 

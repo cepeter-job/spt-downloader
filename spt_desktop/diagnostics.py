@@ -1,4 +1,12 @@
-"""Explicit, best-effort diagnostics. No raw messages, payloads or console sink."""
+"""Explicit, best-effort diagnostics. No raw messages, payloads or console sink.
+
+Exception-handling policy for this module:
+- Diagnostic instrumentation must never replace the product outcome.
+  Broad `except Exception` is intentional here for shutdown, queue, and
+  fallback-path operations, but every occurrence must be justified in a comment.
+- Diagnostic records must never contain credentials, tokens, tax IDs, or
+  response payloads.
+"""
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -337,6 +345,8 @@ def default_root(workspace=None):
     except Exception:
         # Resolving diagnostics is optional too. Relative roots are disabled,
         # never interpreted as permission to write into the working directory.
+        # Path.home/workspace resolution may also raise RuntimeError; no ordinary
+        # lookup failure may replace the CLI outcome, including logging OFF.
         return Path('.')
 
 

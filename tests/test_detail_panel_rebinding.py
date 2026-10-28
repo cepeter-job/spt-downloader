@@ -144,7 +144,7 @@ def test_panel_probe_failure_retains_safe_classification_without_exception_text(
 
     assert result['capture_complete'] is False
     assert [section['name'] for section in result['sections']] == ['L1D']
-    assert result['errors'][0]['message'].startswith('Locator.wait_for: Timeout')
+    assert result['errors'][0]['message'] == 'capture_timeout'
     assert requests == [('GET', DETAIL)]
     rows = diagnostic_records(tmp_path)
     events = [row for row in rows if row['event'] == 'capture.panel_timeout']

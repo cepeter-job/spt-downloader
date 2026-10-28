@@ -21,15 +21,16 @@ Base: `origin/main` (`3e46baec`)
 - Aturan dipertahankan minimal: F821/F822/F823 + E9/W6.
 
 ## Rencana tindak lanjut (disarankan)
-1. PR ini: tambahkan `pyproject.toml` dan pertahankan gate ruff minimum.
-2. PR `chore/ruff-bugbear`: perbaiki B007/B008/B023 (12 masalah, semua bug potensial).
+1. PR ini: tambahkan `pyproject.toml` dan pertahankan gate ruff minimum. ✅ (PR #131)
+2. PR `fix/broad-exception-handling`: batasi handler struktural dan pertahankan sanitizer tipe/frame `error=exc` yang tidak membaca pesan exception; checkpoint DOM/inventory memakai kategori kegagalan tetap. Driver probe dan lookup diagnostik tetap defensif. Verifikasi regresi dan hook opt-in wajib selesai sebelum merge.
+3. PR `chore/ruff-bugbear`: perbaiki B007/B008/B023 (12 masalah, semua bug potensial).
 3. PR `chore/ruff-simplifications`: perbaiki SIM102/SIM105/SIM117/SIM300.
 4. PR `chore/ruff-pyupgrade`: ganti `datetime.timezone.utc` -> `UTC`, format string, dsb.
 5. PR `chore/ruff-comprehensions`: C401/C408/C414/C416/C420.
 6. PR `chore/ruff-return`: RET501/502/503/505.
 7. PR `chore/ruff-ruf`: RUF005/RUF012/RUF015/RUF021/RUF100.
 8. Pertimbangkan menambahkan `mypy` setelah gate di atas bersih.
-9. Pertimbangkan pre-commit hooks setelah gate stabil.
+9. Pertimbangkan pre-commit hooks setelah gate stabil. ✅ Selesai (.pre-commit-config.yaml ditambahkan; ruff check + trailing-whitespace + check-added-large-files; opsional).
 
 ## File hasil audit
 - `C:\Users\kpp096\AppData\Local\hermes\cache\scratch\code_quality_report.md`

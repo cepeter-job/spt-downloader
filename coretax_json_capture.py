@@ -3,6 +3,11 @@
 Callbacks retain bounded driver metadata only. A completed response is read once
 on the caller's thread, checked, and written immediately. Driver body() and JSON
 parsing can still allocate a whole body; budgets are not hard RAM/interrupt caps.
+
+Exception-handling policy for this module:
+- Driver probes can fail through Playwright/CDP or an adapter. Preserve the
+  bounded unavailable-proof fallback and surrounding Stop checks.
+- Never forward exception text into captured JSON or diagnostics.
 """
 from contextlib import contextmanager, ExitStack
 import hashlib
@@ -222,6 +227,8 @@ class DetailJsonCapture:
         try:
             sample = page.evaluate(_BROWSER_CLOCK)
         except Exception:
+            # Driver probes against test doubles or CDP may raise arbitrary errors.
+            # The fallback is unavailable proof; no exception text is forwarded.
             sample = None
         self._cancel(check_cancel)
         if not isinstance(sample, dict) or set(sample) != {'epoch_ms', 'timezone'}:
@@ -278,7 +285,8 @@ class DetailJsonCapture:
         try:
             value = operation()
         except Exception:
-            value = None  # Driver failure is unavailable proof; no exception text.
+            # Driver failure is unavailable proof; no exception text is forwarded.
+            value = None
         self._cancel(check_cancel)
         return value
 
