@@ -1,4 +1,5 @@
 """CLI terminal outcomes survive failed checkpoints and owned resource cleanup."""
+from copy import deepcopy
 import errno
 import json
 from pathlib import Path
@@ -18,9 +19,11 @@ def cli(tmp_path, monkeypatch):
     state = SimpleNamespace(run=scope_run(), closed=[], failures={}, exports=0)
     folder = tmp_path / 'output'
     folder.mkdir()
-    old = json.dumps(state.run).encode()
-    (folder / 'run.json').write_bytes(old)
-    (folder / 'resume.xlsx').write_bytes(b'SYNTHETIC EXISTING WORKBOOK BYTES')
+    # Exercise real existing output scope/proof, rather than an opaque sentinel.
+    coretax.save_output(deepcopy(state.run), folder)
+    old = (folder / 'run.json').read_bytes()
+    state.workbook = (folder / 'resume.xlsx').read_bytes()
+    state.real_export = coretax.save_output
 
     def close(kind):
         state.closed.append(kind)
@@ -84,7 +87,7 @@ def test_capture_failure_checkpoints_partial_without_retrying_export(cli, stop, 
     assert saved['npwp'] == '0000000000000001' and saved['year'] == 2025
     assert cli.exports == 0
     assert cli.closed == ['page', 'context', 'driver']
-    assert (cli.folder / 'resume.xlsx').read_bytes() == b'SYNTHETIC EXISTING WORKBOOK BYTES'
+    assert (cli.folder / 'resume.xlsx').read_bytes() == cli.workbook
     assert PRIVATE not in json.dumps(saved['errors']) + capsys.readouterr().err
 
 
@@ -121,6 +124,24 @@ def test_invalid_scope_never_replaces_last_checkpoint_or_publishes(cli):
     assert cli.invoke() == 1
     assert (cli.folder / 'run.json').read_bytes() == cli.old
     assert cli.exports == 0
+
+
+@pytest.mark.parametrize('conflict', ['checkpoint', 'workbook'])
+def test_valid_existing_different_scope_is_preserved_after_export_refusal(cli, monkeypatch, tmp_path, conflict):
+    import coretax
+    previous = scope_run()
+    previous['npwp'] = '0000000000000002'
+    destination = tmp_path / 'other-scope'
+    cli.real_export(previous, destination)
+    if conflict == 'workbook':
+        # A newer matching checkpoint must not conceal the old physical scope.
+        (destination / 'run.json').write_text(json.dumps(scope_run()), encoding='utf-8')
+    before = {path.name: path.read_bytes() for path in destination.iterdir()}
+    monkeypatch.setattr(coretax, 'save_output', cli.real_export)
+    monkeypatch.setattr(coretax, 'collect_details', lambda *a, **k: None)
+    monkeypatch.setattr(coretax, 'collect_mpn', lambda *a, **k: None)
+    assert cli.invoke('--output', str(destination)) == 1
+    assert {path.name: path.read_bytes() for path in destination.iterdir()} == before
 
 
 @pytest.mark.parametrize('stop', [False, True])
