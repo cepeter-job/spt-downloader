@@ -150,6 +150,33 @@ def test_interrupt_during_cleanup_takes_precedence_over_capture_error(cli):
     assert cli.exports == 0
 
 
+def test_cleanup_interrupt_is_not_hidden_by_later_cleanup_failure(cli):
+    cli.failures.update(page=KeyboardInterrupt(PRIVATE), context=PermissionError(PRIVATE),
+                        driver=RuntimeError(PRIVATE))
+    assert cli.invoke() == 130
+    assert cli.closed == ['page', 'context', 'driver']
+    assert cli.exports == 0
+
+
+def test_interrupt_during_checkpoint_returns_stop_and_keeps_old_bytes(cli, monkeypatch):
+    original = Path.open
+    def opening(path, mode='r', *args, **kwargs):
+        if path.name.startswith('run.json.') and mode == 'xb':
+            raise KeyboardInterrupt(PRIVATE)
+        return original(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, 'open', opening)
+    assert cli.invoke() == 130
+    assert (cli.folder / 'run.json').read_bytes() == cli.old
+    assert cli.exports == 0
+
+
+def test_already_closed_page_is_not_closed_again(cli):
+    cli.page.is_closed = lambda: True
+    assert cli.invoke() == 1
+    assert cli.closed == ['context', 'driver']
+    assert cli.exports == 0
+
+
 @pytest.mark.parametrize('failure', ['startup', 'inventory'])
 def test_failure_before_inventory_does_not_overwrite_old_checkpoint(cli, failure):
     cli.failures[failure] = RuntimeError(PRIVATE)
