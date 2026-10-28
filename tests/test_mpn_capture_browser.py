@@ -20,7 +20,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            session_redirect=False, withheld_fresh_sources=False, request_language='en-US',
            delayed_page_size=False, tooltip_action=False, delayed_dialog=False,
            body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
-           parent_amounts=None):
+           parent_amounts=None, contradictory_parent=None):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -51,6 +51,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         elif duplicate_parent == 'distinct-reference':
             second['ReferenceNumber'] = 'SYNTHETIC SECOND REF'
         parents.append(second)
+        if contradictory_parent=='tin':
+            second['TaxpayerTIN']='0000000000000999'
+        elif contradictory_parent=='cancelled':
+            second['IsCancelled']=True
     if parent_amounts is not None:
         assert len(parents)==len(parent_amounts)
         for parent, amount in zip(parents,parent_amounts):
@@ -489,6 +493,44 @@ def test_all_repeated_parent_numbers_are_reconciled_before_any_detail_action(bro
                     "cell=>cell.textContent='999,00'")
             return original(self,header)
         monkeypatch.setattr(module.AccountingUI,'_bind_header',changed)
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
+
+
+@pytest.mark.parametrize('contradiction', ['tin','cancelled'])
+@pytest.mark.parametrize('reference_type', ['ICT_RCIT',None])
+def test_contradictory_participating_source_peer_is_fatal_before_first_detail(
+        browser,tmp_path,monkeypatch,contradiction,reference_type):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type=reference_type,
+                parent_amounts=('1250','2500'),contradictory_parent=contradiction) as (page,metrics):
+        run=scope_run()
+        with pytest.raises(MpnSafetyError):
+            collect_mpn(page,run,tmp_path)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert metrics['detail']==[]
+
+
+@pytest.mark.parametrize('unsupported_first', [True,False])
+@pytest.mark.parametrize('changed', ['number','caption'])
+def test_unproved_peer_cannot_hide_another_peers_known_visible_contradiction(
+        browser,tmp_path,monkeypatch,unsupported_first,changed):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    import coretax_mpn_ui as module
+    original=module.AccountingUI._bind_header
+    amounts=('1250.01','2500') if unsupported_first else ('1250','2500.01')
+    with portal(browser,monkeypatch,duplicate_parent='ambiguous',reference_type='ICT_RCIT',
+                parent_amounts=amounts) as (page,metrics):
+        def changed_peer(self,header):
+            self.list_owner.locator('tbody tr').nth(1 if unsupported_first else 0).locator('td').nth(
+                10 if changed=='number' else 3).evaluate("cell=>cell.textContent='999'")
+            return original(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',changed_peer)
         run=scope_run()
         with pytest.raises(MpnSafetyError):
             collect_mpn(page,run,tmp_path)

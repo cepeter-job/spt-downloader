@@ -46,3 +46,17 @@ def test_equivalent_original_lexemes_cannot_manufacture_numeric_uniqueness():
     second['CurrencyAmount']=mpn.MpnNumber('1250.000')
     second['AmountLeft']=mpn.MpnNumber('-0')
     assert mpn.parent_numeric_binding(rendered(),first)==mpn.parent_numeric_binding(rendered(),second)
+
+
+@pytest.mark.parametrize(('bad_column','changed_column','kind'), [
+    (7,10,'source'),(7,10,'display'),(11,7,'source'),(11,7,'display')])
+def test_unproved_field_cannot_hide_an_independently_known_number_contradiction(bad_column,changed_column,kind):
+    row=rendered();data=source()
+    fields={7:'CurrencyAmount',8:'CurrencyAmountLeft',9:'ExchangeRate',10:'Amount',11:'AmountLeft'}
+    if kind=='source':
+        data[fields[bad_column]]=None
+    else:
+        row[bad_column]='SYNTHETIC_UNSUPPORTED_NUMBER'
+    row[changed_column]='999,00'
+    with pytest.raises(mpn.MpnSafetyError):
+        mpn.parent_numeric_binding(row,data)
