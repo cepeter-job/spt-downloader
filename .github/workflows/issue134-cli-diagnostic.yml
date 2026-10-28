@@ -1,0 +1,41 @@
+name: Issue134 CLI recovery diagnostic
+on:
+  push:
+    branches: [codex/issue134-cli-recovery]
+permissions:
+  contents: read
+jobs:
+  focused:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          python-version: '3.14.8'
+          enable-cache: true
+          cache-python: true
+          save-cache: false
+      - name: Prepare exact locked synthetic test runtime
+        run: |
+          uv python install cpython-3.14.8-linux-x86_64-gnu --no-bin --no-registry
+          uv venv --managed-python --python 3.14.8+gil .venv
+          uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
+          uv pip check --python .venv/bin/python
+      - name: Exercise CLI failure, Stop, publication and MPN flow
+        run: >-
+          .venv/bin/python -m pytest tests/test_cli_failure_recovery.py
+          tests/test_output_safety.py tests/test_mpn_job_flow.py
+          --basetemp "$RUNNER_TEMP/issue134-tests"
+          --junitxml "$RUNNER_TEMP/issue134-results.xml"
+          -o junit_logging=no -o junit_log_passing_tests=false
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: issue134-cli-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue134-results.xml
+          if-no-files-found: error
