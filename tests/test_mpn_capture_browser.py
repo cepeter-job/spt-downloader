@@ -22,7 +22,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
            parent_amounts=None, contradictory_parent=None, pending_child_navigation=None,
            dropdown_close_delay=0, catalog_response=None, parent_detail_codes=None,
-           parent_detail_display=None):
+           parent_detail_display=None, dialog_close_delay=0):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -79,6 +79,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     async function detail(id){const host=document.getElementById('isShowDetail');host.style.display='block';const response=await fetch('/accounting/api/taxpayeraccounting/listdetail',{method:'POST',body:JSON.stringify(payload('detail',id,[]))});const body=await response.json();const table=host.querySelector('table');table.tBodies[0].replaceChildren();for(const row of body.Payload.Data){let tr=document.createElement('tr');cells(tr,['01-02-2026','01-02-2026',row.TransactionNumber,row.AccountingTypeCode,row.AccountingTypeDetailCode,number(row.CurrencyAmount),number(row.HeaderExchangeRate),number(row.Amount),row.ReferenceNumber]);table.tBodies[0].append(tr);}}
     document.addEventListener('DOMContentLoaded',()=>{head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);head(document.querySelector('#isShowDetail table'),DETAILHEAD);document.querySelector('form').onsubmit=e=>{e.preventDefault();loadList();};for(const id of ['ShowZeroValue','ShowCancelledTransaction'])document.querySelector('#'+id+' .p-dropdown-trigger').onclick=()=>dropdown(id);document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);});
     '''
+    if dialog_close_delay:
+        main = main.replace("document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';",
+            "document.querySelector('.p-dialog-header-close').onclick=()=>{window.syntheticCloseClicks=(window.syntheticCloseClicks||0)+1;"
+            "setTimeout(()=>document.getElementById('isShowDetail').style.display='none',"+str(dialog_close_delay)+");};")
     if dropdown_close_delay != 0:
         removal = ("panel.classList.add('synthetic-closing');" if dropdown_close_delay is None else
                    "panel.classList.add('synthetic-closing');setTimeout(()=>panel.remove()," + str(dropdown_close_delay) + ");")
@@ -523,6 +527,51 @@ def test_inspected_detail_click_does_not_wait_for_unrelated_child_navigation_or_
         assert len(metrics['detail'])==1 and len(metrics['pending_children'])==1
         assert page.evaluate('window.syntheticActionClicks')==1
         assert metrics['unknown']==0
+
+
+@pytest.mark.parametrize('delay_ms,complete', [(1500,True),(5500,False)])
+def test_single_detail_close_allows_bounded_visibility_completion(
+        browser,tmp_path,monkeypatch,delay_ms,complete):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser,monkeypatch,dialog_close_delay=delay_ms) as (page,metrics):
+        run=scope_run()
+        collect_mpn(page,run,tmp_path)
+        assert run['complete'] is complete
+        assert run['mpn']['status']==('COMPLETE' if complete else 'PARTIAL')
+        assert page.evaluate('window.syntheticCloseClicks')==1
+        assert len(metrics['detail'])==1 and metrics['unknown']==0
+
+
+@pytest.mark.parametrize('refusal', ['stop','source'])
+def test_hidden_dialog_wait_reconciles_callback_refusal_before_success(
+        browser,tmp_path,monkeypatch,refusal):
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn import MpnSafetyError
+    from coretax_browser import CaptureCancelled
+    import coretax_mpn_ui as module
+    active=[]; stopped=[]
+    original_bind=module.AccountingUI._bind_header
+    with portal(browser,monkeypatch) as (page,metrics):
+        def bind(self,header):
+            active.append(self)
+            return original_bind(self,header)
+        monkeypatch.setattr(module.AccountingUI,'_bind_header',bind)
+        locator_type=type(page.locator('body'))
+        original_wait=locator_type.wait_for
+        def waited(locator,*args,**kwargs):
+            result=original_wait(locator,*args,**kwargs)
+            if active and kwargs.get('state')=='hidden':
+                if refusal=='source': active[-1].source_safety=True
+                else: stopped.append(True)
+            return result
+        monkeypatch.setattr(locator_type,'wait_for',waited)
+        def stop():
+            if stopped: raise CaptureCancelled('SYNTHETIC_STOP')
+        run=scope_run()
+        with pytest.raises(MpnSafetyError if refusal=='source' else CaptureCancelled):
+            collect_mpn(page,run,tmp_path,check_cancel=stop)
+        assert not run['complete'] and run['mpn']['status']=='PARTIAL'
+        assert len(metrics['detail'])==1
 
 
 @pytest.mark.parametrize('action', ['open','close'])
