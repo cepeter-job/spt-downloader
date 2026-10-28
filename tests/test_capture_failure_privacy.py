@@ -54,3 +54,18 @@ def test_stop_from_actual_table_capture_is_not_demoted_to_partial(routed, tmp_pa
         assert log.flush()
     assert not any(r['event'] == 'capture.partial' for r in diagnostic_records(tmp_path / 'logs'))
     assert requests == [('GET', DETAIL)]
+
+
+@pytest.mark.parametrize('body', ['{', 'SYNTHETIC_NON_JSON_BODY'])
+def test_real_unreadable_request_body_cannot_establish_grid_custody(routed, body):
+    page, _ = routed(control='')
+    endpoint = driver.ORIGIN + '/returnsheet/api/returnsheets/list'
+    page.route(endpoint, lambda route: route.fulfill(body='{}', content_type='application/json'))
+    with page.expect_request(endpoint) as observed:
+        page.evaluate('''([url, body]) => fetch(url, {method:'POST',
+            headers:{'Content-Type':'application/json'},body}).then(reply=>reply.text())''',
+            [endpoint, body])
+    observer = driver.ListObserver.__new__(driver.ListObserver)
+    observer.page = page
+    observer.navigation_source = None
+    assert observer._grid_request(observed.value, endpoint) is None
