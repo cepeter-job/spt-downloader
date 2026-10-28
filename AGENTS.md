@@ -101,6 +101,13 @@ body, 256MiB raw evidence and 10000/10MiB canonical rows; a reached capture cap
 stays PARTIAL. New MPN/resume modules and the sanitized resource belong only to
 the explicit worker allowlist; GUI dependencies and native SPT gates are intact.
 
+MPN physical verification reads the fixed header and bounded ordered body in
+one worksheet stream and the fixed Audit scope in one bounded stream, including
+read-only workbooks. Keep exact dimensions, every value/literal type, empty
+normalization, precision, scope, provenance, evidence and status checks. Refuse
+missing/extra iterator rows. Do not return to per-cell read-only XML rescans or
+treat streaming as new capture, completion or publication permission.
+
 The pure current-only L11-A helper grants no native admission or dispatch.
 Require explicit null predecessor, four complete normalized endpoint inventories,
 current Facilities/Recapitulation, exact five-table headers with no footers and

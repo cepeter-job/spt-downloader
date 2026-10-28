@@ -1,6 +1,7 @@
 """Separate MPN workbook and physical scope/row proof; no raw Accounting archive."""
 from copy import deepcopy
 from decimal import Decimal
+from itertools import zip_longest
 import json
 import math
 from pathlib import Path
@@ -166,20 +167,24 @@ def read_mpn_proof(workbook):
         if any(ws.sheet_state != 'visible' for ws in workbook):
             raise ValueError('MPN has hidden sheets')
         sheet, audit = workbook['MPN'], workbook['Audit']
-        if (sheet.max_row != 4 + len(proof['rows']) or sheet.max_column != len(COLUMNS)
-                or [sheet.cell(4, col).value for col in range(1, len(COLUMNS) + 1)] != [label for _, label in COLUMNS]):
+        if sheet.max_row != 4 + len(proof['rows']) or sheet.max_column != len(COLUMNS):
             raise ValueError('MPN physical headers/count differ from proof')
-        for ordinal, row in enumerate(proof['rows'], 5):
-            for col, value in enumerate(_row_values(row), 1):
+        physical = iter(sheet.iter_rows(min_row=4, max_row=4 + len(proof['rows']), max_col=len(COLUMNS)))
+        if [cell.value for cell in next(physical, ())] != [label for _, label in COLUMNS]:
+            raise ValueError('MPN physical headers/count differ from proof')
+        for actual_row, row in zip_longest(physical, proof['rows']):
+            if actual_row is None or row is None or len(actual_row) != len(COLUMNS):
+                raise ValueError('MPN physical row count differs from proof')
+            for actual, value in zip(actual_row, _row_values(row)):
                 validate_excel_value(value, 'MPN proof cell')
-                actual = sheet.cell(ordinal, col)
                 # openpyxl reloads a saved empty literal as None.
                 if (actual.value != (None if value == '' else value)
                         or isinstance(value, str) and value != '' and actual.data_type != 's'):
                     raise ValueError('MPN physical row differs from its original lexical proof')
         expected = _audit_entries(proof)
-        if (any(audit.cell(row, 1).value != label or audit.cell(row, 2).value != value
-                for row, (label, value) in enumerate(expected, 2)) or audit['B2'].data_type != 's'):
+        audit_rows = list(audit.iter_rows(min_row=2, max_row=1 + len(expected), max_col=2))
+        if ([tuple(cell.value for cell in row) for row in audit_rows] != expected
+                or not audit_rows or audit_rows[0][1].data_type != 's'):
             raise ValueError('MPN physical audit scope differs from proof')
         return proof
     except (ValueError, TypeError, KeyError, AttributeError) as error:
