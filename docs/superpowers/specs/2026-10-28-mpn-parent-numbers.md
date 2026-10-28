@@ -40,9 +40,13 @@ uses the operator's existing explicit exception and new private folders.
 The next owned live probe exposed a separate post-action driver navigation wait:
 the inspected detail click had completed and the owned response arrived, but
 Playwright's implicit navigation wait exceeded its one-second action timeout.
-Open and close each click exactly once with no_wait_after=True. Retain the
+Open and close each click exactly once with no_wait_after=True. A subsequent
+probe exposed a separate timeout during actual close dispatch, before the
+driver reported action completion. Give each inspected detail click a bounded
+five seconds; real synthetic dispatch stalls distinguish completion below that
+bound from PARTIAL beyond it. Never repeat either action. Retain the
 explicit owned response, Document/route/source checks, five-second dialog
-readiness and hidden-dialog wait. Reconcile callback-pumped Stop and source or
+readiness and one-second hidden-dialog wait. Reconcile callback-pumped Stop and source or
 observer safety flags through the existing _observer_call for both clicks and
 the hidden wait, including when the driver RPC raises. Never retry an action
 that may already have happened or admit a new main-frame navigation.

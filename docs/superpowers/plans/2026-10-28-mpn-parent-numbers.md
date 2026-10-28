@@ -58,6 +58,8 @@ The next live probe proved click completion followed by an implicit navigation
 wait timeout. Runner regressions must reproduce the driver boundary and fatal
 callback precedence before implementation. Use the existing _observer_call for
 the single inspected open/close clicks with no_wait_after=True and for the
-hidden-dialog wait. Keep all action budgets and explicit ownership/response/
+hidden-dialog wait. A separately reproduced actual-dispatch timeout increases
+only the two inspected detail clicks to five seconds; retain single actions,
+the one-second hidden wait, and all explicit ownership/response/
 readiness gates. Verify focused GREEN and refresh full exact-head CI, then rerun
 the same-job owned diagnostic before claiming live acceptance.
