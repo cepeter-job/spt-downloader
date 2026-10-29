@@ -29,7 +29,8 @@ unchanged-file hashes plus existing suites cover the remaining boundaries.
 - [ ] Run a branch-only diagnostic probe on a GitHub runner against the original
   base and candidate. Expected: identical effective coverage policy/data path,
   explicit missing-environment refusal, unchanged noncoverage TOML and lint/CI
-  bytes; historical TOML policy lacks the runner data path, candidate rejects it.
+  bytes; historical TOML lacks the runner data path, while candidate TOML has no
+  repository coverage policy and selects upstream defaults when explicitly used.
 - [ ] Verify exact-head full Windows/portable CI, inventory union and packaged
   artifact evidence. Expected: no failures/errors/skips or lost cases.
 - [ ] Obtain one fresh whole-branch review; handle material findings and review
