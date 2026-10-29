@@ -439,6 +439,16 @@ Accounting's route owner may mount after DOMContentLoaded: wait inside one
 detail DOM shape/readiness uses the complete owned JSON detail inventory; dialog,
 paginator, source and identity contradictions retain their independent gates.
 
+## Issue #143 diagnostics boundary
+
+Corporate native refusals may emit only the finite observer-stage enum and a
+bounded tab ordinal before the existing whole-record DOM fallback. MPN capture
+failures may emit a finite collection-stage enum and sanitized exception
+type/frames. These fields are diagnostic evidence, not capture proof: preserve
+every original source pin, privacy/identity gate, Stop, checkpoint and PARTIAL
+outcome. Never log tab captions, URLs, taxpayer values or exception messages.
+See `docs/diagnostik.md`; synthetic tests alone do not certify the live case.
+
 ## Verification
 
 Capture table/panel/view failures and the inventory catch use only fixed

@@ -69,6 +69,27 @@ diagnostik ini sendiri belum membuktikan masalah live telah selesai. Penyiapan
 sesi Accounting mendahului capture dan tidak menyumbangkan bukti sumber;
 status akhir tetap memerlukan inventaris MPN, detail, drain, dan publikasi.
 
+### Tahap penolakan Corporate JSON / MPN (#143)
+
+Pada build setelah perbaikan observabilitas #143, `corporate.observe_unavailable`
+menandai kegagalan eligibilitas observer Corporate sebelum fallback penuh DOM
+dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
+`panel`, `form`, `l3`, `l11a`, `l1d`, `l8`, `l7`,
+`l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
+nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
+Corporate verified. Kode tahap tidak menunjukkan detail penolakan di dalam
+sub-observer; verifikasi sumber, identitas, dan pembatasan tetap wajib.
+
+`mpn.capture_failed` mencatat kegagalan terminal MPN dengan enum
+`mpn_capture_stage`: `session` (pembuatan UI termasuk inisialisasi),
+`open` (kesiapan UI), `parent_inventory`, `parent_detail`, atau
+`final_drain`. `error` hanya kelas exception dan frame terpilih melalui
+sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
+penolakan kepemilikan sumber; event baru bukan penggantinya. Tidak ada
+perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
+atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;
+perbandingan memerlukan build yang benar-benar menjalankan versi ini.
+
 ## Diagnostik Cek Kredensial
 
 Pada build dengan perbaikan redirect, INFO mencatat `auth.state` dan `auth.result` untuk pengecekan yang sudah membuka browser. Log versi sebelumnya hanya mempunyai fase/status terminal; `LOGIN_BLOCKED` atau `LOGIN_MANUAL` saja tidak membuktikan penyebabnya. Perubahan ini tidak menambahkan informasi ke log lama.

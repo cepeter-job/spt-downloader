@@ -505,6 +505,16 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
+    from spt_desktop import diagnostics
+    stage = 'build'
+    ordinal_safe = None
+
+    def unavailable(error=None):
+        # A finite stage and an observed ordinal, never tab text, values,
+        # URL, source body or exception message. Does not grant JSON admission.
+        diagnostics.record('corporate.observe_unavailable', level='WARNING',
+                           corporate_observer_stage=stage, form_ordinal=ordinal_safe, error=error)
+        return None
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
     selected = _corporate_selected(record, scope)
@@ -513,73 +523,83 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
         digest = page.evaluate(_BUILD_HASH, CIT_SOURCE_URL)
         _check_cancel(check_cancel)
         if digest != approved_digest:
-            return None
+            return unavailable()
+        stage = 'tabs'
         view, tabs = _tabs(page)
         if not tabs.count():
-            return None
+            return unavailable()
         forms, names = [], set()
         for ordinal in range(tabs.count()):
             _check_cancel(check_cancel)
+            ordinal_safe = ordinal
+            stage = 'tab'
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
                 continue
             name = tab.inner_text().strip()
             if name not in FORMS or name in names:
-                return None
+                return unavailable()
             names.add(name)
+            stage = 'panel'
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
-                return None
+                return unavailable()
             _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
+            stage = 'form'
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
-                return None
+                return unavailable()
             binding = {'name':name, 'paths':[[root]], 'grids':[]}
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
             if name == 'L3':
+                stage = 'l3'
                 if 'Induk' not in names:
-                    return None
+                    return unavailable()
                 inspected = _observe_l3(page, form, capture, digest, record, max_pages, check_cancel)
                 if inspected is None:
-                    return None
+                    return unavailable()
                 binding.update(inspected)
             if name == 'L11-A':
+                stage = 'l11a'
                 if 'Induk' not in names:
-                    return None
+                    return unavailable()
                 inspected = _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel)
                 if inspected is None:
-                    return None
+                    return unavailable()
                 binding.update(inspected)
             if name == 'L1-D':
+                stage = 'l1d'
                 if 'Induk' not in names:
-                    return None
+                    return unavailable()
                 projection = _observe_l1d(page, form, capture, digest, check_cancel)
                 if projection is None:
-                    return None
+                    return unavailable()
                 binding['projection'] = projection
             if name == 'L8':
+                stage = 'l8'
                 if 'Induk' not in names:
-                    return None
+                    return unavailable()
                 projection = _observe_l8(page, form, capture, digest, check_cancel)
                 if projection is None:
-                    return None
+                    return unavailable()
                 binding['projection'] = projection
             if name == 'L7':
+                stage = 'l7'
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
-                    return None
+                    return unavailable()
                 main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
                 _check_cancel(check_cancel)
                 if main_digest != BUILD_DIGESTS.get(MAIN_SOURCE):
-                    return None
+                    return unavailable()
                 grid = form.locator('rsh-citr-l7-grid1')
                 if (grid.count() != 1 or grid.locator('p-table').count() != 1
                         or grid.locator('table').count() != 1 or form.locator('table').count() != 1):
-                    return None
+                    return unavailable()
                 metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
                 locale = page.evaluate('() => navigator.language')
                 binding['projection'] = {'kind': 'corporate-l7-v1', 'builds': {
@@ -587,23 +607,24 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
             if name == 'L11-C':
+                stage = 'l11c'
                 from coretax_corporate_projection import L11C_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
                 from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or L11C_BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
-                    return None
+                    return unavailable()
                 main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
                 _check_cancel(check_cancel)
                 vendor_digest = page.evaluate(_BUILD_HASH, VENDOR_SOURCE)
                 _check_cancel(check_cancel)
                 if (main_digest != L11C_BUILD_DIGESTS.get(MAIN_SOURCE)
                         or vendor_digest != L11C_BUILD_DIGESTS.get(VENDOR_SOURCE)):
-                    return None
+                    return unavailable()
                 grid = form.locator('rshshr-citr-l11c-form-grid1')
                 if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
                         or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1
                         or form.locator('table').count() != 1):
-                    return None
+                    return unavailable()
                 metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
                 environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
                 references = []
@@ -618,14 +639,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'route': page.url, **environment, 'references': references,
                     'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
+            stage = 'grid'
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)
                 if grids.count() != len(groups):
-                    return None
+                    return unavailable()
                 for index, group in enumerate(groups):
                     table = grids.nth(index).locator('p-table')
                     if table.count() != 1 or not _turn_grid(page, table, max_pages, check_cancel):
-                        return None
+                        return unavailable()
                     endpoint = ORIGIN+'/returnsheet/api/loadcit/'+suffix
                     pages, seen = [], set()
                     for event in capture.request_observations():
@@ -633,41 +655,44 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         if event['url'] != endpoint or event['method'] != 'POST' or not isinstance(request,dict):
                             continue
                         if 'ReturnSheetRecordId' not in request:
-                            return None
+                            return unavailable()
                         if request['ReturnSheetRecordId'] != record['record_id']:
                             raise JsonSafetyError('Observed grid belongs to a different selected return')
                         if group is not None and request.get('GroupType') != group:
                             continue
                         if name == 'L4':
                             if 'PeriodYear' not in request:
-                                return None
+                                return unavailable()
                             period = record.get('source_fields', {}).get('TaxPeriodCode')
                             # DOM listing fallback has no native period binding.
                             # Caller request/response checks still reject conflicts
                             # before allowing whole-DOM fallback; do not invent one.
                             if period is None:
-                                return None
+                                return unavailable()
                             if request['PeriodYear'] != period[-4:]:
                                 raise JsonSafetyError('Observed grid year contradicts selected period')
                         first, rows = request.get('First'), request.get('Rows')
                         if type(first) is not int or first < 0 or type(rows) is not int or rows <= 0:
-                            return None
+                            return unavailable()
                         key = json.dumps(request,sort_keys=True)
                         if key not in seen:
                             seen.add(key)
                             pages.append({'request_json':request,'offset':first})
                     if not pages:
-                        return None
+                        return unavailable()
                     label = name+'/'+suffix+(('/'+group) if group else '')
                     binding['grids'].append({'name':label,'endpoint':endpoint,
                         'pages':sorted(pages,key=lambda item:item['offset'])})
             forms.append(binding)
-        return forms if 'Induk' in names else None
+        if 'Induk' in names:
+            return forms
+        stage = 'induk'
+        return unavailable()
     except JsonSafetyError:
         raise
-    except Exception:
+    except Exception as error:
         _check_cancel(check_cancel)
-        return None
+        return unavailable(error)
 
 
 def capture_financial(page, *, record, folder, check_cancel=None):

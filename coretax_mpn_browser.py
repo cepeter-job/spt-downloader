@@ -440,10 +440,14 @@ No partial DOM page is combined with another source. Raw pages stay private.
         budget += len(raw)
         return item
 
+    from spt_desktop import diagnostics
     seen_headers, seen_details, provenance = {}, {}, {}
+    capture_stage = 'session'
     try:
         with AccountingUI(page, run, folder, check_cancel=check_cancel) as ui:
+            capture_stage = 'open'
             ui.open()
+            capture_stage = 'parent_inventory'
             value['source_pins'] = deepcopy(ui.pins)
             catalog_saved = False
             def retain_catalog():
@@ -480,6 +484,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
                     value['headers'] += 1
                     detail_rows, detail_events, dom_pages = [], [], []
                     detail_first, detail_total, detail_page_count, detail_mode = 0, None, 0, None
+                    capture_stage = 'parent_detail'
                     for detail_snapshot, dom in ui.detail_pages(header, max_pages):
                         stop()
                         retain_catalog()
@@ -551,6 +556,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
                             provenance[detail_id] = entry
                         else:
                             value['coverage']['excluded'] += 1
+                    capture_stage = 'parent_inventory'
                     if value['headers'] % 25 == 0 or time.monotonic() - last_checkpoint >= 5:
                         checkpoint()
                         last_checkpoint = time.monotonic()
@@ -564,14 +570,19 @@ No partial DOM page is combined with another source. Raw pages stay private.
             value['inventory_complete'] = True
             value['details_complete'] = True
             retain_catalog()
+            capture_stage = 'final_drain'
             ui.finish()
             value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
-    except MpnSafetyError:
+    except MpnSafetyError as error:
+        diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
+                           mpn_capture_stage=capture_stage, error=error)
         value['status'] = 'PARTIAL'
         value['audit'].append({'message': 'Identitas atau snapshot MPN berubah; pengambilan ditolak.'})
         checkpoint()
         raise
-    except (MpnUnsupported, PlaywrightError):
+    except (MpnUnsupported, PlaywrightError) as error:
+        diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
+                           mpn_capture_stage=capture_stage, error=error)
         value['status'] = 'PARTIAL'
         value['audit'].append({'message': 'Pengambilan MPN belum lengkap; lihat checkpoint privat dan coba kembali.'})
     except KeyboardInterrupt:
