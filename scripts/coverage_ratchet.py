@@ -180,6 +180,34 @@ def data_files(root, mode):
     return result
 
 
+def combine_data(paths, destination):
+    """Read and consume every branch database, failing rather than skipping one.
+
+    coverage's CLI combine can warn and skip an unreadable input. Direct data
+    updates propagate each read/update failure, with no partial success path.
+    """
+    from coverage import CoverageData
+    from coverage.exceptions import CoverageException
+
+    if destination.exists():
+        raise ValueError('Combined coverage destination must be fresh')
+    parts = []
+    try:
+        for path in paths:
+            part = CoverageData(basename=str(path))
+            part.read()
+            if (not part.has_arcs() or not part.measured_files()
+                    or not any(part.arcs(name) for name in part.measured_files())):
+                raise ValueError('Every Windows input must contain branch measurements')
+            parts.append(part)
+        combined = CoverageData(basename=str(destination))
+        for part in parts:
+            combined.update(part)
+        combined.write()
+    except CoverageException:
+        raise ValueError('A required Windows coverage input could not be consumed') from None
+
+
 def _git(*args):
     return subprocess.check_output(['git', '--no-pager', *args]).decode('utf-8')
 
@@ -230,8 +258,7 @@ def main():
     data = args.output / '.coverage-windows'
     env = dict(os.environ, COVERAGE_FILE=str(data))
     command = [sys.executable, '-m', 'coverage']
-    subprocess.run([*command, 'combine', '--rcfile=.coveragerc', '--keep',
-                    '--data-file', str(data), *map(str, paths)], check=True, env=env)
+    combine_data(paths, data)
     for format_name in ('json', 'xml'):
         subprocess.run([*command, format_name, '--rcfile=.coveragerc',
                         '-o', str(args.output / ('coverage-windows.' + format_name))], check=True, env=env)

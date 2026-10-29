@@ -11,6 +11,14 @@ node and the fixed disjoint partition before combining only its declared files.
 Missing, reversed, failed, foreign or incomplete evidence cannot authorize a
 package. Portable data is never an input to the Windows ratchet.
 
+Each original raw database must independently load with nonempty branch
+measurements. Combination uses a direct data update for every declared input;
+read/update errors fail the job. The coverage CLI's warning-and-skip combine
+behavior is deliberately not used. Actual pinned-database regressions cover a
+nonempty corrupt shard, an empty database and a line-only database, even when the
+other shard alone exceeds deliberately low floors. A positive case proves both
+separate line contributions survive into the published gate report.
+
 The Windows Python parent measures native/browser orchestration and in-process
 worker logic. Isolated managed-worker/bootstrap subprocesses and browser
 JavaScript remain unmeasured by this Python report. Their existing source/frozen,

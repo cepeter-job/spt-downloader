@@ -2,6 +2,8 @@
 from copy import deepcopy
 import importlib
 import importlib.util
+import json
+import sys
 
 import pytest
 
@@ -161,3 +163,56 @@ def test_git_diff_keeps_added_production_lines_and_ignores_deleted_or_test_lines
         'coretax_example.py': {2, 3}, 'spt_desktop/example.py': {4}}
     with pytest.raises(ValueError):
         gate().changed_lines('--option', head)
+
+
+def raw_inputs(tmp_path, monkeypatch, bad=None):
+    """Real pinned coverage databases, without executing the synthetic source."""
+    from coverage import CoverageData
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / '.coveragerc').write_text('[run]\nbranch=True\nrelative_files=True\nsource=.\n', encoding='utf-8')
+    (tmp_path / 'coretax_fixture.py').write_text('value = 1\nvalue += 1\n', encoding='utf-8')
+    _, shards = evidence()
+    for index in (0, 1):
+        folder = tmp_path / ('shard-' + str(index))
+        folder.mkdir()
+        (folder / 'test-inventory.json').write_text(json.dumps(shards[index]), encoding='utf-8')
+        path = folder / ('.coverage.shard-' + str(index))
+        if index == 1 and bad == 'corrupt':
+            path.write_bytes(b'nonempty corrupt coverage input')
+            continue
+        data = CoverageData(basename=str(path))
+        if index == 1 and bad == 'line-only':
+            data.add_lines({'coretax_fixture.py': [2]})
+        elif index == 1 and bad == 'empty':
+            data.add_arcs({})
+        else:
+            line = index + 1
+            data.add_arcs({'coretax_fixture.py': [(-1, line), (line, -1)]})
+        data.write()
+    rules = {'schema': 1, 'totals': {'line': 1, 'branch': 0},
+             'modules': {'coretax_fixture.py': {'line': 1, 'branch': 0}}, 'diff_line': 80}
+    (tmp_path / 'policy.json').write_text(json.dumps(rules), encoding='utf-8')
+    monkeypatch.setattr(sys, 'argv', ['coverage_ratchet', '--root', str(tmp_path),
+        '--mode', 'two-shards', '--python-version', VERSION, '--commit', COMMIT,
+        '--run-id', RUN_ID, '--run-attempt', RUN_ATTEMPT,
+        '--policy', str(tmp_path / 'policy.json'), '--output', str(tmp_path / 'proof')])
+
+
+@pytest.mark.parametrize('bad', ['corrupt', 'empty', 'line-only'])
+def test_passing_inventories_cannot_hide_an_unreadable_or_unmeasured_raw_shard(tmp_path, monkeypatch, bad):
+    raw_inputs(tmp_path, monkeypatch, bad)
+    # One surviving half exceeds the intentionally low floor. Input custody must
+    # reject the bad second half, regardless of that partial report's percentage.
+    with pytest.raises(ValueError):
+        gate().main()
+    assert not (tmp_path / 'proof' / 'coverage-gate.json').exists()
+
+
+def test_both_real_raw_shards_contribute_to_the_published_gate(tmp_path, monkeypatch):
+    raw_inputs(tmp_path, monkeypatch)
+    gate().main()
+    result = json.loads((tmp_path / 'proof' / 'coverage-gate.json').read_text(encoding='utf-8'))
+    assert result['measured']['totals']['line'] == 100
+    combined = json.loads((tmp_path / 'proof' / 'coverage-windows.json').read_text(encoding='utf-8'))
+    assert combined['files']['coretax_fixture.py']['executed_lines'] == [1, 2]
