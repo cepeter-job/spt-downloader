@@ -43,6 +43,12 @@ ENUMS = {
         'page_route', 'request_url', 'resource_kind'}),
     'corporate_observer_stage': frozenset({'build', 'tabs', 'tab', 'panel', 'form',
         'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
+    'corporate_l3_reason': frozenset({
+        'induk_order', 'cit_digest', 'lifetime_start', 'script_providers',
+        'provider_digest_or_table_count', 'form_shape', 'grid_shape',
+        'grid_ownership', 'table_structure', 'paginator', 'stable_table_metadata',
+        'request_shape', 'footer_request', 'grid_offset', 'grid_or_footer_missing',
+        'reference_request', 'lifetime_end'}),
     'mpn_capture_stage': frozenset({'session', 'open', 'parent_inventory',
         'parent_detail', 'final_drain'}),
     'mpn_ui_stage': frozenset({'navigation', 'owner', 'environment', 'source',

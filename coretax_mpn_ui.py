@@ -351,7 +351,7 @@ class AccountingUI:
                 raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
             self.page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
 
-    def _click_ready(self, locator):
+    def _click_ready(self, locator, *, actual_timeout_ms=1000):
         deadline = self.preparation_deadline or time.monotonic() + 5
         while True:
             self._owned()
@@ -366,7 +366,8 @@ class AccountingUI:
             remaining = int((deadline - time.monotonic()) * 1000)
             if remaining <= 0:
                 raise MpnUnsupported('MPN inspected action readiness deadline exceeded')
-            locator.click(timeout=min(1000, remaining))
+            # One actual click only: never retry if the browser may have dispatched it.
+            locator.click(timeout=min(actual_timeout_ms, remaining))
             self._owned()
             return
 
@@ -431,7 +432,9 @@ class AccountingUI:
         for _ in range(2):
             self._stop()
             marker = self.observer.sequence
-            self._click_ready(search)
+            # A successful actionability probe may precede >1s browser scheduling.
+            # Bound the sole real Search click by the original 45s preparation deadline.
+            self._click_ready(search, actual_timeout_ms=5000)
             snapshot = self._wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
             self._stop()
             self.list_owner = self._ready_one('acc-balance-sheet-light-grid ui-grid p-table')
