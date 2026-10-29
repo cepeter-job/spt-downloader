@@ -319,7 +319,7 @@ class DiagnosticLog:
                     self._stop.set()
             if self._thread is not None and self._thread is not threading.current_thread():
                 self._thread.join(timeout=min(2, max(0, float(timeout))))
-        except Exception:
+        except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
             pass  # Shutdown must not replace the original outcome.
 
     def __enter__(self):
@@ -361,7 +361,7 @@ def session(root, role, *, job_id=None, level=None):
     try:
         try:
             log = DiagnosticLog(root, role, job_id=job_id, level=level or configured_level())
-        except Exception:
+        except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
             # An unavailable logger must not prevent the caller from running.
             pass
         _active = log
@@ -371,7 +371,7 @@ def session(root, role, *, job_id=None, level=None):
         if log is not None:
             try:
                 log.close()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 # Preserve the product outcome even when diagnostic shutdown fails.
                 pass
 
@@ -389,7 +389,7 @@ def record(event, **fields):
     try:
         if _active is not None:
             return _active.record(event, **{**(_detail.get() or {}), **fields})
-    except Exception:
+    except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
         # Optional instrumentation cannot replace an operation's error or Stop.
         pass
     return False
@@ -460,7 +460,7 @@ def self_test(root):
         with detail_context(ordinal=1, tax_kind='ppn', source_requested='json-first'):
             with measure('return_detail') as benchmark:
                 record('detail.source', source_used='json', source_reason='native_verified',
-                       token='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
+                       token='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')  # nosec B106 - Deliberate synthetic privacy sentinel, never a credential.
                 benchmark.update(source_used='json', status='COMPLETE', body_rows=2, cached=False)
         record('auth.state', reason='waiting_redirect', expected_origin='satu', observed_origin='coretax')
         record('auth.state', reason='code_exchange_failed', exchange_failure='fetch_exception',
@@ -468,7 +468,7 @@ def self_test(root):
         record('auth.request_blocked',reason='cross_origin_write',target_origin='coretax',method='POST',resource_type='fetch')
         record('auth.result', status='LOGIN_BLOCKED', reason='origin_mismatch',
                expected_origin='coretax', observed_origin='satu', submitted=False,
-               password='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
+               password='SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')  # nosec B106 - Deliberate synthetic privacy sentinel, never a credential.
         try:
             raise ValueError('SYNTHETIC PRIVATE VALUE MUST NOT BE LOGGED')
         except ValueError as error:

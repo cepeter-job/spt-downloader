@@ -746,7 +746,7 @@ class ListObserver:
         if document is not None:
             try:
                 document.dispose()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass  # Cleanup never records browser exception material.
 
     def _fail_navigation(self):
@@ -820,7 +820,7 @@ class ListObserver:
             elif document is not None:
                 try:
                     document.dispose()
-                except Exception:
+                except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                     pass  # A stale callback owns only its own returned handle.
 
     def _grid_request(self, request, url):
@@ -1338,7 +1338,7 @@ class _SearchDiagnostics:
                     }''', timeout=100)
                     if type(observed_table) is str and observed_table in {'missing', 'hidden', 'empty', 'rows_present', 'unavailable'}:
                         table = observed_table
-                except Exception:
+                except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                     pass
             fields = self.counts if self.observation != 'unavailable' else {}
             diagnostics.record('search.result', level='INFO' if result == 'matched' else 'WARNING',
@@ -1752,14 +1752,14 @@ def open_return_readonly(page, row, taxpayer_id, record_id=None, *, json_capture
         if inspected_view is not None:
             try:
                 inspected_view.dispose()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass  # Cleanup cannot replace Stop or the originating failure.
         page.remove_listener('popup', callback)
         if not verified:
             for tab in opened:
                 try:
                     tab.close()
-                except Exception:
+                except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                     pass  # Pertahankan error navigasi jika popup sudah ditutup.
 
 

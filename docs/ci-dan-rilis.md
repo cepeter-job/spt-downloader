@@ -1,5 +1,11 @@
 # CI, penggunaan resource, dan verifikasi rilis
 
+Gate kualitas statis memakai environment hash-locked terpisah dan tetap menjadi
+dependensi build melalui job portable. Mypy mengadopsi dua batas stdlib secara
+strict; Bandit memeriksa modul produk dengan triase lokal. Probe negatif harus
+menolak error tipe dan deserialisasi sintetis. Audit dependensi Windows turut
+memeriksa environment kualitas; baca [scope dan bukti](audits/2026-10-29-quality-gates.md).
+
 [Kembali ke dokumentasi](README.md)
 
 Sumber konfigurasi adalah [windows-build.yml](../.github/workflows/windows-build.yml). CI memeriksa kode sintetis dan artifact; tidak memakai akun intranet, browser pribadi, atau data wajib pajak.

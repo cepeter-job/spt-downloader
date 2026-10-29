@@ -217,7 +217,7 @@ def _partial(label, reason):
 def _release_nodes(page):
     try:
         page.evaluate('() => {delete window._spt_financial_nodes;}')
-    except Exception:
+    except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
         pass
 
 
@@ -258,7 +258,7 @@ def _read_pdf(page, url, check_cancel, document_url, request=None):
         # never let cleanup replace cancellation or expose a browser exception.
         try:
             page.evaluate(_CLOSE, key)
-        except Exception:
+        except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
             pass
 
 

@@ -1,7 +1,7 @@
 """Pure presentation state. Only the controller can certify a job's result."""
 from dataclasses import dataclass, replace
 import re
-from typing import Mapping
+from typing import Mapping, NotRequired, TypedDict, cast
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,14 @@ _TERMINAL_STATES = {
 _STOPPING = frozenset({'stopping', 'cancellation_pending'})
 
 
+class _ProgressChanges(TypedDict):
+    view_state: str
+    stage: str
+    percent: int
+    inventory: NotRequired[Counters | None]
+    details: NotRequired[Counters | None]
+
+
 def scope_errors(npwp: str, year: str) -> dict[str, str]:
     """Identify the field to correct without changing the user's literal input."""
     errors = {}
@@ -64,11 +72,14 @@ def _counters(event: Mapping[str, object]) -> Counters | None:
     if any(name in event and (type(value) is not int or value < 0)
            for name, value in values.items()):
         return None
+    # All present values passed the runtime int guard; absent values are None.
+    counts = cast(dict[str, int | None], values)
     # Check every known pair, including verified/total when processed is absent.
     for lower, upper in (('verified', 'processed'), ('processed', 'total'), ('verified', 'total')):
-        if values[lower] is not None and values[upper] is not None and values[lower] > values[upper]:
+        left, right = counts[lower], counts[upper]
+        if left is not None and right is not None and left > right:
             return None
-    return Counters(**values)
+    return Counters(**counts)
 
 
 def reduce_export(state: ExportState, event: Mapping[str, object], *,
@@ -114,9 +125,11 @@ def reduce_export(state: ExportState, event: Mapping[str, object], *,
     stage = event.get('stage')
     if kind != 'progress' or not isinstance(stage, str) or stage not in _STAGE_STATES:
         return state
-    changes = {'view_state': _STAGE_STATES[stage], 'stage': stage, 'percent': percent}
-    if stage in ('inventory', 'details'):
-        changes[stage] = _counters(event)
+    changes: _ProgressChanges = {'view_state': _STAGE_STATES[stage], 'stage': stage, 'percent': percent}
+    if stage == 'inventory':
+        changes['inventory'] = _counters(event)
+    elif stage == 'details':
+        changes['details'] = _counters(event)
     return replace(state, **changes)
 
 

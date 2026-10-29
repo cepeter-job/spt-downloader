@@ -134,7 +134,7 @@ class App:
 
     def open_logs(self):
         try:
-            os.startfile(str(diagnostics.log_folder(self.workspace)))
+            os.startfile(str(diagnostics.log_folder(self.workspace)))  # nosec B606 - Open an inspected existing output/log folder, not a generated command.
         except (OSError, ValueError):
             messagebox.showerror('Log tidak tersedia',
                 'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
@@ -287,7 +287,7 @@ class App:
             self.root.destroy()
 
     def open_result(self):
-        if self._result and self._result.is_dir():os.startfile(str(self._result))
+        if self._result and self._result.is_dir():os.startfile(str(self._result))  # nosec B606 - Open an inspected existing output/log folder, not a generated command.
         else:messagebox.showerror('Hasil tidak ditemukan','Folder hasil tidak lagi tersedia.',parent=self.root)
 
     def _export_job_active(self,job_id):

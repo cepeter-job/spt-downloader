@@ -14,6 +14,7 @@ LOCK_INPUTS = (
     ('test', 'requirements-test.txt', 'runtime'),
     ('build', 'requirements-build.txt', 'test'),
     ('audit', 'requirements-audit.txt', None),
+    ('quality', 'requirements-quality.txt', None),
 )
 
 

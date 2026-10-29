@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import queue
 import re
-import subprocess
+import subprocess  # nosec B404 - Reviewed owned process/runtime lifecycle; no untrusted command text.
 import threading
 import time
 import uuid

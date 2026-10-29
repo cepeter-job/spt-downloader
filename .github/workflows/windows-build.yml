@@ -117,6 +117,43 @@ jobs:
       - name: Verify lock freshness and hashes against the reviewed manifests
         if: matrix.profile == 'production'
         run: .venv/bin/python -m scripts.update_locks --check
+      - name: Install isolated hash-locked quality tools
+        run: |
+          uv venv --managed-python --python "${{ matrix.python }}+gil" .quality
+          uv pip sync --python .quality/bin/python --require-hashes --only-binary :all: locks/quality.txt
+          uv pip check --python .quality/bin/python
+      - name: Check adopted typed boundaries and triaged security patterns
+        id: quality
+        run: |
+          .quality/bin/python -m mypy --config-file pyproject.toml --junit-xml "$RUNNER_TEMP/mypy.xml"
+          .quality/bin/python -m bandit -r coretax*.py spt_desktop -f json -o "$RUNNER_TEMP/bandit.json"
+      - name: Prove quality tools reject synthetic regressions
+        run: |
+          .venv/bin/python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          typed = root / 'quality_negative_type.py'
+          typed.write_text('def example(value: int) -> int:\n    return "wrong"\n', encoding='utf-8')
+          result = subprocess.run(['.quality/bin/python', '-m', 'mypy', '--strict', '--no-incremental', str(typed)], capture_output=True, text=True)
+          assert result.returncode == 1 and '[return-value]' in result.stdout, 'Typing regression was not rejected'
+          unsafe = root / 'quality_negative_security.py'
+          unsafe.write_text('import pickle\npickle.loads(b"synthetic")\n', encoding='utf-8')
+          result = subprocess.run(['.quality/bin/python', '-m', 'bandit', '-f', 'json', str(unsafe)], capture_output=True, text=True)
+          assert result.returncode == 1 and any(row['test_id'] == 'B301' for row in json.loads(result.stdout)['results']), 'Security regression was not rejected'
+          (root / 'quality-negative.json').write_text(json.dumps({'typing_rejected': True, 'unsafe_deserialization_rejected': True}), encoding='utf-8')
+          PY
+      - name: Retain static quality evidence
+        if: always() && steps.quality.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: quality-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mypy.xml
+            ${{ runner.temp }}/bandit.json
+            ${{ runner.temp }}/quality-negative.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Check undefined Python names with pinned Ruff
         id: lint
         run: .venv/bin/python -m ruff check --output-format github .
@@ -308,11 +345,17 @@ jobs:
           uv pip sync --python .audit/Scripts/python.exe --require-hashes --only-binary :all: locks/audit.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           uv pip check --python .audit/Scripts/python.exe
-      - name: Audit installed runtime, test, build and auditor dependencies
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python "$env:PYTHON_VERSION+gil" .quality
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .quality/Scripts/python.exe --require-hashes --only-binary :all: locks/quality.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .quality/Scripts/python.exe
+      - name: Audit installed runtime, test, build, quality and auditor dependencies
         id: audit
         run: >-
           .audit/Scripts/python.exe -m pip_audit
-          --path .venv/Lib/site-packages --path .audit/Lib/site-packages
+          --path .venv/Lib/site-packages --path .audit/Lib/site-packages --path .quality/Lib/site-packages
           --strict --progress-spinner off --format json
           --output "$env:RUNNER_TEMP/dependency-audit.json"
       - name: Publish dependency audit report

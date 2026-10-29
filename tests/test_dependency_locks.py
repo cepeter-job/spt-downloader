@@ -10,7 +10,7 @@ import pytest
 def locks(tmp_path, monkeypatch):
     updater = importlib.import_module('scripts.update_locks')
     (tmp_path / 'locks').mkdir()
-    for name in ('runtime', 'test', 'build', 'audit'):
+    for name in ('runtime', 'test', 'build', 'audit', 'quality'):
         (tmp_path / 'locks' / f'{name}.txt').write_text('pin semula\n', encoding='utf-8')
     state = {'payload': 'pin semula\n', 'fail': None, 'commands': []}
 
@@ -33,7 +33,7 @@ def test_lock_check_detects_drift_without_modifying_committed_files(locks):
     state['payload'] = 'pin hasil resolusi baru\n'
     before = {path.name: path.read_bytes() for path in (root / 'locks').iterdir()}
     changed = updater.update_locks(root, 'uv', check=True)
-    assert set(changed) == {'runtime', 'test', 'build', 'audit'}
+    assert set(changed) == {'runtime', 'test', 'build', 'audit', 'quality'}
     assert {path.name: path.read_bytes() for path in (root / 'locks').iterdir()} == before
 
 
@@ -46,6 +46,16 @@ def test_failed_resolution_preserves_every_existing_lock(locks):
                for path in (root / 'locks').iterdir())
 
 
+def test_quality_resolution_failure_preserves_every_existing_lock(locks):
+    updater, root, state = locks
+    (root / 'locks' / 'quality.txt').write_text('pin semula\n', encoding='utf-8')
+    before = {path.name: path.read_bytes() for path in (root / 'locks').iterdir()}
+    state.update(payload='pin baru\n', fail='quality')
+    with pytest.raises(subprocess.CalledProcessError):
+        updater.update_locks(root, 'uv')
+    assert {path.name: path.read_bytes() for path in (root / 'locks').iterdir()} == before
+
+
 def test_unchanged_lock_check_passes(locks):
     updater, root, _ = locks
     assert updater.update_locks(root, 'uv', check=True) == []
@@ -54,7 +64,7 @@ def test_unchanged_lock_check_passes(locks):
 def test_successful_regeneration_updates_all_changed_locks(locks):
     updater, root, state = locks
     state['payload'] = 'pin baru\n'
-    assert len(updater.update_locks(root, 'uv')) == 4
+    assert len(updater.update_locks(root, 'uv')) == 5
     assert all(path.read_text(encoding='utf-8') == 'pin baru\n'
                for path in (root / 'locks').iterdir())
 
