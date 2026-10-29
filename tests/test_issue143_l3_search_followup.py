@@ -27,8 +27,14 @@ def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expect
             return None if case == 'lifetime_start' else {}
 
     class SyntheticPage:
+        def __init__(self):
+            self.calls = 0
+
         def evaluate(self, *args):
-            return False  # Provider absent or deliberately wrong pinned digest.
+            self.calls += 1
+            # The provider-digest case must first pass the script-presence
+            # gate before presenting a deliberately wrong provider digest.
+            return case == 'provider_digest_or_table_count' and self.calls == 1
 
     result = {}
     digest = 'UNTRUSTED_SYNTHETIC_DIGEST' if case == 'cit_digest' else L3_BUILD_DIGESTS[CIT_SOURCE_URL]
