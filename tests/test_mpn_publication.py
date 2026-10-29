@@ -25,9 +25,13 @@ def exporter():
     return importlib.import_module('coretax_mpn_export')
 
 
-def test_resume_mpn_audit_message_borders_include_the_blank_count_cells(tmp_path):
+@pytest.mark.parametrize('inventory', [False, True])
+def test_resume_mpn_audit_message_borders_include_the_blank_count_cells(tmp_path, inventory):
     from coretax_exporter import export_workbook
     run = mpn_run(complete=False)
+    if inventory:
+        run['audit'] = [{'status': 'SPT Dilaporkan', 'total': 0, 'rows': 0,
+                         'selected': 0, 'result': 'OK', 'message': 'Synthetic empty inventory'}]
     run['mpn']['audit'] = [{'message': 'Synthetic capture incomplete'}]
     path = tmp_path / 'resume.xlsx'
     export_workbook(run, path, include_details=False)
@@ -41,6 +45,11 @@ def test_resume_mpn_audit_message_borders_include_the_blank_count_cells(tmp_path
             assert all(getattr(audit.cell(row, col).border, edge).style == 'thin'
                        for edge in ('left', 'right', 'top', 'bottom'))
         assert workbook['Ringkasan']['B6'].value == 'PARTIAL'
+        summary_row = row - 1
+        assert [audit.cell(summary_row, col).value for col in (2, 3, 4)] == [1, 1, 1]
+        for col in range(1, 7):
+            assert all(getattr(audit.cell(summary_row, col).border, edge).style == 'thin'
+                       for edge in ('left', 'right', 'top', 'bottom'))
     finally:
         workbook.close()
 

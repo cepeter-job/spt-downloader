@@ -204,7 +204,7 @@ def apply_resume_layout(workbook, run):
             cell.hyperlink = link
         _literal(audit['A1'], source['A1'].value)
         from coretax_mpn_export import apply_resume_mpn
-        apply_resume_mpn(workbook, run, mapping_row + 1)
+        apply_resume_mpn(workbook, run, mapping_row + 1, reference=reference['Audit'])
         index.print_title_rows = '1:4'
         audit.print_title_rows = '1:3'
         for name, width, minimum in (('Ringkasan', 8, 18), ('Daftar SPT', 11, 8), ('Audit', 6, 11)):
