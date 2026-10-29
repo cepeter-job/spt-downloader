@@ -203,7 +203,30 @@ def test_failure_before_inventory_does_not_overwrite_old_checkpoint(cli, failure
     cli.failures[failure] = RuntimeError(PRIVATE)
     assert cli.invoke() == 1
     assert (cli.folder / 'run.json').read_bytes() == cli.old
-    assert cli.closed == ([] if failure == 'startup' else ['page', 'context', 'driver'])
+    assert cli.closed == (['driver'] if failure == 'startup' else ['page', 'context', 'driver'])
+    assert cli.exports == 0
+
+
+@pytest.mark.parametrize('error_type,exit_code', [(KeyboardInterrupt, 130), (RuntimeError, 1)])
+def test_partially_acquired_driver_is_closed_when_enter_raises(cli, monkeypatch, error_type, exit_code):
+    import coretax
+    acquired = []
+    class PartialDriver:
+        def __enter__(self):
+            acquired.append('transport')
+            raise error_type(PRIVATE)
+
+        def __exit__(self, *args):
+            assert acquired == ['transport']
+            acquired.clear()
+            cli.closed.append('partial-driver')
+
+    monkeypatch.setattr(coretax, 'sync_playwright', PartialDriver)
+    assert cli.invoke() == exit_code
+    assert acquired == []
+    assert cli.closed == ['partial-driver']
+    assert (cli.folder / 'run.json').read_bytes() == cli.old
+    assert (cli.folder / 'resume.xlsx').read_bytes() == cli.workbook
     assert cli.exports == 0
 
 

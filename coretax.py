@@ -581,8 +581,10 @@ def _main(argv=None):
     try:
         with _cli_cleanup() as register:
             manager = sync_playwright()
-            playwright = manager.__enter__()
+            # Initialization may acquire the transport before raising or Stop.
+            # The contained callback also tolerates an uninitialized manager.
             register(manager.__exit__, None, None, None)
+            playwright = manager.__enter__()
             if args.reuse_browser:
                 browser = playwright.chromium.connect_over_cdp(args.reuse_browser, timeout=20000)
                 context = browser.contexts[0]

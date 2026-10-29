@@ -611,6 +611,11 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
+Register the CLI Playwright manager teardown before entering it: initialization
+can acquire its driver transport before an error or Stop. Contain early teardown
+failures, retain original exit 1/130 and durable checkpoints, and attempt every
+later owned cleanup. Never close a reused browser context.
+
 CLI live failure/Stop recovery writes only a normally validated PARTIAL run.json
 after the existing checkpoint/physical-workbook scope and selected-JSON checks,
 through the existing guarded atomic checkpoint; never retry save_output from
