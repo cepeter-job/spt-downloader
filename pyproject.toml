@@ -11,14 +11,3 @@ requires-python = ">=3.14"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --durations=10"
-
-[tool.coverage.run]
-branch = true
-relative_files = true
-source = ["."]
-omit = ["tests/*", ".venv/*"]
-
-[tool.coverage.report]
-show_missing = true
-skip_empty = true
-fail_under = 0

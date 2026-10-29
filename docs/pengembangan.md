@@ -25,6 +25,16 @@ Gunakan profil `production` CPython x64/GIL dan pin uv pada [tabel versi](python
 
 Clone repositori dan buat branch perubahan dari `main` yang sudah diperbarui. Nama seperti `fix/checkpoint-scope` atau `feat/export-layout` cukup menjelaskan maksudnya. Jangan memindahkan profil browser, capture JSON, workbook nyata, atau kredensial ke checkout. Simpan data dan ruang tes di direktori terpisah.
 
+## Pemilik konfigurasi tooling
+
+Default pytest dan metadata proyek berada di `pyproject.toml`; pilihan lint
+berada di `ruff.toml`. Coverage hanya memakai `.coveragerc`, dengan pilihan
+eksplisit `--rcfile=.coveragerc` pada seluruh perintah CI run/XML/JSON.
+`RUNNER_TEMP` wajib tersedia agar berkas data tetap di scratch runner;
+konfigurasi mempertahankan branch coverage, omit yang ada dan `fail_under=0`.
+Laporan portable belum mewakili coverage Windows/browser/native/worker.
+Jangan menambahkan salinan `[tool.coverage.*]` yang melewatkan kontrak ini.
+
 ## Alur verifikasi melalui GitHub Actions
 
 1. Tentukan modul, kontrak, dan tes terkait melalui [peta kode](peta-kode.md) serta
