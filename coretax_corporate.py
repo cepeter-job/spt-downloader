@@ -316,7 +316,11 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
         return refuse('main_digest')
     if vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE):
         return refuse('vendor_digest')
-    if form.locator('table').count() != 2:
+    count = form.locator('table').count()
+    if count != 2:
+        if reason_out is not None:
+            reason_out['table_shape'] = (
+                'zero' if count == 0 else 'one' if count == 1 else 'more_than_two')
         return refuse('table_count')
     tables = []
     for phase in range(2):
@@ -518,12 +522,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     stage = 'build'
     ordinal_safe = None
 
-    def unavailable(error=None, *, l3_reason=None):
+    def unavailable(error=None, *, l3_reason=None, l3_table_shape=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
                            corporate_observer_stage=stage, form_ordinal=ordinal_safe,
-                           corporate_l3_reason=l3_reason, error=error)
+                           corporate_l3_reason=l3_reason,
+                           corporate_l3_table_shape=l3_table_shape, error=error)
         return None
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
@@ -572,7 +577,8 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 inspected = _observe_l3(page, form, capture, digest, record, max_pages,
                                         check_cancel, reason_out=l3_diagnostic)
                 if inspected is None:
-                    return unavailable(l3_reason=l3_diagnostic.get('reason'))
+                    return unavailable(l3_reason=l3_diagnostic.get('reason'),
+                                       l3_table_shape=l3_diagnostic.get('table_shape'))
                 binding.update(inspected)
             if name == 'L11-A':
                 stage = 'l11a'
