@@ -284,16 +284,22 @@ def _observe_l8(page, form, capture, digest, check_cancel):
             'source_structure': structure}]}
 
 
-def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
+def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
     from coretax_corporate_projection import L3_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
     from coretax_json import CORPORATE_L3_REFERENCE_URLS, CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    def refuse(reason):
+        # Fixed local reasons only; never record observed request/DOM values.
+        if reason_out is not None:
+            reason_out['reason'] = reason
+        return None
+
     if digest != L3_BUILD_DIGESTS.get(CIT_SOURCE_URL):
-        return None
+        return refuse('cit_digest')
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
-        return None
+        return refuse('lifetime_start')
     _check_cancel(check_cancel)
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
@@ -301,18 +307,18 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
         [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
     _check_cancel(check_cancel)
     if providers is not True:
-        return None
+        return refuse('script_providers')
     main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
     _check_cancel(check_cancel)
     vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
     _check_cancel(check_cancel)
     if (main_digest != L3_BUILD_DIGESTS.get(MAIN_SOURCE)
             or vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE) or form.locator('table').count() != 2):
-        return None
+        return refuse('provider_digest_or_table_count')
     tables = []
     for phase in range(2):
         if form.count() != 1 or not form.is_visible() or form.locator('table').count() != 2:
-            return None
+            return refuse('form_shape')
         observed_tables = []
         for index, selector in enumerate(('rsh-citr-l3-grid1', 'rshshr-citr-l3-grid2')):
             _check_cancel(check_cancel)
@@ -321,7 +327,7 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
             if (grid.count() != 1 or not grid.is_visible() or grid.locator(ui).count() != 1
                     or grid.locator(other).count() or grid.locator('p-table').count() != 1
                     or grid.locator('table').count() != 1):
-                return None
+                return refuse('grid_shape')
             table = grid.locator('table')
             chain = table.evaluate('''(table, {selector, ui}) => {
                 const form=table.closest('rshshr-citr-l3-form'), grid=table.closest(selector);
@@ -333,21 +339,21 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
             }''', {'selector': selector, 'ui': ui})
             _check_cancel(check_cancel)
             if chain is not True:
-                return None
+                return refuse('grid_ownership')
             structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L3')
             if structure != {'form': 'L3', 'component': selector, 'groups': [
                     'A. PENGHASILAN DARI LUAR NEGERI' if index == 0 else 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
-                return None
+                return refuse('table_structure')
             metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
             _check_cancel(check_cancel)
             observed_tables.append({'component': selector, 'source_structure': structure,
                            'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
             if phase == 0 and index == 1 and not _turn_grid(page, grid.locator('p-table'), max_pages, check_cancel):
-                return None
+                return refuse('paginator')
         if phase == 0:
             tables = observed_tables
         elif observed_tables != tables:
-            return None
+            return refuse('stable_table_metadata')
     requests, seen, footer = [], set(), False
     observations = capture.request_observations()
     for item in observations:
@@ -355,33 +361,33 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel):
             continue
         request = item.get('request_json')
         if not isinstance(request, dict) or 'ReturnSheetRecordId' not in request:
-            return None
+            return refuse('request_shape')
         if request['ReturnSheetRecordId'] != record['record_id']:
             raise JsonSafetyError('Observed L3 request contradicts selected return')
         if item['url'] == CORPORATE_L3_FOOTER_URL:
             if request != {'ReturnSheetRecordId': record['record_id']}:
-                return None
+                return refuse('footer_request')
             footer = True
             continue
         if type(request.get('First')) is not int or request['First'] < 0:
-            return None
+            return refuse('grid_offset')
         key = json.dumps(request, sort_keys=True)
         if key not in seen:
             requests.append(request)
             seen.add(key)
     if not requests or not footer:
-        return None
+        return refuse('grid_or_footer_missing')
     references = []
     for url in CORPORATE_L3_REFERENCE_URLS.values():
         sequences = [item['sequence'] for item in observations
             if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
         if not sequences:
-            return None
+            return refuse('reference_request')
         references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
-        return None
+        return refuse('lifetime_end')
     return {'responses': [{'name': 'L3/domestic', 'endpoint': CORPORATE_L3_GRID_URL,
                           'requests': sorted(requests, key=lambda request: request['First'])}],
         'dependencies': [{'endpoint': CORPORATE_L3_FOOTER_URL,
@@ -509,11 +515,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     stage = 'build'
     ordinal_safe = None
 
-    def unavailable(error=None):
+    def unavailable(error=None, *, l3_reason=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
-                           corporate_observer_stage=stage, form_ordinal=ordinal_safe, error=error)
+                           corporate_observer_stage=stage, form_ordinal=ordinal_safe,
+                           corporate_l3_reason=l3_reason, error=error)
         return None
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
@@ -557,10 +564,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'L3':
                 stage = 'l3'
                 if 'Induk' not in names:
-                    return unavailable()
-                inspected = _observe_l3(page, form, capture, digest, record, max_pages, check_cancel)
+                    return unavailable(l3_reason='induk_order')
+                l3_diagnostic = {}
+                inspected = _observe_l3(page, form, capture, digest, record, max_pages,
+                                        check_cancel, reason_out=l3_diagnostic)
                 if inspected is None:
-                    return unavailable()
+                    return unavailable(l3_reason=l3_diagnostic.get('reason'))
                 binding.update(inspected)
             if name == 'L11-A':
                 stage = 'l11a'

@@ -77,8 +77,22 @@ dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
 `panel`, `form`, `l3`, `l11a`, `l1d`, `l8`, `l7`,
 `l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
 nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
-Corporate verified. Kode tahap tidak menunjukkan detail penolakan di dalam
-sub-observer; verifikasi sumber, identitas, dan pembatasan tetap wajib.
+Corporate verified. Khusus `corporate_observer_stage=l3`, sub-observer
+mencatat `corporate_l3_reason` dari 17 kategori tetap yang memisahkan pin/build,
+lifetime komponen awal/akhir, sumber skrip, struktur form/grid, rantai owner,
+judul/metadata tabel, paginator, bentuk request, footer, offset dan katalog
+referensi. Misalnya `table_structure`, `reference_request`, dan
+`grid_or_footer_missing`. Nilai kategori tidak mengambil string, ID,
+hash/URL atau isi dari browser. Field yang tidak ada bukan bukti tahap sukses.
+Refusal tetap mengembalikan `None` dan memilih fallback seluruh record ke DOM;
+verifikasi sumber, identitas, dan pembatasan tetap wajib.
+
+Pada langkah `open → search` MPN, trial click tetap satu kali uji aksi dan
+klik nyata hanya sekali. Klik Search memiliki batas paling lama 5 detik,
+selalu dibatasi sisa deadline persiapan 45 detik sejak DOMContentLoaded;
+kontrol dropdown dan aksi lain tetap menggunakan batas 1 detik. Timeout
+klik nyata tidak dicoba ulang karena permintaan mungkin sudah terdistribusi,
+sehingga jalur PARTIAL dan bukti sumber asli tetap berlaku.
 
 `mpn.capture_failed` mencatat kegagalan terminal MPN dengan enum
 `mpn_capture_stage`: `session` (pembuatan UI termasuk inisialisasi),
@@ -88,8 +102,19 @@ sub-observer; verifikasi sumber, identitas, dan pembatasan tetap wajib.
 `search`, `period_clear`, atau `ready` (kategori tahap saja,
 bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
 sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
-penolakan kepemilikan sumber; event baru bukan penggantinya. Tidak ada
-perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
+penolakan kepemilikan sumber; event baru bukan penggantinya.
+
+`mpn.parent_binding_mismatch` dicatat tepat sebelum penolakan fatal saat
+identitas baris induk yang terlihat di DOM berbeda dari sumber asli.
+`mpn_parent_field` hanya kategori kolom **pertama** yang berbeda:
+`accounting_type`, `accounting_detail`, `currency`, `revenue_code`,
+`payment_code`, `tax_period`, atau `transaction_number`.
+Tidak ada nilai DOM, data sumber, identitas transaksi, nomor pajak, atau
+jumlah rupiah di log. Kategori ini belum membuktikan apakah perbedaannya
+berasal dari label/mapping, pergantian data, atau identitas yang salah;
+`MpnSafetyError` tetap fatal dan tombol detail tidak diklik.
+
+Tidak ada perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
 atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;
 perbandingan memerlukan build yang benar-benar menjalankan versi ini.
 

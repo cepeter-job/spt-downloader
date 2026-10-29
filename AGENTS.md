@@ -453,7 +453,13 @@ paginator, source and identity contradictions retain their independent gates.
 Corporate native refusals may emit only the finite observer-stage enum and a
 bounded tab ordinal before the existing whole-record DOM fallback. MPN capture
 failures may emit a finite collection-stage enum and sanitized exception
-type/frames. These fields are diagnostic evidence, not capture proof: preserve
+type/frames. Issue #143 follow-up L3 subreason is a second, fixed allowlisted enum on
+observer refusal; it must not expose request fields, hashes, labels, DOM content
+or asset metadata. The MPN Search action may receive a bounded single-click
+timeout (5 seconds maximum within the existing 45-second preparation deadline),
+while all other control action budgets remain unchanged; never retry an actual
+click after a timeout because dispatch is uncertain.
+These fields are diagnostic evidence, not capture proof: preserve
 every original source pin, privacy/identity gate, Stop, checkpoint and PARTIAL
 outcome. Never log tab captions, URLs, taxpayer values or exception messages.
 See `docs/diagnostik.md`; synthetic tests alone do not certify the live case.

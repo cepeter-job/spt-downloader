@@ -360,7 +360,9 @@ def _publish_output(staging, folder, names):
                     (folder / name).unlink(missing_ok=True)
         except BaseException as recovery_error:
             # Kunci eksternal atau interupsi juga bisa menghalangi rollback.
-            raise RuntimeError(f'Output rollback blocked; recovery files retained at {staging}') from recovery_error
+            if isinstance(recovery_error, Exception):
+                raise RuntimeError(f'Output rollback blocked; recovery files retained at {staging}') from recovery_error
+            raise
         raise
 
 

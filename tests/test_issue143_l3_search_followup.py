@@ -1,0 +1,255 @@
+"""Synthetic Issue #143 follow-up: reason-only L3 telemetry and one Search click.
+
+No live accounts or source payloads; hosted runners alone execute these tests.
+"""
+import json
+
+import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+from test_diagnostics import records
+from test_json_hybrid_native import browser
+from test_mpn_source_custody import source_ui
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('cit_digest', 'cit_digest'),
+    ('lifetime_start', 'lifetime_start'),
+    ('script_providers', 'script_providers'),
+    ('provider_digest_or_table_count', 'provider_digest_or_table_count'),
+])
+def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expected):
+    from coretax_corporate import _observe_l3, CIT_SOURCE_URL
+    from coretax_corporate_projection import L3_BUILD_DIGESTS
+
+    class SyntheticCapture:
+        def observe_component_lifetime(self, *, check_cancel=None):
+            return None if case == 'lifetime_start' else {}
+
+    class SyntheticPage:
+        def __init__(self):
+            self.calls = 0
+
+        def evaluate(self, *args):
+            self.calls += 1
+            # The provider-digest case must first pass the script-presence
+            # gate before presenting a deliberately wrong provider digest.
+            return case == 'provider_digest_or_table_count' and self.calls == 1
+
+    result = {}
+    digest = 'UNTRUSTED_SYNTHETIC_DIGEST' if case == 'cit_digest' else L3_BUILD_DIGESTS[CIT_SOURCE_URL]
+    assert _observe_l3(SyntheticPage(), object(), SyntheticCapture(), digest,
+                       {}, 20, None, reason_out=result) is None
+    assert result == {'reason': expected}
+    assert 'UNTRUSTED_SYNTHETIC_DIGEST' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('defect,reason', [
+    ('wrong-group', 'table_structure'),
+    ('missing-reference', 'reference_request'),
+    ('missing-footer', 'grid_or_footer_missing'),
+])
+def test_actual_synthetic_l3_owner_refusal_keeps_dom_fallback_and_logs_fixed_subreason(
+        browser, tmp_path, monkeypatch, defect, reason):
+    from coretax_corporate import observe_forms
+    from coretax_json_capture import DetailJsonCapture
+    from l3_observer_fixture import Fixture, ASSET
+    from test_corporate_l3_observer import open_selected
+    from spt_desktop import diagnostics
+    import support_json_corpus as corpus
+
+    fixture = Fixture(browser, monkeypatch, defect=defect)
+    try:
+        with diagnostics.session(tmp_path / 'log', 'worker') as log:
+            with DetailJsonCapture(fixture.context, fixture.page, fixture.record,
+                                   corpus.SCOPE, tmp_path) as capture:
+                page = open_selected(fixture, capture)
+                forms = observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                                      approved_digest=fixture.pins[ASSET])
+            assert log.flush()
+        assert forms is None
+        events = [e for e in records(tmp_path / 'log')
+                  if e['event'] == 'corporate.observe_unavailable']
+        assert len(events) == 1
+        assert events[0]['corporate_observer_stage'] == 'l3'
+        assert events[0]['corporate_l3_reason'] == reason
+        assert events[0]['form_ordinal'] >= 0
+        assert fixture.unexpected == []
+    finally:
+        fixture.close()
+
+
+def test_l3_reason_allowlist_rejects_hostile_private_values(tmp_path):
+    from spt_desktop import diagnostics
+
+    class Poison:
+        def __str__(self):
+            raise AssertionError('Untrusted values must not be converted')
+
+    secret = 'UNTRUSTED_SYNTHETIC_TAX_RECORD'
+    with diagnostics.session(tmp_path, 'worker') as log:
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_observer_stage='l3',
+                           corporate_l3_reason=secret, url=secret)
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_observer_stage='l3',
+                           corporate_l3_reason=Poison())
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_observer_stage='l3',
+                           corporate_l3_reason='table_structure')
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'corporate.observe_unavailable']
+    assert len(rows) == 3
+    assert 'corporate_l3_reason' not in rows[0]
+    assert 'corporate_l3_reason' not in rows[1]
+    assert rows[2]['corporate_l3_reason'] == 'table_structure'
+    assert secret not in json.dumps(rows)
+
+
+def test_one_real_search_click_uses_longer_bounded_timeout_after_successful_trial(
+        tmp_path, monkeypatch):
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    trials, actual = [], []
+
+    class Search:
+        def click(self, *, trial=False, timeout):
+            (trials if trial else actual).append(timeout)
+            if not trial and timeout <= 1000:
+                raise PlaywrightTimeoutError('Synthetic slow scheduling')
+
+    try:
+        ui._click_ready(Search(), actual_timeout_ms=5000)
+        assert len(trials) == len(actual) == 1
+        assert 0 < trials[0] <= 1000
+        assert 1000 < actual[0] <= 5000
+    finally:
+        ui.observer.close()
+
+
+@pytest.mark.parametrize('search', [False, True])
+def test_actual_click_timeout_never_causes_second_real_click(tmp_path, monkeypatch, search):
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    trials, actual = [], []
+
+    class Search:
+        def click(self, *, trial=False, timeout):
+            (trials if trial else actual).append(timeout)
+            if not trial:
+                raise PlaywrightTimeoutError('Synthetic uncertain delivery')
+
+    try:
+        with pytest.raises(PlaywrightTimeoutError):
+            ui._click_ready(Search(), **({'actual_timeout_ms': 5000} if search else {}))
+        assert len(trials) == len(actual) == 1
+        assert actual[0] <= (5000 if search else 1000)
+        assert not ui.source_safety and not ui.source_failed
+    finally:
+        ui.observer.close()
+
+
+def test_search_open_path_keeps_single_real_click_and_explicit_bounded_budget():
+    import inspect
+    from coretax_mpn_ui import AccountingUI
+
+    # This static wiring contract prevents tests of a helper from diverging
+    # from the actual open() Search invocation.
+    source = inspect.getsource(AccountingUI.open)
+    assert 'self._click_ready(search, actual_timeout_ms=5000)' in source
+    assert source.count('self._click_ready(search,') == 1
+
+
+def test_l3_form_shape_refusal_is_measured_without_reading_business_content():
+    from coretax_corporate import _observe_l3, CIT_SOURCE_URL
+    from coretax_corporate_projection import L3_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
+
+    class Capture:
+        def observe_component_lifetime(self, *, check_cancel=None):
+            return {'same_document': True}
+
+    class Count:
+        def count(self):
+            return 2
+
+    class Form:
+        def locator(self, selector):
+            assert selector == 'table'
+            return Count()
+
+        def count(self):
+            return 2  # Ambiguous form identity must refuse, not read rows.
+
+    class Page:
+        def __init__(self):
+            self.calls = 0
+
+        def evaluate(self, script, *args):
+            self.calls += 1
+            return {1: True, 2: L3_BUILD_DIGESTS[MAIN_SOURCE],
+                    3: L3_BUILD_DIGESTS[VENDOR_SOURCE]}[self.calls]
+
+    reason = {}
+    assert _observe_l3(Page(), Form(), Capture(), L3_BUILD_DIGESTS[CIT_SOURCE_URL],
+                       {}, 20, None, reason_out=reason) is None
+    assert reason == {'reason': 'form_shape'}
+
+
+@pytest.mark.parametrize('reason', [
+    'request_shape', 'footer_request', 'grid_offset', 'lifetime_end',
+])
+def test_l3_synthetic_late_refusal_is_named_without_changing_source_admission(
+        browser, tmp_path, monkeypatch, reason):
+    from coretax_corporate import observe_forms
+    from coretax_json import CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL
+    from coretax_json_capture import DetailJsonCapture
+    from l3_observer_fixture import Fixture, ASSET
+    from test_corporate_l3_observer import open_selected
+    from spt_desktop import diagnostics
+    import support_json_corpus as corpus
+
+    fixture = Fixture(browser, monkeypatch)
+    try:
+        with diagnostics.session(tmp_path / 'log', 'worker') as log:
+            with DetailJsonCapture(fixture.context, fixture.page, fixture.record,
+                                   corpus.SCOPE, tmp_path) as capture:
+                page = open_selected(fixture, capture)
+                if reason == 'lifetime_end':
+                    original = capture.observe_component_lifetime
+                    calls = []
+
+                    def lifetime(*, check_cancel=None):
+                        calls.append(True)
+                        return original(check_cancel=check_cancel) if len(calls) == 1 else None
+
+                    monkeypatch.setattr(capture, 'observe_component_lifetime', lifetime)
+                else:
+                    original = capture.request_observations
+                    identity = fixture.record['record_id']
+
+                    def observations():
+                        existing = original()
+                        if reason == 'request_shape':
+                            malformed = {'method': 'POST', 'url': CORPORATE_L3_GRID_URL,
+                                         'request_json': None}
+                        elif reason == 'footer_request':
+                            malformed = {'method': 'POST', 'url': CORPORATE_L3_FOOTER_URL,
+                                         'request_json': {'ReturnSheetRecordId': identity,
+                                                          'SyntheticExtra': True}}
+                        else:
+                            malformed = {'method': 'POST', 'url': CORPORATE_L3_GRID_URL,
+                                         'request_json': {'ReturnSheetRecordId': identity, 'First': -1}}
+                        return [*existing, malformed]
+
+                    monkeypatch.setattr(capture, 'request_observations', observations)
+                forms = observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                                      approved_digest=fixture.pins[ASSET])
+            assert log.flush()
+        assert forms is None
+        events = [row for row in records(tmp_path / 'log')
+                  if row['event'] == 'corporate.observe_unavailable']
+        assert len(events) == 1
+        assert events[0]['corporate_observer_stage'] == 'l3'
+        assert events[0]['corporate_l3_reason'] == reason
+        assert fixture.unexpected == []
+        assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
+    finally:
+        fixture.close()
