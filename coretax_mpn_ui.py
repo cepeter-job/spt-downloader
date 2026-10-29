@@ -638,8 +638,21 @@ class AccountingUI:
                       'revenue_code', 'payment_code', 'tax_period', 'transaction_number')
             for position, field in enumerate(fields):
                 if actual[position] != expected[position]:
+                    # Classify the source-only accounting projection without
+                    # logging source, DOM, reference labels or mismatching values.
+                    provenance = None
+                    if field == 'accounting_type':
+                        code = header.get('AccountingTypeCode')
+                        labels = getattr(self, 'catalogs', {}).get('ACCOUNTING_TYPE', {})
+                        inventory = getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE')
+                        provenance = ('source_code_missing' if type(code) is not str or not code
+                                      else 'catalog_missing' if inventory is None
+                                      else 'code_not_in_catalog' if code not in inventory
+                                      else 'catalog_label' if code in labels
+                                      else 'raw_code_fallback')
                     diagnostics.record('mpn.parent_binding_mismatch', level='WARNING',
-                                       mpn_parent_field=field)
+                                       mpn_parent_field=field,
+                                       mpn_accounting_type_projection=provenance)
                     break
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')
         row = self.list_owner.locator('tbody tr').nth(index)

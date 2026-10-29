@@ -459,6 +459,23 @@ or asset metadata. The MPN Search action may receive a bounded single-click
 timeout (5 seconds maximum within the existing 45-second preparation deadline),
 while all other control action budgets remain unchanged; never retry an actual
 click after a timeout because dispatch is uncertain.
+
+Post-merge Issue #143 diagnostics split L3 MAIN source digest, VENDOR source
+digest and exact two-table count into separate finite `corporate_l3_reason`
+categories. Never emit the observed hash, table contents or source identifiers
+in logging; on refusal, continue whole-return DOM fallback without weakening
+custody. The MPN `accounting_type` mismatch records only catalog-projection
+provenance as a fixed enum, not the code/label/DOM value. It is not permission
+to replace source labels, repair catalog mappings or click detail under
+`MpnSafetyError`.
+
+The general DOM table collector uses a 180-second elapsed budget per table,
+checked before each additional page action. Preserve the Stop-first rule,
+original owned paginator checks and individual browser timeouts, retain
+already captured rows only as PARTIAL, and keep the first failure reason
+when row-count reconciliation also disagrees. This is not a hard interrupt
+for an in-flight browser action or a reason to increase other timeouts.
+
 These fields are diagnostic evidence, not capture proof: preserve
 every original source pin, privacy/identity gate, Stop, checkpoint and PARTIAL
 outcome. Never log tab captions, URLs, taxpayer values or exception messages.

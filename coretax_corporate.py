@@ -312,9 +312,12 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     _check_cancel(check_cancel)
     vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
     _check_cancel(check_cancel)
-    if (main_digest != L3_BUILD_DIGESTS.get(MAIN_SOURCE)
-            or vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE) or form.locator('table').count() != 2):
-        return refuse('provider_digest_or_table_count')
+    if main_digest != L3_BUILD_DIGESTS.get(MAIN_SOURCE):
+        return refuse('main_digest')
+    if vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE):
+        return refuse('vendor_digest')
+    if form.locator('table').count() != 2:
+        return refuse('table_count')
     tables = []
     for phase in range(2):
         if form.count() != 1 or not form.is_visible() or form.locator('table').count() != 2:
