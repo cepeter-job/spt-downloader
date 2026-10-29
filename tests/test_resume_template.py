@@ -10,6 +10,96 @@ def empty_run():
             'audit': [], 'errors': [], 'complete': False, 'started_at': 'synthetic'}
 
 
+@pytest.mark.parametrize('name', ['Ringkasan', 'Daftar SPT', 'Audit'])
+def test_saved_resume_column_defaults_do_not_border_empty_space(tmp_path, name):
+    from copy import copy
+    from coretax_exporter import export_workbook
+    from coretax_resume_layout import RESOURCE
+    path = tmp_path / 'resume.xlsx'
+    export_workbook(empty_run(), path, include_details=False)
+    actual, reference = load_workbook(path), load_workbook(RESOURCE)
+    try:
+        for key, expected in reference[name].column_dimensions.items():
+            column = actual[name].column_dimensions[key]
+            assert column.width == expected.width
+            assert (column.min, column.max) == (expected.min, expected.max)
+            assert all(getattr(column.border, edge).style is None
+                       for edge in ('left', 'right', 'top', 'bottom'))
+            assert column.number_format == 'General'
+            assert copy(column.font) == copy(expected.font)
+    finally:
+        actual.close()
+        reference.close()
+
+
+def test_saved_resume_row_defaults_preserve_the_reference_font_and_border(tmp_path):
+    from copy import copy
+    from coretax_exporter import export_workbook
+    from coretax_resume_layout import RESOURCE
+    path = tmp_path / 'resume.xlsx'
+    export_workbook(empty_run(), path, include_details=False)
+    actual, reference = load_workbook(path), load_workbook(RESOURCE)
+    try:
+        for row in (1, 3, 10):
+            dimension = actual['Audit'].row_dimensions[row]
+            expected = reference['Audit'].row_dimensions[row]
+            assert copy(dimension.font) == copy(expected.font)
+            assert all(getattr(dimension.border, edge).style is None
+                       for edge in ('left', 'right', 'top', 'bottom'))
+    finally:
+        actual.close()
+        reference.close()
+
+
+@pytest.mark.parametrize('axis,key', [('column_dimensions', 'B'), ('row_dimensions', 7)])
+def test_reset_sheet_transfers_dimension_styles_between_distinct_workbooks(tmp_path, axis, key):
+    from copy import copy
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
+    from coretax_resume_layout import _reset_sheet
+    source, target = Workbook(), Workbook()
+    reference, sheet = source.active, target.active
+    dimension = getattr(reference, axis)[key]
+    dimension.font = Font(name='Arial', bold=True, color='123456')
+    dimension.fill = PatternFill('solid', fgColor='ABCDEF')
+    dimension.border = Border(bottom=Side(style='double', color='654321'))
+    dimension.alignment = Alignment(horizontal='right', wrap_text=True)
+    dimension.protection = Protection(locked=False, hidden=True)
+    dimension.number_format = '0.0000 "synthetic"'
+    dimension.hidden, dimension.outlineLevel = True, 2
+    if axis == 'column_dimensions':
+        dimension.width, dimension.min, dimension.max = 23.5, 2, 4
+    else:
+        dimension.height = 31.5
+    # Deliberately allocate incompatible destination IDs before transferring.
+    sheet['A1'].font = Font(name='Courier New', italic=True)
+    sheet['A1'].border = Border(top=Side(style='thick'))
+    sheet['A1'].fill = PatternFill('solid', fgColor='FEDCBA')
+    sheet['A1'].alignment = Alignment(horizontal='left')
+    sheet['A1'].number_format = '0.0 "destination"'
+    expected = {name: copy(getattr(dimension, name)) for name in
+                ('font', 'fill', 'border', 'alignment', 'protection', 'number_format')}
+    _reset_sheet(sheet, reference)
+    path = tmp_path / 'dimensions.xlsx'
+    target.save(path)
+    restored = load_workbook(path)
+    try:
+        actual = getattr(restored.active, axis)[key]
+        for name, value in expected.items():
+            assert copy(getattr(actual, name)) == value
+        assert actual.hidden and actual.outlineLevel == 2
+        if axis == 'column_dimensions':
+            assert (actual.width, actual.min, actual.max) == (23.5, 2, 4)
+        else:
+            assert actual.height == 31.5
+        assert getattr(sheet, axis)[key].parent is sheet
+        assert dimension.parent is reference
+    finally:
+        restored.close()
+        source.close()
+        target.close()
+
+
 def test_resume_uses_the_operator_reference_coordinates_without_sample_rows(tmp_path):
     from coretax_exporter import export_workbook
     run = empty_run()
