@@ -32,6 +32,17 @@ Base: `origin/main` (`3e46baec`)
 8. Pertimbangkan menambahkan `mypy` setelah gate di atas bersih.
 9. Pertimbangkan pre-commit hooks setelah gate stabil. ✅ Selesai (.pre-commit-config.yaml ditambahkan; ruff check + trailing-whitespace + check-added-large-files; opsional).
 
+## Tindak lanjut kepemilikan konfigurasi (2026-10-29)
+
+Issue #130 item 2 dan #134: hapus hanya duplikasi `[tool.coverage.*]` dari
+`pyproject.toml`. `.coveragerc` tetap menjadi sumber coverage yang dipilih CI
+melalui `--rcfile=.coveragerc`, termasuk kewajiban `RUNNER_TEMP` untuk berkas
+data. Default pytest tetap di `pyproject.toml`; pilihan aturan lint tetap di
+`ruff.toml`. Threshold, omit, lock dan perintah CI tidak berubah. Migrasi Ruff
+dan kebijakan versi metadata paket merupakan pekerjaan terpisah. Bukti parity
+runner dan full CI dicatat pada PR perubahan; angka audit historis di atas
+bukan hasil hitung ulang baseline ini.
+
 ## File hasil audit
 - `C:\Users\kpp096\AppData\Local\hermes\cache\scratch\code_quality_report.md`
 - `C:\Users\kpp096\AppData\Local\hermes\cache\scratch\ruff_autofix_diff.patch`
