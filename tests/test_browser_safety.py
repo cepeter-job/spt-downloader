@@ -459,6 +459,6 @@ def test_detail_list_reset_obeys_page_limit(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Table, 'evaluate_handle', lambda self, script: StuckContainer())
     captured = driver.collect_details(page, run_fixture(), tmp_path, max_pages=2)
-    assert previous.clicks <= 2, 'max_pages must bound Previous navigation as well as Next'
+    assert previous.clicks == 2, 'The owned Previous loop must stop at its exact two-page cap'
     assert not captured['complete']
-    assert 'page limit' in captured['errors'][0]['message']
+    assert captured['errors'][0]['message'] == 'capture_failed'

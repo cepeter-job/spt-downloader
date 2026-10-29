@@ -1,6 +1,6 @@
 # Exception containment inventory
 
-Source baseline: remote `bb5da6e8699ccf726051678f64a7ae524ac3fb81` (tree `d1eb08c20090c493e61032ae6c59b919143a4a5f`), then the focused CLI startup and detail-privacy changes linked from issue #130. Regenerate against any current checkout with `python scripts/quality_inventory.py --output <scratch>/quality.json`; this command parses Git-tracked source and imports no product modules. Line numbers below describe the reviewed source snapshot and may move.
+Source baseline: remote `bb5da6e8699ccf726051678f64a7ae524ac3fb81` (tree `d1eb08c20090c493e61032ae6c59b919143a4a5f`), then the focused CLI startup and detail-privacy changes linked from issue #130. Regenerate the exact committed snapshot with `python scripts/quality_inventory.py --output <scratch>/quality.json`; this command parses immutable Git source and imports no product modules. Line numbers below describe the reviewed source snapshot and may move.
 
 **105 non-test broad handler sites.** Count only bare catches or handlers explicitly naming `Exception`/`BaseException`, including tuple members. Subclasses such as `DecimalException` are specific errors and excluded. The initial scratch counter included one such subclass; the corrected definition is authoritative. Test handlers are inventoried by the script but excluded from this production/tooling table.
 
@@ -91,14 +91,14 @@ The three priority owners were inspected individually: browser errors retain fix
 | `spt_desktop/diagnostic_store.py:93` | `SegmentStore.__init__` | `BaseException` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
 | `spt_desktop/diagnostics.py:253` | `DiagnosticLog.record` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
 | `spt_desktop/diagnostics.py:281` | `DiagnosticLog._consume` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:287` | `DiagnosticLog._consume` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:307` | `DiagnosticLog.flush` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:319` | `DiagnosticLog.close` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:345` | `default_root` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:361` | `session` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:371` | `session` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:389` | `record` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
-| `spt_desktop/diagnostics.py:415` | `measure` | `BaseException` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:289` | `DiagnosticLog._consume` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:310` | `DiagnosticLog.flush` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:322` | `DiagnosticLog.close` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:348` | `default_root` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:364` | `session` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:374` | `session` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:392` | `record` | `Exception` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
+| `spt_desktop/diagnostics.py:418` | `measure` | `BaseException` | Optional diagnostics | Closed type/frame/field allowlists; failure cannot replace product outcome or Stop. No raw messages. |
 | `spt_desktop/output.py:253` | `_workbook_scope` | `Exception` | Untrusted workbook read boundary | Third-party ZIP/XML reader can raise heterogeneous errors; reject scope and preserve existing output. |
 | `spt_desktop/output.py:542` | `_Displaced.capture` | `BaseException` | Cleanup/rollback and Stop propagation | Release owned resources or retain failed transaction state; rethrow or preserve terminal cancellation. No completion grant. |
 | `spt_desktop/output.py:564` | `_Displaced.preserve` | `BaseException` | Cleanup/rollback and Stop propagation | Release owned resources or retain failed transaction state; rethrow or preserve terminal cancellation. No completion grant. |

@@ -1,6 +1,6 @@
-# Public module entrypoint inventory
+# Source inventory
 
-Source snapshot and definitions: [source quality audit](2026-10-29-source-quality.md). Regenerate using the AST source inspector before using these line numbers for a later change.
+Definitions and snapshot: [source quality audit](2026-10-29-source-quality.md).
 
 | file | name | line | lines | documented |
 | --- | --- | --- | --- | --- |
@@ -169,16 +169,16 @@ Source snapshot and definitions: [source quality audit](2026-10-29-source-qualit
 | `spt_desktop/credentials.py` | `read_login` | `107` | `9` | `False` |
 | `spt_desktop/credentials.py` | `delete_login` | `118` | `2` | `False` |
 | `spt_desktop/diagnostics.py` | `job_reference` | `129` | `4` | `False` |
-| `spt_desktop/diagnostics.py` | `configured_level` | `329` | `3` | `False` |
-| `spt_desktop/diagnostics.py` | `default_root` | `334` | `17` | `False` |
-| `spt_desktop/diagnostics.py` | `session` | `354` | `20` | `False` |
-| `spt_desktop/diagnostics.py` | `job_context` | `377` | `6` | `False` |
-| `spt_desktop/diagnostics.py` | `record` | `385` | `8` | `False` |
-| `spt_desktop/diagnostics.py` | `detail_context` | `396` | `8` | `False` |
-| `spt_desktop/diagnostics.py` | `measure` | `407` | `17` | `False` |
-| `spt_desktop/diagnostics.py` | `traced` | `426` | `8` | `False` |
-| `spt_desktop/diagnostics.py` | `log_folder` | `436` | `11` | `False` |
-| `spt_desktop/diagnostics.py` | `self_test` | `449` | `54` | `True` |
+| `spt_desktop/diagnostics.py` | `configured_level` | `332` | `3` | `False` |
+| `spt_desktop/diagnostics.py` | `default_root` | `337` | `17` | `False` |
+| `spt_desktop/diagnostics.py` | `session` | `357` | `20` | `False` |
+| `spt_desktop/diagnostics.py` | `job_context` | `380` | `6` | `False` |
+| `spt_desktop/diagnostics.py` | `record` | `388` | `8` | `False` |
+| `spt_desktop/diagnostics.py` | `detail_context` | `399` | `8` | `False` |
+| `spt_desktop/diagnostics.py` | `measure` | `410` | `17` | `False` |
+| `spt_desktop/diagnostics.py` | `traced` | `429` | `8` | `False` |
+| `spt_desktop/diagnostics.py` | `log_folder` | `439` | `11` | `False` |
+| `spt_desktop/diagnostics.py` | `self_test` | `452` | `54` | `True` |
 | `spt_desktop/interaction.py` | `select_records` | `15` | `29` | `False` |
 | `spt_desktop/interaction.py` | `write_reply` | `75` | `2` | `False` |
 | `spt_desktop/interaction.py` | `read_message` | `79` | `24` | `False` |

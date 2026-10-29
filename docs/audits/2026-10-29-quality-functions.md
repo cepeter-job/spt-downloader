@@ -1,6 +1,6 @@
-# Production function inventory
+# Source inventory
 
-Source snapshot and definitions: [source quality audit](2026-10-29-source-quality.md). Regenerate using the AST source inspector before using these line numbers for a later change.
+Definitions and snapshot: [source quality audit](2026-10-29-source-quality.md).
 
 | file | name | line | lines | complexity | public | top_level | documented |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -669,23 +669,23 @@ Source snapshot and definitions: [source quality audit](2026-10-29-source-qualit
 | `spt_desktop/diagnostics.py` | `DiagnosticLog.__init__` | `187` | `33` | `18` | `False` | `False` | `False` |
 | `spt_desktop/diagnostics.py` | `DiagnosticLog.pending` | `222` | `2` | `1` | `True` | `False` | `False` |
 | `spt_desktop/diagnostics.py` | `DiagnosticLog.record` | `225` | `31` | `14` | `True` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `DiagnosticLog._consume` | `257` | `40` | `13` | `False` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `DiagnosticLog.flush` | `298` | `11` | `6` | `True` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `DiagnosticLog.close` | `310` | `11` | `5` | `True` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `DiagnosticLog.__enter__` | `322` | `2` | `1` | `False` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `DiagnosticLog.__exit__` | `325` | `2` | `1` | `False` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `configured_level` | `329` | `3` | `2` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `default_root` | `334` | `17` | `5` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `session` | `354` | `20` | `5` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `job_context` | `377` | `6` | `1` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `record` | `385` | `8` | `4` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `detail_context` | `396` | `8` | `2` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `measure` | `407` | `17` | `7` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `traced` | `426` | `8` | `1` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `traced.decorate` | `427` | `6` | `1` | `True` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `traced.decorate.call` | `429` | `3` | `1` | `True` | `False` | `False` |
-| `spt_desktop/diagnostics.py` | `log_folder` | `436` | `11` | `6` | `True` | `True` | `False` |
-| `spt_desktop/diagnostics.py` | `self_test` | `449` | `54` | `48` | `True` | `True` | `True` |
+| `spt_desktop/diagnostics.py` | `DiagnosticLog._consume` | `257` | `43` | `13` | `False` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `DiagnosticLog.flush` | `301` | `11` | `6` | `True` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `DiagnosticLog.close` | `313` | `11` | `5` | `True` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `DiagnosticLog.__enter__` | `325` | `2` | `1` | `False` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `DiagnosticLog.__exit__` | `328` | `2` | `1` | `False` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `configured_level` | `332` | `3` | `2` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `default_root` | `337` | `17` | `5` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `session` | `357` | `20` | `5` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `job_context` | `380` | `6` | `1` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `record` | `388` | `8` | `4` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `detail_context` | `399` | `8` | `2` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `measure` | `410` | `17` | `7` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `traced` | `429` | `8` | `1` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `traced.decorate` | `430` | `6` | `1` | `True` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `traced.decorate.call` | `432` | `3` | `1` | `True` | `False` | `False` |
+| `spt_desktop/diagnostics.py` | `log_folder` | `439` | `11` | `6` | `True` | `True` | `False` |
+| `spt_desktop/diagnostics.py` | `self_test` | `452` | `54` | `48` | `True` | `True` | `True` |
 | `spt_desktop/events.py` | `Progress.__init__` | `6` | `4` | `1` | `False` | `False` | `False` |
 | `spt_desktop/events.py` | `Progress._send` | `11` | `9` | `3` | `False` | `False` | `False` |
 | `spt_desktop/events.py` | `Progress._fraction` | `22` | `4` | `5` | `False` | `False` | `False` |
