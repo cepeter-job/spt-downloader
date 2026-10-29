@@ -76,6 +76,14 @@ legacy label/header maps. Keep old workbooks readable without rewriting them;
 new coordinates must be used consistently by scope verification/publication.
 These presentation changes do not alter form templates or capture completion.
 
+Resume row/column dimensions must belong to the destination worksheet. Copy
+geometry separately from workbook-local style IDs and register styled dimensions
+through their actual style components; unstyled columns must remain unstyled.
+Verify saved/reopened column and row defaults as well as cell borders, including
+explicit borders on all six cells of MPN audit message rows with blank counts.
+Do not repair excessive borders by applying formatting to entire columns or by
+rewriting existing private workbooks during normal export.
+
 Full live CLI/desktop jobs additionally require a separate owned Accounting MPN
 capture after SPT details and before browser cleanup, including valid empty SPT
 inventories. Inventory-only and offline legacy exports do not acquire MPN scope.

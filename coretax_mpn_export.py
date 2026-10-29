@@ -251,7 +251,7 @@ def apply_resume_mpn(workbook, run, row):
     cell.hyperlink = Hyperlink(ref=cell.coordinate, target=value['filename'], location="'MPN'!A1")
     cell.font = Font(name=cell.font.name, size=cell.font.sz, color='2463A0', underline='single')
     for offset, item in enumerate(captured['audit'] if captured else (), ar + 2):
-        for col, content in ((1, 'MPN'), (5, 'PARTIAL'), (6, item['message'])):
+        for col, content in enumerate(('MPN', None, None, None, 'PARTIAL', item['message']), 1):
             cell = put(audit, offset, col, content)
             _style(cell, audit.cell(4, col))
 
