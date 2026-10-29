@@ -7,6 +7,7 @@ import coretax_browser as driver
 from support_isolated_browser import browser
 from test_json_inventory import synthetic_listing_browser
 from test_diagnostics import records as log_records
+from support_browser_protocol import capture_failures
 
 
 def inventory(page, folder):
@@ -47,6 +48,7 @@ def test_submitted_only_late_label_uses_fresh_catalog_without_rewriting_inventor
 @pytest.mark.parametrize('invalid', ['missing', 'expired', 'ambiguous', 'receipt', 'model',
                                    'legacy_without_proof', 'occurrence_mismatch'])
 def test_late_label_still_rejects_unproved_or_changed_metadata(browser, monkeypatch, tmp_path, invalid):
+    failures = capture_failures(monkeypatch)
     changes = ({'Nomor Bukti Penerimaan': 'SYNTHETIC_CHANGED_RECEIPT'} if invalid == 'receipt' else
                {'Model SPT': 'SYNTHETIC_CHANGED_MODEL'} if invalid == 'model' else None)
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, archive_period_conflict=True,
@@ -62,7 +64,8 @@ def test_late_label_still_rejects_unproved_or_changed_metadata(browser, monkeypa
             selected['source_occurrences'][0]['meta']['Masa Pajak'] = 'SYNTHETIC_CHANGED_PERIOD'
         driver.collect_details(page, run, tmp_path)
         assert metrics['viewed_record_ids'] == []
-        assert any('metadata changed' in e['message'] for e in run['errors'])
+        assert any('metadata changed' in str(error) for error in failures)
+        assert all(e['message'] in ('capture_failed', 'capture_safety_refusal') for e in run['errors'])
         assert not list(tmp_path.glob('period-catalog-restoration-*.json'))
         assert not run['complete']
 

@@ -172,6 +172,8 @@ def test_stop_during_catalog_grace_prevents_another_read_or_request(browser, tmp
 @pytest.mark.parametrize('saved_size', [100, 50])
 def test_detail_restore_uses_captured_size_or_fails_before_view_without_noop_wait(browser, tmp_path,
                                                                              monkeypatch, saved_size):
+    from support_browser_protocol import capture_failures
+    failures = capture_failures(monkeypatch)
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, expired_catalog=True,
                                    page_sizes=[10, 50, 100],
                                    initial_page_size=10 if saved_size == 100 else 100) as (page, metrics):
@@ -190,4 +192,5 @@ def test_detail_restore_uses_captured_size_or_fails_before_view_without_noop_wai
         else:
             assert metrics['viewed_record_ids'] == []
             assert len(metrics['submitted_requests']) == before + 1
-            assert any('Could not restore inventory page size' in e['message'] for e in run['errors'])
+            assert any('Could not restore inventory page size' in str(error) for error in failures)
+            assert all(e['message'] == 'capture_failed' for e in run['errors'])

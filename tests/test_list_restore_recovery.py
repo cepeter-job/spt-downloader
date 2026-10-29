@@ -3,7 +3,7 @@ import pytest
 
 import coretax_browser as driver
 from support_browser_protocol import (
-    DETAIL_URL, LIST_URL, TAXPAYER, SourcePage, response, run_fixture,
+    DETAIL_URL, LIST_URL, TAXPAYER, SourcePage, response, run_fixture, capture_failures,
 )
 
 
@@ -43,6 +43,11 @@ def collector(monkeypatch):
     return captured
 
 
+@pytest.fixture
+def observed_failures(monkeypatch):
+    return capture_failures(monkeypatch)
+
+
 def test_missing_initial_list_response_retries_once_then_captures(tmp_path, collector):
     page = MissingListPage()
     result = driver.collect_details(page, run_fixture(), tmp_path)
@@ -53,13 +58,14 @@ def test_missing_initial_list_response_retries_once_then_captures(tmp_path, coll
     assert not any(page.listeners.values())
 
 
-def test_second_missing_list_response_stays_partial_without_third_navigation(tmp_path, collector):
+def test_second_missing_list_response_stays_partial_without_third_navigation(tmp_path, collector, observed_failures):
     page = MissingListPage(recover=False)
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL, LIST_URL]
     assert not result['complete'] and not result['records'][0]['capture_complete']
     assert result['records'][0]['sections'] == []
-    assert len(result['errors']) == 1 and 'No verifiable' in result['errors'][0]['message']
+    assert len(result['errors']) == 1 and result['errors'][0]['message'] == 'capture_failed'
+    assert any('No verifiable' in str(error) for error in observed_failures)
     assert collector == []
 
 
@@ -77,12 +83,13 @@ def test_retry_requires_a_new_marker_and_cannot_reuse_previous_response(tmp_path
     assert collector == []
 
 
-def test_retry_response_still_requires_the_selected_record(tmp_path, collector):
+def test_retry_response_still_requires_the_selected_record(tmp_path, collector, observed_failures):
     page = MissingListPage(replay=response([{'RecordId': 'synthetic-other-record'}]))
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL, LIST_URL]
     assert not result['complete']
-    assert 'Inventoried SPT' in result['errors'][0]['message']
+    assert result['errors'][0]['message'] == 'capture_failed'
+    assert any('Inventoried SPT' in str(error) for error in observed_failures)
     assert collector == []
 
 
@@ -121,7 +128,7 @@ def test_changed_owner_during_missing_wait_is_not_hidden_by_retry(tmp_path, coll
 
 
 @pytest.mark.parametrize('changes', [{'successful': False}, {'status': 403}, {'status': 500}])
-def test_unsuccessful_list_response_is_not_a_retryable_timeout(tmp_path, collector, changes):
+def test_unsuccessful_list_response_is_not_a_retryable_timeout(tmp_path, collector, changes, observed_failures):
     class FailedPage(SourcePage):
         def goto(self, url, **kwargs):
             self.commit_navigation(url)
@@ -131,11 +138,12 @@ def test_unsuccessful_list_response_is_not_a_retryable_timeout(tmp_path, collect
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL]
     assert not result['complete'] and collector == []
-    assert 'unsuccessful' in result['errors'][0]['message']
+    assert result['errors'][0]['message'] == 'capture_failed'
+    assert any('unsuccessful' in str(error) for error in observed_failures)
 
 
 @pytest.mark.parametrize('fault', ['foreign_request', 'extra_commit', 'pending_overflow'])
-def test_changed_or_unbounded_document_requests_never_authorize_view(tmp_path, collector, fault):
+def test_changed_or_unbounded_document_requests_never_authorize_view(tmp_path, collector, fault, observed_failures):
     class ChangedPage(SourcePage):
         def goto(self, url, **kwargs):
             self.commit_navigation(url)
@@ -154,7 +162,8 @@ def test_changed_or_unbounded_document_requests_never_authorize_view(tmp_path, c
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL]
     assert not result['complete'] and collector == []
-    assert 'ownership' in result['errors'][0]['message']
+    assert result['errors'][0]['message'] == 'capture_failed'
+    assert any('ownership' in str(error) for error in observed_failures)
     assert not any(page.listeners.values())
 
 
@@ -209,7 +218,7 @@ def test_late_old_document_request_cannot_satisfy_retry(tmp_path, collector, sta
 
 @pytest.mark.parametrize('kind', ['html403', 'html500', 'unsuccessful_without_payload'])
 @pytest.mark.parametrize('later_success', [False, True])
-def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, kind, later_success):
+def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, kind, later_success, observed_failures):
     class ErrorPage(SourcePage):
         def goto(self, url, **kwargs):
             self.navigated.append(url)
@@ -233,4 +242,5 @@ def test_owned_error_envelope_without_rows_does_not_retry(tmp_path, collector, k
     result = driver.collect_details(page, run_fixture(), tmp_path)
     assert page.navigated == [LIST_URL]
     assert not result['complete'] and collector == []
-    assert 'unsuccessful' in result['errors'][0]['message']
+    assert result['errors'][0]['message'] == 'capture_failed'
+    assert any('unsuccessful' in str(error) for error in observed_failures)
