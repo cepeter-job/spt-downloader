@@ -26,6 +26,51 @@ def test_current_production_workflow_preserves_real_gate_and_artifact_order():
     contract().validate_production(production())
 
 
+def test_windows_coverage_is_combined_and_gated_before_packaging():
+    assert hasattr(contract(), 'validate_windows_coverage'), 'Windows coverage pipeline is missing'
+    contract().validate_windows_coverage(production())
+
+
+@pytest.mark.parametrize('mutation', [
+    'missing-wrapper', 'different-config', 'missing-raw', 'missing-inventory',
+    'missing-shard-download', 'wrong-run-artifact', 'portable-data',
+    'missing-gate', 'ignored-gate', 'masked-gate', 'gate-after-build',
+])
+def test_windows_coverage_cannot_be_replaced_by_partial_or_ungated_data(mutation):
+    assert hasattr(contract(), 'validate_windows_coverage'), 'Windows coverage pipeline is missing'
+    document = deepcopy(production())
+    windows = document['jobs']['windows']['steps']
+    package = document['jobs']['package']['steps']
+    tests = next(s for s in windows if s.get('id') == 'tests')
+    raw = next(s for s in windows if s.get('id') == 'coverage-upload')
+    download = next(s for s in package if s.get('id') == 'coverage-shard-1')
+    gate_step = next(s for s in package if s.get('id') == 'coverage-gate')
+    if mutation == 'missing-wrapper':
+        tests['run'] = tests['run'].replace("'-m', 'coverage', 'run', '--rcfile=.coveragerc', ", '')
+    elif mutation == 'different-config':
+        tests['run'] = tests['run'].replace('--rcfile=.coveragerc', '--rcfile=/dev/null')
+    elif mutation in {'missing-raw', 'missing-inventory'}:
+        match = '.coverage.' if mutation == 'missing-raw' else 'test-inventory.json'
+        raw['with']['path'] = '\n'.join(line for line in raw['with']['path'].splitlines() if match not in line)
+    elif mutation == 'missing-shard-download':
+        package.remove(download)
+    elif mutation == 'wrong-run-artifact':
+        download['with']['name'] = 'windows-coverage-latest'
+    elif mutation == 'portable-data':
+        download['with']['path'] = '${{ runner.temp }}/coverage-input/portable'
+    elif mutation == 'missing-gate':
+        package.remove(gate_step)
+    elif mutation == 'ignored-gate':
+        gate_step['continue-on-error'] = True
+    elif mutation == 'masked-gate':
+        gate_step['run'] += '\nexit 0'
+    else:
+        package.remove(gate_step)
+        package.append(gate_step)
+    with pytest.raises(AssertionError):
+        contract().validate_windows_coverage(document)
+
+
 def test_current_benchmark_is_isolated_and_keeps_the_complete_windows_contract():
     contract().validate_benchmark(benchmark())
 
@@ -262,7 +307,7 @@ def test_dispatch_pilot_contract_rejects_incomplete_or_unbound_pipeline(mutation
 def test_each_diagnostic_upload_needs_its_own_failure_guard(job):
     document = deepcopy(benchmark() if job == 'benchmark' else production())
     uploads = [s for s in document['jobs'][job]['steps'] if s.get('uses', '').startswith('actions/upload-artifact@')]
-    assert len(uploads) == (3 if job == 'portable' else 2)
+    assert len(uploads) == (3 if job in {'portable', 'windows'} else 2)
     for index in range(len(uploads)):
         broken = deepcopy(document)
         selected = [s for s in broken['jobs'][job]['steps'] if s.get('uses', '').startswith('actions/upload-artifact@')]

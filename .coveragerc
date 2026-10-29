@@ -8,7 +8,9 @@ omit =
 data_file = ${RUNNER_TEMP?}/.coverage-portable
 
 [report]
-# Subset Linux tidak mewakili seluruh perilaku native Windows atau proses worker.
+# Subset Linux tidak mewakili Windows; coverage-policy.json gates the complete
+# Windows parent union separately. Isolated worker/bootstrap processes remain
+# independently tested and unmeasured here.
 show_missing = True
 skip_empty = True
 fail_under = 0

@@ -221,10 +221,14 @@ baru akan ditolak oleh pemeriksaan provenance.
 ## Lint Python dan coverage subset portable
 
 Job `portable` menjalankan Ruff yang dipin dalam `requirements-test.txt` dan lock
-test/build setelah pemeriksaan kesegaran lock. Aturan dalam `ruff.toml` hanya
-menolak nama, ekspor, atau variabel lokal yang tidak terdefinisi (`F821`, `F822`,
-`F823`). Pelanggaran membuat job dan gate gabungan gagal. Gate ini tidak
-memformat ulang kode atau memaksakan anotasi tipe dan batas kompleksitas.
+test/build setelah pemeriksaan kesegaran lock. Aturan dalam `ruff.toml` menolak
+nama, ekspor, atau variabel lokal yang tidak terdefinisi (`F821`, `F822`, `F823`),
+serta keluarga `E9`/`W6` yang telah ditinjau. Pelanggaran membuat job dan gate
+gabungan gagal. Gate ini tidak memformat ulang kode atau memaksakan batas
+kompleksitas. Mypy2.4.1 dan Bandit1.9.4 memakai environment terpisah dari
+`locks/quality.txt`: typing strict hanya pada dua boundary stdlib yang diadopsi,
+sedangkan Bandit memeriksa semua sumber produksi coretax/desktop. Lihat
+[cakupan, triase dan pengecualian spesifik](audits/2026-10-29-quality-gates.md).
 
 Pemanggilan pytest portable dibungkus `coverage run` dengan `.coveragerc`; pilihan
 tes, inventory, JUnit, serta propagasi kegagalan pytest tetap sama. Coverage
@@ -246,6 +250,20 @@ Ruff dan coverage hanya dependensi pengembangan yang terkunci dan ikut audit
 dependensi; keduanya bukan dependensi runtime worker. Perubahan ini tidak
 menjalankan benchmark, mengubah pemilihan suite Windows, atau mengganti fixture workbook
 yang menjadi referensi independen.
+
+Suite Windows lengkap sekarang juga diinstrumentasi dalam proses parent Python.
+Artifact `windows-coverage-<serial/shard>-python<versi>-<commit>-attempt<nomor>`
+menyimpan raw data tersembunyi, laporan JSON/XML dan inventory asli. Job package
+memeriksa union Windows yang lulus dari run/attempt yang sama sebelum menggabung
+slot yang dinyatakan secara eksplisit. `coverage-policy.json` menetapkan floor
+line/branch global dan per module serta80% changed executable production lines.
+Laporan gabungan dan hasil gate berada di artifact `coverage-windows-python...`;
+package tidak dibuat bila gate gagal. `.coveragerc` tetap satu-satunya pemilik
+source, branch dan omit; laporan portable tetap terpisah dan informasional.
+Worker/bootstrap terisolasi dan JavaScript browser belum diukur oleh laporan
+Python ini, dengan pengujian independennya tetap wajib. Baseline, batas metrik
+dan matriks perilaku security ada di
+[laporan coverage Windows](audits/2026-10-29-windows-coverage.md).
 
 ## Bukti waktu dan kegagalan tes
 
