@@ -12,6 +12,11 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 
 ## Change and merge discipline
 
+- Tool configuration has one owner per policy: pytest defaults/project metadata
+  use `pyproject.toml`, lint uses `ruff.toml`, and coverage uses `.coveragerc`.
+  Keep CI's explicit `--rcfile=.coveragerc`, required `RUNNER_TEMP` data path,
+  branch settings and existing thresholds/omissions. Do not recreate an
+  incomplete alternate coverage policy in TOML.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
