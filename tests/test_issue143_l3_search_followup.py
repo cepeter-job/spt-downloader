@@ -18,7 +18,9 @@ from test_mpn_source_custody import source_ui
     ('script_providers', 'script_providers'),
     ('main_digest', 'main_digest'),
     ('vendor_digest', 'vendor_digest'),
-    ('table_count', 'table_count'),
+    ('table_count_zero', 'table_count'),
+    ('table_count_one', 'table_count'),
+    ('table_count_extra', 'table_count'),
 ])
 def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expected):
     from coretax_corporate import _observe_l3, CIT_SOURCE_URL
@@ -34,7 +36,8 @@ def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expect
             return self
 
         def count(self):
-            return 1 if case == 'table_count' else 2
+            return {'table_count_zero': 0, 'table_count_one': 1,
+                    'table_count_extra': 3}.get(case, 2)
 
     class SyntheticPage:
         def __init__(self):
@@ -55,7 +58,13 @@ def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expect
     digest = 'UNTRUSTED_SYNTHETIC_DIGEST' if case == 'cit_digest' else L3_BUILD_DIGESTS[CIT_SOURCE_URL]
     assert _observe_l3(SyntheticPage(), Form(), SyntheticCapture(), digest,
                        {}, 20, None, reason_out=result) is None
-    assert result == {'reason': expected}
+    assert result['reason'] == expected
+    if case.startswith('table_count_'):
+        assert result['table_shape'] == {'table_count_zero': 'zero',
+                'table_count_one': 'one',
+                'table_count_extra': 'more_than_two'}[case]
+    else:
+        assert result == {'reason': expected}
     assert 'UNTRUSTED_SYNTHETIC_DIGEST' not in json.dumps(result)
 
 
@@ -268,3 +277,23 @@ def test_l3_synthetic_late_refusal_is_named_without_changing_source_admission(
         assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
     finally:
         fixture.close()
+
+
+@pytest.mark.parametrize('shape', ['zero', 'one', 'more_than_two'])
+def test_l3_count_shape_diagnostics_accept_only_fixed_categories(tmp_path, shape):
+    from spt_desktop import diagnostics
+    secret = 'SYNTHETIC_TAXPAYER_IDENTIFIER_AND_DOM'
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_observer_stage='l3',
+                           corporate_l3_reason='table_count',
+                           corporate_l3_table_shape=shape, body=secret, url=secret)
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_l3_table_shape=secret)
+        assert log.flush()
+    events = [r for r in records(tmp_path / 'log')
+              if r['event'] == 'corporate.observe_unavailable']
+    assert len(events) == 2
+    assert events[0]['corporate_l3_table_shape'] == shape
+    assert 'corporate_l3_table_shape' not in events[1]
+    assert secret not in json.dumps(events)

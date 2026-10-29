@@ -442,12 +442,19 @@ class AccountingUI:
                 self.list_snapshot = snapshot
                 break
             self.diagnostic_stage = 'period_clear'
+            refusal = self._unfiltered_reason(snapshot)
             clear = self.list_owner.locator('#filterPeriodCode .p-dropdown-clear-icon')
             count = clear.count()
             self._stop()
+            # Never record filter values, names, dates or UI captions. These
+            # fixed categories only identify why original source was refused.
+            clear_state = ('ambiguous' if count > 1 else 'absent' if count == 0
+                           else 'present' if clear.is_visible() else 'hidden')
+            diagnostics.record('mpn.unfiltered_refused', level='WARNING',
+                               mpn_filter_reason=refusal, mpn_clear_state=clear_state)
             if count > 1:
                 raise MpnUnsupported('MPN period clear control is ambiguous')
-            if count == 1 and clear.is_visible():
+            if clear_state == 'present':
                 self._click_ready(clear)
         if self.list_snapshot is None:
             raise MpnUnsupported('MPN unfiltered non-cancelled inventory is unproved')
@@ -472,14 +479,33 @@ class AccountingUI:
         self.catalog_frozen = True
 
     @staticmethod
+    def _unfiltered_reason(snapshot):
+        # Categorize only the original owned request's structure, not its
+        # contents. A diagnostic category must never authorize inventory.
+        request = snapshot.get('request') if isinstance(snapshot, dict) else None
+        filters = request.get('Filters') if isinstance(request, dict) else None
+        if not isinstance(filters, list) or any(not isinstance(f, dict) for f in filters):
+            return 'request_shape'
+        if len(filters) != 1:
+            if any(f.get('PropertyName') in ('TransactionDate', 'PeriodCode')
+                   for f in filters):
+                return 'date_filter_present'
+            return 'additional_filter' if filters else 'cancelled_filter_missing'
+        rule = filters[0]
+        if rule.get('PropertyName') != 'IsCancelled':
+            return 'cancelled_filter_missing'
+        if (set(rule).issubset({'PropertyName', 'Value', 'MatchMode',
+                                'CaseSensitive', 'AsString'})
+                and rule.get('Value') == '0'
+                and rule.get('MatchMode') == 'equals'
+                and rule.get('CaseSensitive', True) is True
+                and rule.get('AsString', False) is False):
+            return None
+        return 'cancelled_filter_modified'
+
+    @staticmethod
     def _unfiltered(snapshot):
-        filters = snapshot['request']['Filters']
-        return (len(filters) == 1 and isinstance(filters[0], dict)
-                and set(filters[0]).issubset({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'})
-                and filters[0].get('PropertyName') == 'IsCancelled' and filters[0].get('Value') == '0'
-                and filters[0].get('MatchMode') == 'equals'
-                and filters[0].get('CaseSensitive', True) is True
-                and filters[0].get('AsString', False) is False)
+        return AccountingUI._unfiltered_reason(snapshot) is None
 
     def _table(self, owner, headers, count):
         deadline = time.monotonic() + 5

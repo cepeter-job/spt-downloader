@@ -131,15 +131,25 @@ def test_maximum_page_size_does_not_reload_an_already_selected_size(page, select
     assert page.locator('.p-dropdown-items').is_hidden()
 
 
-def test_elapsed_table_budget_stops_next_click_and_preserves_partial_warning(page, monkeypatch):
+def test_elapsed_table_budget_stops_next_click_and_preserves_partial_warning(
+        page, monkeypatch, tmp_path):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
     table = fixture(page)
     ticks = count(0, driver.TABLE_CAPTURE_BUDGET_SECONDS + 1)
     monkeypatch.setattr(driver, 'time', SimpleNamespace(monotonic=lambda: next(ticks)))
-    result = driver.capture_table(page, table, 1, max_pages=1000)
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        result = driver.capture_table(page, table, 1, max_pages=1000)
+        assert log.flush()
     assert result['complete'] is False
     assert result['pages'] == 1
     assert result['warning'] == 'Table capture elapsed budget exceeded'
     assert page.evaluate('moves') == 0
+    events = [e for e in records(tmp_path / 'log')
+              if e['event'] == 'table.elapsed_budget']
+    assert len(events) == 1
+    assert events[0]['table_elapsed_stage'] == 'before_next_click'
+    assert events[0]['pages'] == 1
 
 
 def test_stop_remains_prioritized_over_expired_elapsed_budget(page, monkeypatch):
@@ -156,14 +166,23 @@ def test_stop_remains_prioritized_over_expired_elapsed_budget(page, monkeypatch)
     assert page.evaluate('moves') == 0
 
 
-def test_stalled_page_reaching_total_elapsed_budget_retains_original_rows(page, monkeypatch):
+def test_stalled_page_reaching_total_elapsed_budget_retains_original_rows(
+        page, monkeypatch, tmp_path):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
     table = fixture(page)
     page.evaluate('noAdvance=true')
     ticks = count(0, 60)
     monkeypatch.setattr(driver, 'time', SimpleNamespace(monotonic=lambda: next(ticks)))
-    result = driver.capture_table(page, table, 1, max_pages=1000)
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        result = driver.capture_table(page, table, 1, max_pages=1000)
+        assert log.flush()
     assert result['complete'] is False
     assert result['warning'] == 'Table capture elapsed budget exceeded'
     assert result['pages'] == 1
     assert result['body_row_count'] == 1
     assert page.evaluate('moves') == 1, 'Never retry a dispatched paginator click'
+    events = [e for e in records(tmp_path / 'log')
+              if e['event'] == 'table.elapsed_budget']
+    assert len(events) == 1
+    assert events[0]['table_elapsed_stage'] == 'state_poll'

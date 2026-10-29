@@ -476,6 +476,18 @@ already captured rows only as PARTIAL, and keep the first failure reason
 when row-count reconciliation also disagrees. This is not a hard interrupt
 for an in-flight browser action or a reason to increase other timeouts.
 
+Issue #143 follow-up logging preserves the original MPN unfiltered
+non-cancelled source-query predicate. On failed preparation, record only
+finite source-request filter categories and the inspected period-clear
+control's presence class. Do not log filter names/values, claim that the
+clear action succeeded, invent a control, accept a filtered list or
+increase the two owned Search attempts. L3 failed two-table count gains
+a fixed `zero`/`one`/`more_than_two` classification without changing
+its admission rule. Elapsed DOM table budget may log a fixed action-stage
+category and already captured page count without retrying a paginator
+click, changing elapsed policy, or promoting PARTIAL.
+
+
 These fields are diagnostic evidence, not capture proof: preserve
 every original source pin, privacy/identity gate, Stop, checkpoint and PARTIAL
 outcome. Never log tab captions, URLs, taxpayer values or exception messages.

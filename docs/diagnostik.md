@@ -89,12 +89,33 @@ hash/URL atau isi dari browser. Field yang tidak ada bukan bukti tahap sukses.
 Refusal tetap mengembalikan `None` dan memilih fallback seluruh record ke DOM;
 verifikasi sumber, identitas, dan pembatasan tetap wajib.
 
+Untuk penolakan L3 `table_count`, `corporate_l3_table_shape` mengklasifikasikan
+hasil pembacaan struktur dari form yang sama hanya sebagai `zero`, `one`,
+atau `more_than_two`; angka asli, isi tabel, caption, dan selector detail
+tidak dicatat. Syarat **tepat dua tabel** tetap berlaku. Kategori ini
+menentukan pemeriksaan kepemilikan DOM berikutnya, bukan izin menerima
+bentuk tabel baru atau menonaktifkan fallback.
+
 Pada langkah `open → search` MPN, trial click tetap satu kali uji aksi dan
 klik nyata hanya sekali. Klik Search memiliki batas paling lama 5 detik,
 selalu dibatasi sisa deadline persiapan 45 detik sejak DOMContentLoaded;
 kontrol dropdown dan aksi lain tetap menggunakan batas 1 detik. Timeout
 klik nyata tidak dicoba ulang karena permintaan mungkin sudah terdistribusi,
 sehingga jalur PARTIAL dan bukti sumber asli tetap berlaku.
+
+Sebelum setiap upaya membersihkan filter periode setelah respons MPN
+yang belum terbukti tidak-terfilter, `mpn.unfiltered_refused` mencatat
+`mpn_filter_reason` dari pilihan `request_shape`, `date_filter_present`,
+`additional_filter`, `cancelled_filter_missing`, atau
+`cancelled_filter_modified` serta `mpn_clear_state` dari `ambiguous`,
+`absent`, `present`, atau `hidden`. Kategori ini hanya diturunkan dari
+bentuk *request sumber asli* dan status kontrol clear yang telah
+diinspeksi. Tidak ada nama filter, tanggal, nilai, kode, identitas,
+pajak, URL ataupun DOM content yang direkam; nilai enum ini bukan
+izin menerima sumber terfilter. Jalur Search dua percobaan, pemilihan
+kontrol dan `MpnUnsupported` tetap sama. Status `present` hanya berarti
+tombol clear teramati, **bukan** bukti bahwa klik berhasil menghapus
+filter pada request berikutnya.
 
 `mpn.capture_failed` mencatat kegagalan terminal MPN dengan enum
 `mpn_capture_stage`: `session` (pembuatan UI termasuk inisialisasi),
@@ -131,7 +152,12 @@ Stop diprioritaskan lalu batas elapsed diperiksa. Saat habis, tabel menjadi
 yang sudah diamati tidak disertifikasi lengkap, dan tidak ada klik pagination
 berikutnya. Satu operasi browser yang sedang berlangsung masih tunduk pada
 timeout lama hingga selesai; angka ini bukan hard interrupt 180 detik ataupun
-izin retry klik yang tidak pasti. Perlu acceptance live untuk dampaknya.
+izin retry klik yang tidak pasti. Pada saat batas terlampaui,
+event `table.elapsed_budget` mengirim enum
+`table_elapsed_stage=before_next_click` atau `state_poll` serta
+jumlah halaman yang sudah dicatat. Kategori ini tidak menambah
+klik, tidak memulihkan data yang hilang, dan belum membuktikan penyebab
+waktu lambat. Perlu acceptance live untuk dampaknya.
 
 Tidak ada perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
 atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;

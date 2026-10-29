@@ -321,6 +321,9 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         if time.monotonic() >= capture_deadline:
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
+            diagnostics.record('table.elapsed_budget', level='WARNING',
+                               table_elapsed_stage='before_next_click',
+                               pages=result['pages'])
             break
         if result['pages'] >= max_pages:
             result['complete'] = False
@@ -338,9 +341,13 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             _check_cancel(check_cancel)
             if time.monotonic() >= deadline:
                 result['complete'] = False
+                expired = time.monotonic() >= capture_deadline
                 result['warning'] = ('Table capture elapsed budget exceeded'
-                                     if time.monotonic() >= capture_deadline
-                                     else 'Table pagination did not advance')
+                                     if expired else 'Table pagination did not advance')
+                if expired:
+                    diagnostics.record('table.elapsed_budget', level='WARNING',
+                                       table_elapsed_stage='state_poll',
+                                       pages=result['pages'])
                 break
             page.wait_for_timeout(120)
         if not result['complete']:
