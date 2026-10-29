@@ -22,6 +22,8 @@ def page(context):
 
 def fixture(page, *, total=4654, sizes=(10, 25, 50, 100, 250, 500), selected=100,
             component=COMPONENT, caption=CAPTION, form=FORM, tab='L3', reported=None):
+    # DOM installation is test setup, not a capture readiness condition.
+    # On a loaded Windows shard it can exceed the 500 ms locator/action bound.
     page.set_content('''<main class="main-content"><div class="p-tabview">
       <ul class="p-tabview-nav"><li><a role="tab" aria-controls="l3">L3</a></li></ul>
       <div class="p-tabview-panels"><p-tabpanel><div class="p-tabview-panel" id="l3">
@@ -68,7 +70,7 @@ def fixture(page, *, total=4654, sizes=(10, 25, 50, 100, 250, 500), selected=100
         };
         rename('rshshr-citr-l3-grid2',c.component);rename('rshshr-citr-l3-form',c.form);draw();
       };
-      })();</script>''', wait_until='domcontentloaded')
+      })();</script>''', wait_until='domcontentloaded', timeout=10000)
     page.evaluate('c=>configure(c)', dict(total=total, sizes=list(sizes), selected=selected,
                   component=component, caption=caption, form=form, tab=tab,
                   reported=total if reported is None else reported))
