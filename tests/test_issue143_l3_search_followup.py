@@ -16,15 +16,25 @@ from test_mpn_source_custody import source_ui
     ('cit_digest', 'cit_digest'),
     ('lifetime_start', 'lifetime_start'),
     ('script_providers', 'script_providers'),
-    ('provider_digest_or_table_count', 'provider_digest_or_table_count'),
+    ('main_digest', 'main_digest'),
+    ('vendor_digest', 'vendor_digest'),
+    ('table_count', 'table_count'),
 ])
 def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expected):
     from coretax_corporate import _observe_l3, CIT_SOURCE_URL
-    from coretax_corporate_projection import L3_BUILD_DIGESTS
+    from coretax_corporate_projection import L3_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
 
     class SyntheticCapture:
         def observe_component_lifetime(self, *, check_cancel=None):
             return None if case == 'lifetime_start' else {}
+
+    class Form:
+        def locator(self, selector):
+            assert selector == 'table'
+            return self
+
+        def count(self):
+            return 1 if case == 'table_count' else 2
 
     class SyntheticPage:
         def __init__(self):
@@ -32,13 +42,18 @@ def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expect
 
         def evaluate(self, *args):
             self.calls += 1
-            # The provider-digest case must first pass the script-presence
-            # gate before presenting a deliberately wrong provider digest.
-            return case == 'provider_digest_or_table_count' and self.calls == 1
+            values = (True, L3_BUILD_DIGESTS[MAIN_SOURCE], L3_BUILD_DIGESTS[VENDOR_SOURCE])
+            if case == 'script_providers':
+                return False
+            if case == 'main_digest' and self.calls == 2:
+                return 'SYNTHETIC_WRONG_MAIN_HASH'
+            if case == 'vendor_digest' and self.calls == 3:
+                return 'SYNTHETIC_WRONG_VENDOR_HASH'
+            return values[self.calls - 1]
 
     result = {}
     digest = 'UNTRUSTED_SYNTHETIC_DIGEST' if case == 'cit_digest' else L3_BUILD_DIGESTS[CIT_SOURCE_URL]
-    assert _observe_l3(SyntheticPage(), object(), SyntheticCapture(), digest,
+    assert _observe_l3(SyntheticPage(), Form(), SyntheticCapture(), digest,
                        {}, 20, None, reason_out=result) is None
     assert result == {'reason': expected}
     assert 'UNTRUSTED_SYNTHETIC_DIGEST' not in json.dumps(result)

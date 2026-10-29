@@ -282,9 +282,13 @@ def _click_table_paginator(control, container, check_cancel):
         raise RuntimeError('Unavailable or unsupported pagination control')
 
 
+TABLE_CAPTURE_BUDGET_SECONDS = 180
+
+
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
-    """Baca seluruh halaman tabel dan rekonsiliasi jumlah baris sebelum footer."""
+    """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
     _check_cancel(check_cancel)
+    capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     maximize_page_size(page, container_handle, max_page_size=max_page_size)
@@ -312,6 +316,12 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
     seen = set()
     while container_handle.query_selector(next_selector):
         _check_cancel(check_cancel)
+        # Do not issue another paginator action after a stalled table exhausts
+        # its total budget. Keep captured rows but never certify COMPLETE.
+        if time.monotonic() >= capture_deadline:
+            result['complete'] = False
+            result['warning'] = 'Table capture elapsed budget exceeded'
+            break
         if result['pages'] >= max_pages:
             result['complete'] = False
             result['warning'] = f'Table page limit {max_pages} reached'
@@ -323,12 +333,14 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             break
         seen.add(state)
         _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
-        deadline = time.monotonic() + 30
+        deadline = min(time.monotonic() + 30, capture_deadline)
         while container_handle.evaluate(STATE_JS) == state:
             _check_cancel(check_cancel)
             if time.monotonic() >= deadline:
                 result['complete'] = False
-                result['warning'] = 'Table pagination did not advance'
+                result['warning'] = ('Table capture elapsed budget exceeded'
+                                     if time.monotonic() >= capture_deadline
+                                     else 'Table pagination did not advance')
                 break
             page.wait_for_timeout(120)
         if not result['complete']:
@@ -362,7 +374,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             result['source_total'] = int(re.sub(r'[^0-9]', '', match.group(1)))
             if len(result['rows']) != result['source_total']:
                 result['complete'] = False
-                result['warning'] = f"Source count {result['source_total']} != captured rows {len(result['rows'])}"
+                result.setdefault('warning', f"Source count {result['source_total']} != captured rows {len(result['rows'])}")
     # Total sumber sering ada di tfoot; masukkan sekali setelah paginasi selesai.
     result['body_row_count'] = len(result['rows'])
     result['rows'].extend(result.get('footer', []))

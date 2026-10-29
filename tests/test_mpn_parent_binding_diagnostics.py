@@ -122,3 +122,58 @@ def test_mismatch_schema_rejects_untrusted_values_without_conversion(tmp_path):
     assert len(mismatch) == 7
     assert all('mpn_parent_field' not in row for row in mismatch)
     assert SECRET not in json.dumps(mismatch)
+
+
+@pytest.mark.parametrize('source_case,expected_reason', [
+    ('label', 'catalog_label'),
+    ('fallback', 'raw_code_fallback'),
+    ('missing_catalog', 'catalog_missing'),
+    ('unreviewed', 'code_not_in_catalog'),
+    ('blank', 'source_code_missing'),
+])
+def test_accounting_type_mismatch_captures_only_catalog_provenance(
+        tmp_path, source_case, expected_reason):
+    ui, header, row, controls = inspected_binding()
+    header['AccountingTypeCode'] = 'SYNTHETIC_CATEGORY_CODE'
+    ui.catalogs = {'ACCOUNTING_TYPE': {
+        'SYNTHETIC_CATEGORY_CODE': 'SYNTHETIC_CATEGORY_LABEL'}}
+    ui.catalog_codes = {'ACCOUNTING_TYPE': frozenset({'SYNTHETIC_CATEGORY_CODE'})}
+    if source_case == 'fallback':
+        ui.catalogs = {'ACCOUNTING_TYPE': {}}
+    elif source_case == 'missing_catalog':
+        ui.catalog_codes = {'ACCOUNTING_TYPE': None}
+    elif source_case == 'unreviewed':
+        ui.catalog_codes = {'ACCOUNTING_TYPE': frozenset({'ANOTHER_SYNTHETIC_CODE'})}
+    elif source_case == 'blank':
+        header['AccountingTypeCode'] = None
+    row[COLUMNS[0]] = SECRET
+    root = tmp_path / 'diagnostics'
+    with diagnostics.session(root, 'worker') as log:
+        with pytest.raises(MpnSafetyError):
+            ui._bind_header(header)
+        assert log.flush()
+    mismatch = [event for event in records(root)
+                if event['event'] == 'mpn.parent_binding_mismatch']
+    assert len(mismatch) == 1
+    assert mismatch[0]['mpn_parent_field'] == 'accounting_type'
+    assert mismatch[0]['mpn_accounting_type_projection'] == expected_reason
+    assert controls.lookups == []
+    assert SECRET not in json.dumps(records(root))
+    assert 'SYNTHETIC_CATEGORY_CODE' not in json.dumps(records(root))
+
+
+def test_accounting_projection_enum_rejects_untrusted_values(tmp_path):
+    root = tmp_path / 'logs'
+    with diagnostics.session(root, 'worker') as log:
+        diagnostics.record('mpn.parent_binding_mismatch',
+                           mpn_parent_field='accounting_type',
+                           mpn_accounting_type_projection=SECRET)
+        diagnostics.record('mpn.parent_binding_mismatch',
+                           mpn_parent_field='accounting_type',
+                           mpn_accounting_type_projection='catalog_label')
+        assert log.flush()
+    events = [r for r in records(root) if r['event'] == 'mpn.parent_binding_mismatch']
+    assert len(events) == 2
+    assert 'mpn_accounting_type_projection' not in events[0]
+    assert events[1]['mpn_accounting_type_projection'] == 'catalog_label'
+    assert SECRET not in json.dumps(events)

@@ -78,8 +78,10 @@ dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
 `l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
 nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
 Corporate verified. Khusus `corporate_observer_stage=l3`, sub-observer
-mencatat `corporate_l3_reason` dari 17 kategori tetap yang memisahkan pin/build,
-lifetime komponen awal/akhir, sumber skrip, struktur form/grid, rantai owner,
+mencatat `corporate_l3_reason` dari 19 kategori tetap yang memisahkan pin/build,
+hash sumber MAIN (`main_digest`), hash sumber VENDOR (`vendor_digest`),
+jumlah tabel L3 (`table_count`), lifetime komponen awal/akhir,
+sumber skrip, struktur form/grid, rantai owner,
 judul/metadata tabel, paginator, bentuk request, footer, offset dan katalog
 referensi. Misalnya `table_structure`, `reference_request`, dan
 `grid_or_footer_missing`. Nilai kategori tidak mengambil string, ID,
@@ -110,9 +112,26 @@ identitas baris induk yang terlihat di DOM berbeda dari sumber asli.
 `accounting_type`, `accounting_detail`, `currency`, `revenue_code`,
 `payment_code`, `tax_period`, atau `transaction_number`.
 Tidak ada nilai DOM, data sumber, identitas transaksi, nomor pajak, atau
-jumlah rupiah di log. Kategori ini belum membuktikan apakah perbedaannya
-berasal dari label/mapping, pergantian data, atau identitas yang salah;
-`MpnSafetyError` tetap fatal dan tombol detail tidak diklik.
+jumlah rupiah di log. Bila `mpn_parent_field=accounting_type`,
+`mpn_accounting_type_projection` membedakan `catalog_label` (label dari
+referensi asli yang lolos syarat), `raw_code_fallback` (kode ada di inventaris
+namun tidak memiliki label yang boleh digunakan), `catalog_missing`
+(inventaris tidak tersedia), `code_not_in_catalog` (kode tidak ada dalam
+inventaris), dan `source_code_missing`. Kelima nilai adalah enum yang ditetapkan
+dalam kode, tidak pernah teks dari Coretax. Semua kategori tetap **bukan**
+pembuktian bahwa label atau DOM harus diganti. Kategori mismatch itu sendiri
+belum membuktikan apakah perbedaannya berasal dari label/mapping, pergantian data,
+atau identitas yang salah; `MpnSafetyError` tetap fatal dan tombol detail
+tidak diklik.
+
+Capture DOM dengan paginator sekarang memiliki **batas elapsed 180 detik per
+satu tabel** (bukan per keseluruhan return). Sebelum setiap klik halaman berikutnya,
+Stop diprioritaskan lalu batas elapsed diperiksa. Saat habis, tabel menjadi
+`PARTIAL` dengan alasan tetap `Table capture elapsed budget exceeded`, data
+yang sudah diamati tidak disertifikasi lengkap, dan tidak ada klik pagination
+berikutnya. Satu operasi browser yang sedang berlangsung masih tunduk pada
+timeout lama hingga selesai; angka ini bukan hard interrupt 180 detik ataupun
+izin retry klik yang tidak pasti. Perlu acceptance live untuk dampaknya.
 
 Tidak ada perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
 atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;
