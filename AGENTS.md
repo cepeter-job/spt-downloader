@@ -641,7 +641,11 @@ build, validate the complete passing serial or fixed two-shard Windows inventory
 for the exact commit/run/attempt and combine only its explicit raw-data slots.
 Never use portable-only, old, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
-percentages use exact integer ratios. Keep native/browser/Tk and in-process
+percentages use exact integer ratios.
+Pure comment-only files leave the diff budget only after complete non-comment
+token equivalence; retain indentation, statement boundaries and all code tokens.
+Mixed/new/code-changing files remain conservatively counted. Keep native/browser/Tk
+and in-process
 worker coverage distinct from unmeasured isolated worker/bootstrap subprocesses
 and browser JavaScript. Preserve runtime isolation and all independent security,
 source/frozen, bootstrap, inventory and publication gates. Enumerated security

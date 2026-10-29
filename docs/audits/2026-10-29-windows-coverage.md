@@ -38,6 +38,11 @@ totals. Exact integer products decide acceptance; display rounding cannot turn
 comment and docstring-only changes do not manufacture covered statements.
 Changed excluded lines and changed unmeasured production modules are refused.
 PRs use the literal base commit; main pushes use their literal preceding commit.
+Pure comment-only files are excluded only when their entire non-comment Python
+token stream is identical in both immutable commits. Indentation, statement
+boundaries, strings, annotations and operators remain significant. Mixed
+code/comment files are conservatively counted in full, and new files always
+count; a comment cannot hide an actual executable change or lower the80% floor.
 Manual/scheduled runs without a diff base record no diff metric, while all
 global/module and complete-Windows gates remain mandatory.
 

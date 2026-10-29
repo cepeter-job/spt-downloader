@@ -4,12 +4,14 @@ This CI-only module validates original test inventories before combining the
 selected run's raw coverage files. It grants no product or live acceptance.
 """
 import argparse
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import tokenize
 
 from scripts.ci_tests import check_windows_inventories
 
@@ -212,6 +214,25 @@ def _git(*args):
     return subprocess.check_output(['git', '--no-pager', *args]).decode('utf-8')
 
 
+def _comment_only_file(base, head, path):
+    """Ignore only a whole-file equivalence of all non-comment Python tokens.
+
+    Keep indentation, statement boundaries, strings, annotations and operators.
+    A mixed code/comment file remains conservatively counted in full.
+    """
+    try:
+        before = _git('show', base + ':' + path)
+        after = _git('show', head + ':' + path)
+    except subprocess.CalledProcessError:
+        return False  # A new file has no predecessor and must be counted.
+
+    def tokens(source):
+        return [(token.type, token.string) for token in
+                tokenize.generate_tokens(io.StringIO(source).readline)
+                if token.type not in (tokenize.COMMENT, tokenize.NL)]
+    return tokens(before) == tokens(after)
+
+
 def changed_lines(base, head):
     """Read added production lines from literal validated commit objects."""
     for revision in (base, head):
@@ -232,7 +253,7 @@ def changed_lines(base, head):
         lines = set()
         for start, size in re.findall(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', diff, re.MULTILINE):
             lines.update(range(int(start), int(start) + (int(size) if size else 1)))
-        if lines:
+        if lines and not _comment_only_file(base, head, path):
             result[path] = lines
     return result
 

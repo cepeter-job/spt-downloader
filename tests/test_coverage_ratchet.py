@@ -3,6 +3,7 @@ from copy import deepcopy
 import importlib
 import importlib.util
 import json
+import subprocess
 import sys
 
 import pytest
@@ -151,6 +152,8 @@ def test_git_diff_keeps_added_production_lines_and_ignores_deleted_or_test_lines
     def git(*args):
         if args[0] == 'rev-parse':
             return args[-1].split('^')[0] + '\n'
+        if args[0] == 'show':
+            return 'value = ' + ('1' if args[-1].startswith(base) else '2') + '\n'
         if '--name-only' in args:
             return 'coretax_example.py\x00tests/test_example.py\x00spt_desktop/example.py\x00'
         assert '--no-ext-diff' in args and '--no-textconv' in args and '--no-renames' in args
@@ -163,6 +166,36 @@ def test_git_diff_keeps_added_production_lines_and_ignores_deleted_or_test_lines
         'coretax_example.py': {2, 3}, 'spt_desktop/example.py': {4}}
     with pytest.raises(ValueError):
         gate().changed_lines('--option', head)
+
+
+def test_comment_only_files_do_not_consume_runtime_diff_coverage_but_mixed_and_new_code_do(monkeypatch):
+    base, head = 'a' * 40, 'b' * 40
+    old = {'coretax_comment.py': 'try:\n    close()\nexcept Exception:\n    pass\n',
+           'coretax_mixed.py': 'value = 1\nother = 2\n'}
+    new = {'coretax_comment.py': old['coretax_comment.py'].replace('except Exception:',
+            'except Exception:  # nosec B110 - Reviewed cleanup'),
+           'coretax_mixed.py': 'value = 3\nother = 2  # comment\n',
+           'coretax_new.py': 'value = 1\n'}
+
+    def git(*args):
+        if args[0] == 'rev-parse':
+            return args[-1].split('^')[0] + '\n'
+        if args[0] == 'show':
+            revision, path = args[-1].split(':', 1)
+            if revision == base and path not in old:
+                raise subprocess.CalledProcessError(128, ['git', 'show'])
+            return (old if revision == base else new)[path]
+        if '--name-only' in args:
+            return '\x00'.join(new) + '\x00'
+        if args[-1] == 'coretax_comment.py':
+            return '@@ -3 +3 @@\n'
+        if args[-1] == 'coretax_mixed.py':
+            return '@@ -1,2 +1,2 @@\n'
+        return '@@ -0,0 +1 @@\n'
+
+    monkeypatch.setattr(gate(), '_git', git)
+    assert gate().changed_lines(base, head) == {
+        'coretax_mixed.py': {1, 2}, 'coretax_new.py': {1}}
 
 
 def raw_inputs(tmp_path, monkeypatch, bad=None):
