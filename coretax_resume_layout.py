@@ -69,6 +69,16 @@ def _literal(cell, value):
         cell.data_type = 's'
 
 
+def _owned_dimension(reference, sheet):
+    """Keep geometry while registering dimension styles in the destination."""
+    dimension = copy(reference)
+    dimension.parent = sheet
+    dimension._style = None
+    if reference.has_style:
+        _style(dimension, reference)
+    return dimension
+
+
 def _reset_sheet(sheet, reference):
     for merged in list(sheet.merged_cells.ranges):
         sheet.unmerge_cells(str(merged))
@@ -78,9 +88,9 @@ def _reset_sheet(sheet, reference):
     sheet.row_dimensions.clear()
     sheet.column_dimensions.clear()
     for key, dimension in reference.column_dimensions.items():
-        sheet.column_dimensions[key] = copy(dimension)
+        sheet.column_dimensions[key] = _owned_dimension(dimension, sheet)
     for key, dimension in reference.row_dimensions.items():
-        sheet.row_dimensions[key] = copy(dimension)
+        sheet.row_dimensions[key] = _owned_dimension(dimension, sheet)
     for attribute in ('sheet_format', 'sheet_properties', 'views', 'page_setup',
                       'page_margins', 'print_options', 'HeaderFooter'):
         setattr(sheet, attribute, deepcopy(getattr(reference, attribute)))
@@ -194,7 +204,7 @@ def apply_resume_layout(workbook, run):
             cell.hyperlink = link
         _literal(audit['A1'], source['A1'].value)
         from coretax_mpn_export import apply_resume_mpn
-        apply_resume_mpn(workbook, run, mapping_row + 1)
+        apply_resume_mpn(workbook, run, mapping_row + 1, reference=reference['Audit'])
         index.print_title_rows = '1:4'
         audit.print_title_rows = '1:3'
         for name, width, minimum in (('Ringkasan', 8, 18), ('Daftar SPT', 11, 8), ('Audit', 6, 11)):
