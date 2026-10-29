@@ -30,8 +30,8 @@ def test_resume_mpn_audit_message_borders_include_the_blank_count_cells(tmp_path
     from coretax_exporter import export_workbook
     run = mpn_run(complete=False)
     if inventory:
-        run['audit'] = [{'status': 'SPT Dilaporkan', 'total': 0, 'rows': 0,
-                         'selected': 0, 'result': 'OK', 'message': 'Synthetic empty inventory'}]
+        run['audit'] = [{'status': 'SPT Dilaporkan', 'total': 0, 'scanned': 0,
+                         'selected': 0, 'result': 'OK', 'note': 'Synthetic empty inventory'}]
     run['mpn']['audit'] = [{'message': 'Synthetic capture incomplete'}]
     path = tmp_path / 'resume.xlsx'
     export_workbook(run, path, include_details=False)

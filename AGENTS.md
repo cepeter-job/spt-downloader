@@ -81,6 +81,7 @@ geometry separately from workbook-local style IDs and register styled dimensions
 through their actual style components; unstyled columns must remain unstyled.
 Verify saved/reopened column and row defaults as well as cell borders, including
 explicit borders on all six cells of MPN audit message rows with blank counts.
+Use the loaded approved Audit body styles even when no SPT audit body exists.
 Do not repair excessive borders by applying formatting to entire columns or by
 rewriting existing private workbooks during normal export.
 
