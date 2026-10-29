@@ -635,6 +635,19 @@ may be suppressed with their reason. New subprocess callers, driver cleanup
 or source changes need their own review; annotations grant no new permissions.
 Keep CodeQL, locked dependency audits, Ruff and full test/build gates independent.
 
+Windows parent-process coverage uses the existing `.coveragerc` and separately
+declared line/branch/module/diff floors in `coverage-policy.json`. Before package
+build, validate the complete passing serial or fixed two-shard Windows inventory
+for the exact commit/run/attempt and combine only its explicit raw-data slots.
+Never use portable-only, old, failed or missing-shard data as representative
+acceptance. Changed excluded or unmeasured production lines remain refused;
+percentages use exact integer ratios. Keep native/browser/Tk and in-process
+worker coverage distinct from unmeasured isolated worker/bootstrap subprocesses
+and browser JavaScript. Preserve runtime isolation and all independent security,
+source/frozen, bootstrap, inventory and publication gates. Enumerated security
+behavior acceptance is documented in docs/audits/2026-10-29-windows-coverage.md;
+it is not a claim of all-source100% or live acceptance.
+
 CLI live failure/Stop recovery writes only a normally validated PARTIAL run.json
 after the existing checkpoint/physical-workbook scope and selected-JSON checks,
 through the existing guarded atomic checkpoint; never retry save_output from

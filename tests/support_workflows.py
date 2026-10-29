@@ -142,7 +142,9 @@ def _windows_arguments(step):
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
     assert _expression(tail) == _expression(expected), 'Windows must execute its bound shard argv and preserve failures'
     assert _expression(step['env']['CI_SHARD']) == 'matrix.shard'
-    return arguments
+    assert arguments[:4] == ['-m', 'coverage', 'run', '--rcfile=.coveragerc']
+    assert step['env']['COVERAGE_FILE'] == '${{ runner.temp }}/.coverage.${{ matrix.mode }}'
+    return arguments[4:]
 
 
 def _portable_arguments(step):
@@ -304,8 +306,10 @@ def validate_production(document):
         "&&needs.route.result=='success'&&needs.validate.result=='success'")
 
     steps = package['steps']
-    downloads = [(i, s) for i, s in enumerate(steps)
-                 if _action(s, 'actions/download-artifact') and 'name' in s.get('with', {})]
+    all_downloads = [(i, s) for i, s in enumerate(steps)
+                     if _action(s, 'actions/download-artifact') and 'name' in s.get('with', {})]
+    downloads = [(i, s) for i, s in all_downloads
+                 if s['with']['name'].startswith('test-inventory-')]
     expected_downloads = {
         'portable': None,
         'windows-serial': "needs.route.outputs.windows_mode == 'serial'",
@@ -315,9 +319,9 @@ def validate_production(document):
     assert len(downloads) == len(expected_downloads)
     assert {s['with']['name'].split('-python', 1)[0] for _, s in downloads} == {
         'test-inventory-' + name for name in expected_downloads}
-    download_indices = {i for i, _ in downloads}
+    download_indices = {i for i, _ in all_downloads}
     for i, step in enumerate(steps):
-        if i not in download_indices:
+        if i not in download_indices and step.get('id') != 'coverage-proof':
             _success_only(step)
     for _, step in downloads:
         label = step['with']['name'].split('-python', 1)[0].removeprefix('test-inventory-')
@@ -353,7 +357,7 @@ def validate_production(document):
         '--executable', '$env:RUNNER_TEMP/artifact-readback/SPTDownloader.exe',
         '--artifact-id', '$env:ARTIFACT_ID', '--report', '$env:RUNNER_TEMP/packaged-bootstrap.json']
     smoke_upload_i, smoke_upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact')
-                                       and s.get('id') != 'upload')
+                                       and s.get('id') not in {'upload', 'coverage-proof'})
     assert smoke_upload['with']['path'] == '${{ runner.temp }}/packaged-bootstrap.json'
     assert smoke_upload['with']['name'] == 'packaged-bootstrap-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
     assert smoke_upload['with']['if-no-files-found'] == 'error'
@@ -401,8 +405,11 @@ def validate_production(document):
     assert lock_i < lint_i < portable_i
     for step in windows['steps']:
         if _action(step, 'actions/upload-artifact'):
+            if step.get('id') == 'coverage-upload':
+                continue  # Independently checked with raw data and all three source slots.
             prefix = 'test-inventory' if step['with']['path'].endswith('/test-inventory.json') else 'test-results'
             assert step['with']['name'] == prefix + '-windows-${{ matrix.mode }}-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
+    validate_windows_coverage(document)
 
 
 def validate_measurements(document, job_names):
@@ -436,7 +443,7 @@ def validate_measurements(document, job_names):
                 coverage_indices.append(coverage_i)
                 result_files.add(filename)
         uploads = [(i, s) for i, s in enumerate(steps) if _action(s, 'actions/upload-artifact')]
-        assert len(uploads) == (3 if name == 'portable' else 2)
+        assert len(uploads) == (3 if name in {'portable', 'windows'} else 2)
         paths = []
         for i, step in uploads:
             assert step.get('continue-on-error', False) is False
@@ -450,6 +457,13 @@ def validate_measurements(document, job_names):
                 assert len(lines) == 3
                 continue
             assert _expression(step.get('if')) == expected_guard
+            if name == 'windows' and step.get('id') == 'coverage-upload':
+                assert set(lines) == {'${{ runner.temp }}/' + filename for filename in
+                                      ('.coverage.${{ matrix.mode }}', 'coverage-windows.json',
+                                       'coverage-windows.xml', 'test-inventory.json')}
+                assert len(lines) == 4
+                assert step['with']['include-hidden-files'] is True
+                continue
             if name == 'portable':
                 assert len(lines) == len(filenames)
                 assert set(lines) == {'${{ runner.temp }}/' + filename for filename in filenames}
@@ -459,6 +473,63 @@ def validate_measurements(document, job_names):
             assert report_i < i
         assert {'test-inventory.json'} in paths and result_files in paths
         assert start_i < uv_i < tests_i < report_i
+
+
+def validate_windows_coverage(document):
+    """Raw data, inventory identity, selection and gating form one pipeline."""
+    windows = document['jobs']['windows']['steps']
+    package = document['jobs']['package']['steps']
+    tests_i, tests = _one(windows, lambda s: s.get('id') == 'tests')
+    _success_only(tests)
+    _complete_pytest_arguments(_windows_arguments(tests), 'windows')
+    upload_i, upload = _one(windows, lambda s: s.get('id') == 'coverage-upload')
+    assert _action(upload, 'actions/upload-artifact')
+    assert _expression(upload.get('if')) == "always()&&steps.tests.outcome!='skipped'"
+    assert not upload.get('continue-on-error', False)
+    assert upload['with']['include-hidden-files'] is True
+    assert upload['with']['if-no-files-found'] == 'error'
+    assert upload['with']['name'] == 'windows-coverage-${{ matrix.mode }}-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
+    lines = upload['with']['path'].splitlines()
+    assert len(lines) == 4 and set(lines) == {'${{ runner.temp }}/' + name for name in
+        ('.coverage.${{ matrix.mode }}', 'coverage-windows.json', 'coverage-windows.xml', 'test-inventory.json')}
+    for fmt in ('json', 'xml'):
+        report_i, report = _one(windows, lambda s: _runs(s, '-m', 'coverage', fmt))
+        _success_only(report, "always()&&steps.tests.outcome!='skipped'")
+        assert report['env']['COVERAGE_FILE'] == tests['env']['COVERAGE_FILE']
+        assert _single_command(report) == ['-m', 'coverage', fmt, '--rcfile=.coveragerc',
+                                          '-o', '$env:RUNNER_TEMP/coverage-windows.' + fmt]
+        assert tests_i < report_i < upload_i
+    gate_i, gate = _one(package, lambda s: s.get('id') == 'coverage-gate')
+    _success_only(gate)
+    assert _single_command(gate) == [
+        '-m', 'scripts.coverage_ratchet', '--root', '$env:RUNNER_TEMP/coverage-input',
+        '--mode', '$env:WINDOWS_MODE', '--python-version', '$env:PYTHON_VERSION',
+        '--commit', '$env:GITHUB_SHA', '--run-id', '$env:GITHUB_RUN_ID',
+        '--run-attempt', '$env:GITHUB_RUN_ATTEMPT', '--base', '$env:COVERAGE_BASE',
+        '--output', '$env:RUNNER_TEMP/coverage-proof']
+    assert _expression(gate['env']['COVERAGE_BASE']) == "github.event.pull_request.base.sha||github.event.before||''"
+    inventory_i, _ = _one(package, lambda s: s.get('id') == 'inventory')
+    build_i, _ = _one(package, lambda s: _runs(s, 'build_desktop.py'))
+    assert inventory_i < gate_i < build_i
+    for slot in ('serial', 'shard-0', 'shard-1'):
+        download_i, download = _one(package, lambda s: s.get('id') == 'coverage-' + slot)
+        mode = 'serial' if slot == 'serial' else 'two-shards'
+        _success_only(download, f"needs.route.outputs.windows_mode == '{mode}'")
+        assert _action(download, 'actions/download-artifact')
+        assert download['with'] == {
+            'name': 'windows-coverage-' + slot + '-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}',
+            'path': '${{ runner.temp }}/coverage-input/' + slot}
+        assert inventory_i < download_i < gate_i
+    checkout_i, checkout = _one(package, lambda s: _action(s, 'actions/checkout'))
+    assert checkout['with']['fetch-depth'] == 0 and checkout_i < inventory_i
+    proof_i, proof = _one(package, lambda s: s.get('id') == 'coverage-proof')
+    assert gate_i < proof_i < build_i
+    assert _action(proof, 'actions/upload-artifact') and not proof.get('continue-on-error', False)
+    assert _expression(proof.get('if')) == "always()&&steps.coverage-gate.outcome!='skipped'"
+    assert proof['with']['if-no-files-found'] == 'error'
+    assert proof['with']['name'] == 'coverage-windows-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
+    assert set(proof['with']['path'].splitlines()) == {'${{ runner.temp }}/coverage-proof/' + name for name in
+        ('coverage-windows.json', 'coverage-windows.xml', 'coverage-gate.json')}
 
 
 def validate_benchmark(document):
