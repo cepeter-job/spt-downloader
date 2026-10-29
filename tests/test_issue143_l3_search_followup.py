@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from test_diagnostics import records
+from test_json_hybrid_native import browser
 from test_mpn_source_custody import source_ui
 
 
