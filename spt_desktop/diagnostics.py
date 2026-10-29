@@ -33,7 +33,7 @@ EVENTS = frozenset({
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
-    'mpn.capture_failed', 'corporate.observe_unavailable',
+    'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'corporate.observe_unavailable',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
@@ -41,6 +41,8 @@ EVENTS = frozenset({
 ENUMS = {
     'mpn_ownership_reason': frozenset({'navigation', 'frame', 'method',
         'page_route', 'request_url', 'resource_kind'}),
+    'mpn_parent_field': frozenset({'accounting_type', 'accounting_detail',
+        'currency', 'revenue_code', 'payment_code', 'tax_period', 'transaction_number'}),
     'corporate_observer_stage': frozenset({'build', 'tabs', 'tab', 'panel', 'form',
         'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
     'corporate_l3_reason': frozenset({
