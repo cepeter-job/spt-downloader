@@ -46,6 +46,14 @@ ke job yang sudah berakhir.
 
 ## Capture, scope, dan output
 
+Pada CLI, error atau Ctrl+C menutup resource milik perintah lalu hanya mencoba
+checkpoint `run.json` PARTIAL yang tervalidasi secara atomik. Handler tidak
+mengekspor ulang workbook. Jika validasi/penyimpanan checkpoint gagal, file lama
+dipertahankan; kode keluar tetap 1 untuk error atau 130 untuk Stop. Periksa
+diagnostik dan checkpoint privat, lalu gunakan `--resume` setelah penyebabnya
+diselesaikan. Workbook yang sudah ada dapat mencerminkan ekspor sebelumnya;
+keberadaannya bukan bukti run terputus telah COMPLETE.
+
 | Gejala | Pemeriksaan dan tindakan |
 | --- | --- |
 | NPWP tidak ditemukan atau ambigu | Periksa 16 digit persis dan kewenangan akun. Jangan memilih kecocokan sebagian atau menghapus nol awal. |

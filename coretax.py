@@ -5,6 +5,7 @@ CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
 """
 from spt_desktop import diagnostics
 import argparse
+from contextlib import contextmanager, ExitStack
 from datetime import datetime
 import json
 import os
@@ -21,7 +22,7 @@ from coretax_exporter import (validate_scope, validate_export_run, export_split_
                              workbook_groups, detail_sheet_title, record_sheet_titles,
                              workbook_proof, read_workbook_proof, workbook_sheet_titles,
                              export_workbook)
-from coretax_browser import SEARCH_URL, collect_inventory, collect_details
+from coretax_browser import SEARCH_URL, collect_inventory, collect_details, _atomic_checkpoint
 from coretax_pdf import attachment_declarations, pdf_custody, copy_held_pdfs
 from coretax_json_capture import (JSON_OUTPUT_LAYOUT, json_output_names, json_custody,
                                   copy_held_json, verify_existing_json)
@@ -469,6 +470,69 @@ def parser():
     return cli
 
 
+@contextmanager
+def _cli_cleanup():
+    """Close every owned resource without replacing an active error or Stop."""
+    stack = ExitStack()
+    failed = interrupted = False
+
+    def register(callback, *args):
+        def close():
+            nonlocal failed, interrupted
+            try:
+                callback(*args)
+            except KeyboardInterrupt as error:
+                interrupted = True
+                diagnostics.record('operation.cancelled', error=error, phase='cli', status='CANCELLED')
+            except Exception as error:
+                # Each external close is containment only; it cannot authorize
+                # capture/publication or prevent the remaining owned cleanup.
+                failed = True
+                diagnostics.record('operation.failed', error=error, level='WARNING', phase='cli', status='ERROR')
+        stack.callback(close)
+
+    try:
+        yield register
+    finally:
+        active_failure = sys.exception() is not None
+        stack.close()
+        if interrupted:
+            raise KeyboardInterrupt('CLI interrupted during owned cleanup')
+        if failed and not active_failure:
+            raise RuntimeError('CLI owned resource cleanup failed')
+
+
+def _close_cli_page(page):
+    if not page.is_closed():
+        page.close()
+
+
+def _failed_cli_run(run, folder, *, interrupted=False):
+    """Preserve a validated PARTIAL checkpoint; never retry workbook export."""
+    if run is not None:
+        try:
+            run['complete'] = False
+            run.setdefault('errors', []).append({'object': 'Run', 'phase': 'details',
+                'message': ('Interrupted. Resume this output folder to retry incomplete returns.'
+                            if interrupted else 'Capture/export failed. Inspect diagnostics and original checkpoints.')})
+            validate_export_run(run)
+            _check_output_scope(run, folder)
+            _atomic_checkpoint(folder / 'run.json', run)
+        except KeyboardInterrupt as error:
+            interrupted = True
+            diagnostics.record('operation.cancelled', error=error, phase='cli', status='CANCELLED')
+        except Exception as error:
+            # Best effort only. Invalid scope or failed storage preserves the
+            # last durable bytes and the original terminal result.
+            diagnostics.record('operation.failed', error=error, level='WARNING', phase='cli', status='PARTIAL')
+            print('Checkpoint update unavailable; existing checkpoint files retained.', file=sys.stderr)
+    if interrupted:
+        print('Interrupted; existing checkpoints retained.', file=sys.stderr)
+        return 130
+    print('BLOCKED: capture/export failed; inspect diagnostics and original checkpoints.', file=sys.stderr)
+    return 1
+
+
 def _main(argv=None):
     cli = parser()
     args = cli.parse_args(argv)
@@ -514,8 +578,13 @@ def _main(argv=None):
     owned_context = None
     work_page = None
     output_path = None
-    with sync_playwright() as playwright:
-        try:
+    try:
+        with _cli_cleanup() as register:
+            manager = sync_playwright()
+            # Initialization may acquire the transport before raising or Stop.
+            # The contained callback also tolerates an uninitialized manager.
+            register(manager.__exit__, None, None, None)
+            playwright = manager.__enter__()
             if args.reuse_browser:
                 browser = playwright.chromium.connect_over_cdp(args.reuse_browser, timeout=20000)
                 context = browser.contexts[0]
@@ -524,9 +593,11 @@ def _main(argv=None):
                     headless=False, no_viewport=True, service_workers='block',
                     locale='id-ID', timezone_id='Asia/Jakarta',
                     args=['--no-first-run', '--no-default-browser-check'])
+                register(owned_context.close)
                 owned_context._spt_financial_route_policy = 'service_workers_blocked'
                 context = owned_context
             work_page = context.new_page()
+            register(_close_cli_page, work_page)
             work_page.set_viewport_size({'width': 1600, 'height': 1000})
             authenticate(work_page, args.non_interactive)
             if run is None:
@@ -547,27 +618,12 @@ def _main(argv=None):
             run['finished_at'] = datetime.now().astimezone().isoformat()
             run['duration_seconds'] = round(time.monotonic() - start, 2)
             output_path = save_output(run, folder)
-        except KeyboardInterrupt:
-            if run is not None:
-                run['complete'] = False
-                run['errors'].append({'object': 'Run', 'phase': 'details', 'message': 'Interrupted. Resume this output folder to retry incomplete returns.'})
-                output_path = save_output(run, folder)
-            print('Interrupted; existing checkpoints retained.', file=sys.stderr)
-            return 130
-        except Exception as exc:
-            diagnostics.record('operation.failed', error=exc, level='ERROR', status='ERROR')
-            if run is not None:
-                run['complete'] = False
-                run['errors'].append({'object': 'Run', 'phase': 'details', 'message': str(exc).split('\n')[0]})
-                output_path = save_output(run, folder)
-            print(f'BLOCKED: {str(exc).splitlines()[0]}', file=sys.stderr)
-            print('Sign in again if needed; close a locked dedicated profile or use --reuse-browser; inspect Audit for data-layout failures.', file=sys.stderr)
-            return 1
-        finally:
-            if work_page is not None and not work_page.is_closed():
-                work_page.close()
-            if owned_context is not None:
-                owned_context.close()
+    except KeyboardInterrupt as error:
+        diagnostics.record('operation.cancelled', error=error, status='CANCELLED')
+        return _failed_cli_run(run, folder, interrupted=True)
+    except Exception as error:
+        diagnostics.record('operation.failed', error=error, level='ERROR', status='ERROR')
+        return _failed_cli_run(run, folder)
     count = sum(r.get('capture_complete', False) for r in run['records'])
     print(f"{'COMPLETE' if run['complete'] else 'PARTIAL'}: {count}/{len(run['records'])} return details verified")
     print(f'Resume Excel: {output_path.resolve()}')

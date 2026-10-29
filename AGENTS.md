@@ -611,6 +611,23 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
+Register the CLI Playwright manager teardown before entering it: initialization
+can acquire its driver transport before an error or Stop. Contain early teardown
+failures, retain original exit 1/130 and durable checkpoints, and attempt every
+later owned cleanup. Never close a reused browser context.
+
+CLI live failure/Stop recovery writes only a normally validated PARTIAL run.json
+after the existing checkpoint/physical-workbook scope and selected-JSON checks,
+through the existing guarded atomic checkpoint; never retry save_output from
+an error handler. Invalid runs and storage failures preserve the last durable
+checkpoint and existing workbooks. Keep fixed public/checkpoint error messages
+and sanitized diagnostics. Close every CLI-owned page/context/driver in reverse
+ownership order, including after failed acquisition; never close reused external
+contexts. Ordinary cleanup failures cannot mask an active error or Stop, and a
+cleanup failure after normal work cannot report CLI success. Stop during cleanup
+or checkpoint recovery retains exit130; ordinary failure retains exit1. These
+rules do not weaken capture/custody/publication checks or alter desktop outcomes.
+
 - The bottom-right bug-report contact uses its own 12-point font and retains wrapping and bottom-right placement. Compact windows reserve enough vertical space for the summary and initial inputs; retain existing horizontal wrapping measurements. Source/frozen self-tests verify its effective font size and real geometry; do not enlarge shared caption/status styles to achieve this.
 - The SPT selection list uses presentation-only period captions: exact case-insensitive PPh Badan displays `Tahunan`; recognized monthly numbers, same-month period codes and Indonesian month/year captions display the month name. Ambiguous periods remain literal. Preserve original metadata, checkpoint/export periods, identifiers, search by source values, original chronology keys and inventory-order consent IDs.
 - The GUI is a thin stdlib/Tkinter launcher. Do not import Playwright/openpyxl into its process; prepare the isolated worker with uv and copy only `spt_desktop.runtime.WORKER_FILES`. Update that explicit allowlist when adding worker modules; never recursively package workspace/profile/output directories.
