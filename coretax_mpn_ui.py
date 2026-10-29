@@ -395,6 +395,7 @@ class AccountingUI:
             self._observer_call(self.page.wait_for_timeout, min(100, remaining))
 
     def open(self):
+        self.diagnostic_stage = 'navigation'
         self._stop()
         if getattr(self.page.context, '_spt_financial_route_policy', None) != 'service_workers_blocked':
             raise MpnUnsupported('MPN requires the reviewed owned browser context')
@@ -403,7 +404,9 @@ class AccountingUI:
         self.preparation_deadline = time.monotonic() + 45
         # Angular may mount its route owner after DOMContentLoaded. Short
         # value-free probes keep Stop and the original deadline authoritative.
+        self.diagnostic_stage = 'owner'
         self._ready_one('acc-balance-sheet-light')
+        self.diagnostic_stage = 'environment'
         environment = self.page.evaluate('''() => ({language:navigator.language,
             timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
             scripts:[...document.scripts].filter(e=>e.isConnected).map(e=>e.src)})''')
@@ -411,13 +414,16 @@ class AccountingUI:
         self._state()
         if environment.get('language') != 'id-ID' or environment.get('timezone') != 'Asia/Jakarta':
             raise MpnUnsupported('MPN display environment is unsupported')
+        self.diagnostic_stage = 'source'
         if (set(self.pins) != set(SOURCE_PINS)
                 or set(url for url in environment.get('scripts', []) if re.match(
                     re.escape(ORIGIN) + r'/accounting/id-ID/(?:main|vendor)\.', url))
                     != {ORIGIN + path for path in SOURCE_PINS}):
             raise MpnUnsupported('MPN reviewed loaded script providers are unavailable')
+        self.diagnostic_stage = 'dropdowns'
         self._dropdown('acc-balance-sheet-light form ui-dropdown#ShowZeroValue', 'Yes')
         self._dropdown('acc-balance-sheet-light form ui-dropdown#ShowCancelledTransaction', 'No')
+        self.diagnostic_stage = 'search'
         search = self._ready_one('acc-balance-sheet-light form button#submit')
         if search.inner_text(timeout=1000).strip() != 'Cari':
             raise MpnUnsupported('MPN inspected search control changed')
@@ -432,6 +438,7 @@ class AccountingUI:
             if self._unfiltered(snapshot):
                 self.list_snapshot = snapshot
                 break
+            self.diagnostic_stage = 'period_clear'
             clear = self.list_owner.locator('#filterPeriodCode .p-dropdown-clear-icon')
             count = clear.count()
             self._stop()
@@ -445,6 +452,7 @@ class AccountingUI:
         # unnecessary for complete owned pagination and can still be animating.
         self._stop()
         self.preparation_deadline = None
+        self.diagnostic_stage = 'ready'
 
     def _freeze_catalog(self):
         if self.catalog_frozen:

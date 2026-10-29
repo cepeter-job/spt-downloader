@@ -80,6 +80,7 @@ def test_mpn_unsupported_stage_does_not_grant_completion(monkeypatch, tmp_path, 
     class Refusal(SyntheticUI):
         def open(self):
             if phase == 'open':
+                self.diagnostic_stage = 'source'
                 raise MpnUnsupported(secret)
 
         def list_pages(self, max_pages):
@@ -107,6 +108,7 @@ def test_mpn_unsupported_stage_does_not_grant_completion(monkeypatch, tmp_path, 
     assert not run['mpn']['inventory_complete'] or phase == 'final_drain'
     event, = [e for e in records(tmp_path) if e['event'] == 'mpn.capture_failed']
     assert event['mpn_capture_stage'] == phase
+    assert event.get('mpn_ui_stage') == ('source' if phase == 'open' else None)
     assert event['status'] == 'PARTIAL'
     assert event['error']['type'] == 'MpnUnsupported'
     assert secret not in json.dumps(event)
@@ -129,6 +131,7 @@ def test_mpn_proven_empty_inventory_remains_complete_without_failure_event(monke
 
 @pytest.mark.parametrize('event,field', [
     ('mpn.capture_failed', 'mpn_capture_stage'),
+    ('mpn.capture_failed', 'mpn_ui_stage'),
     ('corporate.observe_unavailable', 'corporate_observer_stage'),
 ])
 def test_failure_stage_schema_refuses_arbitrary_private_values(monkeypatch, tmp_path, event, field):

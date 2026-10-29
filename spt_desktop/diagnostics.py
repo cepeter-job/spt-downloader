@@ -45,6 +45,8 @@ ENUMS = {
         'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
     'mpn_capture_stage': frozenset({'session', 'open', 'parent_inventory',
         'parent_detail', 'final_drain'}),
+    'mpn_ui_stage': frozenset({'navigation', 'owner', 'environment', 'source',
+        'dropdowns', 'search', 'period_clear', 'ready'}),
     'mpn_source_stage': frozenset({'provider', 'pending_budget', 'request_failed',
         'ownership', 'response', 'body', 'body_budget', 'script_digest',
         'catalog_snapshot', 'catalog_late', 'catalog_decode'}),

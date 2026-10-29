@@ -83,7 +83,10 @@ sub-observer; verifikasi sumber, identitas, dan pembatasan tetap wajib.
 `mpn.capture_failed` mencatat kegagalan terminal MPN dengan enum
 `mpn_capture_stage`: `session` (pembuatan UI termasuk inisialisasi),
 `open` (kesiapan UI), `parent_inventory`, `parent_detail`, atau
-`final_drain`. `error` hanya kelas exception dan frame terpilih melalui
+`final_drain`. Bila terjadi saat `open`, `mpn_ui_stage` dapat menunjukkan
+`navigation`, `owner`, `environment`, `source`, `dropdowns`,
+`search`, `period_clear`, atau `ready` (kategori tahap saja,
+bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
 sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
 penolakan kepemilikan sumber; event baru bukan penggantinya. Tidak ada
 perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,

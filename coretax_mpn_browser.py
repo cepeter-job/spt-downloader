@@ -443,6 +443,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
     from spt_desktop import diagnostics
     seen_headers, seen_details, provenance = {}, {}, {}
     capture_stage = 'session'
+    ui = None
     try:
         with AccountingUI(page, run, folder, check_cancel=check_cancel) as ui:
             capture_stage = 'open'
@@ -575,14 +576,16 @@ No partial DOM page is combined with another source. Raw pages stay private.
             value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
     except MpnSafetyError as error:
         diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
-                           mpn_capture_stage=capture_stage, error=error)
+                           mpn_capture_stage=capture_stage,
+                           mpn_ui_stage=getattr(ui, 'diagnostic_stage', None), error=error)
         value['status'] = 'PARTIAL'
         value['audit'].append({'message': 'Identitas atau snapshot MPN berubah; pengambilan ditolak.'})
         checkpoint()
         raise
     except (MpnUnsupported, PlaywrightError) as error:
         diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
-                           mpn_capture_stage=capture_stage, error=error)
+                           mpn_capture_stage=capture_stage,
+                           mpn_ui_stage=getattr(ui, 'diagnostic_stage', None), error=error)
         value['status'] = 'PARTIAL'
         value['audit'].append({'message': 'Pengambilan MPN belum lengkap; lihat checkpoint privat dan coba kembali.'})
     except KeyboardInterrupt:
