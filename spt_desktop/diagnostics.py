@@ -279,12 +279,15 @@ class DiagnosticLog:
                 finally:
                     self._queue.task_done()
         except Exception:
+            # Queue/store implementations may fail arbitrarily; diagnostics
+            # become unavailable without replacing a product error or Stop.
             self._failed = True
         finally:
             try:
                 if store is not None:
                     store.close()
             except Exception:
+                # Owned store shutdown cannot replace the product outcome.
                 self._failed = True
             while True:
                 try:

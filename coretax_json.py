@@ -458,6 +458,12 @@ def _render_row(row, context):
 
 
 def adapt_inventory_page(body: bytes, context: dict) -> dict:
+    """Adapt one original submitted-list response using its owned request context.
+
+    Return page eligibility and literal display/source metadata without changing
+    source bytes or identifiers. Unsupported layouts require whole-page DOM
+    fallback. JsonSafetyError rejects request, identity, snapshot or known caption
+    contradictions; native eligibility does not certify inventory completeness."""
     request = validate_inventory_binding(context)
     if not isinstance(body, bytes):
         raise JsonSafetyError('Original list response bytes are required')

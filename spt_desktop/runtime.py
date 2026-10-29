@@ -252,6 +252,12 @@ def _resources(source, root):
 
 @diagnostics.traced('runtime')
 def ensure_runtime(root: Path, on_status, cancelled, *, python_profile='production') -> Path:
+    """Return a verified isolated worker interpreter for the production profile.
+
+    Use pinned uv/Python and hash-locked dependencies, with explicit worker
+    resource allowlisting and validated reuse. on_status receives fixed setup
+    progress; cancelled is checked across preparation. Refuse changed/unsafe
+    resources or environment; installation success does not authorize a job."""
     _cancel(cancelled)
     version = python_version(python_profile)
     root = Path(root).resolve()
