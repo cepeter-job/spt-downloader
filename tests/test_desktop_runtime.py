@@ -95,10 +95,17 @@ class SyntheticCommands:
         return subprocess.CompletedProcess(argv, 0, '', '')
 
 
+def test_missing_required_runtime_fails_instead_of_skipping(monkeypatch, tmp_path):
+    monkeypatch.setattr(importlib.util, 'find_spec', lambda name: None)
+    try:
+        with pytest.raises(AssertionError, match='Portable runtime setup is not implemented'):
+            setup.__wrapped__(monkeypatch, tmp_path)
+    except pytest.skip.Exception:
+        pytest.fail('A missing required runtime must fail its consumers, not skip them')
+
+
 @pytest.fixture
 def setup(monkeypatch, tmp_path):
-    if importlib.util.find_spec('spt_desktop.runtime') is None:
-        pytest.skip('Runtime is absent; the resource-contract test establishes RED')
     runtime = runtime_module()
     source = tmp_path / 'bundled'
     source.mkdir()

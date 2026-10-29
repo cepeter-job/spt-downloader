@@ -171,7 +171,11 @@ def _validate_financial_attachments(record, scope, seen_paths):
 
 
 def validate_export_run(run):
-    """Periksa scope, flag kelengkapan, dan nilai sel sebelum menulis hasil."""
+    """Validate literal scope, completeness flags and cell values before export.
+
+    Reject malformed records, unsafe Excel values and contradictory COMPLETE
+    claims with ValueError. Validation does not acquire original response/PDF
+    custody or grant publication consent; callers retain those separate gates."""
     validate_scope(run.get('npwp'), run.get('year'))
     validate_mpn(run)
     basis = run.get('year_basis')
@@ -633,6 +637,12 @@ def _export_form_workbook(run, path):
 
 def export_workbook(run, path, *, include_details=True, detail_targets=None, resume_file=None,
                     include_administration=True):
+    """Write the validated run's administration or selected form workbook to path.
+
+    Keep identifiers/source periods as literal text and preserve mapping audit
+    results. Forms-only mode requires selected records. Invalid scope/content
+    raises before writing; the caller owns staging, collision checks, byte
+    verification and publication. A written workbook does not certify COMPLETE."""
     validate_export_run(run)
     if not include_administration:
         if not include_details or not run['records']:
@@ -785,7 +795,11 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
 
 
 def export_split_workbooks(run, folder, *, mapping_reports=None):
-    """Buat resume, workbook masa, dan form Badan; publikasi ditangani pemanggil."""
+    """Write resume and model/period-isolated form workbooks into folder.
+
+    Preserve literal grouping identities and relative links; optionally populate
+    mapping_reports. Return the output-name/path map after validation. Caller
+    owns staging/custody/publication and must retain unresolved mapping as PARTIAL."""
     validate_export_run(run)
     folder = Path(folder)
     groups = workbook_groups(run)

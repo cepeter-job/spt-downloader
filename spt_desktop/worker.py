@@ -29,6 +29,13 @@ def playwright_factory():
 
 
 def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=None,detail_source='dom',account=None):
+    """Run one owned read-only export and emit its bounded terminal protocol.
+
+    Validate literal scope/job identity, obtain operator selection/overwrite
+    consent, capture SPT plus required MPN, verify outputs and publish under byte
+    custody. Return 0 for COMPLETE, 2 PARTIAL, 4 cancellation, 3 blocked auth or
+    1 failure. Diagnostics sanitize exceptions; no raw browser messages enter
+    the GUI. A zero exit alone never substitutes for verified terminal output."""
     diagnostics.record('operation.started', job_id=job_id, operation='export')
     progress=Progress(job_id,emit)
     run=None

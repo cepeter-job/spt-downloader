@@ -616,6 +616,14 @@ can acquire its driver transport before an error or Stop. Contain early teardown
 failures, retain original exit 1/130 and durable checkpoints, and attempt every
 later owned cleanup. Never close a reused browser context.
 
+Detail collection records only the existing fixed capture error categories in
+run/checkpoint/console messages, never an external exception's text or string
+conversion. Retain original safe error type/frame diagnostics, cancellation and
+fatal JSON safety semantics. Owned list restoration lives in the same browser
+module helper, preserving module hooks, request/page identity, operation order
+and all checks before View. Source-only quality inventories use the explicit AST
+definitions in `scripts/quality_inventory.py`; their counts are not runtime proof.
+
 CLI live failure/Stop recovery writes only a normally validated PARTIAL run.json
 after the existing checkpoint/physical-workbook scope and selected-JSON checks,
 through the existing guarded atomic checkpoint; never retry save_output from

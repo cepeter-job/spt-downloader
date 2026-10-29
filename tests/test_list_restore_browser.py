@@ -7,10 +7,12 @@ import pytest
 import coretax_browser as driver
 from support_browser_protocol import DETAIL_URL, LIST_URL, META, RECORD, TAXPAYER, run_fixture
 from support_isolated_browser import browser, context
+from support_browser_protocol import capture_failures
 
 
 @pytest.mark.parametrize('case', ['recover', 'missing', 'http403', 'application_error'])
 def test_real_list_restoration_keeps_owned_requests_and_terminal_failures(context, monkeypatch, tmp_path, case):
+    failures = capture_failures(monkeypatch)
     api = driver.ORIGIN + '/returnsheet/api/returnsheetssubmitted'
     visits, captured = [], []
     post = {'TaxpayerAggregateIdentifier': TAXPAYER, 'First': 0, 'Rows': 50,
@@ -66,4 +68,5 @@ def test_real_list_restoration_keeps_owned_requests_and_terminal_failures(contex
         assert result['records'][0]['sections'] == []
         assert len(result['errors']) == 1
         if case in ('http403', 'application_error'):
-            assert 'unsuccessful' in result['errors'][0]['message']
+            assert any('unsuccessful' in str(error) for error in failures)
+            assert result['errors'][0]['message'] == 'capture_failed'

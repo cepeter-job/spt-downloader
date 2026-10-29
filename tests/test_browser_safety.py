@@ -101,6 +101,33 @@ def install_capture(monkeypatch):
     })
 
 
+@pytest.mark.parametrize('error_type', [RuntimeError, ValueError, driver.PlaywrightError])
+def test_detail_failure_keeps_private_exception_text_out_of_outputs(tmp_path, monkeypatch, capsys, error_type):
+    secret = 'SYNTHETIC_PRIVATE_DETAIL_TOKEN'
+    def failed_capture(*args, **kwargs):
+        raise error_type(secret)
+    monkeypatch.setattr(driver, 'capture_detail', failed_capture)
+    result = driver.collect_details(SourcePage(), run_fixture(), tmp_path)
+    assert result['complete'] is False
+    assert result['records'][0]['capture_complete'] is False
+    assert result['errors'][-1]['message'] == 'capture_failed'
+    assert secret not in capsys.readouterr().out
+    assert secret not in json.dumps(result)
+    assert secret not in (tmp_path / 'run.json').read_text(encoding='utf-8')
+
+
+def test_detail_failure_does_not_stringify_the_exception(tmp_path, monkeypatch):
+    class Unprintable(RuntimeError):
+        def __str__(self):
+            pytest.fail('Private exception text must never be requested')
+    def failed_capture(*args, **kwargs):
+        raise Unprintable()
+    monkeypatch.setattr(driver, 'capture_detail', failed_capture)
+    result = driver.collect_details(SourcePage(), run_fixture(), tmp_path)
+    assert result['complete'] is False
+    assert result['errors'][-1]['message'] == 'capture_failed'
+
+
 @pytest.mark.parametrize('list_url', [
     'https://untrusted.invalid/returnsheets/id-ID/submitted-returnsheets/' + TAXPAYER,
     LIST_URL.replace('https:', 'http:'),
@@ -432,6 +459,6 @@ def test_detail_list_reset_obeys_page_limit(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Table, 'evaluate_handle', lambda self, script: StuckContainer())
     captured = driver.collect_details(page, run_fixture(), tmp_path, max_pages=2)
-    assert previous.clicks <= 2, 'max_pages must bound Previous navigation as well as Next'
+    assert previous.clicks == 2, 'The owned Previous loop must stop at its exact two-page cap'
     assert not captured['complete']
-    assert 'page limit' in captured['errors'][0]['message']
+    assert captured['errors'][0]['message'] == 'capture_failed'

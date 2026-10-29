@@ -19,6 +19,24 @@ DETAIL_URL = driver.ORIGIN + '/returnsheets/id-ID/fixture-return/' + TAXPAYER + 
 META = {'Jenis Pajak': 'Fixture', 'Masa Pajak': 'Januari 2025', 'Model SPT': 'Normal'}
 
 
+def capture_failures(monkeypatch):
+    """Observe synthetic guard exceptions without changing their public sanitizer.
+
+    Tests keep their exact negative-path reason assertions on this owned in-memory
+    callback argument; product checkpoint/console messages remain fixed categories.
+    """
+    failures = []
+    original = driver.diagnostics.record
+
+    def observed(event, **fields):
+        if event == 'capture.partial' and isinstance(fields.get('error'), BaseException):
+            failures.append(fields['error'])
+        return original(event, **fields)
+
+    monkeypatch.setattr(driver.diagnostics, 'record', observed)
+    return failures
+
+
 class SignalSource:
     def __init__(self):
         self.listeners = {}

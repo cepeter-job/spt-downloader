@@ -1402,7 +1402,12 @@ def _open_inventory_source(page, source, taxpayer_id, observer):
 
 @diagnostics.traced('inventory')
 def collect_inventory(page, npwp, year, basis, folder, max_pages=1000, on_progress=None, check_cancel=None):
-    """Temukan NPWP persis, simpan batch daftar, lalu rekonsiliasi inventaris."""
+    """Collect the inspected same-taxpayer submitted list into a private run.
+
+    Keep literal metadata, owned pagination and original response evidence in
+    folder. Unproved catalog planning retains a full scan. Stop propagates;
+    failed or limited enumeration remains PARTIAL. This does not certify
+    SPT detail, MPN, financial PDF or publication completion."""
     _check_cancel(check_cancel)
     npwp, year = validate_scope(npwp, year)
     folder = Path(folder)
@@ -1939,7 +1944,11 @@ def _atomic_checkpoint(path, value):
 
 
 def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
-    """Terima hanya hasil capture dengan identitas dan scope inventaris yang sama."""
+    """Return only reusable detail fields bound to this inventory record/scope.
+
+    Validate source descriptors and hold original JSON/PDF evidence before reuse;
+    never let saved metadata replace inventory identity. Unsafe or changed custody
+    raises rather than authorizing a DOM fallback or a COMPLETE checkpoint."""
     validate_detail_source(detail_source)
     path = Path(path).absolute()
     from coretax_pdf import _directories
@@ -2057,9 +2066,61 @@ def _verify_restored_metadata(page, run, record, current_meta, api_record, folde
     record['period_equivalence'] = {**proof, 'catalog_file': name}
 
 
+def _restore_inventory_page(page, observer, record, taxpayer_id, max_pages, check_cancel):
+    """Restore only the inventoried page through the owned list observer.
+
+    Caller installs the original filter route. Keep inspected paginator actions,
+    module-owned hooks, offsets and Stop checks in their original order; return
+    the original bound response, never a reconstructed listing.
+    """
+    current_response = _restore_list_response(
+        page, observer, record['list_url'], taxpayer_id, check_cancel)
+    table = page.locator('.main-content table').first
+    container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
+    current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+    desired = record.get('list_page_size')
+    if desired and current_size and current_size.inner_text().strip() != str(desired):
+        before = observer.sequence
+        if maximize_page_size(page, container):
+            current_response = observer.wait(before)
+        if current_size.inner_text().strip() != str(desired):
+            raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
+    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+    for _ in range(max_pages):
+        _check_cancel(check_cancel)
+        previous = _list_paginator(container, previous_selector)
+        if not previous:
+            break
+        before = observer.sequence
+        previous.evaluate('(e)=>e.click()')
+        current_response = observer.wait(before)
+    if _list_paginator(container, previous_selector):
+        raise RuntimeError(f'List reset page limit {max_pages} reached')
+    if current_response['first'] != 0:
+        raise RuntimeError('List reset did not verify the first page')
+    for _ in range(record['list_page'] - 1):
+        _check_cancel(check_cancel)
+        next_button = _list_paginator(container, '.p-paginator-next:not([disabled]):not(.p-disabled)')
+        if not next_button:
+            raise RuntimeError('Inventory page is no longer available; source changed')
+        before = observer.sequence
+        next_button.evaluate('(e)=>e.click()')
+        current_response = observer.wait(before)
+    if current_response['first'] != (record['list_page'] - 1) * current_response['page_size']:
+        raise RuntimeError('Restored list response has an unexpected page offset')
+    container.dispose()
+    return current_response
+
+
 @diagnostics.traced('details')
 def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_progress=None, check_cancel=None, *, detail_source='dom'):
-    """Lanjutkan checkpoint yang sah dan ambil detail SPT yang belum lengkap."""
+    """Resume verified checkpoints and capture the selected inventoried returns.
+
+    Mutate run and its private checkpoints in inventory order, retaining literal
+    record/scope/source identity. Inspect only read-only View actions after fresh
+    list binding. Stop and fatal JSON safety refusals propagate; ordinary driver
+    failures retain fixed public error categories and PARTIAL. Final completion
+    requires persisted detail reconciliation, independently of later publication."""
     validate_detail_source(detail_source)
     _check_cancel(check_cancel)
     folder = Path(folder)
@@ -2115,42 +2176,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     if condition is not None:
                                         observer.request_filter = group_routes.enter_context(
                                             InventoryFilterRoute(page, taxpayer_id, condition, check_cancel=check_cancel))
-                                    current_response = _restore_list_response(
-                                        page, observer, record['list_url'], taxpayer_id, check_cancel)
-                                    table = page.locator('.main-content table').first
-                                    container = table.element_handle().evaluate_handle('e=>e.closest(\"p-table\")||e.parentElement')
-                                    current_size = container.query_selector('.p-paginator-rpp-options .p-dropdown-label')
-                                    desired = record.get('list_page_size')
-                                    if desired and current_size and current_size.inner_text().strip() != str(desired):
-                                        before = observer.sequence
-                                        if maximize_page_size(page, container):
-                                            current_response = observer.wait(before)
-                                        if current_size.inner_text().strip() != str(desired):
-                                            raise RuntimeError('Could not restore inventory page size; row provenance would be ambiguous')
-                                    previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
-                                    for _ in range(max_pages):
-                                        _check_cancel(check_cancel)
-                                        previous = _list_paginator(container, previous_selector)
-                                        if not previous:
-                                            break
-                                        before = observer.sequence
-                                        previous.evaluate('(e)=>e.click()')
-                                        current_response = observer.wait(before)
-                                    if _list_paginator(container, previous_selector):
-                                        raise RuntimeError(f'List reset page limit {max_pages} reached')
-                                    if current_response['first'] != 0:
-                                        raise RuntimeError('List reset did not verify the first page')
-                                    for _ in range(record['list_page'] - 1):
-                                        _check_cancel(check_cancel)
-                                        next_button = _list_paginator(container, '.p-paginator-next:not([disabled]):not(.p-disabled)')
-                                        if not next_button:
-                                            raise RuntimeError('Inventory page is no longer available; source changed')
-                                        before = observer.sequence
-                                        next_button.evaluate('(e)=>e.click()')
-                                        current_response = observer.wait(before)
-                                    if current_response['first'] != (record['list_page'] - 1) * current_response['page_size']:
-                                        raise RuntimeError('Restored list response has an unexpected page offset')
-                                    container.dispose()
+                                    current_response = _restore_inventory_page(
+                                        page, observer, record, taxpayer_id, max_pages, check_cancel)
                                     active_group = group
                             observer._check_state()
                             if condition is not None:
@@ -2233,8 +2260,11 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                 record.update(sections=[], attachments=[])
                                 record.pop('detail_source', None)
                                 raise
-                            run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': str(exc).split('\n')[0]})
-                            print(f"Detail partial: {str(exc).splitlines()[0]}", flush=True)
+                            # The external driver may include tokens, URLs or tax
+                            # payloads in its message; retain only a fixed category.
+                            message = _capture_failure_message(exc)
+                            run['errors'].append({'object': record['record_id'], 'phase': 'details', 'message': message})
+                            print(f'Detail partial: {message}', flush=True)
                         finally:
                             if detail is not None and is_popup:
                                 detail.close()

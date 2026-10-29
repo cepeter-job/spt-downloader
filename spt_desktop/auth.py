@@ -149,6 +149,12 @@ def _wait_ready(page,deadline,check_cancel,emit=None):
 
 @diagnostics.traced('authentication')
 def authenticate_owned(playwright,profile,browser,headless,emit,check_cancel,manual_timeout=300,*,account=None):
+    """Return an application-owned authorized browser context for read-only capture.
+
+    Use only approved browsers/origins and saved credentials from the protected
+    store. Emit fixed login state, respect Stop and bound manual readiness by
+    manual_timeout. Unproved sign-in/challenges stay manual or raise AuthBlocked;
+    never bypass CAPTCHA/MFA. Caller must close the returned owned context."""
     if browser not in ('msedge','chrome'):raise AuthBlocked('Pilih Microsoft Edge atau Chrome.')
     context=None
     def launch(hidden):

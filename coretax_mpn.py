@@ -397,6 +397,11 @@ def mpn_filename(run):
 
 
 def validate_mpn(run):
+    """Validate optional MPN declarations and refuse contradictory completion.
+
+    Check literal scope, ordered rows, evidence descriptors, coverage and row
+    provenance. MpnSafetyError rejects invalid declarations. This metadata gate
+    never substitutes for holding/reconciling original Accounting response bytes."""
     if 'mpn' not in run:
         return
     value = run['mpn']
@@ -467,6 +472,11 @@ def validate_mpn(run):
 
 
 def validate_provenance(rows, provenance, evidence):
+    """Bind ordered qualified rows to their declared original evidence occurrences.
+
+    Require exact record identities and known response hashes, with bounded
+    occurrences. Raise MpnSafetyError on missing, mixed or contradictory proof;
+    held readers must still reconcile the actual original response bytes."""
     if (not isinstance(provenance, list) or len(provenance) != len(rows)
             or any(not isinstance(entry, dict) or set(entry) != {'record_id', 'occurrences'}
                    for entry in provenance)
@@ -653,7 +663,12 @@ def _reconcile_held(run, readers):
 
 @contextmanager
 def mpn_custody(run, folder, check_cancel=None):
-    """Hold verified private raw bytes through publication without copying them."""
+    """Hold verified private Accounting bytes through the caller's transaction.
+
+    Yield readers only after directory/file ownership and original evidence
+    reconciliation. Stop and safety failures propagate, including checks after
+    yield. Close this context before renaming held files; raw MPN JSON remains
+    outside public SPT JSON output namespaces."""
     validate_mpn(run)
     if not run.get('mpn', {}).get('evidence'):
         yield []

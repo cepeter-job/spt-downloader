@@ -8,6 +8,7 @@ import coretax_browser as driver
 from spt_desktop import diagnostics as d
 from test_diagnostics import records as log_records
 from test_json_inventory import synthetic_listing_browser
+from support_browser_protocol import capture_failures
 
 
 @pytest.mark.parametrize('expired', [False, True])
@@ -66,6 +67,7 @@ def test_saved_legacy_alias_can_restore_with_exact_catalog_proof(browser, tmp_pa
 
 @pytest.mark.parametrize('changed', ['binding', 'receipt', 'missing_proof', 'expired'])
 def test_legacy_restoration_rejects_changed_catalog_or_other_metadata(browser, tmp_path, monkeypatch, changed):
+    failures = capture_failures(monkeypatch)
     original = driver.read_period_catalog
     with synthetic_listing_browser(browser, monkeypatch, year_catalog=True, outside_year_padding=0) as (page, metrics):
         run = driver.collect_inventory(page, '0000000000000001', 2024, 'period', tmp_path)
@@ -85,7 +87,8 @@ def test_legacy_restoration_rejects_changed_catalog_or_other_metadata(browser, t
             selected.pop('period_equivalence')
         driver.collect_details(page, run, tmp_path)
         assert metrics['viewed_record_ids'] == []
-        assert any('metadata changed' in e['message'] for e in run['errors'])
+        assert any('metadata changed' in str(error) for error in failures)
+        assert all(e['message'] in ('capture_failed', 'capture_safety_refusal') for e in run['errors'])
 
 
 def test_stop_after_reconciliation_prevents_inventory_publication(browser, tmp_path, monkeypatch):

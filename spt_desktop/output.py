@@ -746,6 +746,12 @@ def _replace_selected(run, downloads, snapshot, staging, recovery, check_cancel,
 def publish_workbooks(run, source, downloads, job_id, check_cancel=None, *,
                       overwrite=False, expected_outputs=None):
     # Accounting JSON stays private, held across the workbook-only publication.
+    """Publish only declared verified outputs under the selected consent snapshot.
+
+    Hold MPN evidence while the existing transaction validates scope, SPT JSON,
+    PDF and physical workbook proof. Return the final folder after readback;
+    cancellation, changed evidence or replacement races raise and preserve the
+    rollback/recovery contract. Never copy arbitrary private job files."""
     with coretax.mpn_custody(run, source, check_cancel):
         return _publish_workbooks(run, source, downloads, job_id, check_cancel,
                                   overwrite=overwrite, expected_outputs=expected_outputs)
