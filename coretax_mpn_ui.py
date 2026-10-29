@@ -630,6 +630,14 @@ class AccountingUI:
                     raise MpnUnsupported('MPN repeated parent numeric identity is not independently unique')
         actual = tuple(rendered[index][column] for column in (3, 4, 5, 13, 15, 16, 17))
         if actual != expected:
+            # Report only the first mismatched field category, never either value.
+            fields = ('accounting_type', 'accounting_detail', 'currency',
+                      'revenue_code', 'payment_code', 'tax_period', 'transaction_number')
+            for position, field in enumerate(fields):
+                if actual[position] != expected[position]:
+                    diagnostics.record('mpn.parent_binding_mismatch', level='WARNING',
+                                       mpn_parent_field=field)
+                    break
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')
         row = self.list_owner.locator('tbody tr').nth(index)
         button = row.locator('td').nth(0).locator(

@@ -88,8 +88,19 @@ sub-observer; verifikasi sumber, identitas, dan pembatasan tetap wajib.
 `search`, `period_clear`, atau `ready` (kategori tahap saja,
 bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
 sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
-penolakan kepemilikan sumber; event baru bukan penggantinya. Tidak ada
-perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
+penolakan kepemilikan sumber; event baru bukan penggantinya.
+
+`mpn.parent_binding_mismatch` dicatat tepat sebelum penolakan fatal saat
+identitas baris induk yang terlihat di DOM berbeda dari sumber asli.
+`mpn_parent_field` hanya kategori kolom **pertama** yang berbeda:
+`accounting_type`, `accounting_detail`, `currency`, `revenue_code`,
+`payment_code`, `tax_period`, atau `transaction_number`.
+Tidak ada nilai DOM, data sumber, identitas transaksi, nomor pajak, atau
+jumlah rupiah di log. Kategori ini belum membuktikan apakah perbedaannya
+berasal dari label/mapping, pergantian data, atau identitas yang salah;
+`MpnSafetyError` tetap fatal dan tombol detail tidak diklik.
+
+Tidak ada perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
 atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;
 perbandingan memerlukan build yang benar-benar menjalankan versi ini.
 
