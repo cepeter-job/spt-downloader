@@ -1082,7 +1082,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     anywhere aborts even after an earlier response was safely unsupported.
     """
     selected = _corporate_selected(record, scope)
-    sections, paths, requests, grids, responses, dependencies, primary = _corporate_bindings(observed_forms)
+    sections, paths, request_bindings, grids, responses, dependencies, primary = _corporate_bindings(observed_forms)
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
@@ -1119,7 +1119,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                    and envelope.get('IsSuccessful') is True)
         request = ctx.get('request_json')
         key = (ctx['url'], _corporate_request_key(request))
-        binding = requests.get(key)
+        binding = request_bindings.get(key)
         is_primary = primary is not None and key == primary
         is_country = ctx['url'] == CORPORATE_COUNTRY_REFERENCE_URL
         reference_kinds = CORPORATE_REFERENCE_REQUESTS.get(ctx['url'])

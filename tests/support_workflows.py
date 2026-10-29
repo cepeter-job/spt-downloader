@@ -436,14 +436,20 @@ def validate_measurements(document, job_names):
                 coverage_indices.append(coverage_i)
                 result_files.add(filename)
         uploads = [(i, s) for i, s in enumerate(steps) if _action(s, 'actions/upload-artifact')]
-        assert len(uploads) == 2
+        assert len(uploads) == (3 if name == 'portable' else 2)
         paths = []
         for i, step in uploads:
-            assert _expression(step.get('if')) == expected_guard
             assert step.get('continue-on-error', False) is False
             assert step['with']['if-no-files-found'] == 'error'
             lines = [line.strip() for line in step['with']['path'].splitlines() if line.strip()]
             filenames = {line.rsplit('/', 1)[-1] for line in lines}
+            if name == 'portable' and step['with']['name'].startswith('quality-'):
+                assert _expression(step.get('if')) == "always()&&steps.quality.outcome!='skipped'"
+                assert set(lines) == {'${{ runner.temp }}/' + filename for filename in
+                                      ('mypy.xml', 'bandit.json', 'quality-negative.json')}
+                assert len(lines) == 3
+                continue
+            assert _expression(step.get('if')) == expected_guard
             if name == 'portable':
                 assert len(lines) == len(filenames)
                 assert set(lines) == {'${{ runner.temp }}/' + filename for filename in filenames}

@@ -262,7 +262,7 @@ def test_dispatch_pilot_contract_rejects_incomplete_or_unbound_pipeline(mutation
 def test_each_diagnostic_upload_needs_its_own_failure_guard(job):
     document = deepcopy(benchmark() if job == 'benchmark' else production())
     uploads = [s for s in document['jobs'][job]['steps'] if s.get('uses', '').startswith('actions/upload-artifact@')]
-    assert len(uploads) == 2
+    assert len(uploads) == (3 if job == 'portable' else 2)
     for index in range(len(uploads)):
         broken = deepcopy(document)
         selected = [s for s in broken['jobs'][job]['steps'] if s.get('uses', '').startswith('actions/upload-artifact@')]

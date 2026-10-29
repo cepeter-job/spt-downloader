@@ -35,6 +35,12 @@ konfigurasi mempertahankan branch coverage, omit yang ada dan `fail_under=0`.
 Laporan portable belum mewakili coverage Windows/browser/native/worker.
 Jangan menambahkan salinan `[tool.coverage.*]` yang melewatkan kontrak ini.
 
+Mypy memakai scope stdlib terbatas di `pyproject.toml`; Bandit memeriksa modul
+produk dengan pengecualian rule lokal yang ditinjau. Keduanya memakai environment
+`locks/quality.txt` terpisah, juga diaudit sebagai dependensi. Baca
+[scope, triase dan gate negatif](audits/2026-10-29-quality-gates.md) sebelum
+memperluasnya. Ini tidak mengganti validasi runtime atau gate Windows penuh.
+
 ## Alur verifikasi melalui GitHub Actions
 
 1. Tentukan modul, kontrak, dan tes terkait melalui [peta kode](peta-kode.md) serta

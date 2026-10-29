@@ -624,6 +624,17 @@ module helper, preserving module hooks, request/page identity, operation order
 and all checks before View. Source-only quality inventories use the explicit AST
 definitions in `scripts/quality_inventory.py`; their counts are not runtime proof.
 
+Quality tooling is isolated in `locks/quality.txt` from exact
+`requirements-quality.txt` pins, checked by the existing all-or-nothing lock
+updater and dependency audit. Mypy strictly adopts only the existing stdlib
+build identity and UI state owners under Python3.14, without blanket ignores.
+TypedDict/TypeGuard describe validated boundaries; runtime JSON/boolean/value
+guards stay authoritative and public payloads unchanged. Bandit scans all
+root coretax Python and desktop modules; only reviewed source-local rule IDs
+may be suppressed with their reason. New subprocess callers, driver cleanup
+or source changes need their own review; annotations grant no new permissions.
+Keep CodeQL, locked dependency audits, Ruff and full test/build gates independent.
+
 CLI live failure/Stop recovery writes only a normally validated PARTIAL run.json
 after the existing checkpoint/physical-workbook scope and selected-JSON checks,
 through the existing guarded atomic checkpoint; never retry save_output from

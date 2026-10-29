@@ -3,7 +3,7 @@ import ctypes
 from ctypes import wintypes
 import hashlib
 from pathlib import Path
-import subprocess
+import subprocess  # nosec B404 - Reviewed owned process/runtime lifecycle; no untrusted command text.
 import sys
 
 
@@ -137,7 +137,7 @@ class ProcessJob:
         if not self._handle:
             raise RuntimeError('Worker process job is already closed')
         flags = kwargs.pop('creationflags', 0) | 0x4 | 0x08000000
-        process = subprocess.Popen(argv, creationflags=flags, **kwargs)
+        process = subprocess.Popen(argv, creationflags=flags, **kwargs)  # nosec B603 - Reviewed explicit argv; assign suspended owned child before resume.
         try:
             # Launcher venv dapat membuat interpreter anak sebelum kode Python berjalan.
             # Masukkan proses yang masih suspended ke Job Object sebelum dilanjutkan.

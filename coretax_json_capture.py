@@ -712,29 +712,29 @@ class DetailJsonCapture:
         if self._l8_history is not None:
             try:
                 self._l8_history.evaluate('(h) => h.disconnect()')
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
             try:
                 self._l8_history.dispose()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
             self._l8_history = None
         if self._component_listener is not None:
             try:
                 self.page.remove_listener('framenavigated', self._component_listener)
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
             self._component_listener = None
         if self._component_document is not None:
             try:
                 self._component_document.dispose()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
             self._component_document = None
         for event, callback in reversed(self._listeners):
             try:
                 self.context.remove_listener(event, callback)
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass  # Context may already be disposed; never close user pages.
         self._listeners.clear()
         self._guard.close()

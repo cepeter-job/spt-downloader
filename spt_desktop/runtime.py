@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - Reviewed owned process/runtime lifecycle; no untrusted command text.
 import sys
 import tempfile
 import time

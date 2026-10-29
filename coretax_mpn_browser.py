@@ -71,7 +71,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         if document is not None:
             try:
                 document.dispose()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
 
     def _same_document(self):
@@ -152,7 +152,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             elif document is not None and document is not self._document:
                 try:
                     document.dispose()
-                except Exception:
+                except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                     pass
 
     def _kind(self, request):

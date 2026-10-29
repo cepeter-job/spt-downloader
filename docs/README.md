@@ -3,6 +3,7 @@
 Audit kualitas terkini: [inventaris source dan keputusan](audits/2026-10-29-source-quality.md),
 [batas exception](audits/2026-10-29-exception-inventory.md), dan
 [register skip/xfail](test-graveyard.md).
+Gate berikutnya: [typing dan keamanan yang dipin](audits/2026-10-29-quality-gates.md).
 
 Untuk memakai aplikasi atau memulihkan checkpoint, baca [README utama](../README.md).
 Kontributor mulai dari panduan di bawah dan [AGENTS.md](../AGENTS.md). Instruksi akses,

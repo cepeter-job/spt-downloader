@@ -271,7 +271,7 @@ class FinancialPost:
                 self.stopped = error
             try:
                 route.abort('blockedbyclient')
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
 
     def __enter__(self):
@@ -329,13 +329,13 @@ class FinancialPost:
         if self.armed:
             try:
                 self.page.unroute('**/*', self.handler)
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
         self.armed = False
         if self.button is not None:
             try:
                 self.button.dispose()
-            except Exception:
+            except Exception:  # nosec B110 - Owned cleanup is best effort; preserve the original outcome.
                 pass
         self.button = None
         self.envelope.clear()
