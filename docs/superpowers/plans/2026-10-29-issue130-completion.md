@@ -48,6 +48,16 @@ locked static gates and representative coverage integration into focused PRs.
 
 ### Task 4: Representative coverage and closure
 
+Use `scripts.coverage_ratchet.evaluate(report, policy, changed=None)` for exact
+integer line/branch/module/diff floors and fail closed on missing/malformed data.
+`check_windows_inputs` delegates to the existing complete inventory validator;
+`data_files` requires exact serial or two-shard source slots. CI combines only
+those held run/commit/attempt-bound Windows artifacts before package/build,
+with the same `.coveragerc` source/branch/omit policy. Parent Windows execution
+covers real native/Tk/Edge fixtures and in-process worker logic; isolated managed
+worker/bootstrap subprocesses and browser JavaScript are explicitly unmeasured.
+Choose conservative floors only after the representative runner baseline.
+
 - [ ] Instrument both Windows shards and retain per-shard branch data/reports without relaxing inventory gates.
 - [ ] Combine only the complete Windows union; establish measured module line/branch floors.
 - [ ] Add gate behavior tests first for missing shard/module, malformed report and regression; observe RED then GREEN on runners.

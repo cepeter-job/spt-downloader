@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "totals": {"line": 87, "branch": 80},
+  "modules": {
+    "coretax_browser.py": {"line": 90, "branch": 84},
+    "coretax_json_capture.py": {"line": 87, "branch": 82},
+    "coretax_exporter.py": {"line": 93, "branch": 90},
+    "spt_desktop/diagnostics.py": {"line": 86, "branch": 78},
+    "spt_desktop/output.py": {"line": 89, "branch": 82},
+    "spt_desktop/worker.py": {"line": 86, "branch": 64},
+    "spt_desktop/build_info.py": {"line": 91, "branch": 72},
+    "spt_desktop/ui_state.py": {"line": 93, "branch": 88}
+  },
+  "diff_line": 80
+}

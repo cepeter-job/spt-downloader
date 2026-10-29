@@ -19,6 +19,8 @@ PORTABLE_FILES = frozenset({
     'tests/test_ci_python_cache.py',
     'tests/test_ci_routing.py',
     'tests/test_ci_sharding.py',
+    'tests/test_coverage_ratchet.py',
+    'tests/test_quality_inventory.py',
     'tests/test_workflow_contracts.py',
     'tests/test_dependency_locks.py',
     'tests/test_desktop_build.py',

@@ -19,6 +19,7 @@ Local State
 *.json
 # Konfigurasi ruleset repositori disimpan sebagai sumber yang dapat ditinjau.
 !.github/rulesets/main.json
+!/coverage-policy.json
 *.jsonl
 *.zip
 .env
