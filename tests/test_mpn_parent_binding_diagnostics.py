@@ -146,6 +146,10 @@ def test_accounting_type_mismatch_captures_only_catalog_provenance(
         ui.catalog_codes = {'ACCOUNTING_TYPE': frozenset({'ANOTHER_SYNTHETIC_CODE'})}
     elif source_case == 'blank':
         header['AccountingTypeCode'] = None
+    # The source list snapshot must carry the exact selected source header;
+    # otherwise the pre-existing RecordId/digest guard rejects before this
+    # targeted rendered-vs-source mismatch is actually exercised.
+    ui.list_snapshot['rows'][0] = header.copy()
     row[COLUMNS[0]] = SECRET
     root = tmp_path / 'diagnostics'
     with diagnostics.session(root, 'worker') as log:
