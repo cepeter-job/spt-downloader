@@ -25,6 +25,26 @@ def exporter():
     return importlib.import_module('coretax_mpn_export')
 
 
+def test_resume_mpn_audit_message_borders_include_the_blank_count_cells(tmp_path):
+    from coretax_exporter import export_workbook
+    run = mpn_run(complete=False)
+    run['mpn']['audit'] = [{'message': 'Synthetic capture incomplete'}]
+    path = tmp_path / 'resume.xlsx'
+    export_workbook(run, path, include_details=False)
+    workbook = load_workbook(path)
+    try:
+        audit = workbook['Audit']
+        row = audit.max_row
+        assert [audit.cell(row, col).value for col in range(1, 7)] == [
+            'MPN', None, None, None, 'PARTIAL', 'Synthetic capture incomplete']
+        for col in range(1, 7):
+            assert all(getattr(audit.cell(row, col).border, edge).style == 'thin'
+                       for edge in ('left', 'right', 'top', 'bottom'))
+        assert workbook['Ringkasan']['B6'].value == 'PARTIAL'
+    finally:
+        workbook.close()
+
+
 def test_mpn_round_trip_keeps_negative_amount_identifiers_and_literal_reference(tmp_path):
     run = mpn_run()
     path = tmp_path / 'MPN_2025.xlsx'
