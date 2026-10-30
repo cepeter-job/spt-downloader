@@ -121,6 +121,7 @@ class AccountingUI:
         self.catalog_frozen = False
         self.closed = False
         self.reference_raw = None
+        self.reference_request_seen = False
         self.list_snapshot = None
         self.list_owner = None
         self.preparation_deadline = None
@@ -223,6 +224,8 @@ class AccountingUI:
             self._reject_source('pending_budget')
             return
         self.source_sequence += 1
+        if catalog:
+            self.reference_request_seen = True
         self.source_pending[id(request)] = (request, pin, catalog, url, kind, self.observer._navigation_attempt)
 
     def _source_request_failed(self, request):
@@ -476,6 +479,13 @@ class AccountingUI:
         self._owned()
         if time.monotonic() >= deadline:
             raise MpnUnsupported('MPN original reference readiness deadline exceeded')
+        # Readiness is not an authorization to invent a reference fetch.
+        # Differentiate observed-but-unbound from a missing original GET.
+        status = ('accepted' if self.reference_raw is not None else
+                  'observed_unbound' if getattr(self, 'reference_request_seen', False)
+                  else 'not_observed')
+        diagnostics.record('mpn.catalog_readiness', level='INFO',
+                           mpn_catalog_state=status)
         self.catalog_frozen = True
 
     @staticmethod
@@ -680,6 +690,12 @@ class AccountingUI:
                                        mpn_parent_field=field,
                                        mpn_accounting_type_projection=provenance)
                     break
+            if (actual[0] != expected[0] and actual[1:] == expected[1:]
+                    and getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE') is None):
+                # Without an accepted original code inventory, a displayed
+                # localized label cannot prove a source contradiction. Refuse
+                # the action as unsupported; never guess a mapping or click.
+                raise MpnUnsupported('MPN accounting type original reference is unproved')
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')
         row = self.list_owner.locator('tbody tr').nth(index)
         button = row.locator('td').nth(0).locator(

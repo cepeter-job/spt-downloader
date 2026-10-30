@@ -94,7 +94,12 @@ hasil pembacaan struktur dari form yang sama hanya sebagai `zero`, `one`,
 atau `more_than_two`; angka asli, isi tabel, caption, dan selector detail
 tidak dicatat. Syarat **tepat dua tabel** tetap berlaku. Kategori ini
 menentukan pemeriksaan kepemilikan DOM berikutnya, bukan izin menerima
-bentuk tabel baru atau menonaktifkan fallback.
+bentuk tabel baru atau menonaktifkan fallback. Bila tabel lebih dari dua,
+`corporate_l3_extra_layout` hanya mengklasifikasikan pasangan grid sumber
+terinspeksi dan tabel tambahan sebagai `reviewed_pair_hidden_extra`,
+`reviewed_pair_visible_extra`, atau `reviewed_pair_unproved`. Seluruhnya
+tetap menolak JSON native. Tidak ada isi DOM, selector yang bersifat dinamis,
+atau jumlah mentah yang dicatat.
 
 Pada langkah `open → search` MPN, trial click tetap satu kali uji aksi dan
 klik nyata hanya sekali. Klik Search memiliki batas paling lama 5 detik,
@@ -127,6 +132,17 @@ bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
 sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
 penolakan kepemilikan sumber; event baru bukan penggantinya.
 
+Status tambahan `mpn.catalog_readiness` memisahkan `accepted` (byte referensi
+asli berhasil diikat), `observed_unbound` (GET sumber yang memenuhi syarat
+teramati tetapi belum ada katalog yang diterima), dan `not_observed`
+(tidak ada GET referensi yang memenuhi syarat selama sesi). Ini **bukan**
+perintah untuk melakukan fetch baru, memakai cache/browser state, atau
+mengganti nama/label. Jika hanya jenis pencatatan DOM berbeda dan inventaris
+kode `ACCOUNTING_TYPE` asli tidak tersedia, penolakan dilakukan sebagai
+`MpnUnsupported`, bukan mengklaim kontradiksi `MpnSafetyError` yang
+belum dibuktikan; tombol detail tetap **tidak** diklik. Mismatch kolom
+independen lain tetap fatal.
+
 `mpn.parent_binding_mismatch` dicatat tepat sebelum penolakan fatal saat
 identitas baris induk yang terlihat di DOM berbeda dari sumber asli.
 `mpn_parent_field` hanya kategori kolom **pertama** yang berbeda:
@@ -157,7 +173,13 @@ event `table.elapsed_budget` mengirim enum
 `table_elapsed_stage=before_next_click` atau `state_poll` serta
 jumlah halaman yang sudah dicatat. Kategori ini tidak menambah
 klik, tidak memulihkan data yang hilang, dan belum membuktikan penyebab
-waktu lambat. Perlu acceptance live untuk dampaknya.
+waktu lambat. Pada halaman setelah klik paginator, pembacaan DOM kini
+memakai batas Playwright maksimal 10 detik dan sisa budget tabel. Apabila
+pembacaan itu timeout, event `table.dom_read_failed` dengan kategori tetap
+`table_dom_stage=post_pagination` direkam; hanya halaman yang telah lolos
+pembacaan sebelumnya dipertahankan sebagai PARTIAL, tanpa retry klik yang
+sudah terkirim atau mengarang isi halaman terbaru. Batas ini bukan jaminan
+interupsi wall-clock bila proses browser macet. Perlu acceptance live untuk dampaknya.
 
 Tidak ada perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
 atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from coretax_mpn import MpnSafetyError
+from coretax_mpn import MpnSafetyError, MpnUnsupported
 from coretax_mpn_ui import AccountingUI
 from spt_desktop import diagnostics
 from test_diagnostics import records
@@ -58,6 +58,7 @@ def inspected_binding():
     ui.list_owner = controls
     ui._stop = lambda: None
     ui._freeze_catalog = lambda: None
+    ui.catalog_codes = {'ACCOUNTING_TYPE': frozenset({'SYNTHETIC_ACCOUNTING'})}
     ui._owned = lambda: None
     ui._header_projection = lambda _: EXPECTED
     ui._table = lambda owner, headings, count: (None, [rendered])
@@ -153,7 +154,8 @@ def test_accounting_type_mismatch_captures_only_catalog_provenance(
     row[COLUMNS[0]] = SECRET
     root = tmp_path / 'diagnostics'
     with diagnostics.session(root, 'worker') as log:
-        with pytest.raises(MpnSafetyError):
+        with pytest.raises(MpnUnsupported if source_case == 'missing_catalog'
+                           else MpnSafetyError):
             ui._bind_header(header)
         assert log.flush()
     mismatch = [event for event in records(root)
@@ -181,3 +183,17 @@ def test_accounting_projection_enum_rejects_untrusted_values(tmp_path):
     assert 'mpn_accounting_type_projection' not in events[0]
     assert events[1]['mpn_accounting_type_projection'] == 'catalog_label'
     assert SECRET not in json.dumps(events)
+
+
+def test_missing_catalog_never_downgrades_an_independent_currency_contradiction(tmp_path):
+    ui, header, rendered, controls = inspected_binding()
+    header['AccountingTypeCode'] = 'SYNTHETIC_ACCOUNTING'
+    ui.list_snapshot['rows'][0] = header.copy()
+    ui.catalog_codes['ACCOUNTING_TYPE'] = None
+    rendered[COLUMNS[0]] = SECRET
+    rendered[COLUMNS[2]] = SECRET
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        with pytest.raises(MpnSafetyError):
+            ui._bind_header(header)
+        assert log.flush()
+    assert controls.lookups == []

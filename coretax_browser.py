@@ -357,7 +357,31 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             result['complete'] = False
             result['warning'] = 'Repeated table pagination state'
             break
-        data = table.evaluate(TABLE_JS)
+        _check_cancel(check_cancel)
+        # The previous live failure occurred inside a single post-page DOM
+        # evaluation, not the cooperative paginator budget branch.
+        # Do not repeat that dispatched click if the DOM read cannot finish.
+        if time.monotonic() >= capture_deadline:
+            result['complete'] = False
+            result['warning'] = 'Table capture elapsed budget exceeded'
+            diagnostics.record('table.elapsed_budget', level='WARNING',
+                               table_elapsed_stage='before_dom_read',
+                               pages=result['pages'])
+            break
+        try:
+            data = table.evaluate(TABLE_JS, timeout=min(
+                10000, max(1, int((capture_deadline-time.monotonic())*1000))))
+        except PlaywrightTimeoutError as error:
+            # A post-dispatch read timeout retains only previously verified
+            # rows as PARTIAL; no retry, promotion, or guessed current page.
+            _check_cancel(check_cancel)
+            result['complete'] = False
+            result['warning'] = 'Table DOM read timed out after pagination'
+            diagnostics.record('table.dom_read_failed', level='WARNING',
+                               table_dom_stage='post_pagination', pages=result['pages'],
+                               error=error)
+            break
+        _check_cancel(check_cancel)
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:
             if (any(data.get(key) != result.get(key) for key in ('source_structure', 'headers', 'group'))
