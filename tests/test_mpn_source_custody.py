@@ -393,3 +393,24 @@ def test_nonownership_source_refusal_has_no_ownership_reason(tmp_path, monkeypat
     assert 'mpn_ownership_reason' not in event
     with pytest.raises(MpnUnsupported):
         ui._stop()
+
+
+def test_alternate_reference_request_never_enters_source_custody(tmp_path, monkeypatch):
+    from coretax_mpn_ui import _other_reference_get
+    ui, _, _=source_ui(tmp_path,monkeypatch)
+    try:
+        candidate=ORIGIN + '/referencedata/api/currentreferencedata/id-ID/ALTERNATE_SYNTHETIC'
+        assert _other_reference_get(candidate)
+        assert not _other_reference_get(ORIGIN + REFERENCE_PATH)
+        assert not _other_reference_get('https://synthetic.invalid/referencedata/api/currentreferencedata/id-ID/A')
+        request=SimpleNamespace(method='GET', resource_type='fetch',
+                                frame=ui.page.main_frame, url=candidate)
+        ui._source_request(request)
+        assert ui.reference_route_variant_seen is True
+        assert ui.reference_raw is None
+        assert ui.reference_request_seen is False
+        assert ui.source_pending == {}
+        assert ui.catalogs == {}
+        assert ui.catalog_codes == {}
+    finally:
+        ui.observer.close()

@@ -785,3 +785,19 @@ amounts or source payload, and keep all no-click identity gates.
 Corporate pagination STATE_JS uses all rows' textContent to avoid
 repeated forced layout; TABLE_JS extraction, Stop, action count, timeout,
 row/coverage reconciliation and PARTIAL remain unchanged.
+
+
+Issue #143 round 7: after repeated 500-row L3-B post-pagination
+timeout on live build, bound the inspected original Corporate L3-B
+paginator option to <=100 instead of 500. Reconcile every row/page,
+source total and Stop; never manufacture page queries, retry an
+uncertain paginator click, bypass per-table 180s deadline, or promote
+PARTIAL to COMPLETE. No unreviewed table/source admission. Passive
+MPN reference URL variant telemetry classifies only original GET
+xhr/fetch in the owned main frame under the same exact origin and
+reviewed reference prefix; a variant is never bound, fetched, logged
+as URL/bytes or used as a label. Report a fixed third parent mismatch
+category without values and preserve fatal mismatch identity gates.
+A visible third L3 table must refuse native JSON and use the original
+whole-return DOM fallback. Use hosted synthetic Edge tests and require
+separately authorized live acceptance on an exact matching build.

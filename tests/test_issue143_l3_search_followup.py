@@ -401,3 +401,36 @@ def test_l3_extra_owner_diagnostic_is_bounded_and_private(tmp_path):
     assert events[0]['corporate_l3_extra_owner']=='other_form_owner'
     assert 'corporate_l3_extra_owner' not in events[1]
     assert secret not in json.dumps(events)
+
+
+def test_live_shaped_visible_extra_l3_keeps_json_hybrid_fail_closed(
+        browser, tmp_path, monkeypatch):
+    from coretax_corporate import observe_forms
+    from coretax_json_capture import DetailJsonCapture
+    from l3_observer_fixture import Fixture, ASSET
+    from test_corporate_l3_observer import open_selected
+    from spt_desktop import diagnostics
+    import support_json_corpus as corpus
+
+    fixture=Fixture(browser, monkeypatch, defect='visible-extra-form')
+    try:
+        with diagnostics.session(tmp_path/'log', 'worker') as log:
+            with DetailJsonCapture(fixture.context, fixture.page, fixture.record,
+                                   corpus.SCOPE, tmp_path) as capture:
+                page=open_selected(fixture, capture)
+                forms=observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                                    approved_digest=fixture.pins[ASSET])
+            assert log.flush()
+        assert forms is None
+        events=[e for e in records(tmp_path/'log')
+                if e['event']=='corporate.observe_unavailable']
+        assert len(events)==1
+        assert events[0]['corporate_l3_reason']=='table_count'
+        assert events[0]['corporate_l3_table_shape']=='more_than_two'
+        assert events[0]['corporate_l3_extra_layout']=='reviewed_pair_visible_extra'
+        assert events[0]['corporate_l3_extra_owner']=='other_form_owner'
+        assert fixture.unexpected==[]
+        assert page.evaluate('window.businessReads')==0
+        assert page.evaluate('window.forbiddenClicks')==0
+    finally:
+        fixture.close()

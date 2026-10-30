@@ -630,9 +630,11 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if financial_required and name == 'L3' and table.evaluate(CORPORATE_STRUCTURE_JS, name) == {
                         'form': 'L3', 'component': 'rshshr-citr-l3-grid2',
                         'groups': ['B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
-                    # The reviewed L3-B UI offers 250/500. Other tables/callers
-                    # retain 100; never synthesize an option or a grid request.
-                    max_page_size = 500
+                    # Live 30 Oct: repeatedly stalled on L3-B after the UI
+                    # selected 500 rows. Prefer an inspected <=100 option;
+                    # never manufacture a page-size value or a grid request.
+                    # More verified pages are safer than one stuck 500-row page.
+                    max_page_size = 100
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
                     captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
                                              max_page_size=max_page_size)

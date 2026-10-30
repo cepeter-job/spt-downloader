@@ -17,6 +17,18 @@ SOURCE_PINS = {
 }
 REFERENCE_PATH = ('/referencedata/api/currentreferencedata/id-ID/'
                   'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
+
+
+def _other_reference_get(url):
+    # Passive classification only. A neighboring same-origin route is NOT a
+    # source binding and does not qualify or authorize any catalog bytes.
+    if type(url) is not str or url == ORIGIN + REFERENCE_PATH:
+        return False
+    parts = urlsplit(url)
+    expected = urlsplit(ORIGIN)
+    return (parts.scheme == expected.scheme and parts.netloc == expected.netloc
+            and parts.path.startswith('/referencedata/api/currentreferencedata/id-ID/'))
+
 LIST_HEADERS = ('Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
                 'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
                 'Nilai Sisa dalam Mata Uang', 'Nilai Tukar', 'Jumlah', 'Nilai Sisa',
@@ -62,16 +74,21 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
     # navigation that precedes AccountingUI's source-binding listeners.
     # No response bytes/cache are read; seeing this request is NOT admission.
     preparation_catalog_seen = False
+    preparation_reference_variant = False
     deadline = time.monotonic() + 60
 
     def reference_request(request):
-        nonlocal preparation_catalog_seen
-        # Inspect the frame only for the exact already-known reference GET:
-        # unrelated navigations/service requests must not be inspected.
-        if (request.method == 'GET' and request.url == ORIGIN + REFERENCE_PATH
-                and request.resource_type in ('xhr', 'fetch')
-                and request.frame is page.main_frame):
-            preparation_catalog_seen = True
+        nonlocal preparation_catalog_seen, preparation_reference_variant
+        # Inspect the frame only for a recognized reference GET; never log
+        # or read any URL, query, body, response or taxpayer identifier.
+        if request.method != 'GET' or request.resource_type not in ('xhr', 'fetch'):
+            return
+        url = request.url
+        exact = url == ORIGIN + REFERENCE_PATH
+        variant = _other_reference_get(url)
+        if (exact or variant) and request.frame is page.main_frame:
+            preparation_catalog_seen |= exact
+            preparation_reference_variant |= variant
 
     def allowed(url):
         if '#' in url:
@@ -118,7 +135,9 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
         page.remove_listener('framenavigated', navigation)
         diagnostics.record('mpn.catalog_preparation', level='INFO',
                            mpn_catalog_preparation=('request_seen' if preparation_catalog_seen
-                                                    else 'not_observed'))
+                                                    else 'not_observed'),
+                           mpn_catalog_route_shape=('alternate_reference_get'
+                                                    if preparation_reference_variant else 'not_observed'))
 
 
 class AccountingUI:
@@ -140,6 +159,7 @@ class AccountingUI:
         self.closed = False
         self.reference_raw = None
         self.reference_request_seen = False
+        self.reference_route_variant_seen = False
         self.list_snapshot = None
         self.list_owner = None
         self.preparation_deadline = None
@@ -228,6 +248,9 @@ class AccountingUI:
         pin = SOURCE_PINS.get(url.removeprefix(ORIGIN)) if url.startswith(ORIGIN + '/') else None
         kind = request.resource_type
         catalog = url == ORIGIN + REFERENCE_PATH and kind in ('xhr', 'fetch')
+        if kind in ('xhr', 'fetch') and _other_reference_get(url):
+            # Fixed boolean evidence only; NEVER enter source_pending.
+            self.reference_route_variant_seen = True
         # A fetch/preload of script bytes does not prove an executable provider.
         # Nonqualifying traffic must not enter the later ownership checks.
         if pin is not None and kind != 'script':
@@ -509,7 +532,10 @@ class AccountingUI:
                   'observed_unbound' if getattr(self, 'reference_request_seen', False)
                   else 'not_observed')
         diagnostics.record('mpn.catalog_readiness', level='INFO',
-                           mpn_catalog_state=status)
+                           mpn_catalog_state=status,
+                           mpn_catalog_route_shape=('alternate_reference_get'
+                                                    if getattr(self, 'reference_route_variant_seen', False)
+                                                    else 'not_observed'))
         self.catalog_frozen = True
 
     @staticmethod
@@ -714,6 +740,8 @@ class AccountingUI:
                                mpn_parent_field=field,
                                mpn_parent_secondary_field=(fields[differing[1]]
                                                            if len(differing) > 1 else 'none'),
+                               mpn_parent_tertiary_field=(fields[differing[2]]
+                                                          if len(differing) > 2 else 'none'),
                                mpn_parent_mismatch_count=len(differing),
                                mpn_accounting_type_projection=provenance)
             if (actual[0] != expected[0] and actual[1:] == expected[1:]
