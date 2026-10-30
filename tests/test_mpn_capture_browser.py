@@ -194,14 +194,15 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
       <p-dialog id="isShowDetail" style="display:none"><div role="dialog"><span class="p-dialog-title">Detail Transaksi</span><button class="p-dialog-header-close">Close</button><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></div></p-dialog>
       </acc-balance-sheet-light></body></html>'''
     if period_clear_in_grid or ambiguous_period_clear:
-        owner = '<ui-grid><p-table>'
+        owner = '<acc-balance-sheet-light-grid><ui-grid><p-table>'
         extra = ('<div id="filterPeriodCode"><button type="button" '
                  'class="p-dropdown-clear-icon" aria-label="Clear period">X</button></div>')
         if ambiguous_period_clear:
             extra += ('<div id="filterPeriodCode"><button type="button" '
                       'class="p-dropdown-clear-icon">X</button></div>')
         assert html.count(owner) == 1
-        html = html.replace(owner, '<ui-grid>' + extra + '<p-table>', 1)
+        html = html.replace(owner, '<acc-balance-sheet-light-grid><ui-grid>'
+                            + extra + '<p-table>', 1)
     if delayed_page_size:
         html = html.replace('</table></p-table>', '</table><div class="p-paginator">'
             '<span class="p-dropdown-label">10</span><button type="button" class="p-dropdown-trigger">Size</button>'

@@ -9,8 +9,8 @@ from support_isolated_browser import browser
     '<td>A <span class="p-column-title">Hidden caption</span> B</td>',
     '<td><button>Ignore button</button><span>Visible <strong>Bold</strong></span></td>',
     '<td><input value="synthetic" /><select><option selected>Chosen</option></select></td>',
-    '<td><span style="display:none">Hidden style but existing DOM text</span>'
-    '<script>ignore</script><style>ignore</style><textarea>Value</textarea></td>',
+    ('<td><span style="display:none">Hidden style but existing DOM text</span>'
+     + '<script>ignore</script><style>ignore</style><textarea>Value</textarea></td>'),
     '<td><div><span class="p-hidden-accessible">Exclude</span><span>Include</span></div></td>',
     '<td> A <p-columnfilter>Marker</p-columnfilter><span> Z </span></td>',
 ])
