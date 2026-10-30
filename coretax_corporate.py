@@ -284,6 +284,25 @@ def _observe_l8(page, form, capture, digest, check_cancel):
             'source_structure': structure}]}
 
 
+def _l3_extra_table_layout(form):
+    # Count only already-rendered structure inside the verified selected form.
+    # Categorization is diagnostic; none of these outcomes grants native JSON.
+    return form.evaluate("""form => {
+      const tables=[...form.querySelectorAll('table')];
+      const a=[...form.querySelectorAll('rsh-citr-l3-grid1 ui-grid-offline p-table table')];
+      const b=[...form.querySelectorAll('rshshr-citr-l3-grid2 ui-grid p-table table')];
+      if(a.length!==1 || b.length!==1 || a[0]===b[0] ||
+          a[0].closest('rshshr-citr-l3-form')!==form ||
+          b[0].closest('rshshr-citr-l3-form')!==form)
+        return 'reviewed_pair_unproved';
+      const extra=tables.filter(t=>t!==a[0] && t!==b[0]);
+      if(!extra.length) return 'reviewed_pair_unproved';
+      return extra.every(t=>!t.getClientRects().length ||
+          ['hidden','collapse'].includes(getComputedStyle(t).visibility))
+          ? 'reviewed_pair_hidden_extra' : 'reviewed_pair_visible_extra';
+    }""", timeout=1000)
+
+
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -321,6 +340,10 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
         if reason_out is not None:
             reason_out['table_shape'] = (
                 'zero' if count == 0 else 'one' if count == 1 else 'more_than_two')
+            if count > 2:
+                _check_cancel(check_cancel)
+                reason_out['extra_layout'] = _l3_extra_table_layout(form)
+                _check_cancel(check_cancel)
         return refuse('table_count')
     tables = []
     for phase in range(2):
@@ -522,13 +545,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     stage = 'build'
     ordinal_safe = None
 
-    def unavailable(error=None, *, l3_reason=None, l3_table_shape=None):
+    def unavailable(error=None, *, l3_reason=None, l3_table_shape=None,
+                    l3_extra_layout=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
                            corporate_observer_stage=stage, form_ordinal=ordinal_safe,
                            corporate_l3_reason=l3_reason,
-                           corporate_l3_table_shape=l3_table_shape, error=error)
+                           corporate_l3_table_shape=l3_table_shape,
+                           corporate_l3_extra_layout=l3_extra_layout, error=error)
         return None
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
@@ -578,7 +603,8 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                                         check_cancel, reason_out=l3_diagnostic)
                 if inspected is None:
                     return unavailable(l3_reason=l3_diagnostic.get('reason'),
-                                       l3_table_shape=l3_diagnostic.get('table_shape'))
+                                       l3_table_shape=l3_diagnostic.get('table_shape'),
+                                       l3_extra_layout=l3_diagnostic.get('extra_layout'))
                 binding.update(inspected)
             if name == 'L11-A':
                 stage = 'l11a'

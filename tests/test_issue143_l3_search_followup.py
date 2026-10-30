@@ -39,6 +39,10 @@ def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expect
             return {'table_count_zero': 0, 'table_count_one': 1,
                     'table_count_extra': 3}.get(case, 2)
 
+        def evaluate(self, *args, **kwargs):
+            assert case == 'table_count_extra'
+            return 'reviewed_pair_unproved'
+
     class SyntheticPage:
         def __init__(self):
             self.calls = 0
@@ -63,6 +67,8 @@ def test_l3_early_rejection_has_fixed_reason_and_no_observed_values(case, expect
         assert result['table_shape'] == {'table_count_zero': 'zero',
                 'table_count_one': 'one',
                 'table_count_extra': 'more_than_two'}[case]
+        if case == 'table_count_extra':
+            assert result['extra_layout'] == 'reviewed_pair_unproved'
     else:
         assert result == {'reason': expected}
     assert 'UNTRUSTED_SYNTHETIC_DIGEST' not in json.dumps(result)
@@ -296,4 +302,65 @@ def test_l3_count_shape_diagnostics_accept_only_fixed_categories(tmp_path, shape
     assert len(events) == 2
     assert events[0]['corporate_l3_table_shape'] == shape
     assert 'corporate_l3_table_shape' not in events[1]
+    assert secret not in json.dumps(events)
+
+
+@pytest.mark.parametrize('extra,expected', [
+    ('<p-table><table style="display:none"><tbody></tbody></table></p-table>',
+     'reviewed_pair_hidden_extra'),
+    ('<p-table><table><tbody></tbody></table></p-table>',
+     'reviewed_pair_visible_extra'),
+    ('<rsh-citr-l3-grid1><p-table><table></table></p-table></rsh-citr-l3-grid1>',
+     'reviewed_pair_visible_extra'),
+])
+def test_extra_l3_table_owner_classification_does_not_grant_admission(
+        browser, extra, expected):
+    from coretax_corporate import _l3_extra_table_layout
+    page = browser.new_page()
+    try:
+        page.set_content('<rshshr-citr-l3-form>'
+            '<rsh-citr-l3-grid1><ui-grid-offline><p-table><table></table>'
+            '</p-table></ui-grid-offline></rsh-citr-l3-grid1>'
+            '<rshshr-citr-l3-grid2><ui-grid><p-table><table></table>'
+            '</p-table></ui-grid></rshshr-citr-l3-grid2>'
+            + extra + '</rshshr-citr-l3-form>')
+        assert _l3_extra_table_layout(page.locator('rshshr-citr-l3-form')) == expected
+    finally:
+        page.close()
+
+
+def test_l3_pair_unproved_when_source_reviewed_owner_is_absent(browser):
+    from coretax_corporate import _l3_extra_table_layout
+    page = browser.new_page()
+    try:
+        page.set_content('<rshshr-citr-l3-form>'
+            '<rsh-citr-l3-grid1><ui-grid-offline><p-table><table></table>'
+            '</p-table></ui-grid-offline></rsh-citr-l3-grid1>'
+            '<p-table><table></table></p-table>'
+            '<p-table><table></table></p-table>'
+            '</rshshr-citr-l3-form>')
+        assert _l3_extra_table_layout(page.locator('rshshr-citr-l3-form')) == 'reviewed_pair_unproved'
+    finally:
+        page.close()
+
+
+@pytest.mark.parametrize('kind', ['reviewed_pair_hidden_extra',
+                                   'reviewed_pair_visible_extra', 'reviewed_pair_unproved'])
+def test_l3_extra_owner_enum_never_logs_private_dom(tmp_path, kind):
+    from spt_desktop import diagnostics
+    secret='SYNTHETIC_PRIVATE_L3_DOM'
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_observer_stage='l3',
+                           corporate_l3_reason='table_count',
+                           corporate_l3_extra_layout=kind,
+                           dom=secret, body=secret, url=secret)
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_l3_extra_layout=secret)
+        assert log.flush()
+    events=[e for e in records(tmp_path / 'log')
+            if e['event']=='corporate.observe_unavailable']
+    assert len(events)==2
+    assert events[0]['corporate_l3_extra_layout']==kind
+    assert 'corporate_l3_extra_layout' not in events[1]
     assert secret not in json.dumps(events)

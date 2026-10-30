@@ -186,3 +186,38 @@ def test_stalled_page_reaching_total_elapsed_budget_retains_original_rows(
               if e['event'] == 'table.elapsed_budget']
     assert len(events) == 1
     assert events[0]['table_elapsed_stage'] == 'state_poll'
+
+
+def test_post_pagination_dom_read_timeout_retains_verified_rows_without_retry(
+        page, monkeypatch, tmp_path):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    table = fixture(page)
+    evaluate = table.evaluate
+    calls = []
+
+    def bounded_evaluate(source, *args, **kwargs):
+        if source == driver.TABLE_JS:
+            calls.append(kwargs.get('timeout'))
+            if len(calls) == 2:
+                raise BrowserTimeout('SYNTHETIC_PRIVATE_DOM_READ')
+        return evaluate(source, *args, **kwargs)
+
+    wrapped = SimpleNamespace(element_handle=table.element_handle,
+                              evaluate=bounded_evaluate)
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        result = driver.capture_table(page, wrapped, 1, max_pages=3)
+        assert log.flush()
+    assert result['complete'] is False
+    assert result['pages'] == 1
+    assert result['body_row_count'] == 1
+    assert result['warning'] == 'Table DOM read timed out after pagination'
+    assert page.evaluate('moves') == 1
+    assert calls[0] is None and 0 < calls[1] <= 10000
+    events = [e for e in records(tmp_path / 'log')
+              if e['event'] == 'table.dom_read_failed']
+    assert len(events) == 1
+    assert events[0]['table_dom_stage'] == 'post_pagination'
+    assert events[0]['pages'] == 1
+    assert events[0]['error']['type'] == 'TimeoutError'
+    assert 'SYNTHETIC_PRIVATE_DOM_READ' not in str(events)

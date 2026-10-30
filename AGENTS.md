@@ -487,6 +487,20 @@ its admission rule. Elapsed DOM table budget may log a fixed action-stage
 category and already captured page count without retrying a paginator
 click, changing elapsed policy, or promoting PARTIAL.
 
+For Issue #143 live follow-up after PR #150, classify only owned original
+MPN reference GET readiness as accepted, observed-but-unbound, or not observed.
+Never trigger a new reference request, infer a catalog from cache, or map a
+display label to an unproved code. If the sole mismatched field is accounting
+type and no original code inventory exists, refuse as MpnUnsupported rather
+than claiming a known contradiction; no detail click. Independent identity
+contradictions remain MpnSafetyError. After a DOM paginator click, bound the
+Playwright table DOM read to 10 seconds and the remaining per-table deadline;
+a timeout retains only preceding verified pages as PARTIAL and never retries
+the dispatched click. Classify additional L3 form tables against both
+source-reviewed grid owners as hidden/visible extra or unproved pair; retain
+the exact two-table native admission requirement on every branch.
+
+
 
 These fields are diagnostic evidence, not capture proof: preserve
 every original source pin, privacy/identity gate, Stop, checkpoint and PARTIAL
