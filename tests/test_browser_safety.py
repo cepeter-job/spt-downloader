@@ -329,7 +329,11 @@ class PagedTable:
     def evaluate_handle(self, script):
         return self
 
-    def evaluate(self, script):
+    def evaluate(self, script, *, timeout=None):
+        # Match Playwright's bounded DOM-read contract on the synthetic table.
+        if timeout is not None:
+            assert script == driver.TABLE_JS
+            assert 0 < timeout <= 10000
         number, value = self.pages[self.index]
         if script == driver.STATE_JS:
             return json.dumps({'p': [number], 'rows': [value]})
