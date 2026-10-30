@@ -31,7 +31,7 @@ EVENTS = frozenset({
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
-    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
+    'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.catalog_readiness', 'corporate.observe_unavailable', 'table.elapsed_budget',
@@ -56,6 +56,9 @@ ENUMS = {
     'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
     'corporate_l3_extra_layout': frozenset({'reviewed_pair_hidden_extra',
         'reviewed_pair_visible_extra', 'reviewed_pair_unproved'}),
+    'corporate_l3_extra_owner': frozenset({'reviewed_pair_unproved',
+        'no_visible_extra', 'nested_in_reviewed_table', 'reviewed_grid_extra',
+        'other_form_owner', 'mixed_owners'}),
     'corporate_observer_stage': frozenset({'build', 'tabs', 'tab', 'panel', 'form',
         'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
     'corporate_l3_reason': frozenset({
@@ -129,7 +132,7 @@ ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', '
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
     'JSONDecodeError', 'TclError', 'AuthBlocked', 'SetupCancelled', 'CaptureCancelled',
     'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', 'MpnSafetyError', 'MpnUnsupported',
-    '_RecoveryRequired'})
+    '_RecoveryRequired', 'ConsentTimeout'})
 MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_mpn', 'coretax_mpn_browser', 'coretax_mpn_export', 'coretax_mpn_ui', 'coretax_attachments', 'coretax_financial_post', 'coretax_pdf',
     'coretax_exporter', 'coretax_json', 'coretax_json_capture', 'coretax_corporate',
     'spt_gui', *('spt_desktop.' + name for name in (

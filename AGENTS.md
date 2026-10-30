@@ -748,3 +748,27 @@ boolean dan field tambahan tidak valid. Runtime tetap mengembalikan `None`
 dan diagnostik unknown untuk metadata tidak sah; CI melempar `ValueError`
 sebelum menulis metadata. Pertahankan pemeriksaan file dan pembacaan terbatas;
 modul bersama ini hanya boleh bergantung pada standard library.
+
+
+Issue #143 round 5: the MPN period-clear lookup is scoped to exactly one
+ui-grid that owns the single proven list p-table; its clear control may be
+a table sibling but never a document-wide query. A clear click is never
+proof of unfiltered source: observe the next same-owner POST and require
+the original exact non-cancelled-only query before any detail. Reject
+missing/ambiguous controls. Corporate table cell text uses a read-only
+TreeWalker instead of deep-cloning each cell; the old extraction semantics
+must be tested on synthetic browser fixtures, including controls and hidden
+caption labels. Corporate L3 visible-extra ownership is diagnostic-only
+within the owned form and cannot relax native admission or source pins.
+
+
+Issue #143 overwrite follow-up: classify a time-bounded operator selection
+or overwrite request that receives no on-time response as ConsentTimeout
+(BLOCKED exit 3), not a tax DOM or network ERROR. Never infer affirmative
+overwrite permission, publish without a valid reply, extend the consent
+window, or emit private file names/paths. Finite diagnostics distinguish
+controller consent.requested, mapped and actually viewable overwrite modal
+consent.dialog_presented, confirmed consent.replied, and worker
+consent.timeout. A Map event is not proof the operator saw the window;
+preserve the existing safe decline focus, cancellation, Stop, checkpoint
+and publication guards.

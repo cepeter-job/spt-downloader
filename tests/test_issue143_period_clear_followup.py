@@ -75,3 +75,37 @@ def test_mpn_filter_event_never_serializes_values_or_unreviewed_categories(tmp_p
     assert 'mpn_filter_reason' not in events[1]
     assert 'mpn_clear_state' not in events[1]
     assert secret not in json.dumps(events)
+
+
+def test_period_clear_owned_grid_sibling_resets_source_filter_without_guessing(
+        browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, period_clear_in_grid=True) as (page, metrics):
+        run = scope_run()
+        with diagnostics.session(tmp_path / 'log', 'worker') as log:
+            collect_mpn(page, run, tmp_path)
+            assert log.flush()
+    events = [r for r in records(tmp_path / 'log')
+              if r['event'] == 'mpn.unfiltered_refused']
+    assert len(events) == 1
+    assert events[0]['mpn_filter_reason'] == 'date_filter_present'
+    assert events[0]['mpn_clear_state'] == 'present'
+    assert metrics['list'], 'The request must still be observed after clear'
+    assert AccountingUI._unfiltered({'request': metrics['list'][-1]})
+    assert metrics['detail'], 'Only proved unfiltered source may lead to detail'
+
+
+def test_ambiguous_period_clear_never_clicks_either_control(
+        browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, ambiguous_period_clear=True) as (page, metrics):
+        run = scope_run()
+        with diagnostics.session(tmp_path / 'log', 'worker') as log:
+            collect_mpn(page, run, tmp_path)
+            assert log.flush()
+    events = [r for r in records(tmp_path / 'log')
+              if r['event'] == 'mpn.unfiltered_refused']
+    assert len(events) == 1
+    assert events[0]['mpn_clear_state'] == 'ambiguous'
+    assert len(metrics['detail']) == 0
+    assert run['mpn']['status'] == 'PARTIAL'

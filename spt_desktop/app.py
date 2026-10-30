@@ -893,7 +893,18 @@ class App:
             interaction['bindings'].append((widget, sequence, token))
         dialog.protocol('WM_DELETE_WINDOW', decline)
         dialog.bind('<Escape>', decline_key)
+
+        def record_presented(event):
+            if (event.widget is not dialog or not self._interaction_current(interaction)
+                    or interaction.get('presented') or not dialog.winfo_viewable()):
+                return
+            interaction['presented'] = True
+            # A mapped modal is not proof the user acted. No names/paths/IDs.
+            diagnostics.record('consent.dialog_presented', kind='overwrite', count=len(files))
+        token = dialog.bind('<Map>', record_presented, add='+')
+        interaction['bindings'].append((dialog, '<Map>', token))
         request_reflow()
+        dialog.lift()
         safe_button.focus_set()
 
     def settings(self):

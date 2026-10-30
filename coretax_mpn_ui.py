@@ -446,7 +446,13 @@ class AccountingUI:
                 break
             self.diagnostic_stage = 'period_clear'
             refusal = self._unfiltered_reason(snapshot)
-            clear = self.list_owner.locator('#filterPeriodCode .p-dropdown-clear-icon')
+            # The reviewed list owner is p-table inside its single ui-grid.
+            # A PrimeNG header filter can be a sibling of p-table; searching
+            # only the table silently misses an eligible owned clear control.
+            grid = self.list_owner.locator('xpath=ancestor::ui-grid[1]')
+            if grid.count() != 1 or grid.locator('p-table').count() != 1:
+                raise MpnUnsupported('MPN period clear grid owner is unproved')
+            clear = grid.locator('#filterPeriodCode .p-dropdown-clear-icon')
             count = clear.count()
             self._stop()
             # Never record filter values, names, dates or UI captions. These

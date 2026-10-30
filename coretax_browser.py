@@ -35,10 +35,18 @@ from coretax_inventory import (InventoryFilterRoute, plan_year_filters, read_per
                                validate_partition_response, prove_period_equivalence)
 
 CELL_JS = r'''(cell) => {
- const clone=cell.cloneNode(true);
- clone.querySelectorAll('.p-column-title,button,script,style,.p-hidden-accessible').forEach(e=>e.remove());
- clone.querySelectorAll('input,textarea,select').forEach(e=>e.remove());
- let text=(clone.textContent||'').replace(/\s+/g,' ').trim();
+ // Each large-page read previously deep-cloned every cell and mutated the
+ // clones. Traverse the original text nodes without any DOM writes; exclude
+ // precisely the same descendants (but not the cell itself) as the clone.
+ const ignored='.p-column-title,button,script,style,.p-hidden-accessible,input,textarea,select';
+ const walker=cell.ownerDocument.createTreeWalker(cell,NodeFilter.SHOW_TEXT);
+ const fragments=[];
+ for(let node=walker.nextNode();node;node=walker.nextNode()){
+   const matched=node.parentElement?.closest(ignored);
+   if(!matched || matched===cell || !cell.contains(matched))
+     fragments.push(node.nodeValue||'');
+ }
+ let text=fragments.join('').replace(/\s+/g,' ').trim();
  const vals=[...cell.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')]
  .filter(e=>e.getAttribute('role')!=='combobox' && !e.closest('.p-hidden-accessible') && (!(e.type==='radio'||e.type==='checkbox')||e.checked))
  .map(e=>(e.type==='checkbox'||e.type==='radio') ? String(e.checked) : (e.tagName==='SELECT' ? e.selectedOptions[0]?.textContent||e.value : e.value));

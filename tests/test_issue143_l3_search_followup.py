@@ -364,3 +364,40 @@ def test_l3_extra_owner_enum_never_logs_private_dom(tmp_path, kind):
     assert events[0]['corporate_l3_extra_layout']==kind
     assert 'corporate_l3_extra_layout' not in events[1]
     assert secret not in json.dumps(events)
+
+
+@pytest.mark.parametrize('extra,expected', [
+    ('<rsh-citr-l3-grid1><table></table></rsh-citr-l3-grid1>', 'reviewed_grid_extra'),
+    ('<div><table></table></div>', 'other_form_owner'),
+    ('<rsh-citr-l3-grid1><table></table></rsh-citr-l3-grid1>'
+     '<div><table></table></div>', 'mixed_owners'),
+])
+def test_l3_visible_extra_owner_stays_diagnostic_only(browser, extra, expected):
+    from coretax_corporate import _l3_visible_extra_owner
+    page=browser.new_page()
+    try:
+        page.set_content('<rshshr-citr-l3-form>'
+            '<rsh-citr-l3-grid1><ui-grid-offline><p-table><table></table>'
+            '</p-table></ui-grid-offline></rsh-citr-l3-grid1>'
+            '<rshshr-citr-l3-grid2><ui-grid><p-table><table></table>'
+            '</p-table></ui-grid></rshshr-citr-l3-grid2>'
+            + extra + '</rshshr-citr-l3-form>')
+        assert _l3_visible_extra_owner(page.locator('rshshr-citr-l3-form')) == expected
+    finally:
+        page.close()
+
+
+def test_l3_extra_owner_diagnostic_is_bounded_and_private(tmp_path):
+    from spt_desktop import diagnostics
+    secret='SYNTHETIC_PRIVATE_CELLS_AND_TAXPAYER'
+    with diagnostics.session(tmp_path/'log', 'worker') as log:
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_l3_extra_owner='other_form_owner',
+                           raw_dom=secret, taxpayer=secret)
+        diagnostics.record('corporate.observe_unavailable',
+                           corporate_l3_extra_owner=secret)
+        assert log.flush()
+    events=[e for e in records(tmp_path/'log') if e['event']=='corporate.observe_unavailable']
+    assert events[0]['corporate_l3_extra_owner']=='other_form_owner'
+    assert 'corporate_l3_extra_owner' not in events[1]
+    assert secret not in json.dumps(events)
