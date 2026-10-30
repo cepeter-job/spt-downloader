@@ -162,6 +162,8 @@ def test_preparation_reference_request_is_diagnostic_only_and_listener_is_retire
     # catalog URL. It is deliberately classified as an unbound variant.
     assert event[0]['mpn_catalog_route_shape']==(
         'not_observed' if eligible else 'alternate_reference_get')
+    assert event[0]['mpn_catalog_variant_kind']==(
+        'not_observed' if eligible else 'query_variant')
     assert not hasattr(page,'reference_raw')
     assert 'SYNTHETIC' not in str(event)
 
@@ -210,6 +212,8 @@ def test_preparation_passively_classifies_reference_route_variant_without_bindin
     events=[e for e in records(tmp_path/'log') if e['event']=='mpn.catalog_preparation']
     assert len(events)==1
     assert events[0]['mpn_catalog_route_shape']==expected
+    assert events[0]['mpn_catalog_variant_kind']==(
+        'path_variant' if alternate else 'not_observed')
     assert events[0]['mpn_catalog_preparation']=='not_observed'
     assert not hasattr(page,'reference_raw')
     assert 'SYNTHETIC_ALTERNATE_REFERENCE' not in str(events)

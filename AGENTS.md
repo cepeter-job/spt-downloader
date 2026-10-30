@@ -801,3 +801,10 @@ category without values and preserve fatal mismatch identity gates.
 A visible third L3 table must refuse native JSON and use the original
 whole-return DOM fallback. Use hosted synthetic Edge tests and require
 separately authorized live acceptance on an exact matching build.
+
+Issue #143 follow-up: never promote synthetic 250-row pagination to live
+without build-matched measured evidence. Keep Corporate 100-row live cap and
+180s per-table safety deadline. Emit bounded per-page DOM timings without
+source contents; route-shape MPN diagnostics must not admit or replay alternate
+reference GETs, relax catalog/script pins, or permit Detail on mismatch.
+Only GitHub-hosted CI runs the browser/integration tests.
