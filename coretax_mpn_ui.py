@@ -66,9 +66,11 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
 
     def reference_request(request):
         nonlocal preparation_catalog_seen
-        if (request.method == 'GET' and request.frame is page.main_frame
-                and request.url == ORIGIN + REFERENCE_PATH
-                and request.resource_type in ('xhr', 'fetch')):
+        # Inspect the frame only for the exact already-known reference GET:
+        # unrelated navigations/service requests must not be inspected.
+        if (request.method == 'GET' and request.url == ORIGIN + REFERENCE_PATH
+                and request.resource_type in ('xhr', 'fetch')
+                and request.frame is page.main_frame):
             preparation_catalog_seen = True
 
     def allowed(url):
