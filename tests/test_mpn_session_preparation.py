@@ -158,6 +158,10 @@ def test_preparation_reference_request_is_diagnostic_only_and_listener_is_retire
     event=[e for e in records(tmp_path/'log') if e['event']=='mpn.catalog_preparation']
     assert len(event)==1
     assert event[0]['mpn_catalog_preparation']==('request_seen' if eligible else 'not_observed')
+    # A same-path GET with an extra query is not the exact admitted
+    # catalog URL. It is deliberately classified as an unbound variant.
+    assert event[0]['mpn_catalog_route_shape']==(
+        'not_observed' if eligible else 'alternate_reference_get')
     assert not hasattr(page,'reference_raw')
     assert 'SYNTHETIC' not in str(event)
 
@@ -176,3 +180,36 @@ def test_preparation_catalog_observation_never_survives_invalid_navigation(
     assert_clean(page)
     event=[e for e in records(tmp_path/'log') if e['event']=='mpn.catalog_preparation']
     assert len(event)==1 and event[0]['mpn_catalog_preparation']=='not_observed'
+
+
+@pytest.mark.parametrize('alternate,expected', [
+    (True, 'alternate_reference_get'),
+    (False, 'not_observed'),
+])
+def test_preparation_passively_classifies_reference_route_variant_without_binding(
+        monkeypatch, tmp_path, alternate, expected):
+    import coretax_mpn_ui as ui
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    class ReferencePage(PreparingPage):
+        def goto(self, url, **kwargs):
+            super().goto(url, **kwargs)
+            route = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
+                     'SYNTHETIC_ALTERNATE_REFERENCE' if alternate else
+                     'https://synthetic.invalid/referencedata/api/currentreferencedata/id-ID/X')
+            request = SimpleNamespace(method='GET', resource_type='xhr',
+                                      url=route, frame=self.main_frame)
+            for callback in list(self.handlers.get('request', [])):
+                callback(request)
+    page=ReferencePage([SOURCE])
+    monkeypatch.setattr(ui.time,'monotonic',lambda:page.clock)
+    with diagnostics.session(tmp_path/'log','worker') as log:
+        ui.prepare_accounting_session(page, scope_run())
+        assert log.flush()
+    assert_clean(page)
+    events=[e for e in records(tmp_path/'log') if e['event']=='mpn.catalog_preparation']
+    assert len(events)==1
+    assert events[0]['mpn_catalog_route_shape']==expected
+    assert events[0]['mpn_catalog_preparation']=='not_observed'
+    assert not hasattr(page,'reference_raw')
+    assert 'SYNTHETIC_ALTERNATE_REFERENCE' not in str(events)

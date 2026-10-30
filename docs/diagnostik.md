@@ -452,3 +452,41 @@ menyebut keputusan belum diterima. Ini **bukan** kegagalan scraping
 DOM, tidak mempromosikan PARTIAL menjadi COMPLETE, tidak otomatis menyetujui
 overwrite, dan tidak menimpa file lama. Hasil lokal dan checkpoint yang
 sudah diverifikasi tetap dipertahankan tanpa publikasi baru.
+
+
+### Tindak lanjut Issue #143: ukuran L3-B, rute katalog, dan L3 ekstra
+
+Pengujian DOM 30 Oktober 2026 pukul 14.46?14.51 WIB pada build PR #153
+masih gagal membaca halaman setelah pagination untuk **form 4/tabel 3**.
+Tabel L3-B sebelumnya memilih ukuran 500 baris. Untuk mengurangi risiko
+halaman besar yang tidak responsif, capture DOM sekarang memakai **paling
+banyak 100 baris per halaman** pada pemilih ukuran halaman asli yang
+terinspeksi. Tidak ada sintesis endpoint, offset, atau data sumber.
+Proses ini mungkin memerlukan lebih banyak klik/halaman, tetapi jumlah
+baris, urutan, Stop, paginasi ulang yang dilarang, sumber total, dan
+batas 180 detik setiap tabel tetap harus diverifikasi. Apabila opsi
+100 atau lebih kecil tidak tersedia, tidak ada opsi rekaan; tabel
+tidak otomatis dianggap lengkap. Keberhasilan hanya dapat ditentukan
+dengan *live acceptance* pada build yang sesuai.
+
+Ketika baik `mpn.catalog_preparation` maupun `mpn.catalog_readiness`
+bernilai `not_observed`, field `mpn_catalog_route_shape` mencatat
+`alternate_reference_get` jika GET XHR/fetch di frame utama teramati
+ke **prefix rute referensi id-ID yang sama, tetapi URL-nya bukan URL
+katalog tepat yang telah ditinjau**, atau `not_observed` jika tidak.
+Ini hanya identifikasi **kemungkinan perubahan rute**; tidak ada
+URL, query, body, label, kode, identitas, atau byte respons yang
+dibaca/direkam. Endpoint alternatif tidak boleh menjadi sumber
+data atau mengizinkan klik detail; seluruh pin/validasi yang ada
+tetap berlaku.
+
+`mpn_parent_tertiary_field` menyimpan kategori kolom berbeda ketiga
+dari tujuh kolom terverifikasi, atau `none` jika tidak ada. Semua
+kategori berasal dari allowlist, tidak mencatat nilai sumber/DOM.
+Bila mismatch lebih dari satu kolom, `MpnSafetyError` tetap fatal.
+
+Mode JSON-hybrid untuk L3 dengan tabel ketiga yang terlihat tetap
+menolak sumber native dan memilih fallback DOM, sekalipun dua grid
+asli dapat ditemukan. Tes sintetis mereplikasi bentuk ini tanpa
+mengakses portal atau data wajib pajak. **Tes sintetis bukan bukti
+live acceptance**.

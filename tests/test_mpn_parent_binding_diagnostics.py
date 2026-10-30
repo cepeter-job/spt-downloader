@@ -243,3 +243,44 @@ def test_secondary_mismatch_diagnostics_reject_unknown_or_unbounded_values(tmp_p
     assert items[1]['mpn_parent_secondary_field']=='none'
     assert items[1]['mpn_parent_mismatch_count']==1
     assert SECRET not in json.dumps(items)
+
+
+def test_three_independent_mpn_identity_mismatches_remain_fatal_without_click(tmp_path):
+    ui, header, rendered, controls=inspected_binding()
+    ui.catalog_codes = {}
+    header['AccountingTypeCode'] = 'SYNTHETIC_ACCOUNTING'
+    ui.list_snapshot['rows'][0] = header.copy()
+    for column in (COLUMNS[0], COLUMNS[1], COLUMNS[6]):
+        rendered[column] = SECRET
+    with diagnostics.session(tmp_path/'log', 'worker') as log:
+        with pytest.raises(MpnSafetyError):
+            ui._bind_header(header)
+        assert log.flush()
+    events=[x for x in records(tmp_path/'log') if x['event']=='mpn.parent_binding_mismatch']
+    assert len(events)==1
+    assert events[0]['mpn_parent_field']=='accounting_type'
+    assert events[0]['mpn_parent_secondary_field']=='accounting_detail'
+    assert events[0]['mpn_parent_tertiary_field']=='transaction_number'
+    assert events[0]['mpn_parent_mismatch_count']==3
+    assert events[0]['mpn_accounting_type_projection']=='catalog_missing'
+    assert controls.lookups==[]
+    assert SECRET not in json.dumps(events)
+
+
+def test_third_identity_field_and_reference_route_enum_reject_unknown_values(tmp_path):
+    secret='PRIVATE_SYNTHETIC_TAXPAYER'
+    with diagnostics.session(tmp_path/'log', 'worker') as log:
+        diagnostics.record('mpn.parent_binding_mismatch', mpn_parent_tertiary_field=secret)
+        diagnostics.record('mpn.parent_binding_mismatch', mpn_parent_tertiary_field='none')
+        diagnostics.record('mpn.catalog_readiness', mpn_catalog_route_shape=secret, url=secret)
+        diagnostics.record('mpn.catalog_readiness', mpn_catalog_route_shape='alternate_reference_get')
+        assert log.flush()
+    items=records(tmp_path/'log')
+    a=[e for e in items if e['event']=='mpn.parent_binding_mismatch']
+    b=[e for e in items if e['event']=='mpn.catalog_readiness']
+    assert len(a)==len(b)==2
+    assert 'mpn_parent_tertiary_field' not in a[0]
+    assert a[1]['mpn_parent_tertiary_field']=='none'
+    assert 'mpn_catalog_route_shape' not in b[0]
+    assert b[1]['mpn_catalog_route_shape']=='alternate_reference_get'
+    assert secret not in json.dumps(items)

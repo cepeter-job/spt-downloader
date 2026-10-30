@@ -94,6 +94,12 @@ class Fixture(BaseFixture):
             for caption, table in zip(groups, tables))
         hidden = ' style="display:none"' if self.defect == 'hidden-owner' else ''
         form = '<rshshr-citr-l3-form' + hidden + '><p-accordion>' + content + '</p-accordion></rshshr-citr-l3-form>'
+        if self.defect == 'visible-extra-form':
+            # Synthetic third visible form-owned table is never an admitted
+            # native owner and must not authorize any source packet replay.
+            form = form.replace('</p-accordion>', '</p-accordion>'
+                '<p-table><table><tbody><tr><td>SYNTHETIC_EXTRA</td></tr></tbody>'
+                '</table></p-table>', 1)
         if self.defect == 'duplicate-owner': form += form
         tabs = ''.join('<li><a role="tab" aria-controls="panel-' + str(index)
             + '" href="#" onclick="show(' + str(index) + ');return false">' + caption + '</a></li>'
