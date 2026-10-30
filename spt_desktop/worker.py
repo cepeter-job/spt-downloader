@@ -17,7 +17,7 @@ from coretax_mpn_browser import collect_mpn
 from .auth import AuthBlocked,authenticate_owned
 from .events import Progress
 from . import diagnostics
-from .interaction import Requests, select_records
+from .interaction import ConsentTimeout, Requests, select_records
 from .output import existing_outputs, publish_workbooks
 from .paths import downloads_folder
 from .profile_lifecycle import temporary_profile
@@ -144,6 +144,18 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                                    error=checkpoint_error, status='CANCELLED')
         progress.finished(False,None,status='CANCELLED',message='Dihentikan. Checkpoint lokal tetap tersedia; tidak ada hasil COMPLETE.')
         return 4
+    except ConsentTimeout as error:
+        # No publication without affirmative consent. A 10-minute prompt
+        # expiry is operator BLOCKED, not a failed Coretax DOM scrape.
+        diagnostics.record('operation.failed', job_id=job_id, level='WARNING',
+                           error=error, kind=error.kind, stage=error.kind, status='BLOCKED')
+        message = ('Konfirmasi penggantian berkas tidak diterima dalam 10 menit. '
+                   'Berkas sebelumnya tidak diganti; checkpoint lokal tetap tersedia.'
+                   if error.kind == 'overwrite' else
+                   'Pemilihan SPT tidak diterima dalam 10 menit. '
+                   'Tidak ada SPT yang dipilih otomatis.')
+        progress.finished(False, None, status='BLOCKED', message=message)
+        return 3
     except AuthBlocked as error:
         diagnostics.record('operation.failed', job_id=job_id, level='WARNING', error=error, status='BLOCKED')
         progress.finished(False,None,status='BLOCKED',message=str(error))

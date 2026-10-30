@@ -31,7 +31,7 @@ EVENTS = frozenset({
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
-    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
+    'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.catalog_readiness', 'corporate.observe_unavailable', 'table.elapsed_budget',
@@ -132,7 +132,7 @@ ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', '
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
     'JSONDecodeError', 'TclError', 'AuthBlocked', 'SetupCancelled', 'CaptureCancelled',
     'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', 'MpnSafetyError', 'MpnUnsupported',
-    '_RecoveryRequired'})
+    '_RecoveryRequired', 'ConsentTimeout'})
 MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_mpn', 'coretax_mpn_browser', 'coretax_mpn_export', 'coretax_mpn_ui', 'coretax_attachments', 'coretax_financial_post', 'coretax_pdf',
     'coretax_exporter', 'coretax_json', 'coretax_json_capture', 'coretax_corporate',
     'spt_gui', *('spt_desktop.' + name for name in (

@@ -404,3 +404,24 @@ CLI dan checkpoint/audit yang sudah ada masih dapat mengandung data sumber. Kebi
 `spt_desktop/diagnostics.py` memegang schema, sanitasi, antrian, session dan instrumentasi fase. `diagnostic_store.py` memegang file/lock/rotasi/retensi. Tidak ada konfigurasi root logger atau filesystem saat import; setiap proses membuat sink sendiri. Kedua modul masuk allowlist worker/frozen, tanpa dependensi baru.
 
 Dasar desain: [Python Logging Cookbook](https://docs.python.org/3.14/howto/logging-cookbook.html) dan [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html). Bukti aktual gate dan artifact ada pada PR logging; dokumen ini bukan klaim live acceptance.
+
+
+### Perbedaan kegagalan capture dan persetujuan penggantian file
+
+Alur *overwrite* hanya bisa mempublikasikan file terpilih setelah respons
+eksplisit dari operator. `consent.requested` di controller berarti permintaan
+diterima antrean, **bukan** bukti dialog tampil. `consent.dialog_presented`
+dicatat **sekali** saat jendela dialog *overwrite* telah memperoleh peristiwa
+`Map` dan benar-benar `winfo_viewable`; event hanya berisi jenis keputusan
+`overwrite` dan **jumlah** berkas. Event ini belum membuktikan operator
+melihat atau menyetujui dialog. Dialog dibawa di atas jendela aplikasi tanpa
+mengaktifkan tombol persetujuan.
+
+`consent.replied` tetap menjadi bukti persetujuan/penolakan yang dikirim
+ke worker. Jika tidak ada jawaban valid hingga batas 600 detik, worker
+mencatat `consent.timeout` dengan jenis `overwrite` atau `selection`,
+mengakhiri operasi dengan status **BLOCKED** (exit 3) dan pesan yang
+menyebut keputusan belum diterima. Ini **bukan** kegagalan scraping
+DOM, tidak mempromosikan PARTIAL menjadi COMPLETE, tidak otomatis menyetujui
+overwrite, dan tidak menimpa file lama. Hasil lokal dan checkpoint yang
+sudah diverifikasi tetap dipertahankan tanpa publikasi baru.
