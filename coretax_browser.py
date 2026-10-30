@@ -17,6 +17,7 @@ Exception-handling policy for this module:
 
 from spt_desktop import diagnostics
 import time
+from time import perf_counter as _diagnostic_clock
 import re
 import json
 import os
@@ -321,7 +322,12 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             raise RuntimeError('Table pagination did not return to the first page')
     if container_handle.query_selector(previous_selector):
         raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    first_read_started = _diagnostic_clock()
     result = table.evaluate(TABLE_JS)
+    first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
+    diagnostics.record('table.page_timing', table_page_stage='initial',
+                       pages=1, page_rows=len(result['rows']), page_size_cap=max_page_size,
+                       duration_ms=first_read_ms, table_dom_ms=first_read_ms)
     result.update(name=f'Tabel {ordinal}', pages=1, complete=True)
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
     seen = set()
@@ -346,7 +352,9 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             result['warning'] = 'Repeated table pagination state'
             break
         seen.add(state)
+        page_started = _diagnostic_clock()
         _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
+        poll_started = _diagnostic_clock()
         deadline = min(time.monotonic() + 30, capture_deadline)
         while container_handle.evaluate(STATE_JS) == state:
             _check_cancel(check_cancel)
@@ -363,7 +371,10 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             page.wait_for_timeout(120)
         if not result['complete']:
             break
+        poll_ms = (_diagnostic_clock() - poll_started) * 1000
+        idle_started = _diagnostic_clock()
         wait_idle(page)
+        idle_ms = (_diagnostic_clock() - idle_started) * 1000
         if container_handle.evaluate(STATE_JS) in seen:
             result['complete'] = False
             result['warning'] = 'Repeated table pagination state'
@@ -379,6 +390,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
                                table_elapsed_stage='before_dom_read',
                                pages=result['pages'])
             break
+        dom_started = _diagnostic_clock()
         try:
             data = table.evaluate(TABLE_JS, timeout=min(
                 10000, max(1, int((capture_deadline-time.monotonic())*1000))))
@@ -392,6 +404,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
                                table_dom_stage='post_pagination', pages=result['pages'],
                                error=error)
             break
+        dom_ms = (_diagnostic_clock() - dom_started) * 1000
         _check_cancel(check_cancel)
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:
@@ -406,6 +419,11 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         result['footer'] = data.get('footer', [])
         result['footer_spans'] = data.get('footer_spans', [])
         result['pages'] += 1
+        if result['complete']:
+            diagnostics.record('table.page_timing', table_page_stage='advanced',
+                               pages=result['pages'], page_rows=len(data['rows']),
+                               page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_poll_ms=poll_ms, table_idle_ms=idle_ms, table_dom_ms=dom_ms)
         if not result['complete']:
             break
     # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.

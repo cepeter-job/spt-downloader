@@ -35,7 +35,7 @@ EVENTS = frozenset({
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'table.elapsed_budget',
-    'table.dom_read_failed',
+    'table.dom_read_failed', 'table.page_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
@@ -59,6 +59,8 @@ ENUMS = {
         'additional_filter', 'cancelled_filter_missing', 'cancelled_filter_modified'}),
     'mpn_clear_state': frozenset({'ambiguous', 'absent', 'present', 'hidden'}),
     'corporate_l3_table_shape': frozenset({'zero', 'one', 'more_than_two'}),
+    'mpn_catalog_variant_kind': frozenset({'not_observed', 'query_variant', 'path_variant'}),
+    'table_page_stage': frozenset({'initial', 'advanced'}),
     'table_elapsed_stage': frozenset({'before_next_click', 'state_poll', 'before_dom_read'}),
     'table_dom_stage': frozenset({'post_pagination'}),
     'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
@@ -132,7 +134,7 @@ ENUMS = {
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed',
         'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls',
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'page_rows', 'page_size_cap', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls',
     'search_requests', 'search_responses', 'search_failed', 'search_http_1xx', 'search_http_2xx',
     'search_http_3xx', 'search_http_4xx', 'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
@@ -214,6 +216,10 @@ def _safe_fields(fields):
         value = fields.get(name)
         if type(value) is int and -(2 ** 31) <= value < 2 ** 32:
             result[name] = value
+    for name in ('table_poll_ms', 'table_idle_ms', 'table_dom_ms'):
+        value = fields.get(name)
+        if type(value) in (int, float) and 0 <= value <= 604_800_000:
+            result[name] = round(value, 2)
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)

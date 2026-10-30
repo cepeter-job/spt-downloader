@@ -490,3 +490,27 @@ menolak sumber native dan memilih fallback DOM, sekalipun dua grid
 asli dapat ditemukan. Tes sintetis mereplikasi bentuk ini tanpa
 mengakses portal atau data wajib pajak. **Tes sintetis bukan bukti
 live acceptance**.
+
+### Issue #143: per-page DOM timing dan bentuk rute katalog MPN
+
+table.page_timing mencatat pengukuran hanya sesudah halaman tabel selesai
+terbaca dan tetap terverifikasi: pages, page_rows, page_size_cap,
+duration_ms, table_poll_ms, table_idle_ms, dan table_dom_ms.
+table_page_stage=initial|advanced membedakan halaman pertama dan hasil
+paginasi. Semua nilai waktu adalah angka terbatas, tidak menyertakan teks sel,
+URL, identitas, label, request, atau response. Batas 180 detik dan keputusan
+PARTIAL tidak diubah. Event table.elapsed_budget masih mencatat stage
+ketika halaman berikutnya tidak dapat diterima sebagai selesai.
+
+Khusus L3-B, batas live tetap **100** baris per halaman. Pengujian sintetis
+membandingkan opsi UI asli 100 dan 250 yang tersedia, tanpa mengganti
+kebijakan live; perbandingan hanya bisa memilih ukuran berikutnya setelah
+data time-per-page live memperlihatkan penyebab lambat yang terukur.
+
+mpn_catalog_variant_kind=not_observed|query_variant|path_variant
+membedakan rute original GET referensi yang tidak tepat dari URL katalog
+yang sudah disetujui, hanya pada frame utama dan origin yang sama. Ini
+bukti bentuk rute saja, bukan izin membaca, mengikat, atau memanfaatkan
+respons rute tersebut. Mismatch parent tetap fatal; tidak ada klik Detail
+ketika sumber belum terbukti dan Issue #143 tetap terbuka hingga live
+acceptance build-matched.

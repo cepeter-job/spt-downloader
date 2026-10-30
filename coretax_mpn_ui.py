@@ -19,15 +19,20 @@ REFERENCE_PATH = ('/referencedata/api/currentreferencedata/id-ID/'
                   'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
 
 
-def _other_reference_get(url):
-    # Passive classification only. A neighboring same-origin route is NOT a
-    # source binding and does not qualify or authorize any catalog bytes.
+def _reference_route_kind(url):
+    # Classification only. Neither query variants nor neighboring paths are
+    # permitted sources; they must NEVER be admitted to source_pending.
     if type(url) is not str or url == ORIGIN + REFERENCE_PATH:
-        return False
-    parts = urlsplit(url)
-    expected = urlsplit(ORIGIN)
-    return (parts.scheme == expected.scheme and parts.netloc == expected.netloc
-            and parts.path.startswith('/referencedata/api/currentreferencedata/id-ID/'))
+        return 'not_observed'
+    parts, expected = urlsplit(url), urlsplit(ORIGIN)
+    if (parts.scheme != expected.scheme or parts.netloc != expected.netloc
+            or not parts.path.startswith('/referencedata/api/currentreferencedata/id-ID/')):
+        return 'not_observed'
+    return 'query_variant' if parts.path == REFERENCE_PATH else 'path_variant'
+
+
+def _other_reference_get(url):
+    return _reference_route_kind(url) != 'not_observed'
 
 LIST_HEADERS = ('Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
                 'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -75,20 +80,23 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
     # No response bytes/cache are read; seeing this request is NOT admission.
     preparation_catalog_seen = False
     preparation_reference_variant = False
+    preparation_variant_kind = 'not_observed'
     deadline = time.monotonic() + 60
 
     def reference_request(request):
-        nonlocal preparation_catalog_seen, preparation_reference_variant
+        nonlocal preparation_catalog_seen, preparation_reference_variant, preparation_variant_kind
         # Inspect the frame only for a recognized reference GET; never log
         # or read any URL, query, body, response or taxpayer identifier.
         if request.method != 'GET' or request.resource_type not in ('xhr', 'fetch'):
             return
         url = request.url
         exact = url == ORIGIN + REFERENCE_PATH
-        variant = _other_reference_get(url)
-        if (exact or variant) and request.frame is page.main_frame:
+        variant_kind = _reference_route_kind(url)
+        if (exact or variant_kind != 'not_observed') and request.frame is page.main_frame:
             preparation_catalog_seen |= exact
-            preparation_reference_variant |= variant
+            preparation_reference_variant |= variant_kind != 'not_observed'
+            if variant_kind == 'path_variant' or preparation_variant_kind == 'not_observed':
+                preparation_variant_kind = variant_kind
 
     def allowed(url):
         if '#' in url:
@@ -137,7 +145,8 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
                            mpn_catalog_preparation=('request_seen' if preparation_catalog_seen
                                                     else 'not_observed'),
                            mpn_catalog_route_shape=('alternate_reference_get'
-                                                    if preparation_reference_variant else 'not_observed'))
+                                                    if preparation_reference_variant else 'not_observed'),
+                           mpn_catalog_variant_kind=preparation_variant_kind)
 
 
 class AccountingUI:
@@ -160,6 +169,7 @@ class AccountingUI:
         self.reference_raw = None
         self.reference_request_seen = False
         self.reference_route_variant_seen = False
+        self.reference_route_variant_kind = 'not_observed'
         self.list_snapshot = None
         self.list_owner = None
         self.preparation_deadline = None
@@ -248,9 +258,13 @@ class AccountingUI:
         pin = SOURCE_PINS.get(url.removeprefix(ORIGIN)) if url.startswith(ORIGIN + '/') else None
         kind = request.resource_type
         catalog = url == ORIGIN + REFERENCE_PATH and kind in ('xhr', 'fetch')
-        if kind in ('xhr', 'fetch') and _other_reference_get(url):
-            # Fixed boolean evidence only; NEVER enter source_pending.
-            self.reference_route_variant_seen = True
+        if kind in ('xhr', 'fetch'):
+            variant_kind = _reference_route_kind(url)
+            if variant_kind != 'not_observed':
+                # Fixed category only; NEVER enter source_pending.
+                self.reference_route_variant_seen = True
+                if variant_kind == 'path_variant' or self.reference_route_variant_kind == 'not_observed':
+                    self.reference_route_variant_kind = variant_kind
         # A fetch/preload of script bytes does not prove an executable provider.
         # Nonqualifying traffic must not enter the later ownership checks.
         if pin is not None and kind != 'script':
@@ -535,7 +549,8 @@ class AccountingUI:
                            mpn_catalog_state=status,
                            mpn_catalog_route_shape=('alternate_reference_get'
                                                     if getattr(self, 'reference_route_variant_seen', False)
-                                                    else 'not_observed'))
+                                                    else 'not_observed'),
+                           mpn_catalog_variant_kind=getattr(self, 'reference_route_variant_kind', 'not_observed'))
         self.catalog_frozen = True
 
     @staticmethod

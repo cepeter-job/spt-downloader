@@ -407,6 +407,7 @@ def test_alternate_reference_request_never_enters_source_custody(tmp_path, monke
                                 frame=ui.page.main_frame, url=candidate)
         ui._source_request(request)
         assert ui.reference_route_variant_seen is True
+        assert ui.reference_route_variant_kind == 'path_variant'
         assert ui.reference_raw is None
         assert ui.reference_request_seen is False
         assert ui.source_pending == {}
