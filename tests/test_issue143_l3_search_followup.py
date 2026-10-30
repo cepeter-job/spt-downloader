@@ -311,7 +311,7 @@ def test_l3_count_shape_diagnostics_accept_only_fixed_categories(tmp_path, shape
     ('<p-table><table><tbody></tbody></table></p-table>',
      'reviewed_pair_visible_extra'),
     ('<rsh-citr-l3-grid1><p-table><table></table></p-table></rsh-citr-l3-grid1>',
-     'reviewed_pair_unproved'),
+     'reviewed_pair_visible_extra'),
 ])
 def test_extra_l3_table_owner_classification_does_not_grant_admission(
         browser, extra, expected):
@@ -325,6 +325,21 @@ def test_extra_l3_table_owner_classification_does_not_grant_admission(
             '</p-table></ui-grid></rshshr-citr-l3-grid2>'
             + extra + '</rshshr-citr-l3-form>')
         assert _l3_extra_table_layout(page.locator('rshshr-citr-l3-form')) == expected
+    finally:
+        page.close()
+
+
+def test_l3_pair_unproved_when_source_reviewed_owner_is_absent(browser):
+    from coretax_corporate import _l3_extra_table_layout
+    page = browser.new_page()
+    try:
+        page.set_content('<rshshr-citr-l3-form>'
+            '<rsh-citr-l3-grid1><ui-grid-offline><p-table><table></table>'
+            '</p-table></ui-grid-offline></rsh-citr-l3-grid1>'
+            '<p-table><table></table></p-table>'
+            '<p-table><table></table></p-table>'
+            '</rshshr-citr-l3-form>')
+        assert _l3_extra_table_layout(page.locator('rshshr-citr-l3-form')) == 'reviewed_pair_unproved'
     finally:
         page.close()
 
