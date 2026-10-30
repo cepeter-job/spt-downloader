@@ -46,6 +46,9 @@ def test_worker_overwrite_expiry_is_blocked_without_publication(
     run=fixture_run()
     run['inventory_complete']=True
     def inventory(page,npwp,year,basis,folder,**kwargs):
+        # Real collection persists the inventory before consent; the
+        # selection manifest must validate against that same saved scope.
+        (folder / 'inventory.json').write_text(json.dumps(run), encoding='utf-8')
         return run
     def details(page,data,folder,on_progress,check_cancel):
         for ordinal,record in enumerate(data['records'],1):
