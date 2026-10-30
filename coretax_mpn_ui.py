@@ -58,7 +58,18 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
         raise MpnUnsupported('MPN requires the reviewed owned browser context')
     selected = ORIGIN + '/accounting/id-ID/balancesheet/' + taxpayer_id(run)
     refused = False
+    # Record only whether the original reference GET happened during the
+    # navigation that precedes AccountingUI's source-binding listeners.
+    # No response bytes/cache are read; seeing this request is NOT admission.
+    preparation_catalog_seen = False
     deadline = time.monotonic() + 60
+
+    def reference_request(request):
+        nonlocal preparation_catalog_seen
+        if (request.method == 'GET' and request.frame is page.main_frame
+                and request.url == ORIGIN + REFERENCE_PATH
+                and request.resource_type in ('xhr', 'fetch')):
+            preparation_catalog_seen = True
 
     def allowed(url):
         if '#' in url:
@@ -85,6 +96,7 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
     if check_cancel:
         check_cancel()
     page.on('framenavigated', navigation)
+    page.on('request', reference_request)
     try:
         page.goto(selected, wait_until='domcontentloaded', timeout=60000)
         while True:
@@ -100,7 +112,11 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
                 return
             page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
     finally:
+        page.remove_listener('request', reference_request)
         page.remove_listener('framenavigated', navigation)
+        diagnostics.record('mpn.catalog_preparation', level='INFO',
+                           mpn_catalog_preparation=('request_seen' if preparation_catalog_seen
+                                                    else 'not_observed'))
 
 
 class AccountingUI:
@@ -675,27 +691,29 @@ class AccountingUI:
                     raise MpnUnsupported('MPN repeated parent numeric identity is not independently unique')
         actual = tuple(rendered[index][column] for column in (3, 4, 5, 13, 15, 16, 17))
         if actual != expected:
-            # Report only the first mismatched field category, never either value.
+            # Only fixed column categories and a bounded mismatch count; no
+            # actual/expected values or new authorization to click detail.
             fields = ('accounting_type', 'accounting_detail', 'currency',
                       'revenue_code', 'payment_code', 'tax_period', 'transaction_number')
-            for position, field in enumerate(fields):
-                if actual[position] != expected[position]:
-                    # Classify the source-only accounting projection without
-                    # logging source, DOM, reference labels or mismatching values.
-                    provenance = None
-                    if field == 'accounting_type':
-                        code = header.get('AccountingTypeCode')
-                        labels = getattr(self, 'catalogs', {}).get('ACCOUNTING_TYPE', {})
-                        inventory = getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE')
-                        provenance = ('source_code_missing' if type(code) is not str or not code
-                                      else 'catalog_missing' if inventory is None
-                                      else 'code_not_in_catalog' if code not in inventory
-                                      else 'catalog_label' if code in labels
-                                      else 'raw_code_fallback')
-                    diagnostics.record('mpn.parent_binding_mismatch', level='WARNING',
-                                       mpn_parent_field=field,
-                                       mpn_accounting_type_projection=provenance)
-                    break
+            differing = [position for position in range(len(fields))
+                         if actual[position] != expected[position]]
+            field = fields[differing[0]]
+            provenance = None
+            if field == 'accounting_type':
+                code = header.get('AccountingTypeCode')
+                labels = getattr(self, 'catalogs', {}).get('ACCOUNTING_TYPE', {})
+                inventory = getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE')
+                provenance = ('source_code_missing' if type(code) is not str or not code
+                              else 'catalog_missing' if inventory is None
+                              else 'code_not_in_catalog' if code not in inventory
+                              else 'catalog_label' if code in labels
+                              else 'raw_code_fallback')
+            diagnostics.record('mpn.parent_binding_mismatch', level='WARNING',
+                               mpn_parent_field=field,
+                               mpn_parent_secondary_field=(fields[differing[1]]
+                                                           if len(differing) > 1 else 'none'),
+                               mpn_parent_mismatch_count=len(differing),
+                               mpn_accounting_type_projection=provenance)
             if (actual[0] != expected[0] and actual[1:] == expected[1:]
                     and getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE') is None):
                 # Without an accepted original code inventory, a displayed

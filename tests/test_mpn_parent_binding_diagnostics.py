@@ -78,6 +78,8 @@ def test_parent_identity_mismatch_logs_only_first_fixed_field_and_refuses_action
     mismatch = [r for r in records(root) if r['event'] == 'mpn.parent_binding_mismatch']
     assert len(mismatch) == 1
     assert mismatch[0]['mpn_parent_field'] == field
+    assert mismatch[0]['mpn_parent_secondary_field'] == 'none'
+    assert mismatch[0]['mpn_parent_mismatch_count'] == 1
     assert mismatch[0]['level'] == 'WARNING'
     assert controls.lookups == [], 'No detail-control lookup/click is authorized on mismatch'
     assert SECRET not in json.dumps(records(root))
@@ -95,6 +97,8 @@ def test_multiple_mismatched_fields_records_first_only(tmp_path):
         assert log.flush()
     mismatch = [r for r in records(root) if r['event'] == 'mpn.parent_binding_mismatch']
     assert len(mismatch) == 1 and mismatch[0]['mpn_parent_field'] == 'currency'
+    assert mismatch[0]['mpn_parent_secondary_field'] == 'transaction_number'
+    assert mismatch[0]['mpn_parent_mismatch_count'] == 2
     assert controls.lookups == []
 
 
@@ -197,3 +201,45 @@ def test_missing_catalog_never_downgrades_an_independent_currency_contradiction(
             ui._bind_header(header)
         assert log.flush()
     assert controls.lookups == []
+
+
+def test_missing_catalog_with_second_mismatch_stays_fatal_and_explains_category(tmp_path):
+    ui, header, row, controls = inspected_binding()
+    header['AccountingTypeCode'] = 'SYNTHETIC_CODE'
+    ui.list_snapshot['rows'][0] = header.copy()
+    ui.catalog_codes = {}
+    row[COLUMNS[0]] = SECRET
+    row[COLUMNS[2]] = SECRET
+    root = tmp_path/'log'
+    with diagnostics.session(root, 'worker') as log:
+        with pytest.raises(MpnSafetyError):
+            ui._bind_header(header)
+        assert log.flush()
+    mismatch = [e for e in records(root) if e['event']=='mpn.parent_binding_mismatch']
+    assert len(mismatch) == 1
+    assert mismatch[0]['mpn_parent_field'] == 'accounting_type'
+    assert mismatch[0]['mpn_parent_secondary_field'] == 'currency'
+    assert mismatch[0]['mpn_parent_mismatch_count'] == 2
+    assert mismatch[0]['mpn_accounting_type_projection'] == 'catalog_missing'
+    assert controls.lookups == []
+    assert SECRET not in json.dumps(mismatch)
+
+
+def test_secondary_mismatch_diagnostics_reject_unknown_or_unbounded_values(tmp_path):
+    root = tmp_path/'logs'
+    with diagnostics.session(root, 'worker') as log:
+        diagnostics.record('mpn.parent_binding_mismatch',
+                           mpn_parent_secondary_field=SECRET,
+                           mpn_parent_mismatch_count=100,
+                           raw=SECRET)
+        diagnostics.record('mpn.parent_binding_mismatch',
+                           mpn_parent_secondary_field='none',
+                           mpn_parent_mismatch_count=1)
+        assert log.flush()
+    items=[e for e in records(root) if e['event']=='mpn.parent_binding_mismatch']
+    assert len(items)==2
+    assert 'mpn_parent_secondary_field' not in items[0]
+    assert 'mpn_parent_mismatch_count' not in items[0]
+    assert items[1]['mpn_parent_secondary_field']=='none'
+    assert items[1]['mpn_parent_mismatch_count']==1
+    assert SECRET not in json.dumps(items)

@@ -772,3 +772,16 @@ consent.dialog_presented, confirmed consent.replied, and worker
 consent.timeout. A Map event is not proof the operator saw the window;
 preserve the existing safe decline focus, cancellation, Stop, checkpoint
 and publication guards.
+
+
+Issue #143 round 6: observe only an exact method/frame/resource/URL
+reference GET during owned session *preparation* to distinguish early
+request timing; do not bind early bytes, re-fetch, use caches, relax pinned
+catalog or source identities, or infer a label. The temporary request
+listener must always be removed even on navigation/Stop failure.
+MPN parent mismatch diagnostics may report a fixed second category and a
+hard-bounded 1..7 mismatch count; never reveal actual values, code labels,
+amounts or source payload, and keep all no-click identity gates.
+Corporate pagination STATE_JS uses all rows' textContent to avoid
+repeated forced layout; TABLE_JS extraction, Stop, action count, timeout,
+row/coverage reconciliation and PARTIAL remain unchanged.
