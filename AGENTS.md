@@ -748,3 +748,15 @@ boolean dan field tambahan tidak valid. Runtime tetap mengembalikan `None`
 dan diagnostik unknown untuk metadata tidak sah; CI melempar `ValueError`
 sebelum menulis metadata. Pertahankan pemeriksaan file dan pembacaan terbatas;
 modul bersama ini hanya boleh bergantung pada standard library.
+
+
+Issue #143 round 5: the MPN period-clear lookup is scoped to exactly one
+ui-grid that owns the single proven list p-table; its clear control may be
+a table sibling but never a document-wide query. A clear click is never
+proof of unfiltered source: observe the next same-owner POST and require
+the original exact non-cancelled-only query before any detail. Reject
+missing/ambiguous controls. Corporate table cell text uses a read-only
+TreeWalker instead of deep-cloning each cell; the old extraction semantics
+must be tested on synthetic browser fixtures, including controls and hidden
+caption labels. Corporate L3 visible-extra ownership is diagnostic-only
+within the owned form and cannot relax native admission or source pins.

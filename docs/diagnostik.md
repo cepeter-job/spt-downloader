@@ -99,7 +99,12 @@ bentuk tabel baru atau menonaktifkan fallback. Bila tabel lebih dari dua,
 terinspeksi dan tabel tambahan sebagai `reviewed_pair_hidden_extra`,
 `reviewed_pair_visible_extra`, atau `reviewed_pair_unproved`. Seluruhnya
 tetap menolak JSON native. Tidak ada isi DOM, selector yang bersifat dinamis,
-atau jumlah mentah yang dicatat.
+atau jumlah mentah yang dicatat. Untuk kasus `reviewed_pair_visible_extra`,
+`corporate_l3_extra_owner` hanya mencatat `nested_in_reviewed_table`,
+`reviewed_grid_extra`, `other_form_owner`, `mixed_owners`,
+`reviewed_pair_unproved`, atau `no_visible_extra` setelah pemeriksaan
+struktur DOM dalam form yang sama. Tidak ada tabel tambahan yang
+diterima sebagai data sumber native berdasarkan kategori tersebut.
 
 Pada langkah `open → search` MPN, trial click tetap satu kali uji aksi dan
 klik nyata hanya sekali. Klik Search memiliki batas paling lama 5 detik,
@@ -120,7 +125,12 @@ pajak, URL ataupun DOM content yang direkam; nilai enum ini bukan
 izin menerima sumber terfilter. Jalur Search dua percobaan, pemilihan
 kontrol dan `MpnUnsupported` tetap sama. Status `present` hanya berarti
 tombol clear teramati, **bukan** bukti bahwa klik berhasil menghapus
-filter pada request berikutnya.
+filter pada request berikutnya. Lookup sekarang mencari clear hanya di dalam
+satu `ui-grid` asli yang menjadi ancestor dari tepat satu `p-table`
+hasil inventory; ini juga mencakup clear yang ditempatkan sebagai
+saudara (sibling) tabel di header grid. Lookup tidak memindai
+halaman secara umum. Filter sumber harus dibuktikan hilang pada
+respons Search berikutnya sebelum inventory digunakan.
 
 `mpn.capture_failed` mencatat kegagalan terminal MPN dengan enum
 `mpn_capture_stage`: `session` (pembuatan UI termasuk inisialisasi),
@@ -173,7 +183,10 @@ event `table.elapsed_budget` mengirim enum
 `table_elapsed_stage=before_next_click` atau `state_poll` serta
 jumlah halaman yang sudah dicatat. Kategori ini tidak menambah
 klik, tidak memulihkan data yang hilang, dan belum membuktikan penyebab
-waktu lambat. Pada halaman setelah klik paginator, pembacaan DOM kini
+waktu lambat. Pembacaan teks sel tabel menggunakan traversal text node
+tanpa clone/mutasi DOM dan mempertahankan kontrak pembersihan teks yang
+sama; regresi sintetis membandingkan hasil sebelum dan sesudah.
+Pada halaman setelah klik paginator, pembacaan DOM kini
 memakai batas Playwright maksimal 10 detik dan sisa budget tabel. Apabila
 pembacaan itu timeout, event `table.dom_read_failed` dengan kategori tetap
 `table_dom_stage=post_pagination` direkam; hanya halaman yang telah lolos

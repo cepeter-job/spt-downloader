@@ -56,6 +56,9 @@ ENUMS = {
     'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
     'corporate_l3_extra_layout': frozenset({'reviewed_pair_hidden_extra',
         'reviewed_pair_visible_extra', 'reviewed_pair_unproved'}),
+    'corporate_l3_extra_owner': frozenset({'reviewed_pair_unproved',
+        'no_visible_extra', 'nested_in_reviewed_table', 'reviewed_grid_extra',
+        'other_form_owner', 'mixed_owners'}),
     'corporate_observer_stage': frozenset({'build', 'tabs', 'tab', 'panel', 'form',
         'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
     'corporate_l3_reason': frozenset({
