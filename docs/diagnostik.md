@@ -142,6 +142,18 @@ bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
 sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
 penolakan kepemilikan sumber; event baru bukan penggantinya.
 
+`mpn.catalog_preparation` adalah kategori terpisah selama
+navigasi normal *sebelum* source-binding `AccountingUI` dimulai.
+`request_seen` berarti sebuah GET yang tepat cocok dengan rute
+referensi, method, frame utama dan tipe resource telah *teramati* selama
+navigasi; `not_observed` berarti tidak ada GET yang memenuhi syarat.
+Event ini **tidak** mengunduh, mengikat, menyimpan atau menerima byte katalog,
+dan bukan izin untuk mengambil katalog dari cache/bekas halaman. Listener
+sementara selalu dilepas saat navigasi selesai maupun gagal. Gabungkan
+kategori ini dengan `mpn.catalog_readiness` pada tahap detail untuk
+membedakan kemungkinan katalog dimuat sebelum listener sumber aktif.
+Keduanya tetap tidak membuktikan kecocokan identitas pembayaran.
+
 Status tambahan `mpn.catalog_readiness` memisahkan `accepted` (byte referensi
 asli berhasil diikat), `observed_unbound` (GET sumber yang memenuhi syarat
 teramati tetapi belum ada katalog yang diterima), dan `not_observed`
@@ -158,6 +170,15 @@ identitas baris induk yang terlihat di DOM berbeda dari sumber asli.
 `mpn_parent_field` hanya kategori kolom **pertama** yang berbeda:
 `accounting_type`, `accounting_detail`, `currency`, `revenue_code`,
 `payment_code`, `tax_period`, atau `transaction_number`.
+`mpn_parent_secondary_field` adalah kategori kolom berbeda
+kedua atau `none` bila hanya satu kolom; `mpn_parent_mismatch_count`
+adalah jumlah posisi yang berbeda dengan batas keras 1 sampai 7.
+Ketiga kategori berasal dari **perbandingan identitas sumber dan DOM yang
+sudah ada**, tidak mengandung nilai pembanding, dan tidak mengizinkan aksi.
+Jika katalog tidak ada *namun* kolom lain juga berbeda, `MpnSafetyError`
+tetap fatal. Kategori pertama-kedua tidak menjelaskan sendiri mengapa
+teks atau data berbeda.
+
 Tidak ada nilai DOM, data sumber, identitas transaksi, nomor pajak, atau
 jumlah rupiah di log. Bila `mpn_parent_field=accounting_type`,
 `mpn_accounting_type_projection` membedakan `catalog_label` (label dari
@@ -170,6 +191,12 @@ pembuktian bahwa label atau DOM harus diganti. Kategori mismatch itu sendiri
 belum membuktikan apakah perbedaannya berasal dari label/mapping, pergantian data,
 atau identitas yang salah; `MpnSafetyError` tetap fatal dan tombol detail
 tidak diklik.
+
+State pagination memeriksa seluruh urutan teks node baris dengan
+`textContent`, bukan `innerText`. Ini menghindari
+permintaan layout browser pada tiap polling, tetapi **tidak** mengubah
+`TABLE_JS` sebagai sumber nilai tabel, klik paginator, deadline,
+atau aturan PARTIAL; efektivitas di Coretax masih perlu pengujian nyata.
 
 Capture DOM dengan paginator sekarang memiliki **batas elapsed 180 detik per
 satu tabel** (bukan per keseluruhan return). Sebelum setiap klik halaman berikutnya,

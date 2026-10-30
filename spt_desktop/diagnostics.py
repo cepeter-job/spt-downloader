@@ -34,7 +34,7 @@ EVENTS = frozenset({
     'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
-    'mpn.catalog_readiness', 'corporate.observe_unavailable', 'table.elapsed_budget',
+    'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'table.elapsed_budget',
     'table.dom_read_failed',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
@@ -45,6 +45,10 @@ ENUMS = {
         'page_route', 'request_url', 'resource_kind'}),
     'mpn_parent_field': frozenset({'accounting_type', 'accounting_detail',
         'currency', 'revenue_code', 'payment_code', 'tax_period', 'transaction_number'}),
+    'mpn_parent_secondary_field': frozenset({'none', 'accounting_type',
+        'accounting_detail', 'currency', 'revenue_code', 'payment_code',
+        'tax_period', 'transaction_number'}),
+    'mpn_catalog_preparation': frozenset({'request_seen', 'not_observed'}),
     'mpn_accounting_type_projection': frozenset({'catalog_label', 'raw_code_fallback',
         'catalog_missing', 'code_not_in_catalog', 'source_code_missing'}),
     'mpn_filter_reason': frozenset({'request_shape', 'date_filter_present',
@@ -199,6 +203,9 @@ def _safe_fields(fields):
         value = fields.get(name)
         if type(value) is int and 0 <= value <= 10_000_000:
             result[name] = value
+    mismatch_count = fields.get('mpn_parent_mismatch_count')
+    if type(mismatch_count) is int and 1 <= mismatch_count <= 7:
+        result['mpn_parent_mismatch_count'] = mismatch_count
     for name in ('exit_code',):
         value = fields.get(name)
         if type(value) is int and -(2 ** 31) <= value < 2 ** 32:

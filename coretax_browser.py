@@ -227,7 +227,10 @@ FIELDS_JS = r'''(root) => {
  return fields;
 }'''.replace('GROUP', GROUP_JS)
 
-STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.innerText)})"
+# Change detection only, not captured data: textContent avoids forced layout
+# on every 500-row pagination poll. Full row sequence remains compared; an
+# unobserved change fails closed under the existing state-poll deadline.
+STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
 
 class CaptureCancelled(KeyboardInterrupt):

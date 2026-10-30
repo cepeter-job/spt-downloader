@@ -131,3 +131,48 @@ def test_missing_session_owner_has_one_finite_deadline_and_cleans_listener(monke
         prepare(page, monkeypatch)
     assert 0 < page.clock <= 61
     assert_clean(page)
+
+
+@pytest.mark.parametrize('eligible', [True, False])
+def test_preparation_reference_request_is_diagnostic_only_and_listener_is_retired(
+        monkeypatch, tmp_path, eligible):
+    import coretax_mpn_ui as ui
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    class ReferencePage(PreparingPage):
+        def goto(self, url, **kwargs):
+            super().goto(url, **kwargs)
+            # The request is dispatched during successful initial navigation,
+            # before an AccountingUI source listener could be installed.
+            observed = SimpleNamespace(method='GET', frame=self.main_frame,
+                url=ORIGIN + ui.REFERENCE_PATH + ('' if eligible else '?other=1'),
+                resource_type='xhr')
+            for callback in list(self.handlers.get('request', [])):
+                callback(observed)
+    page=ReferencePage([SOURCE])
+    monkeypatch.setattr(ui.time,'monotonic',lambda:page.clock)
+    with diagnostics.session(tmp_path/'log','worker') as log:
+        assert ui.prepare_accounting_session(page, scope_run()) is None
+        assert log.flush()
+    assert_clean(page)
+    event=[e for e in records(tmp_path/'log') if e['event']=='mpn.catalog_preparation']
+    assert len(event)==1
+    assert event[0]['mpn_catalog_preparation']==('request_seen' if eligible else 'not_observed')
+    assert not hasattr(page,'reference_raw')
+    assert 'SYNTHETIC' not in str(event)
+
+
+def test_preparation_catalog_observation_never_survives_invalid_navigation(
+        monkeypatch, tmp_path):
+    import coretax_mpn_ui as ui
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    page=PreparingPage([SOURCE+'?foreign=1'])
+    monkeypatch.setattr(ui.time,'monotonic',lambda:page.clock)
+    with diagnostics.session(tmp_path/'log','worker') as log:
+        with pytest.raises(MpnSafetyError):
+            ui.prepare_accounting_session(page, scope_run())
+        assert log.flush()
+    assert_clean(page)
+    event=[e for e in records(tmp_path/'log') if e['event']=='mpn.catalog_preparation']
+    assert len(event)==1 and event[0]['mpn_catalog_preparation']=='not_observed'
