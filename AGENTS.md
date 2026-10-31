@@ -820,3 +820,12 @@ verified click per page, source-total reconciliation and PARTIAL on
 exhaustion. Record privacy-safe click, state-poll, idle, state-check
 and DOM-read timings for verified pages; no values/URLs in logs.
 Synthetic tests do not establish live acceptance.
+
+
+Issue #143 round 11 (31 Oct): post-click Corporate paginator `STATE_JS`
+polling or revalidation timeouts keep the previous verified page/rows as PARTIAL.
+Emit only fixed `table_state_stage=poll|verify` and bounded numeric timing;
+do not retry an uncertain paginator action or relax Stop/source-total gates.
+The `STATE_JS` full-row text change detector remains intact; the Playwright
+locator-evaluation timeout does not bound execution time of `TABLE_JS`.
+No claim of live completion follows from synthetic timeout regression tests.
