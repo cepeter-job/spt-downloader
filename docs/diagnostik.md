@@ -582,4 +582,10 @@ Halaman yang state-nya gagal tidak dipromosikan menjadi COMPLETE dan
 paginator tidak diklik ulang. Stop, deadline 180 detik, kontrak
 pembacaan seluruh row text, dan MPN fail-closed tetap sama.
 Dua skenario time-out diuji memakai fixture lokal sintetis, bukan bukti
-bahwa kegagalan live telah sembuh. Issue #143 tetap terbuka.
+bahwa kegagalan live telah sembuh. Jika `TABLE_JS` gagal, satu probe
+read-only sesudah timeout (`wait_for(state=attached, timeout=1000)`)
+merekam hanya `table_locator_state=attached|not_attached|unavailable`
+sebagai diagnosis ada/tidaknya locator pada saat probe. Ini bukan
+bukti bahwa locator awal gagal, tabelnya benar, atau datanya lengkap.
+`table_dom_ms` dan `duration_ms` dihitung sebelum probe agar tambahan
+waktu probe tidak mengubah metrik sebelumnya. Issue #143 tetap terbuka.
