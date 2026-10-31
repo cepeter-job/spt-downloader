@@ -829,3 +829,6 @@ do not retry an uncertain paginator action or relax Stop/source-total gates.
 The `STATE_JS` full-row text change detector remains intact; the Playwright
 locator-evaluation timeout does not bound execution time of `TABLE_JS`.
 No claim of live completion follows from synthetic timeout regression tests.
+A post-`TABLE_JS` timeout may probe locator attachment for at most 1000 ms;
+`table_locator_state` is after-failure diagnostic evidence only, never a
+reason to accept rows or retry a click. Preserve original timing before the probe.
