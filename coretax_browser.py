@@ -233,6 +233,18 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
+# Read page state and captured cells within one synchronous browser snapshot.
+# The table must remain inside the SAME paginator owner verified before click;
+# a re-bound locator outside that owner is never a valid continuation.
+TABLE_VERIFIED_JS = r'''(table, owner) => {
+ if(!table.isConnected || !owner.isConnected ||
+    (table.closest('p-table')||table.closest('.p-datatable')||table.parentElement)!==owner)
+   return null;
+ const data=(CAPTURE_TABLE)(table);
+ const state=(CAPTURE_STATE)(owner);
+ return {data,state};
+}'''.replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
+
 
 class CaptureCancelled(KeyboardInterrupt):
     """Lewati penanganan Exception per SPT agar Stop tetap menghasilkan PARTIAL."""
@@ -395,29 +407,10 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         idle_started = _diagnostic_clock()
         wait_idle(page)
         idle_ms = (_diagnostic_clock() - idle_started) * 1000
-        verify_started = _diagnostic_clock()
-        try:
-            if container_handle.evaluate(STATE_JS) in seen:
-                result['complete'] = False
-                result['warning'] = 'Repeated table pagination state'
-                break
-        except PlaywrightTimeoutError as error:
-            _check_cancel(check_cancel)
-            result['complete'] = False
-            result['warning'] = 'Table state read timed out after pagination'
-            diagnostics.record('table.state_read_failed', level='WARNING',
-                               table_state_stage='verify', pages=result['pages'],
-                               page_size_cap=max_page_size,
-                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
-                               table_click_ms=click_ms, table_poll_ms=poll_ms,
-                               table_idle_ms=idle_ms,
-                               table_verify_ms=(_diagnostic_clock() - verify_started) * 1000,
-                               error=error)
-            break
         _check_cancel(check_cancel)
-        # The previous live failure occurred inside a single post-page DOM
-        # evaluation, not the cooperative paginator budget branch.
-        # Do not repeat that dispatched click if the DOM read cannot finish.
+        # Polling already proved a changed page. Read the confirmed state and
+        # cells in one snapshot so rendering cannot rebind the locator between
+        # a separate state verification and its captured rows.
         if time.monotonic() >= capture_deadline:
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
@@ -425,10 +418,10 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
                                table_elapsed_stage='before_dom_read',
                                pages=result['pages'])
             break
-        verify_ms = (_diagnostic_clock() - verify_started) * 1000
+        verify_ms = 0.0  # Verification is part of the atomic DOM read.
         dom_started = _diagnostic_clock()
         try:
-            data = table.evaluate(TABLE_JS, timeout=min(
+            snapshot = table.evaluate(TABLE_VERIFIED_JS, container_handle, timeout=min(
                 10000, max(1, int((capture_deadline-time.monotonic())*1000))))
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
@@ -462,6 +455,28 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             break
         dom_ms = (_diagnostic_clock() - dom_started) * 1000
         _check_cancel(check_cancel)
+        if snapshot is None:
+            result['complete'] = False
+            result['warning'] = 'Table owner changed during pagination'
+            diagnostics.record('table.identity_refused', level='WARNING',
+                               table_identity_reason='owner_changed', pages=result['pages'],
+                               page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
+            break
+        if snapshot['state'] in seen:
+            result['complete'] = False
+            result['warning'] = 'Repeated table pagination state'
+            diagnostics.record('table.identity_refused', level='WARNING',
+                               table_identity_reason='repeated_state', pages=result['pages'],
+                               page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
+            break
+        data = snapshot['data']
+        if any(data.get(key) != result.get(key) for key in ('headers', 'group')):
+            result['complete'] = False
+            result['warning'] = 'Table identity changed during pagination'
+            diagnostics.record('table.identity_refused', level='WARNING',
+                               table_identity_reason='metadata_changed', pages=result['pages'],
+                               page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
+            break
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:
             if (any(data.get(key) != result.get(key) for key in ('source_structure', 'headers', 'group'))

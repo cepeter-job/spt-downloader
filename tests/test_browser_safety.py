@@ -329,15 +329,19 @@ class PagedTable:
     def evaluate_handle(self, script):
         return self
 
-    def evaluate(self, script, *, timeout=None):
-        # Match Playwright's bounded DOM-read contract on the synthetic table.
+    def evaluate(self, script, owner=None, *, timeout=None):
+        # Model an owned, atomic page snapshot without a real browser.
         if timeout is not None:
-            assert script == driver.TABLE_JS
+            assert script == driver.TABLE_VERIFIED_JS and owner is self
             assert 0 < timeout <= 10000
         number, value = self.pages[self.index]
+        state = json.dumps({'p': [number], 'rows': [value]})
         if script == driver.STATE_JS:
-            return json.dumps({'p': [number], 'rows': [value]})
-        return {'headers': ['Fixture'], 'rows': [[value]], 'footer': []}
+            return state
+        data = {'headers': ['Fixture'], 'rows': [[value]], 'footer': []}
+        if script == driver.TABLE_VERIFIED_JS:
+            return {'data': data, 'state': state}
+        return data
 
     def query_selector(self, selector):
         if 'p-paginator-prev' in selector and self.index:

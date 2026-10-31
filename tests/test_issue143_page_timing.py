@@ -92,9 +92,8 @@ def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_
     page.close()
 
 
-@pytest.mark.parametrize("fail_on,stage", [(2, "poll"), (3, "verify")])
-def test_post_pagination_state_timeout_is_partial_without_repeating_click(
-        context, tmp_path, monkeypatch, fail_on, stage):
+def test_post_pagination_state_poll_timeout_is_partial_without_repeating_click(
+        context, tmp_path, monkeypatch):
     from playwright.sync_api import ElementHandle, TimeoutError as PlaywrightTimeoutError
 
     page = context.new_page()
@@ -109,7 +108,7 @@ def test_post_pagination_state_timeout_is_partial_without_repeating_click(
         nonlocal reads
         if expression == driver.STATE_JS:
             reads += 1
-            if reads == fail_on:
+            if reads == 2:
                 raise PlaywrightTimeoutError(secret)
         return original_evaluate(handle, expression, arg)
 
@@ -128,7 +127,7 @@ def test_post_pagination_state_timeout_is_partial_without_repeating_click(
     entries = records(tmp_path / "log")
     failures = [entry for entry in entries if entry["event"] == "table.state_read_failed"]
     assert len(failures) == 1
-    assert failures[0]["table_state_stage"] == stage
+    assert failures[0]["table_state_stage"] == "poll"
     assert failures[0]["pages"] == 1
     assert failures[0]["page_size_cap"] == 250
     assert failures[0]["table_click_ms"] >= 0
@@ -153,7 +152,7 @@ def test_failed_dom_read_reports_only_safe_post_failure_locator_state(
 
     def fail_one_post_page_read(locator, expression, *args, **kwargs):
         nonlocal reads
-        if expression == driver.TABLE_JS:
+        if expression in (driver.TABLE_JS, driver.TABLE_VERIFIED_JS):
             reads += 1
             if reads == 2:
                 if detach:
@@ -176,6 +175,98 @@ def test_failed_dom_read_reports_only_safe_post_failure_locator_state(
     assert len(failures) == 1
     assert failures[0]["table_locator_state"] == expected_state
     assert secret not in json.dumps(records(tmp_path / "log"))
+    page.close()
+
+
+
+def test_post_page_owner_change_cannot_accept_foreign_table(context, tmp_path):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const foreign = document.createElement('section');
+            document.querySelector('main').append(foreign);
+            foreign.append(document.querySelector('table'));
+        }, {once:true});
+    }""")
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+    assert result["complete"] is False
+    assert result["body_row_count"] == 250
+    assert result["pages"] == 1
+    assert page.evaluate("moves") == 1
+    refusals = [r for r in records(tmp_path / "log") if r["event"] == "table.identity_refused"]
+    assert len(refusals) == 1
+    assert refusals[0]["table_identity_reason"] == "owner_changed"
+    assert refusals[0]["pages"] == 1
+    assert refusals[0]["page_size_cap"] == 250
+    page.close()
+
+
+def test_post_page_changed_headers_cannot_be_counted_as_verified(context, tmp_path):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            document.querySelector('thead th').textContent='UNRELATED HEADER';
+        }, {once:true});
+    }""")
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+    assert result["complete"] is False
+    assert result["body_row_count"] == 250
+    assert result["pages"] == 1
+    assert page.evaluate("moves") == 1
+    refusals = [r for r in records(tmp_path / "log") if r["event"] == "table.identity_refused"]
+    assert len(refusals) == 1
+    assert refusals[0]["table_identity_reason"] == "metadata_changed"
+    page.close()
+
+
+def test_post_page_verified_snapshot_avoids_duplicate_expensive_state_evaluation(context, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    original = ElementHandle.evaluate
+    state_reads = 0
+
+    def count_state_reads(handle, expression, arg=None):
+        nonlocal state_reads
+        if expression == driver.STATE_JS:
+            state_reads += 1
+        return original(handle, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, "evaluate", count_state_reads)
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert_rows(result, 601)
+    assert page.evaluate("moves") == 2
+    assert state_reads == 4  # One pre-click and one poll per transition.
+    page.close()
+
+
+def test_post_page_same_owner_table_replacement_preserves_verified_rows(context):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const prior = document.querySelector('table');
+            prior.replaceWith(prior.cloneNode(true));
+        });
+    }""")
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert_rows(result, 601)
+    assert page.evaluate("moves") == 2
     page.close()
 
 
