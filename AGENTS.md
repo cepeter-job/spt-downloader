@@ -802,9 +802,21 @@ A visible third L3 table must refuse native JSON and use the original
 whole-return DOM fallback. Use hosted synthetic Edge tests and require
 separately authorized live acceptance on an exact matching build.
 
-Issue #143 follow-up: never promote synthetic 250-row pagination to live
-without build-matched measured evidence. Keep Corporate 100-row live cap and
-180s per-table safety deadline. Emit bounded per-page DOM timings without
+Issue #143 round 8 (historical): 250-row pagination was not yet live-approved
+without build-matched measured evidence. The build then kept Corporate L3-B
+at 100 rows and the 180s per-table safety deadline. Emit bounded per-page DOM timings without
 source contents; route-shape MPN diagnostics must not admit or replay alternate
 reference GETs, relax catalog/script pins, or permit Detail on mismatch.
 Only GitHub-hosted CI runs the browser/integration tests.
+
+
+Issue #143 round 9 (31 Oct live): 100-row L3-B took 182.87s,
+verified 41/47 pages and remained PARTIAL. Only the narrowly owned
+form L3/grid2/group-B UI paginator may choose inspected <=250
+options, never 500. Verify the active limit before capture; absent
+bounded options must refuse rather than retain a larger page size.
+Other tables remain <=100. Keep original 180s deadline, Stop, one
+verified click per page, source-total reconciliation and PARTIAL on
+exhaustion. Record privacy-safe click, state-poll, idle, state-check
+and DOM-read timings for verified pages; no values/URLs in logs.
+Synthetic tests do not establish live acceptance.
