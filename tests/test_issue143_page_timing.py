@@ -270,6 +270,60 @@ def test_post_page_same_owner_table_replacement_preserves_verified_rows(context)
     page.close()
 
 
+def test_post_page_table_relocated_inside_verified_owner_avoids_stale_locator(context):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    # Keep the original selector intentionally tied to the old table wrapper.
+    table = page.locator(".p-datatable > table")
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const old = document.querySelector('.p-datatable > table');
+            if (!old) return;
+            const holder = document.createElement('div');
+            holder.className = 'owned-table-rebound';
+            document.querySelector('p-table').append(holder);
+            holder.append(old.cloneNode(true));
+            old.remove();
+        });
+    }""")
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert_rows(result, 601)
+    assert result["pages"] == 3
+    assert page.evaluate("moves") == 2
+    assert page.locator(".p-datatable > table").count() == 0
+    assert page.locator("p-table .owned-table-rebound > table").count() == 1
+    page.close()
+
+
+def test_post_page_two_tables_under_same_owner_are_refused_before_accepting_rows(
+        context, tmp_path):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const duplicate = document.querySelector('table').cloneNode(true);
+            document.querySelector('p-table').append(duplicate);
+        }, {once: true});
+    }""")
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+    assert not result["complete"]
+    assert result["pages"] == 1
+    assert result["body_row_count"] == 250
+    assert result["source_total"] == 601
+    assert page.evaluate("moves") == 1
+    failures = [e for e in records(tmp_path / "log") if e["event"] == "table.identity_refused"]
+    assert len(failures) == 1
+    assert failures[0]["table_identity_reason"] == "table_ambiguous"
+    assert not any("rows" in e or "url" in e for e in failures)
+    page.close()
+
+
 @pytest.mark.parametrize("url, expected", [
     (ORIGIN + REFERENCE_PATH, "not_observed"),
     (ORIGIN + REFERENCE_PATH + "?query_variant=1", "query_variant"),
