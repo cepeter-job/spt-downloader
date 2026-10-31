@@ -363,19 +363,32 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         poll_started = _diagnostic_clock()
         click_ms = (poll_started - page_started) * 1000
         deadline = min(time.monotonic() + 30, capture_deadline)
-        while container_handle.evaluate(STATE_JS) == state:
+        try:
+            while container_handle.evaluate(STATE_JS) == state:
+                _check_cancel(check_cancel)
+                if time.monotonic() >= deadline:
+                    result['complete'] = False
+                    expired = time.monotonic() >= capture_deadline
+                    result['warning'] = ('Table capture elapsed budget exceeded'
+                                         if expired else 'Table pagination did not advance')
+                    if expired:
+                        diagnostics.record('table.elapsed_budget', level='WARNING',
+                                           table_elapsed_stage='state_poll',
+                                           pages=result['pages'])
+                    break
+                page.wait_for_timeout(120)
+        except PlaywrightTimeoutError as error:
             _check_cancel(check_cancel)
-            if time.monotonic() >= deadline:
-                result['complete'] = False
-                expired = time.monotonic() >= capture_deadline
-                result['warning'] = ('Table capture elapsed budget exceeded'
-                                     if expired else 'Table pagination did not advance')
-                if expired:
-                    diagnostics.record('table.elapsed_budget', level='WARNING',
-                                       table_elapsed_stage='state_poll',
-                                       pages=result['pages'])
-                break
-            page.wait_for_timeout(120)
+            result['complete'] = False
+            result['warning'] = 'Table state read timed out after pagination'
+            diagnostics.record('table.state_read_failed', level='WARNING',
+                               table_state_stage='poll', pages=result['pages'],
+                               page_size_cap=max_page_size,
+                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               table_click_ms=click_ms,
+                               table_poll_ms=(_diagnostic_clock() - poll_started) * 1000,
+                               error=error)
+            break
         if not result['complete']:
             break
         poll_ms = (_diagnostic_clock() - poll_started) * 1000
@@ -383,9 +396,23 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         wait_idle(page)
         idle_ms = (_diagnostic_clock() - idle_started) * 1000
         verify_started = _diagnostic_clock()
-        if container_handle.evaluate(STATE_JS) in seen:
+        try:
+            if container_handle.evaluate(STATE_JS) in seen:
+                result['complete'] = False
+                result['warning'] = 'Repeated table pagination state'
+                break
+        except PlaywrightTimeoutError as error:
+            _check_cancel(check_cancel)
             result['complete'] = False
-            result['warning'] = 'Repeated table pagination state'
+            result['warning'] = 'Table state read timed out after pagination'
+            diagnostics.record('table.state_read_failed', level='WARNING',
+                               table_state_stage='verify', pages=result['pages'],
+                               page_size_cap=max_page_size,
+                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms,
+                               table_verify_ms=(_diagnostic_clock() - verify_started) * 1000,
+                               error=error)
             break
         _check_cancel(check_cancel)
         # The previous live failure occurred inside a single post-page DOM
