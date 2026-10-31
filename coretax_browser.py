@@ -233,14 +233,17 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
-# Read page state and captured cells within one synchronous browser snapshot.
-# The table must remain inside the SAME paginator owner verified before click;
-# a re-bound locator outside that owner is never a valid continuation.
-TABLE_VERIFIED_JS = r'''(table, owner) => {
- if(!table.isConnected || !owner.isConnected ||
-    (table.closest('p-table')||table.closest('.p-datatable')||table.parentElement)!==owner)
-   return null;
- const data=(CAPTURE_TABLE)(table);
+# Snapshot the unique table inside the exact paginator owner captured
+# before the click. An old locator may no longer resolve after a DOM re-render.
+# The previously verified owner is never replaced by a document-wide search.
+TABLE_VERIFIED_JS = r'''(owner) => {
+ if(!owner.isConnected) return {refusal:'owner_changed'};
+ const owned=[...owner.querySelectorAll('table')].filter(table =>
+    table.isConnected &&
+    (table.closest('p-table')||table.closest('.p-datatable')||table.parentElement)===owner);
+ if(owned.length!==1)
+    return {refusal:owned.length?'table_ambiguous':'table_missing'};
+ const data=(CAPTURE_TABLE)(owned[0]);
  const state=(CAPTURE_STATE)(owner);
  return {data,state};
 }'''.replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
@@ -421,8 +424,9 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         verify_ms = 0.0  # Verification is part of the atomic DOM read.
         dom_started = _diagnostic_clock()
         try:
-            snapshot = table.evaluate(TABLE_VERIFIED_JS, container_handle, timeout=min(
-                10000, max(1, int((capture_deadline-time.monotonic())*1000))))
+            # ElementHandle is pinned to the inspected owner, so a replaced
+            # table cannot make its original Locator wait for 10 seconds.
+            snapshot = container_handle.evaluate(TABLE_VERIFIED_JS)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.
@@ -455,11 +459,12 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             break
         dom_ms = (_diagnostic_clock() - dom_started) * 1000
         _check_cancel(check_cancel)
-        if snapshot is None:
+        if snapshot is None or 'refusal' in snapshot:
             result['complete'] = False
-            result['warning'] = 'Table owner changed during pagination'
+            reason = snapshot.get('refusal', 'owner_changed') if snapshot else 'owner_changed'
+            result['warning'] = 'Table ownership or uniqueness changed during pagination'
             diagnostics.record('table.identity_refused', level='WARNING',
-                               table_identity_reason='owner_changed', pages=result['pages'],
+                               table_identity_reason=reason, pages=result['pages'],
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
             break
         if snapshot['state'] in seen:
