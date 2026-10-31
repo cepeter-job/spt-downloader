@@ -23,7 +23,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            parent_amounts=None, contradictory_parent=None, pending_child_navigation=None,
            dropdown_close_delay=0, catalog_response=None, parent_detail_codes=None,
            parent_detail_display=None, dialog_close_delay=0,
-           period_clear_in_grid=False, ambiguous_period_clear=False):
+           period_clear_in_grid=False, ambiguous_period_clear=False,
+           duplicate_period_widget=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -203,6 +204,13 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         assert html.count(owner) == 1
         html = html.replace(owner, '<acc-balance-sheet-light-grid><ui-grid>'
                             + extra + '<p-table>', 1)
+    if duplicate_period_widget:
+        if not period_clear_in_grid or ambiguous_period_clear:
+            raise ValueError('Synthetic duplicate owner requires one reviewed clear icon')
+        # A duplicate control ID without another clear icon must not authorize
+        # clicking the first visible icon based on its uniqueness alone.
+        html = html.replace('<div id="filterPeriodCode"><button',
+                            '<div id="filterPeriodCode"></div><div id="filterPeriodCode"><button', 1)
     if delayed_page_size:
         html = html.replace('</table></p-table>', '</table><div class="p-paginator">'
             '<span class="p-dropdown-label">10</span><button type="button" class="p-dropdown-trigger">Size</button>'
