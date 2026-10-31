@@ -832,3 +832,16 @@ No claim of live completion follows from synthetic timeout regression tests.
 A post-`TABLE_JS` timeout may probe locator attachment for at most 1000 ms;
 `table_locator_state` is after-failure diagnostic evidence only, never a
 reason to accept rows or retry a click. Preserve original timing before the probe.
+
+
+Issue #161: after a paginator click, the original table locator may no longer
+resolve even when the inspected paginator owner is still connected. Read the
+post-click full page state and cells atomically from the *previously bound owner
+handle*; accept only exactly one table whose closest paginator owner is the same
+connected handle. Missing/ambiguous tables or detached owner fail as PARTIAL
+before accepting rows, with fixed diagnostic reasons and no new row or click.
+Never search the document for a replacement owner, infer new source/capture
+authorization, change page caps, or bypass Stop, deadline, identity and source
+totals. A synthetic same-owner wrapper relocation is permitted only through
+the existing header/group, page-state and source-total checks; live acceptance
+is still required.
