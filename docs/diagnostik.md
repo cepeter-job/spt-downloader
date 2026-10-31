@@ -532,3 +532,27 @@ Tanpa opsi aman, capture ditolak, bukan memaksakan klik/API baru.
 Tabel lain tetap <=100. Batas 180 detik, Stop, larangan klik ulang
 setelah state tidak pasti, rekonsiliasi total/baris dan PARTIAL
 tetap berlaku. Perlu izin terpisah untuk tes live build berikutnya.
+
+
+### Issue #143: DOM pascapaginasi gagal pada batas 250 (31 Oktober 2026)
+
+Live test frozen Python 3.14.8 build `22239d7` (Actions `41176978943`)
+memilih opsi UI L3-B 250 baris. Halaman awal terverifikasi 250 baris
+(dibaca sekitar 168 ms), namun pembacaan DOM setelah klik pertama
+mengalami `TimeoutError` pada `coretax_browser.py:404` dengan
+`table_dom_stage=post_pagination`. Tabel membutuhkan 19 halaman untuk
+total sumber 4.654 baris; tabel ini PARTIAL setelah sekitar 62,32 detik.
+Status keseluruhan job PARTIAL; MPN mempunyai kendala independen di #156.
+
+Kegagalan itu belum membuktikan penyebab: klik paginator, penggantian
+state, waktu idle, verifikasi state, dan pembacaan DOM harus dibedakan.
+Pada kegagalan DOM pascapaginasi, `table.dom_read_failed` menyertakan
+`page_size_cap`, jumlah halaman *sebelumnya* yang telah terverifikasi,
+`duration_ms`, `table_click_ms`, `table_poll_ms`, `table_idle_ms`,
+`table_verify_ms`, dan `table_dom_ms`. Semua berupa angka terbatas
+dan tidak mencatat row/DOM, URL, identitas, nilai sel, request/response,
+atau pesan exception bebas. Jika halaman belum terverifikasi, tidak
+boleh menaikkan penghitung halaman, mengulang klik yang tidak pasti,
+atau menyatakan COMPLETE. Batas 180 detik, Stop, total sumber, guard
+MPN, dan pemilihan ukuran UI lainnya tetap sama. Hasil tes sintetis
+bukan bukti keberhasilan live acceptance.
