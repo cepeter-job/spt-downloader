@@ -52,6 +52,7 @@ def test_real_synthetic_stuck_period_clear_records_safe_cause_and_never_complete
     assert 1 <= len(events) <= 2
     assert all(e['mpn_filter_reason'] == 'date_filter_present' for e in events)
     assert all(e['mpn_clear_state'] == 'absent' for e in events)
+    assert all(e['mpn_period_widget_state'] == 'absent' for e in events)
     assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
     assert metrics['detail'] == []
     assert run['mpn']['rows'] == []
@@ -90,6 +91,7 @@ def test_period_clear_owned_grid_sibling_resets_source_filter_without_guessing(
     assert len(events) == 1
     assert events[0]['mpn_filter_reason'] == 'date_filter_present'
     assert events[0]['mpn_clear_state'] == 'present'
+    assert events[0]['mpn_period_widget_state'] == 'present'
     assert metrics['list'], 'The request must still be observed after clear'
     assert AccountingUI._unfiltered({'request': metrics['list'][-1]})
     assert metrics['detail'], 'Only proved unfiltered source may lead to detail'
@@ -107,6 +109,7 @@ def test_ambiguous_period_clear_never_clicks_either_control(
               if r['event'] == 'mpn.unfiltered_refused']
     assert len(events) == 1
     assert events[0]['mpn_clear_state'] == 'ambiguous'
+    assert events[0]['mpn_period_widget_state'] == 'ambiguous'
     assert len(metrics['detail']) == 0
     assert run['mpn']['status'] == 'PARTIAL'
 
