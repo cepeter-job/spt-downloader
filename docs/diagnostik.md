@@ -655,3 +655,39 @@ header/grup dan MPN tetap terpisah. `ElementHandle.evaluate` tidak
 memiliki timeout locator Playwright; callback JS sinkron tetap tunduk
 pada pembatasan eksternal dan perlu diverifikasi di live secara terpisah.
 Hasil regression test sintetis tidak menyatakan Corporate COMPLETE.
+
+
+### Issue #156: pembuktian owner filter periode dan ketersediaan katalog (1 November 2026)
+
+Live build `7a1d143` / Actions `41220217018` masih
+`MpnSafetyError` pada `parent_detail`. Sumber asli menampilkan filter
+tanggal yang belum terhapus (`date_filter_present`), sementara kontrol
+clear yang sudah diperiksa tidak ditemukan (`mpn_clear_state=absent`).
+Sumber referensi `ACCOUNTING_TYPE`, `ACCOUNTING_TYPE_DETAIL`, dan
+`PERIOD` yang tepat belum terbukti terikat, dan tiga kategori identitas
+parent tetap berbeda. Jangan menyamakan tidak ditemukannya katalog dengan
+izin melanjutkan ke Detail Transaksi.
+
+Saat sumber list masih mengandung filter tak diizinkan, diagnosis baru
+`mpn_period_widget_state=absent|present|ambiguous` menghitung
+`#filterPeriodCode` di `ui-grid` yang terbukti memiliki tepat satu
+`p-table`. Keunikan tombol clear saja tidak cukup: dua widget periode
+dengan hanya satu tombol clear sekarang juga ditolak tanpa klik.
+Kategori tidak mengeluarkan label, teks DOM, data request, URL, kode
+akun, atau identitas wajib pajak.
+
+Jika parent sumber berbeda dengan proyeksi tabel, diagnostik
+`mpn_mismatch_reference_state` membedakan
+`all_reference_missing|some_reference_missing|references_observed|no_reference_mismatch`
+berdasarkan **ada atau tidaknya inventory kode referensi asli** pada
+field yang berbeda. Diagnosis ini tidak membuktikan label cocok. Seluruh
+mismatch independen tetap melalui `MpnSafetyError`, termasuk kombinasi
+`accounting_type`, `accounting_detail`, dan `tax_period`. Katalog
+tetap hanya boleh berasal dari exact GET asli dengan pin kepemilikan,
+bukan `path_variant` atau request baru.
+
+Regression test sintetis meliputi widget absen, unik, dua icon, widget
+ganda dengan satu icon, ketiga kategori ketersediaan referensi, tidak
+ada Detail click, fail-closed PARTIAL dan serialisasi diagnostik
+allowlisted. Tidak ada live replay otomatis. Issue #156 tetap OPEN
+hingga sumber/owner asli terbukti dan ada acceptance build-matched.
