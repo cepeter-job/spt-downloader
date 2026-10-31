@@ -42,6 +42,56 @@ def test_l3_page_size_counterfactual_has_identical_verified_rows_and_safe_page_t
     page.close()
 
 
+def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_timings(context, tmp_path):
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    secret = "SYNTHETIC_PRIVATE_ACCOUNT_OR_REFERENCE"
+
+    class FailSecondDomRead:
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.reads = 0
+
+        def element_handle(self):
+            return self.delegate.element_handle()
+
+        def evaluate(self, script, *args, **kwargs):
+            self.reads += 1
+            if self.reads == 2:
+                raise PlaywrightTimeoutError(secret)
+            return self.delegate.evaluate(script, *args, **kwargs)
+
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, FailSecondDomRead(table), 1, 1000, max_page_size=250)
+        assert log.flush()
+
+    assert not result["complete"]
+    assert result["warning"] == "Table DOM read timed out after pagination"
+    assert result["pages"] == 1
+    assert result["body_row_count"] == 250
+    assert result["source_total"] == 601
+    assert len(result["rows"]) == 251  # Only first verified page and its footer.
+    assert page.evaluate("({moves,size})") == {"moves": 1, "size": 250}
+    entries = records(tmp_path / "log")
+    failures = [e for e in entries if e["event"] == "table.dom_read_failed"]
+    assert len(failures) == 1
+    failure = failures[0]
+    assert failure["table_dom_stage"] == "post_pagination"
+    assert failure["page_size_cap"] == 250
+    assert failure["pages"] == 1
+    for field in ("duration_ms", "table_click_ms", "table_poll_ms", "table_idle_ms",
+                  "table_verify_ms", "table_dom_ms"):
+        assert 0 <= failure[field] <= failure["duration_ms"]
+    assert secret not in json.dumps(entries)
+    assert "page_rows" not in failure
+    assert [e["table_page_stage"] for e in entries if e["event"] == "table.page_timing"] == ["initial"]
+    page.close()
+
+
 @pytest.mark.parametrize("url, expected", [
     (ORIGIN + REFERENCE_PATH, "not_observed"),
     (ORIGIN + REFERENCE_PATH + "?query_variant=1", "query_variant"),
