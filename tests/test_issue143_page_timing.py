@@ -92,6 +92,52 @@ def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_
     page.close()
 
 
+@pytest.mark.parametrize("fail_on,stage", [(2, "poll"), (3, "verify")])
+def test_post_pagination_state_timeout_is_partial_without_repeating_click(
+        context, tmp_path, monkeypatch, fail_on, stage):
+    from playwright.sync_api import ElementHandle, TimeoutError as PlaywrightTimeoutError
+
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    original_evaluate = ElementHandle.evaluate
+    reads = 0
+    secret = "SYNTHETIC_PRIVATE_STATE_VALUE"
+
+    def fail_one_state_read(handle, expression, arg=None):
+        nonlocal reads
+        if expression == driver.STATE_JS:
+            reads += 1
+            if reads == fail_on:
+                raise PlaywrightTimeoutError(secret)
+        return original_evaluate(handle, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, "evaluate", fail_one_state_read)
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+
+    assert not result["complete"]
+    assert result["warning"] == "Table state read timed out after pagination"
+    assert result["pages"] == 1
+    assert result["source_total"] == 601
+    assert result["body_row_count"] == 250
+    assert len(result["rows"]) == 251  # First verified page plus footer only.
+    assert page.evaluate("({moves,size})") == {"moves": 1, "size": 250}
+    entries = records(tmp_path / "log")
+    failures = [entry for entry in entries if entry["event"] == "table.state_read_failed"]
+    assert len(failures) == 1
+    assert failures[0]["table_state_stage"] == stage
+    assert failures[0]["pages"] == 1
+    assert failures[0]["page_size_cap"] == 250
+    assert failures[0]["table_click_ms"] >= 0
+    assert failures[0]["duration_ms"] >= failures[0]["table_click_ms"]
+    assert secret not in json.dumps(entries)
+    assert not any(entry["event"] == "table.dom_read_failed" for entry in entries)
+    page.close()
+
+
 @pytest.mark.parametrize("url, expected", [
     (ORIGIN + REFERENCE_PATH, "not_observed"),
     (ORIGIN + REFERENCE_PATH + "?query_variant=1", "query_variant"),
