@@ -138,6 +138,47 @@ def test_post_pagination_state_timeout_is_partial_without_repeating_click(
     page.close()
 
 
+@pytest.mark.parametrize("detach,expected_state", [(False, "attached"), (True, "not_attached")])
+def test_failed_dom_read_reports_only_safe_post_failure_locator_state(
+        context, tmp_path, monkeypatch, detach, expected_state):
+    from playwright.sync_api import Locator, TimeoutError as PlaywrightTimeoutError
+
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    original_evaluate = Locator.evaluate
+    reads = 0
+    secret = "SYNTHETIC_PRIVATE_TABLE_VALUE"
+
+    def fail_one_post_page_read(locator, expression, *args, **kwargs):
+        nonlocal reads
+        if expression == driver.TABLE_JS:
+            reads += 1
+            if reads == 2:
+                if detach:
+                    page.evaluate("document.querySelector('table').remove()")
+                raise PlaywrightTimeoutError(secret)
+        return original_evaluate(locator, expression, *args, **kwargs)
+
+    monkeypatch.setattr(Locator, "evaluate", fail_one_post_page_read)
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+
+    assert not result["complete"]
+    assert result["pages"] == 1
+    assert result["body_row_count"] == 250
+    assert result["source_total"] == 601
+    assert page.evaluate("moves") == 1
+    failures = [entry for entry in records(tmp_path / "log")
+                if entry["event"] == "table.dom_read_failed"]
+    assert len(failures) == 1
+    assert failures[0]["table_locator_state"] == expected_state
+    assert secret not in json.dumps(records(tmp_path / "log"))
+    page.close()
+
+
 @pytest.mark.parametrize("url, expected", [
     (ORIGIN + REFERENCE_PATH, "not_observed"),
     (ORIGIN + REFERENCE_PATH + "?query_variant=1", "query_variant"),
