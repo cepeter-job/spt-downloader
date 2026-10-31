@@ -448,6 +448,65 @@ Accounting's route owner may mount after DOMContentLoaded: wait inside one
 detail DOM shape/readiness uses the complete owned JSON detail inventory; dialog,
 paginator, source and identity contradictions retain their independent gates.
 
+## Issue #143 diagnostics boundary
+
+Corporate native refusals may emit only the finite observer-stage enum and a
+bounded tab ordinal before the existing whole-record DOM fallback. MPN capture
+failures may emit a finite collection-stage enum and sanitized exception
+type/frames. Issue #143 follow-up L3 subreason is a second, fixed allowlisted enum on
+observer refusal; it must not expose request fields, hashes, labels, DOM content
+or asset metadata. The MPN Search action may receive a bounded single-click
+timeout (5 seconds maximum within the existing 45-second preparation deadline),
+while all other control action budgets remain unchanged; never retry an actual
+click after a timeout because dispatch is uncertain.
+
+Post-merge Issue #143 diagnostics split L3 MAIN source digest, VENDOR source
+digest and exact two-table count into separate finite `corporate_l3_reason`
+categories. Never emit the observed hash, table contents or source identifiers
+in logging; on refusal, continue whole-return DOM fallback without weakening
+custody. The MPN `accounting_type` mismatch records only catalog-projection
+provenance as a fixed enum, not the code/label/DOM value. It is not permission
+to replace source labels, repair catalog mappings or click detail under
+`MpnSafetyError`.
+
+The general DOM table collector uses a 180-second elapsed budget per table,
+checked before each additional page action. Preserve the Stop-first rule,
+original owned paginator checks and individual browser timeouts, retain
+already captured rows only as PARTIAL, and keep the first failure reason
+when row-count reconciliation also disagrees. This is not a hard interrupt
+for an in-flight browser action or a reason to increase other timeouts.
+
+Issue #143 follow-up logging preserves the original MPN unfiltered
+non-cancelled source-query predicate. On failed preparation, record only
+finite source-request filter categories and the inspected period-clear
+control's presence class. Do not log filter names/values, claim that the
+clear action succeeded, invent a control, accept a filtered list or
+increase the two owned Search attempts. L3 failed two-table count gains
+a fixed `zero`/`one`/`more_than_two` classification without changing
+its admission rule. Elapsed DOM table budget may log a fixed action-stage
+category and already captured page count without retrying a paginator
+click, changing elapsed policy, or promoting PARTIAL.
+
+For Issue #143 live follow-up after PR #150, classify only owned original
+MPN reference GET readiness as accepted, observed-but-unbound, or not observed.
+Never trigger a new reference request, infer a catalog from cache, or map a
+display label to an unproved code. If the sole mismatched field is accounting
+type and no original code inventory exists, refuse as MpnUnsupported rather
+than claiming a known contradiction; no detail click. Independent identity
+contradictions remain MpnSafetyError. After a DOM paginator click, bound the
+Playwright table DOM read to 10 seconds and the remaining per-table deadline;
+a timeout retains only preceding verified pages as PARTIAL and never retries
+the dispatched click. Classify additional L3 form tables against both
+source-reviewed grid owners as hidden/visible extra or unproved pair; retain
+the exact two-table native admission requirement on every branch.
+
+
+
+These fields are diagnostic evidence, not capture proof: preserve
+every original source pin, privacy/identity gate, Stop, checkpoint and PARTIAL
+outcome. Never log tab captions, URLs, taxpayer values or exception messages.
+See `docs/diagnostik.md`; synthetic tests alone do not certify the live case.
+
 ## Verification
 
 Capture table/panel/view failures and the inventory catch use only fixed
@@ -689,3 +748,75 @@ boolean dan field tambahan tidak valid. Runtime tetap mengembalikan `None`
 dan diagnostik unknown untuk metadata tidak sah; CI melempar `ValueError`
 sebelum menulis metadata. Pertahankan pemeriksaan file dan pembacaan terbatas;
 modul bersama ini hanya boleh bergantung pada standard library.
+
+
+Issue #143 round 5: the MPN period-clear lookup is scoped to exactly one
+ui-grid that owns the single proven list p-table; its clear control may be
+a table sibling but never a document-wide query. A clear click is never
+proof of unfiltered source: observe the next same-owner POST and require
+the original exact non-cancelled-only query before any detail. Reject
+missing/ambiguous controls. Corporate table cell text uses a read-only
+TreeWalker instead of deep-cloning each cell; the old extraction semantics
+must be tested on synthetic browser fixtures, including controls and hidden
+caption labels. Corporate L3 visible-extra ownership is diagnostic-only
+within the owned form and cannot relax native admission or source pins.
+
+
+Issue #143 overwrite follow-up: classify a time-bounded operator selection
+or overwrite request that receives no on-time response as ConsentTimeout
+(BLOCKED exit 3), not a tax DOM or network ERROR. Never infer affirmative
+overwrite permission, publish without a valid reply, extend the consent
+window, or emit private file names/paths. Finite diagnostics distinguish
+controller consent.requested, mapped and actually viewable overwrite modal
+consent.dialog_presented, confirmed consent.replied, and worker
+consent.timeout. A Map event is not proof the operator saw the window;
+preserve the existing safe decline focus, cancellation, Stop, checkpoint
+and publication guards.
+
+
+Issue #143 round 6: observe only an exact method/frame/resource/URL
+reference GET during owned session *preparation* to distinguish early
+request timing; do not bind early bytes, re-fetch, use caches, relax pinned
+catalog or source identities, or infer a label. The temporary request
+listener must always be removed even on navigation/Stop failure.
+MPN parent mismatch diagnostics may report a fixed second category and a
+hard-bounded 1..7 mismatch count; never reveal actual values, code labels,
+amounts or source payload, and keep all no-click identity gates.
+Corporate pagination STATE_JS uses all rows' textContent to avoid
+repeated forced layout; TABLE_JS extraction, Stop, action count, timeout,
+row/coverage reconciliation and PARTIAL remain unchanged.
+
+
+Issue #143 round 7: after repeated 500-row L3-B post-pagination
+timeout on live build, bound the inspected original Corporate L3-B
+paginator option to <=100 instead of 500. Reconcile every row/page,
+source total and Stop; never manufacture page queries, retry an
+uncertain paginator click, bypass per-table 180s deadline, or promote
+PARTIAL to COMPLETE. No unreviewed table/source admission. Passive
+MPN reference URL variant telemetry classifies only original GET
+xhr/fetch in the owned main frame under the same exact origin and
+reviewed reference prefix; a variant is never bound, fetched, logged
+as URL/bytes or used as a label. Report a fixed third parent mismatch
+category without values and preserve fatal mismatch identity gates.
+A visible third L3 table must refuse native JSON and use the original
+whole-return DOM fallback. Use hosted synthetic Edge tests and require
+separately authorized live acceptance on an exact matching build.
+
+Issue #143 round 8 (historical): 250-row pagination was not yet live-approved
+without build-matched measured evidence. The build then kept Corporate L3-B
+at 100 rows and the 180s per-table safety deadline. Emit bounded per-page DOM timings without
+source contents; route-shape MPN diagnostics must not admit or replay alternate
+reference GETs, relax catalog/script pins, or permit Detail on mismatch.
+Only GitHub-hosted CI runs the browser/integration tests.
+
+
+Issue #143 round 9 (31 Oct live): 100-row L3-B took 182.87s,
+verified 41/47 pages and remained PARTIAL. Only the narrowly owned
+form L3/grid2/group-B UI paginator may choose inspected <=250
+options, never 500. Verify the active limit before capture; absent
+bounded options must refuse rather than retain a larger page size.
+Other tables remain <=100. Keep original 180s deadline, Stop, one
+verified click per page, source-total reconciliation and PARTIAL on
+exhaustion. Record privacy-safe click, state-poll, idle, state-check
+and DOM-read timings for verified pages; no values/URLs in logs.
+Synthetic tests do not establish live acceptance.

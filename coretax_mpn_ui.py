@@ -17,6 +17,23 @@ SOURCE_PINS = {
 }
 REFERENCE_PATH = ('/referencedata/api/currentreferencedata/id-ID/'
                   'ACCOUNTING_TYPE,ACCOUNTING_TYPE_DETAIL,REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT,PERIOD')
+
+
+def _reference_route_kind(url):
+    # Classification only. Neither query variants nor neighboring paths are
+    # permitted sources; they must NEVER be admitted to source_pending.
+    if type(url) is not str or url == ORIGIN + REFERENCE_PATH:
+        return 'not_observed'
+    parts, expected = urlsplit(url), urlsplit(ORIGIN)
+    if (parts.scheme != expected.scheme or parts.netloc != expected.netloc
+            or not parts.path.startswith('/referencedata/api/currentreferencedata/id-ID/')):
+        return 'not_observed'
+    return 'query_variant' if parts.path == REFERENCE_PATH else 'path_variant'
+
+
+def _other_reference_get(url):
+    return _reference_route_kind(url) != 'not_observed'
+
 LIST_HEADERS = ('Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
                 'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
                 'Nilai Sisa dalam Mata Uang', 'Nilai Tukar', 'Jumlah', 'Nilai Sisa',
@@ -58,7 +75,28 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
         raise MpnUnsupported('MPN requires the reviewed owned browser context')
     selected = ORIGIN + '/accounting/id-ID/balancesheet/' + taxpayer_id(run)
     refused = False
+    # Record only whether the original reference GET happened during the
+    # navigation that precedes AccountingUI's source-binding listeners.
+    # No response bytes/cache are read; seeing this request is NOT admission.
+    preparation_catalog_seen = False
+    preparation_reference_variant = False
+    preparation_variant_kind = 'not_observed'
     deadline = time.monotonic() + 60
+
+    def reference_request(request):
+        nonlocal preparation_catalog_seen, preparation_reference_variant, preparation_variant_kind
+        # Inspect the frame only for a recognized reference GET; never log
+        # or read any URL, query, body, response or taxpayer identifier.
+        if request.method != 'GET' or request.resource_type not in ('xhr', 'fetch'):
+            return
+        url = request.url
+        exact = url == ORIGIN + REFERENCE_PATH
+        variant_kind = _reference_route_kind(url)
+        if (exact or variant_kind != 'not_observed') and request.frame is page.main_frame:
+            preparation_catalog_seen |= exact
+            preparation_reference_variant |= variant_kind != 'not_observed'
+            if variant_kind == 'path_variant' or preparation_variant_kind == 'not_observed':
+                preparation_variant_kind = variant_kind
 
     def allowed(url):
         if '#' in url:
@@ -85,6 +123,7 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
     if check_cancel:
         check_cancel()
     page.on('framenavigated', navigation)
+    page.on('request', reference_request)
     try:
         page.goto(selected, wait_until='domcontentloaded', timeout=60000)
         while True:
@@ -100,7 +139,14 @@ def prepare_accounting_session(page, run, *, check_cancel=None):
                 return
             page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
     finally:
+        page.remove_listener('request', reference_request)
         page.remove_listener('framenavigated', navigation)
+        diagnostics.record('mpn.catalog_preparation', level='INFO',
+                           mpn_catalog_preparation=('request_seen' if preparation_catalog_seen
+                                                    else 'not_observed'),
+                           mpn_catalog_route_shape=('alternate_reference_get'
+                                                    if preparation_reference_variant else 'not_observed'),
+                           mpn_catalog_variant_kind=preparation_variant_kind)
 
 
 class AccountingUI:
@@ -121,6 +167,9 @@ class AccountingUI:
         self.catalog_frozen = False
         self.closed = False
         self.reference_raw = None
+        self.reference_request_seen = False
+        self.reference_route_variant_seen = False
+        self.reference_route_variant_kind = 'not_observed'
         self.list_snapshot = None
         self.list_owner = None
         self.preparation_deadline = None
@@ -209,6 +258,13 @@ class AccountingUI:
         pin = SOURCE_PINS.get(url.removeprefix(ORIGIN)) if url.startswith(ORIGIN + '/') else None
         kind = request.resource_type
         catalog = url == ORIGIN + REFERENCE_PATH and kind in ('xhr', 'fetch')
+        if kind in ('xhr', 'fetch'):
+            variant_kind = _reference_route_kind(url)
+            if variant_kind != 'not_observed':
+                # Fixed category only; NEVER enter source_pending.
+                self.reference_route_variant_seen = True
+                if variant_kind == 'path_variant' or self.reference_route_variant_kind == 'not_observed':
+                    self.reference_route_variant_kind = variant_kind
         # A fetch/preload of script bytes does not prove an executable provider.
         # Nonqualifying traffic must not enter the later ownership checks.
         if pin is not None and kind != 'script':
@@ -223,6 +279,8 @@ class AccountingUI:
             self._reject_source('pending_budget')
             return
         self.source_sequence += 1
+        if catalog:
+            self.reference_request_seen = True
         self.source_pending[id(request)] = (request, pin, catalog, url, kind, self.observer._navigation_attempt)
 
     def _source_request_failed(self, request):
@@ -351,7 +409,7 @@ class AccountingUI:
                 raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
             self.page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
 
-    def _click_ready(self, locator):
+    def _click_ready(self, locator, *, actual_timeout_ms=1000):
         deadline = self.preparation_deadline or time.monotonic() + 5
         while True:
             self._owned()
@@ -366,7 +424,8 @@ class AccountingUI:
             remaining = int((deadline - time.monotonic()) * 1000)
             if remaining <= 0:
                 raise MpnUnsupported('MPN inspected action readiness deadline exceeded')
-            locator.click(timeout=min(1000, remaining))
+            # One actual click only: never retry if the browser may have dispatched it.
+            locator.click(timeout=min(actual_timeout_ms, remaining))
             self._owned()
             return
 
@@ -395,6 +454,7 @@ class AccountingUI:
             self._observer_call(self.page.wait_for_timeout, min(100, remaining))
 
     def open(self):
+        self.diagnostic_stage = 'navigation'
         self._stop()
         if getattr(self.page.context, '_spt_financial_route_policy', None) != 'service_workers_blocked':
             raise MpnUnsupported('MPN requires the reviewed owned browser context')
@@ -403,7 +463,9 @@ class AccountingUI:
         self.preparation_deadline = time.monotonic() + 45
         # Angular may mount its route owner after DOMContentLoaded. Short
         # value-free probes keep Stop and the original deadline authoritative.
+        self.diagnostic_stage = 'owner'
         self._ready_one('acc-balance-sheet-light')
+        self.diagnostic_stage = 'environment'
         environment = self.page.evaluate('''() => ({language:navigator.language,
             timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
             scripts:[...document.scripts].filter(e=>e.isConnected).map(e=>e.src)})''')
@@ -411,13 +473,16 @@ class AccountingUI:
         self._state()
         if environment.get('language') != 'id-ID' or environment.get('timezone') != 'Asia/Jakarta':
             raise MpnUnsupported('MPN display environment is unsupported')
+        self.diagnostic_stage = 'source'
         if (set(self.pins) != set(SOURCE_PINS)
                 or set(url for url in environment.get('scripts', []) if re.match(
                     re.escape(ORIGIN) + r'/accounting/id-ID/(?:main|vendor)\.', url))
                     != {ORIGIN + path for path in SOURCE_PINS}):
             raise MpnUnsupported('MPN reviewed loaded script providers are unavailable')
+        self.diagnostic_stage = 'dropdowns'
         self._dropdown('acc-balance-sheet-light form ui-dropdown#ShowZeroValue', 'Yes')
         self._dropdown('acc-balance-sheet-light form ui-dropdown#ShowCancelledTransaction', 'No')
+        self.diagnostic_stage = 'search'
         search = self._ready_one('acc-balance-sheet-light form button#submit')
         if search.inner_text(timeout=1000).strip() != 'Cari':
             raise MpnUnsupported('MPN inspected search control changed')
@@ -425,19 +490,35 @@ class AccountingUI:
         for _ in range(2):
             self._stop()
             marker = self.observer.sequence
-            self._click_ready(search)
+            # A successful actionability probe may precede >1s browser scheduling.
+            # Bound the sole real Search click by the original 45s preparation deadline.
+            self._click_ready(search, actual_timeout_ms=5000)
             snapshot = self._wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
             self._stop()
             self.list_owner = self._ready_one('acc-balance-sheet-light-grid ui-grid p-table')
             if self._unfiltered(snapshot):
                 self.list_snapshot = snapshot
                 break
-            clear = self.list_owner.locator('#filterPeriodCode .p-dropdown-clear-icon')
+            self.diagnostic_stage = 'period_clear'
+            refusal = self._unfiltered_reason(snapshot)
+            # The reviewed list owner is p-table inside its single ui-grid.
+            # A PrimeNG header filter can be a sibling of p-table; searching
+            # only the table silently misses an eligible owned clear control.
+            grid = self.list_owner.locator('xpath=ancestor::ui-grid[1]')
+            if grid.count() != 1 or grid.locator('p-table').count() != 1:
+                raise MpnUnsupported('MPN period clear grid owner is unproved')
+            clear = grid.locator('#filterPeriodCode .p-dropdown-clear-icon')
             count = clear.count()
             self._stop()
+            # Never record filter values, names, dates or UI captions. These
+            # fixed categories only identify why original source was refused.
+            clear_state = ('ambiguous' if count > 1 else 'absent' if count == 0
+                           else 'present' if clear.is_visible() else 'hidden')
+            diagnostics.record('mpn.unfiltered_refused', level='WARNING',
+                               mpn_filter_reason=refusal, mpn_clear_state=clear_state)
             if count > 1:
                 raise MpnUnsupported('MPN period clear control is ambiguous')
-            if count == 1 and clear.is_visible():
+            if clear_state == 'present':
                 self._click_ready(clear)
         if self.list_snapshot is None:
             raise MpnUnsupported('MPN unfiltered non-cancelled inventory is unproved')
@@ -445,6 +526,7 @@ class AccountingUI:
         # unnecessary for complete owned pagination and can still be animating.
         self._stop()
         self.preparation_deadline = None
+        self.diagnostic_stage = 'ready'
 
     def _freeze_catalog(self):
         if self.catalog_frozen:
@@ -458,17 +540,47 @@ class AccountingUI:
         self._owned()
         if time.monotonic() >= deadline:
             raise MpnUnsupported('MPN original reference readiness deadline exceeded')
+        # Readiness is not an authorization to invent a reference fetch.
+        # Differentiate observed-but-unbound from a missing original GET.
+        status = ('accepted' if self.reference_raw is not None else
+                  'observed_unbound' if getattr(self, 'reference_request_seen', False)
+                  else 'not_observed')
+        diagnostics.record('mpn.catalog_readiness', level='INFO',
+                           mpn_catalog_state=status,
+                           mpn_catalog_route_shape=('alternate_reference_get'
+                                                    if getattr(self, 'reference_route_variant_seen', False)
+                                                    else 'not_observed'),
+                           mpn_catalog_variant_kind=getattr(self, 'reference_route_variant_kind', 'not_observed'))
         self.catalog_frozen = True
 
     @staticmethod
+    def _unfiltered_reason(snapshot):
+        # Categorize only the original owned request's structure, not its
+        # contents. A diagnostic category must never authorize inventory.
+        request = snapshot.get('request') if isinstance(snapshot, dict) else None
+        filters = request.get('Filters') if isinstance(request, dict) else None
+        if not isinstance(filters, list) or any(not isinstance(f, dict) for f in filters):
+            return 'request_shape'
+        if len(filters) != 1:
+            if any(f.get('PropertyName') in ('TransactionDate', 'PeriodCode')
+                   for f in filters):
+                return 'date_filter_present'
+            return 'additional_filter' if filters else 'cancelled_filter_missing'
+        rule = filters[0]
+        if rule.get('PropertyName') != 'IsCancelled':
+            return 'cancelled_filter_missing'
+        if (set(rule).issubset({'PropertyName', 'Value', 'MatchMode',
+                                'CaseSensitive', 'AsString'})
+                and rule.get('Value') == '0'
+                and rule.get('MatchMode') == 'equals'
+                and rule.get('CaseSensitive', True) is True
+                and rule.get('AsString', False) is False):
+            return None
+        return 'cancelled_filter_modified'
+
+    @staticmethod
     def _unfiltered(snapshot):
-        filters = snapshot['request']['Filters']
-        return (len(filters) == 1 and isinstance(filters[0], dict)
-                and set(filters[0]).issubset({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'})
-                and filters[0].get('PropertyName') == 'IsCancelled' and filters[0].get('Value') == '0'
-                and filters[0].get('MatchMode') == 'equals'
-                and filters[0].get('CaseSensitive', True) is True
-                and filters[0].get('AsString', False) is False)
+        return AccountingUI._unfiltered_reason(snapshot) is None
 
     def _table(self, owner, headers, count):
         deadline = time.monotonic() + 5
@@ -622,6 +734,37 @@ class AccountingUI:
                     raise MpnUnsupported('MPN repeated parent numeric identity is not independently unique')
         actual = tuple(rendered[index][column] for column in (3, 4, 5, 13, 15, 16, 17))
         if actual != expected:
+            # Only fixed column categories and a bounded mismatch count; no
+            # actual/expected values or new authorization to click detail.
+            fields = ('accounting_type', 'accounting_detail', 'currency',
+                      'revenue_code', 'payment_code', 'tax_period', 'transaction_number')
+            differing = [position for position in range(len(fields))
+                         if actual[position] != expected[position]]
+            field = fields[differing[0]]
+            provenance = None
+            if field == 'accounting_type':
+                code = header.get('AccountingTypeCode')
+                labels = getattr(self, 'catalogs', {}).get('ACCOUNTING_TYPE', {})
+                inventory = getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE')
+                provenance = ('source_code_missing' if type(code) is not str or not code
+                              else 'catalog_missing' if inventory is None
+                              else 'code_not_in_catalog' if code not in inventory
+                              else 'catalog_label' if code in labels
+                              else 'raw_code_fallback')
+            diagnostics.record('mpn.parent_binding_mismatch', level='WARNING',
+                               mpn_parent_field=field,
+                               mpn_parent_secondary_field=(fields[differing[1]]
+                                                           if len(differing) > 1 else 'none'),
+                               mpn_parent_tertiary_field=(fields[differing[2]]
+                                                          if len(differing) > 2 else 'none'),
+                               mpn_parent_mismatch_count=len(differing),
+                               mpn_accounting_type_projection=provenance)
+            if (actual[0] != expected[0] and actual[1:] == expected[1:]
+                    and getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE') is None):
+                # Without an accepted original code inventory, a displayed
+                # localized label cannot prove a source contradiction. Refuse
+                # the action as unsupported; never guess a mapping or click.
+                raise MpnUnsupported('MPN accounting type original reference is unproved')
             raise MpnSafetyError('MPN selected parent rendered/source identity differs')
         row = self.list_owner.locator('tbody tr').nth(index)
         button = row.locator('td').nth(0).locator(

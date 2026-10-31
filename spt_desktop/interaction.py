@@ -9,6 +9,17 @@ import threading
 import time
 import uuid
 
+from . import diagnostics
+
+
+class ConsentTimeout(TimeoutError):
+    """Operator did not consent in time; never infer approval from a timeout."""
+
+    def __init__(self, kind):
+        self.kind = kind
+        super().__init__('User confirmation deadline expired; no automatic consent')
+
+
 MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 
@@ -137,17 +148,22 @@ class Requests:
             while not self._ready.wait(min(0.1, max(0, deadline - time.monotonic()))):
                 self.check_cancel()
                 if time.monotonic() >= deadline:
-                    raise TimeoutError('User confirmation deadline expired; no automatic consent')
+                    raise ConsentTimeout(kind)
             self.check_cancel()
             if time.monotonic() >= deadline:
-                raise TimeoutError('User confirmation deadline expired; no automatic consent')
+                raise ConsentTimeout(kind)
             reply = read_message(self.folder, self.job_id, request_id, reply=True)
             # A ready signal is not proof of timely consent; file reads can also
             # overlap Stop or outlast the confirmation deadline.
             self.check_cancel()
             if time.monotonic() >= deadline:
-                raise TimeoutError('User confirmation deadline expired; no automatic consent')
+                raise ConsentTimeout(kind)
             return reply
+        except ConsentTimeout:
+            # The missing/late reply must remain a hard, non-approving gate.
+            diagnostics.record('consent.timeout', level='WARNING', kind=kind,
+                               stage=kind, status='BLOCKED')
+            raise
         finally:
             with self._lock:
                 self._pending = None

@@ -31,8 +31,11 @@ EVENTS = frozenset({
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
-    'consent.requested', 'consent.replied', 'capture.partial', 'pdf.partial', 'pdf.discovery',
+    'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
+    'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
+    'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'table.elapsed_budget',
+    'table.dom_read_failed', 'table.page_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
@@ -40,6 +43,44 @@ EVENTS = frozenset({
 ENUMS = {
     'mpn_ownership_reason': frozenset({'navigation', 'frame', 'method',
         'page_route', 'request_url', 'resource_kind'}),
+    'mpn_parent_field': frozenset({'accounting_type', 'accounting_detail',
+        'currency', 'revenue_code', 'payment_code', 'tax_period', 'transaction_number'}),
+    'mpn_parent_secondary_field': frozenset({'none', 'accounting_type',
+        'accounting_detail', 'currency', 'revenue_code', 'payment_code',
+        'tax_period', 'transaction_number'}),
+    'mpn_parent_tertiary_field': frozenset({'none', 'accounting_type',
+        'accounting_detail', 'currency', 'revenue_code', 'payment_code',
+        'tax_period', 'transaction_number'}),
+    'mpn_catalog_route_shape': frozenset({'alternate_reference_get', 'not_observed'}),
+    'mpn_catalog_preparation': frozenset({'request_seen', 'not_observed'}),
+    'mpn_accounting_type_projection': frozenset({'catalog_label', 'raw_code_fallback',
+        'catalog_missing', 'code_not_in_catalog', 'source_code_missing'}),
+    'mpn_filter_reason': frozenset({'request_shape', 'date_filter_present',
+        'additional_filter', 'cancelled_filter_missing', 'cancelled_filter_modified'}),
+    'mpn_clear_state': frozenset({'ambiguous', 'absent', 'present', 'hidden'}),
+    'corporate_l3_table_shape': frozenset({'zero', 'one', 'more_than_two'}),
+    'mpn_catalog_variant_kind': frozenset({'not_observed', 'query_variant', 'path_variant'}),
+    'table_page_stage': frozenset({'initial', 'advanced'}),
+    'table_elapsed_stage': frozenset({'before_next_click', 'state_poll', 'before_dom_read'}),
+    'table_dom_stage': frozenset({'post_pagination'}),
+    'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
+    'corporate_l3_extra_layout': frozenset({'reviewed_pair_hidden_extra',
+        'reviewed_pair_visible_extra', 'reviewed_pair_unproved'}),
+    'corporate_l3_extra_owner': frozenset({'reviewed_pair_unproved',
+        'no_visible_extra', 'nested_in_reviewed_table', 'reviewed_grid_extra',
+        'other_form_owner', 'mixed_owners'}),
+    'corporate_observer_stage': frozenset({'build', 'tabs', 'tab', 'panel', 'form',
+        'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
+    'corporate_l3_reason': frozenset({
+        'induk_order', 'cit_digest', 'lifetime_start', 'script_providers',
+        'main_digest', 'vendor_digest', 'table_count', 'form_shape', 'grid_shape',
+        'grid_ownership', 'table_structure', 'paginator', 'stable_table_metadata',
+        'request_shape', 'footer_request', 'grid_offset', 'grid_or_footer_missing',
+        'reference_request', 'lifetime_end'}),
+    'mpn_capture_stage': frozenset({'session', 'open', 'parent_inventory',
+        'parent_detail', 'final_drain'}),
+    'mpn_ui_stage': frozenset({'navigation', 'owner', 'environment', 'source',
+        'dropdowns', 'search', 'period_clear', 'ready'}),
     'mpn_source_stage': frozenset({'provider', 'pending_budget', 'request_failed',
         'ownership', 'response', 'body', 'body_budget', 'script_digest',
         'catalog_snapshot', 'catalog_late', 'catalog_decode'}),
@@ -93,7 +134,7 @@ ENUMS = {
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed',
         'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls',
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'page_rows', 'page_size_cap', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls',
     'search_requests', 'search_responses', 'search_failed', 'search_http_1xx', 'search_http_2xx',
     'search_http_3xx', 'search_http_4xx', 'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
@@ -101,7 +142,7 @@ ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', '
     'KeyError', 'IndexError', 'AssertionError', 'UnicodeError', 'UnicodeDecodeError',
     'JSONDecodeError', 'TclError', 'AuthBlocked', 'SetupCancelled', 'CaptureCancelled',
     'KeyboardInterrupt', 'SystemExit', 'JsonSafetyError', 'MpnSafetyError', 'MpnUnsupported',
-    '_RecoveryRequired'})
+    '_RecoveryRequired', 'ConsentTimeout'})
 MODULES = frozenset({'coretax', 'coretax_browser', 'coretax_mpn', 'coretax_mpn_browser', 'coretax_mpn_export', 'coretax_mpn_ui', 'coretax_attachments', 'coretax_financial_post', 'coretax_pdf',
     'coretax_exporter', 'coretax_json', 'coretax_json_capture', 'coretax_corporate',
     'spt_gui', *('spt_desktop.' + name for name in (
@@ -168,10 +209,17 @@ def _safe_fields(fields):
         value = fields.get(name)
         if type(value) is int and 0 <= value <= 10_000_000:
             result[name] = value
+    mismatch_count = fields.get('mpn_parent_mismatch_count')
+    if type(mismatch_count) is int and 1 <= mismatch_count <= 7:
+        result['mpn_parent_mismatch_count'] = mismatch_count
     for name in ('exit_code',):
         value = fields.get(name)
         if type(value) is int and -(2 ** 31) <= value < 2 ** 32:
             result[name] = value
+    for name in ('table_click_ms', 'table_poll_ms', 'table_idle_ms', 'table_verify_ms', 'table_dom_ms'):
+        value = fields.get(name)
+        if type(value) in (int, float) and 0 <= value <= 604_800_000:
+            result[name] = round(value, 2)
     value = fields.get('duration_ms')
     if type(value) in (int, float) and 0 <= value <= 604_800_000:
         result['duration_ms'] = round(value, 2)

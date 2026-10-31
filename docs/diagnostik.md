@@ -69,6 +69,162 @@ diagnostik ini sendiri belum membuktikan masalah live telah selesai. Penyiapan
 sesi Accounting mendahului capture dan tidak menyumbangkan bukti sumber;
 status akhir tetap memerlukan inventaris MPN, detail, drain, dan publikasi.
 
+### Tahap penolakan Corporate JSON / MPN (#143)
+
+Pada build setelah perbaikan observabilitas #143, `corporate.observe_unavailable`
+menandai kegagalan eligibilitas observer Corporate sebelum fallback penuh DOM
+dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
+`panel`, `form`, `l3`, `l11a`, `l1d`, `l8`, `l7`,
+`l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
+nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
+Corporate verified. Khusus `corporate_observer_stage=l3`, sub-observer
+mencatat `corporate_l3_reason` dari 19 kategori tetap yang memisahkan pin/build,
+hash sumber MAIN (`main_digest`), hash sumber VENDOR (`vendor_digest`),
+jumlah tabel L3 (`table_count`), lifetime komponen awal/akhir,
+sumber skrip, struktur form/grid, rantai owner,
+judul/metadata tabel, paginator, bentuk request, footer, offset dan katalog
+referensi. Misalnya `table_structure`, `reference_request`, dan
+`grid_or_footer_missing`. Nilai kategori tidak mengambil string, ID,
+hash/URL atau isi dari browser. Field yang tidak ada bukan bukti tahap sukses.
+Refusal tetap mengembalikan `None` dan memilih fallback seluruh record ke DOM;
+verifikasi sumber, identitas, dan pembatasan tetap wajib.
+
+Untuk penolakan L3 `table_count`, `corporate_l3_table_shape` mengklasifikasikan
+hasil pembacaan struktur dari form yang sama hanya sebagai `zero`, `one`,
+atau `more_than_two`; angka asli, isi tabel, caption, dan selector detail
+tidak dicatat. Syarat **tepat dua tabel** tetap berlaku. Kategori ini
+menentukan pemeriksaan kepemilikan DOM berikutnya, bukan izin menerima
+bentuk tabel baru atau menonaktifkan fallback. Bila tabel lebih dari dua,
+`corporate_l3_extra_layout` hanya mengklasifikasikan pasangan grid sumber
+terinspeksi dan tabel tambahan sebagai `reviewed_pair_hidden_extra`,
+`reviewed_pair_visible_extra`, atau `reviewed_pair_unproved`. Seluruhnya
+tetap menolak JSON native. Tidak ada isi DOM, selector yang bersifat dinamis,
+atau jumlah mentah yang dicatat. Untuk kasus `reviewed_pair_visible_extra`,
+`corporate_l3_extra_owner` hanya mencatat `nested_in_reviewed_table`,
+`reviewed_grid_extra`, `other_form_owner`, `mixed_owners`,
+`reviewed_pair_unproved`, atau `no_visible_extra` setelah pemeriksaan
+struktur DOM dalam form yang sama. Tidak ada tabel tambahan yang
+diterima sebagai data sumber native berdasarkan kategori tersebut.
+
+Pada langkah `open → search` MPN, trial click tetap satu kali uji aksi dan
+klik nyata hanya sekali. Klik Search memiliki batas paling lama 5 detik,
+selalu dibatasi sisa deadline persiapan 45 detik sejak DOMContentLoaded;
+kontrol dropdown dan aksi lain tetap menggunakan batas 1 detik. Timeout
+klik nyata tidak dicoba ulang karena permintaan mungkin sudah terdistribusi,
+sehingga jalur PARTIAL dan bukti sumber asli tetap berlaku.
+
+Sebelum setiap upaya membersihkan filter periode setelah respons MPN
+yang belum terbukti tidak-terfilter, `mpn.unfiltered_refused` mencatat
+`mpn_filter_reason` dari pilihan `request_shape`, `date_filter_present`,
+`additional_filter`, `cancelled_filter_missing`, atau
+`cancelled_filter_modified` serta `mpn_clear_state` dari `ambiguous`,
+`absent`, `present`, atau `hidden`. Kategori ini hanya diturunkan dari
+bentuk *request sumber asli* dan status kontrol clear yang telah
+diinspeksi. Tidak ada nama filter, tanggal, nilai, kode, identitas,
+pajak, URL ataupun DOM content yang direkam; nilai enum ini bukan
+izin menerima sumber terfilter. Jalur Search dua percobaan, pemilihan
+kontrol dan `MpnUnsupported` tetap sama. Status `present` hanya berarti
+tombol clear teramati, **bukan** bukti bahwa klik berhasil menghapus
+filter pada request berikutnya. Lookup sekarang mencari clear hanya di dalam
+satu `ui-grid` asli yang menjadi ancestor dari tepat satu `p-table`
+hasil inventory; ini juga mencakup clear yang ditempatkan sebagai
+saudara (sibling) tabel di header grid. Lookup tidak memindai
+halaman secara umum. Filter sumber harus dibuktikan hilang pada
+respons Search berikutnya sebelum inventory digunakan.
+
+`mpn.capture_failed` mencatat kegagalan terminal MPN dengan enum
+`mpn_capture_stage`: `session` (pembuatan UI termasuk inisialisasi),
+`open` (kesiapan UI), `parent_inventory`, `parent_detail`, atau
+`final_drain`. Bila terjadi saat `open`, `mpn_ui_stage` dapat menunjukkan
+`navigation`, `owner`, `environment`, `source`, `dropdowns`,
+`search`, `period_clear`, atau `ready` (kategori tahap saja,
+bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
+sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
+penolakan kepemilikan sumber; event baru bukan penggantinya.
+
+`mpn.catalog_preparation` adalah kategori terpisah selama
+navigasi normal *sebelum* source-binding `AccountingUI` dimulai.
+`request_seen` berarti sebuah GET yang tepat cocok dengan rute
+referensi, method, frame utama dan tipe resource telah *teramati* selama
+navigasi; `not_observed` berarti tidak ada GET yang memenuhi syarat.
+Event ini **tidak** mengunduh, mengikat, menyimpan atau menerima byte katalog,
+dan bukan izin untuk mengambil katalog dari cache/bekas halaman. Listener
+sementara selalu dilepas saat navigasi selesai maupun gagal. Gabungkan
+kategori ini dengan `mpn.catalog_readiness` pada tahap detail untuk
+membedakan kemungkinan katalog dimuat sebelum listener sumber aktif.
+Keduanya tetap tidak membuktikan kecocokan identitas pembayaran.
+
+Status tambahan `mpn.catalog_readiness` memisahkan `accepted` (byte referensi
+asli berhasil diikat), `observed_unbound` (GET sumber yang memenuhi syarat
+teramati tetapi belum ada katalog yang diterima), dan `not_observed`
+(tidak ada GET referensi yang memenuhi syarat selama sesi). Ini **bukan**
+perintah untuk melakukan fetch baru, memakai cache/browser state, atau
+mengganti nama/label. Jika hanya jenis pencatatan DOM berbeda dan inventaris
+kode `ACCOUNTING_TYPE` asli tidak tersedia, penolakan dilakukan sebagai
+`MpnUnsupported`, bukan mengklaim kontradiksi `MpnSafetyError` yang
+belum dibuktikan; tombol detail tetap **tidak** diklik. Mismatch kolom
+independen lain tetap fatal.
+
+`mpn.parent_binding_mismatch` dicatat tepat sebelum penolakan fatal saat
+identitas baris induk yang terlihat di DOM berbeda dari sumber asli.
+`mpn_parent_field` hanya kategori kolom **pertama** yang berbeda:
+`accounting_type`, `accounting_detail`, `currency`, `revenue_code`,
+`payment_code`, `tax_period`, atau `transaction_number`.
+`mpn_parent_secondary_field` adalah kategori kolom berbeda
+kedua atau `none` bila hanya satu kolom; `mpn_parent_mismatch_count`
+adalah jumlah posisi yang berbeda dengan batas keras 1 sampai 7.
+Ketiga kategori berasal dari **perbandingan identitas sumber dan DOM yang
+sudah ada**, tidak mengandung nilai pembanding, dan tidak mengizinkan aksi.
+Jika katalog tidak ada *namun* kolom lain juga berbeda, `MpnSafetyError`
+tetap fatal. Kategori pertama-kedua tidak menjelaskan sendiri mengapa
+teks atau data berbeda.
+
+Tidak ada nilai DOM, data sumber, identitas transaksi, nomor pajak, atau
+jumlah rupiah di log. Bila `mpn_parent_field=accounting_type`,
+`mpn_accounting_type_projection` membedakan `catalog_label` (label dari
+referensi asli yang lolos syarat), `raw_code_fallback` (kode ada di inventaris
+namun tidak memiliki label yang boleh digunakan), `catalog_missing`
+(inventaris tidak tersedia), `code_not_in_catalog` (kode tidak ada dalam
+inventaris), dan `source_code_missing`. Kelima nilai adalah enum yang ditetapkan
+dalam kode, tidak pernah teks dari Coretax. Semua kategori tetap **bukan**
+pembuktian bahwa label atau DOM harus diganti. Kategori mismatch itu sendiri
+belum membuktikan apakah perbedaannya berasal dari label/mapping, pergantian data,
+atau identitas yang salah; `MpnSafetyError` tetap fatal dan tombol detail
+tidak diklik.
+
+State pagination memeriksa seluruh urutan teks node baris dengan
+`textContent`, bukan `innerText`. Ini menghindari
+permintaan layout browser pada tiap polling, tetapi **tidak** mengubah
+`TABLE_JS` sebagai sumber nilai tabel, klik paginator, deadline,
+atau aturan PARTIAL; efektivitas di Coretax masih perlu pengujian nyata.
+
+Capture DOM dengan paginator sekarang memiliki **batas elapsed 180 detik per
+satu tabel** (bukan per keseluruhan return). Sebelum setiap klik halaman berikutnya,
+Stop diprioritaskan lalu batas elapsed diperiksa. Saat habis, tabel menjadi
+`PARTIAL` dengan alasan tetap `Table capture elapsed budget exceeded`, data
+yang sudah diamati tidak disertifikasi lengkap, dan tidak ada klik pagination
+berikutnya. Satu operasi browser yang sedang berlangsung masih tunduk pada
+timeout lama hingga selesai; angka ini bukan hard interrupt 180 detik ataupun
+izin retry klik yang tidak pasti. Pada saat batas terlampaui,
+event `table.elapsed_budget` mengirim enum
+`table_elapsed_stage=before_next_click` atau `state_poll` serta
+jumlah halaman yang sudah dicatat. Kategori ini tidak menambah
+klik, tidak memulihkan data yang hilang, dan belum membuktikan penyebab
+waktu lambat. Pembacaan teks sel tabel menggunakan traversal text node
+tanpa clone/mutasi DOM dan mempertahankan kontrak pembersihan teks yang
+sama; regresi sintetis membandingkan hasil sebelum dan sesudah.
+Pada halaman setelah klik paginator, pembacaan DOM kini
+memakai batas Playwright maksimal 10 detik dan sisa budget tabel. Apabila
+pembacaan itu timeout, event `table.dom_read_failed` dengan kategori tetap
+`table_dom_stage=post_pagination` direkam; hanya halaman yang telah lolos
+pembacaan sebelumnya dipertahankan sebagai PARTIAL, tanpa retry klik yang
+sudah terkirim atau mengarang isi halaman terbaru. Batas ini bukan jaminan
+interupsi wall-clock bila proses browser macet. Perlu acceptance live untuk dampaknya.
+
+Tidak ada perubahan pada isi checkpoint, `COMPLETE`/`PARTIAL`, Stop, retry,
+atau kebijakan sumber/identitas. Log lama tidak memiliki field baru;
+perbandingan memerlukan build yang benar-benar menjalankan versi ini.
+
 ## Diagnostik Cek Kredensial
 
 Pada build dengan perbaikan redirect, INFO mencatat `auth.state` dan `auth.result` untuk pengecekan yang sudah membuka browser. Log versi sebelumnya hanya mempunyai fase/status terminal; `LOGIN_BLOCKED` atau `LOGIN_MANUAL` saja tidak membuktikan penyebabnya. Perubahan ini tidak menambahkan informasi ke log lama.
@@ -275,3 +431,128 @@ CLI dan checkpoint/audit yang sudah ada masih dapat mengandung data sumber. Kebi
 `spt_desktop/diagnostics.py` memegang schema, sanitasi, antrian, session dan instrumentasi fase. `diagnostic_store.py` memegang file/lock/rotasi/retensi. Tidak ada konfigurasi root logger atau filesystem saat import; setiap proses membuat sink sendiri. Kedua modul masuk allowlist worker/frozen, tanpa dependensi baru.
 
 Dasar desain: [Python Logging Cookbook](https://docs.python.org/3.14/howto/logging-cookbook.html) dan [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html). Bukti aktual gate dan artifact ada pada PR logging; dokumen ini bukan klaim live acceptance.
+
+
+### Perbedaan kegagalan capture dan persetujuan penggantian file
+
+Alur *overwrite* hanya bisa mempublikasikan file terpilih setelah respons
+eksplisit dari operator. `consent.requested` di controller berarti permintaan
+diterima antrean, **bukan** bukti dialog tampil. `consent.dialog_presented`
+dicatat **sekali** saat jendela dialog *overwrite* telah memperoleh peristiwa
+`Map` dan benar-benar `winfo_viewable`; event hanya berisi jenis keputusan
+`overwrite` dan **jumlah** berkas. Event ini belum membuktikan operator
+melihat atau menyetujui dialog. Dialog dibawa di atas jendela aplikasi tanpa
+mengaktifkan tombol persetujuan.
+
+`consent.replied` tetap menjadi bukti persetujuan/penolakan yang dikirim
+ke worker. Jika tidak ada jawaban valid hingga batas 600 detik, worker
+mencatat `consent.timeout` dengan jenis `overwrite` atau `selection`,
+mengakhiri operasi dengan status **BLOCKED** (exit 3) dan pesan yang
+menyebut keputusan belum diterima. Ini **bukan** kegagalan scraping
+DOM, tidak mempromosikan PARTIAL menjadi COMPLETE, tidak otomatis menyetujui
+overwrite, dan tidak menimpa file lama. Hasil lokal dan checkpoint yang
+sudah diverifikasi tetap dipertahankan tanpa publikasi baru.
+
+
+### Tindak lanjut Issue #143: ukuran L3-B, rute katalog, dan L3 ekstra
+
+Pengujian DOM 30 Oktober 2026 pukul 14.46?14.51 WIB pada build PR #153
+masih gagal membaca halaman setelah pagination untuk **form 4/tabel 3**.
+Tabel L3-B sebelumnya memilih ukuran 500 baris. Untuk mengurangi risiko
+halaman besar yang tidak responsif, capture DOM sekarang memakai **paling
+banyak 100 baris per halaman** pada pemilih ukuran halaman asli yang
+terinspeksi. Tidak ada sintesis endpoint, offset, atau data sumber.
+Proses ini mungkin memerlukan lebih banyak klik/halaman, tetapi jumlah
+baris, urutan, Stop, paginasi ulang yang dilarang, sumber total, dan
+batas 180 detik setiap tabel tetap harus diverifikasi. Apabila opsi
+100 atau lebih kecil tidak tersedia, tidak ada opsi rekaan; tabel
+tidak otomatis dianggap lengkap. Keberhasilan hanya dapat ditentukan
+dengan *live acceptance* pada build yang sesuai.
+
+Ketika baik `mpn.catalog_preparation` maupun `mpn.catalog_readiness`
+bernilai `not_observed`, field `mpn_catalog_route_shape` mencatat
+`alternate_reference_get` jika GET XHR/fetch di frame utama teramati
+ke **prefix rute referensi id-ID yang sama, tetapi URL-nya bukan URL
+katalog tepat yang telah ditinjau**, atau `not_observed` jika tidak.
+Ini hanya identifikasi **kemungkinan perubahan rute**; tidak ada
+URL, query, body, label, kode, identitas, atau byte respons yang
+dibaca/direkam. Endpoint alternatif tidak boleh menjadi sumber
+data atau mengizinkan klik detail; seluruh pin/validasi yang ada
+tetap berlaku.
+
+`mpn_parent_tertiary_field` menyimpan kategori kolom berbeda ketiga
+dari tujuh kolom terverifikasi, atau `none` jika tidak ada. Semua
+kategori berasal dari allowlist, tidak mencatat nilai sumber/DOM.
+Bila mismatch lebih dari satu kolom, `MpnSafetyError` tetap fatal.
+
+Mode JSON-hybrid untuk L3 dengan tabel ketiga yang terlihat tetap
+menolak sumber native dan memilih fallback DOM, sekalipun dua grid
+asli dapat ditemukan. Tes sintetis mereplikasi bentuk ini tanpa
+mengakses portal atau data wajib pajak. **Tes sintetis bukan bukti
+live acceptance**.
+
+### Issue #143: per-page DOM timing dan bentuk rute katalog MPN
+
+table.page_timing mencatat pengukuran hanya sesudah halaman tabel selesai
+terbaca dan tetap terverifikasi: pages, page_rows, page_size_cap,
+duration_ms, table_poll_ms, table_idle_ms, dan table_dom_ms.
+table_page_stage=initial|advanced membedakan halaman pertama dan hasil
+paginasi. Semua nilai waktu adalah angka terbatas, tidak menyertakan teks sel,
+URL, identitas, label, request, atau response. Batas 180 detik dan keputusan
+PARTIAL tidak diubah. Event table.elapsed_budget masih mencatat stage
+ketika halaman berikutnya tidak dapat diterima sebagai selesai.
+
+Pada build PR #155, batas L3-B masih **100** baris per halaman. Pengujian sintetis
+membandingkan opsi UI asli 100 dan 250 yang tersedia, tanpa mengganti
+kebijakan live; perbandingan hanya bisa memilih ukuran berikutnya setelah
+data time-per-page live memperlihatkan penyebab lambat yang terukur.
+
+mpn_catalog_variant_kind=not_observed|query_variant|path_variant
+membedakan rute original GET referensi yang tidak tepat dari URL katalog
+yang sudah disetujui, hanya pada frame utama dan origin yang sama. Ini
+bukti bentuk rute saja, bukan izin membaca, mengikat, atau memanfaatkan
+respons rute tersebut. Mismatch parent tetap fatal; tidak ada klik Detail
+ketika sumber belum terbukti dan Issue #143 tetap terbuka hingga live
+acceptance build-matched.
+
+
+### Issue #143: uji batas L3-B 250 baris (31 Oktober 2026)
+
+Build ac195741 mengukur tabel L3-B 41 halaman berisi 4.100 baris
+dengan batas 100 per halaman dari sumber total 4.654 baris.
+Tabel PARTIAL setelah 182,87 detik dan membutuhkan enam halaman.
+Waktu klik dan verifikasi belum terpisah dari durasi lainnya.
+Diagnostik baru mencatat table_click_ms dan table_verify_ms hanya
+untuk halaman terverifikasi, tanpa informasi identitas atau nilai.
+
+Untuk L3-B dengan form, komponen dan grup asli yang terbukti,
+kandidat memakai opsi ukuran halaman UI paling banyak 250; 500
+dilarang. Opsi harus tersedia dan pilihan aktif <=250 terverifikasi.
+Tanpa opsi aman, capture ditolak, bukan memaksakan klik/API baru.
+Tabel lain tetap <=100. Batas 180 detik, Stop, larangan klik ulang
+setelah state tidak pasti, rekonsiliasi total/baris dan PARTIAL
+tetap berlaku. Perlu izin terpisah untuk tes live build berikutnya.
+
+
+### Issue #143: DOM pascapaginasi gagal pada batas 250 (31 Oktober 2026)
+
+Live test frozen Python 3.14.8 build `22239d7` (Actions `41176978943`)
+memilih opsi UI L3-B 250 baris. Halaman awal terverifikasi 250 baris
+(dibaca sekitar 168 ms), namun pembacaan DOM setelah klik pertama
+mengalami `TimeoutError` pada `coretax_browser.py:404` dengan
+`table_dom_stage=post_pagination`. Tabel membutuhkan 19 halaman untuk
+total sumber 4.654 baris; tabel ini PARTIAL setelah sekitar 62,32 detik.
+Status keseluruhan job PARTIAL; MPN mempunyai kendala independen di #156.
+
+Kegagalan itu belum membuktikan penyebab: klik paginator, penggantian
+state, waktu idle, verifikasi state, dan pembacaan DOM harus dibedakan.
+Pada kegagalan DOM pascapaginasi, `table.dom_read_failed` menyertakan
+`page_size_cap`, jumlah halaman *sebelumnya* yang telah terverifikasi,
+`duration_ms`, `table_click_ms`, `table_poll_ms`, `table_idle_ms`,
+`table_verify_ms`, dan `table_dom_ms`. Semua berupa angka terbatas
+dan tidak mencatat row/DOM, URL, identitas, nilai sel, request/response,
+atau pesan exception bebas. Jika halaman belum terverifikasi, tidak
+boleh menaikkan penghitung halaman, mengulang klik yang tidak pasti,
+atau menyatakan COMPLETE. Batas 180 detik, Stop, total sumber, guard
+MPN, dan pemilihan ukuran UI lainnya tetap sama. Hasil tes sintetis
+bukan bukti keberhasilan live acceptance.

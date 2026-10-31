@@ -22,7 +22,8 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            body_dialog=False, existing_dialog=False, duplicate_parent=None, reference_type='Payment',
            parent_amounts=None, contradictory_parent=None, pending_child_navigation=None,
            dropdown_close_delay=0, catalog_response=None, parent_detail_codes=None,
-           parent_detail_display=None, dialog_close_delay=0):
+           parent_detail_display=None, dialog_close_delay=0,
+           period_clear_in_grid=False, ambiguous_period_clear=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -83,6 +84,15 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         main = main.replace("document.querySelector('.p-dialog-header-close').onclick=()=>document.getElementById('isShowDetail').style.display='none';",
             "document.querySelector('.p-dialog-header-close').onclick=()=>{window.syntheticCloseClicks=(window.syntheticCloseClicks||0)+1;"
             "setTimeout(()=>document.getElementById('isShowDetail').style.display='none',"+str(dialog_close_delay)+");};")
+    if period_clear_in_grid:
+        # Same inspected ui-grid; control is a sibling of p-table, not
+        # contained in p-table. It resets the synthetic default date filter.
+        main = 'let syntheticPeriodCleared=false;' + main
+        main = main.replace('searches<=2||STUCK',
+                            '!syntheticPeriodCleared&&(searches<=2||STUCK)')
+        main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
+                            "document.querySelector('#filterPeriodCode .p-dropdown-clear-icon').onclick=()=>{syntheticPeriodCleared=true;};"
+                            'loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);')
     if dropdown_close_delay != 0:
         removal = ("panel.classList.add('synthetic-closing');" if dropdown_close_delay is None else
                    "panel.classList.add('synthetic-closing');setTimeout(()=>panel.remove()," + str(dropdown_close_delay) + ");")
@@ -183,6 +193,16 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
       <acc-balance-sheet-light-grid><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></acc-balance-sheet-light-grid>
       <p-dialog id="isShowDetail" style="display:none"><div role="dialog"><span class="p-dialog-title">Detail Transaksi</span><button class="p-dialog-header-close">Close</button><ui-grid><p-table><table><thead></thead><tbody></tbody></table></p-table></ui-grid></div></p-dialog>
       </acc-balance-sheet-light></body></html>'''
+    if period_clear_in_grid or ambiguous_period_clear:
+        owner = '<acc-balance-sheet-light-grid><ui-grid><p-table>'
+        extra = ('<div id="filterPeriodCode"><button type="button" '
+                 'class="p-dropdown-clear-icon" aria-label="Clear period">X</button></div>')
+        if ambiguous_period_clear:
+            extra += ('<div id="filterPeriodCode"><button type="button" '
+                      'class="p-dropdown-clear-icon">X</button></div>')
+        assert html.count(owner) == 1
+        html = html.replace(owner, '<acc-balance-sheet-light-grid><ui-grid>'
+                            + extra + '<p-table>', 1)
     if delayed_page_size:
         html = html.replace('</table></p-table>', '</table><div class="p-paginator">'
             '<span class="p-dropdown-label">10</span><button type="button" class="p-dropdown-trigger">Size</button>'

@@ -17,6 +17,7 @@ Exception-handling policy for this module:
 
 from spt_desktop import diagnostics
 import time
+from time import perf_counter as _diagnostic_clock
 import re
 import json
 import os
@@ -35,10 +36,18 @@ from coretax_inventory import (InventoryFilterRoute, plan_year_filters, read_per
                                validate_partition_response, prove_period_equivalence)
 
 CELL_JS = r'''(cell) => {
- const clone=cell.cloneNode(true);
- clone.querySelectorAll('.p-column-title,button,script,style,.p-hidden-accessible').forEach(e=>e.remove());
- clone.querySelectorAll('input,textarea,select').forEach(e=>e.remove());
- let text=(clone.textContent||'').replace(/\s+/g,' ').trim();
+ // Each large-page read previously deep-cloned every cell and mutated the
+ // clones. Traverse the original text nodes without any DOM writes; exclude
+ // precisely the same descendants (but not the cell itself) as the clone.
+ const ignored='.p-column-title,button,script,style,.p-hidden-accessible,input,textarea,select';
+ const walker=cell.ownerDocument.createTreeWalker(cell,NodeFilter.SHOW_TEXT);
+ const fragments=[];
+ for(let node=walker.nextNode();node;node=walker.nextNode()){
+   const matched=node.parentElement?.closest(ignored);
+   if(!matched || matched===cell || !cell.contains(matched))
+     fragments.push(node.nodeValue||'');
+ }
+ let text=fragments.join('').replace(/\s+/g,' ').trim();
  const vals=[...cell.querySelectorAll('input:not([type=password]):not([type=hidden]),textarea,select')]
  .filter(e=>e.getAttribute('role')!=='combobox' && !e.closest('.p-hidden-accessible') && (!(e.type==='radio'||e.type==='checkbox')||e.checked))
  .map(e=>(e.type==='checkbox'||e.type==='radio') ? String(e.checked) : (e.tagName==='SELECT' ? e.selectedOptions[0]?.textContent||e.value : e.value));
@@ -219,7 +228,10 @@ FIELDS_JS = r'''(root) => {
  return fields;
 }'''.replace('GROUP', GROUP_JS)
 
-STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.innerText)})"
+# Change detection only, not captured data: textContent avoids forced layout
+# on every 500-row pagination poll. Full row sequence remains compared; an
+# unobserved change fails closed under the existing state-poll deadline.
+STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
 
 class CaptureCancelled(KeyboardInterrupt):
@@ -282,12 +294,22 @@ def _click_table_paginator(control, container, check_cancel):
         raise RuntimeError('Unavailable or unsupported pagination control')
 
 
+TABLE_CAPTURE_BUDGET_SECONDS = 180
+
+
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
-    """Baca seluruh halaman tabel dan rekonsiliasi jumlah baris sebelum footer."""
+    """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
     _check_cancel(check_cancel)
+    capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    if max_page_size == 250:
+        # A previously selected 500-row page must not bypass the pilot limit.
+        label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+        selected = label.inner_text().strip() if label else ''
+        if not selected.isascii() or not selected.isdecimal() or int(selected) > 250:
+            raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
         _click_table_paginator(first, container_handle, check_cancel)
@@ -306,12 +328,26 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             raise RuntimeError('Table pagination did not return to the first page')
     if container_handle.query_selector(previous_selector):
         raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    first_read_started = _diagnostic_clock()
     result = table.evaluate(TABLE_JS)
+    first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
+    diagnostics.record('table.page_timing', table_page_stage='initial',
+                       pages=1, page_rows=len(result['rows']), page_size_cap=max_page_size,
+                       duration_ms=first_read_ms, table_dom_ms=first_read_ms)
     result.update(name=f'Tabel {ordinal}', pages=1, complete=True)
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
     seen = set()
     while container_handle.query_selector(next_selector):
         _check_cancel(check_cancel)
+        # Do not issue another paginator action after a stalled table exhausts
+        # its total budget. Keep captured rows but never certify COMPLETE.
+        if time.monotonic() >= capture_deadline:
+            result['complete'] = False
+            result['warning'] = 'Table capture elapsed budget exceeded'
+            diagnostics.record('table.elapsed_budget', level='WARNING',
+                               table_elapsed_stage='before_next_click',
+                               pages=result['pages'])
+            break
         if result['pages'] >= max_pages:
             result['complete'] = False
             result['warning'] = f'Table page limit {max_pages} reached'
@@ -322,23 +358,70 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             result['warning'] = 'Repeated table pagination state'
             break
         seen.add(state)
+        page_started = _diagnostic_clock()
         _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
-        deadline = time.monotonic() + 30
+        poll_started = _diagnostic_clock()
+        click_ms = (poll_started - page_started) * 1000
+        deadline = min(time.monotonic() + 30, capture_deadline)
         while container_handle.evaluate(STATE_JS) == state:
             _check_cancel(check_cancel)
             if time.monotonic() >= deadline:
                 result['complete'] = False
-                result['warning'] = 'Table pagination did not advance'
+                expired = time.monotonic() >= capture_deadline
+                result['warning'] = ('Table capture elapsed budget exceeded'
+                                     if expired else 'Table pagination did not advance')
+                if expired:
+                    diagnostics.record('table.elapsed_budget', level='WARNING',
+                                       table_elapsed_stage='state_poll',
+                                       pages=result['pages'])
                 break
             page.wait_for_timeout(120)
         if not result['complete']:
             break
+        poll_ms = (_diagnostic_clock() - poll_started) * 1000
+        idle_started = _diagnostic_clock()
         wait_idle(page)
+        idle_ms = (_diagnostic_clock() - idle_started) * 1000
+        verify_started = _diagnostic_clock()
         if container_handle.evaluate(STATE_JS) in seen:
             result['complete'] = False
             result['warning'] = 'Repeated table pagination state'
             break
-        data = table.evaluate(TABLE_JS)
+        _check_cancel(check_cancel)
+        # The previous live failure occurred inside a single post-page DOM
+        # evaluation, not the cooperative paginator budget branch.
+        # Do not repeat that dispatched click if the DOM read cannot finish.
+        if time.monotonic() >= capture_deadline:
+            result['complete'] = False
+            result['warning'] = 'Table capture elapsed budget exceeded'
+            diagnostics.record('table.elapsed_budget', level='WARNING',
+                               table_elapsed_stage='before_dom_read',
+                               pages=result['pages'])
+            break
+        verify_ms = (_diagnostic_clock() - verify_started) * 1000
+        dom_started = _diagnostic_clock()
+        try:
+            data = table.evaluate(TABLE_JS, timeout=min(
+                10000, max(1, int((capture_deadline-time.monotonic())*1000))))
+        except PlaywrightTimeoutError as error:
+            # A post-dispatch read timeout retains only previously verified
+            # rows as PARTIAL; no retry, promotion, or guessed current page.
+            _check_cancel(check_cancel)
+            result['complete'] = False
+            result['warning'] = 'Table DOM read timed out after pagination'
+            # Measure the failed page without accepting its unverified rows or
+            # re-dispatching a paginator click. Only bounded numeric phases leak.
+            diagnostics.record('table.dom_read_failed', level='WARNING',
+                               table_dom_stage='post_pagination', pages=result['pages'],
+                               page_size_cap=max_page_size,
+                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_verify_ms=verify_ms,
+                               table_dom_ms=(_diagnostic_clock() - dom_started) * 1000,
+                               error=error)
+            break
+        dom_ms = (_diagnostic_clock() - dom_started) * 1000
+        _check_cancel(check_cancel)
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:
             if (any(data.get(key) != result.get(key) for key in ('source_structure', 'headers', 'group'))
@@ -352,6 +435,12 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         result['footer'] = data.get('footer', [])
         result['footer_spans'] = data.get('footer_spans', [])
         result['pages'] += 1
+        if result['complete']:
+            diagnostics.record('table.page_timing', table_page_stage='advanced',
+                               pages=result['pages'], page_rows=len(data['rows']),
+                               page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_verify_ms=verify_ms, table_dom_ms=dom_ms)
         if not result['complete']:
             break
     # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.
@@ -362,7 +451,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             result['source_total'] = int(re.sub(r'[^0-9]', '', match.group(1)))
             if len(result['rows']) != result['source_total']:
                 result['complete'] = False
-                result['warning'] = f"Source count {result['source_total']} != captured rows {len(result['rows'])}"
+                result.setdefault('warning', f"Source count {result['source_total']} != captured rows {len(result['rows'])}")
     # Total sumber sering ada di tfoot; masukkan sekali setelah paginasi selesai.
     result['body_row_count'] = len(result['rows'])
     result['rows'].extend(result.get('footer', []))
@@ -576,9 +665,10 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if financial_required and name == 'L3' and table.evaluate(CORPORATE_STRUCTURE_JS, name) == {
                         'form': 'L3', 'component': 'rshshr-citr-l3-grid2',
                         'groups': ['B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
-                    # The reviewed L3-B UI offers 250/500. Other tables/callers
-                    # retain 100; never synthesize an option or a grid request.
-                    max_page_size = 500
+                    # Live 31 Oct: 100 rows exhausted the 180s table budget.
+                    # Use an inspected <=250 option, not 500 or a fabricated
+                    # request; the selected option must pass the bound check.
+                    max_page_size = 250
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
                     captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
                                              max_page_size=max_page_size)
