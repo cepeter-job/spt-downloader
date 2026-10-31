@@ -63,6 +63,7 @@ ENUMS = {
     'table_page_stage': frozenset({'initial', 'advanced'}),
     'table_elapsed_stage': frozenset({'before_next_click', 'state_poll', 'before_dom_read'}),
     'table_dom_stage': frozenset({'post_pagination'}),
+    'table_state_stage': frozenset({'poll', 'verify'}),
     'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
     'corporate_l3_extra_layout': frozenset({'reviewed_pair_hidden_extra',
         'reviewed_pair_visible_extra', 'reviewed_pair_unproved'}),
