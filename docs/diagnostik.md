@@ -589,3 +589,40 @@ sebagai diagnosis ada/tidaknya locator pada saat probe. Ini bukan
 bukti bahwa locator awal gagal, tabelnya benar, atau datanya lengkap.
 `table_dom_ms` dan `duration_ms` dihitung sebelum probe agar tambahan
 waktu probe tidak mengubah metrik sebelumnya. Issue #143 tetap terbuka.
+
+
+### Issue #143: verifikasi tabel dalam snapshot DOM terikat (31 Oktober 2026)
+
+Pada live build `430715d`, tabel L3-B berhasil membaca 10/19 halaman
+(2.500/4.654 baris). Pergantian halaman memerlukan ~16–17 detik:
+pembacaan state verifikasi umumnya ~7,3–8,3 detik disusul DOM
+~7,8–8,2 detik. Setelah kegagalan halaman berikutnya,
+`table_locator_state=not_attached`, tetapi ini **tidak** membuktikan
+kapan/kenapa elemen terlepas. Capture 180 detik tetap PARTIAL dan
+gagalnya identitas MPN tetap terpisah (#156).
+
+Percobaan terikat ini menggantikan verifikasi state dan pembacaan tabel
+berurutan dengan satu `TABLE_VERIFIED_JS` yang menggunakan pemilik
+paginator awal (`p-table`/container tersimpan) dan membacanya secara
+atomik dengan seluruh state raw-row asli. Snapshot ditolak sebelum
+menambahkan baris ketika tabel berpindah ke pemilik lain, metadata
+header/grup berubah, atau state halaman berulang. Rebinding tabel di
+dalam pemilik yang sama boleh diuji hanya dengan pembuktian struktur
+tersebut. Tidak ada klik paginator ulang, request baru, atau penerimaan
+baris tanpa pemilik dan metadata yang terverifikasi.
+
+`table.identity_refused` mencatat hanya kategori
+`table_identity_reason=owner_changed|metadata_changed|repeated_state`,
+jumlah halaman terverifikasi sebelumnya, batas ukuran halaman, dan
+durasi terbatas. Tidak mencatat nama, header, nilai sel, DOM, URL,
+permintaan, atau respons. `table_verify_ms=0` pada halaman baru karena
+verifikasi state dilakukan di dalam evaluasi `table_dom_ms` yang sama;
+jangan bandingkan dua metrik fase ini lintas build secara langsung.
+
+Perubahan ini menguji hipotesis pengurangan pembacaan state ganda dan
+membatasi penerimaan data pada pemilik/metadata yang sama. Bukti
+synthetic browser RED→GREEN bukan bukti peningkatan kecepatan atau
+keberhasilan live Coretax. Batas 180 detik, Stop, opsi L3-B maksimal
+250, opsi tabel lain maksimal 100, jumlah sumber, status PARTIAL dan
+pengamanan MPN tetap dipertahankan. Issue #143 tetap OPEN sampai ada
+live acceptance build-matched yang diotorisasi terpisah.

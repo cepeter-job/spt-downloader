@@ -197,7 +197,7 @@ def test_post_pagination_dom_read_timeout_retains_verified_rows_without_retry(
     calls = []
 
     def bounded_evaluate(source, *args, **kwargs):
-        if source == driver.TABLE_JS:
+        if source in (driver.TABLE_JS, driver.TABLE_VERIFIED_JS):
             calls.append(kwargs.get('timeout'))
             if len(calls) == 2:
                 raise BrowserTimeout('SYNTHETIC_PRIVATE_DOM_READ')

@@ -567,7 +567,7 @@ def synthetic_listing_browser(browser, monkeypatch, *, unknown=False, unsafe=Fal
     original = Locator.evaluate
 
     def observed_evaluate(locator, expression, *args, **kwargs):
-        if expression == driver.TABLE_JS and urlsplit(locator.page.url).path.startswith('/returnsheets/id-ID/submitted-returnsheets/'):
+        if expression in (driver.TABLE_JS, driver.TABLE_VERIFIED_JS) and urlsplit(locator.page.url).path.startswith('/returnsheets/id-ID/submitted-returnsheets/'):
             metrics['submitted_full_grid_reads'] += 1
         return original(locator, expression, *args, **kwargs)
 
