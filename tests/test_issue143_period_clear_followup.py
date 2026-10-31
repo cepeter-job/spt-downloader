@@ -109,3 +109,38 @@ def test_ambiguous_period_clear_never_clicks_either_control(
     assert events[0]['mpn_clear_state'] == 'ambiguous'
     assert len(metrics['detail']) == 0
     assert run['mpn']['status'] == 'PARTIAL'
+
+
+def test_duplicate_period_widgets_with_one_clear_refuse_action_and_detail(
+        browser, tmp_path, monkeypatch):
+    from coretax_mpn_browser import collect_mpn
+    with portal(browser, monkeypatch, period_clear_in_grid=True,
+                duplicate_period_widget=True) as (page, metrics):
+        run = scope_run()
+        with diagnostics.session(tmp_path / 'log', 'worker') as log:
+            collect_mpn(page, run, tmp_path)
+            assert log.flush()
+    events = [r for r in records(tmp_path / 'log')
+              if r['event'] == 'mpn.unfiltered_refused']
+    assert len(events) == 1
+    assert events[0]['mpn_period_widget_state'] == 'ambiguous'
+    assert events[0]['mpn_clear_state'] == 'present'
+    assert not metrics['detail'], 'An ambiguous period widget cannot authorize Detail'
+    assert not run['complete'] and run['mpn']['status'] == 'PARTIAL'
+    assert run['mpn']['rows'] == []
+
+
+def test_period_widget_diagnostic_is_allowlisted(tmp_path):
+    private = 'SYNTHETIC_PRIVATE_PERIOD_OR_ACCOUNT'
+    with diagnostics.session(tmp_path / 'log', 'worker') as log:
+        diagnostics.record('mpn.unfiltered_refused', mpn_period_widget_state='absent',
+                           raw=private)
+        diagnostics.record('mpn.unfiltered_refused', mpn_period_widget_state=private,
+                           raw=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path / 'log')
+            if r['event'] == 'mpn.unfiltered_refused']
+    assert len(rows) == 2
+    assert rows[0]['mpn_period_widget_state'] == 'absent'
+    assert 'mpn_period_widget_state' not in rows[1]
+    assert private not in json.dumps(rows)
