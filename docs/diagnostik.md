@@ -626,3 +626,32 @@ keberhasilan live Coretax. Batas 180 detik, Stop, opsi L3-B maksimal
 250, opsi tabel lain maksimal 100, jumlah sumber, status PARTIAL dan
 pengamanan MPN tetap dipertahankan. Issue #143 tetap OPEN sampai ada
 live acceptance build-matched yang diotorisasi terpisah.
+
+
+### Issue #161: rebind tabel hanya di dalam owner paginator asal (31 Oktober 2026)
+
+Live build `79e351a` / Actions `41198640120` mencatat dua
+`table.dom_read_failed` pasca-pagination pada batas 250 dan 100
+baris, masing-masing ~10 detik, dan probe setelah kegagalan menghasilkan
+`table_locator_state=not_attached`. Ini hanya membuktikan keadaan
+locator pada waktu probe, bukan kapan tabel terlepas.
+
+Jalur setelah klik kini memanggil `TABLE_VERIFIED_JS` pada **ElementHandle
+owner paginator yang sudah diperiksa sebelum klik**, bukan meminta Playwright
+mencari ulang `Locator` tabel lama. Satu callback browser menemukan tabel
+yang tepat **hanya di bawah owner yang sama** dan memerlukan tepat satu tabel
+dengan `closest('p-table')` / `closest('.p-datatable')` yang cocok.
+Baru setelah itu `TABLE_JS` dan state seluruh baris dibaca dalam
+snapshot sinkron yang sama. Pergantian wrapper tabel di bawah owner yang sama
+dapat diterima bila header/grup, state pagination, dan jumlah sumber cocok.
+
+Bila owner terlepas, tidak ada tabel miliknya, atau terdapat lebih dari satu
+tabel milik owner, capture menjadi PARTIAL sebelum menggabungkan baris;
+`table.identity_refused` mengeluarkan kategori terbatas
+`owner_changed|table_missing|table_ambiguous`. Tidak ada pencarian
+owner baru di seluruh halaman, klik ulang, request tambahan, atau pelebaran
+batas 250/100 dan 180 detik. Stop, footer tunggal, source-total, identitas
+header/grup dan MPN tetap terpisah. `ElementHandle.evaluate` tidak
+memiliki timeout locator Playwright; callback JS sinkron tetap tunduk
+pada pembatasan eksternal dan perlu diverifikasi di live secara terpisah.
+Hasil regression test sintetis tidak menyatakan Corporate COMPLETE.

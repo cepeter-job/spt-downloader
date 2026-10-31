@@ -192,28 +192,27 @@ def test_post_pagination_dom_read_timeout_retains_verified_rows_without_retry(
         page, monkeypatch, tmp_path):
     from spt_desktop import diagnostics
     from test_diagnostics import records
+    from playwright.sync_api import ElementHandle
     table = fixture(page)
-    evaluate = table.evaluate
+    original_evaluate = ElementHandle.evaluate
     calls = []
 
-    def bounded_evaluate(source, *args, **kwargs):
-        if source in (driver.TABLE_JS, driver.TABLE_VERIFIED_JS):
-            calls.append(kwargs.get('timeout'))
-            if len(calls) == 2:
-                raise BrowserTimeout('SYNTHETIC_PRIVATE_DOM_READ')
-        return evaluate(source, *args, **kwargs)
+    def fail_owned_snapshot(handle, expression, arg=None):
+        if expression == driver.TABLE_VERIFIED_JS:
+            calls.append(expression)
+            raise BrowserTimeout('SYNTHETIC_PRIVATE_DOM_READ')
+        return original_evaluate(handle, expression, arg)
 
-    wrapped = SimpleNamespace(element_handle=table.element_handle,
-                              evaluate=bounded_evaluate)
+    monkeypatch.setattr(ElementHandle, 'evaluate', fail_owned_snapshot)
     with diagnostics.session(tmp_path / 'log', 'worker') as log:
-        result = driver.capture_table(page, wrapped, 1, max_pages=3)
+        result = driver.capture_table(page, table, 1, max_pages=3)
         assert log.flush()
     assert result['complete'] is False
     assert result['pages'] == 1
     assert result['body_row_count'] == 1
     assert result['warning'] == 'Table DOM read timed out after pagination'
     assert page.evaluate('moves') == 1
-    assert calls[0] is None and 0 < calls[1] <= 10000
+    assert calls == [driver.TABLE_VERIFIED_JS]
     events = [e for e in records(tmp_path / 'log')
               if e['event'] == 'table.dom_read_failed']
     assert len(events) == 1

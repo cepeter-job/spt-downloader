@@ -65,7 +65,7 @@ ENUMS = {
     'table_dom_stage': frozenset({'post_pagination'}),
     'table_state_stage': frozenset({'poll', 'verify'}),
     'table_locator_state': frozenset({'attached', 'not_attached', 'unavailable'}),
-    'table_identity_reason': frozenset({'owner_changed', 'metadata_changed', 'repeated_state'}),
+    'table_identity_reason': frozenset({'owner_changed', 'table_missing', 'table_ambiguous', 'metadata_changed', 'repeated_state'}),
     'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
     'corporate_l3_extra_layout': frozenset({'reviewed_pair_hidden_extra',
         'reviewed_pair_visible_extra', 'reviewed_pair_unproved'}),

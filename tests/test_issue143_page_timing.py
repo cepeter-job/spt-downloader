@@ -42,8 +42,8 @@ def test_l3_page_size_counterfactual_has_identical_verified_rows_and_safe_page_t
     page.close()
 
 
-def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_timings(context, tmp_path):
-    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_timings(context, tmp_path, monkeypatch):
+    from playwright.sync_api import ElementHandle, TimeoutError as PlaywrightTimeoutError
 
     page = context.new_page()
     page.route("**/*", lambda route: route.abort())
@@ -51,22 +51,16 @@ def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_
     table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
     secret = "SYNTHETIC_PRIVATE_ACCOUNT_OR_REFERENCE"
 
-    class FailSecondDomRead:
-        def __init__(self, delegate):
-            self.delegate = delegate
-            self.reads = 0
+    original_evaluate = ElementHandle.evaluate
 
-        def element_handle(self):
-            return self.delegate.element_handle()
+    def fail_post_page_snapshot(handle, expression, arg=None):
+        if expression == driver.TABLE_VERIFIED_JS:
+            raise PlaywrightTimeoutError(secret)
+        return original_evaluate(handle, expression, arg)
 
-        def evaluate(self, script, *args, **kwargs):
-            self.reads += 1
-            if self.reads == 2:
-                raise PlaywrightTimeoutError(secret)
-            return self.delegate.evaluate(script, *args, **kwargs)
-
+    monkeypatch.setattr(ElementHandle, "evaluate", fail_post_page_snapshot)
     with diagnostics.session(tmp_path / "log", "worker") as log:
-        result = driver.capture_table(page, FailSecondDomRead(table), 1, 1000, max_page_size=250)
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
         assert log.flush()
 
     assert not result["complete"]
@@ -140,27 +134,23 @@ def test_post_pagination_state_poll_timeout_is_partial_without_repeating_click(
 @pytest.mark.parametrize("detach,expected_state", [(False, "attached"), (True, "not_attached")])
 def test_failed_dom_read_reports_only_safe_post_failure_locator_state(
         context, tmp_path, monkeypatch, detach, expected_state):
-    from playwright.sync_api import Locator, TimeoutError as PlaywrightTimeoutError
+    from playwright.sync_api import ElementHandle, TimeoutError as PlaywrightTimeoutError
 
     page = context.new_page()
     page.route("**/*", lambda route: route.abort())
     page.set_default_timeout(500)
     table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
-    original_evaluate = Locator.evaluate
-    reads = 0
+    original_evaluate = ElementHandle.evaluate
     secret = "SYNTHETIC_PRIVATE_TABLE_VALUE"
 
-    def fail_one_post_page_read(locator, expression, *args, **kwargs):
-        nonlocal reads
-        if expression in (driver.TABLE_JS, driver.TABLE_VERIFIED_JS):
-            reads += 1
-            if reads == 2:
-                if detach:
-                    page.evaluate("document.querySelector('table').remove()")
-                raise PlaywrightTimeoutError(secret)
-        return original_evaluate(locator, expression, *args, **kwargs)
+    def fail_one_post_page_read(handle, expression, arg=None):
+        if expression == driver.TABLE_VERIFIED_JS:
+            if detach:
+                page.evaluate("document.querySelector('table').remove()")
+            raise PlaywrightTimeoutError(secret)
+        return original_evaluate(handle, expression, arg)
 
-    monkeypatch.setattr(Locator, "evaluate", fail_one_post_page_read)
+    monkeypatch.setattr(ElementHandle, "evaluate", fail_one_post_page_read)
     with diagnostics.session(tmp_path / "log", "worker") as log:
         result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
         assert log.flush()
@@ -200,7 +190,7 @@ def test_post_page_owner_change_cannot_accept_foreign_table(context, tmp_path):
     assert page.evaluate("moves") == 1
     refusals = [r for r in records(tmp_path / "log") if r["event"] == "table.identity_refused"]
     assert len(refusals) == 1
-    assert refusals[0]["table_identity_reason"] == "owner_changed"
+    assert refusals[0]["table_identity_reason"] == "table_missing"
     assert refusals[0]["pages"] == 1
     assert refusals[0]["page_size_cap"] == 250
     page.close()
@@ -267,6 +257,86 @@ def test_post_page_same_owner_table_replacement_preserves_verified_rows(context)
     result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
     assert_rows(result, 601)
     assert page.evaluate("moves") == 2
+    page.close()
+
+
+def test_post_page_table_relocated_inside_verified_owner_avoids_stale_locator(context):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    # Keep the original selector intentionally tied to the old table wrapper.
+    table = page.locator(".p-datatable > table")
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const old = document.querySelector('.p-datatable > table');
+            if (!old) return;
+            const holder = document.createElement('div');
+            holder.className = 'owned-table-rebound';
+            document.querySelector('p-table').append(holder);
+            holder.append(old.cloneNode(true));
+            old.remove();
+        });
+    }""")
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert_rows(result, 601)
+    assert result["pages"] == 3
+    assert page.evaluate("moves") == 2
+    assert page.locator(".p-datatable > table").count() == 0
+    assert page.locator("p-table .owned-table-rebound > table").count() == 1
+    page.close()
+
+
+def test_replaced_paginator_owner_must_not_be_rebound_even_if_its_table_matches(
+        context, tmp_path):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const owner = document.querySelector('p-table');
+            owner.replaceWith(owner.cloneNode(true));
+        }, {once: true});
+    }""")
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+    assert not result["complete"]
+    assert result["body_row_count"] == 250
+    assert result["pages"] == 1
+    assert page.evaluate("moves") == 1
+    refusals = [e for e in records(tmp_path / "log")
+                if e["event"] == "table.identity_refused"]
+    assert len(refusals) == 1
+    assert refusals[0]["table_identity_reason"] == "owner_changed"
+    page.close()
+
+
+def test_post_page_two_tables_under_same_owner_are_refused_before_accepting_rows(
+        context, tmp_path):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const duplicate = document.querySelector('table').cloneNode(true);
+            document.querySelector('p-table').append(duplicate);
+        }, {once: true});
+    }""")
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+    assert not result["complete"]
+    assert result["pages"] == 1
+    assert result["body_row_count"] == 250
+    assert result["source_total"] == 601
+    assert page.evaluate("moves") == 1
+    failures = [e for e in records(tmp_path / "log") if e["event"] == "table.identity_refused"]
+    assert len(failures) == 1
+    assert failures[0]["table_identity_reason"] == "table_ambiguous"
+    assert not any("rows" in e or "url" in e for e in failures)
     page.close()
 
 
