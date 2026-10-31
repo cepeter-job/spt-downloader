@@ -556,3 +556,36 @@ boleh menaikkan penghitung halaman, mengulang klik yang tidak pasti,
 atau menyatakan COMPLETE. Batas 180 detik, Stop, total sumber, guard
 MPN, dan pemilihan ukuran UI lainnya tetap sama. Hasil tes sintetis
 bukan bukti keberhasilan live acceptance.
+
+
+### Issue #143: state DOM lambat setelah pagination (31 Oktober 2026)
+
+Pada live build `3799767` (run `41184453836`), tabel L3-B 250 baris
+awal terbaca ~139 ms. Percobaan halaman berikutnya mencatat klik 448 ms,
+polling state 85 ms, idle 855 ms, verifikasi state 9041 ms, kemudian
+`Locator.evaluate(TABLE_JS)` gagal setelah ~10037 ms.
+Parameter `timeout` pada `Locator.evaluate` membatasi resolusi locator,
+**bukan** waktu eksekusi JS setelah elemennya ditemukan. Karena itu,
+`table_dom_ms` tidak sendirinya membuktikan `TABLE_JS` lambat:
+elemen `table` yang belum siap, render browser, atau evaluasi sendiri
+masih perlu dibedakan sebelum mengubah aturan pagination.
+
+Timeout Playwright selama pembacaan `STATE_JS` **setelah** satu klik
+paginator (pada tahap `poll` atau `verify`) sekarang menghasilkan
+PARTIAL dengan peringatan tetap `Table state read timed out after pagination`,
+bukan melepaskan exception tanpa status tabel. Event
+`table.state_read_failed` mencatat tahap enum `poll|verify`, jumlah
+halaman **terverifikasi sebelumnya**, cap ukuran halaman, durasi bounded
+dan ukuran waktu fase yang sudah diketahui. Tidak ada teks sel, URL,
+identitas, request/response, atau pesan exception bebas.
+Halaman yang state-nya gagal tidak dipromosikan menjadi COMPLETE dan
+paginator tidak diklik ulang. Stop, deadline 180 detik, kontrak
+pembacaan seluruh row text, dan MPN fail-closed tetap sama.
+Dua skenario time-out diuji memakai fixture lokal sintetis, bukan bukti
+bahwa kegagalan live telah sembuh. Jika `TABLE_JS` gagal, satu probe
+read-only sesudah timeout (`wait_for(state=attached, timeout=1000)`)
+merekam hanya `table_locator_state=attached|not_attached|unavailable`
+sebagai diagnosis ada/tidaknya locator pada saat probe. Ini bukan
+bukti bahwa locator awal gagal, tabelnya benar, atau datanya lengkap.
+`table_dom_ms` dan `duration_ms` dihitung sebelum probe agar tambahan
+waktu probe tidak mengubah metrik sebelumnya. Issue #143 tetap terbuka.

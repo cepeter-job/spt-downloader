@@ -363,19 +363,32 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         poll_started = _diagnostic_clock()
         click_ms = (poll_started - page_started) * 1000
         deadline = min(time.monotonic() + 30, capture_deadline)
-        while container_handle.evaluate(STATE_JS) == state:
+        try:
+            while container_handle.evaluate(STATE_JS) == state:
+                _check_cancel(check_cancel)
+                if time.monotonic() >= deadline:
+                    result['complete'] = False
+                    expired = time.monotonic() >= capture_deadline
+                    result['warning'] = ('Table capture elapsed budget exceeded'
+                                         if expired else 'Table pagination did not advance')
+                    if expired:
+                        diagnostics.record('table.elapsed_budget', level='WARNING',
+                                           table_elapsed_stage='state_poll',
+                                           pages=result['pages'])
+                    break
+                page.wait_for_timeout(120)
+        except PlaywrightTimeoutError as error:
             _check_cancel(check_cancel)
-            if time.monotonic() >= deadline:
-                result['complete'] = False
-                expired = time.monotonic() >= capture_deadline
-                result['warning'] = ('Table capture elapsed budget exceeded'
-                                     if expired else 'Table pagination did not advance')
-                if expired:
-                    diagnostics.record('table.elapsed_budget', level='WARNING',
-                                       table_elapsed_stage='state_poll',
-                                       pages=result['pages'])
-                break
-            page.wait_for_timeout(120)
+            result['complete'] = False
+            result['warning'] = 'Table state read timed out after pagination'
+            diagnostics.record('table.state_read_failed', level='WARNING',
+                               table_state_stage='poll', pages=result['pages'],
+                               page_size_cap=max_page_size,
+                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               table_click_ms=click_ms,
+                               table_poll_ms=(_diagnostic_clock() - poll_started) * 1000,
+                               error=error)
+            break
         if not result['complete']:
             break
         poll_ms = (_diagnostic_clock() - poll_started) * 1000
@@ -383,9 +396,23 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         wait_idle(page)
         idle_ms = (_diagnostic_clock() - idle_started) * 1000
         verify_started = _diagnostic_clock()
-        if container_handle.evaluate(STATE_JS) in seen:
+        try:
+            if container_handle.evaluate(STATE_JS) in seen:
+                result['complete'] = False
+                result['warning'] = 'Repeated table pagination state'
+                break
+        except PlaywrightTimeoutError as error:
+            _check_cancel(check_cancel)
             result['complete'] = False
-            result['warning'] = 'Repeated table pagination state'
+            result['warning'] = 'Table state read timed out after pagination'
+            diagnostics.record('table.state_read_failed', level='WARNING',
+                               table_state_stage='verify', pages=result['pages'],
+                               page_size_cap=max_page_size,
+                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms,
+                               table_verify_ms=(_diagnostic_clock() - verify_started) * 1000,
+                               error=error)
             break
         _check_cancel(check_cancel)
         # The previous live failure occurred inside a single post-page DOM
@@ -409,15 +436,28 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             _check_cancel(check_cancel)
             result['complete'] = False
             result['warning'] = 'Table DOM read timed out after pagination'
-            # Measure the failed page without accepting its unverified rows or
-            # re-dispatching a paginator click. Only bounded numeric phases leak.
+            # Locator.evaluate's timeout can expire before TABLE_JS even runs.
+            # Probe only attachment after failure; never use this as capture proof.
+            failed_dom_ms = (_diagnostic_clock() - dom_started) * 1000
+            failed_page_ms = (_diagnostic_clock() - page_started) * 1000
+            locator_state = 'unavailable'
+            try:
+                table.wait_for(state='attached', timeout=1000)
+                locator_state = 'attached'
+            except PlaywrightTimeoutError:
+                locator_state = 'not_attached'
+            except Exception:
+                # Optional evidence must not replace the original table failure.
+                locator_state = 'unavailable'
+            _check_cancel(check_cancel)
             diagnostics.record('table.dom_read_failed', level='WARNING',
                                table_dom_stage='post_pagination', pages=result['pages'],
+                               table_locator_state=locator_state,
                                page_size_cap=max_page_size,
-                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               duration_ms=failed_page_ms,
                                table_click_ms=click_ms, table_poll_ms=poll_ms,
                                table_idle_ms=idle_ms, table_verify_ms=verify_ms,
-                               table_dom_ms=(_diagnostic_clock() - dom_started) * 1000,
+                               table_dom_ms=failed_dom_ms,
                                error=error)
             break
         dom_ms = (_diagnostic_clock() - dom_started) * 1000
