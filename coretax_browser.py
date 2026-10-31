@@ -409,8 +409,15 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             _check_cancel(check_cancel)
             result['complete'] = False
             result['warning'] = 'Table DOM read timed out after pagination'
+            # Measure the failed page without accepting its unverified rows or
+            # re-dispatching a paginator click. Only bounded numeric phases leak.
             diagnostics.record('table.dom_read_failed', level='WARNING',
                                table_dom_stage='post_pagination', pages=result['pages'],
+                               page_size_cap=max_page_size,
+                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_verify_ms=verify_ms,
+                               table_dom_ms=(_diagnostic_clock() - dom_started) * 1000,
                                error=error)
             break
         dom_ms = (_diagnostic_clock() - dom_started) * 1000
