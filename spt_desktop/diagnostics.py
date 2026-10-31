@@ -59,6 +59,8 @@ ENUMS = {
         'additional_filter', 'cancelled_filter_missing', 'cancelled_filter_modified'}),
     'mpn_clear_state': frozenset({'ambiguous', 'absent', 'present', 'hidden'}),
     'mpn_period_widget_state': frozenset({'ambiguous', 'absent', 'present'}),
+    'mpn_mismatch_reference_state': frozenset({'all_reference_missing',
+        'some_reference_missing', 'references_observed', 'no_reference_mismatch'}),
     'corporate_l3_table_shape': frozenset({'zero', 'one', 'more_than_two'}),
     'mpn_catalog_variant_kind': frozenset({'not_observed', 'query_variant', 'path_variant'}),
     'table_page_stage': frozenset({'initial', 'advanced'}),
