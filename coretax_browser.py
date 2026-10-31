@@ -448,7 +448,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
                 locator_state = 'not_attached'
             except Exception:
                 # Optional evidence must not replace the original table failure.
-                pass
+                locator_state = 'unavailable'
             _check_cancel(check_cancel)
             diagnostics.record('table.dom_read_failed', level='WARNING',
                                table_dom_stage='post_pagination', pages=result['pages'],
