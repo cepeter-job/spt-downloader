@@ -436,15 +436,28 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             _check_cancel(check_cancel)
             result['complete'] = False
             result['warning'] = 'Table DOM read timed out after pagination'
-            # Measure the failed page without accepting its unverified rows or
-            # re-dispatching a paginator click. Only bounded numeric phases leak.
+            # Locator.evaluate's timeout can expire before TABLE_JS even runs.
+            # Probe only attachment after failure; never use this as capture proof.
+            failed_dom_ms = (_diagnostic_clock() - dom_started) * 1000
+            failed_page_ms = (_diagnostic_clock() - page_started) * 1000
+            locator_state = 'unavailable'
+            try:
+                table.wait_for(state='attached', timeout=1000)
+                locator_state = 'attached'
+            except PlaywrightTimeoutError:
+                locator_state = 'not_attached'
+            except Exception:
+                # Optional evidence must not replace the original table failure.
+                pass
+            _check_cancel(check_cancel)
             diagnostics.record('table.dom_read_failed', level='WARNING',
                                table_dom_stage='post_pagination', pages=result['pages'],
+                               table_locator_state=locator_state,
                                page_size_cap=max_page_size,
-                               duration_ms=(_diagnostic_clock() - page_started) * 1000,
+                               duration_ms=failed_page_ms,
                                table_click_ms=click_ms, table_poll_ms=poll_ms,
                                table_idle_ms=idle_ms, table_verify_ms=verify_ms,
-                               table_dom_ms=(_diagnostic_clock() - dom_started) * 1000,
+                               table_dom_ms=failed_dom_ms,
                                error=error)
             break
         dom_ms = (_diagnostic_clock() - dom_started) * 1000
