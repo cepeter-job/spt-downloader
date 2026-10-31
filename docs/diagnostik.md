@@ -502,7 +502,7 @@ URL, identitas, label, request, atau response. Batas 180 detik dan keputusan
 PARTIAL tidak diubah. Event table.elapsed_budget masih mencatat stage
 ketika halaman berikutnya tidak dapat diterima sebagai selesai.
 
-Khusus L3-B, batas live tetap **100** baris per halaman. Pengujian sintetis
+Pada build PR #155, batas L3-B masih **100** baris per halaman. Pengujian sintetis
 membandingkan opsi UI asli 100 dan 250 yang tersedia, tanpa mengganti
 kebijakan live; perbandingan hanya bisa memilih ukuran berikutnya setelah
 data time-per-page live memperlihatkan penyebab lambat yang terukur.
@@ -514,3 +514,21 @@ bukti bentuk rute saja, bukan izin membaca, mengikat, atau memanfaatkan
 respons rute tersebut. Mismatch parent tetap fatal; tidak ada klik Detail
 ketika sumber belum terbukti dan Issue #143 tetap terbuka hingga live
 acceptance build-matched.
+
+
+### Issue #143: uji batas L3-B 250 baris (31 Oktober 2026)
+
+Build ac195741 mengukur tabel L3-B 41 halaman berisi 4.100 baris
+dengan batas 100 per halaman dari sumber total 4.654 baris.
+Tabel PARTIAL setelah 182,87 detik dan membutuhkan enam halaman.
+Waktu klik dan verifikasi belum terpisah dari durasi lainnya.
+Diagnostik baru mencatat table_click_ms dan table_verify_ms hanya
+untuk halaman terverifikasi, tanpa informasi identitas atau nilai.
+
+Untuk L3-B dengan form, komponen dan grup asli yang terbukti,
+kandidat memakai opsi ukuran halaman UI paling banyak 250; 500
+dilarang. Opsi harus tersedia dan pilihan aktif <=250 terverifikasi.
+Tanpa opsi aman, capture ditolak, bukan memaksakan klik/API baru.
+Tabel lain tetap <=100. Batas 180 detik, Stop, larangan klik ulang
+setelah state tidak pasti, rekonsiliasi total/baris dan PARTIAL
+tetap berlaku. Perlu izin terpisah untuk tes live build berikutnya.

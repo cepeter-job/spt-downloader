@@ -35,6 +35,9 @@ def test_l3_page_size_counterfactual_has_identical_verified_rows_and_safe_page_t
     assert all(e["page_size_cap"] == cap for e in rows)
     assert all("duration_ms" in e and "table_dom_ms" in e for e in rows)
     assert all("table_poll_ms" in e and "table_idle_ms" in e for e in rows[1:])
+    assert all("table_click_ms" in e and "table_verify_ms" in e for e in rows[1:])
+    assert all(0 <= e["table_click_ms"] <= e["duration_ms"] for e in rows[1:])
+    assert all(0 <= e["table_verify_ms"] <= e["duration_ms"] for e in rows[1:])
     assert all("rows" not in e and "url" not in e and "headers" not in e for e in rows)
     page.close()
 
@@ -55,10 +58,12 @@ def test_new_diagnostics_reject_unbounded_and_untrusted_values(tmp_path):
     with diagnostics.session(tmp_path / "log", "worker") as log:
         diagnostics.record("table.page_timing", table_page_stage=secret, pages=-1,
                            page_rows=-100, page_size_cap=secret,
-                           duration_ms=-15, table_dom_ms=secret, url=secret, body=secret)
+                           duration_ms=-15, table_dom_ms=secret, table_click_ms=secret,
+                           table_verify_ms=-5, url=secret, body=secret)
         diagnostics.record("table.page_timing", table_page_stage="advanced",
                            pages=2, page_rows=100, page_size_cap=250,
-                           duration_ms=12.5, table_poll_ms=2.1, table_idle_ms=3.2,
+                           duration_ms=12.5, table_click_ms=1.4, table_verify_ms=0.6,
+                           table_poll_ms=2.1, table_idle_ms=3.2,
                            table_dom_ms=7.2)
         diagnostics.record("mpn.catalog_readiness", mpn_catalog_variant_kind=secret,
                            url=secret, body=secret)
@@ -71,6 +76,8 @@ def test_new_diagnostics_reject_unbounded_and_untrusted_values(tmp_path):
     assert "table_page_stage" not in page_events[0]
     assert "pages" not in page_events[0]
     assert page_events[1]["table_dom_ms"] == 7.2
+    assert page_events[1]["table_click_ms"] == 1.4
+    assert page_events[1]["table_verify_ms"] == 0.6
     assert "mpn_catalog_variant_kind" not in route_events[0]
     assert route_events[1]["mpn_catalog_variant_kind"] == "path_variant"
     assert secret not in json.dumps(rows)

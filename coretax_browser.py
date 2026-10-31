@@ -304,6 +304,12 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    if max_page_size == 250:
+        # A previously selected 500-row page must not bypass the pilot limit.
+        label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+        selected = label.inner_text().strip() if label else ''
+        if not selected.isascii() or not selected.isdecimal() or int(selected) > 250:
+            raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
         _click_table_paginator(first, container_handle, check_cancel)
@@ -355,6 +361,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         page_started = _diagnostic_clock()
         _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
         poll_started = _diagnostic_clock()
+        click_ms = (poll_started - page_started) * 1000
         deadline = min(time.monotonic() + 30, capture_deadline)
         while container_handle.evaluate(STATE_JS) == state:
             _check_cancel(check_cancel)
@@ -375,6 +382,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         idle_started = _diagnostic_clock()
         wait_idle(page)
         idle_ms = (_diagnostic_clock() - idle_started) * 1000
+        verify_started = _diagnostic_clock()
         if container_handle.evaluate(STATE_JS) in seen:
             result['complete'] = False
             result['warning'] = 'Repeated table pagination state'
@@ -390,6 +398,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
                                table_elapsed_stage='before_dom_read',
                                pages=result['pages'])
             break
+        verify_ms = (_diagnostic_clock() - verify_started) * 1000
         dom_started = _diagnostic_clock()
         try:
             data = table.evaluate(TABLE_JS, timeout=min(
@@ -423,7 +432,8 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             diagnostics.record('table.page_timing', table_page_stage='advanced',
                                pages=result['pages'], page_rows=len(data['rows']),
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000,
-                               table_poll_ms=poll_ms, table_idle_ms=idle_ms, table_dom_ms=dom_ms)
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_verify_ms=verify_ms, table_dom_ms=dom_ms)
         if not result['complete']:
             break
     # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.
@@ -648,11 +658,10 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if financial_required and name == 'L3' and table.evaluate(CORPORATE_STRUCTURE_JS, name) == {
                         'form': 'L3', 'component': 'rshshr-citr-l3-grid2',
                         'groups': ['B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
-                    # Live 30 Oct: repeatedly stalled on L3-B after the UI
-                    # selected 500 rows. Prefer an inspected <=100 option;
-                    # never manufacture a page-size value or a grid request.
-                    # More verified pages are safer than one stuck 500-row page.
-                    max_page_size = 100
+                    # Live 31 Oct: 100 rows exhausted the 180s table budget.
+                    # Use an inspected <=250 option, not 500 or a fabricated
+                    # request; the selected option must pass the bound check.
+                    max_page_size = 250
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
                     captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
                                              max_page_size=max_page_size)
