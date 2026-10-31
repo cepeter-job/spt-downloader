@@ -287,6 +287,32 @@ def test_post_page_table_relocated_inside_verified_owner_avoids_stale_locator(co
     page.close()
 
 
+def test_replaced_paginator_owner_must_not_be_rebound_even_if_its_table_matches(
+        context, tmp_path):
+    page = context.new_page()
+    page.route("**/*", lambda route: route.abort())
+    page.set_default_timeout(500)
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
+    page.evaluate("""() => {
+        document.querySelector('.p-paginator-next').addEventListener('click', () => {
+            const owner = document.querySelector('p-table');
+            owner.replaceWith(owner.cloneNode(true));
+        }, {once: true});
+    }""")
+    with diagnostics.session(tmp_path / "log", "worker") as log:
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        assert log.flush()
+    assert not result["complete"]
+    assert result["body_row_count"] == 250
+    assert result["pages"] == 1
+    assert page.evaluate("moves") == 1
+    refusals = [e for e in records(tmp_path / "log")
+                if e["event"] == "table.identity_refused"]
+    assert len(refusals) == 1
+    assert refusals[0]["table_identity_reason"] == "owner_changed"
+    page.close()
+
+
 def test_post_page_two_tables_under_same_owner_are_refused_before_accepting_rows(
         context, tmp_path):
     page = context.new_page()
