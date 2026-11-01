@@ -2,7 +2,7 @@
 import pytest
 
 import coretax_browser as driver
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from test_json_inventory import synthetic_listing_browser
 
 

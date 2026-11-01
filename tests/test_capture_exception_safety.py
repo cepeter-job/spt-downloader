@@ -4,7 +4,6 @@ These tests run without a browser; they exercise the narrowed exception
 handlers and verify that diagnostic records never carry exception text.
 """
 import pytest
-from types import SimpleNamespace
 
 from coretax_browser import _SearchDiagnostics, ListObserver
 

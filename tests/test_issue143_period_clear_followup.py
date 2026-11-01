@@ -12,7 +12,7 @@ from spt_desktop import diagnostics
 from test_diagnostics import records
 from test_mpn import scope_run
 from test_mpn_capture_browser import portal
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 
 
 CANCELLED = {'PropertyName': 'IsCancelled', 'Value': '0',

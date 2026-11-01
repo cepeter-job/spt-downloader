@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import importlib.util
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from support_isolated_browser import browser, isolated_context
+from support_isolated_browser import browser as browser, isolated_context
 
 HTML = '''<div class="main-content"><div class="p-tabview">
 <ul class="p-tabview-nav"><li><a role="tab" onclick="show(0)">Induk</a></li><li><a role="tab" onclick="show(1)">Lampiran</a></li></ul>

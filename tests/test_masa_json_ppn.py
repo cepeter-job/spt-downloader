@@ -1,6 +1,5 @@
 """Induk PPN final-value precedence from the pinned submitted-form code."""
 from copy import deepcopy
-import importlib
 
 import pytest
 

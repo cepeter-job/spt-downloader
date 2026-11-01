@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 
 import coretax_browser as driver
-from test_financial_capture import browser, routed, RECORD, DETAIL
+from test_financial_capture import browser as browser, routed as routed, RECORD, DETAIL
 
 
 def periodic_record():

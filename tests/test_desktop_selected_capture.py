@@ -1,7 +1,5 @@
 """Real worker/publication flow; only the authorized portal is replaced."""
-import inspect
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 

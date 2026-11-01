@@ -5,7 +5,7 @@ import pytest
 
 from masa_json_fixtures import SCOPE
 from masa_observer_fixture import ASSETS, FORMS, MAIN, Fixture
-from support_masa_native import browser, observed
+from support_masa_native import browser as browser, observed
 
 
 @pytest.mark.parametrize(

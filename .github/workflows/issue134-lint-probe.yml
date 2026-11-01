@@ -14,6 +14,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
         with:
           version: '0.13.4'
@@ -43,10 +44,50 @@ jobs:
               'run_id':os.environ['GITHUB_RUN_ID'], 'attempt':os.environ['GITHUB_RUN_ATTEMPT'],
               'count':len(rows), 'ruff':subprocess.check_output(['.venv/bin/ruff','--version'],text=True).strip()}))
           PY
+      - name: Require the actual configured lint gate
+        run: .venv/bin/ruff check --output-format json . > "$RUNNER_TEMP/lint-current.json"
+      - name: Prove new rules reject their actual synthetic regressions
+        run: |
+          .venv/bin/python - <<'PY'
+          import json, os, subprocess, tomllib
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          baseline = root/'baseline-ruff.toml'
+          baseline.write_bytes(subprocess.check_output(['git','show','8971bbcb8a981c98e7990a81dd2b7467d4a47231:ruff.toml']))
+          before = tomllib.loads(subprocess.check_output(['git','show','8971bbcb8a981c98e7990a81dd2b7467d4a47231:pyproject.toml']).decode())
+          after = tomllib.loads(Path('pyproject.toml').read_text())
+          assert before['tool'] == after['tool'] and set(after) == {'tool'}
+          samples = {
+              'F401': 'import math\n',
+              'B006': 'def sample(values=[]):\n    return values\n',
+              'B012': 'def sample():\n    try:\n        return 1\n    finally:\n        return 2\n',
+              'B016': 'def sample():\n    raise "synthetic"\n',
+              'B018': 'def sample():\n    42\n',
+              'B020': 'def sample(items):\n    for items in items:\n        pass\n',
+              'F821': 'def sample():\n    return missing_name\n'}
+          evidence = {}
+          for code, source in samples.items():
+              target = root/(code+'.py')
+              target.write_text(source, encoding='utf-8')
+              codes = []
+              for config in (str(baseline), 'ruff.toml'):
+                  result = subprocess.run(['.venv/bin/ruff','check','--config',config,'--output-format','json',str(target)],capture_output=True,text=True)
+                  assert result.returncode in (0,1), result.stderr
+                  codes.append({row['code'] for row in json.loads(result.stdout)})
+              assert code in codes[1]
+              assert (code in codes[0]) == (code == 'F821')
+              evidence[code] = {'baseline_rejected':code in codes[0], 'candidate_rejected':code in codes[1]}
+          (root/'lint-negative.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],
+              'run_id':os.environ['GITHUB_RUN_ID'],'attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'tool_tables_unchanged':True,'cases':evidence}), encoding='utf-8')
+          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
         with:
           name: issue134-lint-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/lint-baseline.json
             ${{ runner.temp }}/lint-probe.json
+            ${{ runner.temp }}/lint-current.json
+            ${{ runner.temp }}/lint-negative.json
           if-no-files-found: error

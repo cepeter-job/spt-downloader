@@ -8,7 +8,7 @@ import coretax_browser as driver
 from coretax_json_capture import DetailJsonCapture
 from support_browser_protocol import (DETAIL_URL, LIST_URL, META, RECORD,
     DetailPage, SourcePage, Table, response, run_fixture)
-from test_list_restore_recovery import collector
+from test_list_restore_recovery import collector as collector
 
 
 def interrupt(page, kind):

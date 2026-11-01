@@ -11,7 +11,7 @@ from coretax_corporate import observe_forms
 from coretax_json import adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l1d_observer_fixture import Fixture, ASSET
-from test_json_hybrid_native import browser
+from test_json_hybrid_native import browser as browser
 from test_corporate_l1d_native import DETAIL
 import support_json_corpus as corpus
 

@@ -1,6 +1,6 @@
 """The inspected submitted View uses one exact query; custody stays literal."""
 import pytest
-from test_json_hybrid_native import browser
+from test_json_hybrid_native import browser as browser
 
 
 @pytest.mark.parametrize('query', ['', '?view=true'])

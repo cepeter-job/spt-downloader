@@ -1,13 +1,12 @@
 """Synthetic financial metadata contracts; no network, profiles or live records."""
 from copy import deepcopy
-import hashlib
 import json
 
 import pytest
 from openpyxl import load_workbook
 
 import coretax_browser as driver
-from coretax_exporter import export_split_workbooks, record_sheet_titles
+from coretax_exporter import export_split_workbooks, record_sheet_titles as record_sheet_titles
 import support_browser_protocol as protocol
 from support_runs import fixture_run
 

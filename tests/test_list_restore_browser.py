@@ -6,7 +6,7 @@ import pytest
 
 import coretax_browser as driver
 from support_browser_protocol import DETAIL_URL, LIST_URL, META, RECORD, TAXPAYER, run_fixture
-from support_isolated_browser import browser, context
+from support_isolated_browser import browser as browser, context as context
 from support_browser_protocol import capture_failures
 
 

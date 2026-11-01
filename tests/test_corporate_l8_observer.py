@@ -11,7 +11,7 @@ from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l8_observer_fixture import Fixture
 from l1d_observer_fixture import ASSET
 from test_corporate_l1d_observer import open_selected
-from test_json_hybrid_native import browser
+from test_json_hybrid_native import browser as browser
 from test_corporate_l8_native import DETAIL
 import support_json_corpus as corpus
 

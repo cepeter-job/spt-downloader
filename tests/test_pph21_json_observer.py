@@ -8,7 +8,7 @@ import pytest
 from coretax_json import JsonSafetyError
 from masa_json_fixtures import SCOPE
 from pph21_observer_fixture import (ARTICLE, BUILD, FIRST, FORMS, GRIDS, INDUK_CONTROLS,
-                                    MAIN, TOTAL, browser, observed)
+                                    MAIN, TOTAL, browser as browser, observed)
 
 
 def feature(monkeypatch):

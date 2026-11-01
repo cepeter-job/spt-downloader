@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
 from coretax_exporter import (validate_scope, validate_export_run, export_split_workbooks,
-                             workbook_groups, detail_sheet_title, record_sheet_titles,
+                             workbook_groups, detail_sheet_title as detail_sheet_title, record_sheet_titles,
                              workbook_proof, read_workbook_proof, workbook_sheet_titles,
                              export_workbook)
 from coretax_browser import SEARCH_URL, collect_inventory, collect_details, _atomic_checkpoint

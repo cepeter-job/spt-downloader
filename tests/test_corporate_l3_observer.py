@@ -11,7 +11,7 @@ from coretax_json import JsonSafetyError, adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l3_observer_fixture import Fixture, ASSET
 from test_corporate_l3_native import DETAIL, GRID, FOOTER, REFERENCES, OWNERS, GROUPS
-from test_json_hybrid_native import browser
+from test_json_hybrid_native import browser as browser
 import support_json_corpus as corpus
 
 

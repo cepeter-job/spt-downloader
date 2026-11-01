@@ -1,6 +1,6 @@
 """Synthetic PPN initial-shell readiness and real DOM-to-XLSX contracts."""
 import pytest
-from support_isolated_browser import browser, context
+from support_isolated_browser import browser as browser, context as context
 
 import coretax_browser as driver
 from support_templates import export_ppn

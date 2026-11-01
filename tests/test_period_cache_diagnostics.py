@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 import pytest
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 import coretax_inventory as inventory
 from spt_desktop import diagnostics as d
 from test_diagnostics import records

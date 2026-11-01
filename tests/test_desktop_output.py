@@ -1,7 +1,6 @@
 """Publication fixtures are synthetic and never live taxpayer output."""
 import importlib
 import importlib.util
-from pathlib import Path
 import pytest
 import coretax
 from support_runs import fixture_run

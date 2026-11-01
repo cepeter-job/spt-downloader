@@ -6,7 +6,7 @@ import pytest
 
 import coretax_browser as driver
 from test_diagnostics import records as diagnostic_records
-from test_financial_capture import browser, routed, RECORD, DETAIL, PDF_URL
+from test_financial_capture import browser as browser, routed as routed, RECORD, DETAIL, PDF_URL
 
 
 def rebind_after_first_control_read(page, monkeypatch, outcome='owned'):

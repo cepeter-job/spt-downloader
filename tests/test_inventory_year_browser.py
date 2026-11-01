@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from support_isolated_browser import browser, isolated_context
+from support_isolated_browser import browser as browser, isolated_context
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ORIGIN = 'https://coretax.intranet.pajak.go.id'

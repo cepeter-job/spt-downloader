@@ -9,7 +9,7 @@ from playwright.sync_api import ElementHandle, JSHandle
 
 import coretax_browser as driver
 from spt_desktop import diagnostics as d
-from support_isolated_browser import browser, context
+from support_isolated_browser import browser as browser, context as context
 from test_corporate_dom_page_size import fixture, assert_rows
 from test_diagnostics import records
 
