@@ -862,3 +862,17 @@ do not reinterpret missing inventories as successful matching,
 downgrade genuine three-field contradictions, or click the Detail
 action after any source/display identity mismatch. Source pins,
 full-parent filter proof and strict final MpnSafetyError are unchanged.
+
+Corporate L3-B's already admitted 250-cap DOM path retains exact full page
+states in a temporary private JSHandle bound to the original paginator owner,
+actual Document and literal URL. Combine fresh state/repeat checks and one
+inspected Next click; do not copy raw state back to Python or replace it with
+a hash. Boolean polling and the same-owner atomic snapshot preserve identity,
+all rows/duplicates/footer, source totals and PARTIAL. Only captured data is
+JSON-packed for transport and immediately decoded without changing values.
+Bind one conservative browser deadline from cursor creation and the original
+remaining 180-second table budget; never refresh it per page or click after
+expiry. Dispose cursor/owner on every exit without masking Stop or failure.
+Generic <=100 tables, native admission, mapping, PDF and MPN gates remain
+independent. Hosted synthetic transport/ownership tests and headed live
+component timings do not certify full headless live completion.

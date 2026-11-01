@@ -120,3 +120,25 @@ def test_cursor_disposal_does_not_mask_stop_after_pagination(context, monkeypatc
     assert disposed
     assert page.evaluate('moves') == 1
     page.close()
+
+
+def test_cursor_deadline_is_not_reset_by_later_advance(context):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    owner = table.element_handle().evaluate_handle("e=>e.closest('p-table')")
+    cursor = owner.evaluate_handle(driver.TABLE_CURSOR_INIT_JS)
+    assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
+                           {'remaining_ms': 10000, 'allow': True})['status'] == 'advanced'
+    snapshot = owner.evaluate(driver.TABLE_VERIFIED_JS, cursor)
+    assert isinstance(snapshot['packed'], str)
+    decoded = json.loads(snapshot['packed'])
+    assert len(decoded['rows']) == 250
+    assert decoded['rows'][0] == ['126', '0']
+    cursor.evaluate('c=>{c.deadline=performance.now()-1}')
+    assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
+                           {'remaining_ms': 100000, 'allow': True})['status'] == 'budget'
+    assert page.evaluate('moves') == 1
+    cursor.dispose()
+    owner.dispose()
+    page.close()

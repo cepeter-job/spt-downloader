@@ -14,8 +14,11 @@ retains the original owner, Document, literal URL and full exact state strings.
 It is not page-global storage, a source cache, native admission or new output.
 Combine the fresh state/repeat check, original owned-next checks and one click
 in one RPC. Poll with booleans and compare the final atomic snapshot against
-the same exact seen states inside the browser. Transfer captured cells once;
-do not transfer duplicate state text. Dispose the cursor on every exit.
+the same exact seen states inside the browser. Transfer captured cells once as
+a JSON string, decoded immediately in Python, rather than serializing each
+nested cell through Playwright's object protocol; do not transfer duplicate
+state text. The legacy snapshot shape stays unchanged. Dispose the cursor on
+every exit.
 
 ## Required boundaries
 

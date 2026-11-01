@@ -88,25 +88,25 @@ def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_
 
 def test_post_pagination_state_poll_timeout_is_partial_without_repeating_click(
         context, tmp_path, monkeypatch):
-    from playwright.sync_api import ElementHandle, TimeoutError as PlaywrightTimeoutError
+    from playwright.sync_api import JSHandle, TimeoutError as PlaywrightTimeoutError
 
     page = context.new_page()
     page.route("**/*", lambda route: route.abort())
     page.set_default_timeout(500)
     table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
-    original_evaluate = ElementHandle.evaluate
+    original_evaluate = JSHandle.evaluate
     reads = 0
     secret = "SYNTHETIC_PRIVATE_STATE_VALUE"
 
     def fail_one_state_read(handle, expression, arg=None):
         nonlocal reads
-        if expression == driver.STATE_JS:
+        if expression == driver.TABLE_CURSOR_POLL_JS:
             reads += 1
-            if reads == 2:
+            if reads == 1:
                 raise PlaywrightTimeoutError(secret)
         return original_evaluate(handle, expression, arg)
 
-    monkeypatch.setattr(ElementHandle, "evaluate", fail_one_state_read)
+    monkeypatch.setattr(JSHandle, "evaluate", fail_one_state_read)
     with diagnostics.session(tmp_path / "log", "worker") as log:
         result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
         assert log.flush()
@@ -239,7 +239,7 @@ def test_post_page_verified_snapshot_avoids_duplicate_expensive_state_evaluation
     result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
     assert_rows(result, 601)
     assert page.evaluate("moves") == 2
-    assert state_reads == 4  # One pre-click and one poll per transition.
+    assert state_reads == 0  # Exact comparison remains in the private cursor.
     page.close()
 
 

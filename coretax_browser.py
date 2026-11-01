@@ -233,10 +233,78 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
+PAGINATOR_CLICK_JS = r'''(e, owner, deadline) => {
+ const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
+ const style = getComputedStyle(e);
+ if (!e.isConnected || actual !== owner || !e.matches(
+     '.p-paginator-first,.p-paginator-prev,.p-paginator-next') ||
+     e.matches(':disabled,[disabled],.p-disabled') ||
+     e.closest('[aria-disabled="true"]') || !e.getClientRects().length ||
+     style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+ if(deadline!==undefined && performance.now()>=deadline) return false;
+ e.click();
+ return true;
+}'''
+
+# Private remote object only: no page globals, persistent state or hashed rows.
+TABLE_CURSOR_INIT_JS = r'''owner => ({
+ owner, document:owner.ownerDocument, href:owner.ownerDocument.location.href,
+ created:performance.now(), deadline:null, seen:new Set(), pending:null
+})'''
+
+TABLE_CURSOR_OWNER_JS = r'''cursor => {
+ const owner=cursor.owner;
+ if(!owner.isConnected || owner.ownerDocument!==cursor.document ||
+    document!==cursor.document || document.location.href!==cursor.href)
+   return 'owner_changed';
+ const owned=[...owner.querySelectorAll('table')].filter(table =>
+   table.isConnected &&
+   (table.closest('p-table')||table.closest('.p-datatable')||table.parentElement)===owner);
+ return owned.length===1 ? '' : owned.length ? 'table_ambiguous' : 'table_missing';
+}'''
+
+TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
+ const refusal=(CHECK_OWNER)(cursor);
+ if(refusal) return {status:'refused',refusal};
+ const owner=cursor.owner;
+ const next=owner.querySelector('.p-paginator-next:not([disabled]):not(.p-disabled)');
+ if(!next) return {status:'done'};
+ if(!options.allow) return {status:'page_limit'};
+ if(cursor.deadline===null){
+   if(!Number.isFinite(options.remaining_ms) || options.remaining_ms<=0)
+     return {status:'budget'};
+   // Creation precedes the response and Python's remaining-budget sample:
+   // a queued command can only shorten this deadline, never extend it.
+   cursor.deadline=cursor.created+Math.min(options.remaining_ms,180000);
+ }
+ if(performance.now()>=cursor.deadline) return {status:'budget'};
+ const state=(READ_STATE)(owner);
+ if(cursor.pending!==null || cursor.seen.has(state))
+   return {status:'refused',refusal:'repeated_state'};
+ if(performance.now()>=cursor.deadline) return {status:'budget'};
+ cursor.seen.add(state);
+ cursor.pending=state;
+ if(!(CLICK_NEXT)(next,owner,cursor.deadline))
+   return {status:performance.now()>=cursor.deadline?'budget':'unavailable'};
+ return {status:'advanced'};
+}'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('READ_STATE', STATE_JS).replace('CLICK_NEXT', PAGINATOR_CLICK_JS)
+
+TABLE_CURSOR_POLL_JS = r'''cursor => {
+ // A changed owner is surfaced to the atomic snapshot's fixed refusal gate;
+ // it never authorizes cells or a replacement owner.
+ if((CHECK_OWNER)(cursor)) return true;
+ return (READ_STATE)(cursor.owner)!==cursor.pending;
+}'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('READ_STATE', STATE_JS)
+
 # Snapshot the unique table inside the exact paginator owner captured
 # before the click. An old locator may no longer resolve after a DOM re-render.
 # The previously verified owner is never replaced by a document-wide search.
-TABLE_VERIFIED_JS = r'''(owner) => {
+TABLE_VERIFIED_JS = r'''(owner, cursor) => {
+ if(cursor){
+   const refusal=cursor.owner===owner ? (CHECK_OWNER)(cursor) : 'owner_changed';
+   if(refusal) return {refusal};
+   if(performance.now()>=cursor.deadline) return {budget:true};
+ }
  if(!owner.isConnected) return {refusal:'owner_changed'};
  const owned=[...owner.querySelectorAll('table')].filter(table =>
     table.isConnected &&
@@ -245,8 +313,14 @@ TABLE_VERIFIED_JS = r'''(owner) => {
     return {refusal:owned.length?'table_ambiguous':'table_missing'};
  const data=(CAPTURE_TABLE)(owned[0]);
  const state=(CAPTURE_STATE)(owner);
+ if(cursor){
+   if(cursor.pending===null || cursor.seen.has(state)) return {refusal:'repeated_state'};
+   if(performance.now()>=cursor.deadline) return {budget:true};
+   cursor.pending=null;
+   return {packed:JSON.stringify(data)};
+ }
  return {data,state};
-}'''.replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
+}'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
 
 
 class CaptureCancelled(KeyboardInterrupt):
@@ -294,17 +368,7 @@ def _click_table_paginator(control, container, check_cancel):
     _check_cancel(check_cancel)
     # Only inspected read-only pagination may bypass pointer interception by
     # sticky headers. Hidden/disabled/detached or foreign controls still fail closed.
-    clicked = control.evaluate("""(e, owner) => {
-        const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
-        const style = getComputedStyle(e);
-        if (!e.isConnected || actual !== owner || !e.matches(
-            '.p-paginator-first,.p-paginator-prev,.p-paginator-next') ||
-            e.matches(':disabled,[disabled],.p-disabled') ||
-            e.closest('[aria-disabled="true"]') || !e.getClientRects().length ||
-            style.visibility === 'hidden' || style.visibility === 'collapse') return false;
-        e.click();
-        return true;
-    }""", container)
+    clicked = control.evaluate(PAGINATOR_CLICK_JS, container)
     if clicked is not True:
         raise RuntimeError('Unavailable or unsupported pagination control')
 
@@ -314,10 +378,25 @@ TABLE_CAPTURE_BUDGET_SECONDS = 180
 
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
+    with ExitStack() as resources:
+        return _capture_table(page, table, ordinal, max_pages, check_cancel,
+                              max_page_size=max_page_size, resources=resources)
+
+
+def _dispose_table_handle(handle):
+    try:
+        handle.dispose()
+    except Exception:
+        # Best-effort remote cleanup must not mask Stop or the capture failure.
+        pass
+
+
+def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_size, resources):
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     handle = table.element_handle()
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
+    resources.callback(_dispose_table_handle, container_handle)
     maximize_page_size(page, container_handle, max_page_size=max_page_size)
     if max_page_size == 250:
         # A previously selected 500-row page must not bypass the pilot limit.
@@ -352,34 +431,80 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
     result.update(name=f'Tabel {ordinal}', pages=1, complete=True)
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
     seen = set()
-    while container_handle.query_selector(next_selector):
+    cursor = None
+    if max_page_size == 250:
         _check_cancel(check_cancel)
+        cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
+        resources.callback(_dispose_table_handle, cursor)
+    while True:
+        _check_cancel(check_cancel)
+        if cursor is not None:
+            page_started = _diagnostic_clock()
+            remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
+            advance = cursor.evaluate(TABLE_CURSOR_ADVANCE_JS,
+                                      {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+            _check_cancel(check_cancel)
+            status = advance['status']
+            if status == 'done':
+                break
+            if status == 'refused':
+                result['complete'] = False
+                reason = advance['refusal']
+                result['warning'] = ('Repeated table pagination state' if reason == 'repeated_state'
+                                     else 'Table ownership or uniqueness changed during pagination')
+                diagnostics.record('table.identity_refused', level='WARNING',
+                                   table_identity_reason=reason, pages=result['pages'],
+                                   page_size_cap=max_page_size,
+                                   duration_ms=(_diagnostic_clock()-page_started)*1000)
+                break
+            if status == 'unavailable':
+                raise RuntimeError('Unavailable or unsupported pagination control')
+            if status == 'page_limit':
+                result['complete'] = False
+                result['warning'] = f'Table page limit {max_pages} reached'
+                break
+            if status == 'budget':
+                result['complete'] = False
+                result['warning'] = 'Table capture elapsed budget exceeded'
+                diagnostics.record('table.elapsed_budget', level='WARNING',
+                                   table_elapsed_stage='before_next_click', pages=result['pages'])
+                break
+            if status != 'advanced':
+                raise RuntimeError('Unsupported pagination cursor state')
+        elif not container_handle.query_selector(next_selector):
+            break
         # Do not issue another paginator action after a stalled table exhausts
         # its total budget. Keep captured rows but never certify COMPLETE.
-        if time.monotonic() >= capture_deadline:
+        if cursor is None and time.monotonic() >= capture_deadline:
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
                                table_elapsed_stage='before_next_click',
                                pages=result['pages'])
             break
-        if result['pages'] >= max_pages:
+        if cursor is None and result['pages'] >= max_pages:
             result['complete'] = False
             result['warning'] = f'Table page limit {max_pages} reached'
             break
-        state = container_handle.evaluate(STATE_JS)
-        if state in seen:
-            result['complete'] = False
-            result['warning'] = 'Repeated table pagination state'
-            break
-        seen.add(state)
-        page_started = _diagnostic_clock()
-        _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
+        if cursor is None:
+            state = container_handle.evaluate(STATE_JS)
+            if state in seen:
+                result['complete'] = False
+                result['warning'] = 'Repeated table pagination state'
+                break
+            seen.add(state)
+            page_started = _diagnostic_clock()
+            _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
         poll_started = _diagnostic_clock()
         click_ms = (poll_started - page_started) * 1000
         deadline = min(time.monotonic() + 30, capture_deadline)
         try:
-            while container_handle.evaluate(STATE_JS) == state:
+            def unchanged():
+                if cursor is not None:
+                    return not cursor.evaluate(TABLE_CURSOR_POLL_JS)
+                return container_handle.evaluate(STATE_JS) == state
+
+            while unchanged():
                 _check_cancel(check_cancel)
                 if time.monotonic() >= deadline:
                     result['complete'] = False
@@ -426,7 +551,7 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
         try:
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
-            snapshot = container_handle.evaluate(TABLE_VERIFIED_JS)
+            snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.
@@ -459,6 +584,12 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
             break
         dom_ms = (_diagnostic_clock() - dom_started) * 1000
         _check_cancel(check_cancel)
+        if snapshot and snapshot.get('budget'):
+            result['complete'] = False
+            result['warning'] = 'Table capture elapsed budget exceeded'
+            diagnostics.record('table.elapsed_budget', level='WARNING',
+                               table_elapsed_stage='before_dom_read', pages=result['pages'])
+            break
         if snapshot is None or 'refusal' in snapshot:
             result['complete'] = False
             reason = snapshot.get('refusal', 'owner_changed') if snapshot else 'owner_changed'
@@ -467,14 +598,14 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
                                table_identity_reason=reason, pages=result['pages'],
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
             break
-        if snapshot['state'] in seen:
+        if cursor is None and snapshot['state'] in seen:
             result['complete'] = False
             result['warning'] = 'Repeated table pagination state'
             diagnostics.record('table.identity_refused', level='WARNING',
                                table_identity_reason='repeated_state', pages=result['pages'],
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
             break
-        data = snapshot['data']
+        data = json.loads(snapshot['packed']) if cursor is not None else snapshot['data']
         if any(data.get(key) != result.get(key) for key in ('headers', 'group')):
             result['complete'] = False
             result['warning'] = 'Table identity changed during pagination'
@@ -515,7 +646,6 @@ def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_pag
     # Total sumber sering ada di tfoot; masukkan sekali setelah paginasi selesai.
     result['body_row_count'] = len(result['rows'])
     result['rows'].extend(result.get('footer', []))
-    container_handle.dispose()
     return result
 
 
