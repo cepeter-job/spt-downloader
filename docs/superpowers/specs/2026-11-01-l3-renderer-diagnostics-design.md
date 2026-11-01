@@ -1,6 +1,6 @@
 # L3-B renderer timing prerequisite
 
-Status: proposed for review; no production implementation or new release.
+Status: approved on 1 November 2026; execution evidence is recorded separately.
 
 ## Intent and evidence
 

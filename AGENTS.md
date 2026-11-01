@@ -876,3 +876,13 @@ expiry. Dispose cursor/owner on every exit without masking Stop or failure.
 Generic <=100 tables, native admission, mapping, PDF and MPN gates remain
 independent. Hosted synthetic transport/ownership tests and headed live
 component timings do not certify full headless live completion.
+
+Successful L3-B cursor advance and packed-snapshot replies may additionally
+measure function-local renderer elapsed time. Only accepted advanced-page
+diagnostics expose optional `table_advance_renderer_ms` and
+`table_dom_renderer_ms` under the existing bounded numeric policy. Missing or
+invalid timings never change capture. Wall timings still include dispatch,
+scheduling, serialization and transport outside those functions; their
+difference is not pure queue time. Do not persist these internal timings in
+capture metadata or change terminal/generic reply shapes, caps, deadlines,
+identity, Stop or completion gates. These measurements alone prove no speedup.

@@ -17,7 +17,7 @@
 - Preserve rows, duplicates, footer, source totals, packed data and output metadata.
 - No new requests, native admission, catalog/cache access, label normalization or PDF/MPN changes.
 - Product imports, tests, browser fixtures and packages execute only on GitHub runners.
-- Require design/plan review before implementation; this branch currently contains documentation only.
+- Design/plan review precedes implementation; the user approved both on 1 November 2026.
 
 ## Review Focus
 
@@ -43,12 +43,12 @@
 - Produces: optional internal `renderer_ms` only on successful cursor replies; optional event fields `table_advance_renderer_ms` and `table_dom_renderer_ms`.
 - Preserves: every other status/result shape and the JSON decoded capture data.
 
-- [ ] **Write failing hosted tests.** Add `test_cursor_reports_renderer_duration_separately_from_pre_rpc_delay` using the real browser fixture plus a controlled host delay at the existing RPC boundary. Assert unchanged 601 ordered rows/three pages/two moves, the two finite nonnegative renderer durations on advanced events, and the artificial wall-only delay remaining outside renderer duration.
-- [ ] **Write the synchronous-work test.** Add `test_cursor_renderer_duration_includes_synchronous_click_work` with a synthetic inspected Next handler that burns a bounded 30 ms before its ordinary draw. Require renderer advance duration >=30 ms, unchanged moves/rows and the existing 180-second deadline.
-- [ ] **Write the omission/privacy tests.** Assert the two fields follow the exact current numeric bounds/rounding, dropping None, strings, bools, NaN, infinities, negatives, above-bound values and coercible objects without invoking coercion. Capture data and status must remain unchanged when timings are missing.
-- [ ] **Verify RED on GitHub.** Push tests-only head and inspect hosted failure evidence; failures must concern the missing optional timings, while baseline capture/refusal tests remain intact. No local product execution.
-- [ ] **Implement minimal optional timings.** Measure only within the existing two synchronous cursor functions. Add the internal field only after the existing successful branch has produced its result. Keep original decisions and exceptions unchanged, and forward optional values only with accepted advanced pages.
-- [ ] **Update AGENTS.md.** State that renderer durations are a diagnostic subset of wall timings; no queue-only inference, new admission, capture completion or measured speedup follows.
+- [x] **Write failing hosted tests.** Add `test_cursor_reports_renderer_duration_separately_from_pre_rpc_delay` using the real browser fixture plus a controlled host delay at the existing RPC boundary. Assert unchanged 601 ordered rows/three pages/two moves, the two finite nonnegative renderer durations on advanced events, and the artificial wall-only delay remaining outside renderer duration.
+- [x] **Write the synchronous-work test.** Add `test_cursor_renderer_duration_includes_synchronous_click_work` with a synthetic inspected Next handler that burns a bounded 30 ms before its ordinary draw. Require renderer advance duration >=30 ms, unchanged moves/rows and the existing 180-second deadline.
+- [x] **Write the omission/privacy tests.** Assert the two fields follow the exact current numeric bounds/rounding, dropping None, strings, bools, NaN, infinities, negatives, above-bound values and coercible objects without invoking coercion. Capture data and status must remain unchanged when timings are missing.
+- [x] **Verify RED on GitHub.** Push tests-only head and inspect hosted failure evidence; failures must concern the missing optional timings, while baseline capture/refusal tests remain intact. No local product execution.
+- [x] **Implement minimal optional timings.** Measure only within the existing two synchronous cursor functions. Add the internal field only after the existing successful branch has produced its result. Keep original decisions and exceptions unchanged, and forward optional values only with accepted advanced pages.
+- [x] **Update AGENTS.md.** State that renderer durations are a diagnostic subset of wall timings; no queue-only inference, new admission, capture completion or measured speedup follows.
 - [ ] **Verify GREEN on GitHub.** Run the new tests plus existing cursor, page-size, owner/atomic-snapshot, Stop, timeout, diagnostic privacy and full required CI checks. Confirm unchanged projection expressions and generic path by source diff and hosted regressions.
 - [ ] **Commit the reviewed final implementation.** Include only synthetic tests/source/docs; no live providers, captures, profiles or private evidence.
 
