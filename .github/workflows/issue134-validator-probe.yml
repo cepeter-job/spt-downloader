@@ -1,0 +1,65 @@
+name: Issue134 literal mode dependency probe
+on:
+  push:
+    branches: [codex/issue134-validator-probe]
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          python-version: '3.14.8'
+          enable-cache: true
+          cache-python: true
+          cache-dependency-glob: locks/*.txt
+      - name: Install reviewed hash-locked environment
+        shell: pwsh
+        run: |
+          python -I -S scripts/ci_python_cache.py --python-version 3.14.8
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python 3.14.8+gil .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Record actual fresh GUI import dependencies
+        shell: pwsh
+        run: |
+          @'
+          import json, os, platform, sys
+          from pathlib import Path
+          import spt_desktop.app
+          value = dict(commit=os.environ['GITHUB_SHA'], run_id=os.environ['GITHUB_RUN_ID'],
+                       attempt=os.environ['GITHUB_RUN_ATTEMPT'], python=platform.python_version(),
+                       coretax_json_loaded='coretax_json' in sys.modules,
+                       coretax_browser_loaded='coretax_browser' in sys.modules,
+                       openpyxl_loaded='openpyxl' in sys.modules, playwright_loaded='playwright' in sys.modules)
+          Path(os.environ['RUNNER_TEMP'], 'mode-import-proof.json').write_text(json.dumps(value))
+          print(json.dumps(value))
+          '@ | .venv/Scripts/python.exe -
+      - name: Exercise boundary and mode behavior
+        shell: pwsh
+        run: |
+          .venv/Scripts/python.exe -m pytest tests/test_detail_source_contract.py tests/test_json_hybrid_modes.py -q --junitxml "$env:RUNNER_TEMP/validator-junit.xml" --basetemp "$env:RUNNER_TEMP/validator-tests"
+      - name: Retain original synthetic proof
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: validator-proof-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mode-import-proof.json
+            ${{ runner.temp }}/validator-junit.xml
+          if-no-files-found: error
