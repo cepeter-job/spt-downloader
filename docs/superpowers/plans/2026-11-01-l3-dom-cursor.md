@@ -41,16 +41,16 @@ create `tests/test_corporate_dom_cursor.py`.
 TABLE_JS/STATE_JS. Produce private cursor init/advance/poll expressions and an
 optional cursor argument to TABLE_VERIFIED_JS; default callers retain `{data,state}`.
 
-- [ ] Add real-browser regression proving 601 ordered duplicate/zero rows,
+- [x] Add real-browser regression proving 601 ordered duplicate/zero rows,
   three verified pages, two clicks and zero raw-state responses on the 250 path.
-- [ ] Add repeat-state, delayed-command, ownership, Stop and cleanup cases;
+- [x] Add repeat-state, delayed-command, ownership, Stop and cleanup cases;
   observe regression RED on a tests-only GitHub head before production edits.
-- [ ] Implement the private cursor, shared guarded-click expression and
+- [x] Implement the private cursor, shared guarded-click expression and
   conservative once-bound browser deadline; dispose resources on all exits.
-- [ ] Preserve timeout injection coverage for both legacy and cursor polls.
-- [ ] Update AGENTS.md with the actual narrow supported boundary.
+- [x] Preserve timeout injection coverage for both legacy and cursor polls.
+- [x] Update AGENTS.md with the actual narrow supported boundary.
 - [ ] Verify hosted full suite, inventory/coverage/quality gates and package.
-- [ ] Obtain one fresh whole-branch review; fix material findings with RED/GREEN.
+- [x] Obtain one fresh whole-branch review; fix material findings with RED/GREEN.
 - [ ] Review current main/preceding other-session merges, merge exact green head,
   then verify and deliver the merged-main package to Downloads.
 

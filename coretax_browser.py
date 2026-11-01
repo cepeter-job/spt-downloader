@@ -388,7 +388,7 @@ def _dispose_table_handle(handle):
         handle.dispose()
     except Exception:
         # Best-effort remote cleanup must not mask Stop or the capture failure.
-        pass
+        return None
 
 
 def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_size, resources):
