@@ -2,7 +2,7 @@
 import importlib
 import importlib.util
 import pytest
-from spt_desktop.runtime import WORKER_FILES, python_version as python_version
+from spt_desktop.runtime import WORKER_FILES
 
 
 def builder():

@@ -7,11 +7,9 @@ import importlib.util
 import pytest
 from playwright.sync_api import sync_playwright
 
-from coretax_browser import CaptureCancelled as CaptureCancelled
-from coretax_json import JsonSafetyError as JsonSafetyError
 from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import SCOPE
-from masa_observer_fixture import ASSETS, BUILD, FORMS as FORMS, FRAME, MAIN, Fixture
+from masa_observer_fixture import ASSETS, BUILD, FRAME, MAIN, Fixture
 
 
 def observer_module():

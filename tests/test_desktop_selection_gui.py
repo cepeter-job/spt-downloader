@@ -2,7 +2,6 @@
 import tkinter as tk
 import pytest
 
-from spt_desktop.app import App as App
 
 
 from support_gui import named_widget, button, consent_event, widgets, window

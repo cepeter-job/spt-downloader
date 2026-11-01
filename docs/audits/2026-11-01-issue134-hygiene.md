@@ -22,9 +22,9 @@ the PR and issue, rather than rewriting this baseline snapshot.
 
 ## Import decisions
 
-33dead bindings are removed after source/cross-module review: two production
+49dead bindings are removed after source/cross-module review: two production
 bindings (`collections.defaultdict` in exporter and `json` in desktop output)
-and31test bindings. There is no remaining consumer in the reviewed import
+and47test bindings. There is no remaining consumer in the reviewed import
 namespace; this is not a claim about hypothetical external consumers of tests.
 The two production compatibility names `coretax.detail_sheet_title` and
 `coretax_masa_projection.project_unifikasi_text` remain the original objects.
@@ -32,13 +32,17 @@ The two production compatibility names `coretax.detail_sheet_title` and
 The first candidate [probe41329808908](https://github.com/cepeter-job/spt-downloader/actions/runs/41329808908)
 rejected two remaining parent `importlib` imports after their unused
 `importlib.util` imports were removed. These two newly exposed F401 findings in
-financial-attachment/Masa test modules are included in the33removals; the
+financial-attachment/Masa test modules are included in the49removals; the
 original135finding baseline is retained above. No rule was suppressed.
 
-104bindings become explicit same-name exports:86pytest fixtures, including
-forwarded fixtures, and18compatibility names. Pytest resolves those through
-module registration/injection; an apparently unused import is not sufficient
-reason to remove it. Import order, local binding names and function/decorator
+88bindings become explicit same-name exports:86pytest fixtures, including
+forwarded fixtures, and the two production compatibility names above. Pytest
+resolves fixtures through module registration/injection; an apparently unused
+import is not sufficient reason to remove one. Sixteen other test-only names
+were initially retained conservatively, then removed after review found no
+internal loads, cross-module imports, module-attribute or string patch consumers.
+The actual fixtures and two production compatibility objects remain available.
+Import order, retained local binding names and function/decorator
 AST bodies remain unchanged. These are targeted reviewed import edits, not Ruff
 autofix, formatting or helper relocation. F401 is repository-wide with no new
 per-file exclusions or rule suppressions. Full collection/behavior remains a

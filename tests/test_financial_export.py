@@ -6,7 +6,7 @@ import pytest
 from openpyxl import load_workbook
 
 import coretax_browser as driver
-from coretax_exporter import export_split_workbooks, record_sheet_titles as record_sheet_titles
+from coretax_exporter import export_split_workbooks
 import support_browser_protocol as protocol
 from support_runs import fixture_run
 
