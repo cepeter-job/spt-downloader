@@ -9,6 +9,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
+from coretax_detail_source import validate_detail_source as validate_detail_source
+
 
 ORIGIN = 'https://coretax.intranet.pajak.go.id'
 PPH21_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
@@ -57,13 +59,6 @@ JAKARTA = timezone(timedelta(hours=7))
 
 class JsonSafetyError(RuntimeError):
     """Contradictory custody, identity or count evidence cannot use DOM fallback."""
-
-
-def validate_detail_source(value):
-    """Keep the opt-in literal identical across launcher, worker and collector."""
-    if type(value) is not str or value not in ('dom', 'json-first'):
-        raise ValueError('Detail source must be dom or json-first.')
-    return value
 
 
 class _UnsupportedMetadata(ValueError):

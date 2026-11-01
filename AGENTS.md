@@ -696,6 +696,17 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
+Literal capture-mode validation belongs to the stdlib-only
+`coretax_detail_source` owner. The GUI controller must import without loading
+the tax JSON adapter or worker/browser/Excel dependencies. Keep the exact
+`str`/`dom`/`json-first` policy, original return value and ValueError text;
+`coretax_json.validate_detail_source` remains an explicit same-object export.
+Keep controller/App local names and backend call-site namespaces patchable;
+re-exporting does not make a later patch propagate to already bound aliases.
+Register the common owner in `WORKER_FILES` and verify frozen/managed-worker
+resources. This structural boundary is not a measured startup/size improvement
+or recovery decoupling; filesystem, source and completion gates are unchanged.
+
 Register the CLI Playwright manager teardown before entering it: initialization
 can acquire its driver transport before an error or Stop. Contain early teardown
 failures, retain original exit 1/130 and durable checkpoints, and attempt every

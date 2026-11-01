@@ -14,7 +14,7 @@ from .windows import ProcessJob
 from .paths import downloads_folder
 from .interaction import read_message, select_records, write_reply
 from .profile_lifecycle import reap_profiles
-from coretax_json import validate_detail_source
+from coretax_detail_source import validate_detail_source
 
 
 def validate_job_scope(npwp,year):
