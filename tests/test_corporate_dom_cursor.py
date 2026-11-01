@@ -1,6 +1,8 @@
 """Hosted Edge regressions for private exact-state comparison, synthetic only."""
 import json
 
+import pytest
+
 from playwright.sync_api import ElementHandle, JSHandle
 
 import coretax_browser as driver
@@ -51,4 +53,70 @@ def test_cursor_queued_advance_cannot_refresh_expired_table_budget(context):
     assert page.evaluate('moves') == 0
     cursor.dispose()
     owner.dispose()
+    page.close()
+
+
+@pytest.mark.parametrize('change', ['owner', 'duplicate_table', 'route'])
+def test_cursor_refuses_changed_ownership_before_another_click(context, change):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    owner = table.element_handle().evaluate_handle("e=>e.closest('p-table')")
+    cursor = owner.evaluate_handle(driver.TABLE_CURSOR_INIT_JS)
+    mutations = {
+        'owner': "const o=document.querySelector('p-table');o.replaceWith(o.cloneNode(true))",
+        'duplicate_table': "const t=document.querySelector('table');t.after(t.cloneNode(true))",
+        'route': "history.replaceState({},'', '#different-document-route')",
+    }
+    page.evaluate('()=>{' + mutations[change] + '}')
+    result = cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
+                             {'remaining_ms': 10000, 'allow': True})
+    assert result['status'] == 'refused'
+    assert page.evaluate('moves') == 0
+    cursor.dispose()
+    owner.dispose()
+    page.close()
+
+
+def test_cursor_full_state_repetition_is_refused_before_accepting_rows(context):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    owner = table.element_handle().evaluate_handle("e=>e.closest('p-table')")
+    cursor = owner.evaluate_handle(driver.TABLE_CURSOR_INIT_JS)
+    assert cursor.evaluate(driver.TABLE_CURSOR_ADVANCE_JS,
+                           {'remaining_ms': 10000, 'allow': True})['status'] == 'advanced'
+    assert cursor.evaluate(driver.TABLE_CURSOR_POLL_JS) is True
+    # A transient changed page is not enough: original page returned before
+    # the atomic data/state read must keep the initial verified rows only.
+    page.evaluate('at=0;draw()')
+    snapshot = owner.evaluate(driver.TABLE_VERIFIED_JS, cursor)
+    assert snapshot == {'refusal': 'repeated_state'}
+    assert page.evaluate('moves') == 1
+    cursor.dispose()
+    owner.dispose()
+    page.close()
+
+
+def test_cursor_disposal_does_not_mask_stop_after_pagination(context, monkeypatch):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    original = JSHandle.dispose
+    disposed = []
+
+    def dispose(handle):
+        disposed.append(True)
+        original(handle)
+        raise RuntimeError('synthetic cleanup failure')
+
+    def stop():
+        if page.evaluate('moves'):
+            raise driver.CaptureCancelled()
+
+    monkeypatch.setattr(JSHandle, 'dispose', dispose)
+    with pytest.raises(driver.CaptureCancelled):
+        driver.capture_table(page, table, 1, 1000, check_cancel=stop, max_page_size=250)
+    assert disposed
+    assert page.evaluate('moves') == 1
     page.close()
