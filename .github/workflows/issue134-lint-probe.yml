@@ -1,0 +1,52 @@
+name: Issue 134 source lint characterization
+on:
+  push:
+    branches: ['codex/issue134-lint-probe']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: '0.13.4'
+          checksum: '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f'
+          python-version: '3.14.8'
+          enable-cache: true
+          save-cache: false
+      - name: Install pinned lint environment
+        run: |
+          uv python install cpython-3.14.8-linux-x86_64-gnu --no-bin --no-registry
+          uv venv --managed-python --python '3.14.8+gil' .venv
+          uv pip sync --python .venv/bin/python --require-hashes --only-binary :all: locks/test.txt
+          uv pip check --python .venv/bin/python
+      - name: Record all F401 and Bugbear findings without changing sources
+        run: |
+          set +e
+          .venv/bin/ruff check --select F401,B --output-format json . > "$RUNNER_TEMP/lint-baseline.json"
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+          .venv/bin/python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          rows = json.loads((root/'lint-baseline.json').read_text())
+          (root/'lint-probe.json').write_text(json.dumps({'commit':os.environ['GITHUB_SHA'],
+              'run_id':os.environ['GITHUB_RUN_ID'], 'attempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'count':len(rows), 'ruff':subprocess.check_output(['.venv/bin/ruff','--version'],text=True).strip()}))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: issue134-lint-${{ github.sha }}-attempt${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lint-baseline.json
+            ${{ runner.temp }}/lint-probe.json
+          if-no-files-found: error
