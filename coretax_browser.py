@@ -264,6 +264,7 @@ TABLE_CURSOR_OWNER_JS = r'''cursor => {
 }'''
 
 TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
+ const started=performance.now();
  const refusal=(CHECK_OWNER)(cursor);
  if(refusal) return {status:'refused',refusal};
  const owner=cursor.owner;
@@ -286,7 +287,7 @@ TABLE_CURSOR_ADVANCE_JS = r'''(cursor, options) => {
  cursor.pending=state;
  if(!(CLICK_NEXT)(next,owner,cursor.deadline))
    return {status:performance.now()>=cursor.deadline?'budget':'unavailable'};
- return {status:'advanced'};
+ return {status:'advanced',renderer_ms:performance.now()-started};
 }'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('READ_STATE', STATE_JS).replace('CLICK_NEXT', PAGINATOR_CLICK_JS)
 
 TABLE_CURSOR_POLL_JS = r'''cursor => {
@@ -300,6 +301,7 @@ TABLE_CURSOR_POLL_JS = r'''cursor => {
 # before the click. An old locator may no longer resolve after a DOM re-render.
 # The previously verified owner is never replaced by a document-wide search.
 TABLE_VERIFIED_JS = r'''(owner, cursor) => {
+ const started=cursor ? performance.now() : null;
  if(cursor){
    const refusal=cursor.owner===owner ? (CHECK_OWNER)(cursor) : 'owner_changed';
    if(refusal) return {refusal};
@@ -317,7 +319,8 @@ TABLE_VERIFIED_JS = r'''(owner, cursor) => {
    if(cursor.pending===null || cursor.seen.has(state)) return {refusal:'repeated_state'};
    if(performance.now()>=cursor.deadline) return {budget:true};
    cursor.pending=null;
-   return {packed:JSON.stringify(data)};
+   const packed=JSON.stringify(data);
+   return {packed,renderer_ms:performance.now()-started};
  }
  return {data,state};
 }'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
@@ -438,6 +441,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         resources.callback(_dispose_table_handle, cursor)
     while True:
         _check_cancel(check_cancel)
+        advance_renderer_ms = None
         if cursor is not None:
             page_started = _diagnostic_clock()
             remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
@@ -471,6 +475,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 break
             if status != 'advanced':
                 raise RuntimeError('Unsupported pagination cursor state')
+            advance_renderer_ms = advance.get('renderer_ms')
         elif not container_handle.query_selector(next_selector):
             break
         # Do not issue another paginator action after a stalled table exhausts
@@ -631,7 +636,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                                pages=result['pages'], page_rows=len(data['rows']),
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000,
                                table_click_ms=click_ms, table_poll_ms=poll_ms,
-                               table_idle_ms=idle_ms, table_verify_ms=verify_ms, table_dom_ms=dom_ms)
+                               table_idle_ms=idle_ms, table_verify_ms=verify_ms, table_dom_ms=dom_ms,
+                               table_advance_renderer_ms=advance_renderer_ms,
+                               table_dom_renderer_ms=snapshot.get('renderer_ms') if cursor is not None else None)
         if not result['complete']:
             break
     # Cocokkan baris isi dengan jumlah yang dinyatakan aplikasi bila tersedia.

@@ -23,6 +23,37 @@ def records(root):
             for line in file.read_text(encoding='utf-8').splitlines()]
 
 
+@pytest.mark.parametrize('field', ['table_advance_renderer_ms', 'table_dom_renderer_ms'])
+def test_renderer_timing_schema_keeps_bounded_numbers_and_rounds(field, tmp_path):
+    d = diagnostics()
+    with d.session(tmp_path, 'worker') as log:
+        for value in (0, 1, 1.23456, 604_800_000):
+            d.record('table.page_timing', **{field: value})
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'table.page_timing']
+    assert [row.get(field) for row in events] == [0, 1, 1.23, 604_800_000]
+
+
+@pytest.mark.parametrize('field', ['table_advance_renderer_ms', 'table_dom_renderer_ms'])
+def test_renderer_timing_schema_drops_invalid_private_values_without_coercion(field, tmp_path):
+    d = diagnostics()
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Timing diagnostics must not stringify objects')
+        def __float__(self):
+            raise AssertionError('Timing diagnostics must not coerce objects')
+    values = [None, 'SYNTHETIC_PRIVATE_RENDERER_VALUE', True, False, float('nan'),
+              float('inf'), float('-inf'), -1, 604_800_001, Untrusted()]
+    with d.session(tmp_path, 'worker') as log:
+        for value in values:
+            d.record('table.page_timing', **{field: value})
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'table.page_timing']
+    assert len(events) == len(values)
+    assert all(field not in row for row in events)
+    assert 'SYNTHETIC_PRIVATE_RENDERER_VALUE' not in json.dumps(events)
+
+
 def test_mpn_source_rejection_schema_keeps_only_fixed_stage_and_safe_error(tmp_path):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_MPN_VALUE'

@@ -222,7 +222,8 @@ def _safe_fields(fields):
         value = fields.get(name)
         if type(value) is int and -(2 ** 31) <= value < 2 ** 32:
             result[name] = value
-    for name in ('table_click_ms', 'table_poll_ms', 'table_idle_ms', 'table_verify_ms', 'table_dom_ms'):
+    for name in ('table_click_ms', 'table_poll_ms', 'table_idle_ms', 'table_verify_ms', 'table_dom_ms',
+                 'table_advance_renderer_ms', 'table_dom_renderer_ms'):
         value = fields.get(name)
         if type(value) in (int, float) and 0 <= value <= 604_800_000:
             result[name] = round(value, 2)
