@@ -142,3 +142,80 @@ def test_cursor_deadline_is_not_reset_by_later_advance(context):
     cursor.dispose()
     owner.dispose()
     page.close()
+
+
+def test_capture_expired_cursor_budget_retains_first_page_without_click(context, monkeypatch):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 0)
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert not result['complete']
+    assert result['warning'] == 'Table capture elapsed budget exceeded'
+    assert result['pages'] == 1 and result['body_row_count'] == 250
+    assert result['source_total'] == 601 and page.evaluate('moves') == 0
+    page.close()
+
+
+@pytest.mark.parametrize('mutation,rows,moves,warning', [
+    ('owner', 250, 0, 'Table ownership or uniqueness changed during pagination'),
+    ('repeat', 500, 1, 'Repeated table pagination state'),
+])
+def test_capture_pre_next_refusal_keeps_only_verified_rows(
+        context, monkeypatch, mutation, rows, moves, warning):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    original = JSHandle.evaluate
+    advances = 0
+
+    def mutate_between_pages(handle, expression, arg=None):
+        nonlocal advances
+        if expression == driver.TABLE_CURSOR_ADVANCE_JS:
+            advances += 1
+            if mutation == 'owner' and advances == 1:
+                page.evaluate("const o=document.querySelector('p-table');o.replaceWith(o.cloneNode(true))")
+            elif mutation == 'repeat' and advances == 2:
+                page.evaluate('at=0;draw()')
+        return original(handle, expression, arg)
+
+    monkeypatch.setattr(JSHandle, 'evaluate', mutate_between_pages)
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert not result['complete'] and result['warning'] == warning
+    assert result['body_row_count'] == rows and result['source_total'] == 601
+    assert page.evaluate('moves') == moves
+    assert result['rows'] == [[str(i // 2 + 1), '0'] for i in range(rows)] + [['TOTAL', '0']]
+    page.close()
+
+
+def test_capture_cursor_refuses_hidden_next_without_click(context):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    page.evaluate("document.querySelector('.p-paginator-next').style.visibility='hidden'")
+    with pytest.raises(RuntimeError, match='Unavailable or unsupported pagination control'):
+        driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert page.evaluate('moves') == 0
+    page.close()
+
+
+def test_capture_cursor_expiring_during_snapshot_rpc_cannot_accept_late_rows(context, monkeypatch):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    original = ElementHandle.evaluate
+
+    def expire_before_browser_dispatch(handle, expression, arg=None):
+        if expression == driver.TABLE_VERIFIED_JS:
+            # Model a queued read executing after the once-bound browser
+            # deadline, after Python has already admitted the RPC.
+            arg.evaluate('c=>{c.deadline=performance.now()-1}')
+        return original(handle, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', expire_before_browser_dispatch)
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert not result['complete']
+    assert result['warning'] == 'Table capture elapsed budget exceeded'
+    assert result['body_row_count'] == 250 and result['pages'] == 1
+    assert result['source_total'] == 601 and page.evaluate('moves') == 1
+    page.close()
