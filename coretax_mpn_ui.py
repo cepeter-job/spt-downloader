@@ -507,6 +507,11 @@ class AccountingUI:
             grid = self.list_owner.locator('xpath=ancestor::ui-grid[1]')
             if grid.count() != 1 or grid.locator('p-table').count() != 1:
                 raise MpnUnsupported('MPN period clear grid owner is unproved')
+            # A unique clear icon inside two identical widget IDs does not
+            # prove which period filter owns that action. Do not click either.
+            widget_count = grid.locator('#filterPeriodCode').count()
+            widget_state = ('ambiguous' if widget_count > 1
+                            else 'present' if widget_count == 1 else 'absent')
             clear = grid.locator('#filterPeriodCode .p-dropdown-clear-icon')
             count = clear.count()
             self._stop()
@@ -515,9 +520,10 @@ class AccountingUI:
             clear_state = ('ambiguous' if count > 1 else 'absent' if count == 0
                            else 'present' if clear.is_visible() else 'hidden')
             diagnostics.record('mpn.unfiltered_refused', level='WARNING',
-                               mpn_filter_reason=refusal, mpn_clear_state=clear_state)
-            if count > 1:
-                raise MpnUnsupported('MPN period clear control is ambiguous')
+                               mpn_filter_reason=refusal, mpn_clear_state=clear_state,
+                               mpn_period_widget_state=widget_state)
+            if widget_count > 1 or count > 1:
+                raise MpnUnsupported('MPN period clear owner/control is ambiguous')
             if clear_state == 'present':
                 self._click_ready(clear)
         if self.list_snapshot is None:
@@ -741,6 +747,20 @@ class AccountingUI:
             differing = [position for position in range(len(fields))
                          if actual[position] != expected[position]]
             field = fields[differing[0]]
+            # Reference availability explains whether displayed labels can
+            # be independently interpreted; it never proves a source match.
+            reference_types = {'accounting_type': 'ACCOUNTING_TYPE',
+                               'accounting_detail': 'ACCOUNTING_TYPE_DETAIL',
+                               'tax_period': 'PERIOD'}
+            reference_fields = [reference_types[fields[position]] for position in differing
+                                if fields[position] in reference_types]
+            missing_references = sum(
+                getattr(self, 'catalog_codes', {}).get(name) is None
+                for name in reference_fields)
+            reference_state = ('no_reference_mismatch' if not reference_fields
+                               else 'references_observed' if not missing_references
+                               else 'all_reference_missing' if missing_references == len(reference_fields)
+                               else 'some_reference_missing')
             provenance = None
             if field == 'accounting_type':
                 code = header.get('AccountingTypeCode')
@@ -758,7 +778,8 @@ class AccountingUI:
                                mpn_parent_tertiary_field=(fields[differing[2]]
                                                           if len(differing) > 2 else 'none'),
                                mpn_parent_mismatch_count=len(differing),
-                               mpn_accounting_type_projection=provenance)
+                               mpn_accounting_type_projection=provenance,
+                               mpn_mismatch_reference_state=reference_state)
             if (actual[0] != expected[0] and actual[1:] == expected[1:]
                     and getattr(self, 'catalog_codes', {}).get('ACCOUNTING_TYPE') is None):
                 # Without an accepted original code inventory, a displayed

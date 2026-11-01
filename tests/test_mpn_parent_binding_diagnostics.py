@@ -284,3 +284,49 @@ def test_third_identity_field_and_reference_route_enum_reject_unknown_values(tmp
     assert 'mpn_catalog_route_shape' not in b[0]
     assert b[1]['mpn_catalog_route_shape']=='alternate_reference_get'
     assert secret not in json.dumps(items)
+
+
+@pytest.mark.parametrize('catalog_codes,expected', [
+    ({}, 'all_reference_missing'),
+    ({'ACCOUNTING_TYPE': frozenset({'SYNTHETIC_TYPE'})},
+     'some_reference_missing'),
+    ({'ACCOUNTING_TYPE': frozenset({'SYNTHETIC_TYPE'}),
+      'ACCOUNTING_TYPE_DETAIL': frozenset({'SYNTHETIC_DETAIL'}),
+      'PERIOD': frozenset({'SYNTHETIC_PERIOD'})}, 'references_observed'),
+])
+def test_three_field_mismatch_reports_catalog_coverage_but_remains_fatal(
+        tmp_path, catalog_codes, expected):
+    ui, header, rendered, controls = inspected_binding()
+    header.update(AccountingTypeCode='SYNTHETIC_TYPE',
+                  AccountingTypeDetailCode='SYNTHETIC_DETAIL',
+                  PeriodCode='SYNTHETIC_PERIOD')
+    ui.list_snapshot['rows'][0] = header.copy()
+    ui.catalog_codes = catalog_codes
+    for column in (COLUMNS[0], COLUMNS[1], COLUMNS[5]):
+        rendered[column] = SECRET
+    with diagnostics.session(tmp_path/'log', 'worker') as log:
+        with pytest.raises(MpnSafetyError):
+            ui._bind_header(header)
+        assert log.flush()
+    failures = [r for r in records(tmp_path/'log')
+                if r['event'] == 'mpn.parent_binding_mismatch']
+    assert len(failures) == 1
+    assert failures[0]['mpn_mismatch_reference_state'] == expected
+    assert failures[0]['mpn_parent_mismatch_count'] == 3
+    assert controls.lookups == []
+    assert SECRET not in json.dumps(records(tmp_path/'log'))
+
+
+def test_reference_coverage_diagnostic_rejects_untrusted_payloads(tmp_path):
+    with diagnostics.session(tmp_path/'log', 'worker') as log:
+        diagnostics.record('mpn.parent_binding_mismatch',
+                           mpn_mismatch_reference_state=SECRET, raw=SECRET)
+        diagnostics.record('mpn.parent_binding_mismatch',
+                           mpn_mismatch_reference_state='all_reference_missing')
+        assert log.flush()
+    events = [r for r in records(tmp_path/'log')
+              if r['event'] == 'mpn.parent_binding_mismatch']
+    assert len(events) == 2
+    assert 'mpn_mismatch_reference_state' not in events[0]
+    assert events[1]['mpn_mismatch_reference_state'] == 'all_reference_missing'
+    assert SECRET not in json.dumps(events)

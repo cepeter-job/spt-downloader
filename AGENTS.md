@@ -845,3 +845,20 @@ authorization, change page caps, or bypass Stop, deadline, identity and source
 totals. A synthetic same-owner wrapper relocation is permitted only through
 the existing header/group, page-state and source-total checks; live acceptance
 is still required.
+
+
+Issue #156 (1 Nov 2026): for the owned MPN Accounting period clear
+action, count the `#filterPeriodCode` widgets inside the uniquely bound
+`ui-grid` before even considering its clear icon. Two period widgets
+with one clear button are ambiguous; refuse the action and keep MPN
+PARTIAL. Record only fixed `mpn_period_widget_state` categories,
+never controls' labels, values or paths. This cannot authorize a
+different widget, a filter bypass or unreviewed reference GET.
+
+Classify the availability of the exact original code inventories for
+mismatched Accounting parent fields using only fixed
+`mpn_mismatch_reference_state` categories. This is diagnostic only;
+do not reinterpret missing inventories as successful matching,
+downgrade genuine three-field contradictions, or click the Detail
+action after any source/display identity mismatch. Source pins,
+full-parent filter proof and strict final MpnSafetyError are unchanged.
