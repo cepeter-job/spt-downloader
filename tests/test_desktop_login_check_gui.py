@@ -1,6 +1,5 @@
 """Native settings retain credential management without a login-check operation."""
 import gc
-from pathlib import Path
 import tkinter as tk
 import pytest
 from spt_desktop import app as gui

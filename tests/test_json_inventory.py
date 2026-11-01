@@ -13,7 +13,7 @@ import sys
 
 import pytest
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

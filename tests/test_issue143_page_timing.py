@@ -7,7 +7,7 @@ import coretax_browser as driver
 from coretax_mpn import ORIGIN
 from coretax_mpn_ui import REFERENCE_PATH, _reference_route_kind
 from spt_desktop import diagnostics
-from support_isolated_browser import browser, context
+from support_isolated_browser import browser as browser, context as context
 from test_corporate_dom_page_size import fixture, assert_rows
 from test_diagnostics import records
 

@@ -1,6 +1,5 @@
 """Synthetic declared-PDF custody contracts, executed only on GitHub runners."""
 from copy import deepcopy
-import hashlib
 import json
 import shutil
 import subprocess

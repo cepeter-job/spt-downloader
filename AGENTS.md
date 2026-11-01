@@ -10,13 +10,28 @@ This repository is the development home for the read-only Coretax SPT downloader
 
 Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md), lalu baca [setup dan pengujian](docs/pengembangan.md), [kontrak arsitektur](docs/arsitektur.md), dan [CI/rilis](docs/ci-dan-rilis.md). CLI dan desktop dikembangkan bersama pada `main` melalui PR.
 
+Navigasi kontrak pada berkas ini: [perubahan/merge](#change-and-merge-discipline),
+[data/akses](#data-and-access-safety), [native JSON](#native-json-boundaries),
+[output](#output-contract), [diagnostik](#issue-143-diagnostics-boundary),
+[verifikasi](#verification), dan [desktop](#desktop-boundaries). Untuk pemilik
+fungsi dan tes, gunakan [peta kode](docs/peta-kode.md). Pin/resource worker
+mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
+
 ## Change and merge discipline
 
-- Tool configuration has one owner per policy: pytest defaults/project metadata
+- Tool configuration has one owner per policy: pytest/mypy settings
   use `pyproject.toml`, lint uses `ruff.toml`, and coverage uses `.coveragerc`.
   Keep CI's explicit `--rcfile=.coveragerc`, required `RUNNER_TEMP` data path,
   branch settings and existing thresholds/omissions. Do not recreate an
   incomplete alternate coverage policy in TOML.
+- Distribution is the verified Windows EXE with commit/run/attempt build-info;
+  `pyproject.toml` owns tool configuration only, with no Python package or
+  semantic-version release promise. Keep the locked setuptools dependency used
+  by the existing build toolchain and preserve build-info/SBOM identities.
+- F401 applies repository-wide. Preserve fixture registration and compatibility
+  names with explicit same-name re-exports; do not bulk-remove imports based on
+  lint alone. The adopted Bugbear subset is B006/B012/B016/B018/B020; remaining
+  findings require contract-specific triage before enabling additional rules.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
@@ -602,7 +617,8 @@ unsupported source shape rather than establishing a new catalog identity.
 Count queries include endpoint and every field except First. Scope L3/L11-A
 auxiliary exact-set checks to each form's endpoints without admitting unrelated
 responses. Keep all twelve IV.B fields canonical and unresolved; template,
-monetary formats, native eligibility/PDF gates and 45-worker allowlist stay intact.
+monetary formats, native eligibility/PDF gates and the explicit
+`spt_desktop.runtime.WORKER_FILES` allowlist stay intact.
 
 The pure L8 helper alone grants no native admission, observation or transport.
 Its supported ICT_RCIT/id-ID branch requires
@@ -620,7 +636,8 @@ stable final inputs and that the effective grid rate remains 1. A fresh grid on
 an uninterrupted Rupiah route has that conditional source invariant; it is not
 proved by the parent's saved exchange control. Native lifetime, dependency-cache
 visibility, main recalculation, async readiness and final callback proofs remain
-separate. Preserve the approved renderer/template, 45-worker list and PARTIAL gates.
+separate. Preserve the approved renderer/template, the explicit
+`spt_desktop.runtime.WORKER_FILES` list and PARTIAL gates.
 
 The separate native L8 branch requires loaded corporate/main/vendor script
 providers, id-ID/Asia/Jakarta, the literal submitted selected `?view=true` route,

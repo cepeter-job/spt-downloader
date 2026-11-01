@@ -344,6 +344,22 @@ tersendiri.
 
 Tidak ada capture, profil, log pribadi, atau hasil wajib pajak dalam artifact. Laporan self-test hanya memuat fakta non-rahasia tentang interpreter, resource, GUI, dan apakah akses kredensial/live scrape dilakukan.
 
+## Kebijakan metadata distribusi
+
+SPT Downloader didistribusikan sebagai aplikasi Windows EXE, bukan paket Python
+yang dipasang dengan `pip install .`. `pyproject.toml` hanya mengatur tooling;
+berkas itu tidak mendeklarasikan backend build PEP517, sumber versi dinamis atau
+nomor versi semantik aplikasi. Lingkungan development/worker
+tetap dipasang dari lock yang sudah ditinjau.
+
+Identitas distribusi tetap dimiliki `build-info.json`: schema, commit penuh,
+run ID dan run attempt. Nama artifact, SBOM, self-test dan verifikasi bootstrap
+mengikuti identitas itu. Jangan menggantinya dengan versi fallback setuptools
+atau menganggap nomor Python sebagai versi aplikasi. Setuptools pada lock build
+tetap diperlukan oleh toolchain PyInstaller; penghapusan deklarasi paket tidak
+menghapus atau mengubah dependensi tersebut. Kebijakan paket Python di masa
+depan memerlukan desain, dependency lock dan verifikasi tersendiri.
+
 ## Memverifikasi artifact
 
 Nama artifact menyertakan commit penuh dan versi interpreter:

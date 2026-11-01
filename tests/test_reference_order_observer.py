@@ -5,7 +5,7 @@ import pytest
 
 import coretax_json
 from masa_json_fixtures import SCOPE
-from pph21_observer_fixture import browser
+from pph21_observer_fixture import browser as browser
 
 VENDOR_BUILD = b'/* SYNTHETIC ORDER VENDOR -- no portal code */'
 

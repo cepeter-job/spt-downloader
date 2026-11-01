@@ -1,6 +1,5 @@
 """Kontrak tata letak keluaran dengan data sintetis, bukan catatan wajib pajak."""
 from copy import deepcopy
-from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 import coretax

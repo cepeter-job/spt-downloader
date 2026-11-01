@@ -1,16 +1,14 @@
 """Runner-only synthetic worker, offline and real-Tk mode contracts."""
 from contextlib import nullcontext
-import gc
 import inspect
 import json
 import threading
 from types import SimpleNamespace
-import tkinter as tk
 
 import pytest
 
 MODES = ['dom', 'json-first']
-from support_mode_gui import CAPTIONS, StartInput, button, mode_control, window
+from support_mode_gui import CAPTIONS, StartInput, button, mode_control, window as window
 
 def worker_job():
     from spt_desktop import worker

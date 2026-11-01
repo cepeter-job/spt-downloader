@@ -13,7 +13,7 @@ from pph21_projection_fixture import case, REFERENCE
 from support_templates import run_for
 from test_dated_reference_catalogs import CLOCK
 from test_pph21_template import export
-from pph21_observer_fixture import browser
+from pph21_observer_fixture import browser as browser
 from test_reference_order_safety import VENDOR_SHA
 
 VENDOR_BUILD = b'/* SYNTHETIC ORDER VENDOR -- no portal code */'

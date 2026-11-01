@@ -5,7 +5,7 @@ from support_templates import section
 import pytest
 
 
-from support_isolated_browser import browser, isolated_context
+from support_isolated_browser import browser as browser, isolated_context
 
 
 import coretax_browser as driver

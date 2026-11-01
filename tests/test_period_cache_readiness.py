@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 import coretax_browser as driver
 from spt_desktop import diagnostics as d
 from test_diagnostics import records

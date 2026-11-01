@@ -1,9 +1,8 @@
 """The frozen GUI payload is explicit; no outputs or browser profiles are globbed."""
 import importlib
 import importlib.util
-from pathlib import Path
 import pytest
-from spt_desktop.runtime import WORKER_FILES, python_version
+from spt_desktop.runtime import WORKER_FILES, python_version as python_version
 
 
 def builder():

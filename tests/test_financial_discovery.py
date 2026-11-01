@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import pytest
 
-from support_financial_browser import browser, routed, attachments, downloaded, RECORD, DETAIL, PDF_URL
+from support_financial_browser import browser as browser, routed as routed, attachments, downloaded, RECORD, DETAIL, PDF_URL
 
 
 CURRENT_LABEL = 'a. 1. Laporan Keuangan/Laporan Keuangan yang Telah Diaudit*'

@@ -2,7 +2,7 @@
 import pytest
 from coretax_json import JsonSafetyError
 from masa_json_fixtures import SCOPE
-from pph21_observer_fixture import REFERENCE, browser, observed
+from pph21_observer_fixture import REFERENCE, browser as browser, observed
 from test_pph21_json_observer import feature, assert_no_values_or_actions
 
 MODEL_REFERENCE = REFERENCE.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'

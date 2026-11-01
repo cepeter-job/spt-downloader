@@ -7,7 +7,7 @@ import pytest
 from playwright.sync_api import TimeoutError as BrowserTimeout
 
 import coretax_browser as driver
-from support_isolated_browser import browser, isolated_context
+from support_isolated_browser import browser as browser, isolated_context
 from test_diagnostics import records
 from test_json_inventory import synthetic_listing_browser as inventory_browser
 

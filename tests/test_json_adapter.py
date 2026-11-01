@@ -7,10 +7,8 @@ synthetic request keys do not claim to describe a native API request schema.
 import builtins
 from copy import deepcopy
 import gc
-import hashlib
 import json
 from pathlib import Path
-import re
 import weakref
 
 import pytest

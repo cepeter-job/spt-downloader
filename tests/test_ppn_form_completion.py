@@ -1,11 +1,9 @@
 """PPN-only completion contracts: synthetic values, GitHub-runner execution."""
 from copy import copy, deepcopy
-from pathlib import Path
 
 import pytest
 from openpyxl import load_workbook
 
-import coretax_exporter as exporter
 from support_templates import assert_format, section
 
 from support_templates import APPENDICES, RAW_MARKER, RESOURCE, export_ppn, source_appendix

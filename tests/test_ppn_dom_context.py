@@ -1,5 +1,5 @@
 """Synthetic DOM metadata; never live taxpayer data."""
-from support_isolated_browser import browser, isolated_context
+from support_isolated_browser import browser as browser, isolated_context
 
 
 def test_dom_keeps_visible_group_and_footer_boundary(browser):

@@ -1,7 +1,7 @@
 """Helper inventaris berbagi proses tanpa berbagi katalog, route, atau metrik."""
 from copy import deepcopy
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from test_inventory_year_browser import URL, send, synthetic_browser
 from test_json_inventory import SOURCE_URL, synthetic_listing_browser
 

@@ -4,7 +4,7 @@ from math import ceil
 import pytest
 
 import coretax_browser as driver
-from support_isolated_browser import browser, context
+from support_isolated_browser import browser as browser, context as context
 
 
 CAPTION = 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'

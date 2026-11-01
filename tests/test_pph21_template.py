@@ -1,5 +1,5 @@
 """PPh21 format contracts use a sanitized reference and synthetic source only."""
-from copy import copy, deepcopy
+from copy import deepcopy
 import hashlib
 from pathlib import Path
 import sys
