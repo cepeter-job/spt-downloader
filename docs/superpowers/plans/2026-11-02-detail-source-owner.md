@@ -26,9 +26,9 @@ coretax_json.py, spt_desktop/controller.py, spt_desktop/runtime.py; AGENTS.md an
 **Interface:** validate_detail_source(value) accepts only exact str dom/json-first,
 returns the original value and otherwise raises the original ValueError.
 
-- [ ] Add a fresh-process GUI import boundary test, public identity/literal characterization and local controller patch-injection tests.
-- [ ] Run tests-only on a pinned Windows probe; observe the expected adapter-import refusal and inspect original JUnit.
-- [ ] Move only the validator body, add the explicit legacy export/controller import/resource and document the actual boundary.
+- [x] Add a fresh-process GUI import boundary test, public identity/literal characterization and local controller patch-injection tests.
+- [x] Run tests-only on a pinned Windows probe; observe the expected adapter-import refusal and inspect original JUnit.
+- [x] Move only the validator body, add the explicit legacy export/controller import/resource and document the actual boundary.
 - [ ] Run the same focused runner probe GREEN and full CI; preserve every baseline test identity and inspect exact artifacts.
 - [ ] Fresh whole-branch review; review latest main/preceding other-session merge, then merge and update issue134 with evidence and remaining conditional work.
 

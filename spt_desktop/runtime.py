@@ -42,6 +42,7 @@ WORKER_FILES = (
     'spt_desktop/diagnostics.py', 'spt_desktop/diagnostic_store.py',
     'spt_desktop/build_info.py', 'spt_desktop/publication_recovery.py',
     'spt_desktop/profile_lifecycle.py',
+    'coretax_detail_source.py',
 )
 
 
