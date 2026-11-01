@@ -1,6 +1,5 @@
 """The reported Satu->Coretax-home flow is reproduced with synthetic routes."""
 import pytest
-from playwright.sync_api import sync_playwright as sync_playwright
 from spt_desktop import auth
 from spt_desktop.credentials import Login
 

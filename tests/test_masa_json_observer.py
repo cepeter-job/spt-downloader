@@ -3,16 +3,14 @@ import hashlib
 import json
 
 import pytest
-from playwright.sync_api import sync_playwright as sync_playwright
 
 import coretax_browser as driver
 from coretax_json import JsonSafetyError
-from coretax_json_capture import DetailJsonCapture as DetailJsonCapture
 from masa_json_fixtures import SCOPE
-from masa_observer_fixture import ASSETS, BUILD, FORMS, FRAME as FRAME, MAIN, Fixture as Fixture
+from masa_observer_fixture import ASSETS, BUILD, FORMS, MAIN
 
 
-from support_masa_native import browser as browser, observed, observer_module as observer_module
+from support_masa_native import browser as browser, observed
 
 
 @pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])

@@ -4,7 +4,6 @@ import subprocess
 import sys
 
 import pytest
-from playwright.sync_api import sync_playwright as sync_playwright
 
 import coretax_browser as source_browser
 
