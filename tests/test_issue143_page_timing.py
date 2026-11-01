@@ -88,42 +88,54 @@ def test_failed_corporate_post_pagination_keeps_verified_rows_and_reports_phase_
 
 def test_post_pagination_state_poll_timeout_is_partial_without_repeating_click(
         context, tmp_path, monkeypatch):
-    from playwright.sync_api import ElementHandle, TimeoutError as PlaywrightTimeoutError
+    _assert_state_poll_timeout(context, tmp_path, monkeypatch, cap=250)
+
+
+def test_legacy_state_poll_timeout_is_partial_without_repeating_click(
+        context, tmp_path, monkeypatch):
+    _assert_state_poll_timeout(context, tmp_path, monkeypatch, cap=100)
+
+
+def _assert_state_poll_timeout(context, tmp_path, monkeypatch, *, cap):
+    from playwright.sync_api import ElementHandle, JSHandle, TimeoutError as PlaywrightTimeoutError
 
     page = context.new_page()
     page.route("**/*", lambda route: route.abort())
     page.set_default_timeout(500)
-    table = fixture(page, total=601, sizes=(10, 100, 250), selected=250)
-    original_evaluate = ElementHandle.evaluate
+    table = fixture(page, total=601, sizes=(10, 100, 250), selected=cap)
+    handle_type = JSHandle if cap == 250 else ElementHandle
+    expression_to_fail = driver.TABLE_CURSOR_POLL_JS if cap == 250 else driver.STATE_JS
+    fail_at = 1 if cap == 250 else 2  # Legacy first reads its pre-click state.
+    original_evaluate = handle_type.evaluate
     reads = 0
     secret = "SYNTHETIC_PRIVATE_STATE_VALUE"
 
     def fail_one_state_read(handle, expression, arg=None):
         nonlocal reads
-        if expression == driver.STATE_JS:
+        if expression == expression_to_fail:
             reads += 1
-            if reads == 2:
+            if reads == fail_at:
                 raise PlaywrightTimeoutError(secret)
         return original_evaluate(handle, expression, arg)
 
-    monkeypatch.setattr(ElementHandle, "evaluate", fail_one_state_read)
+    monkeypatch.setattr(handle_type, "evaluate", fail_one_state_read)
     with diagnostics.session(tmp_path / "log", "worker") as log:
-        result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+        result = driver.capture_table(page, table, 1, 1000, max_page_size=cap)
         assert log.flush()
 
     assert not result["complete"]
     assert result["warning"] == "Table state read timed out after pagination"
     assert result["pages"] == 1
     assert result["source_total"] == 601
-    assert result["body_row_count"] == 250
-    assert len(result["rows"]) == 251  # First verified page plus footer only.
-    assert page.evaluate("({moves,size})") == {"moves": 1, "size": 250}
+    assert result["body_row_count"] == cap
+    assert len(result["rows"]) == cap + 1  # First verified page plus footer only.
+    assert page.evaluate("({moves,size})") == {"moves": 1, "size": cap}
     entries = records(tmp_path / "log")
     failures = [entry for entry in entries if entry["event"] == "table.state_read_failed"]
     assert len(failures) == 1
     assert failures[0]["table_state_stage"] == "poll"
     assert failures[0]["pages"] == 1
-    assert failures[0]["page_size_cap"] == 250
+    assert failures[0]["page_size_cap"] == cap
     assert failures[0]["table_click_ms"] >= 0
     assert failures[0]["duration_ms"] >= failures[0]["table_click_ms"]
     assert secret not in json.dumps(entries)
@@ -239,7 +251,7 @@ def test_post_page_verified_snapshot_avoids_duplicate_expensive_state_evaluation
     result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
     assert_rows(result, 601)
     assert page.evaluate("moves") == 2
-    assert state_reads == 4  # One pre-click and one poll per transition.
+    assert state_reads == 0  # Exact comparison remains in the private cursor.
     page.close()
 
 
