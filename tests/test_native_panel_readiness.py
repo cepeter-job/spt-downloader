@@ -8,7 +8,7 @@ import coretax_browser as driver
 from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import SCOPE
 from pph21_observer_fixture import ARTICLE, BUILD as PPH21_BUILD, MAIN, observed as pph21_case
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from support_masa_native import observed as masa_case
 from test_json_hybrid_native import NativeFixture
 import support_json_corpus as corpus

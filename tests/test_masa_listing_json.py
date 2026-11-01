@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from test_json_inventory import (EXPECTED_META, SOURCE_URL, TAXPAYER, api_row,
                                  context, encode, envelope, synthetic_listing_browser)
 

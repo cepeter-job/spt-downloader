@@ -1,6 +1,5 @@
 """A delayed already-supported form, not an invented portal/login selector."""
 
-import pytest
 
 from spt_desktop import auth
 from spt_desktop.credentials import Login

@@ -5,7 +5,7 @@ import pytest
 
 from masa_observer_fixture import Fixture
 from masa_json_fixtures import SCOPE
-from support_masa_native import browser, observed
+from support_masa_native import browser as browser, observed
 from test_masa_json_field_observation import metadata
 from test_ppn_json_amendment import amend_case, decode, reseal
 

@@ -6,7 +6,7 @@ import coretax_masa_bindings
 import support_masa_native
 from masa_json_fixtures import SCOPE
 from masa_observer_fixture import BUILD, MAIN, ASSETS
-from support_masa_native import browser, observed, exported
+from support_masa_native import browser as browser, observed, exported
 from unifikasi_observer_fixture import NativeFixture
 
 

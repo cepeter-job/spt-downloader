@@ -1,7 +1,7 @@
 """Isolasi context sintetis tetap berlaku saat proses browser dipakai ulang."""
 import pytest
 
-from support_isolated_browser import browser, isolated_context
+from support_isolated_browser import browser as browser, isolated_context
 
 
 ORIGIN = 'https://browser-fixture.synthetic.invalid'

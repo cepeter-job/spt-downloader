@@ -4,7 +4,7 @@ import json
 
 import coretax_browser as driver
 from spt_desktop import diagnostics as d
-from test_corporate_dom_structure import browser, routed, l1d_html, RECORD
+from test_corporate_dom_structure import browser as browser, routed as routed, l1d_html, RECORD
 from test_diagnostics import records
 
 

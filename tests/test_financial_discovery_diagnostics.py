@@ -5,7 +5,7 @@ import json
 import pytest
 
 from spt_desktop import diagnostics as d
-from support_financial_browser import browser, routed, attachments, RECORD, DETAIL
+from support_financial_browser import browser as browser, routed as routed, attachments, RECORD, DETAIL
 from test_diagnostics import records
 from test_financial_discovery import CURRENT_LABEL, file_table
 

@@ -12,7 +12,7 @@ import coretax
 from coretax_exporter import validate_export_run
 from spt_desktop import output
 from support_financial_browser import browser as browser
-from support_financial_browser import routed, attachments, downloaded, RECORD, DETAIL, PDF_URL, LABEL
+from support_financial_browser import routed as routed, attachments, downloaded, RECORD, DETAIL, PDF_URL, LABEL
 from support_financial_publication import PDF, financial_run
 from support_financial_publication import physical_bytes
 from support_runs import fixture_run

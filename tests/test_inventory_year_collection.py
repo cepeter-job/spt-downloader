@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import pytest
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from test_json_inventory import synthetic_listing_browser
 
 

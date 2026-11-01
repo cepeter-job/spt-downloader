@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from test_inventory_year_filter import catalog, plan
 from test_json_inventory import synthetic_listing_browser
 

@@ -12,7 +12,7 @@ from coretax_json import JsonSafetyError, adapt_corporate_detail
 import support_json_corpus as corpus
 from test_corporate_l7_native import (FRAME, MAIN, PINS, L7Fixture, selected,
                                      packet as l7_packet, bindings as l7_bindings)
-from test_json_hybrid_native import browser
+from test_json_hybrid_native import browser as browser
 from test_corporate_l11c_projection import ROOT, HEADERS, SPANS, raw_source
 
 

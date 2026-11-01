@@ -2,7 +2,7 @@
 import json
 
 import coretax_browser as driver
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 
 
 def test_state_poll_reads_all_rows_without_asking_browser_for_layout(browser):

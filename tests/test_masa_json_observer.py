@@ -1,21 +1,16 @@
 # Real Edge contracts: no DOM tax values, guessed requests or partial coverage.
-from contextlib import contextmanager
 import hashlib
-import importlib
-import importlib.util
 import json
 
 import pytest
-from playwright.sync_api import sync_playwright
 
 import coretax_browser as driver
 from coretax_json import JsonSafetyError
-from coretax_json_capture import DetailJsonCapture
 from masa_json_fixtures import SCOPE
-from masa_observer_fixture import ASSETS, BUILD, FORMS, FRAME, MAIN, Fixture
+from masa_observer_fixture import ASSETS, BUILD, FORMS, MAIN
 
 
-from support_masa_native import browser, observed, observer_module
+from support_masa_native import browser as browser, observed
 
 
 @pytest.mark.parametrize('tax', ['PPN', 'PPh Unifikasi'])

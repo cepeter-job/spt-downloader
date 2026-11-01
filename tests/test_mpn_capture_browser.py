@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from support_isolated_browser import browser
+from support_isolated_browser import browser as browser
 from test_mpn import scope_run, payment_source, HEADER
 from test_mpn_capture_protocol import snapshot
 

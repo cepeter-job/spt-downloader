@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from spt_desktop import auth, controller, worker, windows
+from spt_desktop import controller, worker, windows
 
 
 def profiles():

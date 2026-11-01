@@ -27,13 +27,24 @@ Clone repositori dan buat branch perubahan dari `main` yang sudah diperbarui. Na
 
 ## Pemilik konfigurasi tooling
 
-Default pytest dan metadata proyek berada di `pyproject.toml`; pilihan lint
+Konfigurasi pytest/mypy berada di `pyproject.toml`; pilihan lint
 berada di `ruff.toml`. Coverage hanya memakai `.coveragerc`, dengan pilihan
 eksplisit `--rcfile=.coveragerc` pada seluruh perintah CI run/XML/JSON.
 `RUNNER_TEMP` wajib tersedia agar berkas data tetap di scratch runner;
 konfigurasi mempertahankan branch coverage, omit yang ada dan `fail_under=0`.
 Laporan portable belum mewakili coverage Windows/browser/native/worker.
 Jangan menambahkan salinan `[tool.coverage.*]` yang melewatkan kontrak ini.
+
+Distribusi aplikasi tetap berupa EXE, dengan identitas commit/run/attempt.
+`pyproject.toml` tidak mendeklarasikan paket PEP517 atau versi rilis Python;
+instalasi development memakai lock, bukan `pip install .`. Baca
+[kebijakan metadata distribusi](ci-dan-rilis.md#kebijakan-metadata-distribusi).
+
+Ruff memeriksa F401 pada seluruh repository. Impor fixture pytest yang dipakai
+melalui injeksi dan nama kompatibilitas tetap diekspor secara eksplisit dengan
+alias nama yang sama. Jangan memakai autofix untuk menghapusnya. Subset Bugbear
+B006/B012/B016/B018/B020 ditambahkan setelah baseline/triase; aturan lain tetap
+memerlukan keputusan kontrak, terutama panjang pasangan `zip` dan lifetime callback.
 
 Mypy memakai scope stdlib terbatas di `pyproject.toml`; Bandit memeriksa modul
 produk dengan pengecualian rule lokal yang ditinjau. Keduanya memakai environment

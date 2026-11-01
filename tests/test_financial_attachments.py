@@ -1,21 +1,16 @@
 """Financial PDF contracts use intercepted synthetic pages and bytes only."""
 from copy import deepcopy
-import hashlib
-import importlib
-import importlib.util
-from pathlib import PurePosixPath
 import subprocess
 import sys
 
 import pytest
-from playwright.sync_api import sync_playwright
 
 import coretax_browser as source_browser
 
 # Even an accidentally followed redirect must not target the real portal.
 # Existing browser-safety tests separately cover the production origin pin.
 from support_financial_browser import browser as browser
-from support_financial_browser import DETAIL, LABEL, ORIGIN, PDF, PDF_URL, RECORD, attachments, downloaded, routed
+from support_financial_browser import DETAIL, LABEL, ORIGIN, PDF, PDF_URL, RECORD, attachments, downloaded, routed as routed
 
 def partial(result):
     assert result and all(item['status'] == 'PARTIAL' for item in result)

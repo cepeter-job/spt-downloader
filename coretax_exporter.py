@@ -5,7 +5,7 @@ verifikasi, dan publikasi set workbook yang dihasilkan di sini.
 """
 from pathlib import Path
 
-from collections import Counter, defaultdict
+from collections import Counter
 from copy import deepcopy
 from decimal import Decimal
 import hashlib

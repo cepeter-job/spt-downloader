@@ -4,7 +4,7 @@ import json
 import pytest
 
 from coretax_browser import GROUP_JS
-from support_masa_native import browser, observer_module, observed
+from support_masa_native import browser as browser, observer_module, observed
 
 TRAPS = r"""() => {
  window.valueReads=0;

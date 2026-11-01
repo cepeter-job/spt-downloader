@@ -1,10 +1,7 @@
 """Runner-only real Tk dialogs; no scraper, credentials or live taxpayer records."""
-from contextlib import contextmanager
-import gc
 import tkinter as tk
 import pytest
 
-from spt_desktop.app import App
 
 
 from support_gui import named_widget, button, consent_event, widgets, window

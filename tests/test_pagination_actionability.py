@@ -3,7 +3,7 @@ from itertools import count
 from types import SimpleNamespace
 import pytest
 from playwright.sync_api import TimeoutError as BrowserTimeout
-from support_isolated_browser import browser, context
+from support_isolated_browser import browser as browser, context as context
 import coretax_browser as driver
 
 

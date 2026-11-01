@@ -1,6 +1,5 @@
 """Owned synthetic SPA L8 fixture with business-read traps; runners only."""
 import html
-import json
 
 import coretax_corporate_projection as projection
 from l1d_observer_fixture import Fixture as BaseFixture

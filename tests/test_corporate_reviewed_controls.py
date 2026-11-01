@@ -1,7 +1,7 @@
 """Actual paginator ownership, never a value-based legacy-control guess."""
 import coretax_browser as driver
-from support_isolated_browser import browser, context
-from test_ppn_capture_readiness import page
+from support_isolated_browser import browser as browser, context as context
+from test_ppn_capture_readiness import page as page
 
 
 def test_new_dom_fields_exclude_paginator_controls_but_keep_unnamed_business(page):

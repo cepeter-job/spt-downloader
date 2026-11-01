@@ -5,7 +5,7 @@ from coretax_json import ORIGIN, JsonSafetyError, _UnsupportedMetadata, _corpora
 from coretax_masa_bindings import (
     BUILD_DIGESTS, FORMS, MAIN_SOURCE, TAX_SOURCES,
     project_ppn_amount, project_ppn_header, project_ppn_asked_to, project_ppn_footer, project_ppn_grid,
-    project_unifikasi_footer, project_unifikasi_grid, project_unifikasi_text,
+    project_unifikasi_footer, project_unifikasi_grid, project_unifikasi_text as project_unifikasi_text,
     project_unifikasi_tree,
 )
 

@@ -3,7 +3,6 @@ from copy import deepcopy
 import hashlib
 import importlib
 import importlib.util
-import json
 
 import pytest
 
@@ -13,7 +12,7 @@ import coretax_exporter as exporter
 from coretax_json import JsonSafetyError, adapt_corporate_detail
 import support_json_corpus as corpus
 from test_corporate_l7_projection import ROOT, HEADERS, SPANS, raw_source
-from test_json_hybrid_native import ASSET, BUILD, NativeFixture, browser, PDF_URL
+from test_json_hybrid_native import ASSET, BUILD, NativeFixture, browser as browser, PDF_URL
 
 
 MAIN = corpus.ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'

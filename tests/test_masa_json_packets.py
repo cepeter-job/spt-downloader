@@ -6,7 +6,7 @@ import json
 import pytest
 
 from coretax_json import JsonSafetyError
-from masa_json_fixtures import FOREIGN, NPWP, SCOPE, packet, payload, selected
+from masa_json_fixtures import FOREIGN, SCOPE, packet, payload, selected
 
 
 def adapt(bodies, tax, forms=None, record=None):
