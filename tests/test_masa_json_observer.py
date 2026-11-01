@@ -1,6 +1,5 @@
 # Real Edge contracts: no DOM tax values, guessed requests or partial coverage.
 import hashlib
-import importlib
 import json
 
 import pytest

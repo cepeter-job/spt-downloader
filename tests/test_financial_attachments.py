@@ -1,6 +1,5 @@
 """Financial PDF contracts use intercepted synthetic pages and bytes only."""
 from copy import deepcopy
-import importlib
 import subprocess
 import sys
 
