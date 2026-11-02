@@ -345,8 +345,9 @@ Transaksi dialog/title/grid within one five-second readiness deadline.
 
 The original admitted reference response may finish before the first parent
 binding, including after initial UI preparation. Wait at most five seconds for
-already owned pending sources before freezing that binding; never fetch a
-missing catalog or use browser cache. Retain its original bytes once in private
+already owned pending sources before freezing that binding. Only the separately
+approved bounded adapter GET above may acquire a missing catalog before the
+strict parent comparison; never use browser cache. Retain its original bytes once in private
 evidence even if they were unavailable at open. Changed snapshots stay fatal;
 first catalogs arriving after binding stay unsupported. Preserve the earlier
 pending-reply latch at final sampling, including valid empty inventories.
@@ -541,7 +542,8 @@ click, changing elapsed policy, or promoting PARTIAL.
 
 For Issue #143 live follow-up after PR #150, classify only owned original
 MPN reference GET readiness as accepted, observed-but-unbound, or not observed.
-Never trigger a new reference request, infer a catalog from cache, or map a
+These diagnostics never trigger a new reference request; only the separately
+approved bounded adapter acquisition above may do so. Never infer a catalog from cache or map a
 display label to an unproved code. If the sole mismatched field is accounting
 type and no original code inventory exists, refuse as MpnUnsupported rather
 than claiming a known contradiction; no detail click. Independent identity
