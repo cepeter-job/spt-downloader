@@ -49,6 +49,7 @@ def test_owned_transaction_calendar_clear_then_second_search_completes(browser, 
 
 @pytest.mark.parametrize('variant', ['duplicate_calendar', 'duplicate_button', 'wrong_input',
                                     'wrong_icon', 'disabled', 'hidden', 'foreign',
+                                    'sibling_table',
                                     'extra_filter', 'different_date_mode', 'modified_cancelled'])
 def test_unproved_transaction_date_control_never_clears_or_admits_inventory(browser, tmp_path, monkeypatch, variant):
     with portal(browser, monkeypatch, default_stuck=True,

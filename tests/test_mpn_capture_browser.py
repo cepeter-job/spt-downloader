@@ -197,11 +197,14 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             + ('' if transaction_date_clear == 'ineffective' else 'syntheticDateCleared=true;') + '};}'
             'loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);')
         if transaction_date_clear != 'foreign':
+            target = ('acc-balance-sheet-light-grid ui-grid' if transaction_date_clear == 'sibling_table'
+                      else 'acc-balance-sheet-light-grid thead')
+            opening, closing = ('<table><thead><tr><th>', '</th></tr></thead></table>') if transaction_date_clear == 'sibling_table' else ('<tr><th>', '</th></tr>')
             main = main.replace('head(document.querySelector(\'acc-balance-sheet-light-grid table\'),LISTHEAD);',
                 "head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);"
                 "const dateTemplate=document.getElementById('synthetic-date-template');"
-                "document.querySelector('acc-balance-sheet-light-grid thead').insertAdjacentHTML('beforeend',"
-                "'<tr><th>'+dateTemplate.innerHTML+'</th></tr>');dateTemplate.remove();")
+                'document.querySelector(' + json.dumps(target) + ").insertAdjacentHTML('beforeend',"
+                + json.dumps(opening) + '+dateTemplate.innerHTML+' + json.dumps(closing) + ');dateTemplate.remove();')
     main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog or catalog_response is not None else '') + ';'
             + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
@@ -250,6 +253,9 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             calendar = calendar.replace('id="TransactionDate"', 'id="PostingDate"')
         if transaction_date_clear == 'wrong_icon':
             calendar = calendar.replace('pi pi-times', 'pi pi-calendar')
+        if transaction_date_clear == 'missing_parent':
+            calendar = calendar.replace('<div class="input-date-container p-inputgroup">',
+                                        '<span class="input-date-container p-inputgroup">').replace('</div>', '</span>')
         if transaction_date_clear == 'disabled':
             calendar = calendar.replace('data-synthetic-date-clear>', 'data-synthetic-date-clear disabled>')
         if transaction_date_clear == 'hidden':
