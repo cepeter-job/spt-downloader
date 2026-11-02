@@ -24,7 +24,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            dropdown_close_delay=0, catalog_response=None, parent_detail_codes=None,
            parent_detail_display=None, dialog_close_delay=0,
            period_clear_in_grid=False, ambiguous_period_clear=False,
-           duplicate_period_widget=False):
+           duplicate_period_widget=False, transaction_date_clear=None):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -180,6 +180,24 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
             + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
             + 'const ROUNDED=' + json.dumps(rounded) + ';const STUCK=' + json.dumps(default_stuck) + ';' + main).encode()
+    if transaction_date_clear is not None:
+        # The real date clear can emit one stale grid query before the next
+        # Search reconciles the form. Only that actual date action removes it.
+        main = 'let syntheticDateCleared=false;window.syntheticDateClicks=0;window.syntheticSearchClicks=0;' + main
+        main = main.replace('searches<=2||STUCK', '!syntheticDateCleared&&(searches<=2||STUCK)')
+        main = main.replace('e.preventDefault();loadList();',
+                            'e.preventDefault();window.syntheticSearchClicks++;loadList();')
+        main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
+            "for(const button of document.querySelectorAll('[data-synthetic-date-clear]')){"
+            "button.onclick=()=>{window.syntheticDateClicks++;loadList();"
+            + ('' if transaction_date_clear == 'ineffective' else 'syntheticDateCleared=true;') + '};}'
+            'loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);')
+        if transaction_date_clear != 'foreign':
+            main = main.replace('head(document.querySelector(\'acc-balance-sheet-light-grid table\'),LISTHEAD);',
+                "head(document.querySelector('acc-balance-sheet-light-grid table'),LISTHEAD);"
+                "const dateTemplate=document.getElementById('synthetic-date-template');"
+                "document.querySelector('acc-balance-sheet-light-grid thead').insertAdjacentHTML('beforeend',"
+                "'<tr><th>'+dateTemplate.innerHTML+'</th></tr>');dateTemplate.remove();")
     vendor = b'/* Synthetic vendor only; no portal source or taxpayer data. */'
     pins = {'/accounting/id-ID/main.synthetic.js': hashlib.sha256(main).hexdigest(),
             '/accounting/id-ID/vendor.synthetic.js': hashlib.sha256(vendor).hexdigest()}
@@ -211,6 +229,27 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         # clicking the first visible icon based on its uniqueness alone.
         html = html.replace('<div id="filterPeriodCode"><button',
                             '<div id="filterPeriodCode"></div><div id="filterPeriodCode"><button', 1)
+    if transaction_date_clear is not None:
+        calendar = ('<ui-input-date><div class="input-date-container p-inputgroup">'
+            '<p-calendar id="filterTransactionDate"><input id="TransactionDate" readonly></p-calendar>'
+            '<button type="button" class="p-button-secondary" aria-label="Clear date" data-synthetic-date-clear>'
+            '<span class="p-button-icon pi pi-times"></span></button></div></ui-input-date>')
+        if transaction_date_clear == 'duplicate_calendar':
+            calendar = calendar.replace('<p-calendar ', '<p-calendar id="filterTransactionDate"></p-calendar><p-calendar ', 1)
+        if transaction_date_clear == 'duplicate_button':
+            calendar = calendar.replace('</div>', '<button type="button" class="p-button-secondary" aria-label="Clear date" data-synthetic-date-clear><span class="pi pi-times"></span></button></div>', 1)
+        if transaction_date_clear == 'wrong_input':
+            calendar = calendar.replace('id="TransactionDate"', 'id="PostingDate"')
+        if transaction_date_clear == 'wrong_icon':
+            calendar = calendar.replace('pi pi-times', 'pi pi-calendar')
+        if transaction_date_clear == 'disabled':
+            calendar = calendar.replace('data-synthetic-date-clear>', 'data-synthetic-date-clear disabled>')
+        if transaction_date_clear == 'hidden':
+            calendar = calendar.replace('data-synthetic-date-clear>', 'data-synthetic-date-clear style="display:none">')
+        if transaction_date_clear == 'foreign':
+            html = html.replace('</body>', calendar + '</body>')
+        else:
+            html = html.replace('</body>', '<template id="synthetic-date-template">' + calendar + '</template></body>')
     if delayed_page_size:
         html = html.replace('</table></p-table>', '</table><div class="p-paginator">'
             '<span class="p-dropdown-label">10</span><button type="button" class="p-dropdown-trigger">Size</button>'
