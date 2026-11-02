@@ -287,6 +287,9 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
+    def unexpected_adapter_get(*args, **kwargs):
+        raise AssertionError('Synthetic browser fixture refuses unexpected adapter HTTP')
+    monkeypatch.setattr(context.request, 'get', unexpected_adapter_get)
     page = context.new_page()
     original_goto = page.goto
     def goto(*args, **kwargs):

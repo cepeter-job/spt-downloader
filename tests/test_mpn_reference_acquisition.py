@@ -298,3 +298,42 @@ def test_unknown_explicit_origin_or_origin_on_grid_is_refused(kind, origin):
     value['bindings'] = [{'path': 'SYNTHETIC', 'kind': kind, 'origin': origin}]
     with pytest.raises(MpnSafetyError, match='origin'):
         validate_mpn(run)
+
+
+def test_invalid_passive_catalog_is_not_marked_as_accepted_private_bytes(tmp_path, monkeypatch):
+    from test_mpn_source_custody import source_ui, request
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    observed, _ = request(ui, REFERENCE_PATH, b'{', kind='fetch')
+    ui._source_request(observed)
+    ui._source_finished(observed)
+    with pytest.raises(MpnSafetyError):
+        ui._stop()
+    assert ui.reference_raw is None
+    ui.observer.close()
+
+
+@pytest.mark.parametrize('failure', [MpnUnsupported, MpnSafetyError])
+def test_retention_budget_cannot_mask_original_failure_or_skip_partial_checkpoint(
+        tmp_path, monkeypatch, failure):
+    from test_mpn_capture_protocol import prepare
+    module, _ = prepare(monkeypatch)
+    make = module.AccountingUI
+    def factory(*args, **kwargs):
+        ui = make(*args, **kwargs)
+        def pages(header, max_pages):
+            ui.reference_raw = catalog_bytes()
+            ui.reference_origin = 'adapter-get-v1'
+            monkeypatch.setattr(module, 'MAX_EVIDENCE', 0)
+            raise failure('SYNTHETIC ORIGINAL FAILURE')
+            yield  # This fake implements the collector's iterator contract.
+        ui.detail_pages = pages
+        return ui
+    monkeypatch.setattr(module, 'AccountingUI', factory)
+    run = scope_run()
+    if failure is MpnSafetyError:
+        with pytest.raises(MpnSafetyError, match='ORIGINAL FAILURE'):
+            module.collect_mpn(object(), run, tmp_path)
+    else:
+        module.collect_mpn(object(), run, tmp_path)
+    assert run['mpn']['status'] == 'PARTIAL' and not run['complete']
+    assert (tmp_path / 'run.json').is_file()
