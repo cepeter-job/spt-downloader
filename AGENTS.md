@@ -110,7 +110,19 @@ Amounts by the detail's literal tax period/year. Never substitute payment date
 or parent year. Same-year ranges need the exact captured PERIOD meaning;
 cross-year/malformed/missing meanings remain unresolved. Only original same-
 attempt id-ID reference bytes with unique codes and explicit null ValidTo supply
-labels; no cache clock/version selection or extra catalog fetch is admitted.
+labels; no cache clock/version selection is admitted. The operator-approved
+exception permits one adapter-owned GET of the exact four-type id-ID reference
+route when missing catalogs explain all parent reference mismatches. It requires
+the owned Service-Worker-blocked context, both loaded source pins, retained
+Document/attempt/literal ledger, original selected-scope unfiltered list and no
+pending admitted source. Keep one five-second transaction, eight MiB body,
+zero redirects/retries, Stop and sticky source/identity failures. Never fetch for
+empty inventories, already sufficient raw-code bindings or known contradictions.
+Acquire before strict parent comparison; do not demote MpnSafetyError. Preserve
+original bytes privately with observed-get-v1 versus adapter-get-v1 origins;
+legacy missing origin remains readable and unknown explicit origins are refused.
+This grants no cache access, token extraction, alternate route/locale, POST,
+Detail authorization or capture/publication completion by itself.
 Keep loaded Accounting main/vendor pins, committed request-object ownership,
 owned pagination, Stop, terminal failures, source/privacy budgets and final drain.
 DOM needs complete ordered visible binding and exact decimal validation of all
@@ -333,8 +345,9 @@ Transaksi dialog/title/grid within one five-second readiness deadline.
 
 The original admitted reference response may finish before the first parent
 binding, including after initial UI preparation. Wait at most five seconds for
-already owned pending sources before freezing that binding; never fetch a
-missing catalog or use browser cache. Retain its original bytes once in private
+already owned pending sources before freezing that binding. Only the separately
+approved bounded adapter GET above may acquire a missing catalog before the
+strict parent comparison; never use browser cache. Retain its original bytes once in private
 evidence even if they were unavailable at open. Changed snapshots stay fatal;
 first catalogs arriving after binding stay unsupported. Preserve the earlier
 pending-reply latch at final sampling, including valid empty inventories.
@@ -529,7 +542,8 @@ click, changing elapsed policy, or promoting PARTIAL.
 
 For Issue #143 live follow-up after PR #150, classify only owned original
 MPN reference GET readiness as accepted, observed-but-unbound, or not observed.
-Never trigger a new reference request, infer a catalog from cache, or map a
+These diagnostics never trigger a new reference request; only the separately
+approved bounded adapter acquisition above may do so. Never infer a catalog from cache or map a
 display label to an unproved code. If the sole mismatched field is accounting
 type and no original code inventory exists, refuse as MpnUnsupported rather
 than claiming a known contradiction; no detail click. Independent identity

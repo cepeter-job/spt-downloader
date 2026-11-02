@@ -480,7 +480,9 @@ No partial DOM page is combined with another source. Raw pages stay private.
                 'sha256': hashlib.sha256(raw).hexdigest()}
         value['evidence'].append(item)
         binding = {'path': item['path'], 'kind': kind}
-        if kind != 'catalog':
+        if kind == 'catalog':
+            binding['origin'] = snapshot.get('origin', 'observed-get-v1')
+        else:
             binding.update(request=deepcopy(snapshot['request']), parent_id=snapshot.get('parent_id'))
             if 'total_mode' in snapshot:
                 binding['total_mode'] = snapshot['total_mode']
@@ -492,18 +494,26 @@ No partial DOM page is combined with another source. Raw pages stay private.
     seen_headers, seen_details, provenance = {}, {}, {}
     capture_stage = 'session'
     ui = None
+    catalog_saved = False
+    def retain_catalog():
+        nonlocal catalog_saved
+        if not catalog_saved and getattr(ui, 'reference_raw', None) is not None:
+            evidence({'raw': ui.reference_raw,
+                      'origin': getattr(ui, 'reference_origin', None) or 'observed-get-v1'}, 'catalog')
+            catalog_saved = True
+    def retain_after_failure():
+        try:
+            retain_catalog()
+        except MpnUnsupported:  # nosec B110 - Preserve original failure and checkpoint after an evidence cap.
+            # Evidence caps cannot replace the original refusal or skip PARTIAL.
+            # Stop and safety refusals still propagate.
+            pass
     try:
         with AccountingUI(page, run, folder, check_cancel=check_cancel) as ui:
             capture_stage = 'open'
             ui.open()
             capture_stage = 'parent_inventory'
             value['source_pins'] = deepcopy(ui.pins)
-            catalog_saved = False
-            def retain_catalog():
-                nonlocal catalog_saved
-                if not catalog_saved and getattr(ui, 'reference_raw', None) is not None:
-                    evidence({'raw': ui.reference_raw}, 'catalog')
-                    catalog_saved = True
             retain_catalog()
             first, total, pages, total_mode = 0, None, 0, None
             for snapshot in ui.list_pages(max_pages):
@@ -623,6 +633,8 @@ No partial DOM page is combined with another source. Raw pages stay private.
             ui.finish()
             value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
     except MpnSafetyError as error:
+        if ui is not None:
+            retain_after_failure()
         diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
                            mpn_capture_stage=capture_stage,
                            mpn_ui_stage=getattr(ui, 'diagnostic_stage', None), error=error)
@@ -631,6 +643,8 @@ No partial DOM page is combined with another source. Raw pages stay private.
         checkpoint()
         raise
     except (MpnUnsupported, PlaywrightError) as error:
+        if ui is not None:
+            retain_after_failure()
         diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
                            mpn_capture_stage=capture_stage,
                            mpn_ui_stage=getattr(ui, 'diagnostic_stage', None), error=error)

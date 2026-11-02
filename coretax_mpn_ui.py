@@ -167,6 +167,8 @@ class AccountingUI:
         self.catalog_frozen = False
         self.closed = False
         self.reference_raw = None
+        self.reference_origin = None
+        self.reference_acquisition_attempted = False
         self.reference_request_seen = False
         self.reference_route_variant_seen = False
         self.reference_route_variant_kind = 'not_observed'
@@ -366,9 +368,10 @@ class AccountingUI:
                 stage = 'catalog_late'
                 if self.catalog_frozen:
                     raise MpnUnsupported('MPN first reference reply arrived after catalog binding')
-                self.reference_raw = raw
                 stage = 'catalog_decode'
                 self._catalog(raw)
+                self.reference_raw = raw
+                self.reference_origin = 'observed-get-v1'
         except MpnSafetyError as error:
             self._reject_source(stage, error, safety=True, ownership_reason=ownership_reason)
         except Exception as error:
@@ -639,6 +642,124 @@ class AccountingUI:
                            mpn_catalog_variant_kind=getattr(self, 'reference_route_variant_kind', 'not_observed'))
         self.catalog_frozen = True
 
+    def _reference_guard(self, snapshot, attempt, document, context, deadline):
+        """Bound value-free ownership proof around each acquired-source RPC."""
+        def local():
+            if self.check_cancel:
+                self.check_cancel()
+            if (self.closed or self.observer.closed or not self.observer.committed
+                    or attempt is None or document is None
+                    or attempt is not self.observer._navigation_attempt
+                    or document is not self.observer._document
+                    or self.observer._binding_document or self.page.url != self.url
+                    or self.page.context is not context
+                    or snapshot is not self.list_snapshot
+                    or not self.observer.failed and self.observer.latest.get('list') is not snapshot):
+                raise MpnSafetyError('MPN reference acquisition ownership changed')
+            self._stop()
+            if (getattr(context, '_spt_financial_route_policy', None) != 'service_workers_blocked'
+                    or self.pins != SOURCE_PINS or self.source_pending):
+                raise MpnUnsupported('MPN reference acquisition source/context is unproved')
+            if (not self._unfiltered(snapshot)
+                    or snapshot['request'].get('TaxpayerAggregateIdentifier') != self.taxpayer):
+                raise MpnSafetyError('MPN reference acquisition list scope changed')
+            if time.monotonic() >= deadline:
+                raise MpnUnsupported('MPN reference acquisition deadline exceeded')
+        local()
+        try:
+            state = self.page.locator('html').evaluate(
+                '(e,d) => ({same:e.ownerDocument===d, scripts:[...document.scripts]'
+                '.filter(s=>s.isConnected).map(s=>s.src)})', document,
+                timeout=min(1000, max(1, int((deadline-time.monotonic())*1000))))
+        except PlaywrightError:
+            local()
+            raise MpnUnsupported('MPN reference acquisition Document is unreadable') from None
+        local()
+        if not isinstance(state, dict) or state.get('same') is not True:
+            raise MpnSafetyError('MPN reference acquisition Document changed')
+        providers = {url for url in state.get('scripts', []) if type(url) is str and re.match(
+            re.escape(ORIGIN) + r'/accounting/id-ID/(?:main|vendor)\.', url)}
+        if providers != {ORIGIN + path for path in SOURCE_PINS}:
+            raise MpnSafetyError('MPN reference acquisition providers changed')
+
+    def _acquire_reference(self, snapshot):
+        """One approved fixed GET, never a fabricated passive Request event."""
+        self._stop()
+        if self.reference_acquisition_attempted or self.reference_raw is not None:
+            raise MpnUnsupported('MPN reference acquisition is already resolved or attempted')
+        self.reference_acquisition_attempted = True
+        deadline = time.monotonic() + 5
+        attempt, document = self.observer._navigation_attempt, self.observer._document
+        context = self.page.context
+        response = None
+        failure = None
+        def guard():
+            self._reference_guard(snapshot, attempt, document, context, deadline)
+        try:
+            guard()
+            response = context.request.get(ORIGIN + REFERENCE_PATH, max_redirects=0, max_retries=0,
+                timeout=max(1, int((deadline-time.monotonic())*1000)))
+            guard()
+            if response.status != 200 or response.url != ORIGIN + REFERENCE_PATH:
+                raise MpnUnsupported('MPN acquired reference response is unavailable')
+            raw = response.body()
+            guard()
+            if len(raw) > 8 * 1024 * 1024:
+                raise MpnUnsupported('MPN acquired reference exceeds its byte budget')
+            if self.reference_raw is not None and self.reference_raw != raw:
+                raise MpnSafetyError('MPN reference snapshot changed')
+            self._catalog(raw)
+            guard()
+        except BaseException as error:
+            # Transient stack-local precedence only; never retained/logged later.
+            failure = error
+            if isinstance(error, PlaywrightError):
+                raise MpnUnsupported('MPN reference acquisition transport is unavailable') from None
+            raise
+        finally:
+            try:
+                if response is not None:
+                    try:
+                        response.dispose()
+                    except PlaywrightError:  # nosec B110 - Cleanup is best effort; ownership is reconciled below.
+                        pass
+                guard()
+            except KeyboardInterrupt:
+                raise
+            except MpnSafetyError:
+                if not isinstance(failure, KeyboardInterrupt):
+                    raise
+            except (MpnUnsupported, PlaywrightError):
+                if not isinstance(failure, (KeyboardInterrupt, MpnSafetyError)):
+                    raise
+        self.reference_raw = raw
+        self.reference_origin = 'adapter-get-v1'
+        self.source_sequence += 1
+
+    def _prepare_header_catalog(self, header):
+        """Resolve only missing reference labels before the strict final binding."""
+        self._freeze_catalog()
+        if self.reference_raw is not None:
+            return
+        snapshot = self.list_snapshot
+        if self.observer.latest.get('list', {}).get('sequence') != snapshot['sequence']:
+            raise MpnSafetyError('MPN parent list changed before catalog preparation')
+        candidates = [i for i, row in enumerate(snapshot['rows']) if row.get('RecordId') == header['RecordId']]
+        if not candidates or any(_digest(snapshot['rows'][i]) != _digest(header) for i in candidates):
+            raise MpnUnsupported('MPN selected parent position is ambiguous')
+        _, rendered = self._table(self.list_owner, LIST_HEADERS, len(snapshot['rows']))
+        self._owned()
+        expected = self._header_projection(header)
+        actual = tuple(rendered[candidates[0]][column] for column in (3, 4, 5, 13, 15, 16, 17))
+        differing = {i for i, (left, right) in enumerate(zip(actual, expected)) if left != right}
+        references = {0: ('ACCOUNTING_TYPE', 'AccountingTypeCode'),
+                      1: ('ACCOUNTING_TYPE_DETAIL', 'AccountingTypeDetailCode'),
+                      5: ('PERIOD', 'PeriodCode')}
+        if (differing and differing <= references.keys()
+                and all(type(header.get(references[i][1])) is str and header[references[i][1]]
+                        and self.catalog_codes.get(references[i][0]) is None for i in differing)):
+            self._acquire_reference(snapshot)
+
     @staticmethod
     def _unfiltered_reason(snapshot):
         # Categorize only the original owned request's structure, not its
@@ -771,7 +892,8 @@ class AccountingUI:
 
     def _bind_header(self, header):
         self._stop()
-        self._freeze_catalog()
+        if not getattr(self, 'catalog_frozen', False):
+            self._freeze_catalog()
         snapshot = self.list_snapshot
         if self.observer.latest.get('list', {}).get('sequence') != snapshot['sequence']:
             raise MpnSafetyError('MPN parent list changed before the detail action')
@@ -897,6 +1019,7 @@ class AccountingUI:
         return rows
 
     def detail_pages(self, header, max_pages):
+        self._prepare_header_catalog(header)
         button = self._bind_header(header)
         host = self._one('p-dialog#isShowDetail')
         if self.page.locator('[role="dialog"]:visible').count():

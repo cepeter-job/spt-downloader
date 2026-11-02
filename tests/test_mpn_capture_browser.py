@@ -24,7 +24,7 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
            dropdown_close_delay=0, catalog_response=None, parent_detail_codes=None,
            parent_detail_display=None, dialog_close_delay=0,
            period_clear_in_grid=False, ambiguous_period_clear=False,
-           duplicate_period_widget=False, transaction_date_clear=None):
+           duplicate_period_widget=False, transaction_date_clear=None, reference_labels=False):
     import coretax_mpn_ui as ui
     list_headers = ['Aksi', 'Tanggal Transaksi', 'Tanggal Posting', 'Jenis Pencatatan',
         'Detail Jenis Pencatatan', 'Mata Uang', 'Jenis Transaksi', 'Nilai Mata Uang',
@@ -205,6 +205,11 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
                 "const dateTemplate=document.getElementById('synthetic-date-template');"
                 'document.querySelector(' + json.dumps(target) + ").insertAdjacentHTML('beforeend',"
                 + json.dumps(opening) + '+dateTemplate.innerHTML+' + json.dumps(closing) + ');dateTemplate.remove();')
+    if reference_labels:
+        main = main.replace('row.AccountingTypeCode,row.AccountingTypeDetailCode,',
+                            "'Synthetic accounting label','Synthetic detail label',")
+        main = main.replace('row.PaymentCode,row.PeriodCode,row.TransactionNumber',
+                            "row.PaymentCode,'Synthetic period label',row.TransactionNumber")
     main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog or catalog_response is not None else '') + ';'
             + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
             + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
@@ -282,6 +287,9 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
     context = browser.new_context(service_workers='block', locale='id-ID', timezone_id='Asia/Jakarta',
                                    viewport={'width': 1600, 'height': 1000})
     context._spt_financial_route_policy = 'service_workers_blocked'
+    def unexpected_adapter_get(*args, **kwargs):
+        raise AssertionError('Synthetic browser fixture refuses unexpected adapter HTTP')
+    monkeypatch.setattr(context.request, 'get', unexpected_adapter_get)
     page = context.new_page()
     original_goto = page.goto
     def goto(*args, **kwargs):
@@ -351,6 +359,31 @@ def test_real_ui_uses_full_dom_or_whole_detail_json_without_losing_source_precis
         assert len(metrics['detail']) == 1
         assert len(metrics['list']) == 4 and metrics['unknown'] == 0
         assert [f['PropertyName'] for f in metrics['list'][-1]['Filters']] == ['IsCancelled']
+
+
+def test_acquired_catalog_binds_actual_synthetic_browser_before_detail(browser, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from coretax_mpn import mpn_custody
+    from coretax_mpn_browser import collect_mpn
+    from coretax_mpn_ui import REFERENCE_PATH
+    from test_mpn_reference_acquisition import catalog_bytes
+    with portal(browser, monkeypatch, reference_labels=True) as (page, metrics):
+        calls, disposed = [], []
+        def get(url, **kwargs):
+            calls.append((url, kwargs))
+            return SimpleNamespace(status=200, url=url, body=catalog_bytes,
+                                   dispose=lambda: disposed.append(True))
+        monkeypatch.setattr(page.context.request, 'get', get)
+        run = scope_run()
+        collect_mpn(page, run, tmp_path)
+        assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
+        assert len(calls) == 1 and calls[0][0] == ORIGIN + REFERENCE_PATH
+        assert len(metrics['detail']) == 1 and metrics['unknown'] == 0
+        assert disposed == [True]
+        binding = next(b for b in run['mpn']['bindings'] if b['kind'] == 'catalog')
+        assert binding['origin'] == 'adapter-get-v1'
+        with mpn_custody(run, tmp_path):
+            pass
 
 
 def test_real_empty_inventory_can_complete_only_after_unfiltered_owned_response(browser, tmp_path, monkeypatch):
