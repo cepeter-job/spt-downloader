@@ -295,6 +295,20 @@ source/observer checks before and after each bounded RPC. Multiple panels stay
 unsupported; a stuck panel stays PARTIAL. Never repeat an option click, add a
 fixed settling sleep, read a selected value or extend preparation's deadline.
 
+For the pinned Accounting initial TransactionDate/between rule alongside only
+the supported IsCancelled rule, preparation may clear its inspected calendar
+once between the first and second Search. Require one owned ui-grid/p-table,
+one p-calendar#filterTransactionDate in its table header with input#TransactionDate,
+the direct ui-input-date/div.input-date-container.p-inputgroup ancestry and one
+visible enabled button[type=button][aria-label="Clear date"].p-button-secondary
+with its sole pi-times icon. Read no input values. Ambiguous or changed present
+structure remains unsupported; absent calendar retains the legacy period path.
+Drain the original clear response before taking the second Search marker: that
+reply can still contain the initial date filter and grants no inventory proof.
+Never repeat the clear action or clear after the final Search. Keep the shared
+45-second preparation deadline, maximum two Searches, retained Document/Stop/
+sticky failures and the unchanged final unfiltered non-cancelled predicate.
+
 Accounting grid requests preserve either reviewed literal `en-US` or `id-ID`
 LanguageId. Bind one language throughout the owned attempt and held original
 query reconciliation; a change between known languages is fatal, unknown codes

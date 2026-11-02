@@ -453,6 +453,59 @@ class AccountingUI:
                 return
             self._observer_call(self.page.wait_for_timeout, min(100, remaining))
 
+    def _clear_initial_transaction_date(self, snapshot, grid):
+        request = snapshot.get('request') if isinstance(snapshot, dict) else None
+        filters = request.get('Filters') if isinstance(request, dict) else None
+        if not isinstance(filters, list) or any(not isinstance(rule, dict) for rule in filters):
+            return False
+        dates = [rule for rule in filters if rule.get('PropertyName') == 'TransactionDate']
+        if len(dates) != 1:
+            return False
+        date = dates[0]
+        value = date.get('Value')
+        remaining = [rule for rule in filters if rule is not date]
+        if (not set(date).issubset({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'})
+                or date.get('MatchMode') != 'between'
+                or date.get('CaseSensitive', True) is not True
+                or date.get('AsString', False) is not False
+                or not isinstance(value, list) or len(value) != 2
+                or any(type(part) is not str for part in value)
+                or self._unfiltered_reason({'request': {'Filters': remaining}}) is not None):
+            return False
+        self._owned()
+        calendar = grid.locator('p-calendar#filterTransactionDate')
+        count = self._observer_call(calendar.count)
+        if count == 0:
+            return False  # Keep the existing legacy period-control path.
+        if (count != 1 or self._observer_call(self.list_owner.locator('table').count) != 1
+                or self._observer_call(calendar.locator('xpath=ancestor::thead[1]').count) != 1
+                or self._observer_call(calendar.locator('input').count) != 1
+                or self._observer_call(calendar.locator('input#TransactionDate').count) != 1):
+            raise MpnUnsupported('MPN transaction-date calendar owner is unproved')
+        container = calendar.locator('xpath=parent::div')
+        classes = self._observer_call(container.get_attribute, 'class') or ''
+        if (not {'input-date-container', 'p-inputgroup'}.issubset(classes.split())
+                or self._observer_call(container.locator('xpath=parent::ui-input-date').count) != 1):
+            raise MpnUnsupported('MPN transaction-date container is unproved')
+        clear = container.locator(':scope > button[aria-label="Clear date"]')
+        if (self._observer_call(clear.count) != 1
+                or self._observer_call(clear.get_attribute, 'type') != 'button'
+                or 'p-button-secondary' not in (self._observer_call(clear.get_attribute, 'class') or '').split()
+                or self._observer_call(clear.locator('.pi').count) != 1
+                or self._observer_call(clear.locator('.pi-times').count) != 1
+                or not self._observer_call(clear.is_visible)
+                or not self._observer_call(clear.is_enabled)):
+            raise MpnUnsupported('MPN transaction-date clear action is unproved')
+        self._owned()
+        marker = self.observer.sequence
+        self._click_ready(clear)
+        # The pinned control can emit the old grid query before the next
+        # Search reconciles its form. Drain that owned response first; it
+        # never supplies inventory or satisfies the second Search marker.
+        self._wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
+        self._owned()
+        return True
+
     def open(self):
         self.diagnostic_stage = 'navigation'
         self._stop()
@@ -487,7 +540,7 @@ class AccountingUI:
         if search.inner_text(timeout=1000).strip() != 'Cari':
             raise MpnUnsupported('MPN inspected search control changed')
         # The first submit may still add its initial default date interval.
-        for _ in range(2):
+        for search_index in range(2):
             self._stop()
             marker = self.observer.sequence
             # A successful actionability probe may precede >1s browser scheduling.
@@ -507,6 +560,8 @@ class AccountingUI:
             grid = self.list_owner.locator('xpath=ancestor::ui-grid[1]')
             if grid.count() != 1 or grid.locator('p-table').count() != 1:
                 raise MpnUnsupported('MPN period clear grid owner is unproved')
+            if search_index == 0 and self._clear_initial_transaction_date(snapshot, grid):
+                continue
             # A unique clear icon inside two identical widget IDs does not
             # prove which period filter owns that action. Do not click either.
             widget_count = grid.locator('#filterPeriodCode').count()

@@ -3,6 +3,8 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - coretax_mpn_ui.py
+      - tests/test_mpn_capture_browser.py
       - tests/test_mpn_transaction_date_clear.py
       - .github/workflows/mpn-date-probe.yml
 permissions:

@@ -181,6 +181,14 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         # Search reconciles the form. Only that actual date action removes it.
         main = 'let syntheticDateCleared=false;window.syntheticDateClicks=0;window.syntheticSearchClicks=0;' + main
         main = main.replace('searches<=2||STUCK', '!syntheticDateCleared&&(searches<=2||STUCK)')
+        if transaction_date_clear == 'extra_filter':
+            main = main.replace("const response=await fetch('/accounting/api/taxpayeraccounting/list'",
+                "filters.push({PropertyName:'SyntheticUnreviewed',Value:'SYNTHETIC',MatchMode:'equals'});"
+                "const response=await fetch('/accounting/api/taxpayeraccounting/list'")
+        if transaction_date_clear == 'different_date_mode':
+            main = main.replace("MatchMode:'between'", "MatchMode:'equals'")
+        if transaction_date_clear == 'modified_cancelled':
+            main = main.replace("PropertyName:'IsCancelled',Value:'0'", "PropertyName:'IsCancelled',Value:'1'")
         main = main.replace('e.preventDefault();loadList();',
                             'e.preventDefault();window.syntheticSearchClicks++;loadList();')
         main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',

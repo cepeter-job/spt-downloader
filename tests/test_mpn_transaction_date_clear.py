@@ -3,8 +3,33 @@ import pytest
 
 from support_isolated_browser import browser as browser
 from coretax_mpn_browser import collect_mpn
+from coretax_mpn_ui import AccountingUI
 from test_mpn import scope_run
 from test_mpn_capture_browser import portal
+
+
+CANCELLED = {'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals'}
+DATE = {'PropertyName': 'TransactionDate', 'Value': ['SYNTHETIC_A', 'SYNTHETIC_B'], 'MatchMode': 'between'}
+
+
+@pytest.mark.parametrize('snapshot', [
+    None, {}, {'request': None}, {'request': {'Filters': None}},
+    {'request': {'Filters': [None]}}, {'request': {'Filters': [CANCELLED]}},
+    *({'request': {'Filters': [CANCELLED, changed]}} for changed in [
+        {**DATE, 'Unexpected': True}, {**DATE, 'MatchMode': 'equals'},
+        {**DATE, 'CaseSensitive': False}, {**DATE, 'AsString': True},
+        {**DATE, 'Value': None}, {**DATE, 'Value': ['SYNTHETIC']},
+        {**DATE, 'Value': [None, 'SYNTHETIC']},
+    ]),
+    {'request': {'Filters': [CANCELLED, DATE, DATE]}},
+    {'request': {'Filters': [{**CANCELLED, 'Value': '1'}, DATE]}},
+])
+def test_unqualified_source_query_cannot_even_inspect_a_clear_control(snapshot):
+    class NoUI:
+        def locator(self, *args, **kwargs):
+            pytest.fail('Unqualified source query inspected a clear control')
+    owned = AccountingUI.__new__(AccountingUI)
+    assert owned._clear_initial_transaction_date(snapshot, NoUI()) is False
 
 
 @pytest.mark.parametrize('empty', [False, True])
@@ -23,7 +48,8 @@ def test_owned_transaction_calendar_clear_then_second_search_completes(browser, 
 
 
 @pytest.mark.parametrize('variant', ['duplicate_calendar', 'duplicate_button', 'wrong_input',
-                                    'wrong_icon', 'disabled', 'hidden', 'foreign'])
+                                    'wrong_icon', 'disabled', 'hidden', 'foreign',
+                                    'extra_filter', 'different_date_mode', 'modified_cancelled'])
 def test_unproved_transaction_date_control_never_clears_or_admits_inventory(browser, tmp_path, monkeypatch, variant):
     with portal(browser, monkeypatch, default_stuck=True,
                 transaction_date_clear=variant) as (page, metrics):
