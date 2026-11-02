@@ -34,14 +34,14 @@ AccountingUI.open invokes it only between its first and second Search.
 - [x] Commit tests-only and read hosted RED, including the expected date-clear failure.
 - [x] Implement the minimal source-query/owned-control binding and document its supported boundary in AGENTS.md.
 - [ ] Run hosted GREEN/full CI; reconcile exact SHA/tree/run/attempt and retained baseline inventory.
-- [x] Commit verified implementation and record evidence (focused GREEN28 cases; full CI pending).
+- [x] Commit verified implementation and record evidence (final focused GREEN52 cases; full CI pending).
 - [x] Reproduce all four review findings with six failing hosted regressions.
 - [ ] Verify repaired action-request custody, table ownership, bounded metadata
   and fatal click-exception reconciliation on hosted focused and full CI.
 
 ## Task 2: Review, integrate and validate delivery
 
-- [ ] Fresh whole-branch review; handle findings with behavior tests.
+- [x] Fresh whole-branch review; handle findings with behavior tests (four findings, corrected RED6/GREEN52, targeted source follow-up closed all four).
 - [ ] Review latest main/preceding other-session merges and revalidate interactions.
 - [ ] Integrate after exact-head checks; verify exact merged-main package and deliver it.
 - [ ] Operator-run build-matched live test: strict unfiltered request and complete original inventory/detail evidence, or explicit remaining failure. Do not mark live acceptance complete from synthetic proof.
