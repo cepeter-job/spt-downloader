@@ -501,6 +501,13 @@ No partial DOM page is combined with another source. Raw pages stay private.
             evidence({'raw': ui.reference_raw,
                       'origin': getattr(ui, 'reference_origin', None) or 'observed-get-v1'}, 'catalog')
             catalog_saved = True
+    def retain_after_failure():
+        try:
+            retain_catalog()
+        except MpnUnsupported:
+            # Evidence caps cannot replace the original refusal or skip PARTIAL.
+            # Stop and safety refusals still propagate.
+            pass
     try:
         with AccountingUI(page, run, folder, check_cancel=check_cancel) as ui:
             capture_stage = 'open'
@@ -627,7 +634,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
             value['status'] = 'PARTIAL' if value['audit'] else 'COMPLETE'
     except MpnSafetyError as error:
         if ui is not None:
-            retain_catalog()
+            retain_after_failure()
         diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
                            mpn_capture_stage=capture_stage,
                            mpn_ui_stage=getattr(ui, 'diagnostic_stage', None), error=error)
@@ -637,7 +644,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
         raise
     except (MpnUnsupported, PlaywrightError) as error:
         if ui is not None:
-            retain_catalog()
+            retain_after_failure()
         diagnostics.record('mpn.capture_failed', level='WARNING', status='PARTIAL',
                            mpn_capture_stage=capture_stage,
                            mpn_ui_stage=getattr(ui, 'diagnostic_stage', None), error=error)

@@ -368,9 +368,9 @@ class AccountingUI:
                 stage = 'catalog_late'
                 if self.catalog_frozen:
                     raise MpnUnsupported('MPN first reference reply arrived after catalog binding')
-                self.reference_raw = raw
                 stage = 'catalog_decode'
                 self._catalog(raw)
+                self.reference_raw = raw
                 self.reference_origin = 'observed-get-v1'
         except MpnSafetyError as error:
             self._reject_source(stage, error, safety=True, ownership_reason=ownership_reason)
@@ -645,7 +645,8 @@ class AccountingUI:
     def _reference_guard(self, snapshot, attempt, document, context, deadline):
         """Bound value-free ownership proof around each acquired-source RPC."""
         def local():
-            self._stop()
+            if self.check_cancel:
+                self.check_cancel()
             if (self.closed or self.observer.closed or not self.observer.committed
                     or attempt is None or document is None
                     or attempt is not self.observer._navigation_attempt
@@ -653,8 +654,9 @@ class AccountingUI:
                     or self.observer._binding_document or self.page.url != self.url
                     or self.page.context is not context
                     or snapshot is not self.list_snapshot
-                    or self.observer.latest.get('list') is not snapshot):
+                    or not self.observer.failed and self.observer.latest.get('list') is not snapshot):
                 raise MpnSafetyError('MPN reference acquisition ownership changed')
+            self._stop()
             if (getattr(context, '_spt_financial_route_policy', None) != 'service_workers_blocked'
                     or self.pins != SOURCE_PINS or self.source_pending):
                 raise MpnUnsupported('MPN reference acquisition source/context is unproved')
@@ -690,6 +692,7 @@ class AccountingUI:
         attempt, document = self.observer._navigation_attempt, self.observer._document
         context = self.page.context
         response = None
+        failure = None
         def guard():
             self._reference_guard(snapshot, attempt, document, context, deadline)
         try:
@@ -707,17 +710,28 @@ class AccountingUI:
                 raise MpnSafetyError('MPN reference snapshot changed')
             self._catalog(raw)
             guard()
-        except PlaywrightError:
-            guard()
-            raise MpnUnsupported('MPN reference acquisition transport is unavailable') from None
+        except BaseException as error:
+            # Transient stack-local precedence only; never retained/logged later.
+            failure = error
+            if isinstance(error, PlaywrightError):
+                raise MpnUnsupported('MPN reference acquisition transport is unavailable') from None
+            raise
         finally:
-            if response is not None:
-                try:
-                    response.dispose()
-                except PlaywrightError:
-                    self._stop()
-                self._stop()
-        guard()
+            try:
+                if response is not None:
+                    try:
+                        response.dispose()
+                    except PlaywrightError:  # Best-effort cleanup; reconcile ownership below.
+                        pass
+                guard()
+            except KeyboardInterrupt:
+                raise
+            except MpnSafetyError:
+                if not isinstance(failure, KeyboardInterrupt):
+                    raise
+            except (MpnUnsupported, PlaywrightError):
+                if not isinstance(failure, (KeyboardInterrupt, MpnSafetyError)):
+                    raise
         self.reference_raw = raw
         self.reference_origin = 'adapter-get-v1'
         self.source_sequence += 1
@@ -878,7 +892,8 @@ class AccountingUI:
 
     def _bind_header(self, header):
         self._stop()
-        self._freeze_catalog()
+        if not getattr(self, 'catalog_frozen', False):
+            self._freeze_catalog()
         snapshot = self.list_snapshot
         if self.observer.latest.get('list', {}).get('sequence') != snapshot['sequence']:
             raise MpnSafetyError('MPN parent list changed before the detail action')
