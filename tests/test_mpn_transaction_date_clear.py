@@ -1,6 +1,7 @@
 """Original-query date preparation; synthetic portals only, hosted runners."""
 import pytest
 
+from support_isolated_browser import browser as browser
 from coretax_mpn_browser import collect_mpn
 from test_mpn import scope_run
 from test_mpn_capture_browser import portal
