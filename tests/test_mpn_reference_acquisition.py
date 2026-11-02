@@ -332,6 +332,14 @@ def test_disposal_reconciles_ownership_even_after_response_refusal(change):
         ui._acquire_reference(ui.list_snapshot)
 
 
+def test_original_fatal_json_refusal_survives_later_recoverable_disposal_failure():
+    ui, _, _, _, _, response, _ = acquisition_ui()
+    response.body = lambda: b'{'
+    response.dispose = lambda: setattr(ui.observer, 'failed', True)
+    with pytest.raises(MpnSafetyError, match='safe original JSON'):
+        ui._acquire_reference(ui.list_snapshot)
+
+
 @pytest.mark.parametrize('failure', [MpnUnsupported, MpnSafetyError])
 def test_retention_budget_cannot_mask_original_failure_or_skip_partial_checkpoint(
         tmp_path, monkeypatch, failure):
