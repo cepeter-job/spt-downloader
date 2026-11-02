@@ -155,6 +155,7 @@ def test_unavailable_or_unsupported_acquisition_authorizes_no_binding(case):
         response.body = lambda: b' ' * (8 * 1024 * 1024 + 1)
     elif case == 'malformed':
         response.body = lambda: b'{'
+        error = MpnSafetyError
     elif case == 'envelope':
         response.body = lambda: b'{"IsSuccessful":false,"Payload":[]}'
     else:
@@ -167,6 +168,93 @@ def test_unavailable_or_unsupported_acquisition_authorizes_no_binding(case):
     with pytest.raises(MpnUnsupported):
         ui._acquire_reference(ui.list_snapshot)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('stage', ['transport', 'body', 'dispose'])
+@pytest.mark.parametrize('terminal', ['stop', 'safety', 'document', 'attempt', 'deadline'])
+def test_callback_terminal_state_wins_on_successful_rpc_exit(monkeypatch, stage, terminal):
+    import coretax_mpn_ui as module
+    ui, _, _, _, _, response, _ = acquisition_ui()
+    clock = [100.0]
+    monkeypatch.setattr(module.time, 'monotonic', lambda: clock[0])
+    def change():
+        if terminal == 'stop':
+            def cancelled():
+                raise KeyboardInterrupt
+            ui.check_cancel = cancelled
+        elif terminal == 'safety':
+            ui.source_safety = True
+        elif terminal == 'document':
+            ui.observer._document = object()
+        elif terminal == 'attempt':
+            ui.observer._navigation_attempt = object()
+        else:
+            clock[0] = 105.001
+    if stage == 'transport':
+        def get(*args, **kwargs):
+            change()
+            return response
+        ui.page.context.request.get = get
+    elif stage == 'body':
+        def body():
+            change()
+            return catalog_bytes()
+        response.body = body
+    else:
+        response.dispose = change
+    error = (KeyboardInterrupt if terminal == 'stop' else
+             MpnUnsupported if terminal == 'deadline' else MpnSafetyError)
+    with pytest.raises(error):
+        ui._acquire_reference(ui.list_snapshot)
+    assert ui.reference_raw is None
+
+
+def test_pending_original_source_is_drained_without_duplicate_get():
+    ui, header, _, calls, _, _, _ = acquisition_ui()
+    ui.source_pending[1] = object()
+    def wait(_):
+        ui.source_pending.clear()
+        ui.reference_raw = catalog_bytes()
+        ui.reference_origin = 'observed-get-v1'
+        ui._catalog(ui.reference_raw)
+    ui.page.wait_for_timeout = wait
+    ui._prepare_header_catalog(header)
+    assert ui._bind_header(header) is ui.list_owner
+    assert not calls and ui.reference_origin == 'observed-get-v1'
+
+
+@pytest.mark.parametrize('failure', [None, MpnUnsupported, MpnSafetyError])
+def test_acquired_original_bytes_and_origin_are_retained_before_later_failure(
+        tmp_path, monkeypatch, failure):
+    from coretax_mpn import mpn_custody
+    from test_mpn_capture_protocol import prepare
+    module, instances = prepare(monkeypatch)
+    make = module.AccountingUI
+    def factory(*args, **kwargs):
+        ui = make(*args, **kwargs)
+        detail_pages = ui.detail_pages
+        def pages(header, max_pages):
+            ui.reference_raw = catalog_bytes()
+            ui.reference_origin = 'adapter-get-v1'
+            if failure:
+                raise failure('SYNTHETIC LATER FAILURE')
+            yield from detail_pages(header, max_pages)
+        ui.detail_pages = pages
+        return ui
+    monkeypatch.setattr(module, 'AccountingUI', factory)
+    run = scope_run()
+    if failure is MpnSafetyError:
+        with pytest.raises(MpnSafetyError):
+            module.collect_mpn(object(), run, tmp_path)
+    else:
+        module.collect_mpn(object(), run, tmp_path)
+    catalogs = [b for b in run['mpn']['bindings'] if b['kind'] == 'catalog']
+    assert len(catalogs) == 1 and catalogs[0]['origin'] == 'adapter-get-v1'
+    assert (tmp_path / catalogs[0]['path']).read_bytes() == catalog_bytes()
+    assert not (tmp_path / 'json').exists()
+    assert instances[0].closed
+    with mpn_custody(run, tmp_path):
+        pass
 
 
 @pytest.mark.parametrize('stage', ['transport', 'body', 'dispose'])
