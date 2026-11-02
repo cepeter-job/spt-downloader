@@ -15,7 +15,8 @@ and a sibling button[type=button][aria-label="Clear date"] with .pi-times.
 Both belong to one .input-date-container.p-inputgroup inside the owned table.
 The pinned initial Search introduces TransactionDate/between. Its owned Clear
 date updates the form; its immediate request can still contain the old filter.
-The following inspected Search produces the original request without that date
+Wait for that owned clear response before taking the second Search marker. The
+following inspected Search produces the original request without that date
 filter. No business input values, framework component state or browser cache
 were read for this conclusion. No endpoint was constructed or replayed.
 
@@ -34,6 +35,8 @@ foreign input/metadata, hidden or disabled actions. Never read control values.
 Missing calendar retains the existing legacy period preparation path. An
 ambiguous present date control must not fall through to another clear control.
 Do not click date clear after the final Search or retry an actual clear click.
+The immediate clear response is drained inside the same preparation deadline;
+it never supplies inventory or substitutes for the final Search response.
 
 Keep the shared45-second preparation deadline, retained Document/attempt,
 Stop and sticky source/observer failures before/after RPCs and before actions.

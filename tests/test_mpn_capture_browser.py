@@ -176,10 +176,6 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
         main = main.replace('loadList();if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);',
             "loadList();fetch('/accounting/id-ID/main.synthetic.js');fetch("
             + json.dumps(reference_path) + ",{method:'POST'});if(PENDING_REFERENCE)fetch(PENDING_REFERENCE);")
-    main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog or catalog_response is not None else '') + ';'
-            + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
-            + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
-            + 'const ROUNDED=' + json.dumps(rounded) + ';const STUCK=' + json.dumps(default_stuck) + ';' + main).encode()
     if transaction_date_clear is not None:
         # The real date clear can emit one stale grid query before the next
         # Search reconciles the form. Only that actual date action removes it.
@@ -198,6 +194,10 @@ def portal(browser, monkeypatch, *, rounded=False, empty=False, default_stuck=Fa
                 "const dateTemplate=document.getElementById('synthetic-date-template');"
                 "document.querySelector('acc-balance-sheet-light-grid thead').insertAdjacentHTML('beforeend',"
                 "'<tr><th>'+dateTemplate.innerHTML+'</th></tr>');dateTemplate.remove();")
+    main = ('const LANGUAGE=' + json.dumps(request_language) + ';const PENDING_REFERENCE=' + json.dumps(reference_path if pending_catalog or catalog_response is not None else '') + ';'
+            + 'const TAXPAYER=' + json.dumps(scope_run()['sources'][0]['url'].rsplit('/', 1)[-1]) + ';'
+            + 'const LISTHEAD=' + json.dumps(list_headers) + ';const DETAILHEAD=' + json.dumps(detail_headers) + ';'
+            + 'const ROUNDED=' + json.dumps(rounded) + ';const STUCK=' + json.dumps(default_stuck) + ';' + main).encode()
     vendor = b'/* Synthetic vendor only; no portal source or taxpayer data. */'
     pins = {'/accounting/id-ID/main.synthetic.js': hashlib.sha256(main).hexdigest(),
             '/accounting/id-ID/vendor.synthetic.js': hashlib.sha256(vendor).hexdigest()}

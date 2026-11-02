@@ -18,13 +18,13 @@
 - Test duplicate owner with one button, foreign lookalike, delayed/disabled action,
   stale immediate response and callback-pumped Stop/source failures.
 
-## Task1: Reproduce and repair owned date preparation
+## Task 1: Reproduce and repair owned date preparation
 
 **Files:** coretax_mpn_ui.py; tests/test_mpn_capture_browser.py;
 new tests/test_mpn_transaction_date_clear.py; AGENTS.md.
 
 **Interface:** AccountingUI._clear_initial_transaction_date(snapshot, grid) returns
-True only after its one actual owned click; False for an inapplicable source rule
+True only after its one actual owned click and owned clear-response wait; False for an inapplicable source rule
 or absent legacy calendar. Unsupported present structure raises MpnUnsupported.
 AccountingUI.open invokes it only between its first and second Search.
 
@@ -35,7 +35,7 @@ AccountingUI.open invokes it only between its first and second Search.
 - [ ] Run hosted GREEN/full CI; reconcile exact SHA/tree/run/attempt and retained baseline inventory.
 - [ ] Commit verified implementation and record evidence.
 
-## Task2: Review, integrate and validate delivery
+## Task 2: Review, integrate and validate delivery
 
 - [ ] Fresh whole-branch review; handle findings with behavior tests.
 - [ ] Review latest main/preceding other-session merges and revalidate interactions.
