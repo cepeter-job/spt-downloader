@@ -28,12 +28,12 @@ True only after its one actual owned click and owned clear-response wait; False 
 or absent legacy calendar. Unsupported present structure raises MpnUnsupported.
 AccountingUI.open invokes it only between its first and second Search.
 
-- [ ] Extend the synthetic portal with the actual date-container/control shape and sticky dates that only the right clear action removes; retain all existing fixture defaults.
-- [ ] Add whole-capture tests for complete/empty success, wrong/missing/duplicate/hidden/disabled controls, unchanged filters and one-clear/two-Search custody.
-- [ ] Commit tests-only and read hosted RED, including the expected date-clear failure.
-- [ ] Implement the minimal source-query/owned-control binding and document its supported boundary in AGENTS.md.
+- [x] Extend the synthetic portal with the actual date-container/control shape and sticky dates that only the right clear action removes; retain all existing fixture defaults.
+- [x] Add whole-capture tests for complete/empty success, wrong/missing/duplicate/hidden/disabled controls, unchanged filters and one-clear/two-Search custody.
+- [x] Commit tests-only and read hosted RED, including the expected date-clear failure.
+- [x] Implement the minimal source-query/owned-control binding and document its supported boundary in AGENTS.md.
 - [ ] Run hosted GREEN/full CI; reconcile exact SHA/tree/run/attempt and retained baseline inventory.
-- [ ] Commit verified implementation and record evidence.
+- [x] Commit verified implementation and record evidence (focused GREEN28 cases; full CI pending).
 
 ## Task 2: Review, integrate and validate delivery
 
