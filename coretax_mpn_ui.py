@@ -721,7 +721,7 @@ class AccountingUI:
                 if response is not None:
                     try:
                         response.dispose()
-                    except PlaywrightError:  # Best-effort cleanup; reconcile ownership below.
+                    except PlaywrightError:  # nosec B110 - Cleanup is best effort; ownership is reconciled below.
                         pass
                 guard()
             except KeyboardInterrupt:

@@ -504,7 +504,7 @@ No partial DOM page is combined with another source. Raw pages stay private.
     def retain_after_failure():
         try:
             retain_catalog()
-        except MpnUnsupported:
+        except MpnUnsupported:  # nosec B110 - Preserve original failure and checkpoint after an evidence cap.
             # Evidence caps cannot replace the original refusal or skip PARTIAL.
             # Stop and safety refusals still propagate.
             pass
