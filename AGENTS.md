@@ -308,6 +308,17 @@ reply can still contain the initial date filter and grants no inventory proof.
 Never repeat the clear action or clear after the final Search. Keep the shared
 45-second preparation deadline, maximum two Searches, retained Document/Stop/
 sticky failures and the unchanged final unfiltered non-cancelled predicate.
+Preparation Search/date-Clear waits bind one private token armed immediately
+before the actual click to the first newly admitted original list request.
+Pre-action pending responses cannot satisfy it; keep its validated snapshot
+separate from latest, without changing evidence/output fields. Release request
+references on response/failure and invalidate tokens on rejection/reset/close;
+old cleanup cannot clear a newer token. Require the calendar in the held
+p-table's sole actual table header and grid-wide uniqueness. Refuse an absent
+direct container before attribute reads; cap auto-waiting metadata reads at
+1000ms and the remaining shared deadline. Reconcile Stop and sticky fatal state
+on both successful and exceptional trial/actual click RPC exits. Only trial
+actionability timeouts may retry; an actual click still occurs once.
 
 Accounting grid requests preserve either reviewed literal `en-US` or `id-ID`
 LanguageId. Bind one language throughout the owned attempt and held original

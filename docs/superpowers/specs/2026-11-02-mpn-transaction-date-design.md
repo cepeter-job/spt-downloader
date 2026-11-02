@@ -38,6 +38,20 @@ Do not click date clear after the final Search or retry an actual clear click.
 The immediate clear response is drained inside the same preparation deadline;
 it never supplies inventory or substitutes for the final Search response.
 
+Each preparation Search and date Clear arms one private action token immediately
+before its actual click, after the last ownership RPC. Only the first newly
+admitted original list request can bind it; pre-action pending requests cannot.
+Retain that request's validated snapshot separately from the ordinary latest
+snapshot so reverse response order cannot replace it. Wait within the existing
+deadline, release the request on response/failure and invalidate the token on
+failure/reset/close. Stale cleanup cannot clear a newer token. No token or new
+request metadata enters evidence/output. Legacy non-action waits are unchanged.
+Require the calendar under the held p-table's sole table header as well as
+grid-wide uniqueness. Count an absent direct container before attribute reads;
+auto-waiting metadata reads are capped at1000ms and the remaining deadline.
+Trial and actual click RPC exceptions reconcile Stop and sticky fatal state;
+only trial actionability timeouts may retry, never an actual click.
+
 Keep the shared45-second preparation deadline, retained Document/attempt,
 Stop and sticky source/observer failures before/after RPCs and before actions.
 Only the final owned response satisfying the unchanged unfiltered non-cancelled

@@ -20,8 +20,9 @@
 
 ## Task 1: Reproduce and repair owned date preparation
 
-**Files:** coretax_mpn_ui.py; tests/test_mpn_capture_browser.py;
-new tests/test_mpn_transaction_date_clear.py; AGENTS.md.
+**Files:** coretax_mpn_ui.py; coretax_mpn_browser.py;
+tests/test_mpn_capture_browser.py; new tests/test_mpn_transaction_date_clear.py,
+tests/test_mpn_date_review.py and tests/test_mpn_action_custody.py; AGENTS.md.
 
 **Interface:** AccountingUI._clear_initial_transaction_date(snapshot, grid) returns
 True only after its one actual owned click and owned clear-response wait; False for an inapplicable source rule
@@ -34,6 +35,9 @@ AccountingUI.open invokes it only between its first and second Search.
 - [x] Implement the minimal source-query/owned-control binding and document its supported boundary in AGENTS.md.
 - [ ] Run hosted GREEN/full CI; reconcile exact SHA/tree/run/attempt and retained baseline inventory.
 - [x] Commit verified implementation and record evidence (focused GREEN28 cases; full CI pending).
+- [x] Reproduce all four review findings with six failing hosted regressions.
+- [ ] Verify repaired action-request custody, table ownership, bounded metadata
+  and fatal click-exception reconciliation on hosted focused and full CI.
 
 ## Task 2: Review, integrate and validate delivery
 

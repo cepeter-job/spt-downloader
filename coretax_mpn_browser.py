@@ -21,7 +21,8 @@ DETAIL_PATH = '/accounting/api/taxpayeraccounting/listdetail'
 class AccountingObserver:
     """Bind original response bytes to current committed request objects.
 
-Only one latest snapshot per grid is retained. Pending requests are bounded and
+One latest snapshot per grid and at most one preparation-action snapshot are retained.
+Pending requests are bounded and
 released on response/failure/close. Failures are fixed categories, never saved
 exceptions, tracebacks, URLs, request bodies or authentication material.
 """
@@ -44,6 +45,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self._navigation_attempt = None
         self._identity_deadline = None
         self.request_language = None
+        self._action = None
         self.handlers = {'framenavigated': self.on_navigation, 'request': self.on_request,
                          'requestfailed': self.on_request_failed, 'response': self.on_response}
         for event, callback in self.handlers.items():
@@ -60,6 +62,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             self.failed = True
         self.pending.clear()
         self.latest.clear()
+        self.end_action()
         if safety:
             self._navigation_attempt = None
             self._binding_document = False
@@ -94,6 +97,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         if url != expected or self.closed:
             raise MpnSafetyError('MPN navigation is outside its literal owned route')
         self.navigation_source = None
+        self.end_action()
         self._navigation_attempt = object()
         self._binding_document = False
         self._identity_deadline = None
@@ -209,6 +213,11 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             if self.request_language is None:
                 self.request_language = posted['LanguageId']
             self.pending[id(request)] = (request, kind, posted)
+            action = self._action
+            if (action is not None and action['attempt'] is self._navigation_attempt
+                    and action['kind'] == kind and not action['seen']):
+                action['seen'] = True
+                action['request'] = request
         except MpnSafetyError:
             self._reject(safety=True)
         except Exception:
@@ -226,6 +235,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             return
         _, kind, posted = entry
         attempt = self._navigation_attempt
+        action = self._action
         try:
             if (self.page.url != self.navigation_source or response.url != request.url
                     or self._posted(request, kind) != posted):
@@ -264,10 +274,42 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
                                  'first': posted['First'], 'page_size': posted['Rows'],
                                  'rows': rows, 'raw': raw, 'request': deepcopy(posted),
                                  'parent_id': self.parent_id if kind == 'detail' else None}
+            if (action is not None and action is self._action and action['attempt'] is attempt
+                    and action['request'] is request):
+                action['snapshot'] = self.latest[kind]
         except MpnSafetyError:
             self._reject(safety=True)
         except Exception:
             self._reject()
+        finally:
+            if action is not None and action['request'] is request:
+                action['request'] = None
+
+    def begin_action(self, kind):
+        """Arm one preparation click without an intervening browser RPC."""
+        self._stop()
+        if (kind != 'list' or self._action is not None or self.closed or not self.committed
+                or self.safety_failed or self.failed or self._binding_document
+                or self._document is None or self._navigation_attempt is None):
+            raise MpnSafetyError('MPN preparation action ownership is unproved')
+        token = object()
+        self._action = {'token': token, 'attempt': self._navigation_attempt, 'kind': kind,
+                        'seen': False, 'request': None, 'snapshot': None}
+        return token
+
+    def end_action(self, token=None):
+        action = self._action
+        if action is not None and (token is None or token is action['token']):
+            self._action = None
+            action['request'] = action['snapshot'] = None
+
+    def _action_state(self, token, kind):
+        action = self._action
+        if (action is None or action['token'] is not token or action['kind'] != kind
+                or action['attempt'] is not self._navigation_attempt):
+            self._reject(safety=True)
+            raise MpnSafetyError('MPN preparation action attempt changed')
+        return action
 
     def begin_detail(self, parent_id):
         self._check_state()
@@ -301,15 +343,20 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self._reject(safety=True)
         raise MpnSafetyError('MPN retained document identity is unproved')
 
-    def wait(self, after, kind, timeout=45):
+    def wait(self, after, kind, timeout=45, *, action=None):
         if kind not in ('list', 'detail'):
             raise ValueError('Unsupported MPN grid kind')
         deadline = time.monotonic() + timeout
         while True:
             self._check_state(allow_document_pending=True)
-            snapshot = self.latest.get(kind)
+            snapshot = (self._action_state(action, kind)['snapshot']
+                        if action is not None else self.latest.get(kind))
             if not self._binding_document and snapshot is not None and snapshot['sequence'] > after:
                 self._check_state()
+                if action is not None:
+                    self._action_state(action, kind)
+                if action is not None and time.monotonic() >= deadline:
+                    raise MpnUnsupported('MPN fresh grid response timed out')
                 return snapshot
             if time.monotonic() >= deadline:
                 raise MpnUnsupported('MPN fresh grid response timed out')
@@ -322,6 +369,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             self.page.remove_listener(event, callback)
         self.pending.clear()
         self.latest.clear()
+        self.end_action()
         self.parent_id = self.navigation_source = None
         self.closed = True
         self._navigation_attempt = None
