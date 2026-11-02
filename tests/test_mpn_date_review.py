@@ -27,7 +27,7 @@ def test_second_search_waits_for_actual_clear_reply_not_an_older_pending_request
                 state['held'] = route
             else:
                 route.fallback()
-        page.context.route('**/accounting/api/taxpayeraccounting/list', hold)
+        page.route('**/accounting/api/taxpayeraccounting/list', hold)
         def clear(owned, snapshot, grid):
             state['owned'] = owned
             state['raw'] = snapshot['raw']
