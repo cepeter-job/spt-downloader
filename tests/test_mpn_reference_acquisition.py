@@ -60,7 +60,8 @@ def acquisition_ui():
         return response
     def evaluate(expression, document, **kwargs):
         rpc.append(kwargs)
-        return document is ui.observer._document
+        return {'same': document is ui.observer._document,
+                'scripts': [ORIGIN + path for path in SOURCE_PINS]}
     context = SimpleNamespace(_spt_financial_route_policy='service_workers_blocked',
                               request=SimpleNamespace(get=get))
     ui.page = SimpleNamespace(context=context, url=ui.url,

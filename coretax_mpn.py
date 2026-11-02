@@ -469,6 +469,12 @@ def validate_mpn(run):
         raise ValueError('MPN private evidence byte budget exceeded')
     if 'attempt' in value or 'provenance' in value:
         validate_provenance(value['rows'], value.get('provenance'), value['evidence'])
+    for binding in value.get('bindings', []):
+        if isinstance(binding, dict) and 'origin' in binding and (
+                binding.get('kind') != 'catalog'
+                or type(binding['origin']) is not str
+                or binding['origin'] not in ('observed-get-v1', 'adapter-get-v1')):
+            raise MpnSafetyError('MPN reference evidence origin is unsupported')
 
 
 def validate_provenance(rows, provenance, evidence):

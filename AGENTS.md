@@ -110,7 +110,19 @@ Amounts by the detail's literal tax period/year. Never substitute payment date
 or parent year. Same-year ranges need the exact captured PERIOD meaning;
 cross-year/malformed/missing meanings remain unresolved. Only original same-
 attempt id-ID reference bytes with unique codes and explicit null ValidTo supply
-labels; no cache clock/version selection or extra catalog fetch is admitted.
+labels; no cache clock/version selection is admitted. The operator-approved
+exception permits one adapter-owned GET of the exact four-type id-ID reference
+route when missing catalogs explain all parent reference mismatches. It requires
+the owned Service-Worker-blocked context, both loaded source pins, retained
+Document/attempt/literal ledger, original selected-scope unfiltered list and no
+pending admitted source. Keep one five-second transaction, eight MiB body,
+zero redirects/retries, Stop and sticky source/identity failures. Never fetch for
+empty inventories, already sufficient raw-code bindings or known contradictions.
+Acquire before strict parent comparison; do not demote MpnSafetyError. Preserve
+original bytes privately with observed-get-v1 versus adapter-get-v1 origins;
+legacy missing origin remains readable and unknown explicit origins are refused.
+This grants no cache access, token extraction, alternate route/locale, POST,
+Detail authorization or capture/publication completion by itself.
 Keep loaded Accounting main/vendor pins, committed request-object ownership,
 owned pagination, Stop, terminal failures, source/privacy budgets and final drain.
 DOM needs complete ordered visible binding and exact decimal validation of all
