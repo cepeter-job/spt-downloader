@@ -312,6 +312,26 @@ def test_invalid_passive_catalog_is_not_marked_as_accepted_private_bytes(tmp_pat
     ui.observer.close()
 
 
+@pytest.mark.parametrize('change', ['document', 'attempt', 'route', 'closed', 'providers'])
+def test_disposal_reconciles_ownership_even_after_response_refusal(change):
+    ui, _, _, _, _, response, _ = acquisition_ui()
+    response.status = 503
+    def dispose():
+        if change == 'document':
+            ui.observer._document = object()
+        elif change == 'attempt':
+            ui.observer._navigation_attempt = object()
+        elif change == 'route':
+            ui.page.url += '#changed'
+        elif change == 'closed':
+            ui.closed = True
+        else:
+            ui.page.locator = lambda _: SimpleNamespace(evaluate=lambda *a, **k: {'same': True, 'scripts': []})
+    response.dispose = dispose
+    with pytest.raises(MpnSafetyError):
+        ui._acquire_reference(ui.list_snapshot)
+
+
 @pytest.mark.parametrize('failure', [MpnUnsupported, MpnSafetyError])
 def test_retention_budget_cannot_mask_original_failure_or_skip_partial_checkpoint(
         tmp_path, monkeypatch, failure):
