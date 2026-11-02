@@ -409,7 +409,7 @@ class AccountingUI:
                 raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
             self.page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
 
-    def _click_ready(self, locator, *, actual_timeout_ms=1000):
+    def _click_ready(self, locator, *, actual_timeout_ms=1000, capture_requests=False):
         deadline = self.preparation_deadline or time.monotonic() + 5
         while True:
             self._owned()
@@ -417,7 +417,7 @@ class AccountingUI:
             if remaining <= 0:
                 raise MpnUnsupported('MPN inspected action readiness deadline exceeded')
             try:
-                locator.click(trial=True, timeout=min(1000, remaining))
+                self._observer_call(locator.click, trial=True, timeout=min(1000, remaining))
             except PlaywrightTimeoutError:
                 continue  # Only actionability is retried; the actual click occurs once.
             self._owned()
@@ -425,9 +425,15 @@ class AccountingUI:
             if remaining <= 0:
                 raise MpnUnsupported('MPN inspected action readiness deadline exceeded')
             # One actual click only: never retry if the browser may have dispatched it.
-            locator.click(timeout=min(actual_timeout_ms, remaining))
-            self._owned()
-            return
+            action = self.observer.begin_action('list') if capture_requests else None
+            try:
+                self._observer_call(locator.click, timeout=min(actual_timeout_ms, remaining))
+                self._owned()
+                return action
+            except BaseException:
+                if action is not None:
+                    self.observer.end_action(action)
+                raise
 
     def _dropdown(self, selector, caption):
         # Only the two reviewed fixed captions are used by this preparation path.
@@ -452,6 +458,74 @@ class AccountingUI:
             if count == 0:
                 return
             self._observer_call(self.page.wait_for_timeout, min(100, remaining))
+
+    def _clear_initial_transaction_date(self, snapshot, grid):
+        request = snapshot.get('request') if isinstance(snapshot, dict) else None
+        filters = request.get('Filters') if isinstance(request, dict) else None
+        if not isinstance(filters, list) or any(not isinstance(rule, dict) for rule in filters):
+            return False
+        dates = [rule for rule in filters if rule.get('PropertyName') == 'TransactionDate']
+        if len(dates) != 1:
+            return False
+        date = dates[0]
+        value = date.get('Value')
+        remaining = [rule for rule in filters if rule is not date]
+        if (not set(date).issubset({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'})
+                or date.get('MatchMode') != 'between'
+                or date.get('CaseSensitive', True) is not True
+                or date.get('AsString', False) is not False
+                or not isinstance(value, list) or len(value) != 2
+                or any(type(part) is not str for part in value)
+                or self._unfiltered_reason({'request': {'Filters': remaining}}) is not None):
+            return False
+        self._owned()
+        calendar = grid.locator('p-calendar#filterTransactionDate')
+        count = self._observer_call(calendar.count)
+        if count == 0:
+            return False  # Keep the existing legacy period-control path.
+        owned_calendar = self.list_owner.locator('table thead p-calendar#filterTransactionDate')
+        if (count != 1 or self._observer_call(self.list_owner.locator('table').count) != 1
+                or self._observer_call(owned_calendar.count) != 1
+                or self._observer_call(calendar.locator('input').count) != 1
+                or self._observer_call(calendar.locator('input#TransactionDate').count) != 1):
+            raise MpnUnsupported('MPN transaction-date calendar owner is unproved')
+        container = calendar.locator('xpath=parent::div')
+        if self._observer_call(container.count) != 1:
+            raise MpnUnsupported('MPN transaction-date container is unproved')
+
+        def metadata(method, *args):
+            self._stop()
+            remaining_ms = int((self.preparation_deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                raise MpnUnsupported('MPN transaction-date metadata deadline exceeded')
+            return self._observer_call(method, *args, timeout=min(1000, remaining_ms))
+
+        classes = metadata(container.get_attribute, 'class') or ''
+        if (not {'input-date-container', 'p-inputgroup'}.issubset(classes.split())
+                or self._observer_call(container.locator('xpath=parent::ui-input-date').count) != 1):
+            raise MpnUnsupported('MPN transaction-date container is unproved')
+        clear = container.locator(':scope > button[aria-label="Clear date"]')
+        if (self._observer_call(clear.count) != 1
+                or metadata(clear.get_attribute, 'type') != 'button'
+                or 'p-button-secondary' not in (metadata(clear.get_attribute, 'class') or '').split()
+                or self._observer_call(clear.locator('.pi').count) != 1
+                or self._observer_call(clear.locator('.pi-times').count) != 1
+                or not self._observer_call(clear.is_visible)
+                or not metadata(clear.is_enabled)):
+            raise MpnUnsupported('MPN transaction-date clear action is unproved')
+        self._owned()
+        marker = self.observer.sequence
+        action = self._click_ready(clear, capture_requests=True)
+        # The pinned control can emit the old grid query before the next
+        # Search reconciles its form. Drain that owned response first; it
+        # never supplies inventory or satisfies the second Search marker.
+        try:
+            self._wait(marker, 'list', action=action,
+                       timeout=max(.001, self.preparation_deadline - time.monotonic()))
+        finally:
+            self.observer.end_action(action)
+        self._owned()
+        return True
 
     def open(self):
         self.diagnostic_stage = 'navigation'
@@ -487,13 +561,17 @@ class AccountingUI:
         if search.inner_text(timeout=1000).strip() != 'Cari':
             raise MpnUnsupported('MPN inspected search control changed')
         # The first submit may still add its initial default date interval.
-        for _ in range(2):
+        for search_index in range(2):
             self._stop()
             marker = self.observer.sequence
             # A successful actionability probe may precede >1s browser scheduling.
             # Bound the sole real Search click by the original 45s preparation deadline.
-            self._click_ready(search, actual_timeout_ms=5000)
-            snapshot = self._wait(marker, 'list', timeout=max(.001, self.preparation_deadline - time.monotonic()))
+            action = self._click_ready(search, actual_timeout_ms=5000, capture_requests=True)
+            try:
+                snapshot = self._wait(marker, 'list', action=action,
+                                      timeout=max(.001, self.preparation_deadline - time.monotonic()))
+            finally:
+                self.observer.end_action(action)
             self._stop()
             self.list_owner = self._ready_one('acc-balance-sheet-light-grid ui-grid p-table')
             if self._unfiltered(snapshot):
@@ -507,6 +585,8 @@ class AccountingUI:
             grid = self.list_owner.locator('xpath=ancestor::ui-grid[1]')
             if grid.count() != 1 or grid.locator('p-table').count() != 1:
                 raise MpnUnsupported('MPN period clear grid owner is unproved')
+            if search_index == 0 and self._clear_initial_transaction_date(snapshot, grid):
+                continue
             # A unique clear icon inside two identical widget IDs does not
             # prove which period filter owns that action. Do not click either.
             widget_count = grid.locator('#filterPeriodCode').count()

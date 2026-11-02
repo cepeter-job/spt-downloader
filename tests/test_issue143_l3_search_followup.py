@@ -184,7 +184,7 @@ def test_search_open_path_keeps_single_real_click_and_explicit_bounded_budget():
     # This static wiring contract prevents tests of a helper from diverging
     # from the actual open() Search invocation.
     source = inspect.getsource(AccountingUI.open)
-    assert 'self._click_ready(search, actual_timeout_ms=5000)' in source
+    assert 'self._click_ready(search, actual_timeout_ms=5000, capture_requests=True)' in source
     assert source.count('self._click_ready(search,') == 1
 
 
