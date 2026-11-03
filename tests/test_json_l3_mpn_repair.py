@@ -105,9 +105,10 @@ def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(b
                 if not state['trial']:
                     state['trial'] = True
                     locator.evaluate('''e => {
-                        const r=e.getBoundingClientRect(), cover=document.createElement('div');
-                        cover.style.cssText=`position:fixed;z-index:99999;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px`;
-                        document.body.append(cover);setTimeout(()=>cover.remove(),1400);
+                        const cover=document.createElement('div');
+                        e.parentElement.style.position='relative';
+                        cover.style.cssText='position:absolute;z-index:99999;inset:0';
+                        e.parentElement.append(cover);setTimeout(()=>cover.remove(),1700);
                     }''')
                 return result
             state['actual'] += 1

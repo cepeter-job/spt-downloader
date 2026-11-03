@@ -300,13 +300,31 @@ TABLE_CURSOR_POLL_JS = r'''cursor => {
 # Snapshot the unique table inside the exact paginator owner captured
 # before the click. An old locator may no longer resolve after a DOM re-render.
 # The previously verified owner is never replaced by a document-wide search.
-TABLE_VERIFIED_JS = r'''(owner, cursor) => {
- const started=cursor ? performance.now() : null;
+TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
  if(cursor){
    const refusal=cursor.owner===owner ? (CHECK_OWNER)(cursor) : 'owner_changed';
    if(refusal) return {refusal};
    if(performance.now()>=cursor.deadline) return {budget:true};
+   // Combine the old global overlay/settling wait with this owned snapshot.
+   // Pending slices return to Python for Stop; neither deadline is refreshed.
+   const sliceEnd=Math.min(cursor.deadline,performance.now()+1000);
+   while(true){
+     const changed=(CHECK_OWNER)(cursor);
+     if(changed) return {refusal:changed};
+     const now=performance.now();
+     if(now>=cursor.deadline) return {budget:true};
+     const loading=[...document.querySelectorAll('.p-datatable-loading-overlay,.p-blockui')].some(e=>{
+       const r=e.getBoundingClientRect(),style=getComputedStyle(e);
+       return r.width>0 && r.height>0 && style.visibility!=='hidden' && style.visibility!=='collapse';
+     });
+     if(loading) cursor.idleSince=null;
+     else if(cursor.idleSince==null) cursor.idleSince=now;
+     if(cursor.idleSince!==null && now-cursor.idleSince>=180) break;
+     if(now>=sliceEnd) return {pending:true};
+     await new Promise(resolve=>setTimeout(resolve,Math.min(40,sliceEnd-now)));
+   }
  }
+ const started=cursor ? performance.now() : null;
  if(!owner.isConnected) return {refusal:'owner_changed'};
  const owned=[...owner.querySelectorAll('table')].filter(table =>
     table.isConnected &&
@@ -319,6 +337,7 @@ TABLE_VERIFIED_JS = r'''(owner, cursor) => {
    if(cursor.pending===null || cursor.seen.has(state)) return {refusal:'repeated_state'};
    if(performance.now()>=cursor.deadline) return {budget:true};
    cursor.pending=null;
+   cursor.idleSince=null;
    const packed=JSON.stringify(data);
    return {packed,renderer_ms:performance.now()-started};
  }
@@ -538,7 +557,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             break
         poll_ms = (_diagnostic_clock() - poll_started) * 1000
         idle_started = _diagnostic_clock()
-        wait_idle(page)
+        if cursor is None:
+            wait_idle(page)
         idle_ms = (_diagnostic_clock() - idle_started) * 1000
         _check_cancel(check_cancel)
         # Polling already proved a changed page. Read the confirmed state and
@@ -557,6 +577,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
             snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+            while cursor is not None and snapshot.get('pending'):
+                _check_cancel(check_cancel)
+                snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.

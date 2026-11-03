@@ -983,3 +983,21 @@ scheduling, serialization and transport outside those functions; their
 difference is not pure queue time. Do not persist these internal timings in
 capture metadata or change terminal/generic reply shapes, caps, deadlines,
 identity, Stop or completion gates. These measurements alone prove no speedup.
+
+The pinned corporate L3 observer additionally supports its exact third,
+header-only standalone overseas-control p-table beside grid1 inside the same
+group-A p-panel and direct form. Require its two exact captions/spans, wrapper,
+widths, control names and input IDs, and no body/footer rows; read no input
+values. Recheck the structure on both observer passes. Persist only optional
+standalone_layout=overseas-controls-v1 in the existing L3 projection proof;
+unknown explicit markers are unsupported and absent markers keep legacy
+two-table replay. Other extras remain whole-record fallback. Scalar projection,
+unresolved template fields and independent native/capture/PDF gates are intact.
+
+Only the existing 250-cap DOM cursor combines global loading-overlay readiness
+and the existing180ms settling interval with its same-owner atomic snapshot.
+Return pending after at most1000ms of renderer waiting for Python Stop checks;
+retain the original browser/table deadlines, exact state, Document, URL, rows,
+source totals and one click per page. No generic wait or native request changes.
+Renderer snapshot timing excludes this waiting; wall snapshot timing includes it.
+RPC reduction alone is not build-matched live speed or completion acceptance.
