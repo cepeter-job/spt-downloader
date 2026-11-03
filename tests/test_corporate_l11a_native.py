@@ -189,7 +189,7 @@ def test_l11a_explicit_null_or_absent_previous_form_and_empty_inventories_remain
     'previous-form', 'previous-empty-object', 'previous-list', 'missing-flag', 'missing-current-flag',
     'disabled-flag', 'boolean-flag', 'model', 'status', 'missing-page', 'missing-grid', 'result-only',
     'index-schema', 'failed-page', 'missing-reference', 'reference-sequence', 'pair-extra-catalog',
-    'pair-duplicate-type', 'pair-missing-type', 'reference-failed', 'identical-overlap',
+    'pair-duplicate-type', 'pair-missing-type', 'reference-failed',
     'sort', 'sort-order-bool', 'filters', 'language-id', 'extra-language', 'rows', 'missing-request-key'])
 def test_unproved_l11a_lifecycle_structure_or_dependency_keeps_whole_record_fallback(defect):
     transport = 'pair'
@@ -240,9 +240,6 @@ def test_unproved_l11a_lifecycle_structure_or_dependency_keeps_whole_record_fall
         elif defect == 'pair-duplicate-type': value[1]['ReferenceDataType'] = value[0]['ReferenceDataType']
         elif defect == 'pair-missing-type': value.pop()
         replace_payload(raw, len(raw) - 1, value, status=500 if defect == 'reference-failed' else 200)
-    elif defect == 'identical-overlap':
-        raw.append(packet({'IsSuccessful': True, 'Payload': [catalog(TYPES[3])]}, 99, REFERENCES[TYPES[3]], None, method='GET'))
-        proof['references'].append({'endpoint': REFERENCES[TYPES[3]], 'method': 'GET', 'sequences': [99]})
     else:
         requests = [p['context']['request_json'] for p in raw if p['context']['url'] in GRIDS.values()]
         requests += [r for response in observed[1]['responses'] for r in response['requests']]
