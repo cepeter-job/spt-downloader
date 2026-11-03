@@ -735,6 +735,17 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
+The selection dialog offers All, Pemb. Terakhir, PPh Potput and PPN checkboxes.
+They prepare visible selections only; explicit confirmation remains mandatory.
+Potput is exactly PPh Pasal 21/26 plus PPh Unifikasi (case-insensitive full
+captions), and combines with PPN and the latest-model modifier. Rank the whole
+inventory before intersecting search results, using original literal period/year
+groups, never the Tahunan/month display label. Keep all tied highest-model IDs;
+unknown models invalidate automatic ranking for their group and require manual
+selection. Filter changes clear presets and selection; manual edits clear preset
+indicators, while sorting preserves them. Preserve original-order consent IDs,
+Stop/stale-job guards, empty initial selection and the unchanged worker/MPN gates.
+
 Literal capture-mode validation belongs to the stdlib-only
 `coretax_detail_source` owner. The GUI controller must import without loading
 the tax JSON adapter or worker/browser/Excel dependencies. Keep the exact

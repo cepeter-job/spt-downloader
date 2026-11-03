@@ -140,6 +140,19 @@ def test_latest_compares_very_long_amendments_without_integer_coercion(tmp_path)
         assert selected(dialog) == {'larger'}
 
 
+def test_latest_keeps_literal_period_aliases_and_explicit_years_separate(tmp_path):
+    data = payload([
+        ('year24', 'PPN', '01', 'Normal'),
+        ('year25', 'PPN', '01', 'Pembetulan 1'),
+        ('literal-code', 'PPN', '01012025', 'Normal'),
+        ('literal-caption', 'PPN', 'Januari 2025', 'Pembetulan 2')])
+    data['records'][0]['meta']['Tahun Pajak'] = '2024'
+    data['records'][1]['meta']['Tahun Pajak'] = '2025'
+    with window(tmp_path, data) as (root, app, controller, dialog):
+        invoke(root, dialog, 'select_latest')
+        assert selected(dialog) == {'year24', 'year25', 'literal-code', 'literal-caption'}
+
+
 def test_unknown_models_and_missing_identity_require_manual_selection(tmp_path):
     data = payload([
         ('normal-with-unknown', 'PPN', 'Januari 2025', 'Normal'),
@@ -251,3 +264,14 @@ def test_shortcuts_fit_the_compact_dialog_without_horizontal_clipping(tmp_path):
             assert control.winfo_rootx() >= body.winfo_rootx()
             assert control.winfo_rootx() + control.winfo_width() <= body.winfo_rootx() + body.winfo_width()
         assert not controller.replies
+
+
+def test_source_and_frozen_selftest_exercises_actual_shortcuts(tmp_path):
+    import json
+    from spt_gui import self_test
+    path = tmp_path / 'shortcuts.json'
+    assert self_test(path) == 0
+    report = json.loads(path.read_text(encoding='utf-8'))['selection_shortcuts_control']
+    assert report['labels'] == list(LABELS) and report['all_count'] == 9 and report['cleared'] is True
+    assert report['combined_ids'] == [
+        '::synthetic {return}; [literal] / id', 'synthetic-21', 'synthetic-ppn-feb', 'synthetic-unifikasi']

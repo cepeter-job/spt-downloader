@@ -52,6 +52,19 @@ Progress berbobot tahap tetap berbeda dari jumlah SPT terpilih, waktu tersisa, a
 
 ## Pemilihan SPT
 
+Empat checkbox di atas tabel menyiapkan pilihan: **All** memilih seluruh baris
+terlihat; **Pemb. Terakhir** memilih nomor pembetulan tertinggi per jenis dan
+masa/tahun sumber, atau Normal jika belum ada pembetulan. **PPh Potput** mencakup
+PPh Pasal 21/26 serta PPh Unifikasi; **PPN** mencakup PPN. Kedua kategori dapat
+digabung dengan Pemb. Terakhir. All mengganti preset sebelumnya; memilih kategori
+setelah All mempersempit pilihan. Melepas kategori terakhir mengosongkan pilihan.
+Melepas Pemb. Terakhir mengembalikan seluruh model kategori aktif, atau kosong
+tanpa kategori. Pemilihan manual menghapus indikator preset; sorting tetap
+mempertahankannya. Pencarian menghapus preset dan pilihan. Peringkat pembetulan
+memakai inventaris lengkap sebelum filter sehingga model lama yang terlihat
+tidak menggantikan pembetulan terbaru yang tersembunyi. Model ambigu memerlukan
+pilihan manual. Checkbox tidak mengonfirmasi atau memulai pengambilan rincian.
+
 Gunakan dialog native dengan pencarian dan Treeview multi-select: Jenis pajak, Masa pajak, Normal/pembetulan, ID SPT. Kolom Masa pajak menampilkan **Tahunan** untuk jenis PPh Badan dan nama bulan Indonesia untuk masa bulanan yang dikenali: angka 1–12/01–12, kode `MM` + `MM` + tahun dengan bulan awal/akhir sama, atau caption bulan dan tahun. Rentang atau format yang ambigu tetap tampil literal. Metadata, checkpoint, ekspor, ID dan kunci urutan tetap memakai nilai sumber asli; pencarian menerima label tampilan maupun teks sumber. Source ID bukan IID widget; gunakan IID lokal yang dipetakan kembali ke ID teramati.
 
 Saat dialog dibuka, urutan tampilan default adalah **PPh Badan → PPh Pasal 21/26 → PPh Unifikasi → PPN**, lalu jenis lain. Caption dikenali utuh secara case-insensitive; teks sumber tidak diubah. Dalam setiap jenis, tahun menaik, masa Januari–Desember, lalu Normal → Pembetulan 1 → Pembetulan 2 dan seterusnya mengikuti aturan sorting yang ada. Jenis lain diurutkan berdasarkan caption; kunci yang setara tetap mengikuti urutan inventaris.

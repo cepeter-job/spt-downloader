@@ -170,6 +170,28 @@ def self_test(report=None):
             # Header and reply oracles refer to inventory order, not the new display order.
             by_id={tree.item(iid,'values')[3]:iid for iid in initial}
             original=[by_id[record['record_id']] for record in app.controller.read_request(None)['records']]
+            shortcuts={w.winfo_name():w for w in descendants(selection) if w.winfo_class()=='TCheckbutton'}
+            shortcut_report={'labels':[shortcuts['select_'+name].cget('text')
+                                      for name in ('all','latest','potput','ppn')]}
+            assert shortcut_report['labels']==['All','Pemb. Terakhir','PPh Potput','PPN']
+            shortcuts['select_all'].invoke();root.update()
+            shortcut_report['all_count']=len(tree.selection())
+            assert shortcut_report['all_count']==9
+            shortcuts['select_all'].invoke();root.update()
+            assert not tree.selection()
+            shortcuts['select_latest'].invoke();root.update()
+            shortcut_report['latest_ids']=[tree.item(iid,'values')[3] for iid in original if iid in tree.selection()]
+            assert shortcut_report['latest_ids']==[
+                '::synthetic {return}; [literal] / id','synthetic-badan-one','synthetic-21',
+                'synthetic-badan-two','synthetic-ppn-feb','synthetic-unifikasi']
+            shortcuts['select_ppn'].invoke();shortcuts['select_potput'].invoke();root.update()
+            shortcut_report['combined_ids']=[tree.item(iid,'values')[3] for iid in original if iid in tree.selection()]
+            assert shortcut_report['combined_ids']==[
+                '::synthetic {return}; [literal] / id','synthetic-21','synthetic-ppn-feb','synthetic-unifikasi']
+            assert not hasattr(app.controller,'selection_reply')
+            shortcuts['select_all'].invoke();shortcuts['select_all'].invoke();root.update()
+            shortcut_report['cleared']=not tree.selection()
+            assert shortcut_report['cleared']
             chosen=(original[0],original[3])
             tree.selection_set(chosen)
             tree.event_generate('<<TreeviewSelect>>')
@@ -214,6 +236,7 @@ def self_test(report=None):
                   'gui_controls':gui_controls,
                   'detail_source_control':mode_control,
                   'selection_sorting_control':sorting,
+                  'selection_shortcuts_control':shortcut_report,
                   'automatic_login_controls':automatic_login,
                   'bugreport_footer':bugreport_footer,
                   'credential_check_controls':False,'personal_use_labels':personal_use_labels,'ui_text':ui_text,
