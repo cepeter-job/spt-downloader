@@ -26,10 +26,12 @@ def test_detail_grid_failure_keeps_partial_and_one_inspected_action(
         return result
     monkeypatch.setattr(module.AccountingUI, '_wait', wait)
     root = tmp_path / 'diag'
+    job = tmp_path / 'job'
+    job.mkdir()
     with portal(browser, monkeypatch) as (page, metrics):
         run = scope_run()
         with diagnostics.session(root, 'worker') as log:
-            collect_mpn(page, run, tmp_path / 'job', detail_source=mode)
+            collect_mpn(page, run, job, detail_source=mode)
             assert log.flush()
         assert run['mpn']['status'] == 'PARTIAL' and not run['complete']
         assert run['mpn']['headers'] == 1 and run['mpn']['details'] == 0
