@@ -735,6 +735,22 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
+The selection dialog offers All, Pemb. Terakhir, PPh Potput and PPN checkboxes.
+They prepare visible selections only; explicit confirmation remains mandatory.
+Potput is exactly PPh Pasal 21/26 plus PPh Unifikasi (case-insensitive full
+captions), and combines with PPN and the latest-model modifier. Rank the whole
+inventory before intersecting search results, using bounded recognized original
+period/year syntax, never the Tahunan/month display label. Reviewed source codes
+and full captions for the same period share a decision key without rewriting
+metadata. Badan must be annual January-to-December; Masa must be one month.
+Month-only numbers require an explicit valid source year or matching job-snapshot
+year. Unsupported periods and contradictory source years stay manual; conflicting
+year candidates block automatic ranking for both known groups. Keep tied IDs;
+unknown models invalidate automatic ranking for their group and require manual
+selection. Filter changes clear presets and selection; manual edits clear preset
+indicators, while sorting preserves them. Preserve original-order consent IDs,
+Stop/stale-job guards, empty initial selection and the unchanged worker/MPN gates.
+
 Owned Windows Playwright driver startup temporarily defaults
 `NODE_USE_SYSTEM_CA=1` through the stdlib-only `coretax_transport` manager wrapper.
 Use existing trusted Windows CAs with the pinned supported Node runtime; do not
