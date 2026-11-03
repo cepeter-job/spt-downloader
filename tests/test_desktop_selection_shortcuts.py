@@ -140,7 +140,7 @@ def test_latest_compares_very_long_amendments_without_integer_coercion(tmp_path)
         assert selected(dialog) == {'larger'}
 
 
-def test_latest_keeps_literal_period_aliases_and_explicit_years_separate(tmp_path):
+def test_latest_matches_known_period_aliases_and_keeps_explicit_years_separate(tmp_path):
     data = payload([
         ('year24', 'PPN', '01', 'Normal'),
         ('year25', 'PPN', '01', 'Pembetulan 1'),
@@ -150,7 +150,32 @@ def test_latest_keeps_literal_period_aliases_and_explicit_years_separate(tmp_pat
     data['records'][1]['meta']['Tahun Pajak'] = '2025'
     with window(tmp_path, data) as (root, app, controller, dialog):
         invoke(root, dialog, 'select_latest')
-        assert selected(dialog) == {'year24', 'year25', 'literal-code', 'literal-caption'}
+        assert selected(dialog) == {'year24', 'literal-caption'}
+
+
+def test_latest_annual_aliases_share_one_year_without_rewriting_source(tmp_path):
+    data = payload([
+        ('normal', 'PPh Badan', '2025', 'Normal'),
+        ('one', 'PPh Badan', 'Januari - Desember 2025', 'Pembetulan 1'),
+        ('two', 'PPh Badan', '01122025', 'Pembetulan 2'),
+        ('prior-year', 'PPh Badan', '2024', 'Normal')])
+    original = deepcopy(data)
+    with window(tmp_path, data) as (root, app, controller, dialog):
+        invoke(root, dialog, 'select_latest')
+        assert selected(dialog) == {'two', 'prior-year'}
+        assert data == original and not controller.replies
+
+
+def test_latest_refuses_unknown_periods_and_contradictory_source_year(tmp_path):
+    data = payload([
+        ('range', 'PPN', '01022025', 'Pembetulan 1'),
+        ('unknown', 'PPN', 'Januari 2025 extra', 'Normal'),
+        ('contradiction', 'PPN', 'Januari 2025', 'Pembetulan 2'),
+        ('known', 'PPN', 'Februari 2025', 'Normal')])
+    data['records'][2]['meta']['Tahun Pajak'] = '2024'
+    with window(tmp_path, data) as (root, app, controller, dialog):
+        invoke(root, dialog, 'select_latest')
+        assert selected(dialog) == {'known'}
 
 
 @pytest.mark.parametrize('unknown_model', ['Pembetulan terakhir', '', None, 2])
