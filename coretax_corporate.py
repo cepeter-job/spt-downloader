@@ -54,6 +54,31 @@ def _tabs(page):
     return view, tabs
 
 
+def _enabled_form_binding(form, tab, caption):
+    """Recheck only inspected tab/panel ownership, never business controls."""
+    handle = tab.element_handle()
+    try:
+        return form.evaluate('''(form, {tab, caption}) => {
+            if (!tab || !tab.isConnected || !form.isConnected) return false;
+            const li=tab.closest('li'), view=form.closest('.p-tabview');
+            const panel=form.closest('.p-tabview-panel'), id=tab.getAttribute('aria-controls');
+            const href=tab.getAttribute('href');
+            const bounds=form.getBoundingClientRect(), style=getComputedStyle(form);
+            return !!li && !!view && !!panel && tab.closest('.p-tabview')===view &&
+                style.visibility==='visible' && bounds.width>0 && bounds.height>0 &&
+                tab.textContent.trim()===caption && !li.classList.contains('p-disabled') &&
+                tab.getAttribute('aria-disabled')!=='true' && !!id && panel.id===id &&
+                [...view.querySelectorAll('[id]')].filter(e=>e.id===id).length===1 &&
+                (href===null || href==='' || href==='#' || href==='#'+id);
+        }''', {'tab': handle, 'caption': caption}) is True
+    finally:
+        if handle is not None:
+            try:
+                handle.dispose()
+            except Exception:  # nosec B110 - Owned cleanup must not replace Stop or the original failure.
+                pass
+
+
 def _native_panel(page, view, tab, caption, record, check_cancel):
     """Tunggu binding tab terbaru, lalu pertahankan batas struktur native."""
     from coretax_browser import (_check_cancel, _wait_tab_panel, wait_idle,
@@ -504,7 +529,7 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
               **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
 
-def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
+def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Five structural owners and four owned paginators; no DOM business reads."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
     from coretax_corporate_projection import (L11A_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE,
@@ -512,10 +537,15 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
     from coretax_json import (CORPORATE_L11A_GRID_URLS, CORPORATE_L11A_REFERENCE_URLS,
                               CORPORATE_REFERENCE_REQUESTS)
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    def refuse(reason):
+        if reason_out is not None:
+            reason_out['reason'] = reason
+        return None
+
     if digest != L11A_BUILD_DIGESTS.get(CIT_SOURCE_URL):
-        return None
+        return refuse('cit_digest')
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
-        return None
+        return refuse('lifetime_start')
     _check_cancel(check_cancel)
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src === url) ||
@@ -523,18 +553,19 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
         [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
     _check_cancel(check_cancel)
     if providers is not True:
-        return None
+        return refuse('script_providers')
     main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
     _check_cancel(check_cancel)
     vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
     _check_cancel(check_cancel)
-    if (main_digest != L11A_BUILD_DIGESTS.get(MAIN_SOURCE)
-            or vendor_digest != L11A_BUILD_DIGESTS.get(VENDOR_SOURCE)):
-        return None
+    if main_digest != L11A_BUILD_DIGESTS.get(MAIN_SOURCE):
+        return refuse('main_digest')
+    if vendor_digest != L11A_BUILD_DIGESTS.get(VENDOR_SOURCE):
+        return refuse('vendor_digest')
     tables = []
     for phase in range(2):
         if form.count() != 1 or not form.is_visible() or form.locator('table').count() != 5:
-            return None
+            return refuse('table_count')
         observed_tables = []
         for index, selector in enumerate(_L11A_OWNERS):
             _check_cancel(check_cancel)
@@ -543,7 +574,7 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
             if (grid.count() != 1 or not grid.is_visible() or grid.locator(ui).count() != 1
                     or grid.locator(other).count() or grid.locator('p-table').count() != 1
                     or grid.locator('table').count() != 1):
-                return None
+                return refuse('grid_ownership')
             table = grid.locator('table')
             chain = table.evaluate('''(table, {selector, ui}) => {
                 const form=table.closest('rshshr-citr-l11a-form'), grid=table.closest(selector);
@@ -555,10 +586,10 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
             }''', {'selector': selector, 'ui': ui})
             _check_cancel(check_cancel)
             if chain is not True:
-                return None
+                return refuse('grid_ownership')
             structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L11-A')
             if structure != {'form': 'L11-A', 'component': selector, 'groups': _L11A_GROUPS[index]}:
-                return None
+                return refuse('table_structure')
             metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
             _check_cancel(check_cancel)
             observed_tables.append({'component': selector, 'source_structure': structure,
@@ -567,9 +598,9 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
             tables = observed_tables
             for index, selector in enumerate(_L11A_OWNERS):
                 if index != 3 and not _turn_grid(page, form.locator(selector + ' p-table'), max_pages, check_cancel):
-                    return None
+                    return refuse('paginator')
         elif observed_tables != tables:
-            return None
+            return refuse('stable_table_metadata')
     observations = capture.request_observations()
     responses = []
     for url in CORPORATE_L11A_GRID_URLS:
@@ -579,17 +610,17 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
                 continue
             request = item.get('request_json')
             if not isinstance(request, dict) or 'ReturnSheetRecordId' not in request:
-                return None
+                return refuse('request_shape')
             if request['ReturnSheetRecordId'] != record['record_id']:
                 raise JsonSafetyError('Observed L11-A request contradicts selected return')
             if type(request.get('First')) is not int or request['First'] < 0:
-                return None
+                return refuse('grid_offset')
             key = json.dumps(request, sort_keys=True)
             if key not in seen:
                 requests.append(request)
                 seen.add(key)
         if not requests:
-            return None
+            return refuse('grid_request_missing')
         responses.append({'name': 'L11-A/' + url.rsplit('/', 1)[-1], 'endpoint': url,
                           'requests': sorted(requests, key=lambda request: request['First'])})
     references, kinds_seen = [], set()
@@ -599,16 +630,14 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):
         sequences = [item['sequence'] for item in observations
             if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
         if sequences:
-            if kinds_seen.intersection(kinds):
-                return None
             kinds_seen.update(kinds)
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
     if kinds_seen != set(CORPORATE_L11A_REFERENCE_URLS):
-        return None
+        return refuse('reference_request_missing')
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
-        return None
+        return refuse('lifetime_end')
     return {'responses': responses,
         'projection': {'kind': 'corporate-l11a-v1', 'builds': {CIT_SOURCE_URL: digest,
             MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
@@ -623,7 +652,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     ordinal_safe = None
 
     def unavailable(error=None, *, l3_reason=None, l3_table_shape=None,
-                    l3_extra_layout=None, l3_extra_owner=None):
+                    l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
@@ -631,7 +660,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                            corporate_l3_reason=l3_reason,
                            corporate_l3_table_shape=l3_table_shape,
                            corporate_l3_extra_layout=l3_extra_layout,
-                           corporate_l3_extra_owner=l3_extra_owner, error=error)
+                           corporate_l3_extra_owner=l3_extra_owner,
+                           corporate_l11a_reason=(l11a_reason or 'observation_error') if stage == 'l11a' else None,
+                           error=error)
         return None
     _check_cancel(check_cancel)
     verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
@@ -688,11 +719,21 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'L11-A':
                 stage = 'l11a'
                 if 'Induk' not in names:
-                    return unavailable()
-                inspected = _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel)
+                    return unavailable(l11a_reason='induk_order')
+                l11a_diagnostic = {}
+                inspected = _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel,
+                                          reason_out=l11a_diagnostic)
                 if inspected is None:
-                    return unavailable()
+                    return unavailable(l11a_reason=l11a_diagnostic.get('reason'))
                 binding.update(inspected)
+            if name in ('L3', 'L11-A'):
+                _check_cancel(check_cancel)
+                enabled = _enabled_form_binding(form, tab, name)
+                _check_cancel(check_cancel)
+                _check_corporate_route(page.url, selected)
+                if not enabled:
+                    return unavailable(l3_reason='visibility_changed', l11a_reason='visibility_changed')
+                binding['projection']['visibility_binding'] = 'current-induk-enabled-v1'
             if name == 'L1-D':
                 stage = 'l1d'
                 if 'Induk' not in names:

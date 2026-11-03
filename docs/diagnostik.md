@@ -78,7 +78,7 @@ dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
 `l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
 nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
 Corporate verified. Khusus `corporate_observer_stage=l3`, sub-observer
-mencatat `corporate_l3_reason` dari 19 kategori tetap yang memisahkan pin/build,
+mencatat `corporate_l3_reason` dari kategori tetap yang memisahkan pin/build,
 hash sumber MAIN (`main_digest`), hash sumber VENDOR (`vendor_digest`),
 jumlah tabel L3 (`table_count`), lifetime komponen awal/akhir,
 sumber skrip, struktur form/grid, rantai owner,
@@ -88,6 +88,15 @@ referensi. Misalnya `table_structure`, `reference_request`, dan
 hash/URL atau isi dari browser. Field yang tidak ada bukan bukti tahap sukses.
 Refusal tetap mengembalikan `None` dan memilih fallback seluruh record ke DOM;
 verifikasi sumber, identitas, dan pembatasan tetap wajib.
+
+Pada tahap `l11a`, `corporate_l11a_reason` memisahkan pin/provider, lifetime,
+jumlah tabel, ancestry/grup, paginator, perubahan metadata, bentuk/offset request,
+inventori grid dan katalog yang belum teramati. Contoh kategori tetap adalah
+`grid_ownership`, `stable_table_metadata`, `grid_request_missing` dan
+`reference_request_missing`. `visibility_changed` pada L3/L11-A menolak proof
+bila binding tab/panel aktif berubah sesudah observasi. Error yang tidak terduga
+di tahap L11-A hanya memakai `observation_error` serta ringkasan tipe/frame yang
+sudah disanitasi; tidak menyimpan pesan, caption bisnis, request atau URL.
 
 Untuk penolakan L3 `table_count`, `corporate_l3_table_shape` mengklasifikasikan
 hasil pembacaan struktur dari form yang sama hanya sebagai `zero`, `one`,

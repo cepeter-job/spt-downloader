@@ -179,7 +179,12 @@ The approved resource and independent native/Induk/PDF gates remain unchanged.
 
 Native L3 separately requires the exact submitted Rupiah `?view=true` route,
 preceding Induk, valid explicit predecessor encoding, positive fresh owned SPA
-lifetime and numeric1 outer/current IsIncomeTaxOverseas flags. Require all three
+lifetime and numeric1 outer/current IsIncomeTaxOverseas flags for legacy proofs.
+The optional `visibility_binding=current-induk-enabled-v1` instead permits an
+absent outer flag only with current numeric1, preceding Induk and the source-proven
+enabled exact form, rechecked with its original tab/panel binding after observation.
+Explicit outer null/zero/boolean/string and missing current flags stay unsupported;
+unknown explicit markers are refused. Preserve original source fields. Require all three
 loaded script providers/pins, both exact grid/ui-grid/p-table/form ancestries,
 groups, headers and footer spans; read no DOM business values. Turn only the
 owned B paginator. Bind exact observed ten-row Language/LanguageId id-ID,
@@ -193,6 +198,12 @@ identity or changed snapshots and catalog locale/snapshot contradictions remain
 fatal before fallback even without a semantic binding. Generic corporate grids
 retain their existing Index contract. Final drain/Stop, JSON custody, unresolved
 fields, Induk/PDF/live and whole-run completion remain independent gates.
+
+Only the separate native L3/L11-A Data/TotalRecords page consumers admit an
+optional literal-null envelope Index. Preserve it as unused typed provenance;
+nonnull Index, other envelope extras and Result-only payloads stay unsupported.
+This does not change any row's Index, local row numbering, ten-row request
+contract or generic corporate grid Index requirements.
 
 JSON-hybrid output retains only selected capture manifests and accepted original response bytes under `json/<SPT name>/<ordinal>/<attempt>/` inside the final SPT output folder, for CLI and desktop publication. New exports declare `json_output_layout=tax-kind-v1` and use the fixed names `PPh Badan`, `SPT PPh 21`, `SPT PPh Unifikasi`, `PPN` (unknown literal types use `SPT Lainnya`); retain the original ordinal for record isolation. Missing layout keeps legacy `json/<ordinal>/<attempt>/` readers compatible; reject unknown explicit layouts. Offline reexport reads the source layout and writes the new layout without deleting legacy evidence. Check existing selected paths in both layouts before replacement; duplicate private evidence cannot be hidden across tax namespaces. Keep private `returns/json/` checkpoints compatible; published manifests preserve their original bytes/references and are evidence, not standalone resumable jobs. Declare JSON separately from workbook filenames. Verify scope, record, attempt, privacy, budgets and hashes before copying from held readers, and verify staging/final bytes. Include JSON in consent snapshots, cancellation rollback and process-death recovery. Preserve earlier unselected JSON and reject changed selected evidence or case/reparse aliases. Never copy arbitrary job JSON, credentials, headers, profiles or unrelated attempts. Copying evidence does not certify capture completion or native eligibility; DOM-only jobs create no JSON directory.
 
@@ -651,7 +662,10 @@ existing rejection rules.
 
 Native current-only L11-A uses the separate corporate-l11a-v1 proof, the exact
 three loaded provider pins, fresh owned submitted ?view=true lifetime, preceding
-Induk and numeric1 IsDeclareEntertainmentExpense in outer/current MainFormData.
+Induk and numeric1 IsDeclareEntertainmentExpense in outer/current MainFormData
+for legacy proofs. The same optional current-induk-enabled-v1 visibility binding
+permits only an absent outer flag with current numeric1 and the independently
+rechecked enabled exact L11-A form; all other explicit flag types remain unsupported.
 Require explicit PreviousFormData encoding with absent/null L11A predecessor.
 Observe all five exact grid/ui-grid/p-table/form and group/header owners before
 and after the four owned paginators, including the nested IV/IV.A offline table;
@@ -663,7 +677,12 @@ catalog types while preserving original Payload/catalog/detail indices and
 ordinary ordering/version proof. Never force-fetch a missing catalog. Preserve
 fatal identity/snapshot/query-count checks before fallback, even unbound, and
 compare full typed same-kind catalog content across admitted endpoints before
-overlap fallback, retaining numeric lexemes, metadata and duplicate order. The
+projection, retaining numeric lexemes, metadata and duplicate order. Matching
+singleton/pair overlaps may bind all four-to-six original reviewed routes; require
+every observed L11-A catalog route and its exact successful sequence set, select
+the earliest original sequence per kind and preserve all contributing route
+provenance. Failed/unbound secondary sources cannot be hidden behind a matching
+catalog. L11-A refusals expose only fixed corporate_l11a_reason categories. The
 catalog type must be requested by that exact endpoint; a wrong marker remains
 unsupported source shape rather than establishing a new catalog identity.
 Count queries include endpoint and every field except First. Scope L3/L11-A
