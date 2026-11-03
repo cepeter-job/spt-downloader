@@ -153,10 +153,11 @@ def test_latest_keeps_literal_period_aliases_and_explicit_years_separate(tmp_pat
         assert selected(dialog) == {'year24', 'year25', 'literal-code', 'literal-caption'}
 
 
-def test_unknown_models_and_missing_identity_require_manual_selection(tmp_path):
+@pytest.mark.parametrize('unknown_model', ['Pembetulan terakhir', '', None, 2])
+def test_unknown_models_and_missing_identity_require_manual_selection(tmp_path, unknown_model):
     data = payload([
         ('normal-with-unknown', 'PPN', 'Januari 2025', 'Normal'),
-        ('unknown', 'PPN', 'Januari 2025', 'Pembetulan terakhir'),
+        ('unknown', 'PPN', 'Januari 2025', unknown_model),
         ('missing-period', 'PPh Badan', '', 'Normal'),
         ('missing-tax', '', 'Januari 2025', 'Normal'),
         ('known', 'PPN', 'Februari 2025', 'Normal')])
@@ -167,6 +168,17 @@ def test_unknown_models_and_missing_identity_require_manual_selection(tmp_path):
         assert 'manual' in str(notice.getvar(str(notice.cget('textvariable')))).casefold()
         invoke(root, dialog, 'select_all')
         assert selected(dialog) == {r['record_id'] for r in data['records']}
+
+
+def test_zero_amendment_still_supersedes_normal_and_missing_year_is_manual(tmp_path):
+    data = payload([
+        ('normal', 'PPN', 'Januari 2025', 'Normal'),
+        ('zero', 'PPN', 'Januari 2025', 'Pembetulan 0'),
+        ('invalid-year', 'PPN', 'Februari 2025', 'Normal')])
+    data['records'][2]['meta']['Tahun Pajak'] = None
+    with window(tmp_path, data) as (root, app, controller, dialog):
+        invoke(root, dialog, 'select_latest')
+        assert selected(dialog) == {'zero'}
 
 
 @pytest.mark.parametrize('tax', ['PPh Badan extra', 'PPh Pasal 21/26 extra', 'PPh Unifikasi extra', 'PPN extra', ''])

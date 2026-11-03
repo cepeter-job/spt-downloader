@@ -581,6 +581,7 @@ class App:
             preset_selection = set(chosen)
             tree.selection_set(tuple(iid for iid in visible if iid in chosen))
             update_selection()
+            request_reflow()
 
         for name in shortcut_vars:
             control = ttk.Checkbutton(shortcuts, name='select_' + name,
