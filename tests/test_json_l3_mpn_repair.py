@@ -8,7 +8,6 @@ from playwright.sync_api import Locator, ElementHandle
 
 import coretax_browser as driver
 import coretax_corporate as corporate
-from coretax_corporate import observe_forms
 from coretax_corporate_projection import _L3_CAPTIONS
 from coretax_json import adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
@@ -72,7 +71,7 @@ def test_source_shaped_standalone_l3_is_native_and_replays_original_bytes(browse
         with DetailJsonCapture(owned.context, owned.page, owned.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(owned, capture)
             with diagnostics.session(tmp_path/'diagnostics', 'worker') as log:
-                forms = observe_forms(page, owned.record, corpus.SCOPE, capture, approved_digest=owned.pins[ASSET])
+                forms = corporate.observe_forms(page, owned.record, corpus.SCOPE, capture, approved_digest=owned.pins[ASSET])
                 assert log.flush()
             reasons = [{k: r[k] for k in ('corporate_observer_stage', 'corporate_l3_reason', 'error') if k in r}
                        for r in records(tmp_path/'diagnostics') if r['event']=='corporate.observe_unavailable']
@@ -99,7 +98,7 @@ def test_unproved_standalone_l3_keeps_whole_record_fallback(browser, tmp_path, m
     try:
         with DetailJsonCapture(owned.context, owned.page, owned.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(owned, capture)
-            assert observe_forms(page, owned.record, corpus.SCOPE, capture,
+            assert corporate.observe_forms(page, owned.record, corpus.SCOPE, capture,
                                  approved_digest=owned.pins[ASSET]) is None
             assert page.evaluate('window.businessReads') == 0
     finally:
@@ -118,7 +117,7 @@ def test_standalone_l3_change_between_passes_cannot_grant_native(browser, tmp_pa
     try:
         with DetailJsonCapture(owned.context, owned.page, owned.record, corpus.SCOPE, tmp_path) as capture:
             open_selected(owned, capture)
-            assert observe_forms(owned.page, owned.record, corpus.SCOPE, capture,
+            assert corporate.observe_forms(owned.page, owned.record, corpus.SCOPE, capture,
                                  approved_digest=owned.pins[ASSET]) is None
             assert owned.page.evaluate('window.businessReads') == 0
     finally:
