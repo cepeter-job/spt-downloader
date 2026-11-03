@@ -9,6 +9,7 @@ from coretax_json import adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture
 from spt_desktop import diagnostics
 from l11a_observer_fixture import Fixture
+from l3_observer_fixture import Fixture as L3Fixture
 from test_corporate_l11a_observer import open_selected
 from test_json_hybrid_native import browser as browser
 import test_corporate_l11a_native as l11a
@@ -65,7 +66,7 @@ def test_l11a_refusal_reports_fixed_reason(browser, tmp_path, monkeypatch, defec
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
             forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
-                approved_digest=fixture.pins[l11a.corpus.ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'])
+                approved_digest=fixture.pins[observer.CIT_SOURCE_URL])
             assert forms is None
         refusal = [fields for event, fields in events if event == 'corporate.observe_unavailable'][-1]
         assert refusal['corporate_observer_stage'] == 'l11a'
@@ -99,4 +100,98 @@ def test_current_induk_visibility_does_not_override_present_unproved_outer_flags
     value['Payload'][flag] = outer
     raw[0] = module.fresh_packet(value)
     forms[1]['projection']['visibility_binding'] = 'current-induk-enabled-v1'
+    assert not adapt_corporate_detail(iter(raw), module.selected(), corpus.SCOPE, forms)['eligible']
+
+
+def test_owned_l11a_keeps_matching_pair_and_singleton_provenance(browser, tmp_path, monkeypatch):
+    fixture = Fixture(browser, monkeypatch)
+    kind = l11a.TYPES[4]
+    fixture.reference_raw[l11a.REFERENCES[kind]] = corpus.wire(
+        {'IsSuccessful': True, 'Payload': [l11a.catalog(kind)]}).encode()
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[observer.CIT_SOURCE_URL])
+            assert forms is not None
+            assert len(forms[1]['projection']['references']) == 5
+            manifest = capture.drain()
+            assert manifest['complete']
+            bodies = list(capture.iter_bodies())
+            result = adapt_corporate_detail(iter(bodies), fixture.record, corpus.SCOPE, forms)
+            assert result['eligible'], result['reason']
+            evidence = next(p['values'] for p in result['provenance']['projections'] if p['form'] == 'L11-A')
+            references = {p['context']['sequence'] for p in bodies if p['context']['method'] == 'GET'}
+            assert references <= {p['response_sequence'] for p in evidence}
+            assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('fixture_class,flag', [
+    (L3Fixture, 'IsIncomeTaxOverseas'), (Fixture, 'IsDeclareEntertainmentExpense')])
+def test_owned_current_induk_visibility_marks_absent_outer_flag(
+        browser, tmp_path, monkeypatch, fixture_class, flag):
+    fixture = fixture_class(browser, monkeypatch)
+    value = json.loads(fixture.raw)
+    del value['Payload'][flag]
+    fixture.raw = corpus.wire(value).encode()
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[observer.CIT_SOURCE_URL])
+            assert forms is not None
+            assert forms[1]['projection']['visibility_binding'] == 'current-induk-enabled-v1'
+            assert capture.drain()['complete']
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
+            assert result['eligible'], result['reason']
+            assert result['provenance']['projections'][0]['visibility_binding'] == 'current-induk-enabled-v1'
+            assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('fixture_class,name,method', [
+    (L3Fixture, 'L3', '_observe_l3'), (Fixture, 'L11-A', '_observe_l11a')])
+def test_visibility_proof_rechecks_enabled_form_after_observation(
+        browser, tmp_path, monkeypatch, fixture_class, name, method):
+    fixture = fixture_class(browser, monkeypatch)
+    original = getattr(observer, method)
+
+    def disable_after_observation(page, *args, **kwargs):
+        result = original(page, *args, **kwargs)
+        page.locator('a[role=tab]').filter(has_text=name).evaluate(
+            '(e)=>e.setAttribute("aria-disabled","true")')
+        return result
+
+    monkeypatch.setattr(observer, method, disable_after_observation)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            assert observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[observer.CIT_SOURCE_URL]) is None
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('module,flag', [
+    (l3, 'IsIncomeTaxOverseas'), (l11a, 'IsDeclareEntertainmentExpense')])
+@pytest.mark.parametrize('defect', ['unknown-marker', 'missing-current', 'current-bool', 'no-lifetime'])
+def test_current_induk_visibility_keeps_required_source_and_lifetime_proof(module, flag, defect):
+    raw, forms = module.packets(), module.bindings()
+    value = json.loads(raw[0]['body'])
+    del value['Payload'][flag]
+    current = json.loads(value['Payload']['CurrentFormData'])
+    if defect == 'missing-current':
+        del current['MainFormData'][flag]
+    elif defect == 'current-bool':
+        current['MainFormData'][flag] = True
+    value['Payload']['CurrentFormData'] = corpus.wire(current)
+    raw[0] = module.fresh_packet(value)
+    forms[1]['projection']['visibility_binding'] = (
+        'SYNTHETIC UNREVIEWED' if defect == 'unknown-marker' else 'current-induk-enabled-v1')
+    if defect == 'no-lifetime':
+        for packet in raw:
+            del packet['context']['component_lifetime']
     assert not adapt_corporate_detail(iter(raw), module.selected(), corpus.SCOPE, forms)['eligible']
