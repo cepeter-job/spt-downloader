@@ -1,0 +1,36 @@
+name: Temporary JSON review regression probe
+on:
+  push:
+    branches: [fix/json-l3-mpn-review-probe-20261103]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version: '0.13.4'
+          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          python-version: '3.14.8'
+      - name: Install locked test environment
+        run: |
+          uv python install cpython-3.14.8-windows-x86_64-none --no-bin --no-registry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv venv --managed-python --python '3.14.8+gil' .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip sync --python .venv/Scripts/python.exe --require-hashes --only-binary :all: locks/test.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv pip check --python .venv/Scripts/python.exe
+      - name: Exercise actual late host reply and decode
+        run: |
+          .venv/Scripts/python.exe -m pytest tests/test_json_l3_mpn_repair.py -k late_snapshot_reply_or_decode -v --tb=short --basetemp "$env:RUNNER_TEMP/json-review-tests" --junitxml "$env:RUNNER_TEMP/regressions.xml"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: json-review-probe-${{ github.sha }}
+          path: ${{ runner.temp }}/regressions.xml

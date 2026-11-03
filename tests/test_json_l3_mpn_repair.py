@@ -1,5 +1,6 @@
 """Synthetic regressions for the November L3/MPN capture obstacles; runners only."""
 import html
+import json
 import re
 import time
 
@@ -283,4 +284,48 @@ def test_snapshot_cannot_refresh_an_expired_overlay_wait_deadline(context, monke
     assert not result['complete']
     assert result['warning'] == 'Table DOM read timed out after pagination'
     assert result['body_row_count'] == 250 and page.evaluate('moves') == 1
+    page.close()
+
+
+@pytest.mark.parametrize('delay_stage', ['reply', 'pending', 'decode'])
+def test_late_snapshot_reply_or_decode_keeps_only_prior_verified_rows(context, monkeypatch, delay_stage):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = dom_fixture(page, total=251, selected=250)
+    if delay_stage == 'pending':
+        page.evaluate('''() => document.querySelector('.p-paginator-next').addEventListener('click',()=>{
+            const overlay=document.createElement('div');overlay.className='p-blockui';
+            overlay.style.cssText='width:20px;height:20px';document.body.append(overlay);
+        })''')
+    original_evaluate, original_loads = ElementHandle.evaluate, json.loads
+    state = {'calls': 0, 'delayed': False, 'packed': None}
+    def evaluate(handle, expression, arg=None):
+        result = original_evaluate(handle, expression, arg)
+        if expression == driver.TABLE_VERIFIED_JS:
+            state['calls'] += 1
+            if isinstance(result, dict) and isinstance(result.get('packed'), str):
+                state['packed'] = result['packed']
+            if (not state['delayed'] and delay_stage != 'decode'
+                    and (result.get('pending') if delay_stage == 'pending' else 'packed' in result)):
+                state['delayed'] = True
+                # The real browser already produced its owned reply. Delay
+                # only the host return, never synthesize rows or browser time.
+                time.sleep(2.1)
+        return result
+    def loads(value, *args, **kwargs):
+        result = original_loads(value, *args, **kwargs)
+        if delay_stage == 'decode' and value == state['packed'] and not state['delayed']:
+            state['delayed'] = True
+            time.sleep(2.1)
+        return result
+    monkeypatch.setattr(ElementHandle, 'evaluate', evaluate)
+    monkeypatch.setattr(driver.json, 'loads', loads)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 2)
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert state['delayed'], 'Fixture never reached the in-time browser reply'
+    assert not result['complete'], 'Late final-page host response was accepted as COMPLETE'
+    assert result['warning'] == 'Table capture elapsed budget exceeded'
+    assert result['pages'] == 1 and result['body_row_count'] == 250
+    assert result['source_total'] == 251 and page.evaluate('moves') == 1
+    assert state['calls'] == 1, 'Host deadline allowed another pending snapshot RPC'
     page.close()
