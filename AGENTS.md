@@ -895,8 +895,9 @@ xhr/fetch in the owned main frame under the same exact origin and
 reviewed reference prefix; a variant is never bound, fetched, logged
 as URL/bytes or used as a label. Report a fixed third parent mismatch
 category without values and preserve fatal mismatch identity gates.
-A visible third L3 table must refuse native JSON and use the original
-whole-return DOM fallback. Use hosted synthetic Edge tests and require
+Except for the separately source-proven overseas-control table below, a visible
+third L3 table must refuse native JSON and use the original whole-return DOM
+fallback. Use hosted synthetic Edge tests and require
 separately authorized live acceptance on an exact matching build.
 
 Issue #143 round 8 (historical): 250-row pagination was not yet live-approved
@@ -997,7 +998,7 @@ unresolved template fields and independent native/capture/PDF gates are intact.
 Only the existing 250-cap DOM cursor combines global loading-overlay readiness
 and the existing180ms settling interval with its same-owner atomic snapshot.
 Return pending after at most1000ms of renderer waiting for Python Stop checks;
-retain the original browser/table deadlines, exact state, Document, URL, rows,
+retain the original45s loading and browser/table deadlines, exact state, Document, URL, rows,
 source totals and one click per page. No generic wait or native request changes.
 Renderer snapshot timing excludes this waiting; wall snapshot timing includes it.
 RPC reduction alone is not build-matched live speed or completion acceptance.

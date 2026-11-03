@@ -142,6 +142,10 @@ def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(
     original_clear = AccountingUI._clear_initial_transaction_date
     def clear(owned, *args):
         state['owned'] = owned
+        if remaining_budget is not None:
+            # The remaining budget already exists when _click_ready enters;
+            # do not replace its retained deadline after a readiness trial.
+            owned.preparation_deadline = time.monotonic()+remaining_budget
         return original_clear(owned, *args)
     monkeypatch.setattr(AccountingUI, '_clear_initial_transaction_date', clear)
     with portal(browser, monkeypatch, default_stuck=True, transaction_date_clear='valid') as (page, metrics):
@@ -158,21 +162,20 @@ def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(
                         cover.style.cssText='position:absolute;z-index:99999;inset:0';
                         e.parentElement.append(cover);setTimeout(()=>cover.remove(),1700);
                     }''')
-                    if remaining_budget is not None:
-                        state['owned'].preparation_deadline = time.monotonic()+remaining_budget
                 return result
             state['actual'] += 1
             return original(locator, *args, **kwargs)
         monkeypatch.setattr(Locator, 'click', click)
         run = scope_run()
         collect_mpn(page, run, tmp_path)
-        assert state['trial'] and state['actual'] == 1
         if remaining_budget is None:
+            assert state['trial'] and state['actual'] == 1
             assert run['mpn']['status'] == 'COMPLETE', 'One-second clear dispatch truncated preparation'
             assert page.evaluate('window.syntheticDateClicks') == 1
             assert page.evaluate('window.syntheticSearchClicks') == 2
             assert len(metrics['detail']) == 1
         else:
+            assert state['actual'] <= 1
             assert run['mpn']['status'] == 'PARTIAL' and not run['complete']
             assert page.evaluate('window.syntheticDateClicks') == 0
             assert page.evaluate('window.syntheticSearchClicks') == 1

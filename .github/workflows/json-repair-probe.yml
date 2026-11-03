@@ -28,7 +28,7 @@ jobs:
           uv pip check --python .venv/Scripts/python.exe
       - name: Run focused real synthetic browser regressions
         run: |
-          .venv/Scripts/python.exe -m pytest tests/test_json_l3_mpn_repair.py -v --tb=short --basetemp "$env:RUNNER_TEMP/json-repair-tests" --junitxml "$env:RUNNER_TEMP/regressions.xml"
+          .venv/Scripts/python.exe -m pytest tests/test_json_l3_mpn_repair.py tests/test_corporate_l3_observer.py tests/test_corporate_l3_native.py tests/test_corporate_l3_projection.py tests/test_issue143_l3_search_followup.py tests/test_corporate_dom_cursor.py tests/test_corporate_dom_page_size.py tests/test_issue143_page_timing.py tests/test_mpn_transaction_date_clear.py tests/test_mpn_date_review.py -v --tb=short --basetemp "$env:RUNNER_TEMP/json-repair-tests" --junitxml "$env:RUNNER_TEMP/regressions.xml"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

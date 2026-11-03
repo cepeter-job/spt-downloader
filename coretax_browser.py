@@ -307,12 +307,14 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
    if(performance.now()>=cursor.deadline) return {budget:true};
    // Combine the old global overlay/settling wait with this owned snapshot.
    // Pending slices return to Python for Stop; neither deadline is refreshed.
-   const sliceEnd=Math.min(cursor.deadline,performance.now()+1000);
+   if(cursor.idleDeadline==null) cursor.idleDeadline=Math.min(cursor.deadline,performance.now()+45000);
+   const sliceEnd=Math.min(cursor.deadline,cursor.idleDeadline,performance.now()+1000);
    while(true){
      const changed=(CHECK_OWNER)(cursor);
      if(changed) return {refusal:changed};
      const now=performance.now();
      if(now>=cursor.deadline) return {budget:true};
+     if(now>=cursor.idleDeadline) return {idle_timeout:true};
      const loading=[...document.querySelectorAll('.p-datatable-loading-overlay,.p-blockui')].some(e=>{
        const r=e.getBoundingClientRect(),style=getComputedStyle(e);
        return r.width>0 && r.height>0 && style.visibility!=='hidden' && style.visibility!=='collapse';
@@ -338,6 +340,7 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
    if(performance.now()>=cursor.deadline) return {budget:true};
    cursor.pending=null;
    cursor.idleSince=null;
+   cursor.idleDeadline=null;
    const packed=JSON.stringify(data);
    return {packed,renderer_ms:performance.now()-started};
  }
@@ -577,8 +580,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
             snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
-            while cursor is not None and snapshot.get('pending'):
+            while cursor is not None:
                 _check_cancel(check_cancel)
+                if snapshot.get('idle_timeout'):
+                    raise PlaywrightTimeoutError('Owned table loading readiness deadline exceeded')
+                if not snapshot.get('pending'):
+                    break
                 snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified

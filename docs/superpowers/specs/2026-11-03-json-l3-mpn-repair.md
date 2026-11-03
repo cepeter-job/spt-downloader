@@ -22,6 +22,7 @@ For the existing 250-cap owned DOM cursor, combine the global loading-overlay
 wait and 180ms settling interval with its existing atomic snapshot RPC. Each
 attempt waits at most 1000ms before returning pending, preserving Python Stop
 checks, the original owner/Document/URL, exact state and original table deadline.
+Keep the original45-second loading bound across pending slices as well.
 Other table paths retain their existing waits. This reduces remote calls; it is
 not a claim that the unmeasured source of host/transport latency is solved.
 
