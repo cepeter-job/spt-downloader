@@ -40,7 +40,7 @@
 **Files:** `AGENTS.md`, `docs/diagnostik.md`, verification report; remove temporary workflow.
 
 - [x] Document supported diagnostic boundaries and record runner evidence; remove temporary workflow.
-- [ ] Obtain independent whole-branch review and resolve material findings with regressions.
+- [x] Obtain independent whole-branch review and resolve material findings with regressions (none found).
 - [ ] Run unchanged full PR CI; inspect exact commit/tree/run/attempt checks and review threads.
 - [ ] Refresh latest main and review the preceding other-session merged PR and its affected functions/tests/contracts.
 - [ ] Merge the reviewed tested tree and verify the resulting main identity/checks. Report synthetic versus live limits.

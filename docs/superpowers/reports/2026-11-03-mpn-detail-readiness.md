@@ -50,3 +50,14 @@ Fresh review and full final-tree PR CI are separate gates after the focused
 proof above. Refresh latest main/preceding merged PR before merge. These are
 synthetic runner results, not proof of the actual live layout or MPN COMPLETE.
 No live product execution, tests, fixtures or builds ran on the operator machine.
+
+Independent whole-branch review at706fce4 found no Critical/Important/Minor
+issues. During full CI, main advanced to
+faad237251964d9446da348bbb6ff81ee2a7edb5 through other-session PR175. Reviewed
+its `_selection_model_key`, `_selection_latest_period`, `_selection_latest_iids`,
+selection preset/search/manual-edit callbacks, GUI self-test, synthetic tests
+and AGENTS contract. Shortcuts prepare original-order selected IDs only and
+retain explicit confirmation, Stop/stale-job and worker/MPN boundaries. They
+do not change this readiness path or diagnostic schema. Merge both AGENTS
+additions; the two production files in this change remain identical to the
+focused GREEN/reviewed versions. Full CI must run again on the combined tree.
