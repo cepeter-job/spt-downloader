@@ -691,3 +691,34 @@ ganda dengan satu icon, ketiga kategori ketersediaan referensi, tidak
 ada Detail click, fail-closed PARTIAL dan serialisasi diagnostik
 allowlisted. Tidak ada live replay otomatis. Issue #156 tetap OPEN
 hingga sumber/owner asli terbukti dan ada acceptance build-matched.
+
+### Kesiapan dialog detail MPN (3 November 2026)
+
+`mpn.detail_readiness_failed` mencatat satu penolakan pada pemeriksaan kesiapan
+yang sudah ada. `mpn_ui_stage` membedakan `detail_dialog`, `detail_title`, dan
+`detail_grid`. State terakhir `mpn_readiness_state` hanya salah satu dari
+`unobserved`, `missing`, `hidden`, `visible`, atau `ambiguous`; alasan
+`mpn_readiness_reason` hanya `deadline` atau `ambiguous`.
+
+`mpn_readiness_budget_ms` adalah sisa budget ketika panggilan kesiapan tersebut
+dimulai, dibatasi 0..5000 ms; `duration_ms` adalah waktu panggilan itu sendiri.
+Ketiga panggilan tetap memakai satu deadline bersama lima detik. State `visible`
+dengan alasan `deadline` berarti hasil pemeriksaan akhir terlambat dan tetap
+tidak mengizinkan capture. `unobserved` berarti belum ada hasil count/visibility,
+misalnya saat identitas Document masih pending. Angka ini tidak mengukur waktu
+render murni atau durasi seluruh pengambilan detail.
+
+Event memakai hasil count/visibility yang sudah dibaca oleh gate; tidak ada
+probe DOM tambahan setelah gagal. Tidak ada selector, caption, URL, pesan
+exception, isi tabel, atau identitas wajib pajak. Stop dan kegagalan safety dari
+callback tetap didahulukan. Kegagalan RPC lain mempertahankan diagnostik error
+yang sudah ada dan tidak direka sebagai hasil readiness.
+
+Mode DOM dan JSON-first tetap memerlukan owner dialog/grid yang sama sebelum
+fallback detail. `mpn.capture_failed` tetap menyatakan `parent_detail`/PARTIAL
+dan kini dapat menunjukkan stage kesiapan yang lebih tepat. Keberhasilan tes
+sintetis tidak membuktikan penyebab struktur live atau keberhasilan MPN live.
+Event `catalog_readiness` sebelumnya hanya menggambarkan observasi pasif saat
+itu; katalog dapat kemudian diperoleh oleh adapter yang sudah disetujui dengan
+origin `adapter-get-v1` di bukti privat. Jangan menyimpulkan kegagalan katalog
+hanya dari event pasif tersebut.

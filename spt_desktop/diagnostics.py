@@ -33,7 +33,7 @@ EVENTS = frozenset({
     'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
-    'mpn.capture_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
+    'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'table.elapsed_budget',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
@@ -70,6 +70,8 @@ ENUMS = {
     'table_locator_state': frozenset({'attached', 'not_attached', 'unavailable'}),
     'table_identity_reason': frozenset({'owner_changed', 'table_missing', 'table_ambiguous', 'metadata_changed', 'repeated_state'}),
     'mpn_catalog_state': frozenset({'accepted', 'observed_unbound', 'not_observed'}),
+    'mpn_readiness_state': frozenset({'unobserved', 'missing', 'hidden', 'visible', 'ambiguous'}),
+    'mpn_readiness_reason': frozenset({'deadline', 'ambiguous'}),
     'corporate_l3_extra_layout': frozenset({'reviewed_pair_hidden_extra',
         'reviewed_pair_visible_extra', 'reviewed_pair_unproved'}),
     'corporate_l3_extra_owner': frozenset({'reviewed_pair_unproved',
@@ -86,7 +88,7 @@ ENUMS = {
     'mpn_capture_stage': frozenset({'session', 'open', 'parent_inventory',
         'parent_detail', 'final_drain'}),
     'mpn_ui_stage': frozenset({'navigation', 'owner', 'environment', 'source',
-        'dropdowns', 'search', 'period_clear', 'ready'}),
+        'dropdowns', 'search', 'period_clear', 'ready', 'detail_dialog', 'detail_title', 'detail_grid'}),
     'mpn_source_stage': frozenset({'provider', 'pending_budget', 'request_failed',
         'ownership', 'response', 'body', 'body_budget', 'script_digest',
         'catalog_snapshot', 'catalog_late', 'catalog_decode'}),
@@ -218,6 +220,9 @@ def _safe_fields(fields):
     mismatch_count = fields.get('mpn_parent_mismatch_count')
     if type(mismatch_count) is int and 1 <= mismatch_count <= 7:
         result['mpn_parent_mismatch_count'] = mismatch_count
+    readiness_budget = fields.get('mpn_readiness_budget_ms')
+    if type(readiness_budget) in (int, float) and 0 <= readiness_budget <= 5000:
+        result['mpn_readiness_budget_ms'] = round(readiness_budget, 2)
     for name in ('exit_code',):
         value = fields.get(name)
         if type(value) is int and -(2 ** 31) <= value < 2 ** 32:

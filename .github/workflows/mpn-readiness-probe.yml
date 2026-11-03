@@ -31,7 +31,7 @@ jobs:
       - name: Run focused synthetic regressions
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe -m pytest tests/test_mpn_detail_readiness.py tests/test_mpn_detail_readiness_browser.py -q --basetemp "$env:RUNNER_TEMP/mpn-readiness-tests" --junitxml "$env:RUNNER_TEMP/mpn-readiness.xml" -o junit_logging=no -o junit_log_passing_tests=false
+          .venv/Scripts/python.exe -m pytest tests/test_mpn_detail_readiness.py tests/test_mpn_detail_readiness_browser.py tests/test_mpn_source_custody.py tests/test_mpn_capture_browser.py tests/test_mpn_reference_acquisition.py tests/test_diagnostics.py -q --basetemp "$env:RUNNER_TEMP/mpn-readiness-tests" --junitxml "$env:RUNNER_TEMP/mpn-readiness.xml" -o junit_logging=no -o junit_log_passing_tests=false
           exit $LASTEXITCODE
       - name: Preserve synthetic JUnit
         if: always()

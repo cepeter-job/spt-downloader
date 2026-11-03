@@ -391,6 +391,20 @@ class AccountingUI:
 
     def _ready_one(self, selector, *, deadline=None):
         deadline = deadline if deadline is not None else self.preparation_deadline or time.monotonic() + 5
+        stage = getattr(self, 'diagnostic_stage', None)
+        started = time.monotonic() if stage in ('detail_dialog', 'detail_title', 'detail_grid') else None
+        budget_ms = max(0, min(5000, (deadline - started) * 1000)) if started is not None else None
+        observed = 'unobserved'
+
+        def record_refusal(reason):
+            # Reuse only the gate's prior reads. No post-refusal browser RPC,
+            # raw selector, locator, business value or exception is retained.
+            if started is not None:
+                diagnostics.record('mpn.detail_readiness_failed', level='WARNING',
+                    mpn_ui_stage=stage, mpn_readiness_state=observed,
+                    mpn_readiness_reason=reason, mpn_readiness_budget_ms=budget_ms,
+                    duration_ms=(time.monotonic() - started) * 1000)
+
         while True:
             self._stop()
             self._state(allow_document_pending=True)
@@ -400,15 +414,20 @@ class AccountingUI:
                 self._stop()
                 self._state()
                 if count > 1:
+                    observed = 'ambiguous'
+                    record_refusal('ambiguous')
                     raise MpnUnsupported('MPN inspected readiness owner is ambiguous')
                 visible = count == 1 and locator.is_visible()
+                observed = 'visible' if visible else 'hidden' if count == 1 else 'missing'
                 self._stop()
                 self._state()
                 if time.monotonic() >= deadline:
+                    record_refusal('deadline')
                     raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
                 if visible:
                     return locator
             if time.monotonic() >= deadline:
+                record_refusal('deadline')
                 raise MpnUnsupported('MPN inspected control readiness deadline exceeded')
             self.page.wait_for_timeout(min(100, max(1, int((deadline - time.monotonic()) * 1000))))
 
@@ -1030,8 +1049,10 @@ class AccountingUI:
         self._observer_call(button.click, timeout=5000, no_wait_after=True)
         initial = self._wait(marker, 'detail')
         deadline = time.monotonic() + 5
+        self.diagnostic_stage = 'detail_dialog'
         dialog = self._ready_one('p-dialog#isShowDetail [role="dialog"]:visible, '
             'body > .p-dialog-mask.p-component-overlay > .p-dialog.p-component[role="dialog"]:visible', deadline=deadline)
+        self.diagnostic_stage = 'detail_title'
         title = self._ready_one(dialog.locator('.p-dialog-title'), deadline=deadline)
         if title.count() != 1 or title.inner_text(timeout=1000).strip() != 'Detail Transaksi':
             raise MpnUnsupported('MPN inspected detail dialog changed')
@@ -1042,7 +1063,9 @@ class AccountingUI:
             if (host.get_attribute('header') != 'Detail Transaksi' or not title_id
                     or dialog.get_attribute('aria-labelledby') != title_id):
                 raise MpnUnsupported('MPN body-mounted detail dialog lacks its inspected title binding')
+        self.diagnostic_stage = 'detail_grid'
         owners = self._ready_one(dialog.locator('ui-grid p-table'), deadline=deadline)
+        self.diagnostic_stage = 'ready'
         try:
             for snapshot in self._pages('detail', owners, initial, max_pages):
                 self._stop()
