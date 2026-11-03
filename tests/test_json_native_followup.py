@@ -213,6 +213,8 @@ def test_l11a_omitted_secondary_catalog_binding_cannot_hide_original_response():
 @pytest.mark.parametrize('index', [None, 0, '', [], {}])
 def test_active_grid_envelope_supports_only_absent_or_null_index(module, index):
     raw, forms = module.packets(), module.bindings()
+    baseline = adapt_corporate_detail(iter(raw), module.selected(), corpus.SCOPE, forms)
+    assert baseline['eligible']
     urls = {module.GRID} if module is l3 else set(module.GRIDS.values())
     sequences = set()
     for i, packet in enumerate(raw):
@@ -227,6 +229,7 @@ def test_active_grid_envelope_supports_only_absent_or_null_index(module, index):
     result = adapt_corporate_detail(iter(raw), module.selected(), corpus.SCOPE, forms)
     assert result['eligible'] is (index is None), result['reason']
     if index is None:
+        assert result['sections'] == baseline['sections']
         evidence = result['provenance']['projections'][0]['values']
         assert sequences == {p['response_sequence'] for p in evidence
                              if p.get('rule') == 'unused-null-envelope-index' and p['path'] == ['Index']}

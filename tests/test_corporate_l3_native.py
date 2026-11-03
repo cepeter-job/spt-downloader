@@ -197,7 +197,7 @@ def test_unproved_l3_packet_or_owner_dependency_keeps_whole_record_fallback(defe
         page = inputs()[1][0]
         payload = {'TotalRecords': 12, 'Data': page['data']}
         if defect == 'page-result-only': payload = {'TotalRecords': 12, 'Result': {'Data': page['data']}}
-        else: payload['Index'] = None  # Initial supported consumer schema stays exact.
+        else: payload['Index'] = 0  # Only a literal-null envelope Index is supported.
         raw[2] = packet({'IsSuccessful': True, 'Payload': payload}, 3, GRID, request(0))
     elif defect == 'missing-reference':
         raw.pop()
