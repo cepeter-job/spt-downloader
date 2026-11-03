@@ -13,6 +13,7 @@ from coretax_corporate_projection import _L3_CAPTIONS
 from coretax_json import adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from coretax_mpn_browser import collect_mpn
+from coretax_mpn_ui import AccountingUI
 from l3_observer_fixture import Fixture, ASSET
 from support_isolated_browser import browser as browser, context as context
 from test_corporate_dom_page_size import fixture as dom_fixture, assert_rows
@@ -31,6 +32,10 @@ class StandaloneFixture(Fixture):
             '</p-accordion>', '</p-accordion></form>')
         markup = markup.replace('p-accordiontab', 'p-panel').replace(
             'p-accordion-header-text', 'p-panel-title')
+        # The pinned PrimeNG paginator uses type=button. The legacy fixture
+        # had no enclosing form and omitted it; keep this actual-shaped form
+        # from turning a read-only paginator action into a synthetic submit.
+        markup = markup.replace('<button class="p-paginator-', '<button type="button" class="p-paginator-')
         controls = ('RefundDeductionCreditOverseas', 'TotalIncomeTaxPaidOverseas')
         rows = ''.join('<tr><th colspan="10" width="1099">' + html.escape(caption)
             + '</th><th width="116"><p-inputnumber formcontrolname="' + name
@@ -129,9 +134,16 @@ def test_explicit_unknown_standalone_replay_marker_is_unsupported(marker):
     assert not result['eligible'] and not result['sections']
 
 
-def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(browser, tmp_path, monkeypatch):
+@pytest.mark.parametrize('remaining_budget', [None, .3])
+def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(
+        browser, tmp_path, monkeypatch, remaining_budget):
     original = Locator.click
     state = {'trial': False, 'actual': 0}
+    original_clear = AccountingUI._clear_initial_transaction_date
+    def clear(owned, *args):
+        state['owned'] = owned
+        return original_clear(owned, *args)
+    monkeypatch.setattr(AccountingUI, '_clear_initial_transaction_date', clear)
     with portal(browser, monkeypatch, default_stuck=True, transaction_date_clear='valid') as (page, metrics):
         def click(locator, *args, **kwargs):
             if locator.get_attribute('aria-label', timeout=1000) != 'Clear date':
@@ -146,17 +158,25 @@ def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(b
                         cover.style.cssText='position:absolute;z-index:99999;inset:0';
                         e.parentElement.append(cover);setTimeout(()=>cover.remove(),1700);
                     }''')
+                    if remaining_budget is not None:
+                        state['owned'].preparation_deadline = time.monotonic()+remaining_budget
                 return result
             state['actual'] += 1
             return original(locator, *args, **kwargs)
         monkeypatch.setattr(Locator, 'click', click)
         run = scope_run()
         collect_mpn(page, run, tmp_path)
-        assert run['mpn']['status'] == 'COMPLETE', 'One-second clear dispatch truncated preparation'
-        assert state == {'trial': True, 'actual': 1}
-        assert page.evaluate('window.syntheticDateClicks') == 1
-        assert page.evaluate('window.syntheticSearchClicks') == 2
-        assert len(metrics['detail']) == 1
+        assert state['trial'] and state['actual'] == 1
+        if remaining_budget is None:
+            assert run['mpn']['status'] == 'COMPLETE', 'One-second clear dispatch truncated preparation'
+            assert page.evaluate('window.syntheticDateClicks') == 1
+            assert page.evaluate('window.syntheticSearchClicks') == 2
+            assert len(metrics['detail']) == 1
+        else:
+            assert run['mpn']['status'] == 'PARTIAL' and not run['complete']
+            assert page.evaluate('window.syntheticDateClicks') == 0
+            assert page.evaluate('window.syntheticSearchClicks') == 1
+            assert metrics['detail'] == []
 
 
 def test_owned_dom_cursor_combines_idle_and_snapshot_without_separate_wait_rpc(context, monkeypatch):
@@ -244,4 +264,21 @@ def test_pending_snapshot_cannot_refresh_original_deadline(context, monkeypatch)
     assert result['body_row_count'] == 250 and result['pages'] == 1
     assert result['warning'] == 'Table capture elapsed budget exceeded'
     assert not result['complete'] and page.evaluate('moves') == 1
+    page.close()
+
+
+def test_snapshot_cannot_refresh_an_expired_overlay_wait_deadline(context, monkeypatch):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = dom_fixture(page, total=601, selected=250)
+    original = ElementHandle.evaluate
+    def expired(handle, expression, arg=None):
+        if expression == driver.TABLE_VERIFIED_JS:
+            arg.evaluate('c=>{c.idleDeadline=performance.now()-1}')
+        return original(handle, expression, arg)
+    monkeypatch.setattr(ElementHandle, 'evaluate', expired)
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert not result['complete']
+    assert result['warning'] == 'Table DOM read timed out after pagination'
+    assert result['body_row_count'] == 250 and page.evaluate('moves') == 1
     page.close()
