@@ -62,7 +62,9 @@ Melepas Pemb. Terakhir mengembalikan seluruh model kategori aktif, atau kosong
 tanpa kategori. Pemilihan manual menghapus indikator preset; sorting tetap
 mempertahankannya. Pencarian menghapus preset dan pilihan. Peringkat pembetulan
 memakai inventaris lengkap sebelum filter sehingga model lama yang terlihat
-tidak menggantikan pembetulan terbaru yang tersembunyi. Model ambigu memerlukan
+tidak menggantikan pembetulan terbaru yang tersembunyi. Kode dan caption lengkap
+untuk masa yang sama dibandingkan bersama tanpa mengubah sumber; `Tahunan` dan
+nama bulan pendek bukan identitas kelompok. Masa/model/tahun ambigu memerlukan
 pilihan manual. Checkbox tidak mengonfirmasi atau memulai pengambilan rincian.
 
 Gunakan dialog native dengan pencarian dan Treeview multi-select: Jenis pajak, Masa pajak, Normal/pembetulan, ID SPT. Kolom Masa pajak menampilkan **Tahunan** untuk jenis PPh Badan dan nama bulan Indonesia untuk masa bulanan yang dikenali: angka 1–12/01–12, kode `MM` + `MM` + tahun dengan bulan awal/akhir sama, atau caption bulan dan tahun. Rentang atau format yang ambigu tetap tampil literal. Metadata, checkpoint, ekspor, ID dan kunci urutan tetap memakai nilai sumber asli; pencarian menerima label tampilan maupun teks sumber. Source ID bukan IID widget; gunakan IID lokal yang dipetakan kembali ke ID teramati.

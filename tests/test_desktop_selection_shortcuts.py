@@ -166,6 +166,20 @@ def test_latest_annual_aliases_share_one_year_without_rewriting_source(tmp_path)
         assert data == original and not controller.replies
 
 
+def test_numeric_months_use_only_a_bound_source_or_job_year(tmp_path):
+    data = payload([
+        ('january-normal', 'PPN', '01', 'Normal'),
+        ('january-latest', 'PPN', 'Januari 2025', 'Pembetulan 1'),
+        ('february-normal', 'PPN', '02', 'Normal'),
+        ('prior-year', 'PPN', 'Januari 2024', 'Normal')])
+    with window(tmp_path, data) as (root, app, controller, dialog):
+        invoke(root, dialog, 'select_latest')
+        assert selected(dialog) == {'january-latest', 'february-normal', 'prior-year'}
+    from spt_desktop.app import _selection_latest_iids
+    latest, unresolved = _selection_latest_iids(data['records'])
+    assert latest == {'record-1', 'record-3'} and unresolved == {'record-0', 'record-2'}
+
+
 def test_latest_refuses_unknown_periods_and_contradictory_source_year(tmp_path):
     data = payload([
         ('range', 'PPN', '01022025', 'Pembetulan 1'),

@@ -19,10 +19,15 @@ Pemb. Terakhir dengan PPh Potput dan/atau PPN.
   inventaris lengkap sebelum diiriskan dengan hasil pencarian; menyembunyikan
   pembetulan terbaru tidak menjadikan Normal/pembetulan lama sebagai terbaru.
 
-Identitas kelompok memakai caption jenis penuh case-insensitive, masa literal
-asli dan tahun metadata literal bila tersedia. Jangan mengelompokkan menurut
-caption tampilan `Tahunan`/nama bulan, tanggal penyampaian atau ID. Jangan
-menggabungkan alias masa sumber yang berbeda. Model yang dikenali adalah Normal,
+Identitas kelompok memakai caption jenis penuh case-insensitive dan arti masa
+dari sintaks sumber yang dikenali. Kode satu bulan dan caption bulan/tahun yang
+sama berbagi kunci keputusan; Badan mengenali kode Januari-Desember, caption
+Januari-Desember dan tahun empat digit sebagai satu masa tahunan. Angka bulan
+tanpa tahun memerlukan tahun sumber eksplisit yang sah atau snapshot tahun job
+yang sama. Kontradiksi tahun memerlukan manual untuk kedua kandidat kelompok;
+rentang Masa dan masa tak dikenal tetap manual. Jangan mengelompokkan menurut
+caption tampilan `Tahunan`/nama bulan, tanggal penyampaian atau ID. Semua teks
+sumber tetap literal dan tidak ditulis ulang. Model yang dikenali adalah Normal,
 Pembetulan N, Pembetulan ke-N dan Amendment N, tanpa penebakan substring.
 Nomor dibandingkan berdasarkan panjang/desimal setelah nol awalan untuk
 menghindari konversi integer tak terbatas. Seluruh record dengan peringkat
