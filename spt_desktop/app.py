@@ -49,17 +49,68 @@ def _selection_detail_key(period, model):
     else:
         # Unknown periods are incomparable: even their models keep source order.
         return (1,)
+    return (0, year, month, _selection_model_key(model))
+
+
+def _selection_model_key(model):
     if model.casefold() == 'normal':
-        model_key = (0,)
-    else:
-        amendment = re.fullmatch(r'(?:pembetulan (?:ke-)?|amendment )([0-9]+)', model.casefold())
-        if amendment:
-            # Decimal length/text avoids integer limits without altering source values.
-            number = amendment[1].lstrip('0') or '0'
-            model_key = (1, len(number), number)
-        else:
-            model_key = (2,)
-    return (0, year, month, model_key)
+        return (0,)
+    amendment = re.fullmatch(r'(?:pembetulan (?:ke-)?|amendment )([0-9]+)', model.casefold())
+    if amendment:
+        # Decimal length/text avoids integer limits without altering source values.
+        number = amendment[1].lstrip('0') or '0'
+        return (1, len(number), number)
+    return (2,)
+
+
+def _selection_latest_period(tax, period, fallback_year):
+    """Recognize source syntax only; never group by its shortened display label."""
+    key = _selection_detail_key(period, 'Normal')
+    annual = tax.casefold() == 'pph badan'
+    if key[0] == 0 and key[1] and (key[2] == 13) == annual:
+        return (key[1], 1, 12) if annual else (key[1], key[2], key[2])
+    code = re.fullmatch(r'(0[1-9]|1[0-2])(0[1-9]|1[0-2])([0-9]{4})', period)
+    if code and int(code[3]) and (
+            (annual and (code[1], code[2]) == ('01', '12')) or (not annual and code[1] == code[2])):
+        return (int(code[3]), int(code[1]), int(code[2]))
+    if (not annual and re.fullmatch(r'0?[1-9]|1[0-2]', period)
+            and re.fullmatch(r'[0-9]{4}', fallback_year) and int(fallback_year)):
+        return (int(fallback_year), int(period), int(period))
+    return None
+
+
+def _selection_latest_iids(records, scope_year=''):
+    """Rank recognized source periods, retaining every original value and ID."""
+    groups, unresolved = {}, set()
+    for ordinal, record in enumerate(records):
+        iid, meta = f'record-{ordinal}', record['meta'] if 'meta' in record else {}
+        tax, period, model = (meta.get(field, '') for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT'))
+        year = meta.get('Tahun Pajak', '')
+        if not all(isinstance(value, str) and value for value in (tax, period)):
+            unresolved.add(iid)
+            continue
+        valid_year = ('Tahun Pajak' not in meta or (
+            isinstance(year, str) and re.fullmatch(r'[0-9]{4}', year) and int(year)))
+        period_key = _selection_latest_period(tax, period, year if valid_year and year else scope_year)
+        if period_key is None:
+            unresolved.add(iid)
+            continue
+        group = (tax.casefold(), *period_key)
+        rank = _selection_model_key(model) if isinstance(model, str) else (2,)
+        if not valid_year or (year and int(year) != period_key[0]):
+            rank = (2,)
+            if valid_year and year:
+                # Either conflicting year must remain manual, including its aliases.
+                groups.setdefault((tax.casefold(), int(year), *period_key[1:]), []).append((iid, rank))
+        groups.setdefault(group, []).append((iid, rank))
+    latest = set()
+    for members in groups.values():
+        if any(rank[0] == 2 for _, rank in members):
+            unresolved.update(iid for iid, _ in members)
+            continue
+        highest = max(rank for _, rank in members)
+        latest.update(iid for iid, rank in members if rank == highest)
+    return latest, unresolved
 
 
 def load_preferences(root):
@@ -472,6 +523,15 @@ class App:
         search = tk.StringVar(dialog)
         entry = ttk.Entry(search_group, name='search', textvariable=search, style='SPT.TEntry')
         entry.grid(row=1, column=0, sticky='ew', pady=(px(4), 0))
+        shortcuts = ttk.Frame(search_group, name='selection_shortcuts', style='SPT.Card.TFrame')
+        shortcuts.grid(row=0, column=0, sticky='ew', pady=(0, px(4)))
+        shortcut_vars = {name: tk.BooleanVar(dialog, False) for name in ('all', 'latest', 'potput', 'ppn')}
+        shortcut_controls = {}
+        shortcut_help = ttk.Label(search_group, text=copy_text('selection.shortcuts.help'),
+                                  style='SPT.Caption.TLabel', wraplength=px(700))
+        shortcut_help.grid(row=1, column=0, sticky='ew', pady=(0, px(4)))
+        search_label.grid_configure(row=2)
+        entry.grid_configure(row=3)
         table = ttk.Frame(body, style='SPT.Card.TFrame')
         table.grid(row=3, column=0, sticky='nsew')
         table.columnconfigure(0, weight=1)
@@ -513,6 +573,49 @@ class App:
             type_priority.get(rows[iid][1][0].casefold(), len(type_priority)), rows[iid][1][0].casefold(),
             rows[iid][3]))
         descending, reset_pending = None, False
+        scope_year = str(snapshot.year) if snapshot is not None and snapshot.job_id == key[0] else ''
+        latest_iids, unresolved_latest = _selection_latest_iids(records, scope_year)
+        category_iids = {
+            'potput': {iid for iid, row in rows.items()
+                       if row[1][0].casefold() in ('pph pasal 21/26', 'pph unifikasi')},
+            'ppn': {iid for iid, row in rows.items() if row[1][0].casefold() == 'ppn'}}
+        preset_selection = None
+
+        def clear_shortcuts():
+            nonlocal preset_selection
+            preset_selection = None
+            for variable in shortcut_vars.values():
+                variable.set(False)
+
+        def apply_shortcut(name):
+            nonlocal preset_selection
+            if not self._interaction_current(interaction):
+                return
+            if name == 'all':
+                for other in ('latest', 'potput', 'ppn'):
+                    shortcut_vars[other].set(False)
+                scope_all = shortcut_vars['all'].get()
+            else:
+                shortcut_vars['all'].set(False)
+                scope_all = name == 'latest' and shortcut_vars['latest'].get() and not any(
+                    shortcut_vars[category].get() for category in ('potput', 'ppn'))
+            visible = tree.get_children()
+            scope = set(visible) if scope_all else set().union(*(
+                category_iids[category] for category in ('potput', 'ppn') if shortcut_vars[category].get()))
+            chosen = set(visible) & scope
+            if shortcut_vars['latest'].get():
+                chosen &= latest_iids
+            preset_selection = set(chosen)
+            tree.selection_set(tuple(iid for iid in visible if iid in chosen))
+            update_selection()
+            request_reflow()
+
+        for name in shortcut_vars:
+            control = ttk.Checkbutton(shortcuts, name='select_' + name,
+                text=copy_text('selection.shortcuts.' + name), variable=shortcut_vars[name],
+                command=lambda name=name: apply_shortcut(name))
+            shortcut_controls[name] = control
+            control.grid(row=0, column=len(shortcut_controls) - 1, sticky='w', padx=(0, px(12)))
 
         def selected_ids():
             chosen = set(tree.selection()) & set(tree.get_children())
@@ -528,7 +631,13 @@ class App:
             nonlocal reset_pending
             if not self._interaction_current(interaction):
                 return
+            if preset_selection is not None and set(tree.selection()) != preset_selection:
+                clear_shortcuts()
             count, visible = len(selected_ids()), len(tree.get_children())
+            visible_iids = set(tree.get_children())
+            for name, control in shortcut_controls.items():
+                available = visible_iids & category_iids[name] if name in category_iids else visible_iids
+                control.state(['!disabled' if available else 'disabled'])
             submit.state(['!disabled' if count else 'disabled'])
             summary.set(copy_text('selection.summary', selected=count, visible=visible, inventory=len(rows)))
             if count:
@@ -540,6 +649,8 @@ class App:
                 messages.append(copy_text('selection.no_match'))
             if reset_pending:
                 messages.append(copy_text('selection.filter_reset'))
+            if shortcut_vars['latest'].get() and unresolved_latest & visible_iids:
+                messages.append(copy_text('selection.shortcuts.manual'))
             notice.set('\n'.join(messages))
             sync_focused_id()
 
@@ -565,6 +676,7 @@ class App:
             # Latch before deleting: Tk may deliver the empty selection event later.
             if selected_ids():
                 reset_pending = True
+            clear_shortcuts()
             children = tree.get_children()
             if children:
                 tree.delete(*children)
@@ -637,9 +749,15 @@ class App:
             layout_size = (width, canvas.winfo_height())
             canvas.itemconfigure(body_window, width=width)
             text_width = max(px(80), width - px(8))
-            for label in (intro, scope, search_label, id_label, summary_label, notice_label, keyboard_hint):
+            for label in (intro, scope, shortcut_help, search_label, id_label, summary_label, notice_label, keyboard_hint):
                 if int(label.cget('wraplength') or 0) != text_width:
                     label.configure(wraplength=text_width)
+            shortcut_width = sum(control.winfo_reqwidth() + px(12) for control in shortcut_controls.values())
+            columns = 4 if shortcut_width <= text_width else 2
+            if max(control.winfo_reqwidth() + px(12) for control in shortcut_controls.values()) * 2 > text_width:
+                columns = 1
+            for position, control in enumerate(shortcut_controls.values()):
+                control.grid_configure(row=position // columns, column=position % columns)
             # The body can scroll on short displays; the fixed actions remain outside it.
             canvas.itemconfigure(body_window, height=max(body.winfo_reqheight(), canvas.winfo_height()))
             update_scrollregion()
