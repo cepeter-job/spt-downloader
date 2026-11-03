@@ -19,11 +19,10 @@ $cert = New-SelfSignedCertificate -Subject $env:SPT_TEST_CERT_SUBJECT -DnsName '
 try {
   Export-PfxCertificate -Cert $cert -FilePath $env:SPT_TEST_PFX -Password $pfxPassword -CryptoAlgorithmOption AES256_SHA256 | Out-Null
   Export-Certificate -Cert $cert -FilePath $env:SPT_TEST_CER | Out-Null
-  Import-Certificate -FilePath $env:SPT_TEST_CER -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+  Import-Certificate -FilePath $env:SPT_TEST_CER -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
   @{thumbprint=$cert.Thumbprint} | ConvertTo-Json -Compress
 } catch {
-  foreach ($store in @('Root','My')) {
-    $path = "Cert:\CurrentUser\$store\$($cert.Thumbprint)"
+  foreach ($path in @("Cert:\LocalMachine\Root\$($cert.Thumbprint)","Cert:\CurrentUser\My\$($cert.Thumbprint)")) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
   }
   throw
@@ -34,8 +33,7 @@ CLEANUP = r'''
 $ErrorActionPreference = 'Stop'
 $thumb = $env:SPT_TEST_CERT_THUMB
 if ($thumb -cnotmatch '^[A-F0-9]{40}$') { throw 'Invalid synthetic thumbprint' }
-foreach ($store in @('Root','My')) {
-  $path = "Cert:\CurrentUser\$store\$thumb"
+foreach ($path in @("Cert:\LocalMachine\Root\$thumb","Cert:\CurrentUser\My\$thumb")) {
   if (Test-Path -LiteralPath $path) {
     $owned = Get-Item -LiteralPath $path
     if ($owned.Subject -ne $env:SPT_TEST_CERT_SUBJECT) { throw 'Refuse unrelated certificate' }
@@ -73,6 +71,7 @@ print(json.dumps(result))
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Native Windows CA store integration')
 def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_path):
+    assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Synthetic root requires a disposable hosted runner'
     from playwright._impl._driver import compute_driver_executable
     node, _ = compute_driver_executable()
     environment = dict(os.environ)
@@ -113,9 +112,11 @@ def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_pa
         assert request(1,'localhost') is True, 'Native Windows trust did not reach the owned driver'
         assert request(1,'127.0.0.1') is False, 'Hostname verification was bypassed'
     finally:
-        if server is not None:
-            server.terminate()
-            server.wait(timeout=5)
-            server.stdout.close()
-        subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',CLEANUP],
-            env=ps_environment,capture_output=True,text=True,timeout=15,check=True)
+        try:
+            if server is not None:
+                server.terminate()
+                server.wait(timeout=5)
+                server.stdout.close()
+        finally:
+            subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',CLEANUP],
+                env=ps_environment,capture_output=True,text=True,timeout=15,check=True)
