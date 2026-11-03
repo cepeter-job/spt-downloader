@@ -36,7 +36,7 @@ jobs:
       - name: Exercise selection shortcut behavior
         shell: pwsh
         run: |
-          .venv/Scripts/python.exe -m pytest tests/test_desktop_selection_shortcuts.py -k "aliases or contradictory" -q --basetemp "$env:RUNNER_TEMP/selection-shortcut-tests" --junitxml "$env:RUNNER_TEMP/selection-shortcuts.xml" -o junit_logging=no -o junit_log_passing_tests=false
+          .venv/Scripts/python.exe -m pytest tests/test_desktop_selection_shortcuts.py tests/test_desktop_ui_copy.py tests/test_desktop_selection_default.py tests/test_desktop_selection_gui.py tests/test_desktop_selection_sorting.py tests/test_desktop_selection_periods.py tests/test_desktop_dialog_layout.py -q --basetemp "$env:RUNNER_TEMP/selection-shortcut-tests" --junitxml "$env:RUNNER_TEMP/selection-shortcuts.xml" -o junit_logging=no -o junit_log_passing_tests=false
           exit $LASTEXITCODE
       - name: Retain synthetic evidence
         if: always()

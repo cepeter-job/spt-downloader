@@ -96,6 +96,12 @@ def test_catalog_matches_approved_copy():
         'selection.summary': '{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.',
         'selection.no_match': 'Tidak ada SPT yang cocok dengan pencarian.',
         'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.',
+        'selection.shortcuts.all': 'All',
+        'selection.shortcuts.latest': 'Pemb. Terakhir',
+        'selection.shortcuts.potput': 'PPh Potput',
+        'selection.shortcuts.ppn': 'PPN',
+        'selection.shortcuts.help': 'Pilihan cepat berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN.',
+        'selection.shortcuts.manual': 'Sebagian SPT memiliki masa/model yang belum dapat diperingkat. Pilih SPT tersebut secara manual bila diperlukan.',
         'download.details.body': (
             '{processed} dari {total} SPT sudah diproses. '
             'Kelengkapan {verified} SPT sudah diperiksa.'

@@ -171,6 +171,10 @@ def test_latest_refuses_unknown_periods_and_contradictory_source_year(tmp_path):
         ('range', 'PPN', '01022025', 'Pembetulan 1'),
         ('unknown', 'PPN', 'Januari 2025 extra', 'Normal'),
         ('contradiction', 'PPN', 'Januari 2025', 'Pembetulan 2'),
+        ('normal-alias', 'PPN', '01012025', 'Normal'),
+        ('prior-year', 'PPN', 'Januari 2024', 'Normal'),
+        ('annual-vat', 'PPN', '01122025', 'Normal'),
+        ('monthly-badan', 'PPh Badan', '01012025', 'Normal'),
         ('known', 'PPN', 'Februari 2025', 'Normal')])
     data['records'][2]['meta']['Tahun Pajak'] = '2024'
     with window(tmp_path, data) as (root, app, controller, dialog):

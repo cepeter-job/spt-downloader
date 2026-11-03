@@ -183,7 +183,7 @@ def self_test(report=None):
             shortcut_report['latest_ids']=[tree.item(iid,'values')[3] for iid in original if iid in tree.selection()]
             assert shortcut_report['latest_ids']==[
                 '::synthetic {return}; [literal] / id','synthetic-badan-one','synthetic-21',
-                'synthetic-badan-two','synthetic-ppn-feb','synthetic-unifikasi']
+                'synthetic-ppn-feb','synthetic-unifikasi']
             shortcuts['select_ppn'].invoke();shortcuts['select_potput'].invoke();root.update()
             shortcut_report['combined_ids']=[tree.item(iid,'values')[3] for iid in original if iid in tree.selection()]
             assert shortcut_report['combined_ids']==[

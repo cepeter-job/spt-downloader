@@ -63,19 +63,45 @@ def _selection_model_key(model):
     return (2,)
 
 
-def _selection_latest_iids(records):
-    """Rank original literal inventory groups, independently of display/search."""
+def _selection_latest_period(tax, period, fallback_year):
+    """Recognize source syntax only; never group by its shortened display label."""
+    key = _selection_detail_key(period, 'Normal')
+    annual = tax.casefold() == 'pph badan'
+    if key[0] == 0 and key[1] and (key[2] == 13) == annual:
+        return (key[1], 1, 12) if annual else (key[1], key[2], key[2])
+    code = re.fullmatch(r'(0[1-9]|1[0-2])(0[1-9]|1[0-2])([0-9]{4})', period)
+    if code and int(code[3]) and (
+            (annual and (code[1], code[2]) == ('01', '12')) or (not annual and code[1] == code[2])):
+        return (int(code[3]), int(code[1]), int(code[2]))
+    if (not annual and re.fullmatch(r'0?[1-9]|1[0-2]', period)
+            and re.fullmatch(r'[0-9]{4}', fallback_year) and int(fallback_year)):
+        return (int(fallback_year), int(period), int(period))
+    return None
+
+
+def _selection_latest_iids(records, scope_year=''):
+    """Rank recognized source periods, retaining every original value and ID."""
     groups, unresolved = {}, set()
     for ordinal, record in enumerate(records):
         iid, meta = f'record-{ordinal}', record['meta'] if 'meta' in record else {}
         tax, period, model = (meta.get(field, '') for field in ('Jenis Pajak', 'Masa Pajak', 'Model SPT'))
         year = meta.get('Tahun Pajak', '')
-        if (not all(isinstance(value, str) and value for value in (tax, period))
-                or not isinstance(year, str)):
+        if not all(isinstance(value, str) and value for value in (tax, period)):
             unresolved.add(iid)
             continue
-        group = (tax.casefold(), period, year)
+        valid_year = ('Tahun Pajak' not in meta or (
+            isinstance(year, str) and re.fullmatch(r'[0-9]{4}', year) and int(year)))
+        period_key = _selection_latest_period(tax, period, year if valid_year and year else scope_year)
+        if period_key is None:
+            unresolved.add(iid)
+            continue
+        group = (tax.casefold(), *period_key)
         rank = _selection_model_key(model) if isinstance(model, str) else (2,)
+        if not valid_year or (year and int(year) != period_key[0]):
+            rank = (2,)
+            if valid_year and year:
+                # Either conflicting year must remain manual, including its aliases.
+                groups.setdefault((tax.casefold(), int(year), *period_key[1:]), []).append((iid, rank))
         groups.setdefault(group, []).append((iid, rank))
     latest = set()
     for members in groups.values():
@@ -547,7 +573,8 @@ class App:
             type_priority.get(rows[iid][1][0].casefold(), len(type_priority)), rows[iid][1][0].casefold(),
             rows[iid][3]))
         descending, reset_pending = None, False
-        latest_iids, unresolved_latest = _selection_latest_iids(records)
+        scope_year = str(snapshot.year) if snapshot is not None and snapshot.job_id == key[0] else ''
+        latest_iids, unresolved_latest = _selection_latest_iids(records, scope_year)
         category_iids = {
             'potput': {iid for iid, row in rows.items()
                        if row[1][0].casefold() in ('pph pasal 21/26', 'pph unifikasi')},
