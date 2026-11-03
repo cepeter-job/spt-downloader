@@ -52,12 +52,32 @@ cursor/page-size/timing, MPN transaction-date and callback/fatality regressions.
 The temporary isolated probe is removed; existing CI/coverage policies remain
 unchanged. Full final-tree CI and fresh whole-branch review gate merge.
 
+Independent whole-branch review atbc3a768 found one Important acceptance gap:
+a browser snapshot could finish on time but reach or finish decoding at the
+host after the original table deadline, allowing a final page to complete.
+No Critical/Minor issues were found. Hosted RED run41573178167/attempt1 at
+ec6143d reproduced three assertion failures: late final reply, late pending
+reply followed by another RPC, and late decoding. Artifact13202466986 retains
+that JUnit evidence. The fix rechecks the original host deadline before pending
+retries and after decoding before appending rows, with Stop first.
+
+Hosted GREEN run41573371050/attempt1 at
+57a14263f57cef4578ed18c7bb72612747e91696 passed298 cases, zero failures/errors/
+skips, including those three real successful-reply/decode regressions. Original
+JUnit artifact13202705920 was downloaded and reconciled; ZIP SHA256
+e572d4a70cebb73a67670aec7049b90adb478e104a4076abcb968e27c5cd6277.
+The review fix pass is complete; full final-tree CI remains required. Its
+separate temporary probe is removed as well.
+
 ## Interaction and limits
 
-Open PR176 at b047f1f was reviewed: it instruments `_ready_one` and
+PR176 at b047f1f was reviewed and merged as main197e85d: it instruments `_ready_one` and
 `detail_pages` for dialog/title/grid readiness refusals. That is later than this
 Clear date preparation action. Preserve its diagnostic schema, observations,
 shared five-second detail deadline and JSON fallback when integrating main.
+Main197e85d was merged without conflicts. Static AST comparison confirms that
+only `_clear_initial_transaction_date` differs from its AccountingUI; its
+readiness methods are intact and diagnostics.py is byte-identical to main.
 PR175's selection ranking/preset/search/manual-edit and consent boundaries,
 and PR174's owned driver trust/cleanup/allowlist, remain unchanged here.
 
