@@ -13,6 +13,7 @@ from coretax_json import validate_detail_source
 from coretax_browser import CaptureCancelled,TaxpayerSearchTimeout,collect_inventory,collect_details,_atomic_checkpoint
 from coretax_resume import persist_selection
 from coretax_mpn import require_mpn
+from coretax_transport import system_ca_manager
 from coretax_mpn_browser import collect_mpn
 from .auth import AuthBlocked,authenticate_owned
 from .events import Progress
@@ -55,7 +56,7 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
         root=Path(root)
         folder=root/'jobs'/job_id
         folder.mkdir(parents=True,exist_ok=False)
-        with contextlib.ExitStack() as profiles,playwright_factory() as playwright:
+        with contextlib.ExitStack() as profiles,system_ca_manager(playwright_factory()) as playwright:
             profile=root/'profile'
             auth_options={} if account is None else {'account':account}
             if account:

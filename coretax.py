@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 from openpyxl import load_workbook
 from playwright.sync_api import sync_playwright
+from coretax_transport import system_ca_manager
 from coretax_exporter import (validate_scope, validate_export_run, export_split_workbooks,
                              workbook_groups, detail_sheet_title as detail_sheet_title, record_sheet_titles,
                              workbook_proof, read_workbook_proof, workbook_sheet_titles,
@@ -582,7 +583,7 @@ def _main(argv=None):
     output_path = None
     try:
         with _cli_cleanup() as register:
-            manager = sync_playwright()
+            manager = system_ca_manager(sync_playwright())
             # Initialization may acquire the transport before raising or Stop.
             # The contained callback also tolerates an uninitialized manager.
             register(manager.__exit__, None, None, None)

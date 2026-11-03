@@ -43,6 +43,14 @@ inventaris asli, sehingga filter terbaru tidak menambah izin capture MPN,
 reference GET, source/native, PDF, publication atau completion. PR #170 date
 clear dan #167 validator/controller/resource juga tetap utuh.
 
+Saat PR dibuka, main bergerak ke `920ca01f5d811064e659d503159f89699408f4a8`
+melalui PR #174. Wrapper `coretax_transport.system_ca_manager`, entry/cleanup
+CLI dan desktop, resource allowlist53 serta tes native TLS dipelajari sebelum
+menggabungkan baseline. Konflik hanya dua paragraf baru AGENTS pada lokasi yang
+sama; kedua kontrak dipertahankan. Semua sumber/tes trust dan MPN identik dengan
+main baru; CI final menguji kombinasi tersebut. Checkbox tetap hanya GUI dan
+tidak mengubah environment trust maupun proses worker.
+
 Semua pytest/import produk/Tk/build/EXE berjalan pada GitHub runner; lokal hanya
 source/AST/Git serta inspeksi ZIP/JSON/hash. Bukti sintetis dan paket tidak
 membuktikan penerimaan akun Coretax live atau interaksi Excel operator.
