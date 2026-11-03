@@ -582,6 +582,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
             while cursor is not None:
                 _check_cancel(check_cancel)
+                if time.monotonic() >= capture_deadline:
+                    snapshot = {'budget': True}
+                    break
                 if snapshot.get('idle_timeout'):
                     raise PlaywrightTimeoutError('Owned table loading readiness deadline exceeded')
                 if not snapshot.get('pending'):
@@ -647,6 +650,15 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             diagnostics.record('table.identity_refused', level='WARNING',
                                table_identity_reason='metadata_changed', pages=result['pages'],
                                page_size_cap=max_page_size, duration_ms=(_diagnostic_clock()-page_started)*1000)
+            break
+        _check_cancel(check_cancel)
+        if cursor is not None and time.monotonic() >= capture_deadline:
+            # A timely browser snapshot may arrive or finish decoding late.
+            # Keep only prior verified rows; never grant COMPLETE from it.
+            result['complete'] = False
+            result['warning'] = 'Table capture elapsed budget exceeded'
+            diagnostics.record('table.elapsed_budget', level='WARNING',
+                               table_elapsed_stage='before_dom_read', pages=result['pages'])
             break
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:

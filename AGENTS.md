@@ -1001,6 +1001,10 @@ Return pending after at most1000ms of renderer waiting for Python Stop checks;
 retain the original45s loading and browser/table deadlines, exact state, Document, URL, rows,
 source totals and one click per page. No generic wait or native request changes.
 Renderer snapshot timing excludes this waiting; wall snapshot timing includes it.
+Recheck the original host table deadline after every snapshot reply, before a
+pending retry and after packed-data decoding before accepting rows. A late
+final page retains prior verified rows as PARTIAL even if its browser snapshot
+finished in time; source-count equality cannot override the host deadline.
 RPC reduction alone is not build-matched live speed or completion acceptance.
 
 The source-proven MPN transaction-date Clear date uses the same5000ms maximum
