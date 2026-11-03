@@ -47,9 +47,28 @@ boolean, string or conflicting values remain unsupported. Recheck enabled
 ownership after observation before issuing the marker; preserve original
 source fields and all predecessor, identity, route, query and structure gates.
 
+## Null Index envelope
+
+All466 captured L3-B pages and32 L11-A pages also contain literal-null envelope
+Index beside Data/TotalRecords. The pinned main consumer at UTF-16 3116035 and
+3116267 reads Data and TotalRecords and emits the original payload; it does not
+use envelope Index for rows or counts. The narrow support retains this null in
+typed per-response provenance while keeping nonnull Index, unknown fields,
+Result-only payloads and generic grid Index contracts unsupported/unchanged.
+
 ## Verification status
 
 Synthetic tests were committed before implementation and submitted in PR178.
-Runner RED/GREEN, final review and release coordinates will be recorded after
-their actual results are available. No local product execution or new live
-capture is claimed by this source analysis.
+Hosted RED41591409317/a1, diagnostic1067fcfd/sourceadc6259, artifact13210003918
+SHA256923cc87ff519771f5e4e660e38a4184b984c5419e2cec1d5c5a9171d9bc64ca1:
+565 cases,19 failures, zero errors/skips. Eighteen failures cover missing native
+behavior/diagnostics and the nineteenth exposed a synthetic reference-timing
+fixture. The fixture now constructs its overlap before the page is generated
+and explicitly waits for its original synthetic reference replies.
+
+The follow-up RED41592313042/a1, diagnosticb855865c/source71c1ae6,
+artifact13210783044 SHA256e452e60cbacfc177cf096111038c7ffd4686e7641de58010fef50d03225231b3,
+has576 cases: the18 behavior failures are resolved; two null-Index page tests
+fail at the intended payload gate and the fixture generation defect remained
+until the correction above. Final GREEN/review coordinates will follow their
+actual results. No local product execution or new live capture is claimed.

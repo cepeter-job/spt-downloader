@@ -63,7 +63,9 @@ def _enabled_form_binding(form, tab, caption):
             const li=tab.closest('li'), view=form.closest('.p-tabview');
             const panel=form.closest('.p-tabview-panel'), id=tab.getAttribute('aria-controls');
             const href=tab.getAttribute('href');
+            const bounds=form.getBoundingClientRect(), style=getComputedStyle(form);
             return !!li && !!view && !!panel && tab.closest('.p-tabview')===view &&
+                style.visibility==='visible' && bounds.width>0 && bounds.height>0 &&
                 tab.textContent.trim()===caption && !li.classList.contains('p-disabled') &&
                 tab.getAttribute('aria-disabled')!=='true' && !!id && panel.id===id &&
                 [...view.querySelectorAll('[id]')].filter(e=>e.id===id).length===1 &&

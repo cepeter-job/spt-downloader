@@ -167,7 +167,11 @@ rentang format yang disetujui tidak berubah.
 
 Integrasi native L11-A memakai marker corporate-l11a-v1, tiga pin provider
 script termuat, lifetime SPA segar, route submitted literal ?view=true, Induk
-sebelumnya dan flag IsDeclareEntertainmentExpense numerik1 pada outer/current.
+sebelumnya dan flag IsDeclareEntertainmentExpense numerik1 pada outer/current
+untuk proof lama. Marker opsional `visibility_binding=current-induk-enabled-v1`
+mengizinkan outer yang absen bila current numerik1 dan tab/panel/form aktif yang
+tepat dibuktikan ulang sesudah observasi. Outer null, nol, boolean atau string,
+current hilang dan marker eksplisit yang tidak dikenal tetap unsupported.
 PreviousFormData wajib eksplisit dan tidak boleh memuat predecessor L11A
 nonnull. Observer mengikat lima grid beserta seluruh grup/header/ancestry,
 termasuk IV/IV.A, sebelum dan sesudah empat paginator miliknya. Adapter hanya
@@ -177,7 +181,11 @@ DEDUCTION_METHOD,TYPE_OF_FULFILLMENT. Tidak membaca nilai bisnis DOM/cache atau
 meminta katalog tambahan. Path Payload/catalog/detail asli tetap dipertahankan
 meskipun urutan dua katalog dalam payload berbeda. Tipe katalog yang dibandingkan
 wajib diminta endpoint asalnya; marker salah tetap merupakan bentuk unsupported.
-Katalog bertipe sama yang berubah lintas endpoint tetap fatal sebelum fallback,
+Overlap singleton/pasangan yang sama mengikat seluruh empat sampai enam route
+yang telah ditinjau beserta semua sequence suksesnya. Pilih sequence asli paling
+awal per jenis secara deterministik dan simpan provenance setiap route; respons
+sekunder gagal atau tidak terikat tidak boleh tersembunyi. Katalog bertipe sama
+yang berubah lintas endpoint tetap fatal sebelum fallback,
 termasuk metadata, urutan
 duplicate, jenis JSON dan token angka. Identitas/snapshot/count grid diketahui
 juga fatal tanpa binding; count dibedakan per endpoint dan query selain First.
@@ -241,7 +249,10 @@ null tetap kosong, tetapi string kosong ditolak karena consumer tanggalnya berbe
 Integrasi native L3 memakai marker terpisah corporate-l3-v1: lifetime SPA milik
 capture yang masih segar, route submitted literal ?view=true, Induk sebelumnya,
 encoding predecessor eksplisit dan flag IsIncomeTaxOverseas numerik1 pada outer
-serta current MainFormData. Observer membuktikan tiga provider script termuat dan
+serta current MainFormData untuk proof lama. Marker current-induk-enabled-v1
+memakai batas absent-outer/current-numerik1 dan observasi aktif ulang yang sama
+dengan L11-A; tidak mengisi atau menormalisasi field sumber yang hilang.
+Observer membuktikan tiga provider script termuat dan
 hash, dua grid/ui-grid/p-table/form beserta grup/header/span, lalu hanya memutar
 paginator B yang dimiliki. Tidak ada pembacaan nilai bisnis DOM atau cache.
 Adapter mengikat request B sepuluh baris dan footer yang benar-benar diamati,
@@ -251,6 +262,12 @@ ordinal katalog asli dipertahankan; katalog hilang tidak di-fetch. Kontradiksi
 identitas/snapshot B/footer dan locale/snapshot katalog tetap fatal sebelum
 fallback. Skema Index grid generik lama tidak dilonggarkan. Final drain, Stop,
 custody JSON, dua field belum terpetakan, Induk/PDF dan penerimaan live terpisah.
+
+Consumer halaman native L3/L11-A menerima envelope Data/TotalRecords dengan
+Index opsional yang harus literal null. Metadata ini dipertahankan sebagai
+provenance bertipe tanpa memengaruhi Index bisnis di setiap baris. Index envelope
+nonnull, field tambahan lain dan Result-only tetap unsupported; kontrak grid
+generik dan request sepuluh baris tidak berubah.
 
 
 Proyeksi semantik L7/L11-C menerima URL submitted literal tanpa query untuk

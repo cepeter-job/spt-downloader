@@ -1168,6 +1168,21 @@ def _current_induk_visibility(payload, main, flag, proof):
     return type(outer) is _CorporateNumber and _decimal(outer) == 1
 
 
+def _active_grid_payload(source):
+    """The pinned Data/TotalRecords consumer ignores only this null envelope slot."""
+    return (isinstance(source, dict) and set(source) in (
+        {'Data', 'TotalRecords'}, {'Data', 'TotalRecords', 'Index'})
+        and source.get('Index') is None)
+
+
+def _unused_grid_index(source, event, form):
+    if 'Index' not in source:
+        return []
+    return [{**_evidence(None, ['Index']), 'response_sequence': event['sequence'],
+             'container': ['Payload'], 'rule': 'unused-null-envelope-index',
+             'destination': {'table': form, 'metadata': 'Index'}}]
+
+
 def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
               reference_packets, auxiliary_packets):
     proof = binding['projection']
@@ -1235,16 +1250,18 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
             raise _UnsupportedMetadata('unsupported_corporate_l3_page_request')
     requests = sorted(requests, key=lambda value: value['First'])
     page_sources, pages, expected = [], [], set()
+    index_provenance = []
     for request in requests:
         key = (CORPORATE_L3_GRID_URL, _corporate_request_key(request))
         expected.add(key)
         packet = auxiliary_packets.get(key)
         source = packet['payload'] if packet is not None else None
-        if not isinstance(source, dict) or set(source) != {'Data', 'TotalRecords'}:
+        if not _active_grid_payload(source):
             raise _UnsupportedMetadata('unsupported_corporate_l3_page_payload')
         pages.append({'offset': request['First'], 'rows': request['Rows'],
                       'total': _corporate_integer(source['TotalRecords']), 'data': source['Data']})
         page_sources.append(packet['event'])
+        index_provenance.extend(_unused_grid_index(source, packet['event'], 'L3'))
     footer_key = (CORPORATE_L3_FOOTER_URL, _corporate_request_key(footer_request))
     expected.add(footer_key)
     if expected != {key for key in auxiliary_packets
@@ -1295,6 +1312,7 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
         result['provenance'].extend({**entry, 'response_sequence': sources[kind]['sequence'],
             'container': ['Payload'], 'destination': {'table': 'L3', 'reference': kind}}
             for entry in catalog['provenance'])
+    result['provenance'].extend(index_provenance)
     return {'form': 'L3', 'kind': proof['kind'], 'builds': dict(proof['builds']),
             'route': proof['route'], 'values': result['provenance'],
             **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}
@@ -1408,6 +1426,7 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
     if not isinstance(responses, list) or len(responses) != 4:
         raise _UnsupportedMetadata('unverified_corporate_l11a_auxiliary_binding')
     page_sources, pages, expected = {}, {}, set()
+    index_provenance = []
     for response in responses:
         if (not isinstance(response, dict) or set(response) != {'name', 'endpoint', 'requests'}
                 or response['endpoint'] not in CORPORATE_L11A_GRID_URLS):
@@ -1433,11 +1452,12 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
             expected.add(key)
             packet = auxiliary_packets.get(key)
             source = packet['payload'] if packet is not None else None
-            if not isinstance(source, dict) or set(source) != {'Data', 'TotalRecords'}:
+            if not _active_grid_payload(source):
                 raise _UnsupportedMetadata('unsupported_corporate_l11a_page_payload')
             pages[endpoint].append({'offset': request['First'], 'rows': request['Rows'],
                 'total': _corporate_integer(source['TotalRecords']), 'data': source['Data']})
             page_sources[endpoint].append(packet['event'])
+            index_provenance.extend(_unused_grid_index(source, packet['event'], 'L11-A'))
     if expected != {key for key in auxiliary_packets if key[0] in CORPORATE_L11A_GRID_URLS}:
         raise _UnsupportedMetadata('incomplete_corporate_l11a_auxiliary_packets')
     references = proof['references']
@@ -1497,6 +1517,7 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
         result['provenance'].extend({**entry, 'response_sequence': source['sequence'],
             'container': ['Payload'], 'destination': {'table': 'L11-A', 'reference': kind}}
             for entry in catalog['provenance'])
+    result['provenance'].extend(index_provenance)
     return {'form': 'L11-A', 'kind': proof['kind'], 'builds': dict(proof['builds']),
             'route': proof['route'], 'values': result['provenance'],
             **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}

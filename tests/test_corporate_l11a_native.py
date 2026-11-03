@@ -57,6 +57,8 @@ def catalog(kind):
 def transports(transport='singletons'):
     if transport == 'singletons':
         return [(url, [kind]) for kind, url in REFERENCES.items()]
+    if transport == 'pair-overlap':
+        return transports('pair-reordered') + [(REFERENCES[TYPES[4]], [TYPES[4]])]
     return [(REFERENCES[kind], [kind]) for kind in TYPES[:3]] + [
         (PAIR, TYPES[3:] if transport == 'pair' else list(reversed(TYPES[3:])))]
 

@@ -104,10 +104,7 @@ def test_current_induk_visibility_does_not_override_present_unproved_outer_flags
 
 
 def test_owned_l11a_keeps_matching_pair_and_singleton_provenance(browser, tmp_path, monkeypatch):
-    fixture = Fixture(browser, monkeypatch)
-    kind = l11a.TYPES[4]
-    fixture.reference_raw[l11a.REFERENCES[kind]] = corpus.wire(
-        {'IsSuccessful': True, 'Payload': [l11a.catalog(kind)]}).encode()
+    fixture = Fixture(browser, monkeypatch, transport='pair-overlap')
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
@@ -156,15 +153,21 @@ def test_owned_current_induk_visibility_marks_absent_outer_flag(
 
 @pytest.mark.parametrize('fixture_class,name,method', [
     (L3Fixture, 'L3', '_observe_l3'), (Fixture, 'L11-A', '_observe_l11a')])
+@pytest.mark.parametrize('change', ['disabled', 'hidden', 'control'])
 def test_visibility_proof_rechecks_enabled_form_after_observation(
-        browser, tmp_path, monkeypatch, fixture_class, name, method):
+        browser, tmp_path, monkeypatch, fixture_class, name, method, change):
     fixture = fixture_class(browser, monkeypatch)
     original = getattr(observer, method)
 
     def disable_after_observation(page, *args, **kwargs):
         result = original(page, *args, **kwargs)
-        page.locator('a[role=tab]').filter(has_text=name).evaluate(
-            '(e)=>e.setAttribute("aria-disabled","true")')
+        if change == 'hidden':
+            form = args[0]
+            form.evaluate('(e)=>e.style.display="none"')
+        else:
+            page.locator('a[role=tab]').filter(has_text=name).evaluate(
+                '(e, change)=>e.setAttribute(change==="disabled"?"aria-disabled":"aria-controls",'
+                'change==="disabled"?"true":"synthetic-foreign-panel")', change)
         return result
 
     monkeypatch.setattr(observer, method, disable_after_observation)
