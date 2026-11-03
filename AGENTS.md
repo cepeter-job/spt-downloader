@@ -739,8 +739,9 @@ Owned Windows Playwright driver startup temporarily defaults
 `NODE_USE_SYSTEM_CA=1` through the stdlib-only `coretax_transport` manager wrapper.
 Use existing trusted Windows CAs with the pinned supported Node runtime; do not
 disable TLS checks, install/export real certificates, change proxy policy or
-mutate machine settings. Preserve every explicit variable value and caller
-update, serialize nested/concurrent startup, and restore the owned temporary
+mutate machine settings. Preserve every pre-existing explicit value and updates
+to a different value; a same-value write during entry is indistinguishable from
+the owned default. Serialize nested/concurrent startup and restore the temporary
 default on success/error/Stop. Keep CLI/desktop local factory names patchable,
 CLI teardown registered before entry, and original context-manager exit
 semantics. Register this owner in WORKER_FILES and verify frozen/managed bytes.

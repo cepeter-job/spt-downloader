@@ -36,7 +36,9 @@ Add a stdlib-only coretax_transport owner exposing system_ca_manager(manager).
 It wraps only the context-manager entry: under an RLock, temporarily default
 NODE_USE_SYSTEM_CA to 1 on Windows if the variable is absent, call the original
 manager.__enter__, and restore the owned default on success/error/Stop. Preserve
-all explicit values and caller changes. Forward __exit__ arguments and result
+all pre-existing explicit values and changes to a different value. A write of
+the same temporary value during entry cannot be distinguished and is restored
+as part of the owned default. Forward __exit__ arguments and result
 unchanged. Nested/concurrent starts must not inherit a disappearing default.
 
 CLI still calls its local sync_playwright and registers contained __exit__

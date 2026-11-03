@@ -22,7 +22,7 @@ class _SystemCAManager:
             try:
                 return self.manager.__enter__()
             finally:
-                # Preserve a caller update instead of overwriting its choice.
+                # Preserve a caller update to a different value.
                 if os.environ.get(_SYSTEM_CA) == '1':
                     os.environ.pop(_SYSTEM_CA, None)
 

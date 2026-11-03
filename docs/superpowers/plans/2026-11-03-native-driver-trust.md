@@ -13,7 +13,7 @@
 ## Global constraints
 
 - No TLS bypass, OS/machine environment change, proxy change, extra catalog GET, endpoint/locale expansion or admission relaxation.
-- Preserve explicit environment values, Stop, cleanup, original factory patch points and GUI import separation.
+- Preserve pre-existing explicit values and different-value updates, Stop, cleanup, original factory patch points and GUI import separation; same-value writes during entry are indistinguishable from the temporary default.
 - Product tests/imports/builds run only on GitHub runners; local evidence is source/AST/Git/hash and generic no-HTTP TLS diagnostics.
 
 ## Review focus
