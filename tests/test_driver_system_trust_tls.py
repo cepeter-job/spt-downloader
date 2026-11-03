@@ -1,7 +1,6 @@
 """Real Windows-runner TLS regression, using one owned synthetic certificate."""
 import json
 import os
-from pathlib import Path
 import queue
 import re
 import subprocess
@@ -14,31 +13,53 @@ import pytest
 
 SETUP = r'''
 $ErrorActionPreference = 'Stop'
-$pfxPassword = ConvertTo-SecureString $env:SPT_TEST_PFX_PASSWORD -AsPlainText -Force
-$cert = New-SelfSignedCertificate -Subject $env:SPT_TEST_CERT_SUBJECT -DnsName 'localhost' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy Exportable -NotAfter (Get-Date).AddHours(1) -KeyUsage DigitalSignature,KeyEncipherment,CertSign -TextExtension @('2.5.29.19={text}ca=true')
+$rsa = [System.Security.Cryptography.RSA]::Create(2048)
+$cert = $null
+$public = $null
+$store = $null
 try {
-  Export-PfxCertificate -Cert $cert -FilePath $env:SPT_TEST_PFX -Password $pfxPassword -CryptoAlgorithmOption AES256_SHA256 | Out-Null
-  Export-Certificate -Cert $cert -FilePath $env:SPT_TEST_CER | Out-Null
-  Import-Certificate -FilePath $env:SPT_TEST_CER -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
+  $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new($env:SPT_TEST_CERT_SUBJECT,$rsa,[System.Security.Cryptography.HashAlgorithmName]::SHA256,[System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+  $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true,$false,0,$true))
+  $san = [System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
+  $san.AddDnsName('localhost')
+  $request.CertificateExtensions.Add($san.Build())
+  $usage = [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment -bor [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign
+  $request.CertificateExtensions.Add([System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new($usage,$true))
+  $cert = $request.CreateSelfSigned([DateTimeOffset]::UtcNow.AddMinutes(-5),[DateTimeOffset]::UtcNow.AddHours(1))
+  # Persist public ownership before adding trust; no key is stored in My.
+  [IO.File]::WriteAllBytes($env:SPT_TEST_CER,$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+  [IO.File]::WriteAllBytes($env:SPT_TEST_PFX,$cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx,$env:SPT_TEST_PFX_PASSWORD))
+  $public = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.RawData)
+  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root',[System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+  $store.Add($public)
   @{thumbprint=$cert.Thumbprint} | ConvertTo-Json -Compress
-} catch {
-  foreach ($path in @("Cert:\LocalMachine\Root\$($cert.Thumbprint)","Cert:\CurrentUser\My\$($cert.Thumbprint)")) {
-    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-  }
-  throw
+} finally {
+  if ($store) { $store.Dispose() }
+  if ($public) { $public.Dispose() }
+  if ($cert) { $cert.Dispose() }
+  $rsa.Dispose()
 }
 '''
 
 CLEANUP = r'''
 $ErrorActionPreference = 'Stop'
-$thumb = $env:SPT_TEST_CERT_THUMB
-if ($thumb -cnotmatch '^[A-F0-9]{40}$') { throw 'Invalid synthetic thumbprint' }
-foreach ($path in @("Cert:\LocalMachine\Root\$thumb","Cert:\CurrentUser\My\$thumb")) {
-  if (Test-Path -LiteralPath $path) {
-    $owned = Get-Item -LiteralPath $path
-    if ($owned.Subject -ne $env:SPT_TEST_CERT_SUBJECT) { throw 'Refuse unrelated certificate' }
-    Remove-Item -LiteralPath $path -Force
+if (-not [IO.File]::Exists($env:SPT_TEST_CER)) { exit 0 }
+$owned = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([IO.File]::ReadAllBytes($env:SPT_TEST_CER))
+$store = $null
+try {
+  if ($env:SPT_TEST_CERT_SUBJECT -cnotmatch '^CN=SPTDownloaderSynthetic-[a-f0-9]{32}$' -or $owned.Subject -ne $env:SPT_TEST_CERT_SUBJECT -or $owned.Thumbprint -cnotmatch '^[A-F0-9]{40}$') { throw 'Invalid synthetic ownership' }
+  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('Root',[System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+  $matches = $store.Certificates.Find([System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,$owned.Thumbprint,$false)
+  foreach ($entry in $matches) {
+    if ([Convert]::ToBase64String($entry.RawData) -cne [Convert]::ToBase64String($owned.RawData)) { throw 'Refuse unrelated certificate' }
+    $store.Remove($entry)
   }
+  if ($store.Certificates.Find([System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,$owned.Thumbprint,$false).Count -ne 0) { throw 'Synthetic root cleanup failed' }
+} finally {
+  if ($store) { $store.Dispose() }
+  $owned.Dispose()
 }
 '''
 
@@ -82,18 +103,12 @@ def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_pa
     environment.update(SPT_TEST_PFX_PASSWORD=uuid.uuid4().hex,
         SPT_TEST_PFX=str(tmp_path/'synthetic.pfx'), SPT_TEST_CER=str(tmp_path/'synthetic.cer'),
         SPT_TEST_CERT_SUBJECT='CN=SPTDownloaderSynthetic-'+uuid.uuid4().hex)
-    # Windows PowerShell must not autoload PowerShell 7's incompatible modules.
-    ps_environment = {k:v for k,v in environment.items() if k.upper() != 'PSMODULEPATH'}
-    ps_environment['PSMODULEPATH'] = str(Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/Modules')
-    setup = subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',SETUP],
-        env=ps_environment, capture_output=True, text=True, timeout=30, check=False)
-    assert setup.returncode == 0, 'Synthetic certificate setup failed: ' + setup.stderr
-    thumb = json.loads(setup.stdout)['thumbprint']
-    assert re.fullmatch('[A-F0-9]{40}', thumb)
-    environment['SPT_TEST_CERT_THUMB'] = thumb
-    ps_environment['SPT_TEST_CERT_THUMB'] = thumb
     server = None
     try:
+        setup = subprocess.run(['pwsh','-NoProfile','-NonInteractive','-Command',SETUP],
+            env=environment, capture_output=True, text=True, timeout=30, check=False)
+        assert setup.returncode == 0, 'Synthetic certificate setup failed: ' + setup.stderr
+        assert re.fullmatch('[A-F0-9]{40}', json.loads(setup.stdout)['thumbprint'])
         script = tmp_path/'server.cjs'
         script.write_text(SERVER,encoding='utf-8')
         server = subprocess.Popen([node,str(script)],env=environment,stdout=subprocess.PIPE,
@@ -118,5 +133,7 @@ def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_pa
                 server.wait(timeout=5)
                 server.stdout.close()
         finally:
-            subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',CLEANUP],
-                env=ps_environment,capture_output=True,text=True,timeout=15,check=True)
+            subprocess.run(['pwsh','-NoProfile','-NonInteractive','-Command',CLEANUP],
+                env=environment,capture_output=True,text=True,timeout=15,check=True)
+            (tmp_path/'synthetic.pfx').unlink(missing_ok=True)
+            (tmp_path/'synthetic.cer').unlink(missing_ok=True)
