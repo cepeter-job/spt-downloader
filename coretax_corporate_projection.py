@@ -1160,8 +1160,10 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
 def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
               reference_packets, auxiliary_packets):
     proof = binding['projection']
+    keys = {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
     if (not isinstance(proof, dict)
-            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or set(proof) not in (keys, keys | {'standalone_layout'})
+            or 'standalone_layout' in proof and proof['standalone_layout'] != 'overseas-controls-v1'
             or proof['kind'] != 'corporate-l3-v1' or proof['builds'] != L3_BUILD_DIGESTS
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L3_ROOT]]
             or binding.get('grids', []) or event.get('component_lifetime') is None):

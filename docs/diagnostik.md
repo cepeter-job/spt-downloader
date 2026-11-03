@@ -619,6 +619,15 @@ permintaan, atau respons. `table_verify_ms=0` pada halaman baru karena
 verifikasi state dilakukan di dalam evaluasi `table_dom_ms` yang sama;
 jangan bandingkan dua metrik fase ini lintas build secara langsung.
 
+Pada jalur cursor L3-B250 yang menggabungkan loading dan snapshot, tidak ada
+RPC `wait_idle` terpisah untuk halaman lanjutan. `table_idle_ms` hanya mencatat
+waktu bagian host yang kini kosong; `table_dom_ms` mencakup RPC snapshot beserta
+tunggu overlay dan settling180ms. `table_dom_renderer_ms` tetap mengukur
+ekstraksi setelah tunggu tersebut. Pending slice paling lama1000ms memberi
+kesempatan pemeriksaan Stop di Python; deadline loading45s dan tabel180s tetap
+berjalan dan tidak diulang. Selisih wall/renderer bukan ukuran antrean murni,
+dan pengurangan RPC tidak membuktikan peningkatan kecepatan live.
+
 Perubahan ini menguji hipotesis pengurangan pembacaan state ganda dan
 membatasi penerimaan data pada pemilik/metadata yang sama. Bukti
 synthetic browser RED→GREEN bukan bukti peningkatan kecepatan atau

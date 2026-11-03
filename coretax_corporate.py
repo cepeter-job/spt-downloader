@@ -325,6 +325,53 @@ def _l3_visible_extra_owner(form):
     }""", timeout=1000)
 
 
+def _l3_standalone_layout(form):
+    """Prove the pinned header-only overseas controls, never their values."""
+    from coretax_corporate_projection import _L3_CAPTIONS
+    return form.evaluate(r'''(form, captions) => {
+      const a=[...form.querySelectorAll('rsh-citr-l3-grid1')];
+      const b=[...form.querySelectorAll('rshshr-citr-l3-grid2')];
+      const tables=[...form.querySelectorAll('table')];
+      if(a.length!==1 || b.length!==1 || tables.length!==3) return false;
+      const first=a[0].querySelector('table'), last=b[0].querySelector('table');
+      if(tables[0]!==first || tables[2]!==last) return false;
+      const table=tables[1], owner=table.closest('p-table');
+      const group=a[0].closest('p-panel'), parent=a[0].closest('form');
+      if(!owner || !group || !parent || parent.parentElement!==form ||
+         b[0].closest('form')!==parent || table.closest('form')!==parent ||
+         table.closest('rshshr-citr-l3-form')!==form ||
+         table.closest('p-panel')!==group || owner.parentElement!==a[0].parentElement ||
+         owner.getAttribute('responsivelayout')!=='scroll' ||
+         table.closest('ui-grid,ui-grid-offline,p-dialog') ||
+         table.parentElement.closest('table') || !table.getClientRects().length)
+        return false;
+      const wrapper=table.closest('.p-datatable');
+      if(!wrapper || wrapper.closest('p-table')!==owner ||
+         !['scaled-datatable','p-datatable-sm','p-datatable-gridlines',
+           'p-datatable-striped','p-datatable-responsiveness'].every(c=>wrapper.classList.contains(c)) ||
+         owner.querySelectorAll('table').length!==1 || table.querySelectorAll('tbody tr,tfoot tr').length)
+        return false;
+      const rows=[...table.querySelectorAll(':scope > thead > tr')];
+      const names=['RefundDeductionCreditOverseas','TotalIncomeTaxPaidOverseas'];
+      if(rows.length!==2 || table.querySelectorAll('thead').length!==1 ||
+         table.querySelectorAll('p-inputnumber').length!==2 ||
+         table.querySelectorAll('input').length!==2) return false;
+      return rows.every((row,i)=>{
+        const cells=[...row.children];
+        if(cells.length!==2 || cells.some(c=>c.localName!=='th') ||
+           cells[0].colSpan!==10 || cells[1].colSpan!==1 ||
+           cells.some(c=>c.rowSpan!==1) || cells[0].getAttribute('width')!=='1099' ||
+           cells[1].getAttribute('width')!=='116' || cells[0].children.length ||
+           (cells[0].textContent||'').replace(/\s+/g,' ').trim()!==captions[i]) return false;
+        const controls=cells[1].querySelectorAll(':scope > p-inputnumber');
+        if(controls.length!==1 || cells[1].children.length!==1 ||
+           controls[0].getAttribute('formcontrolname')!==names[i]) return false;
+        const inputs=controls[0].querySelectorAll('input');
+        return inputs.length===1 && inputs[0].getAttribute('id')===names[i];
+      });
+    }''', list(_L3_CAPTIONS), timeout=1000) is True
+
+
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -358,7 +405,9 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if vendor_digest != L3_BUILD_DIGESTS.get(VENDOR_SOURCE):
         return refuse('vendor_digest')
     count = form.locator('table').count()
-    if count != 2:
+    standalone = count == 3 and _l3_standalone_layout(form)
+    _check_cancel(check_cancel)
+    if count != 2 and not standalone:
         if reason_out is not None:
             reason_out['table_shape'] = (
                 'zero' if count == 0 else 'one' if count == 1 else 'more_than_two')
@@ -372,8 +421,10 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
         return refuse('table_count')
     tables = []
     for phase in range(2):
-        if form.count() != 1 or not form.is_visible() or form.locator('table').count() != 2:
+        if (form.count() != 1 or not form.is_visible() or form.locator('table').count() != count
+                or standalone and not _l3_standalone_layout(form)):
             return refuse('form_shape')
+        _check_cancel(check_cancel)
         observed_tables = []
         for index, selector in enumerate(('rsh-citr-l3-grid1', 'rshshr-citr-l3-grid2')):
             _check_cancel(check_cancel)
@@ -449,7 +500,8 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
                           'request_json': {'ReturnSheetRecordId': record['record_id']}}],
         'projection': {'kind': 'corporate-l3-v1', 'builds': {CIT_SOURCE_URL: digest,
             MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
-            **environment, 'tables': tables, 'references': references}}
+              **environment, 'tables': tables, 'references': references,
+              **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
 
 def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel):

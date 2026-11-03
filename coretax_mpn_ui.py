@@ -537,7 +537,9 @@ class AccountingUI:
             raise MpnUnsupported('MPN transaction-date clear action is unproved')
         self._owned()
         marker = self.observer.sequence
-        action = self._click_ready(clear, capture_requests=True)
+        # A passed trial can precede browser scheduling above one second.
+        # Match Search's bounded dispatch budget; never repeat the real click.
+        action = self._click_ready(clear, actual_timeout_ms=5000, capture_requests=True)
         # The pinned control can emit the old grid query before the next
         # Search reconciles its form. Drain that owned response first; it
         # never supplies inventory or satisfies the second Search marker.
