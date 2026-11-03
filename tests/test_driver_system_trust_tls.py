@@ -1,6 +1,7 @@
 """Real Windows-runner TLS regression, using one owned synthetic certificate."""
 import json
 import os
+from pathlib import Path
 import queue
 import re
 import subprocess
@@ -82,12 +83,16 @@ def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_pa
     environment.update(SPT_TEST_PFX_PASSWORD=uuid.uuid4().hex,
         SPT_TEST_PFX=str(tmp_path/'synthetic.pfx'), SPT_TEST_CER=str(tmp_path/'synthetic.cer'),
         SPT_TEST_CERT_SUBJECT='CN=SPTDownloaderSynthetic-'+uuid.uuid4().hex)
+    # Windows PowerShell must not autoload PowerShell 7's incompatible modules.
+    ps_environment = {k:v for k,v in environment.items() if k.upper() != 'PSMODULEPATH'}
+    ps_environment['PSMODULEPATH'] = str(Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/Modules')
     setup = subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',SETUP],
-        env=environment, capture_output=True, text=True, timeout=30, check=False)
+        env=ps_environment, capture_output=True, text=True, timeout=30, check=False)
     assert setup.returncode == 0, 'Synthetic certificate setup failed: ' + setup.stderr
     thumb = json.loads(setup.stdout)['thumbprint']
     assert re.fullmatch('[A-F0-9]{40}', thumb)
     environment['SPT_TEST_CERT_THUMB'] = thumb
+    ps_environment['SPT_TEST_CERT_THUMB'] = thumb
     server = None
     try:
         script = tmp_path/'server.cjs'
@@ -113,4 +118,4 @@ def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_pa
             server.wait(timeout=5)
             server.stdout.close()
         subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',CLEANUP],
-            env=environment,capture_output=True,text=True,timeout=15,check=True)
+            env=ps_environment,capture_output=True,text=True,timeout=15,check=True)
