@@ -503,6 +503,19 @@ paginator, source and identity contradictions retain their independent gates.
 
 ## Issue #143 diagnostics boundary
 
+MPN detail-readiness refusals may report `mpn.detail_readiness_failed` only
+from the existing dialog/title/grid `_ready_one` ambiguity/deadline checks.
+Use fixed `mpn_ui_stage`, last observed readiness state and refusal categories,
+the bounded remaining budget at that call's entry, and elapsed call time.
+Reuse only count/visibility results already read by the control gate; pending
+Document identity remains unobserved. Do not probe DOM after refusal for logging,
+read business values, log selectors/URLs/messages or retain a locator/exception.
+Stop and callback-pumped safety failures keep precedence. A final visible
+observation after the shared five-second deadline still refuses capture.
+Selectors, RPC/action order, dialog ownership, whole-detail JSON fallback,
+TLS/catalog/source, PARTIAL and publication gates remain unchanged. Diagnostic
+categories do not establish the actual live cause or authorize a repair.
+
 Corporate native refusals may emit only the finite observer-stage enum and a
 bounded tab ordinal before the existing whole-record DOM fallback. MPN capture
 failures may emit a finite collection-stage enum and sanitized exception
