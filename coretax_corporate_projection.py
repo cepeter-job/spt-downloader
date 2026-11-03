@@ -1157,13 +1157,25 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
     return {'tables': tables, 'fields': fields, 'provenance': provenance}
 
 
+def _current_induk_visibility(payload, main, flag, proof):
+    """Pinned callback plus an owned enabled form may bind an absent outer flag."""
+    current = main.get(flag) if isinstance(main, dict) else None
+    if type(current) is not _CorporateNumber or _decimal(current) != 1:
+        return False
+    if flag not in payload:
+        return proof.get('visibility_binding') == 'current-induk-enabled-v1'
+    outer = payload[flag]
+    return type(outer) is _CorporateNumber and _decimal(outer) == 1
+
+
 def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
               reference_packets, auxiliary_packets):
     proof = binding['projection']
     keys = {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
     if (not isinstance(proof, dict)
-            or set(proof) not in (keys, keys | {'standalone_layout'})
+            or set(proof) - {'standalone_layout', 'visibility_binding'} != keys
             or 'standalone_layout' in proof and proof['standalone_layout'] != 'overseas-controls-v1'
+            or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
             or proof['kind'] != 'corporate-l3-v1' or proof['builds'] != L3_BUILD_DIGESTS
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L3_ROOT]]
             or binding.get('grids', []) or event.get('component_lifetime') is None):
@@ -1180,9 +1192,7 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
             or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
-            or not isinstance(main, dict)
-            or any(type(value) is not _CorporateNumber or _decimal(value) != 1
-                   for value in (payload.get('IsIncomeTaxOverseas'), main.get('IsIncomeTaxOverseas')))):
+            or not _current_induk_visibility(payload, main, 'IsIncomeTaxOverseas', proof)):
         raise _UnsupportedMetadata('unverified_corporate_l3_submitted_lifecycle')
     if 'PreviousFormData' not in payload:
         raise _UnsupportedMetadata('missing_corporate_l3_previous_encoding')
@@ -1286,7 +1296,8 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
             'container': ['Payload'], 'destination': {'table': 'L3', 'reference': kind}}
             for entry in catalog['provenance'])
     return {'form': 'L3', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-            'route': proof['route'], 'values': result['provenance']}
+            'route': proof['route'], 'values': result['provenance'],
+            **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}
 
 
 # Active L11-A consumers in the pinned corporate build; no taxpayer defaults.
@@ -1353,7 +1364,8 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
                  reference_packets, auxiliary_packets):
     proof = binding['projection']
     if (not isinstance(proof, dict)
-            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or set(proof) - {'visibility_binding'} != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
             or proof['kind'] != 'corporate-l11a-v1' or proof['builds'] != L11A_BUILD_DIGESTS
             or proof['route'] != event['frame_url'] or binding.get('paths') != [[_L11A_ROOT]]
             or binding.get('grids', []) or binding.get('dependencies', [])
@@ -1371,10 +1383,7 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
             or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
-            or not isinstance(main, dict)
-            or any(type(value) is not _CorporateNumber or _decimal(value) != 1
-                   for value in (payload.get('IsDeclareEntertainmentExpense'),
-                                 main.get('IsDeclareEntertainmentExpense')))):
+            or not _current_induk_visibility(payload, main, 'IsDeclareEntertainmentExpense', proof)):
         raise _UnsupportedMetadata('unverified_corporate_l11a_submitted_lifecycle')
     if 'PreviousFormData' not in payload:
         raise _UnsupportedMetadata('missing_corporate_l11a_previous_encoding')
@@ -1432,9 +1441,10 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
     if expected != {key for key in auxiliary_packets if key[0] in CORPORATE_L11A_GRID_URLS}:
         raise _UnsupportedMetadata('incomplete_corporate_l11a_auxiliary_packets')
     references = proof['references']
-    if not isinstance(references, list) or len(references) not in (4, 5):
+    if not isinstance(references, list) or not 4 <= len(references) <= 6:
         raise _UnsupportedMetadata('missing_corporate_l11a_reference_bindings')
     catalogs, sources = {}, {}
+    contributors = []
     urls = set()
     for ref in references:
         if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
@@ -1442,7 +1452,7 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
                 or ref['method'] != 'GET' or not isinstance(ref['sequences'], list) or not ref['sequences']):
             raise _UnsupportedMetadata('unsupported_corporate_l11a_reference_binding')
         kinds = CORPORATE_REFERENCE_REQUESTS.get(ref['endpoint'])
-        if kinds is None or any(kind not in CORPORATE_L11A_REFERENCE_URLS or kind in catalogs for kind in kinds):
+        if kinds is None or any(kind not in CORPORATE_L11A_REFERENCE_URLS for kind in kinds):
             raise _UnsupportedMetadata('unsupported_corporate_l11a_reference_binding')
         urls.add(ref['endpoint'])
         sequences = ref['sequences']
@@ -1451,11 +1461,20 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
         actual = {n for n, packet in reference_packets.items() if packet['event']['url'] == ref['endpoint']}
         if set(sequences) != actual or any(not reference_packets[n]['successful'] for n in actual):
             raise _UnsupportedMetadata('missing_or_failed_corporate_l11a_catalog')
-        source = reference_packets[sequences[0]]
+        source = reference_packets[min(sequences)]
         for kind in kinds:
-            catalogs[kind] = _project_corporate_catalog(source['payload'], kind=kind, requested_types=kinds,
+            catalog = _project_corporate_catalog(source['payload'], kind=kind, requested_types=kinds,
                 clock_interval=source['event'].get('clock_interval'))
-            sources[kind] = source['event']
+            if kind in catalogs and catalog['lookups'] != catalogs[kind]['lookups']:
+                raise JsonSafetyError('Corporate L11-A catalog selection changed across admitted transports')
+            contributors.append((kind, catalog, source['event']))
+            if kind not in sources or source['event']['sequence'] < sources[kind]['sequence']:
+                catalogs[kind], sources[kind] = catalog, source['event']
+    actual_urls = {packet['event']['url'] for packet in reference_packets.values()
+                  if all(kind in CORPORATE_L11A_REFERENCE_URLS
+                         for kind in CORPORATE_REFERENCE_REQUESTS[packet['event']['url']])}
+    if urls != actual_urls:
+        raise _UnsupportedMetadata('unbound_corporate_l11a_catalog')
     if set(catalogs) != set(CORPORATE_L11A_REFERENCE_URLS):
         raise _UnsupportedMetadata('missing_corporate_l11a_catalogs')
     result = project_l11a(root.get(_L11A_ROOT), previous=previous_form, pages=pages,
@@ -1474,12 +1493,13 @@ def _apply_l11a(binding, section, observed_forms, *, root, payload, record, even
             result['provenance'].append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
                 'response_sequence': sources[kind]['sequence'], 'container': ['Payload'],
                 'destination': deepcopy(entry['destination'])})
-    for kind, catalog in catalogs.items():
-        result['provenance'].extend({**entry, 'response_sequence': sources[kind]['sequence'],
+    for kind, catalog, source in contributors:
+        result['provenance'].extend({**entry, 'response_sequence': source['sequence'],
             'container': ['Payload'], 'destination': {'table': 'L11-A', 'reference': kind}}
             for entry in catalog['provenance'])
     return {'form': 'L11-A', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-            'route': proof['route'], 'values': result['provenance']}
+            'route': proof['route'], 'values': result['provenance'],
+            **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}
 
 
 def _l11a_integer(value, *, nullish=False):

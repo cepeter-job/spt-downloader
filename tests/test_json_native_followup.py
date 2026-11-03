@@ -111,6 +111,8 @@ def test_owned_l11a_keeps_matching_pair_and_singleton_provenance(browser, tmp_pa
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
+            page.locator('a[role=tab]').filter(has_text='L11-A').click()
+            page.wait_for_function('window.l11aReferenceReplies===5')
             forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
                 approved_digest=fixture.pins[observer.CIT_SOURCE_URL])
             assert forms is not None
@@ -195,3 +197,34 @@ def test_current_induk_visibility_keeps_required_source_and_lifetime_proof(modul
         for packet in raw:
             del packet['context']['component_lifetime']
     assert not adapt_corporate_detail(iter(raw), module.selected(), corpus.SCOPE, forms)['eligible']
+
+
+def test_l11a_omitted_secondary_catalog_binding_cannot_hide_original_response():
+    raw, forms = overlapping_catalogs(l11a.TYPES[4:])
+    forms[1]['projection']['references'].pop()
+    result = adapt_corporate_detail(iter(raw), l11a.selected(), corpus.SCOPE, forms)
+    assert not result['eligible'] and 'unbound_corporate_l11a_catalog' in result['reason']
+
+
+@pytest.mark.parametrize('module', [l3, l11a])
+@pytest.mark.parametrize('index', [None, 0, '', [], {}])
+def test_active_grid_envelope_supports_only_absent_or_null_index(module, index):
+    raw, forms = module.packets(), module.bindings()
+    urls = {module.GRID} if module is l3 else set(module.GRIDS.values())
+    sequences = set()
+    for i, packet in enumerate(raw):
+        context = packet['context']
+        if context['url'] not in urls:
+            continue
+        value = json.loads(packet['body'])
+        value['Payload']['Index'] = index
+        raw[i] = module.packet(value, context['sequence'], context['url'], context['request_json'])
+        sequences.add(context['sequence'])
+    before = deepcopy((raw, forms))
+    result = adapt_corporate_detail(iter(raw), module.selected(), corpus.SCOPE, forms)
+    assert result['eligible'] is (index is None), result['reason']
+    if index is None:
+        evidence = result['provenance']['projections'][0]['values']
+        assert sequences == {p['response_sequence'] for p in evidence
+                             if p.get('rule') == 'unused-null-envelope-index' and p['path'] == ['Index']}
+    assert (raw, forms) == before

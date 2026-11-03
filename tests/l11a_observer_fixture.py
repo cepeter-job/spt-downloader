@@ -114,7 +114,7 @@ class Fixture(BaseFixture):
         grids = {index: url for index, url in zip((0, 1, 2, 4), GRIDS.values())}
         active = list(grids)
         if self.defect == 'missing-grid': active.remove(1)
-        script = ('<script>window.l11aStarted=false;window.l11aReplies=0;window.l11aNextDone=false;'
+        script = ('<script>window.l11aStarted=false;window.l11aReplies=0;window.l11aNextDone=false;window.l11aReferenceReplies=0;'
             'const baseShowL11A=window.show;window.show=function(i){baseShowL11A(i);if(i===1&&!window.l11aStarted)'
             '{window.l11aStarted=true;startL11A();}};'
             'function moveL11A(index,first){const req=' + json.dumps(request(0)) + ';req.First=first;'
@@ -134,5 +134,5 @@ class Fixture(BaseFixture):
             + ('document.querySelector(owners[3]).closest("p-accordiontab").querySelector(".p-accordion-header-text").textContent="SYNTHETIC CHANGED OFFLINE GROUP";' if self.defect == 'changed-offline-group-after-page' else '')
             + '}});}'
             'function startL11A(){const active=' + json.dumps(active) + ',refs=' + json.dumps(references) + ';'
-            'active.forEach(index=>moveL11A(index,0));refs.forEach(url=>fetch(url).then(r=>r.json()));}</script>')
+            'active.forEach(index=>moveL11A(index,0));refs.forEach(url=>fetch(url).then(r=>r.json()).then(()=>window.l11aReferenceReplies++));}</script>')
         return base.replace('</body>', script + '</body>')

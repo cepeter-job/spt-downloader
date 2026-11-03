@@ -230,7 +230,7 @@ def test_unproved_l11a_lifecycle_structure_or_dependency_keeps_whole_record_fall
     elif defect in ('result-only', 'index-schema', 'failed-page'):
         value = json.loads(raw[1]['body'])['Payload']
         if defect == 'result-only': value['Result'] = {'Data': value.pop('Data')}
-        elif defect == 'index-schema': value['Index'] = None
+        elif defect == 'index-schema': value['Index'] = 0
         replace_payload(raw, 1, value, status=500 if defect == 'failed-page' else 200)
     elif defect == 'missing-reference': raw.pop()
     elif defect == 'reference-sequence': proof['references'][0]['sequences'] = [999]
