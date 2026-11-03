@@ -30,16 +30,16 @@
 
 **Interfaces:** Existing `_ready_one(selector, *, deadline=None)` signature remains unchanged; a fixed event describes only its own detail-readiness ambiguity/deadline refusals.
 
-- [ ] Write unit tests for refusal state, stage, timing, privacy and unchanged reads/Stop; add real synthetic capture regressions for missing/hidden grid ancestry in both source modes.
-- [ ] Use an isolated temporary runner workflow to observe the expected missing-event RED on unmodified production.
-- [ ] Add the finite event/schema and emit from already observed state at the original refusal points; identify the three existing detail waits.
-- [ ] Observe hosted GREEN, including existing MPN custody, reference and diagnostics tests.
+- [x] Write unit tests for refusal state, stage, timing, privacy and unchanged reads/Stop; add real synthetic capture regressions for missing/hidden grid ancestry in both source modes.
+- [x] Use an isolated temporary runner workflow to observe the expected missing-event RED on unmodified production.
+- [x] Add the finite event/schema and emit from already observed state at the original refusal points; identify the three existing detail waits.
+- [x] Observe hosted GREEN, including existing MPN custody, reference and diagnostics tests.
 
 ### Task2: Review, full validation and merge
 
 **Files:** `AGENTS.md`, `docs/diagnostik.md`, verification report; remove temporary workflow.
 
-- [ ] Document supported diagnostic boundaries and record runner evidence.
+- [x] Document supported diagnostic boundaries and record runner evidence; remove temporary workflow.
 - [ ] Obtain independent whole-branch review and resolve material findings with regressions.
 - [ ] Run unchanged full PR CI; inspect exact commit/tree/run/attempt checks and review threads.
 - [ ] Refresh latest main and review the preceding other-session merged PR and its affected functions/tests/contracts.

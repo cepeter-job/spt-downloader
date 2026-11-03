@@ -699,6 +699,9 @@ yang sudah ada. `mpn_ui_stage` membedakan `detail_dialog`, `detail_title`, dan
 `detail_grid`. State terakhir `mpn_readiness_state` hanya salah satu dari
 `unobserved`, `missing`, `hidden`, `visible`, atau `ambiguous`; alasan
 `mpn_readiness_reason` hanya `deadline` atau `ambiguous`.
+`missing` berarti selector yang sudah diperiksa menghasilkan nol match,
+termasuk filter `:visible` yang sudah ada pada selector dialog; ini bukan
+pernyataan bahwa tidak ada host dialog tersembunyi di dokumen.
 
 `mpn_readiness_budget_ms` adalah sisa budget ketika panggilan kesiapan tersebut
 dimulai, dibatasi 0..5000 ms; `duration_ms` adalah waktu panggilan itu sendiri.
