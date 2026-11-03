@@ -83,7 +83,8 @@ def test_owned_driver_uses_windows_trust_but_still_rejects_wrong_hostname(tmp_pa
         SPT_TEST_PFX=str(tmp_path/'synthetic.pfx'), SPT_TEST_CER=str(tmp_path/'synthetic.cer'),
         SPT_TEST_CERT_SUBJECT='CN=SPTDownloaderSynthetic-'+uuid.uuid4().hex)
     setup = subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',SETUP],
-        env=environment, capture_output=True, text=True, timeout=30, check=True)
+        env=environment, capture_output=True, text=True, timeout=30, check=False)
+    assert setup.returncode == 0, 'Synthetic certificate setup failed: ' + setup.stderr
     thumb = json.loads(setup.stdout)['thumbprint']
     assert re.fullmatch('[A-F0-9]{40}', thumb)
     environment['SPT_TEST_CERT_THUMB'] = thumb
