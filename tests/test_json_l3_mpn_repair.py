@@ -1,11 +1,13 @@
 """Synthetic regressions for the November L3/MPN capture obstacles; runners only."""
 import html
 import re
+import time
 
 import pytest
 from playwright.sync_api import Locator, ElementHandle
 
 import coretax_browser as driver
+import coretax_corporate as corporate
 from coretax_corporate import observe_forms
 from coretax_corporate_projection import _L3_CAPTIONS
 from coretax_json import adapt_corporate_detail
@@ -58,12 +60,18 @@ class StandaloneFixture(Fixture):
 
 
 def test_source_shaped_standalone_l3_is_native_and_replays_original_bytes(browser, tmp_path, monkeypatch):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
     owned = StandaloneFixture(browser, monkeypatch)
     try:
         with DetailJsonCapture(owned.context, owned.page, owned.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(owned, capture)
-            forms = observe_forms(page, owned.record, corpus.SCOPE, capture, approved_digest=owned.pins[ASSET])
-            assert forms is not None, 'Source-proven standalone L3 table was refused'
+            with diagnostics.session(tmp_path/'diagnostics', 'worker') as log:
+                forms = observe_forms(page, owned.record, corpus.SCOPE, capture, approved_digest=owned.pins[ASSET])
+                assert log.flush()
+            reasons = [{k: r[k] for k in ('corporate_observer_stage', 'corporate_l3_reason', 'error') if k in r}
+                       for r in records(tmp_path/'diagnostics') if r['event']=='corporate.observe_unavailable']
+            assert forms is not None, ('Source-proven standalone L3 table was refused', reasons)
             assert forms[1]['projection']['standalone_layout'] == 'overseas-controls-v1'
             manifest = capture.drain()
             result = adapt_corporate_detail(capture.iter_bodies(), owned.record, corpus.SCOPE, forms)
@@ -91,6 +99,34 @@ def test_unproved_standalone_l3_keeps_whole_record_fallback(browser, tmp_path, m
             assert page.evaluate('window.businessReads') == 0
     finally:
         owned.close()
+
+
+def test_standalone_l3_change_between_passes_cannot_grant_native(browser, tmp_path, monkeypatch):
+    original = corporate._turn_grid
+    owned = StandaloneFixture(browser, monkeypatch)
+    def turn(page, *args):
+        result = original(page, *args)
+        page.locator('p-inputnumber[formcontrolname=RefundDeductionCreditOverseas]').evaluate(
+            "e=>e.setAttribute('formcontrolname','Changed')")
+        return result
+    monkeypatch.setattr(corporate, '_turn_grid', turn)
+    try:
+        with DetailJsonCapture(owned.context, owned.page, owned.record, corpus.SCOPE, tmp_path) as capture:
+            open_selected(owned, capture)
+            assert observe_forms(owned.page, owned.record, corpus.SCOPE, capture,
+                                 approved_digest=owned.pins[ASSET]) is None
+            assert owned.page.evaluate('window.businessReads') == 0
+    finally:
+        owned.close()
+
+
+@pytest.mark.parametrize('marker', [None, '', True, 'unreviewed-layout'])
+def test_explicit_unknown_standalone_replay_marker_is_unsupported(marker):
+    from test_corporate_l3_native import packets, bindings, selected
+    observed = bindings()
+    observed[1]['projection']['standalone_layout'] = marker
+    result = adapt_corporate_detail(packets(), selected(), corpus.SCOPE, observed)
+    assert not result['eligible'] and not result['sections']
 
 
 def test_clear_date_dispatch_can_wait_above_one_second_without_repeating_click(browser, tmp_path, monkeypatch):
@@ -190,4 +226,22 @@ def test_snapshot_pending_allows_stop_without_another_paginator_click(context, m
     with pytest.raises(driver.CaptureCancelled):
         driver.capture_table(page, table, 1, 1000, max_page_size=250, check_cancel=stop)
     assert state['pending'] and page.evaluate('moves') == 1
+    page.close()
+
+
+def test_pending_snapshot_cannot_refresh_original_deadline(context, monkeypatch):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = dom_fixture(page, total=601, selected=250)
+    page.evaluate('''() => document.querySelector('.p-paginator-next').addEventListener('click',()=>{
+        const overlay=document.createElement('div');overlay.className='p-blockui';
+        overlay.style.cssText='width:20px;height:20px';document.body.append(overlay);
+    })''')
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 1.8)
+    started = time.monotonic()
+    result = driver.capture_table(page, table, 1, 1000, max_page_size=250)
+    assert time.monotonic()-started < 5
+    assert result['body_row_count'] == 250 and result['pages'] == 1
+    assert result['warning'] == 'Table capture elapsed budget exceeded'
+    assert not result['complete'] and page.evaluate('moves') == 1
     page.close()

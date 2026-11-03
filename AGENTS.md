@@ -1001,3 +1001,9 @@ retain the original browser/table deadlines, exact state, Document, URL, rows,
 source totals and one click per page. No generic wait or native request changes.
 Renderer snapshot timing excludes this waiting; wall snapshot timing includes it.
 RPC reduction alone is not build-matched live speed or completion acceptance.
+
+The source-proven MPN transaction-date Clear date uses the same5000ms maximum
+actual dispatch timeout as Search, always within preparation's original45s
+deadline. Trial-only readiness retries remain separate from the single actual
+click. Preserve final ownership/Stop/sticky-failure checks, exact clear-response
+custody and the second Search's independent unfiltered-query proof.
