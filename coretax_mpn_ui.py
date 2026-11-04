@@ -838,9 +838,20 @@ class AccountingUI:
         for page_index in range(max_pages):
             self._stop()
             self._state()
-            if (snapshot['first'] != expected_first
-                    or {key: value for key, value in snapshot['request'].items() if key != 'First'} != binding
-                    or kind == 'list' and not self._unfiltered(snapshot)):
+            if snapshot['first'] != expected_first:
+                reason = 'first_mismatch'
+            elif kind == 'list' and not self._unfiltered(snapshot):
+                reason = 'filter_changed'
+            elif ({key: value for key, value in snapshot['request'].items()
+                    if key != 'First'} != binding):
+                reason = 'binding_changed'
+            else:
+                reason = None
+            if reason is not None:
+                diagnostics.record('mpn.paginator_refused', level='WARNING',
+                                   mpn_paginator_kind=kind,
+                                   mpn_paginator_reason=reason,
+                                   pages=page_index + 1)
                 raise MpnSafetyError('MPN paginator query/total/offset changed')
             total = validate_page_total(decode_mpn(snapshot['raw'])['Payload'], expected_first,
                                         snapshot['page_size'], total, mode=mode)
