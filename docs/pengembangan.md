@@ -69,7 +69,7 @@ memperluasnya. Ini tidak mengganti validasi runtime atau gate Windows penuh.
    [artifact dibaca kembali dan diverifikasi](ci-dan-rilis.md#memverifikasi-artifact).
    Catat scope yang dibuktikan dan pisahkan dari penerimaan portal nyata.
 
-CI normal menjalankan suite Windows lengkap melalui dua shard, serta subset
+CI normal menjalankan suite Windows lengkap melalui empat shard, serta subset
 portable, audit, bootstrap worker, source/frozen self-test, build, dan verifikasi
 artifact. Dispatch manual tersedia untuk pemeriksaan tambahan atau kontrol serial;
 jangan mengubah workflow atau selector untuk membuat hasil menjadi hijau.
@@ -120,7 +120,7 @@ Workload portable memberi feedback awal. Workload Windows tanpa `--ci-shard`
 menjalankan seluruh suite, termasuk logika portable, lalu browser/Tk/native yang
 nyata bila tesnya memerlukan hal tersebut; fixture dan payload tetap sintetis.
 Contoh Windows di atas adalah bentuk serial. CI reguler memberi masing-masing
-runner `--ci-shard 0/2` atau `--ci-shard 1/2`, disertai `--ci-manifest`, lalu
+runner `--ci-shard 0/4`, `1/4`, `2/4`, atau `3/4`, disertai `--ci-manifest`, lalu
 memverifikasi gabungan inventory sebelum packaging. Jangan menjalankan beberapa
 tes GUI/Job Object sekaligus pada workspace atau profil yang sama.
 

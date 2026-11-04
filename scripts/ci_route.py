@@ -34,18 +34,22 @@ def choose_mode(event, paths, ref):
 
 
 def execution_plan(event, profiles, windows_mode='', cache_mode=''):
-    """Use two isolated Windows shards; dispatch alone may override mode or cache."""
-    windows_mode = windows_mode or 'two-shards'
+    """Use four isolated Windows shards; dispatch alone may override mode or cache."""
+    windows_mode = windows_mode or 'four-shards'
     cache_mode = cache_mode or 'restore'
-    if windows_mode not in {'serial', 'two-shards'} or cache_mode not in {'restore', 'cold'}:
+    if windows_mode not in {'serial', 'two-shards', 'four-shards'} or cache_mode not in {'restore', 'cold'}:
         raise ValueError('Unknown Windows execution or cache mode.')
-    if event != 'workflow_dispatch' and (windows_mode != 'two-shards' or cache_mode != 'restore'):
+    if event != 'workflow_dispatch' and (windows_mode != 'four-shards' or cache_mode != 'restore'):
         raise ValueError('Only workflow_dispatch may override the production Windows execution plan.')
     if (not isinstance(profiles, dict) or not profiles
             or any(not isinstance(value, str) or not value
                    for pair in profiles.items() for value in pair)):
         raise ValueError('The Windows matrix requires explicit Python profiles.')
-    variants = [('serial', '')] if windows_mode == 'serial' else [('shard-0', '0/2'), ('shard-1', '1/2')]
+    if windows_mode == 'serial':
+        variants = [('serial', '')]
+    else:
+        count = 2 if windows_mode == 'two-shards' else 4
+        variants = [(f'shard-{i}', f'{i}/{count}') for i in range(count)]
     return {
         'windows_mode': windows_mode, 'cache_mode': cache_mode,
         'windows_matrix': {'include': [

@@ -84,8 +84,8 @@ def pytest_addoption(parser):
     group.addoption('--ci-manifest', help='Write synthetic node IDs and runner metadata.')
     group.addoption('--ci-benchmark', action='store_true',
                     help='Measure a separate full-suite benchmark without changing production.')
-    group.addoption('--ci-shard', choices=('0/2', '1/2'),
-                    help='Run one of two Windows shards with an evidence manifest.')
+    group.addoption('--ci-shard', choices=('0/2', '1/2', '0/4', '1/4', '2/4', '3/4'),
+                    help='Run one Windows shard with an evidence manifest.')
 
 
 class _OutcomeRecorder:
@@ -148,10 +148,11 @@ def pytest_collection_modifyitems(config, items):
         config.hook.pytest_deselected(items=excluded)
     shard = config.getoption('--ci-shard')
     if shard:
-        index = int(shard[0])
+        index = int(shard.split('/')[0])
+        count = int(shard.split('/')[1])
         selected, excluded = [], []
         for item in items:
-            (selected if shard_for(item.nodeid, 2) == index else excluded).append(item)
+            (selected if shard_for(item.nodeid, count) == index else excluded).append(item)
         items[:] = selected
         config.hook.pytest_deselected(items=excluded)
     manifest = config.getoption('--ci-manifest')
@@ -170,7 +171,7 @@ def pytest_collection_modifyitems(config, items):
             'all': all_nodes, 'selected': sorted(item.nodeid for item in items),
         }
         if shard:
-            report['shard'] = {'index': int(shard[0]), 'count': 2}
+            report['shard'] = {'index': int(shard.split('/')[0]), 'count': int(shard.split('/')[1])}
         Path(manifest).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
@@ -223,8 +224,8 @@ def _checked_inventory(report, workload, target, python_version, commit, run_id,
 def check_windows_inventories(windows, python_version, commit, *, run_id, run_attempt):
     """Validate original serial or shard evidence and return its full collection."""
     reports = [windows] if isinstance(windows, dict) else windows
-    if not isinstance(reports, list) or len(reports) not in (1, 2):
-        raise ValueError('Expected one serial Windows report or exactly two shard reports.')
+    if not isinstance(reports, list) or len(reports) not in (1, 2, 4):
+        raise ValueError('Expected one serial Windows report or exactly two or four shard reports.')
     all_nodes = None
     for index, report in enumerate(reports):
         full, selected = _checked_inventory(
@@ -237,14 +238,15 @@ def check_windows_inventories(windows, python_version, commit, *, run_id, run_at
             if 'shard' in report or selected != full:
                 raise ValueError('Serial Windows evidence must execute every collected test without sharding.')
             continue
+        count = len(reports)
         shard = report.get('shard')
         if (not isinstance(shard, dict)
                 or type(shard.get('index')) is not int or type(shard.get('count')) is not int
-                or shard != {'index': index, 'count': 2}):
-            raise ValueError('Expected ordered Windows shard identities 0/2 and 1/2.')
-        # Dua shard harus cocok dengan partisi identitas masing-masing; jumlah
+                or shard != {'index': index, 'count': count}):
+            raise ValueError(f'Expected ordered Windows shard identities 0/{count}..{count - 1}/{count}.')
+        # Shard harus cocok dengan partisi identitas masing-masing; jumlah
         # total yang sama saja masih dapat menyembunyikan duplikasi dan celah.
-        expected = {node for node in full if shard_for(node, 2) == index}
+        expected = {node for node in full if shard_for(node, count) == index}
         if not expected or selected != expected:
             raise ValueError('Shard evidence does not match its exact Windows test partition.')
     return all_nodes
