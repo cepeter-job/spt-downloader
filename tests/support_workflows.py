@@ -117,22 +117,6 @@ def _array_arguments(step, name):
     return arguments, '\n'.join(lines[end + 1:])
 
 
-def _benchmark_arguments(step):
-    # Invocation, shard selection and native exit propagation stay bound together.
-    arguments, tail = _array_arguments(step, 'pytestArgs')
-    expected = """if ($env:BENCHMARK_MODE -ne 'serial') {
-        $shardIndex = $env:BENCHMARK_MODE.Substring(6)
-        $pytestArgs += @('--ci-shard', "$shardIndex/2")
-    }
-    & .venv/Scripts/python.exe @pytestArgs
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
-    assert _expression(tail) == _expression(expected), 'Benchmark must execute its guarded shard argv'
-    assert arguments[:3] == ['-m', 'pytest', 'tests']
-    assert arguments[arguments.index('--ci-workload') + 1] == 'windows'
-    assert '--ci-benchmark' in arguments and '--ci-shard' not in arguments
-    return arguments
-
-
 def _windows_arguments(step):
     arguments, tail = _array_arguments(step, 'pytestArgs')
     expected = """if ($env:CI_SHARD) {
@@ -185,11 +169,11 @@ def _inventory_command(step):
     assert _expression('\n'.join(_logical_lines(step))) == _expression(expected), 'Coverage must verify all original shard manifests from this run before building'
 
 
-def _complete_pytest_arguments(arguments, workload, *, benchmark=False):
+def _complete_pytest_arguments(arguments, workload):
     """A matching inventory must not certify collect-only or a common filtered subset."""
     assert arguments[:3] == ['-m', 'pytest', 'tests']
     temporary = '$RUNNER_TEMP' if workload == 'portable' else '$env:RUNNER_TEMP'
-    suffix = 'benchmark' if benchmark else workload
+    suffix = workload
     values = {
         '-p': {'scripts.ci_tests'}, '--ci-workload': {workload},
         '--basetemp': {temporary + '/spt-pytest-' + suffix},
@@ -197,7 +181,7 @@ def _complete_pytest_arguments(arguments, workload, *, benchmark=False):
         '--junitxml': {temporary + '/test-results.xml'},
         '-o': {'junit_logging=no', 'junit_log_passing_tests=false'},
     }
-    flags = {'-q', '--durations=10'} | ({'--ci-benchmark'} if benchmark else set())
+    flags = {'-q', '--durations=10'}
     seen, index = set(), 3
     while index < len(arguments):
         option = arguments[index]
@@ -429,10 +413,8 @@ def validate_measurements(document, job_names):
         uv_i, _ = _one(steps, lambda s: _action(s, 'astral-sh/setup-uv'))
         tests_i, tests = _one(steps, lambda s: s.get('id') == 'tests')
         _success_only(tests)
-        args = (_benchmark_arguments(tests) if name == 'benchmark' else
-                _windows_arguments(tests) if name == 'windows' else _portable_arguments(tests))
-        _complete_pytest_arguments(args, 'portable' if name == 'portable' else 'windows',
-                                   benchmark=name == 'benchmark')
+        args = (_windows_arguments(tests) if name == 'windows' else _portable_arguments(tests))
+        _complete_pytest_arguments(args, 'portable' if name == 'portable' else 'windows')
         assert args[:3] == ['-m', 'pytest', 'tests']
         assert all(option in args for option in ('--junitxml', 'junit_logging=no', 'junit_log_passing_tests=false'))
         report_i, report = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_report', 'report'))
@@ -544,38 +526,3 @@ def validate_windows_coverage(document):
     assert proof['with']['name'] == 'coverage-windows-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
     assert set(proof['with']['path'].splitlines()) == {'${{ runner.temp }}/coverage-proof/' + name for name in
         ('coverage-windows.json', 'coverage-windows.xml', 'coverage-gate.json')}
-
-
-def validate_benchmark(document):
-    _permissions(document)
-    assert set(document['on']) == {'workflow_dispatch'}
-    jobs = document['jobs']
-    assert _needs(jobs['benchmark']) == {'profile'}
-    assert jobs['benchmark']['runs-on'] == 'windows-2022'
-    assert jobs['benchmark']['timeout-minutes'] == 30
-    assert set(jobs['benchmark']['strategy']['matrix']['mode']) == {'serial', 'shard-0', 'shard-1'}
-    assert _expression(jobs['benchmark']['env']['PYTHON_VERSION']) == 'needs.profile.outputs.production_python'
-    assert _expression(jobs['benchmark']['env']['BENCHMARK_MODE']) == 'matrix.mode'
-    _, profile = _one(jobs['profile']['steps'], lambda s: s.get('id') == 'profile')
-    assert _runs(profile, '-m', 'scripts.ci_route', 'route')
-    _, tests = _one(jobs['benchmark']['steps'], lambda s: s.get('id') == 'tests')
-    _success_only(tests)
-    _complete_pytest_arguments(_benchmark_arguments(tests), 'windows', benchmark=True)
-    _, uv = _one(jobs['benchmark']['steps'], lambda s: _action(s, 'astral-sh/setup-uv'))
-    assert uv['with']['save-cache'] is False
-    assert _expression(uv['with']['restore-cache']) == "inputs.cache_mode!='cold'"
-    compare = jobs['compare']
-    assert _needs(compare) == {'profile', 'benchmark'}
-    assert _expression(compare['if']) == 'always()'
-    assert _expression(compare['env']['BENCHMARK_RESULT']) == 'needs.benchmark.result'
-    guard = compare['steps'][0]
-    assert shlex.split(guard['run']) == ['test', '$BENCHMARK_RESULT', '=', 'success']
-    for step in compare['steps']:
-        _success_only(step)
-    downloads = [(i, s) for i, s in enumerate(compare['steps']) if _action(s, 'actions/download-artifact')]
-    assert len(downloads) == 3
-    assert {s['with']['name'].split('-${{', 1)[0] for _, s in downloads} == {
-        'windows-benchmark-serial', 'windows-benchmark-shard-0', 'windows-benchmark-shard-1'}
-    verify_i, verify = _one(compare['steps'], lambda s: _runs(s, '-m', 'scripts.ci_shard_benchmark'))
-    assert max(i for i, _ in downloads) < verify_i
-    assert {'--python-version', '--commit', '--run-id', '--run-attempt', '--output'} <= set(_single_command(verify))

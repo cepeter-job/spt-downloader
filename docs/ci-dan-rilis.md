@@ -151,37 +151,6 @@ penghapusan pemeriksaan artifact. Kontrol serial manual memakai batas yang sama.
 Jika durasi mendekati batas baru, gunakan pengukuran per tahap dan durasi tes
 untuk mencari penyebabnya; jangan menaikkan batas terus-menerus tanpa bukti.
 
-## Benchmark opsional pembagian tes Windows
-
-[windows-shard-benchmark.yml](../.github/workflows/windows-shard-benchmark.yml)
-berjalan hanya melalui `workflow_dispatch`: buka **Actions → Benchmark Windows
-test sharding → Run workflow**. PR, push, dan jadwal tidak menjalankan benchmark.
-Gunakan saat menyelidiki perubahan Python/runner, cache, atau pembagian shard,
-serta ketika membutuhkan perbandingan performa yang terukur. Validasi PR rutin
-tetap memakai workflow build produksi. Benchmark
-tidak mengganti job `windows`, check gabungan, packaging
-atau artifact readback. Profil Python dibaca dari sumber yang sama dengan CI utama.
-
-Satu runner mengerjakan suite serial, dua runner lain masing-masing satu shard,
-tetap satu proses pytest per runner. Partisi hash node ID harus deterministik,
-disjoint dan bergabung tepat menjadi koleksi serial; identitas commit, versi,
-run/attempt, jumlah, hasil dan payload inventory wajib cocok. Batas job benchmark
-30 menit mengikuti anggaran produksi agar serial tidak dibatalkan oleh batas
-20 menit yang lebih pendek. Tidak ada `xdist` atau akun nyata.
-
-Laporan membandingkan pytest, setup + pytest, serta jumlah runner-seconds shard.
-Itu bukan waktu CI total. Dispatch `cache_mode=restore` tidak menjamin hit; mode
-`cold` melewati restore tanpa menghapus cache repo, dan benchmark tidak menulis cache.
-
-Keputusan adopsi memakai sedikitnya lima perbandingan pipeline lengkap pada commit
-yang sama, kondisi cache terpisah, serta antre/setup/build/readback dari metadata
-Actions. Tinjauan juga mencakup flake, kelengkapan inventory dan biaya runner.
-Sasaran median CI kandidat turun setidaknya 20% adalah target evaluasi, bukan gate
-benchmark. [Evaluasi 16 Oktober](audits/2026-10-16-optimization-completion.md)
-adalah keputusan historis untuk tetap serial berdasarkan bukti saat itu;
-[evaluasi 21 Oktober](audits/2026-10-21-windows-shard-evaluation.md) menyimpan bukti
-pipeline lengkap dan keputusan terbaru.
-
 ### Perbandingan pipeline lengkap
 
 Dispatch [workflow build](../.github/workflows/windows-build.yml) menerima
@@ -248,7 +217,7 @@ coverage lain.
 
 Ruff dan coverage hanya dependensi pengembangan yang terkunci dan ikut audit
 dependensi; keduanya bukan dependensi runtime worker. Perubahan ini tidak
-menjalankan benchmark, mengubah pemilihan suite Windows, atau mengganti fixture workbook
+mengubah pemilihan suite Windows atau mengganti fixture workbook
 yang menjadi referensi independen.
 
 Suite Windows lengkap sekarang juga diinstrumentasi dalam proses parent Python.
@@ -267,15 +236,14 @@ dan matriks perilaku security ada di
 
 ## Bukti waktu dan kegagalan tes
 
-Job portable, Windows produksi, serta setiap varian benchmark menyimpan JUnit
+Job portable dan Windows produksi menyimpan JUnit
 `test-results.xml` dan ringkasan `test-measurements.json` dalam artifact diagnostik
 terpisah. Inventory tetap memakai nama dan format pokok yang dikonsumsi gate
 packaging. Upload inventory dan diagnostik tetap dicoba ketika langkah pytest
 gagal, termasuk kegagalan assertion, fixture, atau collection; kegagalan tersebut
 tetap membuat job gagal. Artifact distribusi memakai tujuh berkas eksplisit di bawah.
 
-Inventory sekarang mencatat exit status dan durasi setiap sesi pytest, bukan
-hanya benchmark. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
+Inventory sekarang mencatat exit status dan durasi setiap sesi pytest. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
 tersimpan. Setup diukur dengan timestamp Unix wall-clock sejak setelah checkout hingga
 awal sesi pytest. Python bawaan runner dan Python managed dapat memakai clock
 monotonik Windows yang berbeda; durasi setup tidak boleh mengurangkan kedua
@@ -490,6 +458,3 @@ hasil runner tetap diperlukan untuk sintaks, eksekusi, dan verifikasi artifact.
 
 Hasil lengkap dan batas pengukuran tetap berada pada
 [laporan optimasi](audits/2026-10-16-optimization-completion.md).
-Kebijakan eksperimen yang masih berlaku dijelaskan pada
-[benchmark opsional](#benchmark-opsional-pembagian-tes-windows), bukan disalin
-menjadi hasil baru setiap kali panduan CI diperbarui.

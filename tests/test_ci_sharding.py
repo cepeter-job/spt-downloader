@@ -116,20 +116,7 @@ def test_production_gate_enforces_timed_shard_override():
             portable, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
 
 
-def test_evidence_checks_exact_coverage_and_records_elapsed_time():
-    from scripts import ci_shard_benchmark
-
-    baseline, shards = evidence()
-    data = ci_shard_benchmark.verify(
-        baseline, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
-    assert data['total_tests'] == 12
-    assert data['serial_seconds'] == 120.0
-    assert data['parallel_seconds'] == 76.0
-    assert data['saved_seconds'] == 44.0
-    assert sum(data['shard_counts']) == 12
-
-
-@pytest.mark.parametrize('target, key, wrong', [
+pytest.mark.parametrize('target, key, wrong', [
     ('baseline', 'selected', []),
     ('baseline', 'all', []),
     ('baseline', 'commit', 'b' * 40),
@@ -149,18 +136,6 @@ def test_evidence_checks_exact_coverage_and_records_elapsed_time():
     ('shard1', 'run_attempt', '1'),
     ('shard1', 'exitstatus', 5),
 ])
-def test_evidence_rejects_missing_or_forged_run(target, key, wrong):
-    from scripts import ci_shard_benchmark
-
-    baseline, shards = evidence()
-    report = {'baseline': baseline, 'shard0': shards[0],
-              'shard1': shards[1]}[target]
-    report[key] = wrong
-    with pytest.raises(ValueError):
-        ci_shard_benchmark.verify(
-            baseline, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
-
-
 def production_evidence():
     baseline, shards = evidence()
     portable_nodes = [f'tests/test_ci_sharding.py::test_synthetic[{i}]' for i in range(2)]
@@ -474,60 +449,10 @@ def test_setup_measurement_is_written_to_the_environment_file(tmp_path, monkeypa
     assert abs(float(value) - time.time()) < 10
 
 
-def test_benchmark_records_setup_and_runner_time_without_claiming_total_ci_savings():
-    from scripts import ci_shard_benchmark
-
-    baseline, shards = evidence()
-    baseline['setup_seconds'] = 10.0
-    shards[0]['setup_seconds'] = 20.0
-    shards[1]['setup_seconds'] = 5.0
-    data = ci_shard_benchmark.verify(
-        baseline, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
-    assert data.get('serial_setup_pytest_seconds') == 130.0
-    assert data['parallel_setup_pytest_seconds'] == 95.0
-    assert data['shard_pytest_runner_seconds'] == 151.0
-    text = ci_shard_benchmark.summary_text(data)
-    assert 'setup + pytest' in text.lower()
-    assert 'excludes' in text.lower() and 'queue' in text.lower()
-
-
-@pytest.mark.parametrize('bad_setup', [-1, float('nan'), float('inf'), True])
-def test_benchmark_rejects_invalid_setup_measurements(bad_setup):
-    from scripts import ci_shard_benchmark
-
-    baseline, shards = evidence()
-    baseline['setup_seconds'] = bad_setup
-    for shard in shards:
-        shard['setup_seconds'] = 1.0
-    with pytest.raises(ValueError):
-        ci_shard_benchmark.verify(
-            baseline, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
-
-
-
-
 @pytest.mark.parametrize('invalid', [-1, float('nan'), float('inf'), True, '12'])
 def test_report_rejects_invalid_measurement_numbers(invalid):
     with pytest.raises(ValueError):
         report_module().summarize({'elapsed_seconds': invalid}, None)
-
-
-def test_benchmark_comparison_json_is_tied_to_verified_inputs(tmp_path):
-    from scripts import ci_shard_benchmark
-
-    baseline, shards = evidence()
-    paths = [tmp_path / f'report-{index}.json' for index in range(3)]
-    for path, report in zip(paths, [baseline, *shards]):
-        path.write_text(json.dumps(report), encoding='utf-8')
-    output, summary = tmp_path / 'comparison.json', tmp_path / 'summary.md'
-    ci_shard_benchmark.main([
-        *map(str, paths), '--python-version', VERSION, '--commit', COMMIT,
-        '--run-id', RUN_ID, '--run-attempt', RUN_ATTEMPT,
-        '--output', str(output), '--summary', str(summary),
-    ])
-    assert json.loads(output.read_text(encoding='utf-8')) == ci_shard_benchmark.verify(
-        baseline, shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
-    assert 'non-production' in summary.read_text(encoding='utf-8')
 
 
 def test_runner_bootstrap_python_and_managed_python_share_setup_epoch(tmp_path):
