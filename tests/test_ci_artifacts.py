@@ -126,6 +126,8 @@ def source_evidence():
         'Route changes and validate workflows', 'Portable tests (Python 3.14.8)',
         'Windows integration (Python 3.14.8, shard-0)',
         'Windows integration (Python 3.14.8, shard-1)',
+        'Windows integration (Python 3.14.8, shard-2)',
+        'Windows integration (Python 3.14.8, shard-3)',
         'Locked dependency audit', 'Windows package (Python 3.14.8)',
         'Artifact provenance (Python 3.14.8)', 'Windows tests and dependency audit',
     ]

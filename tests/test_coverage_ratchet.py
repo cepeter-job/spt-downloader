@@ -133,6 +133,21 @@ def test_complete_windows_shards_and_serial_are_both_supported():
         commit=COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT) == set(serial['all'])
     assert gate().check_windows_inputs([serial], mode='serial', python_version=VERSION,
         commit=COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT) == set(serial['all'])
+    # Four-shard production evidence must also validate as a complete partition.
+    from scripts import ci_tests
+    nodes = list(serial['all'])
+    four = [dict(all=nodes, workload='windows', platform='win32',
+                 python=VERSION, commit=COMMIT, exitstatus=0,
+                 run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
+                 selected=[node for node in nodes
+                           if ci_tests.shard_for(node, 4) == index],
+                 shard={'index': index, 'count': 4})
+            for index in range(4)]
+    for report in four:
+        report['outcomes'] = {node: {'setup': ['passed'], 'call': ['passed'], 'teardown': ['passed']}
+                              for node in report['selected']}
+    assert gate().check_windows_inputs(four, mode='four-shards', python_version=VERSION,
+        commit=COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT) == set(nodes)
 
 
 def test_data_file_slots_must_match_the_selected_windows_mode(tmp_path):
@@ -144,6 +159,12 @@ def test_data_file_slots_must_match_the_selected_windows_mode(tmp_path):
     (tmp_path / 'shard-1' / '.coverage.shard-1').unlink()
     with pytest.raises(ValueError):
         gate().data_files(tmp_path, 'two-shards')
+    for name in ('shard-2', 'shard-3'):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / ('.coverage.' + name)).write_bytes(b'synthetic source data')
+    (tmp_path / 'shard-1' / '.coverage.shard-1').write_bytes(b'synthetic source data')
+    assert len(gate().data_files(tmp_path, 'four-shards')) == 4
 
 
 def test_git_diff_keeps_added_production_lines_and_ignores_deleted_or_test_lines(monkeypatch):

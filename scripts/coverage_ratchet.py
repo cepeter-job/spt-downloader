@@ -157,6 +157,8 @@ def _slots(mode):
         return ('serial',)
     if mode == 'two-shards':
         return ('shard-0', 'shard-1')
+    if mode == 'four-shards':
+        return ('shard-0', 'shard-1', 'shard-2', 'shard-3')
     raise ValueError('Unknown Windows coverage mode')
 
 
@@ -261,7 +263,7 @@ def changed_lines(base, head):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
-    parser.add_argument('--mode', choices=('serial', 'two-shards'), required=True)
+    parser.add_argument('--mode', choices=('serial', 'two-shards', 'four-shards'), required=True)
     parser.add_argument('--python-version', required=True)
     parser.add_argument('--commit', required=True)
     parser.add_argument('--run-id', required=True)

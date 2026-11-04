@@ -89,13 +89,13 @@ dijelaskan pada [dokumentasi GitHub](https://docs.github.com/en/actions/referenc
 PR biasa memakai pemeriksaan otomatis di atas. Untuk pemeriksaan penuh tambahan,
 gunakan branch remote yang telah dipush dan catat SHA penuh yang diharapkan.
 Dispatch selalu memilih mode `full`, termasuk ketika perubahan hanya dokumentasi.
-Contoh ini memakai default dua shard dan restore cache:
+Contoh ini memakai default empat shard dan restore cache:
 
 ```powershell
 $SptRepo = "cepeter-job/spt-downloader"
 $SptBranch = "GANTI_DENGAN_BRANCH_TERPUSH"
 $SptCommit = "GANTI_DENGAN_SHA_BRANCH_40_KARAKTER"
-gh workflow run windows-build.yml --repo $SptRepo --ref $SptBranch -f windows_mode=two-shards -f cache_mode=restore
+gh workflow run windows-build.yml --repo $SptRepo --ref $SptBranch -f windows_mode=four-shards -f cache_mode=restore
 gh run list --repo $SptRepo --workflow windows-build.yml --event workflow_dispatch --branch $SptBranch --commit $SptCommit --limit 10 --json databaseId,event,headBranch,headSha,attempt,status,conclusion,url
 ```
 
@@ -120,7 +120,7 @@ dokumentasi berubah. Komentar dalam `.py` tetap termasuk perubahan kode.
 | --- | --- | --- |
 | `route` | Memutuskan dokumentasi aman atau pemeriksaan kode lengkap; memvalidasi workflow. | Pekerjaan kecil, tanpa instalasi stack aplikasi. |
 | `portable` | CPython 3.14.8 produksi pada Linux; logika tanpa browser/Tk/native Windows. | Satu proses pytest pada satu runner. |
-| `windows` | Suite produksi CPython 3.14.8; Edge fixture, GUI Tk, batas native, dan bootstrap worker nyata. | Dua runner terisolasi, satu proses pytest per shard; dispatch manual juga menyediakan kontrol serial. |
+| `windows` | Suite produksi CPython 3.14.8; Edge fixture, GUI Tk, batas native, dan bootstrap worker nyata. | Empat runner terisolasi, satu proses pytest per shard; dispatch manual juga menyediakan kontrol serial dan dua shard. |
 | `dependency-audit` | Environment build pada Python produksi Windows dan tool audit terisolasi. | Satu runner; jadwal mingguan menjalankan audit tanpa build. |
 | `package` | Satu executable produksi 3.14.8 setelah tes/audit; self-test source kemudian frozen. | Satu build, artifact diverifikasi ulang. |
 | Pemeriksaan artifact | File allowlist, laporan self-test, checksum, dan identitas run/commit/artifact. | Hanya set distribusi yang diunggah dan dibaca kembali. |
@@ -185,14 +185,14 @@ pipeline lengkap dan keputusan terbaru.
 ### Perbandingan pipeline lengkap
 
 Dispatch [workflow build](../.github/workflows/windows-build.yml) menerima
-`windows_mode=serial` atau `two-shards` dan `cache_mode=restore` atau `cold`.
-Push, PR, dan default dispatch memakai dua shard. Kedua pilihan manual
+`windows_mode=serial`, `two-shards`, atau `four-shards` dan `cache_mode=restore` atau `cold`.
+Push, PR, dan default dispatch memakai empat shard. Ketiga pilihan manual
 menjalankan portable, audit, managed worker, source/frozen GUI, build, upload,
 artifact readback dan check gabungan yang sama. Run manual memiliki grup concurrency
 tersendiri agar pasangan pada satu commit dapat dibandingkan tanpa saling membatalkan.
 Pembatalan validasi PR yang sudah usang tetap berlaku; setiap push `main` dipertahankan.
 
-Dalam mode dua shard, job package membaca kedua manifest asli dari direktori
+Dalam mode shard, job package membaca semua manifest asli dari direktori
 terpisah. Verifier menolak shard hilang/ganda, partisi yang salah, hasil pytest
 gagal, perbedaan commit/Python/run/attempt, atau gabungan identitas tes yang tidak
 sama dengan collector portable. Bootstrap worker berjalan pada serial atau shard
@@ -309,7 +309,7 @@ Beberapa keputusan menjaga beban tetap terukur:
 - Perubahan dokumentasi yang terbukti aman tidak menjalankan semua interpreter, browser, dan build.
 - Subset Linux memberi feedback portable tanpa browser/GUI; suite Windows penuh mempertahankan seluruh perilaku target.
 - Satu proses pytest per runner menghindari perkalian proses browser dan perebutan resource Tk/Windows Job Object.
-- Fase tes memakai satu runner portable, dua runner shard Windows (satu untuk dispatch serial), dan satu audit; satu runner build dimulai setelah gate tersebut. Run PR usang dibatalkan; push `main` memakai grup per run agar bukti build kode tidak hilang.
+- Fase tes memakai satu runner portable, empat runner shard Windows (satu untuk dispatch serial/dua shard), dan satu audit; satu runner build dimulai setelah gate tersebut. Run PR usang dibatalkan; push `main` memakai grup per run agar bukti build kode tidak hilang.
 - Audit mingguan tidak membuat ulang executable dan tidak menjalankan suite browser.
 - Artifact executable yang sudah terkompresi diunggah tanpa kompresi tambahan.
 - Durasi job dan keadaan cache perlu dibandingkan pada scope yang setara sebelum menyatakan penghematan numerik.

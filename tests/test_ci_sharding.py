@@ -42,6 +42,34 @@ def test_two_shards_partition_every_node():
     assert left.isdisjoint(right)
     assert left | right == set(nodes)
 
+def test_four_shards_partition_every_node():
+    nodes = [f'tests/test_file_{i % 8}.py::test_case[{i}]'
+             for i in range(100)]
+    parts = [{node for node in nodes if ci_tests.shard_for(node, 4) == index}
+             for index in range(4)]
+    assert all(parts)
+    assert all(not (part & other) for i, part in enumerate(parts) for other in parts[i + 1:])
+    assert set().union(*parts) == set(nodes)
+
+
+def test_four_shard_inventory_validates_and_three_reports_are_rejected():
+    nodes = [f'tests/test_alpha.py::test_{i}' for i in range(12)]
+    shards = [dict(all=nodes, workload='windows', platform='win32',
+                   python=VERSION, commit=COMMIT, exitstatus=0,
+                   run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
+                   selected=[node for node in nodes
+                             if ci_tests.shard_for(node, 4) == index],
+                   shard={'index': index, 'count': 4},
+                   elapsed_seconds=60.0 + index)
+              for index in range(4)]
+    for report in shards:
+        report['outcomes'] = completed_outcomes(report)
+    assert ci_tests.check_windows_inventories(
+        shards, VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT) == set(nodes)
+    with pytest.raises(ValueError):
+        ci_tests.check_windows_inventories(
+            shards[:3], VERSION, COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT)
+
 
 
 @pytest.mark.parametrize('nodeid', sorted(ci_tests._TIMED_SHARD_ONE))

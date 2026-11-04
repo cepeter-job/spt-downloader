@@ -166,6 +166,13 @@ def _inventory_command(step):
             "$env:RUNNER_TEMP/inventory-windows-shard-0/test-inventory.json",
             "$env:RUNNER_TEMP/inventory-windows-shard-1/test-inventory.json"
         )
+    } elseif ($env:WINDOWS_MODE -eq 'four-shards') {
+        $inventoryArgs += @(
+            "$env:RUNNER_TEMP/inventory-windows-shard-0/test-inventory.json",
+            "$env:RUNNER_TEMP/inventory-windows-shard-1/test-inventory.json",
+            "$env:RUNNER_TEMP/inventory-windows-shard-2/test-inventory.json",
+            "$env:RUNNER_TEMP/inventory-windows-shard-3/test-inventory.json"
+        )
     } else {
         throw 'Unknown Windows execution mode.'
     }
@@ -175,7 +182,7 @@ def _inventory_command(step):
     )
     & .venv/Scripts/python.exe @inventoryArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
-    assert _expression('\n'.join(_logical_lines(step))) == _expression(expected), 'Coverage must verify both original shard manifests from this run before building'
+    assert _expression('\n'.join(_logical_lines(step))) == _expression(expected), 'Coverage must verify all original shard manifests from this run before building'
 
 
 def _complete_pytest_arguments(arguments, workload, *, benchmark=False):
@@ -261,7 +268,7 @@ def validate_production(document):
     inputs = triggers['workflow_dispatch']['inputs']
     assert set(inputs) == {'windows_mode', 'cache_mode'}
     for name, default, options in (
-            ('windows_mode', 'two-shards', ['serial', 'two-shards']),
+            ('windows_mode', 'four-shards', ['serial', 'two-shards', 'four-shards']),
             ('cache_mode', 'restore', ['restore', 'cold'])):
         assert inputs[name]['type'] == 'choice' and inputs[name]['default'] == default
         assert inputs[name]['options'] == options
@@ -313,8 +320,10 @@ def validate_production(document):
     expected_downloads = {
         'portable': None,
         'windows-serial': "needs.route.outputs.windows_mode == 'serial'",
-        'windows-shard-0': "needs.route.outputs.windows_mode == 'two-shards'",
-        'windows-shard-1': "needs.route.outputs.windows_mode == 'two-shards'",
+        'windows-shard-0': "needs.route.outputs.windows_mode == 'two-shards' || needs.route.outputs.windows_mode == 'four-shards'",
+        'windows-shard-1': "needs.route.outputs.windows_mode == 'two-shards' || needs.route.outputs.windows_mode == 'four-shards'",
+        'windows-shard-2': "needs.route.outputs.windows_mode == 'four-shards'",
+        'windows-shard-3': "needs.route.outputs.windows_mode == 'four-shards'",
     }
     assert len(downloads) == len(expected_downloads)
     assert {s['with']['name'].split('-python', 1)[0] for _, s in downloads} == {
@@ -378,7 +387,7 @@ def validate_production(document):
     windows = jobs['windows']
     assert windows['runs-on'] == 'windows-2022' and _needs(windows) == {'route'}
     assert windows['timeout-minutes'] == 30 and package['timeout-minutes'] == 20
-    assert windows['strategy']['fail-fast'] is False and windows['strategy']['max-parallel'] == 2
+    assert windows['strategy']['fail-fast'] is False and windows['strategy']['max-parallel'] == 4
     assert _expression(windows['strategy']['matrix']) == 'fromJSON(needs.route.outputs.windows_matrix)'
     test_i, test = _one(windows['steps'], lambda s: s.get('id') == 'tests')
     _success_only(test)
@@ -511,10 +520,15 @@ def validate_windows_coverage(document):
     inventory_i, _ = _one(package, lambda s: s.get('id') == 'inventory')
     build_i, _ = _one(package, lambda s: _runs(s, 'build_desktop.py'))
     assert inventory_i < gate_i < build_i
-    for slot in ('serial', 'shard-0', 'shard-1'):
+    for slot in ('serial', 'shard-0', 'shard-1', 'shard-2', 'shard-3'):
         download_i, download = _one(package, lambda s: s.get('id') == 'coverage-' + slot)
-        mode = 'serial' if slot == 'serial' else 'two-shards'
-        _success_only(download, f"needs.route.outputs.windows_mode == '{mode}'")
+        if slot == 'serial':
+            condition = "needs.route.outputs.windows_mode == 'serial'"
+        elif slot in ('shard-2', 'shard-3'):
+            condition = "needs.route.outputs.windows_mode == 'four-shards'"
+        else:
+            condition = "needs.route.outputs.windows_mode == 'two-shards' || needs.route.outputs.windows_mode == 'four-shards'"
+        _success_only(download, condition)
         assert _action(download, 'actions/download-artifact')
         assert download['with'] == {
             'name': 'windows-coverage-' + slot + '-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}',
