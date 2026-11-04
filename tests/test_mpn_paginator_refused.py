@@ -4,14 +4,16 @@ The paginator safety check records only fixed categories, never the
 compared First offset, request values, filters or row contents.
 """
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from coretax_mpn import MpnSafetyError
+from coretax_mpn_ui import AccountingUI
 from spt_desktop import diagnostics
 from test_diagnostics import records
 from test_mpn_browser import Request, Response
-from test_mpn_pagination import frontier_snapshot, snapshot, source_rows
+from test_mpn_pagination import frontier_snapshot, source_rows
 from test_mpn_source_custody import source_ui
 
 SECRET = 'SYNTHETIC_PRIVATE_FILTER_VALUE'
@@ -82,16 +84,46 @@ def test_second_page_reset_to_first_records_first_mismatch(tmp_path, monkeypatch
     assert event['pages'] == 2
 
 
-def test_second_page_page_size_change_records_binding_changed(tmp_path, monkeypatch):
-    rows = source_rows(35)
-    packets = [snapshot(rows[:10], total=35), snapshot(rows[10:35], first=10, total=35)]
+def test_second_page_binding_change_records_binding_changed(tmp_path):
+    # A non-First binding change the observer rejects upstream (sort
+    # order, page size) cannot arrive through the protocol fixture, so
+    # drive the _pages classification directly with a stubbed
+    # observer/wait; _pages is the unit under test here.
+    rows = source_rows(11)
+    first = frontier_snapshot(rows[:10], 0, 11)
+    second = frontier_snapshot(rows[10:], 10, 11)
+    second['request']['SortOrder'] = 1
+    ui = AccountingUI.__new__(AccountingUI)
+    ui._stop = lambda: None
+    ui._state = lambda: None
+    ui._owned = lambda: None
+    ui._unfiltered = lambda snapshot: True
+    ui.observer = SimpleNamespace(sequence=first['sequence'],
+                                  latest={'list': {'sequence': first['sequence']}})
+    ui._wait = lambda marker, kind: second
 
-    def widen(body):
-        body['Rows'] = 25
+    class Owner:
+        def locator(self, selector):
+            return self
 
-    event = refused(tmp_path, monkeypatch, packets, mutate_second=widen)
-    assert event['mpn_paginator_kind'] == 'list'
-    assert event['mpn_paginator_reason'] == 'binding_changed'
+        def count(self):
+            return 1
+
+        def is_visible(self):
+            return True
+
+        def click(self, *, timeout):
+            pass
+
+    root = tmp_path / 'diagnostics'
+    with diagnostics.session(root, 'worker') as log:
+        with pytest.raises(MpnSafetyError, match='paginator query/total/offset changed'):
+            list(ui._pages('list', Owner(), first, 100))
+        assert log.flush()
+    events = [r for r in records(root) if r['event'] == 'mpn.paginator_refused']
+    assert len(events) == 1
+    assert events[0]['mpn_paginator_kind'] == 'list'
+    assert events[0]['mpn_paginator_reason'] == 'binding_changed'
 
 
 def test_second_page_added_filter_records_filter_changed(tmp_path, monkeypatch):
