@@ -18,10 +18,6 @@ def production():
     return contract().load_workflow(ROOT / '.github/workflows/windows-build.yml')
 
 
-def benchmark():
-    return contract().load_workflow(ROOT / '.github/workflows/windows-shard-benchmark.yml')
-
-
 def test_current_production_workflow_preserves_real_gate_and_artifact_order():
     contract().validate_production(production())
 
@@ -71,13 +67,8 @@ def test_windows_coverage_cannot_be_replaced_by_partial_or_ungated_data(mutation
         contract().validate_windows_coverage(document)
 
 
-def test_current_benchmark_is_isolated_and_keeps_the_complete_windows_contract():
-    contract().validate_benchmark(benchmark())
-
-
 def test_diagnostics_survive_attempted_test_failure_in_every_test_job():
     contract().validate_measurements(production(), ('portable', 'windows'))
-    contract().validate_measurements(benchmark(), ('benchmark',))
 
 
 @pytest.mark.parametrize('mutation', [
@@ -303,9 +294,9 @@ def test_dispatch_pilot_contract_rejects_incomplete_or_unbound_pipeline(mutation
         contract().validate_production(document)
 
 
-@pytest.mark.parametrize('job', ['portable', 'windows', 'benchmark'])
+@pytest.mark.parametrize('job', ['portable', 'windows'])
 def test_each_diagnostic_upload_needs_its_own_failure_guard(job):
-    document = deepcopy(benchmark() if job == 'benchmark' else production())
+    document = deepcopy(production())
     uploads = [s for s in document['jobs'][job]['steps'] if s.get('uses', '').startswith('actions/upload-artifact@')]
     assert len(uploads) == (3 if job in {'portable', 'windows'} else 2)
     for index in range(len(uploads)):
@@ -316,10 +307,10 @@ def test_each_diagnostic_upload_needs_its_own_failure_guard(job):
             contract().validate_measurements(broken, (job,))
 
 
-@pytest.mark.parametrize('job', ['portable', 'windows', 'benchmark'])
+@pytest.mark.parametrize('job', ['portable', 'windows'])
 @pytest.mark.parametrize('option', ['--collect-only', '--ignore=tests/test_unified_login_flow.py'])
 def test_matching_manifests_cannot_hide_unexecuted_or_common_filtered_tests(job, option):
-    document = deepcopy(benchmark() if job == 'benchmark' else production())
+    document = deepcopy(production())
     step = next(s for s in document['jobs'][job]['steps'] if s.get('id') == 'tests')
     if job == 'portable':
         step['run'] += ' ' + option
@@ -328,41 +319,7 @@ def test_matching_manifests_cannot_hide_unexecuted_or_common_filtered_tests(job,
     with pytest.raises(AssertionError):
         contract().validate_measurements(document, (job,))
     with pytest.raises(AssertionError):
-        (contract().validate_benchmark if job == 'benchmark' else contract().validate_production)(document)
-
-
-@pytest.mark.parametrize('mutation', [
-    'automatic-push', 'automatic-pull-request', 'automatic-schedule',
-    'missing-shard', 'different-python', 'ignored-comparison',
-    'comment-only-arguments', 'removed-shard-branch', 'unbound-shard-mode',
-])
-def test_benchmark_contract_rejects_unscoped_or_incomplete_execution(mutation):
-    document = deepcopy(benchmark())
-    if mutation == 'automatic-push':
-        document['on']['push'] = {'branches': ['main']}
-    elif mutation == 'automatic-pull-request':
-        document['on']['pull_request'] = {'branches': ['main']}
-    elif mutation == 'automatic-schedule':
-        document['on']['schedule'] = [{'cron': '0 0 * * 1'}]
-    elif mutation == 'missing-shard':
-        document['jobs']['benchmark']['strategy']['matrix']['mode'].remove('shard-1')
-    elif mutation == 'different-python':
-        document['jobs']['benchmark']['env']['PYTHON_VERSION'] = '3.11.0'
-    elif mutation == 'ignored-comparison':
-        document['jobs']['compare']['steps'][0]['continue-on-error'] = True
-    elif mutation == 'unbound-shard-mode':
-        document['jobs']['benchmark']['env']['BENCHMARK_MODE'] = 'serial'
-    elif mutation == 'comment-only-arguments':
-        step = next(s for s in document['jobs']['benchmark']['steps'] if s.get('id') == 'tests')
-        original = step['run']
-        step['run'] = "$pytestArgs = @('--version')\n& .venv/Scripts/python.exe @pytestArgs\n" + \
-                      '\n'.join('# ' + line for line in original.splitlines())
-    else:
-        step = next(s for s in document['jobs']['benchmark']['steps'] if s.get('id') == 'tests')
-        step['run'] = step['run'].replace("$pytestArgs += @('--ci-shard', \"$shardIndex/2\")",
-                                          "# $pytestArgs += @('--ci-shard', \"$shardIndex/2\")")
-    with pytest.raises(AssertionError):
-        contract().validate_benchmark(document)
+        contract().validate_production(document)
 
 
 def test_equivalent_yaml_layout_does_not_break_workflow_contract(tmp_path):

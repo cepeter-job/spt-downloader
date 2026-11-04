@@ -834,7 +834,7 @@ Keep CodeQL, locked dependency audits, Ruff and full test/build gates independen
 
 Windows parent-process coverage uses the existing `.coveragerc` and separately
 declared line/branch/module/diff floors in `coverage-policy.json`. Before package
-build, validate the complete passing serial or fixed two-shard Windows inventory
+build, validate the complete passing serial, fixed two-shard or fixed four-shard Windows inventory
 for the exact commit/run/attempt and combine only its explicit raw-data slots.
 Never use portable-only, old, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;

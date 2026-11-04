@@ -66,6 +66,8 @@ def validate_source(run, jobs, artifact, *, repository, run_id, run_attempt,
         'Route changes and validate workflows', f'Portable tests (Python {python_version})',
         f'Windows integration (Python {python_version}, shard-0)',
         f'Windows integration (Python {python_version}, shard-1)',
+        f'Windows integration (Python {python_version}, shard-2)',
+        f'Windows integration (Python {python_version}, shard-3)',
         'Locked dependency audit', f'Windows package (Python {python_version})',
         f'Artifact provenance (Python {python_version})', 'Windows tests and dependency audit',
     }
