@@ -151,6 +151,23 @@ bukan nilai kontrol). `error` hanya kelas exception dan frame terpilih melalui
 sanitizer. `mpn.source_rejected` tetap menjadi sumber pertama untuk
 penolakan kepemilikan sumber; event baru bukan penggantinya.
 
+`mpn.paginator_refused` dicatat tepat sebelum penolakan fatal pada
+pemeriksaan paginator MPN (`_pages`). `mpn_paginator_kind` hanya
+`list` atau `detail`. `mpn_paginator_reason` memisahkan tiga bentuk
+yang beragam dalam satu pemeriksaan: `first_mismatch` (offset
+`First` snapshot berbeda dari offset yang diharapkan), `filter_changed`
+(hanya inventory list yang tidak lagi terbukti tidak terfilter), dan
+`binding_changed` (binding request selain `First` berubah).
+Prioritasnya berurutan: offset diperiksa pertama, lalu filter pada
+list, lalu binding umum; filter yang berubah juga mengubah binding,
+sehingga alasan filter didahulukan agar tidak tersamarkan.
+`pages` adalah nomor halaman yang ditolak. Tidak ada offset, nilai
+request, filter, tanggal, kode, identitas, pajak, URL, atau isi
+baris yang direkam; kategori ini hanya menunjukkan bentuk penolakan,
+bukan penyebab live-nya dan bukan izin menerima snapshot baru.
+`MpnSafetyError` tetap fatal, checkpoint PARTIAL tetap berlaku, dan
+`mpn.capture_failed` tetap mencatat tahap terminalnya.
+
 `mpn.catalog_preparation` adalah kategori terpisah selama
 navigasi normal *sebelum* source-binding `AccountingUI` dimulai.
 `request_seen` berarti sebuah GET yang tepat cocok dengan rute
