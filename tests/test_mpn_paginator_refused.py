@@ -168,3 +168,48 @@ def test_unlisted_paginator_reason_is_stripped(tmp_path):
     assert len(events) == 1
     assert 'mpn_paginator_reason' not in events[0]
     assert SECRET not in json.dumps(records(root))
+
+
+@pytest.mark.parametrize('key,field', [
+    ('TaxpayerAggregateIdentifier', 'taxpayer'), ('RecordId', 'record_id'),
+    ('Rows', 'rows'), ('SortField', 'sort_field'), ('SortOrder', 'sort_order'),
+    ('LanguageId', 'language'), ('Filters', 'filters')])
+def test_paginator_field_reports_first_differing_binding_field(key, field):
+    binding = {'Rows': 10, 'SortField': 'PostingDate', 'SortOrder': -1,
+               'LanguageId': 'id-ID', 'Filters': [], 'TaxpayerAggregateIdentifier': 'SYNTHETIC'}
+    current = dict(binding, First=10)
+    current[key] = 'SYNTHETIC_CHANGED' if key != 'Rows' else 25
+    assert AccountingUI._paginator_field(binding, current) == field
+
+
+def test_paginator_field_falls_back_to_other_for_unlisted_key():
+    assert AccountingUI._paginator_field({'Rows': 10}, {'Rows': 10, 'Unlisted': 1}) == 'other'
+    assert AccountingUI._paginator_field({'Rows': 10}, None) == 'rows'
+
+
+@pytest.mark.parametrize('initial_keys,current_keys,shape', [
+    ({'PropertyName', 'Value', 'MatchMode'}, {'PropertyName', 'Value', 'MatchMode'}, 'none'),
+    ({'PropertyName', 'Value', 'MatchMode'},
+     {'PropertyName', 'Value', 'MatchMode', 'CaseSensitive'}, 'case_sensitive_added'),
+    ({'PropertyName', 'Value', 'MatchMode'},
+     {'PropertyName', 'Value', 'MatchMode', 'AsString'}, 'as_string_added'),
+    ({'PropertyName', 'Value', 'MatchMode'},
+     {'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'}, 'both_added'),
+    ({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'},
+     {'PropertyName', 'Value', 'MatchMode'}, 'both_removed'),
+    ({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive'},
+     {'PropertyName', 'Value', 'MatchMode'}, 'case_sensitive_removed'),
+    ({'PropertyName', 'Value', 'MatchMode', 'AsString'},
+     {'PropertyName', 'Value', 'MatchMode'}, 'as_string_removed'),
+    ({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive'},
+     {'PropertyName', 'Value', 'MatchMode', 'AsString'}, 'mixed')])
+def test_paginator_filter_shape_classifies_optional_key_presence(initial_keys, current_keys, shape):
+    initial = [{key: None for key in initial_keys}]
+    current = [{key: None for key in current_keys}]
+    assert AccountingUI._paginator_filter_shape(initial, current) == shape
+
+
+@pytest.mark.parametrize('initial,current', [
+    (None, []), ([], []), ([{}, {}], [{}]), ([{}], None), ('x', [{}])])
+def test_paginator_filter_shape_is_none_without_single_rules(initial, current):
+    assert AccountingUI._paginator_filter_shape(initial, current) == 'none'
