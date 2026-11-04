@@ -82,6 +82,8 @@ def test_second_page_reset_to_first_records_first_mismatch(tmp_path, monkeypatch
     assert event['mpn_paginator_kind'] == 'list'
     assert event['mpn_paginator_reason'] == 'first_mismatch'
     assert event['pages'] == 2
+    assert 'mpn_paginator_field' not in event
+    assert 'mpn_paginator_filter_shape' not in event
 
 
 def test_second_page_binding_change_records_binding_changed(tmp_path):
@@ -124,6 +126,22 @@ def test_second_page_binding_change_records_binding_changed(tmp_path):
     assert len(events) == 1
     assert events[0]['mpn_paginator_kind'] == 'list'
     assert events[0]['mpn_paginator_reason'] == 'binding_changed'
+    assert events[0]['mpn_paginator_field'] == 'sort_order'
+    assert events[0]['mpn_paginator_filter_shape'] == 'none'
+
+
+def test_second_page_explicit_filter_defaults_record_filter_shape(tmp_path, monkeypatch):
+    rows = source_rows(11)
+    packets = [frontier_snapshot(rows[:10], 0, 11), frontier_snapshot(rows[10:], 10, 11)]
+
+    def explicit_defaults(body):
+        body['Filters'][0].update({'CaseSensitive': True, 'AsString': False})
+
+    event = refused(tmp_path, monkeypatch, packets, mutate_second=explicit_defaults)
+    assert event['mpn_paginator_kind'] == 'list'
+    assert event['mpn_paginator_reason'] == 'binding_changed'
+    assert event['mpn_paginator_field'] == 'filters'
+    assert event['mpn_paginator_filter_shape'] == 'both_added'
 
 
 def test_second_page_added_filter_records_filter_changed(tmp_path, monkeypatch):
