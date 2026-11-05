@@ -19,6 +19,7 @@ PORTABLE_FILES = frozenset({
     'tests/test_ci_python_cache.py',
     'tests/test_ci_routing.py',
     'tests/test_ci_sharding.py',
+    'tests/test_ci_four_shard_timing.py',
     'tests/test_coverage_ratchet.py',
     'tests/test_quality_inventory.py',
     'tests/test_workflow_contracts.py',
@@ -68,12 +69,32 @@ _TIMED_SHARD_ONE = frozenset({
 })
 
 
+# Selected from three successful 4-shard Windows runs, not from test counts.
+# Only exact collected node IDs move. Renames and new cases keep the stable hash.
+_TIMED_FOUR_SHARD_TARGETS = {
+    "tests/test_corporate_template_layout.py::test_binding_stage_preserves_reference_geometry_and_approved_styles": 3,
+    "tests/test_financial_discovery.py::test_financial_link_outside_the_detail_content_is_not_downloaded": 2,
+    "tests/test_financial_discovery.py::test_financial_text_does_not_bind_an_unrecognized_file_table[<thead><tr><th>Other document</th></tr></thead>]": 2,
+    "tests/test_mpn_detail_readiness_browser.py::test_detail_grid_failure_keeps_partial_and_one_inspected_action[missing-json-first]": 2,
+    "tests/test_desktop_dialog_layout.py::test_selection_reflow_preserves_data_and_owned_resources": 2,
+    "tests/test_ppn_json_build_budget.py::test_ppn_main_build_budget_is_bounded_and_scope_specific[ppn-main-ceiling]": 2,
+    "tests/test_mpn_capture_browser.py::test_inspected_detail_action_has_a_bounded_dispatch_budget_without_repeating[5500-False-close]": 2,
+    "tests/test_mpn_capture_browser.py::test_inspected_detail_action_has_a_bounded_dispatch_budget_without_repeating[5500-False-open]": 2,
+    "tests/test_financial_capture.py::test_unsupported_or_absent_financial_control_keeps_structured_capture_partial[]": 2,
+    "tests/test_financial_attachments.py::test_absent_financial_control_is_explicitly_partial_without_an_invented_file": 2,
+}
+
+
 def shard_for(nodeid, count):
     # SHA-256 memberi partisi yang sama di setiap runner; hash() bawaan Python
     # dapat berbeda antarproses dan membuat tes terlewat atau dijalankan ganda.
     # Hanya profil tepat 2-shard yang menerima pengecualian berdasarkan timing.
     if count == 2 and nodeid in _TIMED_SHARD_ONE:
         return 1
+    if count == 4:
+        target = _TIMED_FOUR_SHARD_TARGETS.get(nodeid)
+        if target is not None:
+            return target
     digest = hashlib.sha256(nodeid.encode('utf-8')).digest()
     return int.from_bytes(digest[:8], 'big') % count
 

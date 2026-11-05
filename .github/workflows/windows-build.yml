@@ -262,7 +262,7 @@ jobs:
           $pytestArgs = @(
             '-m', 'coverage', 'run', '--rcfile=.coveragerc', '-m', 'pytest', 'tests', '-p', 'scripts.ci_tests', '--ci-workload', 'windows', '-q',
             '--basetemp', "$env:RUNNER_TEMP/spt-pytest-windows",
-            '--ci-manifest', "$env:RUNNER_TEMP/test-inventory.json", '--durations=10',
+            '--ci-manifest', "$env:RUNNER_TEMP/test-inventory.json", '--durations=30',
             '--junitxml', "$env:RUNNER_TEMP/test-results.xml",
             '-o', 'junit_logging=no', '-o', 'junit_log_passing_tests=false'
           )

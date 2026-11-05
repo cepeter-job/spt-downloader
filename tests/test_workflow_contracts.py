@@ -70,6 +70,19 @@ def test_windows_coverage_cannot_be_replaced_by_partial_or_ungated_data(mutation
 def test_diagnostics_survive_attempted_test_failure_in_every_test_job():
     contract().validate_measurements(production(), ('portable', 'windows'))
 
+@pytest.mark.parametrize('workload, reviewed, unreviewed', [
+    ('portable', '--durations=10', '--durations=30'),
+    ('windows', '--durations=30', '--durations=10'),
+])
+def test_pytest_profiling_depth_is_reviewed_per_workload(workload, reviewed, unreviewed):
+    document = deepcopy(production())
+    tests = next(step for step in document['jobs'][workload]['steps']
+                 if step.get('id') == 'tests')
+    assert reviewed in tests['run']
+    tests['run'] = tests['run'].replace(reviewed, unreviewed)
+    with pytest.raises(AssertionError, match='Pytest selection|evidence options'):
+        contract().validate_measurements(document, ('portable', 'windows'))
+
 
 @pytest.mark.parametrize('mutation', [
     'missing-test-dependency', 'wrong-job-dependency', 'upload-before-build',

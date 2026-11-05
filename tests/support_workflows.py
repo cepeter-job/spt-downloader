@@ -181,7 +181,7 @@ def _complete_pytest_arguments(arguments, workload):
         '--junitxml': {temporary + '/test-results.xml'},
         '-o': {'junit_logging=no', 'junit_log_passing_tests=false'},
     }
-    flags = {'-q', '--durations=10'}
+    flags = {'-q', '--durations=10' if workload == 'portable' else '--durations=30'}
     seen, index = set(), 3
     while index < len(arguments):
         option = arguments[index]
