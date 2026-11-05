@@ -173,6 +173,31 @@ def test_actual_pages_refuse_cap_or_enabled_next_after_terminal(tmp_path,monkeyp
     ui.observer.close()
 
 
+@pytest.mark.parametrize('explicit,held', [(True, True), (False, False)])
+def test_held_list_query_equates_explicit_filter_defaults(monkeypatch,tmp_path,explicit,held):
+    import coretax_mpn_browser as module
+    headers=source_rows(11)
+    class UI(SyntheticUI):
+        children={h['RecordId']:[] for h in headers}
+        def list_pages(self,max_pages):
+            yield frontier_snapshot(headers[:10],0,11)
+            second=frontier_snapshot(headers[10:],10,11)
+            second['request']['Filters'][0].update(
+                {'CaseSensitive': explicit, 'AsString': False})
+            yield second
+    monkeypatch.setattr(module,'AccountingUI',UI)
+    run=scope_run()
+    module.collect_mpn(object(),run,tmp_path)
+    assert run['mpn']['status']=='COMPLETE'
+    if held:
+        with mpn_custody(run,tmp_path):
+            pass
+    else:
+        with pytest.raises(MpnSafetyError):
+            with mpn_custody(run,tmp_path):
+                pass
+
+
 @pytest.mark.parametrize('terminal',[True,False])
 def test_held_detail_frontier_is_independent_and_cannot_omit_terminal(monkeypatch,tmp_path,terminal):
     import coretax_mpn_browser as module

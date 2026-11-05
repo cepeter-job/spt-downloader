@@ -154,6 +154,30 @@ def validate_page_total(payload, first, size, previous=None, *, mode='fixed-v1')
     return total
 
 
+def normalized_mpn_query(request):
+    """Query identity without First, with filter defaults filled in.
+
+    The Search and paginator actions serialize the same logical filter
+    differently: one omits the optional CaseSensitive/AsString keys, the
+    other writes their reviewed defaults explicitly. Comparison only;
+    the raw request and stored evidence are never rewritten. Non-default
+    explicit values stay distinct, as does every other field.
+    """
+    if not isinstance(request, dict):
+        return request
+    query = {key: value for key, value in request.items() if key != 'First'}
+    filters = query.get('Filters')
+    if isinstance(filters, list):
+        normalized = []
+        for rule in filters:
+            if isinstance(rule, dict):
+                rule = {**rule, 'CaseSensitive': rule.get('CaseSensitive', True),
+                        'AsString': rule.get('AsString', False)}
+            normalized.append(rule)
+        query['Filters'] = normalized
+    return query
+
+
 def _text(data, key, *, optional=False):
     value = data.get(key)
     if optional and value is None:
@@ -565,7 +589,7 @@ def _reconcile_held(run, readers):
         elif request['LanguageId'] != request_language:
             raise MpnSafetyError('MPN held original request language changed')
         mode = binding.get('total_mode', 'fixed-v1')
-        query = {key: item for key, item in request.items() if key != 'First'}
+        query = normalized_mpn_query(request)
         if kind == 'list':
             filters = request['Filters']
             if (request[identity] != value['taxpayer_id'] or request['First'] != list_first
