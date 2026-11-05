@@ -1058,3 +1058,16 @@ actual dispatch timeout as Search, always within preparation's original45s
 deadline. Trial-only readiness retries remain separate from the single actual
 click. Preserve final ownership/Stop/sticky-failure checks, exact clear-response
 custody and the second Search's independent unfiltered-query proof.
+
+Corporate L3-B page size is now capped at500 rows via the existing inspected
+paginator dropdown (live 5 Nov 2026: the 250 cap exhausted the 180s table budget
+on a 2250+ row table at ~20s per server-bound page). `maximize_page_size`
+picks the largest offered option within the bound and degrades gracefully when
+500 is unoffered; the bound check and DOM cursor trigger at >=250 with the
+caller's cap. The 180s budget, renderer custody and source-total proofs are
+unchanged; tables still incomplete at the budget stay PARTIAL. Financial PDF
+discovery rescans for up to10s while no attachment table/control is observed
+at all (lazy grid rendering after tab activation); present-but-unbound tables
+remain definitive refusals without polling. Template-mapping entries persist
+unmapped field/table identities (form, label, field, group) alongside their
+counts so the exact not-mapped subset is inspectable from run data.

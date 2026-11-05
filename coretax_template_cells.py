@@ -181,11 +181,33 @@ def _whole_accounting(sheet):
                 cell.number_format = cell.number_format.replace('#,##0.00', '#,##0')
 
 
+def _unmapped_identities(fields, unresolved):
+    """Persist which captured fields/tables the template did not place.
+
+    Identities only, never values: values already live in the job checkpoint
+    and reports must stay compact and free of amounts. Returns {} when nothing
+    is unmapped, so COMPLETE reports are unchanged.
+    """
+    extra = {}
+    if fields:
+        extra['unmapped_field_identities'] = [
+            {'label': f.get('label'), 'field': f.get('field'), 'group': f.get('group')}
+            for f in fields]
+    if unresolved:
+        extra['unmapped_table_identities'] = [
+            {'name': t.get('name'), 'group': t.get('group'),
+             'headers': list(t.get('headers') or []), 'complete': t.get('complete', True),
+             'row_count': len(t.get('rows', [])), 'body_row_count': t.get('body_row_count')}
+            for t in unresolved]
+    return extra
+
+
 def _raw_evidence(sheet, sections, fields, tables, style_row):
     unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
     report = {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
               'unmapped_tables': len(unresolved),
-              'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved)}
+              'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved),
+              **_unmapped_identities(fields, unresolved)}
     texts = [section.get('text', '') for section in sections if section.get('text')]
     if not fields and not tables and not texts:
         return report

@@ -8,7 +8,8 @@ import re
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Border, Color, Side
 
-from coretax_template_cells import load_template_workbook, _write, _grow, _raw_evidence
+from coretax_template_cells import (load_template_workbook, _write, _grow,
+                                    _raw_evidence, _unmapped_identities)
 
 FORMS = ['L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9', 'L10-A', 'L10-C',
          'L11-A', 'L11-B', 'L11-C']
@@ -93,6 +94,7 @@ def _clean_report(fields, tables, *, form=None, source_tables=(), **derived):
     return {'complete': not fields and not unresolved and derived.get('derived_complete', True),
             'unmapped_fields': len(fields), 'unmapped_tables': len(unresolved),
             'unmapped_rows': sum(len(table.get('rows', [])) for table in unresolved),
+            **_unmapped_identities(fields, unresolved),
             **_reviewed_omissions(form, fields, source_tables), **derived}
 
 
