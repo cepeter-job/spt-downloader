@@ -105,9 +105,16 @@ capture after SPT details and before browser cleanup, including valid empty SPT
 inventories. Inventory-only and offline legacy exports do not acquire MPN scope.
 The inspected same-taxpayer list/listdetail UI reads remain separate from SPT
 native admission. Enumerate the unfiltered non-cancelled parents, including zero
-amounts and other parent years, then qualify strictly negative original detail
-Amounts by the detail's literal tax period/year. Never substitute payment date
-or parent year. Same-year ranges need the exact captured PERIOD meaning;
+amounts and other parent years, then capture details only for parents whose
+header PeriodCode year equals the SPT scope year. The header PeriodCode is the
+canonical scope: an out-of-year parent keeps its list evidence but its detail
+dialog is never opened, and held custody must re-prove that same header year
+before it accepts completeness; a malformed header code is captured, never
+skipped. Row qualification then requires strictly negative original detail
+Amounts by the header's literal tax period/year; a divergent detail period can
+neither rescue an out-of-year header nor condemn an in-year one, but its code
+must still be well-formed. Never substitute payment date for the header year.
+Same-year ranges need the exact captured PERIOD meaning;
 cross-year/malformed/missing meanings remain unresolved. Only original same-
 attempt id-ID reference bytes with unique codes and explicit null ValidTo supply
 labels; no cache clock/version selection is admitted. The operator-approved
@@ -771,8 +778,11 @@ Use an existing saved JSON capture for offline export/layout checks when appropr
 
 ## Desktop boundaries
 
-The selection dialog offers All, Pemb. Terakhir, PPh Potput and PPN checkboxes.
-They prepare visible selections only; explicit confirmation remains mandatory.
+The selection dialog offers All, Pemb. Terakhir, PPh Potput and PPN checkboxes
+plus a default-off Sedot MPN opt-in in the action row. They prepare visible
+selections only; explicit confirmation remains mandatory. The MPN choice is
+per-job, travels in the selection reply, and gates MPN capture in the worker;
+without a dialog (empty inventory) the required MPN behavior is preserved.
 Potput is exactly PPh Pasal 21/26 plus PPh Unifikasi (case-insensitive full
 captions), and combines with PPN and the latest-model modifier. Rank the whole
 inventory before intersecting search results, using bounded recognized original
