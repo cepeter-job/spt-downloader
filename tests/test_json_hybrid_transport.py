@@ -52,7 +52,7 @@ def test_worker_selected_scope_forwards_literal_mode_to_collector(tmp_path, monk
     monkeypatch.setattr(worker, 'downloads_folder', lambda: tmp_path / 'Downloads')
     monkeypatch.setattr(worker, 'existing_outputs', lambda *args: None)
     monkeypatch.setattr(worker, 'publish_workbooks', lambda *args, **kwargs: tmp_path / 'published')
-    requests = SimpleNamespace(request=lambda kind, payload, percent: {'selected_ids': expected_ids[::-1]})
+    requests = SimpleNamespace(request=lambda kind, payload, percent: {'selected_ids': expected_ids[::-1], 'mpn': True})
     result = worker.run_job('0000000000000001', 2025, tmp_path, 'synthetic-mode',
                             'msedge', True, emitted.append, lambda: False,
                             requests=requests, detail_source=mode)

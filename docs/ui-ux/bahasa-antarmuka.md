@@ -44,6 +44,7 @@ Istilah pajak dan nama berkas yang membantu pencarian tetap dipertahankan: NPWP,
 | `app.subtitle` | Coretax → Excel · for personal use only |
 | `app.bugreport` | bugreport : sharmila@kemenkeu.go.id |
 | `selection.confirm` | Sedot SPT terpilih |
+| `selection.mpn` | Sedot MPN |
 
 Title harus ada pada caption dan satu `Title.TLabel` yang nyata, bukan hanya disisipkan ke metadata. `results.location_hint` tampil tepat sekali. Checkbox mempertahankan binding `headless`. Sumber: [tes requested text](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/tests/test_desktop_requested_text.py) dan [tes pemilihan](https://github.com/cepeter-job/spt-downloader/blob/ecbd9878aa732a379ba94ef848764f9815445003/tests/test_desktop_selection_gui.py).
 

@@ -69,7 +69,7 @@ def test_worker_overwrite_expiry_is_blocked_without_publication(
     def request(kind,payload,percent):
         asked.append(kind)
         if kind=='selection':
-            return {'selected_ids':[run['records'][0]['record_id']]}
+            return {'selected_ids':[run['records'][0]['record_id']], 'mpn': True}
         raise interaction.ConsentTimeout('overwrite')
     messages=[]
     code=worker.run_job('0000000000000001','2025',tmp_path/'workspace',

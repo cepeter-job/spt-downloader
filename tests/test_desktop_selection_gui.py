@@ -38,7 +38,7 @@ def test_selection_starts_empty_and_search_sends_only_the_clicked_return(tmp_pat
         assert not button.instate(['disabled'])
         button.invoke()
         root.update()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-february']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-february'], 'mpn': False})]
         assert app._ui_state.selected_count == 1 and app.view.scope_selected.get() == '1'
         assert not dialog.winfo_exists() and not controller.stopped
 
@@ -70,7 +70,34 @@ def test_selection_uses_local_row_ids_and_preserves_the_observed_identifier(tmp_
         tree = select_first(root, dialog)
         assert identifier not in tree.get_children()
         button(dialog, 'Sedot SPT terpilih').invoke()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [identifier]})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [identifier], 'mpn': False})]
+
+
+def test_mpn_checkbox_defaults_off_and_opts_in_on_confirm(tmp_path):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        actions = named_widget(dialog, 'actions')
+        mpn = named_widget(actions, 'mpn')
+        assert mpn.cget('text') == 'Sedot MPN'
+        assert mpn.instate(['!disabled']) and not mpn.instate(['selected'])
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert controller.replies == [('selection', 'a' * 32,
+                                       {'selected_ids': ['badan-amendment'], 'mpn': False})]
+
+
+def test_mpn_checkbox_checked_includes_mpn_in_reply(tmp_path):
+    with window(tmp_path, records()) as (root, app, controller, dialog):
+        actions = named_widget(dialog, 'actions')
+        mpn = named_widget(actions, 'mpn')
+        mpn.invoke()
+        root.update()
+        assert mpn.instate(['selected'])
+        select_first(root, dialog)
+        button(dialog, 'Sedot SPT terpilih').invoke()
+        root.update()
+        assert controller.replies == [('selection', 'a' * 32,
+                                       {'selected_ids': ['badan-amendment'], 'mpn': True})]
 
 
 def test_filtering_clears_hidden_selections_before_consent(tmp_path):
@@ -255,7 +282,7 @@ def test_confirmed_selection_updates_progress_before_first_detail_finishes(tmp_p
         select_first(root, dialog)
         button(dialog, 'Sedot SPT terpilih').invoke()
         root.update()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-amendment']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-amendment'], 'mpn': False})]
         assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
         assert not dialog.winfo_exists() and not controller.stopped
         assert app.percent.get() != '100%'

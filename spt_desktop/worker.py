@@ -69,7 +69,10 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                     on_progress=lambda item:progress.inventory(item['completed'],item['total'],item['scanned']),
                     check_cancel=check_cancel)
                 check_cancel()
-                require_mpn(run, detail_source)
+                # MPN is opt-in from the selection dialog (default off).
+                # Without a dialog (empty inventory) there is no choice to
+                # honor, so the required MPN behavior is preserved.
+                mpn_enabled = True
                 if requests is None:
                     raise RuntimeError('A private selection channel is required before detail capture')
                 if run['records']:
@@ -77,10 +80,14 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                                               for record in run['records']]}
                     reply = requests.request('selection', inventory, progress.percent)
                     check_cancel()
-                    if not isinstance(reply, dict) or set(reply) != {'selected_ids'}:
+                    if (not isinstance(reply, dict) or set(reply) != {'selected_ids', 'mpn'}
+                            or type(reply['mpn']) is not bool):
                         raise ValueError('Invalid selection response')
+                    mpn_enabled = reply['mpn']
                     run = select_records(run, reply['selected_ids'])
                     persist_selection(run, folder, detail_source=detail_source)
+                if mpn_enabled:
+                    require_mpn(run, detail_source)
                 run['started_at']=datetime.now().astimezone().isoformat()
                 verified=0
                 def details_progress(data,ordinal):
@@ -98,10 +105,11 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
                                     **source_options)
                 if not run['records']:progress.details(0,0,0)
                 check_cancel()
-                progress.mpn(0, 0, 0)
-                run = collect_mpn(page, run, folder, detail_source=detail_source,
-                                  on_progress=progress.mpn, check_cancel=check_cancel)
-                progress.mpn(run['mpn']['headers'], run['mpn']['headers'], len(run['mpn']['rows']))
+                if mpn_enabled:
+                    progress.mpn(0, 0, 0)
+                    run = collect_mpn(page, run, folder, detail_source=detail_source,
+                                      on_progress=progress.mpn, check_cancel=check_cancel)
+                    progress.mpn(run['mpn']['headers'], run['mpn']['headers'], len(run['mpn']['rows']))
             finally:
                 context.close()
         # Browser dan driver sudah ditutup sebelum ekspor workbook dimulai;

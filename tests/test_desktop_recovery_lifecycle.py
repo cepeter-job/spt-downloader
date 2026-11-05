@@ -83,7 +83,7 @@ def _cancelled_capture(tmp_path, monkeypatch, fault):
     monkeypatch.setattr(coretax_browser.os, 'replace', interrupted_replace)
     events = []
     reply = SimpleNamespace(request=lambda kind, payload, percent: {
-        'selected_ids': [record['record_id'] for record in payload['records']]})
+        'selected_ids': [record['record_id'] for record in payload['records']], 'mpn': True})
     try:
         code = worker.run_job('0000000000000001', '2025', root, 'synthetic-cancel',
                               'msedge', True, events.append, lambda: False, requests=reply)

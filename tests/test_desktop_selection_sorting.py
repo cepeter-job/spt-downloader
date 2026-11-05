@@ -81,7 +81,7 @@ def test_sorting_keeps_exact_selected_identifiers_and_inventory_order_in_reply(t
         button(dialog, 'Sedot SPT terpilih').invoke()
         root.update()
         expected_ids = [payload['records'][ordinal]['record_id'] for ordinal in (0, 3)]
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': expected_ids})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': expected_ids, 'mpn': False})]
         assert app._ui_state.selected_count == len(expected_ids)
         assert not controller.stopped and not dialog.winfo_exists()
 
@@ -107,7 +107,7 @@ def test_sorting_keeps_active_search_and_visible_selection_with_stable_ties(tmp_
                        str(widget.cget('text')).startswith('1 SPT dipilih')
                        for widget in widgets(dialog))
         button(dialog, 'Sedot SPT terpilih').invoke()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-two']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-two'], 'mpn': False})]
 
 
 def test_search_change_preserves_sort_mode_but_clears_consent_as_before(tmp_path):
@@ -287,7 +287,7 @@ def test_chronology_preserves_filtered_selection_focus_and_inventory_order_reply
             assert any(w.winfo_class() == 'TLabel' and
                        str(w.cget('text')).startswith('2 SPT dipilih') for w in widgets(dialog))
         button(dialog, 'Sedot SPT terpilih').invoke()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [special, 'normal']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [special, 'normal'], 'mpn': False})]
 
 
 def test_chronology_survives_filter_clear_without_restoring_consent(tmp_path):

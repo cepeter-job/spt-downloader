@@ -208,7 +208,8 @@ class JobController:
         request=self.read_request({'job_id':job_id,'type':kind+'_required','request_id':request_id})
         if not isinstance(payload,dict):raise ValueError('Invalid consent response')
         if kind=='selection':
-            if set(payload)!={'selected_ids'}:raise ValueError('Invalid selection response')
+            if set(payload)!={'selected_ids','mpn'} or type(payload['mpn']) is not bool:
+                raise ValueError('Invalid selection response')
             select_records(request,payload['selected_ids'])
         elif set(payload)!={'overwrite'} or type(payload['overwrite']) is not bool:
             raise ValueError('Invalid overwrite response')

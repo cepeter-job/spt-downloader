@@ -101,7 +101,7 @@ def test_default_display_does_not_reorder_confirmed_inventory_ids(tmp_path):
         tree.selection_set(('record-4', 'record-1'))
         tree.event_generate('<<TreeviewSelect>>'); root.update()
         button(dialog, 'Sedot SPT terpilih').invoke(); root.update()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['ppn', 'badan']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['ppn', 'badan'], 'mpn': False})]
 
 
 def test_source_and_frozen_selftest_observes_initial_order_including_unifikasi(tmp_path):

@@ -40,7 +40,7 @@ def test_complete_event_is_after_browser_cleanup_and_verified_downloads(tmp_path
         messages.append(event)
     def choose(kind, payload, percent):
         assert kind == 'selection'
-        return {'selected_ids': [record['record_id'] for record in payload['records']]}
+        return {'selected_ids': [record['record_id'] for record in payload['records']], 'mpn': True}
     result=module.run_job('0000000000000001','2025',tmp_path/'workspace','synthetic-job','msedge',True,
                           emit,lambda:False,requests=SimpleNamespace(request=choose))
     assert result==0

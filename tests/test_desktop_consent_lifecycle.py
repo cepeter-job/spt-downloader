@@ -82,7 +82,7 @@ class Output:
         if event['type'] not in ('selection_required', 'overwrite_required'):
             return
         kind = event['type'].removesuffix('_required')
-        payload = {'selected_ids': ['PRIVATE_SYNTHETIC_RETURN']} if kind == 'selection' else {'overwrite': True}
+        payload = {'selected_ids': ['PRIVATE_SYNTHETIC_RETURN'], 'mpn': False} if kind == 'selection' else {'overwrite': True}
         write_reply(root / 'jobs' / job_id, job_id, event['request_id'], payload)
         if kind == 'selection':
             self.selection_requests += 1
@@ -110,7 +110,7 @@ def run(npwp, year, workspace, identifier, browser, headless, emit, cancelled, *
     else:
         raise AssertionError('A foreign-job signal authorized selection')
     assert requests.request('selection', {'records': [{'record_id': 'PRIVATE_SYNTHETIC_RETURN'}]}, 20) == {
-        'selected_ids': ['PRIVATE_SYNTHETIC_RETURN']}
+        'selected_ids': ['PRIVATE_SYNTHETIC_RETURN'], 'mpn': False}
     assert requests.request('overwrite', {'files': ['resume.xlsx']}, 99) == {'overwrite': True}
     emit({'job_id': identifier, 'type': 'terminal', 'status': 'CANCELLED',
           'percent': 99, 'output': None, 'message': 'Synthetic transport completed'})

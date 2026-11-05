@@ -26,17 +26,17 @@ def test_controller_reads_only_its_request_and_never_sends_return_ids_on_stdin(t
         assert events[-1]['request_id'] == event['request_id']
         payload = controller.read_request(event)
         assert payload == {'records': [{'record_id': 'synthetic-return', 'meta': {}}]}
-        assert not controller.respond('selection', 'b' * 32, {'selected_ids': ['synthetic-return']})
-        assert controller.respond('selection', event['request_id'], {'selected_ids': ['synthetic-return']})
+        assert not controller.respond('selection', 'b' * 32, {'selected_ids': ['synthetic-return'], 'mpn': False})
+        assert controller.respond('selection', event['request_id'], {'selected_ids': ['synthetic-return'], 'mpn': False})
         signal = json.loads(controller.process.stdin.getvalue())
         assert signal == {'job_id': 'synthetic-job', 'command': 'selection', 'request_id': event['request_id']}
         assert 'synthetic-return' not in controller.process.stdin.getvalue()
         assert requests.respond(signal['command'], signal['request_id'])
-        assert not controller.respond('selection', event['request_id'], {'selected_ids': ['synthetic-return']})
+        assert not controller.respond('selection', event['request_id'], {'selected_ids': ['synthetic-return'], 'mpn': False})
 
     requests = Requests(folder, 'synthetic-job', emit, lambda: None)
     assert requests.request('selection', {'records': [{'record_id': 'synthetic-return', 'meta': {}}]}, 20) == {
-        'selected_ids': ['synthetic-return']}
+        'selected_ids': ['synthetic-return'], 'mpn': False}
 
 
 def test_controller_stop_and_foreign_job_cannot_authorize_a_pending_answer(tmp_path):
