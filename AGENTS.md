@@ -79,6 +79,16 @@ The separate L11-C semantic branch requires loaded corporate/main/vendor pins, t
 
 ## Output contract
 
+Offline CLI `coretax.save_output` must pin SHA-256 for every verified staged
+JSON/XLSX and the exact `run.json` manifest, compare these bytes before and
+after each publication move, then revalidate the installed workbook set while
+rollback backups are still available. Wrong-source identity, changed readable
+ZIP bytes and changed manifest must fail with rollback; never mark a changed
+publication successful. The verifier may exclude only its own same-parent
+`.spt-export-*` staging directory, never an arbitrary folder. This provides
+exception/rollback safety, not multi-file process-death atomicity; desktop
+native write-ahead recovery remains a separate boundary.
+
 Resume administration uses the approved sanitized `resources/resume_format.xlsx`
 presentation: Ringkasan identity/year/basis/status/counts are B2/B3/B5/B6/B7:B8,
 type counts start at row14 and move the mapping summary below actual types;
