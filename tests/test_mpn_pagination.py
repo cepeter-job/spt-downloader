@@ -212,6 +212,8 @@ def test_out_of_year_headers_skip_detail_capture_with_custody_proof(monkeypatch,
     malformed['PeriodCode']='not-a-period'
     headers=[*in_scope, out_scope, malformed]
     in_details={h['RecordId']:[] for h in in_scope}
+    detail = deepcopy(detail)
+    detail['HeaderRecordId'] = in_scope[0]['RecordId']
     in_details[in_scope[0]['RecordId']]=[detail]
     malformed_detail=deepcopy(detail)
     malformed_detail['RecordId']='00000000-0000-4000-8000-000000000024'

@@ -90,8 +90,10 @@ def test_worker_skips_mpn_when_selection_opts_out(tmp_path, monkeypatch):
     run = fixture_run()
     run['sources'] = scope_run()['sources']
     run['inventory_complete'] = True
-    monkeypatch.setattr(worker, 'collect_inventory',
-                        lambda page, npwp, year, basis, folder, **kwargs: run)
+    def inventory(page, npwp, year, basis, folder, **kwargs):
+        (folder / 'inventory.json').write_text(json.dumps(run), encoding='utf-8')
+        return run
+    monkeypatch.setattr(worker, 'collect_inventory', inventory)
     def details(page, data, folder, **kwargs):
         data['complete'] = True
         return data

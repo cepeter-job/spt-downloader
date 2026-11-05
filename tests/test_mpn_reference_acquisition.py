@@ -236,6 +236,7 @@ def test_acquired_original_bytes_and_origin_are_retained_before_later_failure(
         def pages(header, max_pages):
             ui.reference_raw = catalog_bytes()
             ui.reference_origin = 'adapter-get-v1'
+            ui.catalog = {'01012025': 'Synthetic period label'}
             if failure:
                 raise failure('SYNTHETIC LATER FAILURE')
             yield from detail_pages(header, max_pages)
