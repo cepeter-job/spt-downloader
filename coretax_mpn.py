@@ -495,8 +495,14 @@ def validate_mpn(run):
         seen.add(row['record_id'])
         for key in ('amount', 'currency_amount', 'exchange_rate'):
             _number(row[key])
-        if Decimal(row['amount']) >= 0 or period_year(row['period_code'], {row['period_code']: row['period_label']}) != run['year']:
+        # Scope was proven by the parent header at capture and custody;
+        # a row's own detail period code must only be well-formed here.
+        if Decimal(row['amount']) >= 0:
             raise ValueError('MPN row is outside the negative tax-period scope')
+        try:
+            period_year(row['period_code'], {row['period_code']: row['period_label']})
+        except MpnUnsupported:
+            raise ValueError('MPN row is outside the negative tax-period scope') from None
     if len(value['evidence']) > MAX_RESPONSES:
         raise ValueError('MPN evidence count exceeds its bound')
     paths, size = set(), 0

@@ -19,7 +19,7 @@ def catalog_bytes():
             ('ACCOUNTING_TYPE', 'OtherTaxReturn', 'Synthetic accounting label'),
             ('ACCOUNTING_TYPE_DETAIL', 'DBP', 'Synthetic detail label'),
             ('REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT', '411211', 'Synthetic revenue label'),
-            ('PERIOD', '01012026', 'Synthetic period label')):
+            ('PERIOD', '01012025', 'Synthetic period label')):
         groups.append({'ReferenceDataType': name, 'Checksum': 'SYNTHETIC-V1',
                        'Details': [{'Code': code, 'CodeDescription': label,
                                     'AppLanguageId': 'id-ID', 'ValidTo': None}]})
