@@ -105,7 +105,7 @@ def test_worker_counts_verified_details_once_and_keeps_partial_below_100(monkeyp
     monkeypatch.setattr(worker, 'publish_workbooks', lambda *args, **kwargs: tmp_path / 'hasil-sintetis')
     monkeypatch.setattr(worker, 'existing_outputs', lambda *args: None)
     requests=SimpleNamespace(request=lambda kind,payload,percent:{
-        'selected_ids':[record['record_id'] for record in payload['records']]})
+        'selected_ids':[record['record_id'] for record in payload['records']], 'mpn': True})
     result = worker.run_job('0000000000000001', 2025, tmp_path, 'fixture-progress',
                             'msedge', True, emitted.append, lambda: False,requests=requests)
 

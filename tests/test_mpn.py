@@ -15,9 +15,10 @@ def adapter():
     return importlib.import_module('coretax_mpn')
 
 
-def payment_source(*, amount='-1250.50', period='01012025', paid='2026-02-01T00:00:00Z'):
+def payment_source(*, amount='-1250.50', period='01012025', paid='2026-02-01T00:00:00Z',
+                   header_period='01012025'):
     header = {'RecordId': HEADER, 'TaxpayerAggregateIdentifier': TAXPAYER,
-              'TaxpayerTIN': '0000000000000001', 'PeriodCode': '01012026',
+              'TaxpayerTIN': '0000000000000001', 'PeriodCode': header_period,
               'ReferenceNumber': 'SYNTHETIC-PARENT-0001', 'IsCancelled': False}
     detail = {'RecordId': DETAIL, 'HeaderRecordId': HEADER, 'PeriodCode': period,
               'Amount': '__amount__', 'CurrencyAmount': '__amount__',
@@ -39,15 +40,20 @@ def scope_run():
                          'submitted-returnsheets/' + TAXPAYER, 'label': 'SPT Dilaporkan'}]}
 
 
-def test_negative_payment_uses_detail_tax_year_even_when_parent_and_payment_are_later():
-    header, detail = payment_source()
+def test_negative_payment_uses_header_tax_year_even_when_detail_is_later():
+    header, detail = payment_source(period='01012026')
     row = adapter().project_payment(header, detail, year=2025)
     assert row['record_id'] == DETAIL and row['header_id'] == HEADER
-    assert row['period_code'] == '01012025'
+    assert row['period_code'] == '01012026'
     assert row['amount'] == '-1250.50'
     assert row['transaction_date'] == '2026-02-01T00:00:00Z'
     assert row['transaction_number'] == '0000000000000007'
     assert row['reference'] == '=SYNTHETIC-REFERENCE'
+
+
+def test_detail_tax_year_cannot_rescue_out_of_year_header():
+    header, detail = payment_source(header_period='01012026')
+    assert adapter().project_payment(header, detail, year=2025) is None
 
 
 @pytest.mark.parametrize('amount', ['0', '-0', '0.00', '-0.00', '25', '1e-10'])
@@ -57,7 +63,7 @@ def test_zero_and_positive_details_are_excluded(amount):
 
 
 def test_known_other_tax_year_is_excluded():
-    header, detail = payment_source(period='12122024')
+    header, detail = payment_source(header_period='12122024')
     assert adapter().project_payment(header, detail, year=2025) is None
 
 
@@ -72,6 +78,14 @@ def test_unproved_periods_are_not_repaired_from_parent_or_caption(period):
     header, detail = payment_source(period=period)
     with pytest.raises(adapter().MpnUnsupported):
         adapter().project_payment(header, detail, year=2025)
+
+
+@pytest.mark.parametrize('code,expected', [
+    ('01012025', 2025), ('01122025', 2025), ('12122024', 2024), ('01011900', 1900),
+    ('12122100', 2100), ('13252025', None), ('01012025 ', None), ('0101202', None),
+    ('010120251', None), ('abcd2025', None), ('12252025', None), (None, None)])
+def test_period_code_year_extracts_only_wellformed_codes(code, expected):
+    assert adapter().period_code_year(code) == expected
 
 
 def test_foreign_header_is_fatal_before_out_of_year_exclusion():

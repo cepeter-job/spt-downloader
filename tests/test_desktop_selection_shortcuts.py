@@ -286,7 +286,7 @@ def test_confirm_sends_literal_ids_in_original_inventory_order_only(tmp_path):
         assert not controller.replies
         button(dialog, 'Sedot SPT terpilih').invoke()
         assert controller.replies == [('selection', 'a' * 32, {
-            'selected_ids': ['::synthetic {return}; [literal] / id', 'vat-feb']})]
+            'selected_ids': ['::synthetic {return}; [literal] / id', 'vat-feb'], 'mpn': False})]
         assert data == original and not controller.stopped
 
 

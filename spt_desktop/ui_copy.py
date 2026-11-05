@@ -9,6 +9,7 @@ COPY: Mapping[str, str] = MappingProxyType({'app.title': 'Coretax SPT downloader
  'app.subtitle': 'Coretax → Excel · for personal use only',
  'app.bugreport': 'bugreport : sharmila@kemenkeu.go.id',
  'selection.confirm': 'Sedot SPT terpilih',
+ 'selection.mpn': 'Sedot MPN',
  'form.title': 'Masukkan NPWP dan tahun pajak',
  'form.help': 'Setelah daftar muncul, pilih SPT yang ingin diunduh.',
  'form.npwp.label': 'NPWP (16 digit)',

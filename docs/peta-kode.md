@@ -46,7 +46,7 @@ widget Tk dan GUI tidak mengimpor Playwright/openpyxl.
 
 Job live penuh menambahkan `require_mpn` sebelum capture, lalu `collect_mpn`
 setelah detail SPT dan sebelum browser ditutup. [Proyeksi dan custody MPN](../coretax_mpn.py)
-memegang aturan nilai negatif/tahun detail; [observer](../coretax_mpn_browser.py)
+memegang aturan nilai negatif/tahun header; [observer](../coretax_mpn_browser.py)
 mengikat request asli dan checkpoint; [UI Accounting](../coretax_mpn_ui.py)
 memegang sumber terpin, filter, dialog dan paginator baca yang diperiksa.
 [Workbook MPN](../coretax_mpn_export.py) memiliki proof/coverage sendiri dan

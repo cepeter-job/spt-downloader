@@ -217,7 +217,7 @@ def self_test(report=None):
             next(w for w in descendants(selection) if w.winfo_class()=='TButton'
                  and w.cget('text')=='Sedot SPT terpilih').invoke()
             expected_ids=[values[iid][3] for iid in chosen]
-            assert app.controller.selection_reply==('selection','a'*32,{'selected_ids':expected_ids})
+            assert app.controller.selection_reply==('selection','a'*32,{'selected_ids':expected_ids,'mpn':False})
             assert app._interaction is None
             sorting['confirmed_ids']=app.controller.selection_reply[2]['selected_ids']
             sorting['selection_preserved']=True

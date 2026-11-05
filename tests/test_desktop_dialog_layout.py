@@ -210,7 +210,7 @@ def test_alt_j_and_header_preserve_filtered_selection_and_reply_order(active_app
     assert tree.heading('type', 'text') == 'Jenis pajak ▼'
     assert tree.focus() == 'record-2' and tree.bbox('record-2')
     named_widget(dialog, 'confirm').invoke()
-    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january', 'badan-normal']})]
+    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january', 'badan-normal'], 'mpn': False})]
     assert app._ui_state.selected_count == 2
 
 
@@ -245,7 +245,7 @@ def test_only_focused_submit_activation_sends_selection_once(active_app, activat
     else:
         submit.event_generate(f'<KeyPress-{activation}>')
     settle(root)
-    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january']})]
+    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['21-january'], 'mpn': False})]
     assert not dialog.winfo_exists() and not controller.stopped
     app.on_event(consent_event(controller))
     assert len(controller.replies) == 1 and app._interaction is None
@@ -627,7 +627,7 @@ def test_fresh_selection_keyboard_navigation_can_authorize_only_at_button(active
     _tab_to_widget(root, tree, confirm)
     confirm.event_generate('<Return>')
     root.update()
-    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [expected]})]
+    assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [expected], 'mpn': False})]
 
 
 @pytest.mark.parametrize('size', [(640, 560), (540, 390)])

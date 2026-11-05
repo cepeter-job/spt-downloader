@@ -191,6 +191,21 @@ def _identity(value):
     return type(value) is str and re.fullmatch(GUID, value) is not None
 
 
+def period_code_year(code):
+    """Year digits of a PeriodCode, or None when the code is malformed.
+
+    Scope decisions (detail capture skip, custody out-of-scope proof)
+    use only these digits; full period validation with the captured
+    catalog label stays in period_year for row projection.
+    """
+    if type(code) is not str or not re.fullmatch(r'[0-9]{8}', code):
+        return None
+    first, last, year = int(code[:2]), int(code[2:4]), int(code[4:])
+    if not 1 <= first <= last <= 12 or not 1900 <= year <= 2100:
+        return None
+    return year
+
+
 def period_year(code, catalog=None):
     if type(code) is not str or not re.fullmatch(r'[0-9]{8}', code):
         raise MpnUnsupported('MPN detail tax period is unsupported')
@@ -225,9 +240,15 @@ def project_payment(header, detail, *, year, catalog=None):
     source_number(detail.get('HeaderExchangeRate'))
     if amount >= 0:
         return None
-    code = _text(detail, 'PeriodCode')
-    if period_year(code, catalog) != year:
+    # The header PeriodCode is the canonical scope: the collector captures
+    # details only for headers in the scope year, and custody proves
+    # out-of-scope headers from the same header code. A divergent detail
+    # period can neither rescue an out-of-year header nor condemn an
+    # in-year one; its code must still be well-formed.
+    if period_year(_text(header, 'PeriodCode'), catalog) != year:
         return None
+    code = _text(detail, 'PeriodCode')
+    period_year(code, catalog)
     label = catalog.get(code, code) if isinstance(catalog, dict) else code
     if type(label) is not str or not label:
         raise MpnUnsupported('MPN period label is unsupported')
@@ -474,8 +495,14 @@ def validate_mpn(run):
         seen.add(row['record_id'])
         for key in ('amount', 'currency_amount', 'exchange_rate'):
             _number(row[key])
-        if Decimal(row['amount']) >= 0 or period_year(row['period_code'], {row['period_code']: row['period_label']}) != run['year']:
+        # Scope was proven by the parent header at capture and custody;
+        # a row's own detail period code must only be well-formed here.
+        if Decimal(row['amount']) >= 0:
             raise ValueError('MPN row is outside the negative tax-period scope')
+        try:
+            period_year(row['period_code'], {row['period_code']: row['period_label']})
+        except MpnUnsupported:
+            raise ValueError('MPN row is outside the negative tax-period scope') from None
     if len(value['evidence']) > MAX_RESPONSES:
         raise ValueError('MPN evidence count exceeds its bound')
     paths, size = set(), 0
@@ -645,6 +672,14 @@ def _reconcile_held(run, readers):
                 values.append(detail)
     if seen_paths != set(by_path):
         raise MpnSafetyError('MPN original evidence lacks its owned page binding')
+    # Parents without detail bindings are complete only when their own
+    # header PeriodCode proves a different year; anything else (in-year
+    # or malformed) leaves the COMPLETE gate below to refuse.
+    for parent, header in headers.items():
+        if parent not in detail_offsets:
+            year_of_code = period_code_year(header.get('PeriodCode'))
+            if year_of_code is not None and year_of_code != run['year']:
+                detail_offsets[parent] = (0, 0)
     complete = value['status'] == 'COMPLETE'
     if complete and (list_total is None or list_first != list_total or any(
             parent not in detail_offsets or detail_offsets[parent][0] != detail_offsets[parent][1] for parent in headers)):

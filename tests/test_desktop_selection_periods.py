@@ -78,7 +78,7 @@ def test_search_accepts_display_month_annual_caption_and_original_source(tmp_pat
         tree.event_generate('<<TreeviewSelect>>')
         root.update()
         button(dialog, 'Sedot SPT terpilih').invoke()
-        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['synthetic-0']})]
+        assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['synthetic-0'], 'mpn': False})]
         assert payload == original and not controller.stopped
 
 

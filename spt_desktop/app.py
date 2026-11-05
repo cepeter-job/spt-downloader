@@ -565,6 +565,10 @@ class App:
         actions = ttk.Frame(frame, name='actions')
         actions.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(px(10), 0))
         actions.columnconfigure(0, weight=1)
+        mpn_var = tk.BooleanVar(dialog, False)
+        mpn_choice = ttk.Checkbutton(actions, name='mpn', text=copy_text('selection.mpn'),
+                                     variable=mpn_var)
+        mpn_choice.grid(row=0, column=0, sticky='w')
         stop = ttk.Button(actions, name='stop', text=copy_text('action.stop'), style='SPT.TButton',
                           command=lambda: self._cancel_interaction(interaction))
         stop.grid(row=0, column=1, padx=(0, px(8)), sticky='e')
@@ -714,7 +718,7 @@ class App:
                 return
             chosen = selected_ids()
             if chosen:
-                self._reply_interaction(interaction, {'selected_ids': chosen})
+                self._reply_interaction(interaction, {'selected_ids': chosen, 'mpn': mpn_var.get()})
 
         def confirm_key(event):
             if self._interaction_current(interaction) and submit.instate(['!disabled']):

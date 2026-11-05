@@ -58,7 +58,7 @@ def selected_job(tmp_path, monkeypatch, selected_ids, *, overwrite=None, stop_on
             assert [record['record_id'] for record in payload['records']] == [
                 'badan-normal', 'badan-amendment', '21-january', '21-february', 'unifikasi']
             stopped = stop_on_choice
-            return {'selected_ids': selected_ids}
+            return {'selected_ids': selected_ids, 'mpn': True}
         assert kind == 'overwrite' and overwrite is not None
         assert payload['files']
         return {'overwrite': overwrite}

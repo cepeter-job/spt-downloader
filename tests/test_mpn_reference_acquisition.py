@@ -19,7 +19,7 @@ def catalog_bytes():
             ('ACCOUNTING_TYPE', 'OtherTaxReturn', 'Synthetic accounting label'),
             ('ACCOUNTING_TYPE_DETAIL', 'DBP', 'Synthetic detail label'),
             ('REVENUE_CHART_OF_ACCOUNTS_6_DIGITS_SEGMENT', '411211', 'Synthetic revenue label'),
-            ('PERIOD', '01012026', 'Synthetic period label')):
+            ('PERIOD', '01012025', 'Synthetic period label')):
         groups.append({'ReferenceDataType': name, 'Checksum': 'SYNTHETIC-V1',
                        'Details': [{'Code': code, 'CodeDescription': label,
                                     'AppLanguageId': 'id-ID', 'ValidTo': None}]})
@@ -236,6 +236,7 @@ def test_acquired_original_bytes_and_origin_are_retained_before_later_failure(
         def pages(header, max_pages):
             ui.reference_raw = catalog_bytes()
             ui.reference_origin = 'adapter-get-v1'
+            ui.catalog = {'01012025': 'Synthetic period label'}
             if failure:
                 raise failure('SYNTHETIC LATER FAILURE')
             yield from detail_pages(header, max_pages)

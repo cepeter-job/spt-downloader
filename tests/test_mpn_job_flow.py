@@ -50,7 +50,7 @@ def test_worker_collects_required_mpn_with_open_browser_even_for_no_spt(tmp_path
     monkeypatch.setattr(worker, 'collect_mpn', mpn, raising=False)
     monkeypatch.setattr(worker, 'downloads_folder', lambda: tmp_path / 'Downloads')
     request = SimpleNamespace(request=lambda kind, payload, percent:
-                              {'selected_ids': [record['record_id'] for record in payload['records']]})
+                              {'selected_ids': [record['record_id'] for record in payload['records']], 'mpn': True})
     events = []
     result = worker.run_job(run['npwp'], 2025, tmp_path / 'root', 'synthetic-mpn-flow',
                             'msedge', True, events.append, lambda: False, requests=request)
@@ -80,6 +80,36 @@ def test_stop_during_spt_never_starts_a_later_mpn_stage(tmp_path, monkeypatch):
     result = worker.run_job(run['npwp'], 2025, tmp_path, 'synthetic-stop', 'msedge', True,
                             events.append, lambda: False, requests=object())
     assert result == 4 and events[-1]['status'] == 'CANCELLED'
+    assert not any(event['stage'] == 'mpn' for event in events)
+
+
+def test_worker_skips_mpn_when_selection_opts_out(tmp_path, monkeypatch):
+    from spt_desktop import worker
+    state = {}
+    synthetic_browser(worker, monkeypatch, state)
+    run = fixture_run()
+    run['sources'] = scope_run()['sources']
+    run['inventory_complete'] = True
+    def inventory(page, npwp, year, basis, folder, **kwargs):
+        (folder / 'inventory.json').write_text(json.dumps(run), encoding='utf-8')
+        return run
+    monkeypatch.setattr(worker, 'collect_inventory', inventory)
+    def details(page, data, folder, **kwargs):
+        data['complete'] = True
+        return data
+    monkeypatch.setattr(worker, 'collect_details', details)
+    def never(*args, **kwargs):
+        pytest.fail('MPN collected despite opt-out')
+    monkeypatch.setattr(worker, 'collect_mpn', never, raising=False)
+    monkeypatch.setattr(worker, 'downloads_folder', lambda: tmp_path / 'Downloads')
+    request = SimpleNamespace(request=lambda kind, payload, percent:
+                              {'selected_ids': [record['record_id'] for record in payload['records']],
+                               'mpn': False})
+    events = []
+    result = worker.run_job(run['npwp'], 2025, tmp_path / 'root', 'synthetic-mpn-off',
+                            'msedge', True, events.append, lambda: False, requests=request)
+    assert result == 0
+    assert events[-1]['status'] == 'COMPLETE'
     assert not any(event['stage'] == 'mpn' for event in events)
 
 

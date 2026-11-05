@@ -5,7 +5,7 @@ import json
 import pytest
 
 from coretax_mpn import decode_mpn, MpnSafetyError, mpn_custody
-from test_mpn import scope_run, payment_source
+from test_mpn import scope_run, payment_source, DETAIL
 from test_mpn_capture_protocol import SyntheticUI, snapshot
 
 
@@ -196,6 +196,73 @@ def test_held_list_query_equates_explicit_filter_defaults(monkeypatch,tmp_path,e
         with pytest.raises(MpnSafetyError):
             with mpn_custody(run,tmp_path):
                 pass
+
+
+def test_out_of_year_headers_skip_detail_capture_with_custody_proof(monkeypatch,tmp_path):
+    import coretax_mpn_browser as module
+    header,detail=payment_source()
+    in_scope=[deepcopy(header), deepcopy(header)]
+    in_scope[0]['RecordId']='00000000-0000-4000-8000-000000000020'
+    in_scope[1]['RecordId']='00000000-0000-4000-8000-000000000021'
+    out_scope=deepcopy(header)
+    out_scope['RecordId']='00000000-0000-4000-8000-000000000022'
+    out_scope['PeriodCode']='01012024'
+    malformed=deepcopy(header)
+    malformed['RecordId']='00000000-0000-4000-8000-000000000023'
+    malformed['PeriodCode']='not-a-period'
+    headers=[*in_scope, out_scope, malformed]
+    in_details={h['RecordId']:[] for h in in_scope}
+    detail = deepcopy(detail)
+    detail['HeaderRecordId'] = in_scope[0]['RecordId']
+    in_details[in_scope[0]['RecordId']]=[detail]
+    malformed_detail=deepcopy(detail)
+    malformed_detail['RecordId']='00000000-0000-4000-8000-000000000024'
+    malformed_detail['HeaderRecordId']=malformed['RecordId']
+    in_details[malformed['RecordId']]=[malformed_detail]
+    opened=[]
+    class UI(SyntheticUI):
+        def list_pages(self,max_pages):
+            yield snapshot(headers)
+        def detail_pages(self,header,max_pages):
+            opened.append(header['RecordId'])
+            yield snapshot(in_details[header['RecordId']],kind='detail',
+                           parent=header['RecordId']),None
+    monkeypatch.setattr(module,'AccountingUI',UI)
+    run=scope_run()
+    module.collect_mpn(object(),run,tmp_path)
+    assert opened==[h['RecordId'] for h in in_scope]+[malformed['RecordId']]
+    assert run['mpn']['headers']==4 and run['mpn']['details']==2
+    assert [row['record_id'] for row in run['mpn']['rows']]==[DETAIL]
+    # Malformed header code cannot prove out-of-scope: its (unresolved)
+    # detail audit keeps the run PARTIAL, but custody still reconciles.
+    assert run['mpn']['status']=='PARTIAL'
+    with mpn_custody(run,tmp_path):
+        pass
+
+
+def test_out_of_year_skip_cannot_hide_missing_in_scope_details(monkeypatch,tmp_path):
+    import coretax_mpn_browser as module
+    header,detail=payment_source()
+    out_scope=deepcopy(header)
+    out_scope['RecordId']='00000000-0000-4000-8000-000000000022'
+    out_scope['PeriodCode']='01012024'
+    headers=[deepcopy(header), out_scope]
+    class UI(SyntheticUI):
+        children={headers[0]['RecordId']:[detail]}
+        def list_pages(self,max_pages):
+            yield snapshot(headers)
+    monkeypatch.setattr(module,'AccountingUI',UI)
+    run=scope_run()
+    module.collect_mpn(object(),run,tmp_path)
+    assert run['mpn']['status']=='COMPLETE'
+    with mpn_custody(run,tmp_path):
+        pass
+    run['mpn']['bindings']=[b for b in run['mpn']['bindings']
+                            if not (b['kind']=='detail'
+                                    and b['parent_id']==headers[0]['RecordId'])]
+    with pytest.raises(MpnSafetyError):
+        with mpn_custody(run,tmp_path):
+            pass
 
 
 @pytest.mark.parametrize('terminal',[True,False])
