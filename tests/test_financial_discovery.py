@@ -118,3 +118,15 @@ def test_financial_link_outside_the_detail_content_is_not_downloaded(routed, tmp
     result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
     assert result and all(item['status'] == 'PARTIAL' for item in result)
     assert requests == [('GET', DETAIL)] and not list(tmp_path.glob('*.pdf'))
+
+
+def test_lazily_rendered_attachment_table_is_discovered_within_the_poll(routed, tmp_path):
+    link = f'<a href="{PDF_URL}">SYNTHETIC-PRIVATE-FILENAME.pdf</a>'
+    section = f'<section><label>{CURRENT_LABEL}</label>' + file_table(link, f'<caption>{CURRENT_LABEL}</caption>') + '</section>'
+    html = ('<script>setTimeout(()=>{document.querySelector(\'main\')'
+            f".insertAdjacentHTML('beforeend', {section!r})}}, 1500)</script>")
+    page, requests = routed(html)
+    result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+    item, _ = downloaded(result, tmp_path)
+    assert item['label'] == CURRENT_LABEL
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]

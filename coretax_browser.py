@@ -423,11 +423,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     resources.callback(_dispose_table_handle, container_handle)
     maximize_page_size(page, container_handle, max_page_size=max_page_size)
-    if max_page_size == 250:
-        # A previously selected 500-row page must not bypass the pilot limit.
+    if max_page_size >= 250:
+        # A previously selected larger page must not bypass the pilot limit.
         label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
         selected = label.inner_text().strip() if label else ''
-        if not selected.isascii() or not selected.isdecimal() or int(selected) > 250:
+        if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
             raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
@@ -457,7 +457,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     next_selector = '.p-paginator-next:not([disabled]):not(.p-disabled)'
     seen = set()
     cursor = None
-    if max_page_size == 250:
+    if max_page_size >= 250:
         _check_cancel(check_cancel)
         cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
         resources.callback(_dispose_table_handle, cursor)
@@ -904,10 +904,12 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                 if financial_required and name == 'L3' and table.evaluate(CORPORATE_STRUCTURE_JS, name) == {
                         'form': 'L3', 'component': 'rshshr-citr-l3-grid2',
                         'groups': ['B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN']}:
-                    # Live 31 Oct: 100 rows exhausted the 180s table budget.
-                    # Use an inspected <=250 option, not 500 or a fabricated
-                    # request; the selected option must pass the bound check.
-                    max_page_size = 250
+                    # Live 5 Nov: 250 rows/page exhausted the 180s table
+                    # budget on a 2250+ row table (~20s/page server-bound).
+                    # Use an inspected <=500 option; the selected option
+                    # must pass the bound check. Cursor renderer cost at
+                    # 500 rows stays negligible versus the grid fetch.
+                    max_page_size = 500
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
                     captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
                                              max_page_size=max_page_size)

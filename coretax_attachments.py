@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 import stat
+import time
 from urllib.parse import urlparse
 import uuid
 
@@ -301,6 +302,19 @@ def download_financial_attachments(page, record, folder, check_cancel=None):
         _include_folder(guard, folder)
         scanned = page.evaluate(_SCAN)
         _cancel(check_cancel)
+        # Lazy Angular grids can render after the tab's loading overlay
+        # clears. Rescan briefly while no attachment table/control is
+        # observed at all; present-but-unbound tables are definitive
+        # refusals and are never polled further.
+        deadline = time.monotonic() + 10
+        while (not scanned['controls']
+               and not any(o.get('attachment_tables') for o in scanned['observations'])
+               and time.monotonic() < deadline):
+            page.wait_for_timeout(500)
+            _cancel(check_cancel)
+            _verify_page(page, record)
+            scanned = page.evaluate(_SCAN)
+            _cancel(check_cancel)
         for observation in scanned['observations']:
             diagnostics.record('pdf.discovery', phase='pdf', **observation)
         controls = [item for item in scanned['controls'] if item['label'].strip() in _LABELS]
