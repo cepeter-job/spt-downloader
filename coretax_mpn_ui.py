@@ -7,7 +7,8 @@ from playwright.sync_api import Error as PlaywrightError, TimeoutError as Playwr
 
 from coretax_mpn import (ORIGIN, MpnUnsupported, MpnSafetyError, decode_mpn,
                          dom_numbers_match, parent_numeric_binding, taxpayer_id, captured_catalogs,
-                         source_display_date as _date, validate_page_total)
+                         source_display_date as _date, validate_page_total,
+                         normalized_mpn_query)
 from coretax_mpn_browser import AccountingObserver, _digest
 from spt_desktop import diagnostics
 
@@ -818,8 +819,9 @@ class AccountingUI:
     @staticmethod
     def _paginator_field(binding, current):
         # First differing binding field in fixed order; category only,
-        # never the compared values.
-        current = ({key: value for key, value in current.items() if key != 'First'}
+        # never the compared values. Both sides use query identity, so
+        # explicit filter defaults alone never name a field.
+        current = (normalized_mpn_query(current)
                    if isinstance(current, dict) else {})
         for key, field in AccountingUI._PAGINATOR_FIELDS:
             if binding.get(key) != current.get(key):
@@ -873,7 +875,7 @@ class AccountingUI:
 
     def _pages(self, kind, owner, initial, max_pages):
         snapshot = initial
-        binding = {key: value for key, value in snapshot['request'].items() if key != 'First'}
+        binding = normalized_mpn_query(snapshot['request'])
         payload = decode_mpn(initial['raw'])['Payload']
         mode = ('frontier-v1' if payload.get('Index', False) is None
                 and initial['total'] == initial['page_size'] + 1
@@ -886,8 +888,7 @@ class AccountingUI:
                 reason = 'first_mismatch'
             elif kind == 'list' and not self._unfiltered(snapshot):
                 reason = 'filter_changed'
-            elif ({key: value for key, value in snapshot['request'].items()
-                    if key != 'First'} != binding):
+            elif normalized_mpn_query(snapshot['request']) != binding:
                 reason = 'binding_changed'
             else:
                 reason = None
@@ -898,7 +899,7 @@ class AccountingUI:
                         binding, snapshot['request'])
                     fields['mpn_paginator_filter_shape'] = (
                         self._paginator_filter_shape(
-                            binding.get('Filters'),
+                            initial['request'].get('Filters'),
                             snapshot['request'].get('Filters')))
                 diagnostics.record('mpn.paginator_refused', level='WARNING',
                                    mpn_paginator_kind=kind,

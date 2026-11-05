@@ -431,7 +431,11 @@ earlier unsupported field/peer cannot hide a later known contradiction.
 Accounting original null-Index/full-page totals may declare the bounded
 `frontier-v1` continuation contract: the first total must be Rows+1 and every
 continuation total First+Rows+1. Bind identical queries, page sizes and languages,
-contiguous offsets and previous frontier=next First+1. Only an original nonempty
+contiguous offsets and previous frontier=next First+1. Query identity fills the
+reviewed filter defaults (`CaseSensitive=true`, `AsString=false`) for comparison
+only, so a Search request that omits those optional keys and a paginator request
+that writes them explicitly are the same query; non-default explicit values and
+every other field remain exact, and stored raw requests are never rewritten. Only an original nonempty
 terminal page with total=First+row count closes it, including a full terminal
 page. A promised continuation followed by an empty page contradicts that proof.
 Missing/non-null Index, arbitrary total changes, gaps, changed identities/content,

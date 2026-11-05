@@ -130,18 +130,23 @@ def test_second_page_binding_change_records_binding_changed(tmp_path):
     assert events[0]['mpn_paginator_filter_shape'] == 'none'
 
 
-def test_second_page_explicit_filter_defaults_record_filter_shape(tmp_path, monkeypatch):
+def test_second_page_explicit_filter_defaults_are_same_query(tmp_path, monkeypatch):
     rows = source_rows(11)
     packets = [frontier_snapshot(rows[:10], 0, 11), frontier_snapshot(rows[10:], 10, 11)]
 
     def explicit_defaults(body):
         body['Filters'][0].update({'CaseSensitive': True, 'AsString': False})
 
-    event = refused(tmp_path, monkeypatch, packets, mutate_second=explicit_defaults)
-    assert event['mpn_paginator_kind'] == 'list'
-    assert event['mpn_paginator_reason'] == 'binding_changed'
-    assert event['mpn_paginator_field'] == 'filters'
-    assert event['mpn_paginator_filter_shape'] == 'both_added'
+    ui, _, _ = source_ui(tmp_path, monkeypatch)
+    root = tmp_path / 'diagnostics'
+    try:
+        with diagnostics.session(root, 'worker') as log:
+            pages = paged(ui, packets, mutate_second=explicit_defaults)
+            assert log.flush()
+    finally:
+        ui.observer.close()
+    assert [page['first'] for page in pages] == [0, 10]
+    assert not [r for r in records(root) if r['event'] == 'mpn.paginator_refused']
 
 
 def test_second_page_added_filter_records_filter_changed(tmp_path, monkeypatch):
@@ -213,3 +218,34 @@ def test_paginator_filter_shape_classifies_optional_key_presence(initial_keys, c
     (None, []), ([], []), ([{}, {}], [{}]), ([{}], None), ('x', [{}])])
 def test_paginator_filter_shape_is_none_without_single_rules(initial, current):
     assert AccountingUI._paginator_filter_shape(initial, current) == 'none'
+
+
+def test_normalized_query_equates_explicit_filter_defaults():
+    from coretax_mpn import normalized_mpn_query
+    omitted = {'First': 0, 'Rows': 10, 'Filters': [
+        {'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals'}]}
+    explicit = {'First': 10, 'Rows': 10, 'Filters': [
+        {'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals',
+         'CaseSensitive': True, 'AsString': False}]}
+    assert normalized_mpn_query(omitted) == normalized_mpn_query(explicit)
+    assert 'First' not in normalized_mpn_query(omitted)
+    assert omitted['Filters'][0] == {'PropertyName': 'IsCancelled', 'Value': '0',
+                                     'MatchMode': 'equals'}, 'Raw request is not rewritten'
+
+
+def test_normalized_query_keeps_nondefault_filter_values_distinct():
+    from coretax_mpn import normalized_mpn_query
+    omitted = {'First': 0, 'Filters': [
+        {'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals'}]}
+    nondefault = {'First': 10, 'Filters': [
+        {'PropertyName': 'IsCancelled', 'Value': '0', 'MatchMode': 'equals',
+         'CaseSensitive': False}]}
+    assert normalized_mpn_query(omitted) != normalized_mpn_query(nondefault)
+
+
+@pytest.mark.parametrize('request,expected', [
+    (None, None), ('x', 'x'), ({'First': 0, 'Filters': 'x'}, {'Filters': 'x'}),
+    ({'First': 0, 'Filters': ['x']}, {'Filters': ['x']})])
+def test_normalized_query_passes_through_unsupported_shapes(request, expected):
+    from coretax_mpn import normalized_mpn_query
+    assert normalized_mpn_query(request) == expected

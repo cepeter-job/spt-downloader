@@ -161,7 +161,15 @@ yang beragam dalam satu pemeriksaan: `first_mismatch` (offset
 Prioritasnya berurutan: offset diperiksa pertama, lalu filter pada
 list, lalu binding umum; filter yang berubah juga mengubah binding,
 sehingga alasan filter didahulukan agar tidak tersamarkan.
-`pages` adalah nomor halaman yang ditolak. Khusus
+`pages` adalah nomor halaman yang ditolak. Identitas query
+membandingkan request tanpa `First` lewat `normalized_mpn_query`:
+kunci opsional `CaseSensitive`/`AsString` yang absen diisi dengan
+default yang direview (`true`/`false`), sehingga serialisasi
+Search yang menghilangkan kunci dan serialisasi paginator yang
+menulis default secara eksplisit dianggap query yang sama.
+Nilai eksplisit non-default tetap berbeda, dan semua bidang lain
+tetap dibandingkan persis. Normalisasi hanya untuk perbandingan;
+request mentah dan bukti yang disimpan tidak ditulis ulang. Khusus
 `binding_changed`, `mpn_paginator_field` mencatat bidang binding
 **pertama** yang berbeda dalam urutan tetap: `taxpayer`,
 `record_id`, `rows`, `sort_field`, `sort_order`, `language`,
