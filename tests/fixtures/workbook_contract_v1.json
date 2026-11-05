@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "description": "Fully synthetic semantic workbook goldens; not captured tax records or an XLSX binary snapshot.",
+  "cases": [
+    {
+      "tax": "PPh Badan",
+      "period": "Januari - Desember 2025",
+      "induk_marker_visible": true
+    },
+    {
+      "tax": "PPh Pasal 21/26",
+      "period": "Januari 2025",
+      "induk_marker_visible": true
+    },
+    {
+      "tax": "PPN",
+      "period": "Januari 2025",
+      "induk_marker_visible": false,
+      "induk_amount_cell": "E43",
+      "induk_amount": 101
+    },
+    {
+      "tax": "PPh Unifikasi",
+      "period": "Januari 2025",
+      "induk_marker_visible": false,
+      "induk_amount_cell": "C10",
+      "induk_amount": 101
+    }
+  ],
+  "generic_sheet": "L-Z",
+  "generic_cells": {
+    "A1": "L-Z",
+    "A2": "Bagian",
+    "B2": "Field",
+    "C2": "Nilai sumber",
+    "A3": "L-Z",
+    "B3": "Synthetic record marker",
+    "C3": "SYNTHETIC synthetic-model-return-1 / L-Z",
+    "A6": "Synthetic duplicate source rows",
+    "A7": "Kode",
+    "B7": "Nilai",
+    "A8": "Kode",
+    "B8": "Nilai",
+    "C8": "Numerik 2 (Nilai)",
+    "A9": "00007",
+    "B9": "1.234,50",
+    "C9": 1234.5,
+    "A10": "00007",
+    "B10": "1.234,50",
+    "C10": 1234.5
+  }
+}
