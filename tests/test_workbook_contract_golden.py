@@ -57,7 +57,7 @@ def test_semantic_golden_preserves_source_rows_and_workbook_proof(tmp_path, case
         }
 
         sheet = workbook[GOLDEN['generic_sheet']]
-        assert sheet.max_row == 10 and sheet.max_column == 3
+        assert sheet.max_row == 10 and sheet.max_column == 4
         for coordinate, expected in GOLDEN['generic_cells'].items():
             assert sheet[coordinate].value == expected, (case['tax'], coordinate)
         assert all(sheet[coordinate].data_type == 's'
