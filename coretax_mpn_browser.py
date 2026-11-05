@@ -12,7 +12,8 @@ from playwright.sync_api import Error as PlaywrightError
 from coretax_mpn import (ORIGIN, MpnSafetyError, MpnUnsupported, decode_mpn,
                          source_integer, _identity, MpnNumber, require_mpn,
                          project_payment, validate_mpn, MAX_BODY, MAX_EVIDENCE, MAX_RESPONSES,
-                         _mpn_directories, _source_digest, REQUEST_LANGUAGES, validate_page_total)
+                         _mpn_directories, _source_digest, REQUEST_LANGUAGES, validate_page_total,
+                         period_code_year)
 
 LIST_PATH = '/accounting/api/taxpayeraccounting/list'
 DETAIL_PATH = '/accounting/api/taxpayeraccounting/listdetail'
@@ -541,6 +542,20 @@ No partial DOM page is combined with another source. Raw pages stay private.
                         continue
                     seen_headers[identifier] = digest
                     value['headers'] += 1
+                    # Year scope is the header PeriodCode: an out-of-year
+                    # parent keeps its list evidence but its detail dialog
+                    # is never opened. Custody re-proves the same header
+                    # year before it can accept completeness. A malformed
+                    # code is treated as in-scope and captured.
+                    year_of_code = period_code_year(header.get('PeriodCode'))
+                    if year_of_code is not None and year_of_code != run['year']:
+                        capture_stage = 'parent_inventory'
+                        if value['headers'] % 25 == 0 or time.monotonic() - last_checkpoint >= 5:
+                            checkpoint()
+                            last_checkpoint = time.monotonic()
+                        if on_progress:
+                            on_progress(value['headers'], total, len(value['rows']))
+                        continue
                     detail_rows, detail_events, dom_pages = [], [], []
                     detail_first, detail_total, detail_page_count, detail_mode = 0, None, 0, None
                     capture_stage = 'parent_detail'

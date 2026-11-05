@@ -105,11 +105,13 @@ def test_complete_empty_attempt_cannot_discard_its_original_inventory_evidence(m
         validate_mpn(run)
 
 
-def prepare(monkeypatch, *, dom=None, duplicate=False, language='en-US'):
+def prepare(monkeypatch, *, dom=None, duplicate=False, language='en-US',
+            header_period='01012025'):
     import coretax_mpn_browser as browser
     header, detail = payment_source(amount='-1250.501')
-    # A zero-valued, later-year header still owns the selected-year payment.
-    header.update(Amount=decode_mpn(b'{"n":0}')['n'], PeriodCode='01012026')
+    # Zero-valued header in the scope year by default; callers may move it
+    # out of scope to exercise the header-year skip.
+    header.update(Amount=decode_mpn(b'{"n":0}')['n'], PeriodCode=header_period)
     positive = deepcopy(detail)
     positive.update(RecordId='00000000-0000-4000-8000-000000000004',
                     Amount=decode_mpn(b'{"n":40}')['n'])
@@ -150,18 +152,20 @@ def test_mixed_reviewed_request_languages_cannot_reconcile_as_one_attempt(monkey
             pass
 
 
-def test_all_zero_later_year_headers_are_inspected_and_raw_bytes_stay_private(monkeypatch, tmp_path):
-    browser, instances = prepare(monkeypatch)
+def test_all_zero_later_year_headers_skip_details_with_header_year_proof(monkeypatch, tmp_path):
+    from coretax_mpn import mpn_custody
+    browser, instances = prepare(monkeypatch, header_period='01012026')
     run = scope_run()
     require_mpn(run, 'dom')
     run['complete'] = True  # The preceding SPT detail component has completed.
     browser.collect_mpn(object(), run, tmp_path)
     assert run['complete'] and run['mpn']['status'] == 'COMPLETE'
-    assert instances[0].opened == [HEADER] and instances[0].closed
-    assert run['mpn']['headers'] == 1 and run['mpn']['details'] == 2
-    assert [row['record_id'] for row in run['mpn']['rows']] == [DETAIL]
-    assert run['mpn']['rows'][0]['amount'] == '-1250.501'
-    assert len(run['mpn']['evidence']) == 2
+    assert instances[0].opened == [] and instances[0].closed
+    assert run['mpn']['headers'] == 1 and run['mpn']['details'] == 0
+    assert run['mpn']['rows'] == []
+    assert len(run['mpn']['evidence']) == 1
+    with mpn_custody(run, tmp_path):
+        pass
     for item in run['mpn']['evidence']:
         raw = (tmp_path / item['path']).read_bytes()
         assert len(raw) == item['bytes'] and hashlib.sha256(raw).hexdigest() == item['sha256']
@@ -282,7 +286,8 @@ def test_identical_dom_rows_with_different_hidden_periods_require_whole_json_fal
     monkeypatch.setattr(browser, 'AccountingUI', make)
     run = scope_run()
     browser.collect_mpn(object(), run, tmp_path)
-    assert len(run['mpn']['rows']) == 1 and run['mpn']['rows'][0]['source'] == 'json'
+    assert len(run['mpn']['rows']) == 2
+    assert all(row['source'] == 'json' for row in run['mpn']['rows'])
 
 
 def test_complete_capture_cannot_drop_original_negative_rows_from_its_proof(monkeypatch, tmp_path):
