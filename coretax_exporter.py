@@ -16,6 +16,7 @@ import sys
 from urllib.parse import urlsplit
 from openpyxl import Workbook
 from coretax_pph21 import template_workbook, render_template_form
+from coretax_template_cells import _unmapped_identities
 from coretax_masa_templates import (RESOURCES as MASA_RESOURCES,
                                     template_workbook as masa_template_workbook,
                                     render_template_form as render_masa_template, canonical_form)
@@ -621,9 +622,14 @@ def _export_form_workbook(run, path):
                 detail.oddFooter.center.text = None
                 render_form(detail, sections, ordinal, form_index, start_row=1)
                 if tax == 'PPN':
+                    ppn_fields = [f for s in sections for f in s.get('fields', [])]
+                    ppn_tables = [t for s in sections for t in s.get('tables', [])]
+                    ppn_unresolved = [t for t in ppn_tables
+                                      if t.get('rows') or not t.get('complete', True)]
                     reports.append({'file': Path(path).name, 'form': form, 'complete': False,
                                     'unmapped_fields': sum(len(s.get('fields', [])) for s in sections),
-                                    'unmapped_tables': sum(len(s.get('tables', [])) for s in sections)})
+                                    'unmapped_tables': sum(len(s.get('tables', [])) for s in sections),
+                                    **_unmapped_identities(ppn_fields, ppn_unresolved)})
     for template in templates.values():
         wb.remove(template)
     if templates:

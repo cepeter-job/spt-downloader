@@ -7,7 +7,8 @@ import re
 
 from coretax_template_cells import (load_template_workbook, _key, _write, _mapping,
                                     _grow, _body_rows, _header_key, _table_projection,
-                                    _compact_rows, _whole_accounting, _parse_percent_rate)
+                                    _compact_rows, _whole_accounting, _parse_percent_rate,
+                                    _unmapped_identities)
 
 
 def canonical_form(tax, form):
@@ -586,4 +587,5 @@ def render_template_form(sheet, tax, form, sections):
     unresolved = [t for t in tables if t.get('rows') or not t.get('complete', True)]
     return {'complete': not fields and not unresolved, 'unmapped_fields': len(fields),
             'unmapped_tables': len(unresolved),
-            'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved)}
+            'unmapped_rows': sum(len(t.get('rows', [])) for t in unresolved),
+            **_unmapped_identities(fields, unresolved)}
