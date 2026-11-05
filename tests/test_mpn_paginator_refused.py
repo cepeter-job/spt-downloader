@@ -82,6 +82,8 @@ def test_second_page_reset_to_first_records_first_mismatch(tmp_path, monkeypatch
     assert event['mpn_paginator_kind'] == 'list'
     assert event['mpn_paginator_reason'] == 'first_mismatch'
     assert event['pages'] == 2
+    assert 'mpn_paginator_field' not in event
+    assert 'mpn_paginator_filter_shape' not in event
 
 
 def test_second_page_binding_change_records_binding_changed(tmp_path):
@@ -124,6 +126,22 @@ def test_second_page_binding_change_records_binding_changed(tmp_path):
     assert len(events) == 1
     assert events[0]['mpn_paginator_kind'] == 'list'
     assert events[0]['mpn_paginator_reason'] == 'binding_changed'
+    assert events[0]['mpn_paginator_field'] == 'sort_order'
+    assert events[0]['mpn_paginator_filter_shape'] == 'none'
+
+
+def test_second_page_explicit_filter_defaults_record_filter_shape(tmp_path, monkeypatch):
+    rows = source_rows(11)
+    packets = [frontier_snapshot(rows[:10], 0, 11), frontier_snapshot(rows[10:], 10, 11)]
+
+    def explicit_defaults(body):
+        body['Filters'][0].update({'CaseSensitive': True, 'AsString': False})
+
+    event = refused(tmp_path, monkeypatch, packets, mutate_second=explicit_defaults)
+    assert event['mpn_paginator_kind'] == 'list'
+    assert event['mpn_paginator_reason'] == 'binding_changed'
+    assert event['mpn_paginator_field'] == 'filters'
+    assert event['mpn_paginator_filter_shape'] == 'both_added'
 
 
 def test_second_page_added_filter_records_filter_changed(tmp_path, monkeypatch):
@@ -150,3 +168,48 @@ def test_unlisted_paginator_reason_is_stripped(tmp_path):
     assert len(events) == 1
     assert 'mpn_paginator_reason' not in events[0]
     assert SECRET not in json.dumps(records(root))
+
+
+@pytest.mark.parametrize('key,field', [
+    ('TaxpayerAggregateIdentifier', 'taxpayer'), ('RecordId', 'record_id'),
+    ('Rows', 'rows'), ('SortField', 'sort_field'), ('SortOrder', 'sort_order'),
+    ('LanguageId', 'language'), ('Filters', 'filters')])
+def test_paginator_field_reports_first_differing_binding_field(key, field):
+    binding = {'Rows': 10, 'SortField': 'PostingDate', 'SortOrder': -1,
+               'LanguageId': 'id-ID', 'Filters': [], 'TaxpayerAggregateIdentifier': 'SYNTHETIC'}
+    current = dict(binding, First=10)
+    current[key] = 'SYNTHETIC_CHANGED' if key != 'Rows' else 25
+    assert AccountingUI._paginator_field(binding, current) == field
+
+
+def test_paginator_field_falls_back_to_other_for_unlisted_key():
+    assert AccountingUI._paginator_field({'Rows': 10}, {'Rows': 10, 'Unlisted': 1}) == 'other'
+    assert AccountingUI._paginator_field({'Rows': 10}, None) == 'rows'
+
+
+@pytest.mark.parametrize('initial_keys,current_keys,shape', [
+    ({'PropertyName', 'Value', 'MatchMode'}, {'PropertyName', 'Value', 'MatchMode'}, 'none'),
+    ({'PropertyName', 'Value', 'MatchMode'},
+     {'PropertyName', 'Value', 'MatchMode', 'CaseSensitive'}, 'case_sensitive_added'),
+    ({'PropertyName', 'Value', 'MatchMode'},
+     {'PropertyName', 'Value', 'MatchMode', 'AsString'}, 'as_string_added'),
+    ({'PropertyName', 'Value', 'MatchMode'},
+     {'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'}, 'both_added'),
+    ({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive', 'AsString'},
+     {'PropertyName', 'Value', 'MatchMode'}, 'both_removed'),
+    ({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive'},
+     {'PropertyName', 'Value', 'MatchMode'}, 'case_sensitive_removed'),
+    ({'PropertyName', 'Value', 'MatchMode', 'AsString'},
+     {'PropertyName', 'Value', 'MatchMode'}, 'as_string_removed'),
+    ({'PropertyName', 'Value', 'MatchMode', 'CaseSensitive'},
+     {'PropertyName', 'Value', 'MatchMode', 'AsString'}, 'mixed')])
+def test_paginator_filter_shape_classifies_optional_key_presence(initial_keys, current_keys, shape):
+    initial = [{key: None for key in initial_keys}]
+    current = [{key: None for key in current_keys}]
+    assert AccountingUI._paginator_filter_shape(initial, current) == shape
+
+
+@pytest.mark.parametrize('initial,current', [
+    (None, []), ([], []), ([{}, {}], [{}]), ([{}], None), ('x', [{}])])
+def test_paginator_filter_shape_is_none_without_single_rules(initial, current):
+    assert AccountingUI._paginator_filter_shape(initial, current) == 'none'

@@ -810,6 +810,50 @@ class AccountingUI:
     def _unfiltered(snapshot):
         return AccountingUI._unfiltered_reason(snapshot) is None
 
+    _PAGINATOR_FIELDS = (('TaxpayerAggregateIdentifier', 'taxpayer'),
+                         ('RecordId', 'record_id'), ('Rows', 'rows'),
+                         ('SortField', 'sort_field'), ('SortOrder', 'sort_order'),
+                         ('LanguageId', 'language'), ('Filters', 'filters'))
+
+    @staticmethod
+    def _paginator_field(binding, current):
+        # First differing binding field in fixed order; category only,
+        # never the compared values.
+        current = ({key: value for key, value in current.items() if key != 'First'}
+                   if isinstance(current, dict) else {})
+        for key, field in AccountingUI._PAGINATOR_FIELDS:
+            if binding.get(key) != current.get(key):
+                return field
+        return 'other'
+
+    @staticmethod
+    def _paginator_filter_shape(initial, current):
+        # Optional-key presence change of a single filter rule only.
+        if not (isinstance(initial, list) and len(initial) == 1
+                and isinstance(initial[0], dict) and isinstance(current, list)
+                and len(current) == 1 and isinstance(current[0], dict)):
+            return 'none'
+        optional = ('CaseSensitive', 'AsString')
+        added = {key for key in optional
+                 if key in current[0] and key not in initial[0]}
+        removed = {key for key in optional
+                   if key in initial[0] and key not in current[0]}
+        if added and removed:
+            return 'mixed'
+        if added == set(optional):
+            return 'both_added'
+        if added == {'CaseSensitive'}:
+            return 'case_sensitive_added'
+        if added == {'AsString'}:
+            return 'as_string_added'
+        if removed == set(optional):
+            return 'both_removed'
+        if removed == {'CaseSensitive'}:
+            return 'case_sensitive_removed'
+        if removed == {'AsString'}:
+            return 'as_string_removed'
+        return 'none'
+
     def _table(self, owner, headers, count):
         deadline = time.monotonic() + 5
         while True:
@@ -848,10 +892,18 @@ class AccountingUI:
             else:
                 reason = None
             if reason is not None:
+                fields = {}
+                if reason == 'binding_changed':
+                    fields['mpn_paginator_field'] = self._paginator_field(
+                        binding, snapshot['request'])
+                    fields['mpn_paginator_filter_shape'] = (
+                        self._paginator_filter_shape(
+                            binding.get('Filters'),
+                            snapshot['request'].get('Filters')))
                 diagnostics.record('mpn.paginator_refused', level='WARNING',
                                    mpn_paginator_kind=kind,
                                    mpn_paginator_reason=reason,
-                                   pages=page_index + 1)
+                                   pages=page_index + 1, **fields)
                 raise MpnSafetyError('MPN paginator query/total/offset changed')
             total = validate_page_total(decode_mpn(snapshot['raw'])['Payload'], expected_first,
                                         snapshot['page_size'], total, mode=mode)

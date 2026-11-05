@@ -161,7 +161,18 @@ yang beragam dalam satu pemeriksaan: `first_mismatch` (offset
 Prioritasnya berurutan: offset diperiksa pertama, lalu filter pada
 list, lalu binding umum; filter yang berubah juga mengubah binding,
 sehingga alasan filter didahulukan agar tidak tersamarkan.
-`pages` adalah nomor halaman yang ditolak. Tidak ada offset, nilai
+`pages` adalah nomor halaman yang ditolak. Khusus
+`binding_changed`, `mpn_paginator_field` mencatat bidang binding
+**pertama** yang berbeda dalam urutan tetap: `taxpayer`,
+`record_id`, `rows`, `sort_field`, `sort_order`, `language`,
+`filters`, atau `other` untuk kunci tak dikenal; dan
+`mpn_paginator_filter_shape` mencatat perubahan keberadaan kunci
+opsional `CaseSensitive`/`AsString` pada satu rule filter:
+`none`, `<kunci>_added`, `<kunci>_removed`, `both_added`,
+`both_removed`, atau `mixed`. Kedua kategori hanya berasal dari
+perbandingan bentuk request yang sudah ada, tidak mengandung nilai
+pembanding, dan tidak mengizinkan aksi. Dua field ini tidak
+direkam untuk `first_mismatch`/`filter_changed`. Tidak ada offset, nilai
 request, filter, tanggal, kode, identitas, pajak, URL, atau isi
 baris yang direkam; kategori ini hanya menunjukkan bentuk penolakan,
 bukan penyebab live-nya dan bukan izin menerima snapshot baru.
