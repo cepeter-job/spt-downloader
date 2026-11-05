@@ -97,27 +97,27 @@ def assert_rows(table, total):
     assert 'source_structure' not in table  # No new output/eligibility declaration.
 
 
-def test_corporate_l3_b_4654_rows_cap_at_250_without_losing_rows_or_footer(page):
+def test_corporate_l3_b_4654_rows_cap_at_500_without_losing_rows_or_footer(page):
     fixture(page)
     captured = captured_table(capture(page))
-    assert captured['pages'] == 19
+    assert captured['pages'] == 10
     assert_rows(captured, 4654)
-    assert page.evaluate('({sizeChanges,moves,size})') == {'sizeChanges': [250], 'moves': 18, 'size': 250}
-    # A previous 500-row selection must be downsized via the inspected UI.
-    table = fixture(page, selected=500)
-    reduced = driver.capture_table(page, table, 1, max_pages=1000, max_page_size=250)
+    assert page.evaluate('({sizeChanges,moves,size})') == {'sizeChanges': [500], 'moves': 9, 'size': 500}
+    # A previous 1000-row selection must be downsized via the inspected UI.
+    table = fixture(page, sizes=(10, 25, 50, 100, 250, 500, 1000), selected=1000)
+    reduced = driver.capture_table(page, table, 1, max_pages=1000, max_page_size=500)
     assert_rows(reduced, 4654)
-    assert reduced['pages'] == 19
-    assert page.evaluate('({sizeChanges,moves,size})') == {'sizeChanges': [250], 'moves': 18, 'size': 250}
+    assert reduced['pages'] == 10
+    assert page.evaluate('({sizeChanges,moves,size})') == {'sizeChanges': [500], 'moves': 9, 'size': 500}
     assert captured['rows'] == reduced['rows']
 
 
 @pytest.mark.parametrize('sizes,selected,chosen,changes', [
-    ((10, 100, 250, 500, 1000), 100, 250, [250]),
+    ((10, 100, 250, 500, 1000), 100, 500, [500]),
     ((10, 100, 250), 100, 250, [250]),
     ((10, 100, 250), 250, 250, []),
     ((10, 100), 100, 100, []),
-    ((10, 100, 500), 500, 100, [100]),
+    ((10, 100, 500, 1000), 1000, 500, [500]),
 ])
 def test_corporate_size_uses_only_available_bounded_options_and_avoids_reload(page, sizes, selected, chosen, changes):
     fixture(page, total=601, sizes=sizes, selected=selected)
@@ -128,12 +128,12 @@ def test_corporate_size_uses_only_available_bounded_options_and_avoids_reload(pa
     assert page.locator('.p-dropdown-items').is_hidden()
 
 
-def test_guarded_250_cap_refuses_unbounded_current_ui_option(page):
-    table = fixture(page, total=1001, sizes=(500, 1000), selected=500)
+def test_guarded_500_cap_refuses_unbounded_current_ui_option(page):
+    table = fixture(page, total=1001, sizes=(1000,), selected=1000)
     with pytest.raises(RuntimeError, match='page size'):
-        driver.capture_table(page, table, 1, max_pages=1000, max_page_size=250)
+        driver.capture_table(page, table, 1, max_pages=1000, max_page_size=500)
     assert page.evaluate('({sizeChanges,moves,size})') == {
-        'sizeChanges': [], 'moves': 0, 'size': 500}
+        'sizeChanges': [], 'moves': 0, 'size': 1000}
 
 
 @pytest.mark.parametrize('override', [
@@ -165,7 +165,7 @@ def test_large_page_capture_preserves_partial_count_and_page_limit(page):
     fixture(page, total=601)
     limited = captured_table(capture(page, max_pages=1))
     assert not limited['complete'] and limited['pages'] == 1
-    assert limited['body_row_count'] == 250 and limited['source_total'] == 601
+    assert limited['body_row_count'] == 500 and limited['source_total'] == 601
     assert page.evaluate('moves') == 0
     fixture(page, total=601, reported=602)
     mismatch = captured_table(capture(page))
@@ -182,5 +182,5 @@ def test_large_page_capture_stop_after_first_move_propagates(page):
 
     with pytest.raises(driver.CaptureCancelled):
         capture(page, check_cancel=stop)
-    assert page.evaluate('sizeChanges') == [250]
+    assert page.evaluate('sizeChanges') == [500]
     assert page.evaluate('moves') == 1
