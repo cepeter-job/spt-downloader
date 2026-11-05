@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "description": "Synthetic business facts shared by independent JSON wire and stubbed DOM capture fixtures; not a live or browser-parser parity claim.",
+  "scope": [
+    "0000000000000001",
+    2025,
+    "period"
+  ],
+  "record_id": "00000000-0000-4000-8000-000000000001",
+  "meta": {
+    "Jenis Pajak": "PPh Badan",
+    "Masa Pajak": "Tahun 2025",
+    "Model SPT": "Normal",
+    "Tanggal Submit SPT": "02-01-2025"
+  },
+  "facts": [
+    {
+      "json_path": "/MainFormData/Tin",
+      "dom_field": "Tin",
+      "literal": "0000000000000001"
+    },
+    {
+      "json_path": "/MainFormData/NetIncomeBeforeTax",
+      "dom_field": "NetIncomeBeforeTax",
+      "literal": "123.4500"
+    }
+  ],
+  "dom_sections": [
+    {
+      "name": "Induk",
+      "fields": [
+        {
+          "label": "1. NPWP",
+          "field": "Tin",
+          "group": "A. IDENTITAS WAJIB PAJAK",
+          "value": "0000000000000001"
+        },
+        {
+          "label": "SYNTHETIC NET INCOME",
+          "field": "NetIncomeBeforeTax",
+          "group": "SYNTHETIC VALUES",
+          "value": "123.4500"
+        }
+      ],
+      "tables": [],
+      "text": ""
+    }
+  ]
+}
