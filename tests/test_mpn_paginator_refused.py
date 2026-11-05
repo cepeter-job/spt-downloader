@@ -243,9 +243,9 @@ def test_normalized_query_keeps_nondefault_filter_values_distinct():
     assert normalized_mpn_query(omitted) != normalized_mpn_query(nondefault)
 
 
-@pytest.mark.parametrize('request,expected', [
+@pytest.mark.parametrize('value,expected', [
     (None, None), ('x', 'x'), ({'First': 0, 'Filters': 'x'}, {'Filters': 'x'}),
     ({'First': 0, 'Filters': ['x']}, {'Filters': ['x']})])
-def test_normalized_query_passes_through_unsupported_shapes(request, expected):
+def test_normalized_query_passes_through_unsupported_shapes(value, expected):
     from coretax_mpn import normalized_mpn_query
-    assert normalized_mpn_query(request) == expected
+    assert normalized_mpn_query(value) == expected
