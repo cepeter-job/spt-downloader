@@ -114,3 +114,27 @@ def test_foreign_footer_request_cannot_hide_behind_final_tab_or_fallback(browser
     with observed(browser, tmp_path, monkeypatch, defect='foreign-footer') as (module, fixture, capture):
         with pytest.raises(JsonSafetyError):
             module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5)
+
+
+@pytest.mark.parametrize('defect,gate', [
+    ('changed-main', 'build_digest'),
+    ('changed-build', 'build_digest'),
+    ('missing-form', 'catalog'),
+    ('extra-form', 'catalog'),
+    ('duplicate-form', 'catalog'),
+    ('extra-table', 'grid_structure'),
+    ('filtered', 'evaluation_error'),
+])
+def test_masa_observer_gate_records_which_strict_gate_refused(browser, tmp_path, monkeypatch, defect, gate):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    if defect in {'missing-form', 'extra-form', 'duplicate-form'}:
+        monkeypatch.setattr(driver, 'DETAIL_READY_TIMEOUT', 0.05)
+    root = tmp_path / 'diag'
+    with diagnostics.session(root, 'worker') as log:
+        with observed(browser, tmp_path, monkeypatch, defect=defect) as (module, fixture, capture):
+            assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
+        assert log.flush()
+    gates = [row for row in records(root) if row['event'] == 'masa.observer_gate']
+    assert [row['masa_observer_gate'] for row in gates] == [gate]

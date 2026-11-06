@@ -260,6 +260,12 @@ def _pages(events, endpoint, record_id, total):
     return pages
 
 
+def _gate(name):
+    """Record which strict gate refused native coverage (fixed enum only)."""
+    diagnostics.record('masa.observer_gate', masa_observer_gate=name)
+    return None
+
+
 def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_cancel=None):
     """Bind known tabs/controls/tables to observed requests, not source values.
 
@@ -272,7 +278,7 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
     try:
         tax = record['meta'].get('Jenis Pajak')
         if tax not in FORMS or type(max_pages) is not int or max_pages <= 0:
-            return None
+            return _gate('unsupported_tax')
         verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
         builds = {}
         for url in (MAIN_SOURCE, TAX_SOURCES[tax]):
@@ -283,41 +289,41 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
                 diagnostics.record('build.unfamiliar_build', build_source=(
                     'main' if url == MAIN_SOURCE else
                     'ppn_chunk' if tax == 'PPN' else 'unifikasi_chunk'))
-                return None
+                return _gate('build_digest')
             builds[url] = digest
         reference_order = _reference_order_build(page, check_cancel) if tax == 'PPh Unifikasi' else None
         if tax == 'PPN':
             from coretax_browser import _ppn_catalog_ready
             if not _ppn_catalog_ready(page, check_cancel):
-                return None
+                return _gate('catalog')
         view, tabs = _tabs(page)
         names = [tabs.nth(i).inner_text().strip() for i in range(tabs.count())]
         if len(names) != len(set(names)) or set(names) != set(FORMS[tax]):
-            return None
+            return _gate('tab_set')
         environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
         forms = []
         for ordinal, name in enumerate(names):
             _check_cancel(check_cancel)
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
-                return None
+                return _gate('tab_disabled')
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
-                return None
+                return _gate('panel')
             selector, roles = FORMS[tax][name]
             form = panel.locator(selector) if selector else panel
             if form.count() != 1 or not form.is_visible():
-                return None
+                return _gate('form_root')
             fields = form.evaluate(FIELDS.replace('GROUP', GROUP_JS), {'tax': tax, 'form': name})
             if fields is None or any(not field['field'] or not field['label'] for field in fields):
-                return None
+                return _gate('fields')
             binding = {'name': name, 'fields': fields, 'tables': [], 'builds': dict(builds), **environment}
             if name == 'INDUK' and reference_order is not None:
                 binding['reference_order_build'] = reference_order
             if tax == 'PPh Unifikasi' and name == 'INDUK':
                 tree = form.locator('rshshr-spt-unifikasi-grid p-treetable table:visible')
                 if tree.count() != 1:
-                    return None
+                    return _gate('grid_structure')
                 binding['tables'].append({'name': 'income-taxes', **tree.evaluate(TABLE.replace('GROUP', GROUP_JS))})
             visible_tables = form.locator('table:visible')
             layout_count = 0
@@ -327,25 +333,25 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
                 layout_count = sum(bool(visible_tables.nth(index).evaluate(PPN_LABEL_TABLE))
                                    for index in range(visible_tables.count()))
             if visible_tables.count() - layout_count != len(roles) + len(binding['tables']):
-                return None
+                return _gate('grid_structure')
             for grid_selector, suffix in roles:
                 table = form.locator(grid_selector + ' p-table')
                 if table.count() != 1 or not _turn_grid(page, table, max_pages, check_cancel):
-                    return None
+                    return _gate('grid_structure')
                 verify_detail_url(page.url, list_taxpayer_id(record['list_url']), record['record_id'])
                 physical = table.locator('table:visible')
                 marker = table.locator('.p-paginator-current')
                 if physical.count() != 1 or marker.count() != 1:
-                    return None
+                    return _gate('grid_structure')
                 match = re.search(r'(?:of|dari)\s+([0-9]+)(?![0-9.,])', marker.inner_text(), re.I)
                 if not match:
-                    return None
+                    return _gate('total')
                 total = int(match[1])
                 endpoint = ORIGIN + '/returnsheet/api/' + ('loadndvat/' if tax == 'PPN' else 'loadwtr/') + suffix + '-grid'
                 pages = _pages(_observations(capture, record, scope), endpoint, record['record_id'], total)
                 metadata = physical.evaluate(TABLE.replace('GROUP', GROUP_JS))
                 if not metadata['headers'] or not all(metadata['headers']):
-                    return None
+                    return _gate('table_shape')
                 table_binding = {'name': suffix, **metadata, 'endpoint': endpoint,
                                  'pages': pages, 'source_total': total}
                 if tax == 'PPN' and suffix == 'lc':
@@ -355,7 +361,7 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
                     requests = _requests(_observations(capture, record, scope),
                         footer_endpoint, record['record_id'], identity='ReturnSheetRecordId')
                     if any(item['request_json'].get('IsNormalVAT') is not True for item in requests):
-                        return None
+                        return _gate('reference')
                     table_binding['footer_source'] = {'endpoint': footer_endpoint, 'requests': requests}
                 binding['tables'].append(table_binding)
             if name == 'INDUK':
@@ -369,7 +375,7 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             references = _reference_bindings(page, record, scope, capture, check_cancel,
                                              endpoints=(UNIFIKASI_REFERENCE_URL,))
             if references is None:
-                return None
+                return _gate('reference')
             for form in forms:
                 form['references'] = references
         return forms
@@ -377,7 +383,7 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
         raise
     except Exception:
         _check_cancel(check_cancel)
-        return None
+        return _gate('evaluation_error')
     finally:
         # Unknown structure/build cannot turn an observed contradiction into
         # ordinary fallback. The dispatch also checks again after final drain.
