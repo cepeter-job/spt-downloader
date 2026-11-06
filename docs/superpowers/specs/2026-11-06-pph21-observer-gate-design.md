@@ -27,5 +27,5 @@ the refusal attributable.
 `tests/test_pph21_json_observer.py` defect fixtures pin the recorded
 gate per defect (changed-build → build_digest, missing/extra-form →
 tab_set, invalid-group → table_shape, extra-ui-grid → grid_structure,
-unknown-status-label → tab_caption, ambiguous-status → fields). Full
+unknown-status-label → fields, ambiguous-status → fields). Full
 CI, then the next live run names the actual gate.

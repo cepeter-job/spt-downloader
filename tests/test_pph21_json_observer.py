@@ -112,7 +112,7 @@ def test_unsupported_structure_never_becomes_native_coverage(browser, tmp_path, 
     ('changed-build', 'build_digest'),
     ('invalid-group', 'table_shape'),
     ('extra-ui-grid', 'grid_structure'),
-    ('unknown-status-label', 'tab_caption'),
+    ('unknown-status-label', 'fields'),
     ('ambiguous-status', 'fields'),
 ])
 def test_observer_gate_records_which_strict_gate_refused(browser, tmp_path, monkeypatch, defect, gate):
