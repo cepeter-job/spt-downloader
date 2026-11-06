@@ -106,6 +106,28 @@ def test_unsupported_structure_never_becomes_native_coverage(browser, tmp_path, 
         assert_no_values_or_actions(fixture)
 
 
+@pytest.mark.parametrize('defect,gate', [
+    ('missing-form', 'tab_set'),
+    ('extra-form', 'tab_set'),
+    ('changed-build', 'build_digest'),
+    ('invalid-group', 'table_shape'),
+    ('extra-ui-grid', 'grid_structure'),
+    ('unknown-status-label', 'tab_caption'),
+    ('ambiguous-status', 'fields'),
+])
+def test_observer_gate_records_which_strict_gate_refused(browser, tmp_path, monkeypatch, defect, gate):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    observe = feature(monkeypatch)
+    root = tmp_path / 'diag'
+    with diagnostics.session(root, 'worker') as log:
+        with observed(browser, tmp_path, defect=defect) as (fixture, capture):
+            assert observe(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
+        assert log.flush()
+    gates = [row for row in records(root) if row['event'] == 'pph21.observer_gate']
+    assert [row['pph21_observer_gate'] for row in gates] == [gate]
+
+
 @pytest.mark.parametrize('defect', ['foreign-request', 'unauthorized', 'forbidden'])
 def test_identity_and_authorization_failures_never_become_dom_fallback(browser, tmp_path, monkeypatch, defect):
     observe = feature(monkeypatch)
