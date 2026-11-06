@@ -19,7 +19,7 @@ treatment in PR #193; Masa was the remaining gap.
 `masa.observer_gate` with a fixed enum: `unsupported_tax`, `build_digest`
 (mirror of build.unfamiliar_build — both fire), `tab_set`, `tab_disabled`,
 `panel`, `form_root`, `fields`, `grid_structure`, `table_shape`, `total`,
-`reference_order`, `catalog`, `evaluation_error`. Every `return None` in
+`reference`, `catalog`, `evaluation_error`. Every `return None` in
 `observe_masa_forms` maps to one gate. Behavior unchanged: still fails
 closed to DOM; the refusal becomes attributable.
 
