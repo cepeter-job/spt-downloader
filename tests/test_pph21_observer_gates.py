@@ -7,8 +7,6 @@ exercised without trusting new DOM shapes.
 import hashlib
 import importlib
 
-import pytest
-
 from masa_json_fixtures import SCOPE, TAXPAYER, selected
 from pph21_observer_fixture import MAIN, ARTICLE, BUILD, browser  # noqa: F401  (browser unused; kept for parity)
 from spt_desktop import diagnostics
