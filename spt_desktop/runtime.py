@@ -34,6 +34,7 @@ WORKER_FILES = (
     'coretax_masa_observer.py', 'coretax_masa_projection.py', 'coretax_unifikasi_json.py',
     'resources/ppn_format.xlsx', 'resources/unifikasi_format.xlsx',
     'coretax_attachments.py', 'coretax_financial_post.py', 'coretax_pdf.py', 'requirements.txt',
+    'coretax_build_pins.py', 'resources/build-pins.json',
     RUNTIME_LOCK,
     'spt_desktop/__init__.py', 'spt_desktop/paths.py',
     'spt_desktop/credentials.py', 'spt_desktop/windows.py',
