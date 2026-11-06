@@ -65,8 +65,10 @@ class FakeTab:
 
 
 class FakeTabs:
-    def __init__(self, captions):
+    def __init__(self, captions, *, disabled_first=False):
         self._tabs = [FakeTab(c) for c in captions]
+        if disabled_first and self._tabs:
+            self._tabs[0]._disabled = True
 
     def count(self):
         return len(self._tabs)
@@ -77,7 +79,7 @@ class FakeTabs:
 
 class FakeLocator:
     def __init__(self, page, *, count=1, visible=True, fields=(), grids=0,
-                 marker='', metadata=None, inner=''):
+                 marker='', metadata=None, inner='', tables=1):
         self._page = page
         self._count = count
         self._visible = visible
@@ -86,9 +88,13 @@ class FakeLocator:
         self._marker = marker
         self._metadata = metadata or {}
         self._inner = inner
+        self._tables = tables
 
     def count(self):
         return self._count
+
+    def nth(self, index):
+        return self
 
     def is_visible(self):
         return self._visible
@@ -100,12 +106,16 @@ class FakeLocator:
         if selector == 'ui-grid':
             return FakeLocator(self._page, count=self._grids)
         if selector == 'table:visible':
-            return FakeLocator(self._page, count=1, metadata=self._metadata)
+            return FakeLocator(self._page, count=self._tables, metadata=self._metadata,
+                               marker=self._marker)
         if selector == '.p-paginator-current':
             return FakeLocator(self._page, count=1, inner=self._marker)
         if selector == 'p-table':
-            return FakeLocator(self._page, count=1)
-        return FakeLocator(self._page, count=self._grid_count(selector))
+            return FakeLocator(self._page, count=1, marker=self._marker,
+                               metadata=self._metadata)
+        return FakeLocator(self._page, count=self._grid_count(selector),
+                           grids=self._grids, marker=self._marker,
+                           metadata=self._metadata, tables=self._tables)
 
     def _grid_count(self, selector):
         return self._count
@@ -118,36 +128,39 @@ class FakeLocator:
 
 class FakePanel:
     def __init__(self, page, *, root_count=1, fields=(), induk_grids=0,
-                 wrapper_count=1, n_grids=0, tables_per_root=0,
+                 root_grids=None, root_tables=1,
                  marker='Page 1 of 1', metadata=None):
         self._page = page
         self._root_count = root_count
         self._fields = fields
-        self._induk_grids = induk_grids
-        self._wrapper_count = wrapper_count
-        self._n_grids = n_grids
-        self._tables_per_root = tables_per_root
+        self._grids = root_grids if root_grids is not None else induk_grids
         self._marker = marker
         self._metadata = metadata or {'group': 'LIST-IA', 'headers': ['H']}
+        self._root_tables = root_tables
+        self._calls = 0
 
     def locator(self, selector):
+        # First root is Induk (no ui-grid expected); later roots are grid forms.
+        self._calls += 1
+        grids = 0 if self._calls == 1 else self._grids
         return FakeLocator(self._page, count=self._root_count,
-                           fields=self._fields, grids=self._induk_grids,
-                           marker=self._marker, metadata=self._metadata)
+                           fields=self._fields, grids=grids,
+                           marker=self._marker, metadata=self._metadata,
+                           tables=self._root_tables)
 
 
-def base_fakes(mod, monkeypatch, *, captions=None, panel=None, page=None):
+def base_fakes(mod, monkeypatch, *, captions=None, panel=None, page=None, disabled_first=False):
     monkeypatch.setattr(mod, '_reference_order_build', lambda p, c: None)
     monkeypatch.setattr(mod, '_turn_grid', lambda p, t, m, c: True)
     monkeypatch.setattr(mod, '_pages', lambda *a, **k: [])
     captions = captions or ['Induk', 'L-IA', 'L-IB', 'L-II', 'L-III']
-    monkeypatch.setattr(mod, '_tabs', lambda p: (None, FakeTabs(captions)))
+    monkeypatch.setattr(mod, '_tabs', lambda p: (None, FakeTabs(captions, disabled_first=disabled_first)))
     panel = panel or FakePanel(page if page is not None else object())
     return panel
 
 
 def run(mod, monkeypatch, page, record, *, panel=None, captions=None,
-        requests=(), observations=(), reference_bindings='skip'):
+        requests=(), observations=(), reference_bindings='skip', disabled_first=False):
     if reference_bindings != 'skip':
         monkeypatch.setattr(mod, '_reference_bindings',
                             lambda *a, **k: reference_bindings)
@@ -157,7 +170,8 @@ def run(mod, monkeypatch, page, record, *, panel=None, captions=None,
     monkeypatch.setattr(mod, '_observations', lambda c, r, s: list(observations))
     panel_obj = panel if panel is not None else FakePanel(page)
     monkeypatch.setattr(mod, '_native_panel', lambda *a, **k: panel_obj)
-    base_fakes(mod, monkeypatch, captions=captions, panel=panel_obj, page=page)
+    base_fakes(mod, monkeypatch, captions=captions, panel=panel_obj, page=page,
+               disabled_first=disabled_first)
     return mod.observe_pph21_forms(page, record, SCOPE, FakeCapture(observations), max_pages=5)
 
 
@@ -234,12 +248,57 @@ def test_reference_bindings_gate(monkeypatch, tmp_path):
     mod = module(monkeypatch)
     page = FakePage(mod)
     panel = FakePanel(page)
+    flat = {name: (selector, None, ()) for name, (selector, _, _) in mod.FORMS.items()}
+    monkeypatch.setattr(mod, 'FORMS', flat)
     root = tmp_path / 'd'
     with diagnostics.session(root, 'worker') as log:
         assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26'), panel=panel,
                    reference_bindings=None) is None
         assert log.flush()
     assert gates_in(root) == ['reference_bindings']
+
+
+def test_tab_disabled_gate(monkeypatch, tmp_path):
+    mod = module(monkeypatch)
+    page = FakePage(mod)
+    root = tmp_path / 'd'
+    with diagnostics.session(root, 'worker') as log:
+        assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26'), disabled_first=True) is None
+        assert log.flush()
+    assert gates_in(root) == ['tab_disabled']
+
+
+def test_tab_caption_gate(monkeypatch, tmp_path):
+    mod = module(monkeypatch)
+    page = FakePage(mod)
+    root = tmp_path / 'd'
+    with diagnostics.session(root, 'worker') as log:
+        assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26'),
+                   captions=['Induk', 'Unknown', 'L-IB', 'L-II', 'L-III']) is None
+        assert log.flush()
+    assert gates_in(root) in (['tab_set'], ['tab_caption'])
+
+
+def test_roles_grid_mismatch_gate(monkeypatch, tmp_path):
+    mod = module(monkeypatch)
+    page = FakePage(mod)
+    panel = FakePanel(page, root_grids=0, root_tables=1)
+    root = tmp_path / 'd'
+    with diagnostics.session(root, 'worker') as log:
+        assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26'), panel=panel) is None
+        assert log.flush()
+    assert gates_in(root) == ['grid_structure']
+
+
+def test_total_gate(monkeypatch, tmp_path):
+    mod = module(monkeypatch)
+    page = FakePage(mod)
+    panel = FakePanel(page, root_grids=1, root_tables=1, marker='No records')
+    root = tmp_path / 'd'
+    with diagnostics.session(root, 'worker') as log:
+        assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26'), panel=panel) is None
+        assert log.flush()
+    assert gates_in(root) == ['total']
 
 
 def test_reference_bindings_internal_gate(monkeypatch, tmp_path):
