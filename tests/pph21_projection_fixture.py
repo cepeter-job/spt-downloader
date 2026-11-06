@@ -11,8 +11,8 @@ from pph21_observer_fixture import INDUK_CONTROLS
 
 MAIN = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
 ARTICLE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
-BUILDS = {MAIN: '696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd',
-          ARTICLE: 'cd7b51042384a63e1d1fae9b9b284a38a0a942ab9f95a7fceb46b3c76fcd9add'}
+BUILDS = {MAIN: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
+          ARTICLE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454'}
 PREFILL = ORIGIN + '/returnsheet/api/prefillreturnsheet/article-2126'
 REFERENCE = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS'
 MODEL_REFERENCE = REFERENCE.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'

@@ -10,7 +10,7 @@ from coretax_masa_observer import (TABLE, _PPN_MAIN_BUILD_HASH, _observations, _
 
 ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
 BUILD_DIGESTS = {MAIN_SOURCE: MASA_BUILD_DIGESTS[MAIN_SOURCE],
-                 ARTICLE_SOURCE: 'cd7b51042384a63e1d1fae9b9b284a38a0a942ab9f95a7fceb46b3c76fcd9add'}
+                 ARTICLE_SOURCE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454'}
 FORMS = {
     'Induk': ('rshshr-art2126-main-form', None, ()),
     'L-IA': ('rshshr-art2126-l1a-form', 'rshshr-art2126-l1a-grid', (('l1a', 'LIST-IA'),)),
