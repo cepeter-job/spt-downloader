@@ -18,7 +18,7 @@ from test_json_hybrid_native import ASSET, BUILD, NativeFixture, browser as brow
 MAIN = corpus.ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
 MAIN_BUILD = b'/* SYNTHETIC MAIN BUILD -- no portal code or taxpayer data */'
 PINS = {ASSET: 'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
-        MAIN: '696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd'}
+        MAIN: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454'}
 FRAME = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' +
          '/'.join((corpus.TAXPAYER_ID, corpus.RECORD_ID, 'ICT_RCIT', corpus.AGGREGATE_ID)))
 REQUEST = {'RecordId': corpus.RECORD_ID, 'OnManualClick': False}
