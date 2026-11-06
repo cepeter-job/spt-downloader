@@ -7,6 +7,7 @@ from spt_desktop import diagnostics
 import argparse
 from contextlib import contextmanager, ExitStack
 from datetime import datetime
+import hashlib
 import json
 import os
 import shutil
@@ -198,13 +199,21 @@ def write_folder_resume(run, existing, destination):
     verify_workbook(destination, combined, include_details=False)
 
 
-def _verify_workbook_outputs(run, folder, *, allow_extra=False):
+def _verify_workbook_outputs(run, folder, *, allow_extra=False, staging=None):
     """Verifikasi set Excel dan tautan pembetulan, termasuk saat Python memakai -O.
 
     Pemeriksaan ini memakai exception eksplisit agar optimasi interpreter tidak
     menghilangkan syarat publikasi hasil CLI maupun desktop.
     """
     folder = Path(folder)
+    if staging is not None:
+        staging = Path(os.path.abspath(staging))
+        if (staging.parent != Path(os.path.abspath(folder))
+                or not staging.name.startswith('.spt-export-')
+                or not staging.is_dir()
+                or staging.is_symlink()
+                or getattr(staging.lstat(), 'st_file_attributes', 0) & 1024):
+            raise ValueError('Invalid publication staging exclusion')
     validate_export_run(run)
     grouped = workbook_groups(run)
     selected_files = set(grouped)
@@ -220,7 +229,7 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
         raise ValueError('Workbook filename/count mismatch')
     for name in declared:
         output_path(folder, name)
-    actual = workbook_files(folder)
+    actual = workbook_files(folder, exclude=staging)
     if (not allow_extra and actual != expected) or not expected.issubset(actual):
         raise ValueError('Workbook file set differs from the selected scope')
     if any((folder / name).is_symlink() or not (folder / name).is_file() for name in expected):
@@ -271,10 +280,10 @@ def _verify_workbook_outputs(run, folder, *, allow_extra=False):
 
 
 @diagnostics.traced('verify')
-def verify_outputs(run, folder, *, allow_extra=False):
+def verify_outputs(run, folder, *, allow_extra=False, staging=None):
     """Verify declared held PDF bytes as well as the existing workbook scope."""
     with pdf_custody(run, folder), json_custody(run, folder):
-        _verify_workbook_outputs(run, folder, allow_extra=allow_extra)
+        _verify_workbook_outputs(run, folder, allow_extra=allow_extra, staging=staging)
 
 
 def _check_output_scope(run, folder, staging=None):
@@ -328,12 +337,23 @@ def _check_output_scope(run, folder, staging=None):
             raise FileExistsError('Existing workbook scope differs; use a new output folder')
 
 
-def _publish_output(staging, folder, names):
+def _verified_digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').digest()
+
+
+def _publish_output(staging, folder, names, run, verified_digests):
     """Pulihkan penggantian terdahulu bila publikasi berkas berikutnya gagal.
 
     Backup membantu saat exception atau berkas dikunci Excel. Ini bukan jaminan
     transaksi atomik ketika proses dimatikan atau listrik padam.
     """
+    # Bind the manifest and all published files to their verified staging bytes.
+    if set(names) != set(verified_digests) or len(names) != len(verified_digests):
+        raise ValueError('Published file digest declarations differ from the selected set')
+    expected_manifest = json.dumps(run, ensure_ascii=False, indent=2)
+    if (staging / 'run.json').read_text(encoding='utf-8') != expected_manifest:
+        raise ValueError('Staged run.json differs from the verified export manifest')
     backup = staging / 'backup'
     backup.mkdir()
     for name in names:
@@ -347,7 +367,18 @@ def _publish_output(staging, folder, names):
             target = output_path(folder, name)
             target.parent.mkdir(parents=True, exist_ok=True)
             attempted.append(name)
+            if _verified_digest(staging / name) != verified_digests[name]:
+                raise ValueError('Staged output bytes differ from the verified digest')
             (staging / name).replace(target)
+            if _verified_digest(target) != verified_digests[name]:
+                raise ValueError('Published output bytes differ from the verified digest')
+        # Publication can change a staged workbook after its earlier check.
+        # Revalidate the entire installed set while rollback backups still exist.
+        verify_outputs(run, folder, staging=staging)
+        if any(_verified_digest(folder / name) != verified_digests[name] for name in names):
+            raise ValueError('Published output bytes differ from the verified digest')
+        if (folder / 'run.json').read_text(encoding='utf-8') != expected_manifest:
+            raise ValueError('Published run.json differs from the verified export manifest')
     except BaseException as error:
         diagnostics.record('publish.rollback', phase='rollback', error=error, level='WARNING')
         try:
@@ -393,12 +424,15 @@ def save_output(run, folder, *, json_source=None):
             files = export_split_workbooks(current, staging, mapping_reports=current['template_mapping'])
             saved_run = {**current, 'output_files': list(files)}
             verify_outputs(saved_run, staging)
+            names = [*current['output_json'], *files, 'run.json']
+            verified_digests = {name: _verified_digest(staging / name) for name in names[:-1]}
             (staging / 'run.json').write_text(json.dumps(saved_run, ensure_ascii=False, indent=2), encoding='utf-8')
+            verified_digests['run.json'] = _verified_digest(staging / 'run.json')
             _check_output_scope(run, folder, staging)
             # Simpan staging/backup sejak publikasi dimulai agar interupsi atau
             # rollback yang terhalang tetap menyisakan bahan pemulihan.
             retain_recovery = True
-            _publish_output(staging, folder, [*current['output_json'], *files, 'run.json'])
+            _publish_output(staging, folder, names, saved_run, verified_digests)
             retain_recovery = False
             run['output_files'] = list(files)
             run['output_attachments'] = current['output_attachments']

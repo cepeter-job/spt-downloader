@@ -388,9 +388,9 @@ Publikasi lokal oleh `coretax.save_output` mengikuti urutan berikut:
 
 1. Periksa scope run serta proof fisik workbook baru atau header workbook lama secara independen dari `run.json`.
 2. Tulis set baru ke direktori staging. Pemindaian menyamakan bentuk path relatif/absolut secara leksikal sebelum mengecualikan staging, tanpa mengikuti symlink atau junction untuk menutupi path yang tidak sah.
-3. Baca ulang set, jumlah, tipe sel identitas, status, serta tautan workbook/pembetulan. Pemeriksaan tetap berjalan dengan `python -O` karena menggunakan exception eksplisit.
-4. Buat backup dan ganti seluruh workbook serta `run.json`.
-5. Bila penggantian gagal, coba rollback. Pertahankan staging/backup bila publikasi atau pemulihan tidak selesai.
+3. Baca ulang set, jumlah, tipe sel identitas, status, serta tautan workbook/pembetulan. Pemeriksaan tetap berjalan dengan `python -O` karena menggunakan exception eksplisit. Setelah lolos, pin SHA-256 setiap berkas JSON/XLSX yang dipilih dan manifest `run.json`.
+4. Buat backup, lalu bandingkan digest berkas staging dan hasil setiap pemindahan. Sebelum menyatakan selesai, verifikasi ulang keseluruhan workbook terpasang dan byte `run.json` saat backup masih tersedia. Pengecualian direktori staging hanya boleh mengarah ke `.spt-export-*` milik folder itu sendiri.
+5. Bila penggantian atau verifikasi akhir gagal, coba rollback. Pertahankan staging/backup bila publikasi atau pemulihan tidak selesai. Jalur CLI ini tidak menjamin transaksi atomik lintas beberapa file ketika proses mati atau listrik padam; journal pemulihan proses mati merupakan tanggung jawab jalur desktop.
 
 Unduhan PDF keuangan baru memakai nama file datar `LK_<record-key>_<document-key>.pdf` langsung berdampingan dengan Excel di folder hasil, tanpa subfolder `attachments`. Kunci record dan dokumen menjaga keunikan lintas SPT; `relative_path` tetap menjadi target tautan dan deklarasi byte yang sama, tanpa mengubah penyalin atau writer Excel. Proof/capture lama dengan path bersubfolder tetap dapat dibaca tanpa ditulis ulang; bila unduhan datar baru bertemu hasil lama dengan PDF bersubfolder, validasi semua deklarasi COMPLETE lama lalu pilih folder hasil baru, bukan memindahkan file lama.
 
