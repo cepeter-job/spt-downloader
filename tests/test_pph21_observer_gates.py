@@ -315,3 +315,17 @@ def test_reference_bindings_internal_gate(monkeypatch, tmp_path):
                                        FakeCapture(), None) is None
         assert log.flush()
     assert gates_in(root) == ['reference']
+
+
+def test_unfamiliar_build_records_source_category(monkeypatch, tmp_path):
+    """A digest outside the reviewed allowlist records the source category."""
+    mod = module(monkeypatch)
+    page = FakePage(mod)
+    monkeypatch.setattr(mod, 'BUILD_DIGESTS', {mod.MAIN_SOURCE: '0' * 64,
+                                               mod.ARTICLE_SOURCE: '0' * 64})
+    root = tmp_path / 'd'
+    with diagnostics.session(root, 'worker') as log:
+        assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26')) is None
+        assert log.flush()
+    unfamiliar = [row for row in records(root) if row['event'] == 'build.unfamiliar_build']
+    assert [row['build_source'] for row in unfamiliar] == ['main']

@@ -12,16 +12,18 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
 from coretax_masa_bindings import _decimal, _number, _evidence
+from coretax_build_pins import load_build_pins
 
 CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
 MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
-BUILD_DIGESTS = {
-    CIT_SOURCE: 'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
-    MAIN_SOURCE: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
-}
 VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
-L11C_BUILD_DIGESTS = {**BUILD_DIGESTS,
-    VENDOR_SOURCE: '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'}
+
+def _corporate_pins(urls):
+    pins = load_build_pins()
+    return {url: pins[url] for url in urls if url in pins}
+
+BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE))
+L11C_BUILD_DIGESTS = {**BUILD_DIGESTS, **_corporate_pins((VENDOR_SOURCE,))}
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
