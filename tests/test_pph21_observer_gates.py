@@ -307,7 +307,6 @@ def test_reference_bindings_internal_gate(monkeypatch, tmp_path):
     """A failing reference GET records 'reference' from inside _reference_bindings."""
     mod = module(monkeypatch)
     page = FakePage(mod)
-    panel = FakePanel(page)
     root = tmp_path / 'd'
     with diagnostics.session(root, 'worker') as log:
         # Call the real _reference_bindings with a failing GET result.
