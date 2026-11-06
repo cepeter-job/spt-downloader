@@ -104,7 +104,8 @@ class FakeLocator:
 
     def locator(self, selector):
         if selector == 'ui-grid':
-            return FakeLocator(self._page, count=self._grids)
+            return FakeLocator(self._page, count=self._grids, marker=self._marker,
+                               metadata=self._metadata)
         if selector == 'table:visible':
             return FakeLocator(self._page, count=self._tables, metadata=self._metadata,
                                marker=self._marker)
@@ -128,7 +129,7 @@ class FakeLocator:
 
 class FakePanel:
     def __init__(self, page, *, root_count=1, fields=(), induk_grids=0,
-                 root_grids=None, root_tables=1,
+                 root_grids=None, root_tables=1, first_grids=0,
                  marker='Page 1 of 1', metadata=None):
         self._page = page
         self._root_count = root_count
@@ -137,12 +138,13 @@ class FakePanel:
         self._marker = marker
         self._metadata = metadata or {'group': 'LIST-IA', 'headers': ['H']}
         self._root_tables = root_tables
+        self._first_grids = first_grids
         self._calls = 0
 
     def locator(self, selector):
         # First root is Induk (no ui-grid expected); later roots are grid forms.
         self._calls += 1
-        grids = 0 if self._calls == 1 else self._grids
+        grids = self._first_grids if self._calls == 1 else self._grids
         return FakeLocator(self._page, count=self._root_count,
                            fields=self._fields, grids=grids,
                            marker=self._marker, metadata=self._metadata,
@@ -224,7 +226,7 @@ def test_form_root_gate(monkeypatch, tmp_path):
 def test_induk_grid_structure_gate(monkeypatch, tmp_path):
     mod = module(monkeypatch)
     page = FakePage(mod)
-    panel = FakePanel(page, induk_grids=1)
+    panel = FakePanel(page, first_grids=1)
     root = tmp_path / 'd'
     with diagnostics.session(root, 'worker') as log:
         assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26'), panel=panel) is None
