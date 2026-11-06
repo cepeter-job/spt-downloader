@@ -111,11 +111,9 @@ class FakeLocator:
         return self._count
 
     def evaluate(self, expr):
-        if 'formcontrolname' in expr:
+        if 'seen=new Set' in expr:
             return list(self._fields) if self._fields else []
-        if 'headers' in str(expr) or 'row_spans' in str(expr) or 'GROUP' in str(expr):
-            return dict(self._metadata)
-        return {}
+        return dict(self._metadata)
 
 
 class FakePanel:
