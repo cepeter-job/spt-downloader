@@ -24,7 +24,7 @@ PRIVATE = 'SYNTHETIC_PRIVATE_RESPONSE_MUST_NOT_BE_LOGGED'
         ('content_type', 'response_content_type'),
         ('body', 'response_body'),
         ('envelope', 'response_shape'),
-        ('count', 'response_count'),
+        ('count', 'response_row_count_mismatch'),
         ('identity', 'response_identity'),
     ],
 )

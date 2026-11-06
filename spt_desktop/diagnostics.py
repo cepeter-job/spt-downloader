@@ -98,7 +98,9 @@ ENUMS = {
     'mpn_observer_reason': frozenset({
         'request_shape', 'request_handler', 'request_transport', 'response_request',
         'response_status', 'response_content_type', 'response_body',
-        'response_shape', 'response_count', 'response_identity', 'other'}),
+        'response_shape', 'response_count', 'response_total_invalid',
+        'response_offset_exceeds_total', 'response_row_count_mismatch',
+        'response_row_shape_invalid', 'response_identity', 'other'}),
     'mpn_grid_wait_state': frozenset({'no_pending_response', 'pending_response'}),
     'mpn_paginator_reason': frozenset({'first_mismatch', 'binding_changed',
         'filter_changed'}),
