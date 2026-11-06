@@ -22,7 +22,7 @@ POST_SOURCE_PINS = {
     '/returnsheets/id-ID/525.ec1edffbb4a91d20.js':
         'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
     '/returnsheets/id-ID/main.cccfdb820c20596c.js':
-        '696ac66dc2897c937c7df7b466382dffdf25651837a20e0a4d4235787f3c9afd',
+        '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
 }
 
 _SCAN = r'''() => {
