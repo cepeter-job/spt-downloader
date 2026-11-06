@@ -39,6 +39,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self.committed = False
         self.safety_failed = False
         self.failed = False
+        self.failure_reason = None
         self.parent_id = None
         self.closed = False
         self._document = None
@@ -56,11 +57,26 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         if self.check_cancel:
             self.check_cancel()
 
-    def _reject(self, *, safety=False):
+    def _reject(self, *, safety=False, reason=None, kind=None):
         if safety:
             self.safety_failed = True
         else:
             self.failed = True
+            if self.failure_reason is None:
+                # Callback exceptions may contain taxpayer IDs or payloads.
+                # Preserve only a literal first-failure category.
+                allowed = {
+                    'request_shape', 'request_handler', 'request_transport',
+                    'response_request', 'response_status', 'response_content_type',
+                    'response_body', 'response_shape', 'response_count',
+                    'response_identity',
+                }
+                self.failure_reason = reason if reason in allowed else 'other'
+                from spt_desktop import diagnostics
+                diagnostics.record(
+                    'mpn.observer_refused', level='WARNING',
+                    mpn_observer_reason=self.failure_reason,
+                    mpn_paginator_kind=kind if kind in ('list', 'detail') else None)
         self.pending.clear()
         self.latest.clear()
         self.end_action()
@@ -106,6 +122,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self._stop()
         self.navigation_source = expected
         self.committed = self.safety_failed = self.failed = False
+        self.failure_reason = None
         self.pending.clear()
         self.latest.clear()
         self.parent_id = None
@@ -204,6 +221,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             return
         if self.closed or not self.committed or self.safety_failed or self.failed:
             return
+        kind = None
         try:
             kind = self._kind(request)
             if kind is None:
@@ -221,13 +239,15 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
                 action['request'] = request
         except MpnSafetyError:
             self._reject(safety=True)
+        except MpnUnsupported:
+            self._reject(reason='request_shape', kind=kind)
         except Exception:
-            self._reject()
+            self._reject(reason='request_handler', kind=kind)
 
     def on_request_failed(self, request):
         entry = self.pending.pop(id(request), None)
         if entry is not None and entry[0] is request:
-            self._reject()
+            self._reject(reason='request_transport', kind=entry[1])
 
     def on_response(self, response):
         request = response.request
@@ -237,12 +257,18 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         _, kind, posted = entry
         attempt = self._navigation_attempt
         action = self._action
+        reason = 'response_request'
         try:
             if (self.page.url != self.navigation_source or response.url != request.url
                     or self._posted(request, kind) != posted):
                 raise MpnSafetyError('MPN response document/request binding changed')
-            if not 200 <= response.status < 300 or 'json' not in response.headers.get('content-type', '').lower():
+            reason = 'response_status'
+            if not 200 <= response.status < 300:
                 raise MpnUnsupported('MPN owned grid response failed')
+            reason = 'response_content_type'
+            if 'json' not in response.headers.get('content-type', '').lower():
+                raise MpnUnsupported('MPN owned grid response failed')
+            reason = 'response_body'
             raw = response.body()
             if attempt is not self._navigation_attempt:
                 return
@@ -251,17 +277,20 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             if self.page.url != self.navigation_source:
                 self._reject(safety=True)
                 return
+            reason = 'response_shape'
             decoded = decode_mpn(raw)
             if decoded.get('IsSuccessful') is not True:
                 raise MpnUnsupported('MPN owned grid response is unsuccessful')
             payload = decoded.get('Payload')
             if not isinstance(payload, dict) or not isinstance(payload.get('Data'), list):
                 raise MpnUnsupported('MPN grid payload is unsupported')
+            reason = 'response_count'
             total = source_integer(payload.get('TotalRecords'))
             rows = payload['Data']
             if (len(rows) != min(posted['Rows'], max(0, total - posted['First']))
                     or posted['First'] > total or not all(isinstance(row, dict) for row in rows)):
                 raise MpnUnsupported('MPN page count does not reconcile')
+            reason = 'response_identity'
             for row in rows:
                 if not _identity(row.get('RecordId')):
                     raise MpnUnsupported('MPN source row identity is unavailable')
@@ -281,7 +310,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         except MpnSafetyError:
             self._reject(safety=True)
         except Exception:
-            self._reject()
+            self._reject(reason=reason, kind=kind)
         finally:
             if action is not None and action['request'] is request:
                 action['request'] = None
@@ -344,6 +373,14 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         self._reject(safety=True)
         raise MpnSafetyError('MPN retained document identity is unproved')
 
+    def _wait_timeout(self, kind):
+        from spt_desktop import diagnostics
+        pending = any(entry[1] == kind for entry in self.pending.values())
+        diagnostics.record(
+            'mpn.grid_wait_timeout', level='WARNING', mpn_paginator_kind=kind,
+            mpn_grid_wait_state='pending_response' if pending else 'no_pending_response')
+        raise MpnUnsupported('MPN fresh grid response timed out')
+
     def wait(self, after, kind, timeout=45, *, action=None):
         if kind not in ('list', 'detail'):
             raise ValueError('Unsupported MPN grid kind')
@@ -357,10 +394,10 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
                 if action is not None:
                     self._action_state(action, kind)
                 if action is not None and time.monotonic() >= deadline:
-                    raise MpnUnsupported('MPN fresh grid response timed out')
+                    self._wait_timeout(kind)
                 return snapshot
             if time.monotonic() >= deadline:
-                raise MpnUnsupported('MPN fresh grid response timed out')
+                self._wait_timeout(kind)
             self.page.wait_for_timeout(100)
 
     def close(self):
