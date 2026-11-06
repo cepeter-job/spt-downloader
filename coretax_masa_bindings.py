@@ -16,8 +16,8 @@ TAX_SOURCES = {
 }
 BUILD_DIGESTS = {
     MAIN_SOURCE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
-    TAX_SOURCES['PPN']: '4a7e33826b6d0395afb23372fb6b4a9d4be6abaab0ec25fa743c897d0e654aef',
-    TAX_SOURCES['PPh Unifikasi']: '2694fdda5c23b7d5f0eefe0cf0a0c55caa0fe29acc590363f34684ed90188fe0',
+    TAX_SOURCES['PPN']: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
+    TAX_SOURCES['PPh Unifikasi']: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
 }
 # Component names come from the reviewed public build, not field-name guessing.
 FORMS = {
