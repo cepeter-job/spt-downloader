@@ -138,3 +138,27 @@ def test_masa_observer_gate_records_which_strict_gate_refused(browser, tmp_path,
         assert log.flush()
     gates = [row for row in records(root) if row['event'] == 'masa.observer_gate']
     assert [row['masa_observer_gate'] for row in gates] == [gate]
+
+
+def test_unifikasi_passing_fixture_emits_no_gate_event(browser, tmp_path, monkeypatch):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    root = tmp_path / 'diag'
+    with diagnostics.session(root, 'worker') as log:
+        with observed(browser, tmp_path, monkeypatch, 'PPh Unifikasi') as (module, fixture, capture):
+            assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is not None
+        assert log.flush()
+    assert not [row for row in records(root) if row['event'] == 'masa.observer_gate']
+
+
+@pytest.mark.parametrize('defect,gate', [('extra-table', 'grid_structure'), ('changed-build', 'build_digest')])
+def test_unifikasi_observer_gate_records_which_strict_gate_refused(browser, tmp_path, monkeypatch, defect, gate):
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+    root = tmp_path / 'diag'
+    with diagnostics.session(root, 'worker') as log:
+        with observed(browser, tmp_path, monkeypatch, 'PPh Unifikasi', defect=defect) as (module, fixture, capture):
+            assert module.observe_masa_forms(fixture.page, fixture.record, SCOPE, capture, max_pages=5) is None
+        assert log.flush()
+    gates = [row for row in records(root) if row['event'] == 'masa.observer_gate']
+    assert [row['masa_observer_gate'] for row in gates] == [gate]
