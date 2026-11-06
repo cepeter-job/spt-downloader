@@ -6,8 +6,8 @@ from masa_json_fixtures import FOREIGN, RECORD, TAXPAYER, selected
 
 MAIN = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 ASSETS = {
-    'PPN': ORIGIN + '/returnsheets/id-ID/640.36c042afd2381189.js',
-    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
+    'PPN': ORIGIN + '/returnsheets/id-ID/640.7ac2145c88285ca5.js',
+    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.a011ba093b4bf8b7.js',
 }
 BUILD = b'/* synthetic observer build, not portal code */'
 VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
