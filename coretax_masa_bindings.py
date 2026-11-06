@@ -9,15 +9,15 @@ import re
 from coretax_json import (ORIGIN, JsonSafetyError, _CorporateNumber, _UnsupportedMetadata,
                           _corporate_request_key, _capture_clock_interval)
 
-MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
+MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 TAX_SOURCES = {
     'PPN': ORIGIN + '/returnsheets/id-ID/640.36c042afd2381189.js',
     'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
 }
 BUILD_DIGESTS = {
-    MAIN_SOURCE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
-    TAX_SOURCES['PPN']: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
-    TAX_SOURCES['PPh Unifikasi']: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
+    MAIN_SOURCE: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
+    TAX_SOURCES['PPN']: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
+    TAX_SOURCES['PPh Unifikasi']: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
 }
 # Component names come from the reviewed public build, not field-name guessing.
 FORMS = {

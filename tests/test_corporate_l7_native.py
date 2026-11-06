@@ -15,10 +15,10 @@ from test_corporate_l7_projection import ROOT, HEADERS, SPANS, raw_source
 from test_json_hybrid_native import ASSET, BUILD, NativeFixture, browser as browser, PDF_URL
 
 
-MAIN = corpus.ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
+MAIN = corpus.ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 MAIN_BUILD = b'/* SYNTHETIC MAIN BUILD -- no portal code or taxpayer data */'
 PINS = {ASSET: 'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
-        MAIN: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454'}
+        MAIN: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44'}
 FRAME = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' +
          '/'.join((corpus.TAXPAYER_ID, corpus.RECORD_ID, 'ICT_RCIT', corpus.AGGREGATE_ID)))
 REQUEST = {'RecordId': corpus.RECORD_ID, 'OnManualClick': False}
@@ -331,7 +331,7 @@ def test_l7_native_fixture_is_independently_valid_before_native_support(browser,
         detail.get_by_role('tab', name='L7', exact=True).click()
         assert detail.locator('rsh-citr-l7-grid1 tbody td').first.inner_text() == '999999'
         assert detail.locator('rsh-citr-l7-grid1 tfoot td').first.get_attribute('colspan') == '3'
-        detail.wait_for_function("() => performance.getEntriesByType('resource').some(e=>e.name.endsWith('/main.cccfdb820c20596c.js'))")
+        detail.wait_for_function("() => performance.getEntriesByType('resource').some(e=>e.name.endsWith('/main.bed1449c3647a8ca.js'))")
         assert fixture.unexpected == []
     finally:
         fixture.close()

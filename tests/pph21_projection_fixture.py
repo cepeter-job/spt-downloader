@@ -9,10 +9,10 @@ from test_pph21_json_grids import GRIDS, LOOKUPS, fixture as grid_fixture
 from support_pph21_dom import appendix_table, induk_tables
 from pph21_observer_fixture import INDUK_CONTROLS
 
-MAIN = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
-ARTICLE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
-BUILDS = {MAIN: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
-          ARTICLE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454'}
+MAIN = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
+ARTICLE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
+BUILDS = {MAIN: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
+          ARTICLE: 'e4fb68886a18281ad0ba861ac542b5e0ed3731cd7364689da15e80f1015741af'}
 PREFILL = ORIGIN + '/returnsheet/api/prefillreturnsheet/article-2126'
 REFERENCE = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS'
 MODEL_REFERENCE = REFERENCE.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'

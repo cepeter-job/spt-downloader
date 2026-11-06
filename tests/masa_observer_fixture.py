@@ -4,7 +4,7 @@ import json
 from coretax_json import ORIGIN
 from masa_json_fixtures import FOREIGN, RECORD, TAXPAYER, selected
 
-MAIN = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
+MAIN = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 ASSETS = {
     'PPN': ORIGIN + '/returnsheets/id-ID/640.36c042afd2381189.js',
     'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
