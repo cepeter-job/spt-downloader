@@ -2,6 +2,7 @@
 import json
 import re
 
+from spt_desktop import diagnostics
 from coretax_json import ORIGIN, JsonSafetyError
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
 from coretax_masa_json import check_masa_request_identities
@@ -278,7 +279,10 @@ def observe_masa_forms(page, record, scope, capture, *, max_pages=1000, check_ca
             _check_cancel(check_cancel)
             build_hash = _PPN_MAIN_BUILD_HASH if tax in ('PPN', 'PPh Unifikasi') and url == MAIN_SOURCE else _BUILD_HASH
             digest = page.evaluate(build_hash, url)
-            if digest != BUILD_DIGESTS[url]:
+            if digest != BUILD_DIGESTS.get(url):
+                diagnostics.record('build.unfamiliar_build', build_source=(
+                    'main' if url == MAIN_SOURCE else
+                    'ppn_chunk' if tax == 'PPN' else 'unifikasi_chunk'))
                 return None
             builds[url] = digest
         reference_order = _reference_order_build(page, check_cancel) if tax == 'PPh Unifikasi' else None

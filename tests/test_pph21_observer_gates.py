@@ -8,7 +8,7 @@ import hashlib
 import importlib
 
 from masa_json_fixtures import SCOPE, TAXPAYER, selected
-from pph21_observer_fixture import MAIN, ARTICLE, BUILD, browser  # noqa: F401  (browser unused; kept for parity)
+from pph21_observer_fixture import MAIN, ARTICLE, browser  # noqa: F401  (browser unused; kept for parity)
 from spt_desktop import diagnostics
 from test_diagnostics import records
 
@@ -18,7 +18,7 @@ DETAIL_URL = ORIGIN + '/returnsheets/id-ID/synthetic/' + TAXPAYER + '/' + '00000
 
 def module(monkeypatch):
     mod = importlib.import_module('coretax_pph21_observer')
-    digest = hashlib.sha256(BUILD).hexdigest()
+    digest = LIVE_MAIN_DIGEST
     monkeypatch.setattr(mod, 'BUILD_DIGESTS', {MAIN: digest, ARTICLE: digest})
     return mod
 
@@ -34,6 +34,9 @@ class FakeCapture:
         return {'complete': True, 'reasons': []}
 
 
+LIVE_MAIN_DIGEST = hashlib.sha256(b'synthetic-live-build').hexdigest()
+
+
 class FakePage:
     def __init__(self, mod, *, env=None, fail_enabled=False, marker='Page 1 of 1'):
         self.url = DETAIL_URL
@@ -46,7 +49,7 @@ class FakePage:
         if self._fail:
             raise RuntimeError('synthetic evaluate failure')
         if args and isinstance(args[0], str):
-            return self._mod.BUILD_DIGESTS[args[0]]
+            return LIVE_MAIN_DIGEST
         if 'locale' in expr:
             return dict(self._env)
         raise AssertionError('unexpected page.evaluate: ' + str(expr)[:60])
@@ -315,3 +318,17 @@ def test_reference_bindings_internal_gate(monkeypatch, tmp_path):
                                        FakeCapture(), None) is None
         assert log.flush()
     assert gates_in(root) == ['reference']
+
+
+def test_unfamiliar_build_records_source_category(monkeypatch, tmp_path):
+    """A digest outside the reviewed allowlist records the source category."""
+    mod = module(monkeypatch)
+    page = FakePage(mod)
+    monkeypatch.setattr(mod, 'BUILD_DIGESTS', {mod.MAIN_SOURCE: '0' * 64,
+                                               mod.ARTICLE_SOURCE: '0' * 64})
+    root = tmp_path / 'd'
+    with diagnostics.session(root, 'worker') as log:
+        assert run(mod, monkeypatch, page, selected('PPh Pasal 21/26')) is None
+        assert log.flush()
+    unfamiliar = [row for row in records(root) if row['event'] == 'build.unfamiliar_build']
+    assert [row['build_source'] for row in unfamiliar] == ['main']

@@ -3,14 +3,19 @@ import re
 
 from spt_desktop import diagnostics
 from coretax_json import ORIGIN, PPH21_REFERENCE_URLS, JsonSafetyError
+from coretax_build_pins import load_build_pins
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
-from coretax_masa_bindings import MAIN_SOURCE, BUILD_DIGESTS as MASA_BUILD_DIGESTS
+from coretax_masa_bindings import MAIN_SOURCE
 from coretax_masa_observer import (TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests,
                                    _reference_order_build)
 
 ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
-BUILD_DIGESTS = {MAIN_SOURCE: MASA_BUILD_DIGESTS[MAIN_SOURCE],
-                 ARTICLE_SOURCE: 'e4fb68886a18281ad0ba861ac542b5e0ed3731cd7364689da15e80f1015741af'}
+
+def _pph21_pins():
+    pins = load_build_pins()
+    return {url: pins[url] for url in (MAIN_SOURCE, ARTICLE_SOURCE) if url in pins}
+
+BUILD_DIGESTS = _pph21_pins()
 FORMS = {
     'Induk': ('rshshr-art2126-main-form', None, ()),
     'L-IA': ('rshshr-art2126-l1a-form', 'rshshr-art2126-l1a-grid', (('l1a', 'LIST-IA'),)),
@@ -129,7 +134,9 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
         for url in (MAIN_SOURCE, ARTICLE_SOURCE):
             _check_cancel(check_cancel)
             digest = page.evaluate(_PPN_MAIN_BUILD_HASH if url == MAIN_SOURCE else _BUILD_HASH, url)
-            if digest != BUILD_DIGESTS[url]:
+            if digest != BUILD_DIGESTS.get(url):
+                diagnostics.record('build.unfamiliar_build',
+                                   build_source='main' if url == MAIN_SOURCE else 'article')
                 return _gate('build_digest')
             builds[url] = digest
         reference_order = _reference_order_build(page, check_cancel)

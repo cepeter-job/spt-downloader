@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import uuid
 
 from coretax_browser import list_taxpayer_id, trusted_origin, verify_detail_url
+from coretax_build_pins import load_build_pins
 from coretax_exporter import FINANCIAL_LABELS
 from coretax_financial_post import FinancialPost, verify_sources
 from spt_desktop.output_windows import DirectoryGuard, locked_file
@@ -18,12 +19,16 @@ from spt_desktop.output_windows import DirectoryGuard, locked_file
 MAX_PDF_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT_MS = 30000
 _LABELS = FINANCIAL_LABELS
-POST_SOURCE_PINS = {
-    '/returnsheets/id-ID/525.ec1edffbb4a91d20.js':
-        'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
-    '/returnsheets/id-ID/main.bed1449c3647a8ca.js':
-        'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
-}
+
+_PDF_PIN_PATHS = ('/returnsheets/id-ID/525.ec1edffbb4a91d20.js',
+                  '/returnsheets/id-ID/main.bed1449c3647a8ca.js')
+
+def _pdf_source_pins():
+    pins = load_build_pins()
+    return {urlparse(url).path: digest for url, digest in pins.items()
+            if urlparse(url).path in _PDF_PIN_PATHS}
+
+POST_SOURCE_PINS = _pdf_source_pins()
 
 _SCAN = r'''() => {
     const roots = document.querySelectorAll('.main-content');
