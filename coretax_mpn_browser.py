@@ -69,6 +69,8 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
                     'request_shape', 'request_handler', 'request_transport',
                     'response_request', 'response_status', 'response_content_type',
                     'response_body', 'response_shape', 'response_count',
+                    'response_total_invalid', 'response_offset_exceeds_total',
+                    'response_row_count_mismatch', 'response_row_shape_invalid',
                     'response_identity',
                 }
                 self.failure_reason = reason if reason in allowed else 'other'
@@ -284,11 +286,19 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
             payload = decoded.get('Payload')
             if not isinstance(payload, dict) or not isinstance(payload.get('Data'), list):
                 raise MpnUnsupported('MPN grid payload is unsupported')
-            reason = 'response_count'
+            # Keep these refusals terminal and distinct without persisting
+            # source totals, offsets, row values, or exception messages.
+            reason = 'response_total_invalid'
             total = source_integer(payload.get('TotalRecords'))
             rows = payload['Data']
-            if (len(rows) != min(posted['Rows'], max(0, total - posted['First']))
-                    or posted['First'] > total or not all(isinstance(row, dict) for row in rows)):
+            reason = 'response_offset_exceeds_total'
+            if posted['First'] > total:
+                raise MpnUnsupported('MPN page count does not reconcile')
+            reason = 'response_row_count_mismatch'
+            if len(rows) != min(posted['Rows'], total - posted['First']):
+                raise MpnUnsupported('MPN page count does not reconcile')
+            reason = 'response_row_shape_invalid'
+            if not all(isinstance(row, dict) for row in rows):
                 raise MpnUnsupported('MPN page count does not reconcile')
             reason = 'response_identity'
             for row in rows:
