@@ -9,15 +9,15 @@ import re
 from coretax_json import (ORIGIN, JsonSafetyError, _CorporateNumber, _UnsupportedMetadata,
                           _corporate_request_key, _capture_clock_interval)
 
-MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
+MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 TAX_SOURCES = {
-    'PPN': ORIGIN + '/returnsheets/id-ID/640.36c042afd2381189.js',
-    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.4de61c6eb2000c7e.js',
+    'PPN': ORIGIN + '/returnsheets/id-ID/640.7ac2145c88285ca5.js',
+    'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.a011ba093b4bf8b7.js',
 }
 BUILD_DIGESTS = {
-    MAIN_SOURCE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
-    TAX_SOURCES['PPN']: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
-    TAX_SOURCES['PPh Unifikasi']: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
+    MAIN_SOURCE: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
+    TAX_SOURCES['PPN']: '7cebfa63d01f713d339b6681dde216d614ae17ca3f3f340db2ab1c3ec6bb4c03',
+    TAX_SOURCES['PPh Unifikasi']: '3644f8518690a5b0ee6d3251c64a2804150bc5f9c8ca5a088d8438287d9d8cd3',
 }
 # Component names come from the reviewed public build, not field-name guessing.
 FORMS = {

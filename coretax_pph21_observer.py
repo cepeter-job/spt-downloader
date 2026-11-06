@@ -8,9 +8,9 @@ from coretax_masa_bindings import MAIN_SOURCE, BUILD_DIGESTS as MASA_BUILD_DIGES
 from coretax_masa_observer import (TABLE, _PPN_MAIN_BUILD_HASH, _observations, _pages, _requests,
                                    _reference_order_build)
 
-ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.8681206e4827011e.js'
+ARTICLE_SOURCE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
 BUILD_DIGESTS = {MAIN_SOURCE: MASA_BUILD_DIGESTS[MAIN_SOURCE],
-                 ARTICLE_SOURCE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454'}
+                 ARTICLE_SOURCE: 'e4fb68886a18281ad0ba861ac542b5e0ed3731cd7364689da15e80f1015741af'}
 FORMS = {
     'Induk': ('rshshr-art2126-main-form', None, ()),
     'L-IA': ('rshshr-art2126-l1a-form', 'rshshr-art2126-l1a-grid', (('l1a', 'LIST-IA'),)),

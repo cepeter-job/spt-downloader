@@ -14,10 +14,10 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
 from coretax_masa_bindings import _decimal, _number, _evidence
 
 CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
-MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.cccfdb820c20596c.js'
+MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 BUILD_DIGESTS = {
     CIT_SOURCE: 'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
-    MAIN_SOURCE: '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
+    MAIN_SOURCE: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
 }
 VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
 L11C_BUILD_DIGESTS = {**BUILD_DIGESTS,

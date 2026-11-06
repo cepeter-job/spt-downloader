@@ -21,8 +21,8 @@ _LABELS = FINANCIAL_LABELS
 POST_SOURCE_PINS = {
     '/returnsheets/id-ID/525.ec1edffbb4a91d20.js':
         'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d',
-    '/returnsheets/id-ID/main.cccfdb820c20596c.js':
-        '5535c9006cc07a4ae057b543a750ee79a711179213ec4456f9233fbd60e1f454',
+    '/returnsheets/id-ID/main.bed1449c3647a8ca.js':
+        'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44',
 }
 
 _SCAN = r'''() => {
