@@ -1,6 +1,5 @@
 """Build-pin allowlist: reviewed file wins, failures fail closed."""
 import json
-from pathlib import Path
 
 from coretax_build_pins import load_build_pins
 
