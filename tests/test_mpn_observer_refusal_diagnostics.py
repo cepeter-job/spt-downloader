@@ -82,7 +82,7 @@ def test_first_owned_grid_failure_has_one_safe_reason(tmp_path, failure, expecte
 
 
 @pytest.mark.parametrize('pending', [False, True])
-def test_grid_wait_timeout_distinguishes_no_request_from_pending(tmp_path, pending):
+def test_grid_wait_timeout_distinguishes_pending_from_no_pending(tmp_path, pending):
     page, capture = observer(tmp_path)
     root = tmp_path / 'diagnostics'
     try:
@@ -96,7 +96,7 @@ def test_grid_wait_timeout_distinguishes_no_request_from_pending(tmp_path, pendi
         events = [entry for entry in records(root) if entry['event'] == 'mpn.grid_wait_timeout']
         assert len(events) == 1
         assert events[0]['mpn_paginator_kind'] == 'list'
-        assert events[0]['mpn_grid_wait_state'] == ('pending_response' if pending else 'no_request')
+        assert events[0]['mpn_grid_wait_state'] == ('pending_response' if pending else 'no_pending_response')
         assert not capture.failed
     finally:
         capture.close()
@@ -115,5 +115,27 @@ def test_unsafe_identity_remains_fatal_without_observer_refusal_event(tmp_path):
             assert log.flush()
         assert [e for e in records(root) if e['event'] == 'mpn.observer_refused'] == []
         assert capture.safety_failed
+    finally:
+        capture.close()
+
+
+def test_late_owned_grid_response_is_not_misreported_as_no_request(tmp_path):
+    page, capture = observer(tmp_path)
+    root = tmp_path / 'diagnostics'
+    try:
+        capture.on_navigation(page.main_frame)
+        token = capture.begin_action('list')
+        request = Request(page)
+        capture.on_request(request)
+        capture.on_response(Response(request))
+        with diagnostics.session(root, 'worker') as log:
+            with pytest.raises(MpnUnsupported, match='fresh grid response timed out'):
+                capture.wait(0, 'list', timeout=0, action=token)
+            assert log.flush()
+        events = [entry for entry in records(root) if entry['event'] == 'mpn.grid_wait_timeout']
+        assert len(events) == 1
+        assert events[0]['mpn_grid_wait_state'] == 'no_pending_response'
+        assert capture.sequence == 1
+        assert not capture.failed
     finally:
         capture.close()

@@ -26,7 +26,7 @@ source-provenance gate; a passive path variant is **not** admissible.
   failure, response request binding, HTTP status, content type, unreadable
   body, response shape, count and identity.
 - On an owned-grid wait timeout, emit `mpn.grid_wait_timeout` with
-  `no_request` or `pending_response` and grid kind, without changing
+  `no_pending_response` or `pending_response` and grid kind, without changing
   timeout duration or final exception.
 - Validate with real synthetic observer callbacks and the actual
   diagnostics store; ensure no private payload, filter, taxpayer ID,

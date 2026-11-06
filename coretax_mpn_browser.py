@@ -378,7 +378,7 @@ exceptions, tracebacks, URLs, request bodies or authentication material.
         pending = any(entry[1] == kind for entry in self.pending.values())
         diagnostics.record(
             'mpn.grid_wait_timeout', level='WARNING', mpn_paginator_kind=kind,
-            mpn_grid_wait_state='pending_response' if pending else 'no_request')
+            mpn_grid_wait_state='pending_response' if pending else 'no_pending_response')
         raise MpnUnsupported('MPN fresh grid response timed out')
 
     def wait(self, after, kind, timeout=45, *, action=None):
