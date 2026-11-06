@@ -1,6 +1,7 @@
 """PPh21 navigation and metadata only; source values remain in captured JSON."""
 import re
 
+from spt_desktop import diagnostics
 from coretax_json import ORIGIN, PPH21_REFERENCE_URLS, JsonSafetyError
 from coretax_corporate import _BUILD_HASH, _tabs, _turn_grid, _native_panel
 from coretax_masa_bindings import MAIN_SOURCE, BUILD_DIGESTS as MASA_BUILD_DIGESTS
@@ -82,6 +83,12 @@ _REFERENCE_GET = r'''async url => {
 }'''
 
 
+def _gate(name):
+    """Record which strict gate refused native coverage (fixed enum only)."""
+    diagnostics.record('pph21.observer_gate', pph21_observer_gate=name)
+    return None
+
+
 def _reference_bindings(page, record, scope, capture, check_cancel, *, endpoints=PPH21_REFERENCE_URLS):
     from coretax_browser import _check_cancel, list_taxpayer_id, verify_detail_url
     taxpayer = list_taxpayer_id(record['list_url'])
@@ -97,10 +104,10 @@ def _reference_bindings(page, record, scope, capture, check_cancel, *, endpoints
         if isinstance(result, dict) and result.get('status') in (401, 403):
             raise JsonSafetyError('PPh21 reference authorization was rejected')
         if not isinstance(result, dict) or result.get('ok') is not True or result.get('status') != 200:
-            return None
+            return _gate('reference')
         matches = [event for event in events if event['sequence'] not in before and event['url'] == endpoint]
         if len(matches) != 1:
-            return None
+            return _gate('reference')
         event = matches[0]
         if event.get('method') != 'GET' or event.get('request_json') is not None:
             raise JsonSafetyError('PPh21 reference observation contradicts its GET request')
@@ -115,7 +122,7 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
     _observations(capture, record, scope)
     try:
         if record.get('meta', {}).get('Jenis Pajak') != 'PPh Pasal 21/26' or type(max_pages) is not int or max_pages <= 0:
-            return None
+            return _gate('unsupported_tax')
         taxpayer = list_taxpayer_id(record['list_url'])
         verify_detail_url(page.url, taxpayer, record['record_id'])
         builds = {}
@@ -123,42 +130,42 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
             _check_cancel(check_cancel)
             digest = page.evaluate(_PPN_MAIN_BUILD_HASH if url == MAIN_SOURCE else _BUILD_HASH, url)
             if digest != BUILD_DIGESTS[url]:
-                return None
+                return _gate('build_digest')
             builds[url] = digest
         reference_order = _reference_order_build(page, check_cancel)
         view, tabs = _tabs(page)
         canonical = {name.upper(): name for name in FORMS}
         names = [canonical.get(tabs.nth(i).inner_text().strip().upper()) for i in range(tabs.count())]
         if len(names) != len(set(names)) or set(names) != set(FORMS):
-            return None
+            return _gate('tab_set')
         environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
         if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
-            return None
+            return _gate('environment')
         forms = []
         for ordinal, name in enumerate(names):
             _check_cancel(check_cancel)
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
-                return None
+                return _gate('tab_disabled')
             caption = tab.inner_text().strip()
             if canonical.get(caption.upper()) != name:
-                return None
+                return _gate('tab_caption')
             panel = _native_panel(page, view, tab, caption, record, check_cancel)
             if panel is None:
-                return None
+                return _gate('panel')
             selector, container, roles = FORMS[name]
             root = panel.locator(selector)
             if root.count() != 1 or not root.is_visible():
-                return None
+                return _gate('form_root')
             fields = root.evaluate(_FIELDS.replace('GROUP', GROUP_JS))
             if fields is None:
-                return None
+                return _gate('fields')
             binding = {'name': name, 'fields': fields, 'tables': [], 'builds': dict(builds), **environment}
             if name == 'Induk' and reference_order is not None:
                 binding['reference_order_build'] = reference_order
             if not roles:
                 if root.locator('ui-grid').count():
-                    return None
+                    return _gate('grid_structure')
                 tables = root.locator('table:visible')
                 for index in range(tables.count()):
                     physical = tables.nth(index)
@@ -167,30 +174,30 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
                 endpoint = ORIGIN + '/returnsheet/api/prefillreturnsheet/article-2126'
                 requests = _requests(_observations(capture, record, scope), endpoint, record['record_id'])
                 if any(item['request_json'].get('onManualClick') is not False for item in requests):
-                    return None
+                    return _gate('reference')
                 binding['primary'] = {'endpoint': endpoint, 'requests': requests}
             else:
                 wrapper = root.locator(container)
                 if wrapper.count() != 1 or root.locator('ui-grid').count() != len(roles):
-                    return None
+                    return _gate('grid_structure')
                 grids = wrapper.locator('ui-grid')
                 if grids.count() != len(roles) or root.locator('table:visible').count() != len(roles):
-                    return None
+                    return _gate('grid_structure')
                 for index, (suffix, group) in enumerate(roles):
                     table = grids.nth(index).locator('p-table')
                     if table.count() != 1 or not _turn_grid(page, table, max_pages, check_cancel):
-                        return None
+                        return _gate('grid_structure')
                     verify_detail_url(page.url, taxpayer, record['record_id'])
                     physical, marker = table.locator('table:visible'), table.locator('.p-paginator-current')
                     if physical.count() != 1 or marker.count() != 1:
-                        return None
+                        return _gate('grid_structure')
                     match = re.search(r'(?:of|dari)\s+([0-9]+)(?![0-9.,])', marker.inner_text(), re.I)
                     if not match:
-                        return None
+                        return _gate('total')
                     total = int(match[1])
                     metadata = physical.evaluate(TABLE.replace('GROUP', GROUP_JS))
                     if metadata['group'] != group or not metadata['headers'] or not all(metadata['headers']):
-                        return None
+                        return _gate('table_shape')
                     endpoint = ORIGIN + '/returnsheet/api/loadarticle2126/' + suffix + '-grid'
                     pages = _pages(_observations(capture, record, scope), endpoint, record['record_id'], total)
                     binding['tables'].append({'name': suffix, **metadata, 'endpoint': endpoint,
@@ -198,13 +205,13 @@ def observe_pph21_forms(page, record, scope, capture, *, max_pages=1000, check_c
             forms.append(binding)
         references = _reference_bindings(page, record, scope, capture, check_cancel)
         if references is None:
-            return None
+            return _gate('reference_bindings')
         next(form for form in forms if form['name'] == 'Induk')['references'] = references
         return forms
     except JsonSafetyError:
         raise
     except Exception:
         _check_cancel(check_cancel)
-        return None
+        return _gate('evaluation_error')
     finally:
         _observations(capture, record, scope)
