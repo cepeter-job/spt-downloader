@@ -162,3 +162,73 @@ def test_unifikasi_observer_gate_records_which_strict_gate_refused(browser, tmp_
         assert log.flush()
     gates = [row for row in records(root) if row['event'] == 'masa.observer_gate']
     assert [row['masa_observer_gate'] for row in gates] == [gate]
+
+
+@pytest.mark.parametrize('gate,tax', [
+    ('unsupported_tax', 'PPN'),
+    ('tab_set', 'PPh Unifikasi'),
+    ('tab_disabled', 'PPh Unifikasi'),
+    ('form_root', 'PPN'),
+    ('grid_structure', 'PPh Unifikasi'),
+    ('total', 'PPN'),
+    ('table_shape', 'PPN'),
+    ('reference', 'PPh Unifikasi'),
+    ('grid_structure_physical', 'PPN'),
+])
+def test_masa_observer_gate_covers_remaining_real_browser_refusals(
+        browser, tmp_path, monkeypatch, gate, tax):
+    """Exercise fail-closed gates through synthetic owned Edge pages, not direct _gate calls."""
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root = tmp_path / 'diag'
+    with diagnostics.session(root, 'worker') as log:
+        with observed(browser, tmp_path, monkeypatch, tax) as (module, fixture, capture):
+            if gate == 'unsupported_tax':
+                monkeypatch.setattr(module, 'FORMS', {})
+            elif gate == 'tab_set':
+                forms = {**module.FORMS}
+                forms[tax] = {**forms[tax], 'UNREVIEWED': (None, [])}
+                monkeypatch.setattr(module, 'FORMS', forms)
+            elif gate == 'tab_disabled':
+                fixture.page.locator(
+                    '.main-content > .p-tabview > .p-tabview-nav > li > a'
+                ).first.evaluate('(e) => e.setAttribute("aria-disabled", "true")')
+            elif gate == 'form_root':
+                forms = {**module.FORMS}
+                forms[tax] = {**forms[tax], 'INDUK': ('missing-coretax-form', [])}
+                monkeypatch.setattr(module, 'FORMS', forms)
+            elif gate == 'grid_structure':
+                fixture.page.locator('rshshr-spt-unifikasi-grid').evaluate(
+                    '(e) => e.remove()')
+            elif gate in {'total', 'grid_structure_physical'}:
+                original_turn = module._turn_grid
+
+                def tampered_grid(page, table, max_pages, check_cancel):
+                    ok = original_turn(page, table, max_pages, check_cancel)
+                    if ok:
+                        if gate == 'total':
+                            table.locator('.p-paginator-current').evaluate(
+                                '(e) => { e.textContent = "unknown total"; }')
+                        else:
+                            table.locator('table:visible').first.evaluate(
+                                '(e) => { e.style.display = "none"; }')
+                    return ok
+
+                monkeypatch.setattr(module, '_turn_grid', tampered_grid)
+            elif gate == 'table_shape':
+                monkeypatch.setattr(module, 'TABLE', '(node) => ({headers: [], rows: []})')
+            elif gate == 'reference':
+                import coretax_pph21_observer
+                monkeypatch.setattr(coretax_pph21_observer, '_reference_bindings',
+                                    lambda *args, **kwargs: None)
+
+            assert module.observe_masa_forms(
+                fixture.page, fixture.record, SCOPE, capture, max_pages=5
+            ) is None
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
+            assert fixture.page.evaluate('window.valueReads') == 0
+        assert log.flush()
+    gates = [row['masa_observer_gate'] for row in records(root)
+             if row['event'] == 'masa.observer_gate']
+    assert gates == ['grid_structure' if gate == 'grid_structure_physical' else gate]
