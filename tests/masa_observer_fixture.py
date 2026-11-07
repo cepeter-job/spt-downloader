@@ -68,7 +68,11 @@ class Fixture:
     def table(self, selector, grid, group):
         endpoint = '/loadndvat/' if self.tax == 'PPN' else '/loadwtr/'
         config = html.escape(json.dumps({'endpoint': endpoint + grid + '-grid', 'first': 10}), quote=True)
-        tfoot = ('<tfoot><tr></tr><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot>'
+        # Live list-i-bpu sets showFooter=false: no tFoot at all. The four
+        # footer-bearing Unifikasi grids carry the physical blank spacer.
+        tfoot = (''
+                 if self.tax == 'PPh Unifikasi' and grid == 'list-i-bpu' else
+                 '<tfoot><tr></tr><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot>'
                  if self.tax == 'PPh Unifikasi' else
                  '<tfoot><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot>')
         return ('<p-panel><div class="p-panel-header"><span class="p-panel-title">' + group +

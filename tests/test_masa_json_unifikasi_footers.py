@@ -87,3 +87,25 @@ def test_decimal_underscore_is_not_accepted_by_footer_pipe_but_body_stays_litera
 def test_unknown_footer_scope_is_not_a_blank_complete_result(grid, form):
     with pytest.raises(_UnsupportedMetadata):
         project(grid, form)
+
+
+def test_footer_layout_distinguishes_no_footer_grid_from_spacer_grids():
+    from copy import deepcopy
+    from coretax_masa_json import adapt_masa_detail
+    from masa_projection_fixture import native_case
+
+    case = native_case('PPh Unifikasi')
+    result = adapt_masa_detail(case['packets'], record=case['record'],
+                               scope=case['scope'], observed_forms=case['forms'])
+    assert result['eligible'], result['reason']
+    # The no-footer grid (list-i-bpu, []) and a spacer grid
+    # (list-i-bpnr, [[], …]) must be distinguished by the layout guard.
+    for target, spans in (('list-i-bpu', [[], [2, 1]]), ('list-i-bpnr', [[10, 1, 5]] * 4)):
+        tampered = deepcopy(case)
+        for form in tampered['forms']:
+            for table in form['tables']:
+                if table['name'] == target:
+                    table['footer_spans'] = spans
+        reason = adapt_masa_detail(tampered['packets'], record=tampered['record'],
+                                   scope=tampered['scope'], observed_forms=tampered['forms'])['reason']
+        assert 'unverified_masa_footer_layout' in reason
