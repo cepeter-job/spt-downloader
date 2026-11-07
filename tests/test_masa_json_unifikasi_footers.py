@@ -45,8 +45,8 @@ def test_visible_footer_uses_named_prefill_total_not_row_column_or_page_sum(grid
         form[key] = _corporate_json(values[index])
     before = deepcopy(form)
     result = project(grid, form)
-    assert result['footer'] == [[label, displayed[i], ''] for i, (_, label) in enumerate(bindings)]
-    assert result['footer_spans'] == [spans] * len(bindings)
+    assert result['footer'] == [[]] + [[label, displayed[i], ''] for i, (_, label) in enumerate(bindings)]
+    assert result['footer_spans'] == [[]] + [spans] * len(bindings)
     assert result['provenance'] == [
         {'path': [key], 'source': 'prefill_form', 'type': 'number', 'value': values[i]}
         for i, (key, _) in enumerate(bindings)]
@@ -58,14 +58,15 @@ def test_visible_footer_uses_named_prefill_total_not_row_column_or_page_sum(grid
 def test_footer_zero_display_does_not_replace_null_or_missing_source_evidence(grid, bindings, spans, shape):
     form = {key: None for key, _ in bindings} if shape == 'null' else {}
     result = project(grid, form)
-    assert result['footer'] == [[label, '0', ''] for _, label in bindings]
+    assert result['footer'] == [[]] + [[label, '0', ''] for _, label in bindings]
+    assert result['footer_spans'] == [[]] + [spans] * len(bindings)
     assert all(p['type'] == shape and p['value'] is None for p in result['provenance'])
 
 
 @pytest.mark.parametrize('raw,displayed', [('"001234.50"', '1.235'), ('""', '')])
 def test_footer_decimal_strings_are_formatted_but_raw_lexemes_are_preserved(raw, displayed):
     result = project('attachment-i', {'TotalIncomeTaxAttachment': _corporate_json(raw)})
-    assert result['footer'][0][1] == displayed
+    assert result['footer'][1][1] == displayed
     assert result['provenance'][0]['type'] == 'string'
     assert result['provenance'][0]['value'] == _corporate_json(raw)
 
@@ -86,3 +87,25 @@ def test_decimal_underscore_is_not_accepted_by_footer_pipe_but_body_stays_litera
 def test_unknown_footer_scope_is_not_a_blank_complete_result(grid, form):
     with pytest.raises(_UnsupportedMetadata):
         project(grid, form)
+
+
+def test_footer_layout_distinguishes_no_footer_grid_from_spacer_grids():
+    from copy import deepcopy
+    from coretax_masa_json import adapt_masa_detail
+    from masa_projection_fixture import native_case
+
+    case = native_case('PPh Unifikasi')
+    result = adapt_masa_detail(case['packets'], record=case['record'],
+                               scope=case['scope'], observed_forms=case['forms'])
+    assert result['eligible'], result['reason']
+    # The no-footer grid (list-i-bpu, []) and a spacer grid
+    # (list-i-bpnr, [[], …]) must be distinguished by the layout guard.
+    for target, spans in (('list-i-bpu', [[], [2, 1]]), ('list-i-bpnr', [[10, 1, 5]] * 4)):
+        tampered = deepcopy(case)
+        for form in tampered['forms']:
+            for table in form['tables']:
+                if table['name'] == target:
+                    table['footer_spans'] = spans
+        reason = adapt_masa_detail(tampered['packets'], record=tampered['record'],
+                                   scope=tampered['scope'], observed_forms=tampered['forms'])['reason']
+        assert 'unverified_masa_footer_layout' in reason

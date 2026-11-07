@@ -690,13 +690,16 @@ def project_unifikasi_footer(grid_name, form):
     if binding is None:
         raise _UnsupportedMetadata('unsupported_unifikasi_footer_grid')
     spans, fields = binding
-    rows, evidence = [], []
+    # Mirror PPh21: PrimeNG renders a physical blank spacer row (0 cells)
+    # before the totals; the observer records it as footer_spans[0] == [].
+    rows, evidence = [[]], []
     for field, label in fields:
         value = _source_scalar(form, (field,), evidence)
         evidence[-1]['source'] = 'prefill_form'
         displayed = render_grid_value('0' if value is None else value, 'number', footer=True)
         rows.append([label, displayed, ''])
-    return {'footer': rows, 'footer_spans': [list(spans) for _ in rows], 'provenance': evidence}
+    return {'footer': rows, 'footer_spans': [[]] + [list(spans) for _ in rows[1:]],
+            'provenance': evidence}
 
 
 _UNIFIKASI_TEXT = {
