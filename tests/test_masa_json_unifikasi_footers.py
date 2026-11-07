@@ -45,8 +45,8 @@ def test_visible_footer_uses_named_prefill_total_not_row_column_or_page_sum(grid
         form[key] = _corporate_json(values[index])
     before = deepcopy(form)
     result = project(grid, form)
-    assert result['footer'] == [[label, displayed[i], ''] for i, (_, label) in enumerate(bindings)]
-    assert result['footer_spans'] == [spans] * len(bindings)
+    assert result['footer'] == [[]] + [[label, displayed[i], ''] for i, (_, label) in enumerate(bindings)]
+    assert result['footer_spans'] == [[]] + [spans] * len(bindings)
     assert result['provenance'] == [
         {'path': [key], 'source': 'prefill_form', 'type': 'number', 'value': values[i]}
         for i, (key, _) in enumerate(bindings)]
@@ -58,14 +58,15 @@ def test_visible_footer_uses_named_prefill_total_not_row_column_or_page_sum(grid
 def test_footer_zero_display_does_not_replace_null_or_missing_source_evidence(grid, bindings, spans, shape):
     form = {key: None for key, _ in bindings} if shape == 'null' else {}
     result = project(grid, form)
-    assert result['footer'] == [[label, '0', ''] for _, label in bindings]
+    assert result['footer'] == [[]] + [[label, '0', ''] for _, label in bindings]
+    assert result['footer_spans'] == [[]] + [spans] * len(bindings)
     assert all(p['type'] == shape and p['value'] is None for p in result['provenance'])
 
 
 @pytest.mark.parametrize('raw,displayed', [('"001234.50"', '1.235'), ('""', '')])
 def test_footer_decimal_strings_are_formatted_but_raw_lexemes_are_preserved(raw, displayed):
     result = project('attachment-i', {'TotalIncomeTaxAttachment': _corporate_json(raw)})
-    assert result['footer'][0][1] == displayed
+    assert result['footer'][1][1] == displayed
     assert result['provenance'][0]['type'] == 'string'
     assert result['provenance'][0]['value'] == _corporate_json(raw)
 

@@ -117,9 +117,9 @@ def native_case(tax, *, populated=True):
                 'TaxObject': 'SYNTHETIC OBJECT', 'TaxBase': 1200, 'TaxRate': 2.5, 'IncomeTax': 30,
                 'TaxCertificate': None, 'PaymentMethod': None, 'BranchId': '0000000000000002000001',
                 'Status': 'SYNTHETIC STATUS', 'RevenueCode': 'SYNTHETIC REVENUE'}
-            specs = [('DAFTAR-I','Daftar I', [('list-i-bpu',16,'B3',[]),('list-i-bpnr',16,'B9',[[10,1,5]]*4)]),
-                     ('DAFTAR-II','Daftar II', [('list-ii-sp',11,'B3',[[6,1,4]]*2),('list-ii-cy',11,'B12',[[6,1,4]])]),
-                     ('LAMPIRAN-I','Lampiran I',[('attachment-i',17,'B3',[[12,1,4]])])]
+            specs = [('DAFTAR-I','Daftar I', [('list-i-bpu',16,'B3',[]),('list-i-bpnr',16,'B9',[[]]+[[10,1,5]]*4)]),
+                     ('DAFTAR-II','Daftar II', [('list-ii-sp',11,'B3',[[]]+[[6,1,4]]*2),('list-ii-cy',11,'B12',[[]]+[[6,1,4]])]),
+                     ('LAMPIRAN-I','Lampiran I',[('attachment-i',17,'B3',[[]]+[[12,1,4]])])]
             for name, sheet, grids in specs:
                 form = add_form(name, [field('TaxIdentificationNumber', 'NPWP')])
                 for grid, width, group_cell, spans in grids:

@@ -29,7 +29,7 @@ def test_all_masa_tabs_bind_real_requests_without_reading_tax_values(browser, tm
         assert len(bindings) == (6 if tax == 'PPN' else 5)
         for table in bindings:
             assert table['headers'] == ['No.', 'Document / Number', 'Document / Date']
-            assert table['footer_spans'] == [[2, 1]]
+            assert table['footer_spans'] == ([[2, 1]] if tax == 'PPN' else [[], [2, 1]])
             assert table['source_total'] == 12
             assert [p['offset'] for p in table['pages']] == [0, 10]
             assert all(p['sequences'] for p in table['pages'])
