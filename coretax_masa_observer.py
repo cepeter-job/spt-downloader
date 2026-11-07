@@ -142,8 +142,9 @@ FIELDS = r"""(root, context={}) => {
    }
    if(control.matches('p-dropdown,p-multiselect')){
      const paginator=control.closest('.p-paginator');
-     if(control.matches('p-dropdown')&&context.tax==='PPN'&&
-        ['A-1','A-2','B-1','B-2','B-3','C'].includes(context.form)&&
+     if(control.matches('p-dropdown')&&
+        ((context.tax==='PPN'&&['A-1','A-2','B-1','B-2','B-3','C'].includes(context.form))||
+         (context.tax==='PPh Unifikasi'&&['DAFTAR-I','DAFTAR-II','LAMPIRAN-I'].includes(context.form)))&&
         control.closest('p-paginator')&&control.closest('p-table')&&paginator&&
         paginator.querySelectorAll('.p-paginator-current').length===1)continue;
      return null;
