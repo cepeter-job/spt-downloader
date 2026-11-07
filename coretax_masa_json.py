@@ -270,7 +270,9 @@ def _check_primary(payload, record, selected, scope, period, tax, reasons):
         # A submitted listing alone cannot repair contradictory primary bytes.
         _identity_field(payload, 'ReturnSheetStatusCode', 'SUBMITTED', reasons)
     elif tax == 'PPh Unifikasi':
-        _identity_field(payload, 'ReturnSheetType', 'ICT_WTR', reasons)
+        # Live withholding-tax primary carries no ReturnSheetType (verified
+        # 2026-11-07); family is proven by the prefill endpoint plus TIN,
+        # period and submitted-status checks above and the listing binding.
         # Submitted is the reviewed lifecycle: draft can depend on login claims.
         _identity_field(payload, 'ReturnSheetStatusCode', 'SUBMITTED', reasons)
     if payload.get('IsFound') is not True:

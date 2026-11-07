@@ -74,9 +74,10 @@ class Fixture:
             '<tr><th>Number</th><th>Date</th></tr><tr><th><input value="FILTER-TRAP"></th></tr></thead>'
             '<tbody><tr><td>DOM-ROW-TRAP</td></tr></tbody>'
             '<tfoot><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot></table>'
-            '<div class="p-paginator"><span class="p-paginator-current"></span>'
+            '<p-paginator><div class="p-paginator"><p-dropdown style="display:block">10</p-dropdown>'
+            '<span class="p-paginator-current"></span>'
             '<button class="p-paginator-prev" onclick="turn(this,-10)">Previous</button>'
-            '<button class="p-paginator-next" onclick="turn(this,10)">Next</button></div>'
+            '<button class="p-paginator-next" onclick="turn(this,10)">Next</button></div></p-paginator>'
             '</p-table></' + selector + '></div></p-panel>')
 
     def document(self):
@@ -102,6 +103,8 @@ class Fixture:
                     '<tbody><tr><td>DOM-TREE-TRAP</td></tr></tbody><tfoot><tr><td colspan="2">TOTAL</td></tr></tfoot>'
                     '</table></p-treetable></rshshr-spt-unifikasi-grid>')
             content = control + ''.join(self.table(*grid) for grid in grids)
+            if self.defect == 'business-dropdown' and index == 0:
+                content += '<p-dropdown style="display:block">BUSINESS</p-dropdown>'
             if self.defect == 'extra-table' and index == 0:
                 content += '<table><thead><tr><th>UNKNOWN</th></tr></thead><tbody></tbody></table>'
             if selector:

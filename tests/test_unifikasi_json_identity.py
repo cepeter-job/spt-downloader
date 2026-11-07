@@ -68,7 +68,7 @@ def source_case(model='Normal'):
     case['record']['source_fields'].update(ReturnSheetModel=model, ReturnSheetStatusCode='SUBMITTED',
                                           TaxTypeCode='ICT_WT', ReturnSheetTypeCode='ICT_WTR')
     data = json.loads(case['packets'][0]['body'])['Payload']
-    data.update(ReturnSheetStatusCode='SUBMITTED', ReturnSheetType='ICT_WTR',
+    data.update(ReturnSheetStatusCode='SUBMITTED',
                 ReturnSheetModel='NORMAL' if model == 'Normal' else 'AMENDMENT')
     case['packets'][0] = packet('PPh Unifikasi', data)
     return case
@@ -86,7 +86,7 @@ def test_native_unifikasi_submitted_models(model):
     assert result['eligible'], result['reason']
 
 
-@pytest.mark.parametrize('key,value', [('ReturnSheetStatusCode', 'DRAFT'), ('ReturnSheetType', 'ICT_WITR')])
+@pytest.mark.parametrize('key,value', [('ReturnSheetStatusCode', 'DRAFT')])
 def test_native_unifikasi_wrong_primary_lifecycle_stops(key, value):
     case = source_case()
     data = json.loads(case['packets'][0]['body'])['Payload']

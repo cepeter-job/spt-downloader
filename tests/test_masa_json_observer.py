@@ -124,6 +124,7 @@ def test_foreign_footer_request_cannot_hide_behind_final_tab_or_fallback(browser
     ('duplicate-form', 'catalog'),
     ('extra-table', 'grid_structure'),
     ('filtered', 'evaluation_error'),
+    ('business-dropdown', 'fields'),
 ])
 def test_masa_observer_gate_records_which_strict_gate_refused(browser, tmp_path, monkeypatch, defect, gate):
     from spt_desktop import diagnostics
@@ -151,7 +152,8 @@ def test_unifikasi_passing_fixture_emits_no_gate_event(browser, tmp_path, monkey
     assert not [row for row in records(root) if row['event'] == 'masa.observer_gate']
 
 
-@pytest.mark.parametrize('defect,gate', [('extra-table', 'grid_structure'), ('changed-build', 'build_digest')])
+@pytest.mark.parametrize('defect,gate', [('extra-table', 'grid_structure'), ('changed-build', 'build_digest'),
+                                        ('business-dropdown', 'fields')])
 def test_unifikasi_observer_gate_records_which_strict_gate_refused(browser, tmp_path, monkeypatch, defect, gate):
     from spt_desktop import diagnostics
     from test_diagnostics import records
