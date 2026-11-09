@@ -188,7 +188,7 @@ class NativeFixture:
             '"<tr><td>0000</td></tr>").join("");if(c.endpoint==="/loadcit/l4-table-a-grid"){'
             'return fetch(' + json.dumps(corpus.ORIGIN + '/returnsheet/api') +
             '+c.endpoint+"/footer",{method:"POST",headers:{"Content-Type":"application/json"},'
-            'body:JSON.stringify(c.identity)}).then(r=>r.json()).then(()=>{})}})'
+            'body:JSON.stringify(c.identity)}).then(r=>r.json()).then(()=>{})}})}'
             'function turn(b,d){let g=b.closest("p-table"),c=JSON.parse(g.dataset.fixtureConfig);'
             'c.first+=d;g.dataset.fixtureConfig=JSON.stringify(c);load(g)}'
             'function show(i){document.querySelectorAll(".p-tabview-panel").forEach((p,j)=>{'
