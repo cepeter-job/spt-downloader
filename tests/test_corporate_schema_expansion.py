@@ -163,6 +163,9 @@ def test_disabled_panel_null_root_passes():
     result = adapt([primary_with_outer_periods(form)],
                    forms=_disabled_forms('L1bFormData'))
     eligible(result)
+    # A null root is proved by source coverage, not exported as a blank form.
+    assert 'L1-B' not in {section['name'] for section in result['sections']}
+    assert result['coverage']['complete']
 
 
 def test_disabled_panel_missing_root_passes():
@@ -170,6 +173,8 @@ def test_disabled_panel_missing_root_passes():
     result = adapt([primary_with_outer_periods(form)],
                    forms=_disabled_forms('L1bFormData'))
     eligible(result)
+    assert 'L1-B' not in {section['name'] for section in result['sections']}
+    assert result['coverage']['complete']
 
 
 @pytest.mark.parametrize('value', [
