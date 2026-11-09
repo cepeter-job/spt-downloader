@@ -1,10 +1,11 @@
 """Readonly corporate UI bindings pinned to reviewed public build bytes."""
 import json
 import time
+from coretax_build_pins import load_build_pins
 from coretax_json import ORIGIN, JsonSafetyError
 
 CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js'
-CIT_SOURCE_SHA256 = '500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153'
+CIT_SOURCE_SHA256 = load_build_pins().get(CIT_SOURCE_URL)
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),
  'L1-B': ('rshshr-citr-l1b-form', 'L1bFormData'),

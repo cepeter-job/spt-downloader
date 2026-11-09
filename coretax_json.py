@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
+from coretax_build_pins import load_build_pins
 from coretax_detail_source import validate_detail_source as validate_detail_source
 
 
@@ -34,7 +35,7 @@ CORPORATE_REFERENCE_REQUESTS[ORIGIN + '/referencedata/api/currentreferencedata/i
 CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-{index}-grid'
                                   for index in (1, 2, 3, 5))
 REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
-REFERENCE_ORDER_SHA256 = '6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173'
+REFERENCE_ORDER_SHA256 = load_build_pins().get(REFERENCE_ORDER_SOURCE)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
