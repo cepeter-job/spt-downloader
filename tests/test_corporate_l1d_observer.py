@@ -35,7 +35,12 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
-            assert forms is not None and [f['name'] for f in forms] == ['Induk', 'L1-D']
+            assert forms is not None
+            assert [f['name'] for f in forms] == ['Induk', 'L1-D', 'L1-B', 'L8']
+            assert all(f.get('disabled') is True and f['paths'] == [[root]]
+                       and not f.get('grids') and not f.get('projection')
+                       for f, root in ((forms[2], 'L1bFormData'),
+                                       (forms[3], 'CalculationFacilitiesIncomeTaxRateReduction'))
             proof = forms[1]['projection']
             assert proof['kind'] == 'corporate-l1d-v1' and proof['builds'] == fixture.pins
             assert [t['component'] for t in proof['tables']] == [f'rsh-citr-l1d-grid{i}' for i in (1, 2, 3)]
