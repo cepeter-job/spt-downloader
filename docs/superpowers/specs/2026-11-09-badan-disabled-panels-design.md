@@ -57,3 +57,17 @@ not omitted).
   `unverified_corporate_disabled_panel`; disabled+absent passes.
 - Observer: synthetic tabs (Induk enabled + L1-B disabled) via FakePage tabs —
   disabled binding declared, no panel access for it.
+
+## Review hardening (PR #207 follow-up)
+
+- `_corporate_bindings` now enforces the path-only contract at the adapter
+  boundary: a disabled entry must be exactly `True`, with one single-token
+  path and no `primary`/`projection`/`grids`/`responses`/`dependencies`
+  surface (contradictory caller bindings raise instead of smuggling
+  uninspected evidence). Adapter negative tests cover every variant.
+- A disabled + non-null root refuses for array/string/number values as well
+  as objects (parametrized).
+- Observer: duplicate disabled captions and unrecognized disabled captions
+  return unavailable (intentional fail-closed — the inspected tab set is
+  exactly the `FORMS` set); disabled-then-enabled rebinding order remains
+  independent, so either order binds correctly.

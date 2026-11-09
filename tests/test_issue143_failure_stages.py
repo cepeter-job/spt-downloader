@@ -234,3 +234,63 @@ def test_corporate_disabled_panel_binds_inert_path_without_inspection(monkeypatc
     assert disabled['grids'] == [] and disabled['responses'] == []
     assert disabled['dependencies'] == []
     assert inspected == ['Induk']
+
+
+def _observe_with_tabs(monkeypatch, tabs, captions):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+
+    class Tab:
+        def __init__(self, name, disabled):
+            self.name, self.disabled = name, disabled
+
+        def evaluate(self, *a):
+            return self.disabled
+
+        def inner_text(self):
+            return self.name
+
+    fake = [Tab(name, dis) for name, dis in zip(captions, tabs)]
+
+    def fake_tabs(page):
+        return object(), SimpleNamespace(count=lambda: len(fake),
+                                         nth=lambda i: fake[i])
+
+    monkeypatch.setattr(coretax_corporate, '_tabs', fake_tabs)
+    form = SimpleNamespace(count=lambda: 1, is_visible=lambda: True)
+    panel = SimpleNamespace(locator=lambda selector: form)
+    inspected = []
+
+    def fake_panel(page, view, tab, caption, record, check_cancel):
+        inspected.append(caption)
+        return panel
+
+    monkeypatch.setattr(coretax_corporate, '_native_panel', fake_panel)
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'c' * 64)
+    forms = coretax_corporate.observe_forms(
+        page, {'list_url': 'https://synthetic.invalid/list',
+               'record_id': 'SYNTHETIC-ID'},
+        ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
+    return forms, inspected
+
+
+def test_corporate_disabled_duplicate_or_unknown_caption_fails_closed(monkeypatch):
+    forms, _ = _observe_with_tabs(monkeypatch, [False, True, True],
+                                  ['Induk', 'L1-B', 'L1-B'])
+    assert forms is None
+    forms, _ = _observe_with_tabs(monkeypatch, [False, True],
+                                  ['Induk', 'Surat Tanpa Panel'])
+    assert forms is None
+    forms, inspected = _observe_with_tabs(monkeypatch, [True, False],
+                                          ['L1-B', 'Induk'])
+    assert forms is not None
+    assert [form['name'] for form in forms] == ['L1-B', 'Induk']
+    assert forms[0]['disabled'] is True
+    assert inspected == ['Induk']

@@ -692,9 +692,20 @@ def _corporate_bindings(observed_forms):
         names.add(form['name'])
         section = {'name': form['name'], 'fields': [], 'tables': [], 'text': ''}
         if 'disabled' in form:
-            if type(form['disabled']) is not bool:
+            if form['disabled'] is not True:
                 raise JsonSafetyError('Observed source disabled marker is invalid')
-            section['disabled'] = form['disabled']
+            # A disabled binding is a path-only declaration (one-token root,
+            # no request/projection surface) — anything else contradicts it
+            # and would smuggle uninspected evidence past DOM-proof custody.
+            declared_paths = form.get('paths')
+            if (not isinstance(declared_paths, list) or len(declared_paths) != 1
+                    or not isinstance(declared_paths[0], list)
+                    or len(declared_paths[0]) != 1
+                    or 'primary' in form or 'projection' in form
+                    or form.get('grids') or form.get('responses')
+                    or form.get('dependencies')):
+                raise JsonSafetyError('Observed source disabled binding is contradictory')
+            section['disabled'] = True
         sections.append(section)
         if 'primary' in form:
             binding = form['primary']
