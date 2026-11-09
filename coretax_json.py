@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
 from coretax_build_pins import load_build_pins
@@ -536,6 +537,26 @@ def adapt_inventory_page(body: bytes, context: dict) -> dict:
 # Kept separate from inventory and capture: this API has no I/O or mode switch.
 _CIT_CONTROLS = frozenset({'TaxType', 'IsDraft', 'TaxPeriodCode',
                            'ReturnSheetRecordIdentifier', 'ReturnSheetAggregateIdentifier'})
+# 525 rebuild additions proven inert as explicit nulls (live 2026-11-09);
+# any non-null value for these names still refuses.
+_CIT_NULL_OMISSIONS = frozenset({'CalculationAfterTaxIncome5Years',
+    'CalculationLetterOfTheIncomeTax', 'ConsolidatedFinancialStatement',
+    'CopyOfIncomeTaxReturn', 'CorporateType',
+    'FinancialStatementControlledForeignCompany', 'FinancialStatementXlsx',
+    'L12AFormData', 'L12BNotificationReinvestmentNetIncome',
+    'L13AListOfTaxFacilityInInvestment', 'L13BListOfAdditionalGrossIncomeDeduction',
+    'L13CListOfTaxFacilityOfCorporateIncomeTaxReduction',
+    'L14UtilizationOfRemainingExcess', 'L1aFormData', 'L1cFormData', 'L1eFormData',
+    'L1fFormData', 'L1gFormData', 'L1hFormData', 'L1iFormData', 'L1jFormData',
+    'L1kFormData', 'L1lFormData', 'ListOfGrossTurnover', 'MonthlyReport',
+    'PeriodCode', 'ProofOfIncomeTax', 'ProofOfReinvestment', 'ProofOfZakat',
+    'ReportOfShareholders', 'WithholdingSlip'})
+# New data-bearing top-level keys, validated as source evidence when present
+# (doc metadata never proves PDF custody; IDs/provenance are bound, not logged).
+_CIT_METADATA_KEYS = frozenset({'ActualMonths', 'AuditOpinion', 'FinancialStatement',
+    'OtherDocuments', 'PrefillFromId', 'ElectronicReceiptSubmission'})
+CORPORATE_L4_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid'
+CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
 _CIT_SECRET_KEYS = frozenset({'password', 'passwd', 'pwd', 'authorization', 'cookie',
                               'setcookie', 'token', 'accesstoken', 'refreshtoken',
@@ -990,16 +1011,100 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
         if key in _CIT_CONTROLS:
             _corporate_rows(value, (key,), controls)
     provenance['controls'] = controls
+    # Reviewed metadata/omission handling for the rebuild's new top-level keys.
+    # Null omissions are proven inert only as exact nulls; data keys below
+    # validate type, range and relation before any value is recorded.
+    omitted = []
+    for key, value in list(root.items()):
+        if key in _CIT_NULL_OMISSIONS:
+            if value is not None:
+                raise _UnsupportedMetadata('unverified_corporate_null_omission_value')
+            omitted.append(key)
+    provenance['omitted_null_keys'] = sorted(omitted)
+    metadata = {}
+    metadata_rows = []
+    if 'ActualMonths' in root:
+        months = root['ActualMonths']
+        if isinstance(months, bool) or not (isinstance(months, (_CorporateNumber, int))
+                and str(months).isdigit() and 1 <= int(str(months)) <= 12):
+            raise _UnsupportedMetadata('unverified_corporate_actual_months')
+        start, end = payload.get('PeriodMonthStart'), payload.get('PeriodMonthEnd')
+        if isinstance(start, bool) or isinstance(end, bool) or isinstance(start, dict) or isinstance(end, dict):
+            raise _UnsupportedMetadata('unverified_corporate_actual_months')
+        try:
+            start, end = int(str(start)), int(str(end))
+        except (ValueError, TypeError):
+            raise _UnsupportedMetadata('unverified_corporate_actual_months') from None
+        if not (1 <= start <= 12 and 1 <= end <= 12):
+            raise _UnsupportedMetadata('unverified_corporate_actual_months')
+        # Cross-year wraps are unsupported: the 525 fallback's odd 13-End+Start
+        # rule is itself unreviewed, so fail closed instead of guessing.
+        if start > end:
+            raise _UnsupportedMetadata('unverified_corporate_actual_months')
+        derived = end - start + 1
+        if int(str(months)) != derived:
+            raise _UnsupportedMetadata('unverified_corporate_actual_months')
+        metadata['ActualMonths'] = int(str(months))
+        _corporate_rows(months, ('ActualMonths',), metadata_rows)
+    if 'PrefillFromId' in root:
+        prefill_id = root['PrefillFromId']
+        if (not isinstance(prefill_id, str)
+                or not re.fullmatch(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
+                                    r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', prefill_id)):
+            raise _UnsupportedMetadata('unverified_corporate_prefill_identity')
+        # Bounded hash proof; the raw identifier never reaches durable output.
+        metadata['PrefillFromId'] = {
+            'present': True, 'format': 'uuid',
+            'sha256': hashlib.sha256(prefill_id.encode()).hexdigest()}
+        _corporate_rows(prefill_id, ('PrefillFromId',), metadata_rows)
+    if 'ElectronicReceiptSubmission' in root:
+        if type(root['ElectronicReceiptSubmission']) is not bool:
+            raise _UnsupportedMetadata('unverified_corporate_receipt_status')
+        metadata['ElectronicReceiptSubmission'] = root['ElectronicReceiptSubmission']
+        _corporate_rows(root['ElectronicReceiptSubmission'], ('ElectronicReceiptSubmission',), metadata_rows)
+    doc_keys = {'DocumentAggregateIdentifier', 'DocumentId', 'FileName', 'DocumentType', 'CreationDate'}
+    for name in ('AuditOpinion', 'FinancialStatement', 'OtherDocuments'):
+        if name not in root:
+            continue
+        value = root[name]
+        items = [value] if name == 'AuditOpinion' else value
+        if not isinstance(items, list) or len(items) > 32:
+            raise _UnsupportedMetadata('unverified_corporate_document_metadata')
+        for item in items:
+            # Exact str (JSON string), not the _CorporateNumber subclass that
+            # marks JSON number tokens; numeric IDs are a different type.
+            if (not isinstance(item, dict) or set(item) != doc_keys
+                    or any(type(item[k]) is not str or not item[k] or len(item[k]) > 1024
+                           for k in doc_keys)):
+                raise _UnsupportedMetadata('unverified_corporate_document_metadata')
+        # Non-PDF-custody source evidence: full leaves stay in provenance.
+        item_rows = []
+        for index, item in enumerate(items):
+            _corporate_rows(item, (name, index), item_rows)
+        metadata_rows.extend(item_rows)
+        metadata[name] = {'count': len(items),
+                          'types': sorted({item['DocumentType'] for item in items}),
+                          'rows': item_rows}
+    provenance['corporate_metadata'] = metadata
     # Every leaf/empty container outside control roots needs exactly one path.
     evidence = []
     for key, value in root.items():
-        if key not in _CIT_CONTROLS:
+        if (key not in _CIT_CONTROLS and key not in _CIT_METADATA_KEYS
+                and key not in _CIT_NULL_OMISSIONS):
             _corporate_rows(value, (key,), evidence)
     pointers = [_corporate_pointer(path) for path, _ in paths]
     if any(not any(row[0] == pointer or row[0].startswith(pointer + '/') for pointer in pointers)
            for row in evidence):
         raise _UnsupportedMetadata('unmapped_corporate_source_subtree')
+    # Validated metadata/omission rows count as source evidence too.
+    evidence.extend(metadata_rows)
+    for key in omitted:
+        _corporate_rows(None, (key,), evidence)
     for path, section in paths:
+        # The backend omits the empty L10-A section; the frontend reads it
+        # via ?. and the grid coverage below stands on its own.
+        if tuple(path) == ('DeclarationTransactionRelatedParties',) and path[0] not in root:
+            continue
         value = root
         for token in path:
             if not isinstance(value, dict) or token not in value:
@@ -1213,6 +1318,28 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                         rows = []
                         _corporate_rows(payload, ('Payload',), rows)
                         state['seen'][key] = {'sha256': ctx['sha256'], 'rows': rows}
+                        if state['endpoint'] == CORPORATE_L4_FOOTER_URL:
+                            if primary_source is None or not isinstance(payload, dict) \
+                                    or set(payload) != {'IncomeTax', 'IncomeTaxUsd', 'TaxBase', 'TaxBaseUsd'}:
+                                raise _UnsupportedMetadata('unverified_corporate_l4_footer')
+                            stored = primary_source[0].get(
+                                'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject', {})
+                            try:
+                                # USD totals have no FormData counterpart; validate
+                                # numeric JSON type + finite decimals only.
+                                if (type(payload['TaxBaseUsd']) is not _CorporateNumber
+                                        or type(payload['IncomeTaxUsd']) is not _CorporateNumber):
+                                    raise _UnsupportedMetadata('unverified_corporate_l4_footer')
+                                usd = [Decimal(str(payload['TaxBaseUsd'])),
+                                       Decimal(str(payload['IncomeTaxUsd']))]
+                                if any(not value.is_finite() for value in usd):
+                                    raise _UnsupportedMetadata('unverified_corporate_l4_footer')
+                                if (Decimal(str(payload['TaxBase'])) != Decimal(str(stored['TotalTaxBase']))
+                                        or Decimal(str(payload['IncomeTax']))
+                                        != Decimal(str(stored['TotalFinalIncomeTaxPayable']))):
+                                    raise JsonSafetyError('Corporate L4 footer contradicts stored totals')
+                            except (KeyError, TypeError, ValueError, InvalidOperation):
+                                raise _UnsupportedMetadata('unverified_corporate_l4_footer') from None
                         if is_auxiliary:
                             # Keep decoded original values, never reconstruct
                             # business data from the rendered leaf rows.

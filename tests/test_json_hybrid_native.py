@@ -59,7 +59,9 @@ class NativeFixture:
                     'inventory_complete': True, 'errors': [], 'records': [self.record]}
         form = corpus.current_form()
         if groups:
-            form.update(ListOfIncomeSubjectToFinalTaxAndNonTaxableObject=[],
+            form.update(ListOfIncomeSubjectToFinalTaxAndNonTaxableObject={
+                            'TotalTaxBase': 100, 'TotalFinalIncomeTaxPayable': 7,
+                            'TotalGrossIncome': 100, 'TotalFinalIncomeTaxPayableUsd': 0},
                         RecapitulationFiscalDepreciationAmortization=[], DeclarationTransactionRelatedParties=[])
         self.raw = corpus.primary(form)['body']
         self.build = BUILD + (b'/* CHANGED */' if changed_build else b'')
@@ -88,6 +90,13 @@ class NativeFixture:
             assert request.method == 'POST' and request.post_data_json == {
                 'RecordId': corpus.RECORD_ID, 'OnManualClick': False}
             route.fulfill(content_type='application/json', body=self.raw)
+        elif url == corpus.ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid/footer':
+            assert request.method == 'POST' and request.post_data_json == {
+                'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025'}
+            route.fulfill(content_type='application/json', body=corpus.wire({
+                'IsSuccessful': True, 'Payload': {
+                    'TaxBase': 100, 'TaxBaseUsd': 0,
+                    'IncomeTax': 7, 'IncomeTaxUsd': 0}}).encode())
         elif url.startswith(corpus.ORIGIN + '/returnsheet/api/loadcit/'):
             post = request.post_data_json
             assert request.method == 'POST' and post['ReturnSheetRecordId'] == corpus.RECORD_ID
@@ -176,7 +185,10 @@ class NativeFixture:
             'return fetch(' + json.dumps(corpus.ORIGIN + '/returnsheet/api') +
             '+c.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(r)})'
             '.then(r=>r.json()).then(b=>{g.querySelector("tbody").innerHTML=b.Payload.Data.map(x=>'
-            '"<tr><td>0000</td></tr>").join("")})}'
+            '"<tr><td>0000</td></tr>").join("");if(c.endpoint==="/loadcit/l4-table-a-grid"){'
+            'return fetch(' + json.dumps(corpus.ORIGIN + '/returnsheet/api') +
+            '+c.endpoint+"/footer",{method:"POST",headers:{"Content-Type":"application/json"},'
+            'body:JSON.stringify(c.identity)}).then(r=>r.json()).then(()=>{})}})}'
             'function turn(b,d){let g=b.closest("p-table"),c=JSON.parse(g.dataset.fixtureConfig);'
             'c.first+=d;g.dataset.fixtureConfig=JSON.stringify(c);load(g)}'
             'function show(i){document.querySelectorAll(".p-tabview-panel").forEach((p,j)=>{'
@@ -326,7 +338,7 @@ def test_synthetic_native_fixture_navigation_and_grid_handlers_are_independently
         requests = [r for r in fixture.requests if '/loadcit/' in r['url']]
         roles = {(r['url'].rsplit('/', 1)[-1], r['body'].get('GroupType')) for r in requests}
         expected = {('l9-table-' + str(family) + '-grid', group) for family, group in GROUPS}
-        expected |= {('l4-table-a-grid', None), ('l10a-grid', None)}
+        expected |= {('l4-table-a-grid', None), ('footer', None), ('l10a-grid', None)}
         assert roles == expected
         assert fixture.unexpected == []
     finally:
