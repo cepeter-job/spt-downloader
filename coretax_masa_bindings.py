@@ -428,9 +428,18 @@ def project_ppn_asked_to(form, *, model, clock_interval=None, period_year=None):
     if model == 'NORMAL':
         balance, integral, contributing = _ppn_vat_balance(form)
         evidence.extend(contributing)
-        if not integral or balance < 0 or choice == 'FORWARD_REFUND':
+        if not integral:
             raise _UnsupportedMetadata('unverified_ppn_normal_choice_lifecycle')
-        return {'value': None, 'rule': 'not_overpaid_clear', 'provenance': evidence}
+        if balance >= 0:
+            if choice == 'FORWARD_REFUND':
+                raise _UnsupportedMetadata('unverified_ppn_normal_choice_lifecycle')
+            return {'value': None, 'rule': 'not_overpaid_clear', 'provenance': evidence}
+        # Negative balance is overpaid (input credit exceeds output); the
+        # component only enables carry-forward there, never fast/forward
+        # without their separate facility/calendar paths (still refused).
+        if choice != 'CARRY_FORWARD':
+            raise _UnsupportedMetadata('unverified_ppn_normal_choice_lifecycle')
+        return {'value': choice, 'rule': 'normal_carry_forward_overpaid', 'provenance': evidence}
     balance = _observed_ppn_number(form, ('VATUnderOrOverPaidDueToAmendment', 'VAT'), evidence)
     if balance >= 0:
         if choice == 'FORWARD_REFUND':
@@ -532,9 +541,10 @@ def _ppn_vat_balance(form):
     basis = _source_scalar(form, ('BasedOnType',), evidence)
     goods = _ppn_source_number(form, ('InputTaxPercentageGoods',), evidence)
     services = _ppn_source_number(form, ('InputTaxPercentageServices',), evidence)
-    if basis is not None or (goods is not None and services is not None and
-                             float(_decimal(goods)) == 90 and float(_decimal(services)) == 0):
+    if basis is not None:
         raise _UnsupportedMetadata('unverified_ppn_final_balance_lifecycle')
+    unchanged = (goods is not None and services is not None and
+                 float(_decimal(goods)) == 90 and float(_decimal(services)) == 0)
     # The final onChangeBasedOnType resets these percentages to 90/0.
     # A definite change invokes the normal-VAT balance calculation even on a
     # disabled submitted form; its earlier stored balance is then overwritten.
@@ -555,8 +565,15 @@ def _ppn_vat_balance(form):
         total = values[0]
         for value in values[1:]:
             total = _checked_ppn_number(total - value)
-    return (total.to_integral_value(rounding=ROUND_FLOOR),
-            all(value == value.to_integral_value() for value in values), evidence)
+    floored = total.to_integral_value(rounding=ROUND_FLOOR)
+    if unchanged:
+        # No percentage change emitted on init, so the stored Prefill
+        # balance stands. It is final only when it agrees with the
+        # component calculation above (live-verified 2026-11-09).
+        stored = _ppn_source_number(form, ('VATUnderOrOverPaid', 'VAT'), evidence)
+        if stored is None or _decimal(stored) != floored:
+            raise _UnsupportedMetadata('unverified_ppn_final_balance_lifecycle')
+    return (floored, all(value == value.to_integral_value() for value in values), evidence)
 
 
 def _project_ppn_vat_balance(form):

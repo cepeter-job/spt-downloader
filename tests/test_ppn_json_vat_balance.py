@@ -70,6 +70,23 @@ def test_unchanged_percentages_do_not_prove_the_reactive_lifecycle():
         project_ppn_amount(source(goods=90, services=0), 'VATIsUnderOrOverPaid', model='AMENDMENT')
 
 
+def test_unchanged_percentages_project_stored_balance_when_it_agrees_with_components():
+    data = source(goods=90, services=0)
+    data['VATUnderOrOverPaid']['VAT'] = _corporate_json('55')
+    result = project_ppn_amount(data, 'VATIsUnderOrOverPaid', model='AMENDMENT')
+    assert result['value'] == '55'
+    assert result['rule'] == 'late_percentage_change_normal_vat_balance'
+    paths = [entry['path'] for entry in result['provenance']]
+    assert ['VATUnderOrOverPaid', 'VAT'] in paths
+
+
+def test_unchanged_percentages_reject_a_disagreeing_stored_balance():
+    data = source(goods=90, services=0)
+    data['VATUnderOrOverPaid']['VAT'] = _corporate_json('56')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(data, 'VATIsUnderOrOverPaid', model='AMENDMENT')
+
+
 def test_unbound_basis_profile_is_not_used_to_guess_final_balance():
     with pytest.raises(_UnsupportedMetadata):
         project_ppn_amount(source(basis='UNREVIEWED_BASIS'), 'VATIsUnderOrOverPaid', model='AMENDMENT')
