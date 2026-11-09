@@ -338,7 +338,7 @@ def test_synthetic_native_fixture_navigation_and_grid_handlers_are_independently
         requests = [r for r in fixture.requests if '/loadcit/' in r['url']]
         roles = {(r['url'].rsplit('/', 1)[-1], r['body'].get('GroupType')) for r in requests}
         expected = {('l9-table-' + str(family) + '-grid', group) for family, group in GROUPS}
-        expected |= {('l4-table-a-grid', None), ('l10a-grid', None)}
+        expected |= {('l4-table-a-grid', None), ('footer', None), ('l10a-grid', None)}
         assert roles == expected
         assert fixture.unexpected == []
     finally:
