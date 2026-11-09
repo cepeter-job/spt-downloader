@@ -14,7 +14,7 @@ from support_pph21_dom import appendix_table, induk_tables
 MAIN = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
 ARTICLE = ORIGIN + '/returnsheets/id-ID/803.3216dd51e4f24bf3.js'
 BUILD = b'/* synthetic observer build, not portal code */'
-VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
+VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 FRAME = ORIGIN + '/returnsheets/id-ID/article-21-26-tax-return/' + TAXPAYER + '/' + RECORD + '/ICT_WIT/00000000-0000-4000-8000-000000000002'
 REFERENCE = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/EBUPOT_TAX_CERTIFICATE,COUNTRY_CODE,EBUPOT_STATUS'
 MODEL_REFERENCE = REFERENCE.rsplit('/', 1)[0] + '/RETURN_SHEET_MODEL'

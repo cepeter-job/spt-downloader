@@ -17,7 +17,7 @@ from test_corporate_l11c_projection import ROOT, HEADERS, SPANS, raw_source
 
 
 COUNTRY = corpus.ORIGIN + '/referencedata/api/currentreferencedata/id-ID/COUNTRY_CODE'
-VENDOR = corpus.ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
+VENDOR = corpus.ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 VENDOR_BUILD = b'/* SYNTHETIC VENDOR -- no portal code */'
 L11C_PINS = {**PINS, VENDOR: '6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173'}
 

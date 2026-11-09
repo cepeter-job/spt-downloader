@@ -10,7 +10,7 @@ ASSETS = {
     'PPh Unifikasi': ORIGIN + '/returnsheets/id-ID/693.a011ba093b4bf8b7.js',
 }
 BUILD = b'/* synthetic observer build, not portal code */'
-VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
+VENDOR = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 FRAME = ORIGIN + '/returnsheets/id-ID/synthetic-masa/' + TAXPAYER + '/' + RECORD
 FORMS = {
     'PPN': [('INDUK', None, []),
