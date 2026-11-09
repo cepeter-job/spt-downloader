@@ -1437,5 +1437,10 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         return {'eligible': False, 'reason': ','.join(dict.fromkeys(reasons)), 'sections': [],
                 'coverage': coverage, 'provenance': provenance}
     coverage['complete'] = True
-    return {'eligible': True, 'reason': 'verified_corporate_source_coverage', 'sections': sections,
+    # Inert absent/disabled roots have already passed null-only checks and
+    # contributed to the evidence coverage above. Keep them in `sections`
+    # through semantic projection (which pairs forms by position), but do
+    # not publish them as empty workbook worksheets.
+    published_sections = [section for section in sections if not section.get('disabled')]
+    return {'eligible': True, 'reason': 'verified_corporate_source_coverage', 'sections': published_sections,
             'coverage': coverage, 'provenance': provenance}
