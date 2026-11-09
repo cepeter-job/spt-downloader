@@ -278,3 +278,22 @@ def test_l4_footer_nonfinite_usd_refuses(usd):
     result = adapt(bodies, forms=forms)
     assert result['eligible'] is False
     assert 'unverified_corporate_l4_footer' in result['reason']
+
+
+@pytest.mark.parametrize('usd', ['0', '100'])
+def test_l4_footer_string_numeric_usd_refuses(usd):
+    from support_json_corpus import RECORD_ID, source_row
+    form = _l4_packets()
+    forms, grid_url, footer_url = _l4_forms()
+    bodies = [primary_with_outer_periods(form)]
+    bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
+        'Payload': {'Data': [source_row()], 'TotalRecords': 1, 'Index': None}}, 2,
+        endpoint=grid_url,
+        request={'ReturnSheetRecordId': RECORD_ID, 'First': 0, 'Rows': 10}))
+    bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
+        'Payload': {'TaxBase': Number('100'), 'TaxBaseUsd': usd,
+                    'IncomeTax': Number('7'), 'IncomeTaxUsd': Number('0')}}, 3,
+        endpoint=footer_url, request={'ReturnSheetRecordId': RECORD_ID}))
+    result = adapt(bodies, forms=forms)
+    assert result['eligible'] is False
+    assert 'unverified_corporate_l4_footer' in result['reason']

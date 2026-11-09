@@ -1324,7 +1324,10 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                                 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject', {})
                             try:
                                 # USD totals have no FormData counterpart; validate
-                                # numeric shape only (evidence, not reconciliation).
+                                # numeric JSON type + finite decimals only.
+                                if (type(payload['TaxBaseUsd']) is not _CorporateNumber
+                                        or type(payload['IncomeTaxUsd']) is not _CorporateNumber):
+                                    raise _UnsupportedMetadata('unverified_corporate_l4_footer')
                                 usd = [Decimal(str(payload['TaxBaseUsd'])),
                                        Decimal(str(payload['IncomeTaxUsd']))]
                                 if any(not value.is_finite() for value in usd):
