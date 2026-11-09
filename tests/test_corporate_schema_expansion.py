@@ -24,11 +24,12 @@ DOC = {'DocumentId': 'SYNTHETIC', 'DocumentAggregateIdentifier': 'SYNTHETIC-AGGR
        'CreationDate': '02-01-2025'}
 
 
-def with_schema(form, *, nulls=None, months='6', prefill='00000000-0000-4000-8000-000000000001',
+def with_schema(form, *, nulls=None, months=None, prefill='00000000-0000-4000-8000-000000000001',
                 receipt=True):
     for key in (nulls or SCHEMA_NULL):
         form[key] = None
-    form.update({'ActualMonths': months, 'PrefillFromId': prefill,
+    form.update({'ActualMonths': Number('6') if months is None else months,
+                 'PrefillFromId': prefill,
                  'ElectronicReceiptSubmission': receipt})
     return form
 
@@ -49,9 +50,24 @@ def test_null_allowlist_and_metadata_pass_together():
     eligible(result)
     assert result['provenance']['omitted_null_keys'] == sorted(SCHEMA_NULL)
     assert result['provenance']['corporate_metadata']['ActualMonths'] == 6
+    prefill = result['provenance']['corporate_metadata']['PrefillFromId']
+    assert prefill['format'] == 'uuid' and len(prefill['sha256']) == 64
 
 
-@pytest.mark.parametrize('defect', ['nonnull-null-key', 'bad-months', 'months-mismatch',
+@pytest.mark.parametrize('start,end,months', [(11, 2, '4'), (12, 1, '2'), (1, 12, '12'), (6, 6, '1')])
+def test_actual_months_wraps_across_year_end(start, end, months):
+    form = with_schema(current_form())
+    form['ActualMonths'] = Number(months)
+    item = primary(form)
+    envelope = json.loads(item['body'])
+    envelope['Payload'].update(PeriodMonthStart=start, PeriodMonthEnd=end)
+    item['body'] = wire(envelope).encode()
+    item['context'].update(bytes=len(item['body']),
+                           sha256=hashlib.sha256(item['body']).hexdigest())
+    eligible(adapt([item]))
+
+
+@pytest.mark.parametrize('defect', ['nonnull-null-key', 'bad-months', 'string-months', 'months-mismatch',
     'bad-prefill', 'nonbool-receipt'])
 def test_schema_expansion_malformed_values_refuse(defect):
     form = with_schema(current_form())
@@ -59,8 +75,10 @@ def test_schema_expansion_malformed_values_refuse(defect):
         form['L1aFormData'] = {}
     elif defect == 'bad-months':
         form['ActualMonths'] = 'Synthetic-not-a-number'
+    elif defect == 'string-months':
+        form['ActualMonths'] = '6'
     elif defect == 'months-mismatch':
-        form['ActualMonths'] = '5'
+        form['ActualMonths'] = Number('5')
     elif defect == 'bad-prefill':
         form['PrefillFromId'] = 'not-a-uuid'
     else:
@@ -103,6 +121,42 @@ def test_declared_l10a_path_skips_only_when_absent():
     forms = observed([['DeclarationTransactionRelatedParties'], ['FinancialStatement']])
     result = adapt([primary_with_outer_periods(form)], forms=forms)
     eligible(result)
+
+
+def _l4_footer_events(*requests, url=None):
+    from coretax_json import ORIGIN
+    base = url or (ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid/footer')
+    return [{'url': base, 'method': 'POST', 'request_json': request}
+            for request in requests]
+
+
+def test_l4_footer_accepts_both_proven_request_shapes():
+    from coretax_corporate import _l4_footer_requests
+    found = _l4_footer_requests(
+        _l4_footer_events({'ReturnSheetRecordId': 'R'},
+                          {'ReturnSheetRecordId': 'R', 'PeriodYear': '2025'}),
+        record_id='R', period='01122025')
+    assert found == [{'ReturnSheetRecordId': 'R'},
+                     {'ReturnSheetRecordId': 'R', 'PeriodYear': '2025'}]
+
+
+def test_l4_footer_refuses_missing_footer():
+    from coretax_corporate import _l4_footer_requests
+    assert _l4_footer_requests([], record_id='R', period='01122025') is None
+    assert _l4_footer_requests(
+        _l4_footer_events({'ReturnSheetRecordId': 'R', 'Unexpected': True}),
+        record_id='R', period='01122025') is None
+
+
+def test_l4_footer_contradictions_are_fatal():
+    from coretax_corporate import _l4_footer_requests
+    from coretax_json import JsonSafetyError
+    with pytest.raises(JsonSafetyError):
+        _l4_footer_requests(_l4_footer_events({'ReturnSheetRecordId': 'OTHER'}),
+                            record_id='R', period='01122025')
+    with pytest.raises(JsonSafetyError):
+        _l4_footer_requests(_l4_footer_events({'ReturnSheetRecordId': 'R', 'PeriodYear': '2024'}),
+                            record_id='R', period='01122025')
 
 
 def _l4_packets(*, footer_tax_base='100', with_footer=True):
@@ -161,3 +215,21 @@ def test_l4_footer_contradiction_is_fatal_and_missing_footer_refuses():
     assert 'L4 footer contradicts' in str(excinfo.value)
     result = adapt(copy.deepcopy(bodies[:2]), forms=forms)
     assert result['eligible'] is False
+
+
+def test_l4_footer_non_numeric_usd_refuses():
+    from support_json_corpus import RECORD_ID, source_row
+    form = _l4_packets()
+    forms, grid_url, footer_url = _l4_forms()
+    bodies = [primary_with_outer_periods(form)]
+    bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
+        'Payload': {'Data': [source_row()], 'TotalRecords': 1, 'Index': None}}, 2,
+        endpoint=grid_url,
+        request={'ReturnSheetRecordId': RECORD_ID, 'First': 0, 'Rows': 10}))
+    bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
+        'Payload': {'TaxBase': Number('100'), 'TaxBaseUsd': 'SYNTHETIC-USD',
+                    'IncomeTax': Number('7'), 'IncomeTaxUsd': Number('0')}}, 3,
+        endpoint=footer_url, request={'ReturnSheetRecordId': RECORD_ID}))
+    result = adapt(bodies, forms=forms)
+    assert result['eligible'] is False
+    assert 'unverified_corporate_l4_footer' in result['reason']

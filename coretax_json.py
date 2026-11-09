@@ -1022,6 +1022,7 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             omitted.append(key)
     provenance['omitted_null_keys'] = sorted(omitted)
     metadata = {}
+    metadata_rows = []
     if 'ActualMonths' in root:
         months = root['ActualMonths']
         if isinstance(months, bool) or not (isinstance(months, (_CorporateNumber, int))
@@ -1036,21 +1037,28 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             raise _UnsupportedMetadata('unverified_corporate_actual_months') from None
         if not (1 <= start <= 12 and 1 <= end <= 12):
             raise _UnsupportedMetadata('unverified_corporate_actual_months')
-        derived = end - start + 1 if start <= end else 13 - end + start
+        # Wrap across year-end: Nov->Feb is 4 months, not 22.
+        derived = ((end - start) % 12) + 1
         if int(str(months)) != derived:
             raise _UnsupportedMetadata('unverified_corporate_actual_months')
         metadata['ActualMonths'] = int(str(months))
+        _corporate_rows(months, ('ActualMonths',), metadata_rows)
     if 'PrefillFromId' in root:
         prefill_id = root['PrefillFromId']
         if (not isinstance(prefill_id, str)
                 or not re.fullmatch(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-'
                                     r'[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', prefill_id)):
             raise _UnsupportedMetadata('unverified_corporate_prefill_identity')
-        metadata['PrefillFromId'] = prefill_id
+        # Bounded hash proof; the raw identifier never reaches durable output.
+        metadata['PrefillFromId'] = {
+            'present': True, 'format': 'uuid',
+            'sha256': hashlib.sha256(prefill_id.encode()).hexdigest()}
+        _corporate_rows(prefill_id, ('PrefillFromId',), metadata_rows)
     if 'ElectronicReceiptSubmission' in root:
         if type(root['ElectronicReceiptSubmission']) is not bool:
             raise _UnsupportedMetadata('unverified_corporate_receipt_status')
         metadata['ElectronicReceiptSubmission'] = root['ElectronicReceiptSubmission']
+        _corporate_rows(root['ElectronicReceiptSubmission'], ('ElectronicReceiptSubmission',), metadata_rows)
     doc_keys = {'DocumentAggregateIdentifier', 'DocumentId', 'FileName', 'DocumentType', 'CreationDate'}
     for name in ('AuditOpinion', 'FinancialStatement', 'OtherDocuments'):
         if name not in root:
@@ -1064,8 +1072,14 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
                     or any(not isinstance(item[k], str) or not item[k] or len(item[k]) > 1024
                            for k in doc_keys)):
                 raise _UnsupportedMetadata('unverified_corporate_document_metadata')
+        # Non-PDF-custody source evidence: full leaves stay in provenance.
+        item_rows = []
+        for index, item in enumerate(items):
+            _corporate_rows(item, (name, index), item_rows)
+        metadata_rows.extend(item_rows)
         metadata[name] = {'count': len(items),
-                          'types': sorted({item['DocumentType'] for item in items})}
+                          'types': sorted({item['DocumentType'] for item in items}),
+                          'rows': item_rows}
     provenance['corporate_metadata'] = metadata
     # Every leaf/empty container outside control roots needs exactly one path.
     evidence = []
@@ -1077,6 +1091,10 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     if any(not any(row[0] == pointer or row[0].startswith(pointer + '/') for pointer in pointers)
            for row in evidence):
         raise _UnsupportedMetadata('unmapped_corporate_source_subtree')
+    # Validated metadata/omission rows count as source evidence too.
+    evidence.extend(metadata_rows)
+    for key in omitted:
+        _corporate_rows(None, (key,), evidence)
     for path, section in paths:
         # The backend omits the empty L10-A section; the frontend reads it
         # via ?. and the grid coverage below stands on its own.
@@ -1302,6 +1320,10 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                             stored = primary_source[0].get(
                                 'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject', {})
                             try:
+                                # USD totals have no FormData counterpart; validate
+                                # numeric shape only (evidence, not reconciliation).
+                                Decimal(str(payload['TaxBaseUsd']))
+                                Decimal(str(payload['IncomeTaxUsd']))
                                 if (Decimal(str(payload['TaxBase'])) != Decimal(str(stored['TotalTaxBase']))
                                         or Decimal(str(payload['IncomeTax']))
                                         != Decimal(str(stored['TotalFinalIncomeTaxPayable']))):

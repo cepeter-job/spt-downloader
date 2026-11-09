@@ -645,6 +645,36 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, 
             **environment, 'tables': tables, 'references': references}}
 
 
+def _l4_footer_requests(observations, *, record_id, period):
+    """Collect distinct proven L4 footer requests (None when absent).
+
+    A caller reports unknown shapes as unavailable (None); identity or year
+    contradictions are fatal, mirroring the grid page checks they track.
+    """
+    footer_url = ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid/footer'
+    found, seen = [], set()
+    for event in observations:
+        if event['url'] != footer_url or event['method'] != 'POST':
+            continue
+        request = event['request_json']
+        if not isinstance(request, dict) or 'ReturnSheetRecordId' not in request:
+            return None
+        if request['ReturnSheetRecordId'] != record_id:
+            raise JsonSafetyError('Observed footer belongs to a different selected return')
+        if not set(request) <= {'ReturnSheetRecordId', 'PeriodYear'}:
+            return None
+        if 'PeriodYear' in request:
+            if period is None:
+                return None
+            if request['PeriodYear'] != period[-4:]:
+                raise JsonSafetyError('Observed footer year contradicts selected period')
+        key = json.dumps(request, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            found.append(request)
+    return found or None
+
+
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
@@ -854,32 +884,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     binding['grids'].append({'name':label,'endpoint':endpoint,
                         'pages':sorted(pages,key=lambda item:item['offset'])})
                     if name == 'L4':
-                        footer_url = endpoint + '/footer'
-                        footer_requests, footer_seen = [], set()
-                        for event in capture.request_observations():
-                            if event['url'] != footer_url or event['method'] != 'POST':
-                                continue
-                            request = event['request_json']
-                            if not isinstance(request, dict) or 'ReturnSheetRecordId' not in request:
-                                return unavailable()
-                            if request['ReturnSheetRecordId'] != record['record_id']:
-                                raise JsonSafetyError('Observed footer belongs to a different selected return')
-                            if not set(request) <= {'ReturnSheetRecordId', 'PeriodYear'}:
-                                return unavailable()
-                            if 'PeriodYear' in request:
-                                period = record.get('source_fields', {}).get('TaxPeriodCode')
-                                if period is None:
-                                    return unavailable()
-                                if request['PeriodYear'] != period[-4:]:
-                                    raise JsonSafetyError('Observed footer year contradicts selected period')
-                            key = json.dumps(request, sort_keys=True)
-                            if key not in footer_seen:
-                                footer_seen.add(key)
-                                footer_requests.append(request)
+                        footer_requests = _l4_footer_requests(
+                            capture.request_observations(), record_id=record['record_id'],
+                            period=record.get('source_fields', {}).get('TaxPeriodCode'))
                         if not footer_requests:
                             return unavailable()
                         binding.setdefault('dependencies', []).extend(
-                            {'endpoint': footer_url, 'request_json': request}
+                            {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
             forms.append(binding)
         if 'Induk' in names:

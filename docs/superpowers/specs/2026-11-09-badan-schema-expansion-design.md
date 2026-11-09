@@ -37,16 +37,21 @@ as a `dependencies` binding with exact request
   exact JSON `null` value (omitted rows otherwise refuse). No catch-all.
 - Six data keys validated per key as source evidence (types, ranges,
   period/identity relations; doc metadata only — PDF custody stays
-  independently gated by `coretax_attachments`):
-  `ActualMonths` (1–12, equals derived months), `AuditOpinion` (doc
-  object), `FinancialStatement` / `OtherDocuments` (doc lists),
-  `PrefillFromId` (UUID format, contradicts nothing), 
+  independently gated by `coretax_attachments`, leaves kept in
+  `corporate_metadata` rows, not just counts):
+  `ActualMonths` (1–12, equals `((End−Start) mod 12)+1` so year-end
+  wraps), `AuditOpinion` (doc object), `FinancialStatement` /
+  `OtherDocuments` (doc lists), `PrefillFromId` (UUID format, stored as a
+  bounded SHA-256 proof, never the raw id),
   `ElectronicReceiptSubmission` (bool).
-- L10-A: absent root is treated as a single null row (backend omits the
-  empty section; frontend `?.` proves the read is optional).
+- L10-A: absent root is skipped (backend omits the empty section;
+  frontend `?.` proves the read is optional; grid coverage stands).
 - L4 footer: declare `loadcit/l4-table-a-grid/footer` as a `dependencies`
-  binding with the exact single-field request and reconcile its totals
-  with the L4 projection (missing/changed footer still refuses).
+  binding for both proven request shapes (single-field and with
+  `PeriodYear`, both validated against record/period; mismatches fatal).
+  IDR totals reconcile against stored FormData totals; USD totals are
+  numeric-shape-validated only (no FormData counterpart to reconcile).
+  Missing/changed footer still refuses.
 
 ## What does not change
 
