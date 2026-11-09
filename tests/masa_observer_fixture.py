@@ -68,12 +68,18 @@ class Fixture:
     def table(self, selector, grid, group):
         endpoint = '/loadndvat/' if self.tax == 'PPN' else '/loadwtr/'
         config = html.escape(json.dumps({'endpoint': endpoint + grid + '-grid', 'first': 10}), quote=True)
+        # Live list-i-bpu sets showFooter=false: no tFoot at all. The four
+        # footer-bearing Unifikasi grids carry the physical blank spacer.
+        tfoot = (''
+                 if self.tax == 'PPh Unifikasi' and grid == 'list-i-bpu' else
+                 '<tfoot><tr></tr><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot>'
+                 if self.tax == 'PPh Unifikasi' else
+                 '<tfoot><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot>')
         return ('<p-panel><div class="p-panel-header"><span class="p-panel-title">' + group +
             '</span></div><div class="p-panel-content"><' + selector + '><p-table data-config="' + config + '">'
             '<table><thead><tr><th rowspan="2">No.</th><th colspan="2">Document</th></tr>'
             '<tr><th>Number</th><th>Date</th></tr><tr><th><input value="FILTER-TRAP"></th></tr></thead>'
-            '<tbody><tr><td>DOM-ROW-TRAP</td></tr></tbody>'
-            '<tfoot><tr><td colspan="2">TOTAL</td><td>DOM-TOTAL-TRAP</td></tr></tfoot></table>'
+            '<tbody><tr><td>DOM-ROW-TRAP</td></tr></tbody>' + tfoot + '</table>'
             '<p-paginator><div class="p-paginator"><p-dropdown style="display:block">10</p-dropdown>'
             '<span class="p-paginator-current"></span>'
             '<button class="p-paginator-prev" onclick="turn(this,-10)">Previous</button>'
