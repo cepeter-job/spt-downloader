@@ -52,6 +52,19 @@ Reviewed-data pin update (URL + digest together, per pin rules):
 No observer/projection logic changes. MAIN and the other tax chunks
 (640/693/803) are unchanged and still match.
 
+## Contract evidence (bounded live probes)
+
+- 525 selectors: all 15 Corporate tabs render; bound form roots present
+  (main/L1-D/L2/L3/L4/L6/L7/L9/L11-A/L11-C count 1 each).
+- PDF scan: 0 attachment tables on this return (matches prior
+  `pdf.discovery no_control`); the shape scan is unchanged.
+- Vendor ordering: the ordering consumer lives in MAIN (DisplayIndex /
+  getActiveReferenceDataValue / currentreferencedata / COUNTRY_CODE all
+  hit in main, 0 in vendor/525). MAIN digest is unchanged
+  (`ad856c…`), so consumer ordering code is bit-identical; vendor holds
+  only generic framework `sort`/`locale`. Python mirror + synthetic
+  ordering tests cover duplicate resolution.
+
 ## Verification
 
 - CI: full green on the PR head, then merge.
