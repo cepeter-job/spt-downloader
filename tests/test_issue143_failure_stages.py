@@ -337,6 +337,35 @@ def test_corporate_absent_grid_bearing_tab_binds_nothing(monkeypatch):
     assert 'L3' not in names and 'L4' not in names and 'L11-A' not in names
 
 
+@pytest.mark.parametrize('missing', ['L3', 'L4', 'L9', 'L10-A', 'L11-A'])
+def test_pinned_corporate_build_refuses_unseen_required_grid_tab(monkeypatch, missing):
+    import coretax_corporate
+
+    # A synthetic pin standing in for the reviewed 525 asset: unlike a
+    # generic fixture build, its mandatory 15-tab inventory is contractual.
+    monkeypatch.setattr(coretax_corporate, 'CIT_SOURCE_SHA256', 'c' * 64)
+    required = [name for name in coretax_corporate.FORMS
+                if name not in ('L1-B', 'L8') and name != missing]
+    assert required[0] == 'Induk'
+    forms, inspected = _observe_with_tabs(
+        monkeypatch, [False] + [True] * (len(required) - 1), required)
+    assert forms is None
+    assert inspected == ['Induk']
+
+
+def test_pinned_corporate_build_accepts_reviewed_fifteen_tab_inventory(monkeypatch):
+    import coretax_corporate
+
+    monkeypatch.setattr(coretax_corporate, 'CIT_SOURCE_SHA256', 'c' * 64)
+    required = [name for name in coretax_corporate.FORMS
+                if name not in ('L1-B', 'L8')]
+    forms, inspected = _observe_with_tabs(
+        monkeypatch, [False] + [True] * (len(required) - 1), required)
+    assert forms is not None
+    assert {item['name'] for item in forms} == set(coretax_corporate.FORMS)
+    assert inspected == ['Induk']
+
+
 def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_path):
     import coretax_browser
     import coretax_corporate
