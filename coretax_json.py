@@ -1071,8 +1071,10 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
         if not isinstance(items, list) or len(items) > 32:
             raise _UnsupportedMetadata('unverified_corporate_document_metadata')
         for item in items:
+            # Exact str (JSON string), not the _CorporateNumber subclass that
+            # marks JSON number tokens; numeric IDs are a different type.
             if (not isinstance(item, dict) or set(item) != doc_keys
-                    or any(not isinstance(item[k], str) or not item[k] or len(item[k]) > 1024
+                    or any(type(item[k]) is not str or not item[k] or len(item[k]) > 1024
                            for k in doc_keys)):
                 raise _UnsupportedMetadata('unverified_corporate_document_metadata')
         # Non-PDF-custody source evidence: full leaves stay in provenance.

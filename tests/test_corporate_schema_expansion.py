@@ -145,7 +145,7 @@ def test_document_metadata_malformed_refuses():
 
 def test_declared_l10a_path_skips_only_when_absent():
     form = with_schema(current_form())
-    forms = observed([['DeclarationTransactionRelatedParties'], ['FinancialStatement']])
+    forms = observed(['DeclarationTransactionRelatedParties'])
     result = adapt([primary_with_outer_periods(form)], forms=forms)
     eligible(result)
 

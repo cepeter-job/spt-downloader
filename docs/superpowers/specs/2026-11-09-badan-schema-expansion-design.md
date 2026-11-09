@@ -39,10 +39,10 @@ as a `dependencies` binding with exact request
   period/identity relations; doc metadata only — PDF custody stays
   independently gated by `coretax_attachments`, leaves kept in
   `corporate_metadata` rows, not just counts):
-  `ActualMonths` (1–12, equals `((End−Start) mod 12)+1` so year-end
-  wraps), `AuditOpinion` (doc object), `FinancialStatement` /
-  `OtherDocuments` (doc lists), `PrefillFromId` (UUID format, stored as a
-  bounded SHA-256 proof, never the raw id),
+  `ActualMonths` (1–12, equals `End−Start+1`; cross-year
+  `Start>End` fails closed as unreviewed), `AuditOpinion` (doc object),
+  `FinancialStatement` / `OtherDocuments` (doc lists), `PrefillFromId`
+  (UUID format, stored as a bounded SHA-256 proof, never the raw id),
   `ElectronicReceiptSubmission` (bool).
 - L10-A: absent root is skipped (backend omits the empty section;
   frontend `?.` proves the read is optional; grid coverage stands).
