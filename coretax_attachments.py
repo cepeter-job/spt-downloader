@@ -20,7 +20,7 @@ MAX_PDF_BYTES = 20 * 1024 * 1024
 _DOWNLOAD_TIMEOUT_MS = 30000
 _LABELS = FINANCIAL_LABELS
 
-_PDF_PIN_PATHS = ('/returnsheets/id-ID/525.ec1edffbb4a91d20.js',
+_PDF_PIN_PATHS = ('/returnsheets/id-ID/525.32c49782948fc5ef.js',
                   '/returnsheets/id-ID/main.bed1449c3647a8ca.js')
 
 def _pdf_source_pins():

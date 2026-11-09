@@ -14,9 +14,9 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
 from coretax_masa_bindings import _decimal, _number, _evidence
 from coretax_build_pins import load_build_pins
 
-CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
+CIT_SOURCE = ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js'
 MAIN_SOURCE = ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
-VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.a03856633dae3544.js'
+VENDOR_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 
 def _corporate_pins(urls):
     pins = load_build_pins()

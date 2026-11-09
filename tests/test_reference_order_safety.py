@@ -14,7 +14,7 @@ from test_pph21_json_references import source, TYPES
 from test_unifikasi_json_references import catalogs
 
 
-VENDOR_SHA = '1de6335b41d5431fd302ab7b7d00b6c593dfa6640c43ab8a88fbfbdb1b0f4b68'
+VENDOR_SHA = '6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173'
 FAMILIES = ('pph21', 'unifikasi', 'country')
 
 
