@@ -471,7 +471,10 @@ def _observe_with_capture(monkeypatch, tmp_path, *, missing_tab=None):
 
 def test_corporate_observe_timing_exactly_once_on_missing_required_tab(monkeypatch, tmp_path):
     forms, all_rows = _observe_with_capture(monkeypatch, tmp_path, missing_tab='L3')
-    assert forms is None
+    # An absent required panel leaves the observation structurally complete
+    # here; the adapter refuses its uncovered evidence. Timings must still
+    # flush unduplicated on the success path.
+    assert forms is not None
     rows = [e for e in all_rows if e['event'] == 'corporate.observe_timing']
     assert rows
     import collections

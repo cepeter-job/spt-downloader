@@ -34,7 +34,7 @@ def test_owned_l3_view_to_original_packets_checkpoint_and_compact_saved_form(
             page = open_selected(fixture, capture)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             assert forms is not None, 'Native L3 owned observer is not implemented'
-            assert [form['name'] for form in forms] == ['Induk', 'L3']
+            assert [form['name'] for form in forms] == ['Induk', 'L3', 'L1-B', 'L8']
             proof = forms[1]['projection']
             assert proof['kind'] == 'corporate-l3-v1' and proof['builds'] == fixture.pins
             assert [t['component'] for t in proof['tables']] == OWNERS

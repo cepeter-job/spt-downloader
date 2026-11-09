@@ -64,7 +64,7 @@ def assert_saved(result, folder, model):
     assert model in name
     book = load_workbook(folder / name)
     try:
-        assert set(book.sheetnames) == {'Induk', 'L11-C'}
+        assert set(book.sheetnames) == {'Induk', 'L11-C', 'L1-B', 'L8'}
         sheet = book['L11-C']
         assert sheet.max_row == 5 and sheet.max_column == 16
         assert sheet['B3'].value == sheet['B4'].value == 'SYNTHETIC CREDITOR'
