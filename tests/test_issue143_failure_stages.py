@@ -296,6 +296,20 @@ def test_corporate_disabled_duplicate_or_unknown_caption_fails_closed(monkeypatc
     assert inspected == ['Induk']
 
 
+def test_corporate_absent_panel_binds_inert_path(monkeypatch):
+    forms, inspected = _observe_with_tabs(monkeypatch, [False, False],
+                                          ['Induk', 'L2'])
+    assert forms is not None
+    names = [form['name'] for form in forms]
+    assert 'L1-B' in names and 'L8' in names
+    absent = forms[names.index('L1-B')]
+    assert absent['disabled'] is True
+    assert absent['paths'] == [['L1bFormData']]
+    assert absent['grids'] == [] and absent['responses'] == []
+    assert absent['dependencies'] == []
+    assert inspected == ['Induk', 'L2']
+
+
 def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_path):
     import coretax_browser
     import coretax_corporate

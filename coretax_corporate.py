@@ -927,6 +927,16 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                           ordinal_safe))
         _emit_timings()
         if 'Induk' in names:
+            # Panels entirely absent from the live tab set still declare a
+            # path-only binding under the same null/missing inert rule the
+            # adapter enforces for disabled tabs; objects stay refused.
+            for absent in FORMS:
+                if absent not in names:
+                    names.add(absent)
+                    forms.append({'name': absent,
+                                  'paths': [[FORMS[absent][1]]],
+                                  'disabled': True,
+                                  'grids': [], 'responses': [], 'dependencies': []})
             return forms
         stage = 'induk'
         return unavailable()

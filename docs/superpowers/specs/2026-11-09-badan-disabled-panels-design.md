@@ -71,3 +71,14 @@ not omitted).
   return unavailable (intentional fail-closed — the inspected tab set is
   exactly the `FORMS` set); disabled-then-enabled rebinding order remains
   independent, so either order binds correctly.
+
+## Follow-up: tabs absent from the live tab set (confirmed via CDP)
+
+PR #207 live rerun still fell back to DOM with `unmapped…`. A controlled
+Edge probe on the live detail enumerated **15 tabs** — `L1-B` and `L8` are
+absent (not disabled). The observer iterates only visible tabs, so their
+null roots had no declared path at all.
+
+Fix: FORMS panels missing from the tab list declare the same path-only,
+null/missing-inert binding (no tab touched, no grids). Object-valued JSON
+for an absent panel still refuses (`unverified_corporate_disabled_panel`).
