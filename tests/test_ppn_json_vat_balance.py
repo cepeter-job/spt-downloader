@@ -75,7 +75,7 @@ def test_unchanged_percentages_project_stored_balance_when_it_agrees_with_compon
     data['VATUnderOrOverPaid']['VAT'] = _corporate_json('55')
     result = project_ppn_amount(data, 'VATIsUnderOrOverPaid', model='AMENDMENT')
     assert result['value'] == '55'
-    assert result['rule'] == 'late_percentage_change_normal_vat_balance'
+    assert result['rule'] == 'stored_balance_reconciled_unchanged_percentages'
     paths = [entry['path'] for entry in result['provenance']]
     assert ['VATUnderOrOverPaid', 'VAT'] in paths
 

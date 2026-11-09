@@ -426,7 +426,7 @@ def project_ppn_asked_to(form, *, model, clock_interval=None, period_year=None):
     if choice is not None and (type(choice) is not str or choice not in choices):
         raise _UnsupportedMetadata('unsupported_ppn_asked_to_source')
     if model == 'NORMAL':
-        balance, integral, contributing = _ppn_vat_balance(form)
+        balance, integral, contributing, _unchanged = _ppn_vat_balance(form)
         evidence.extend(contributing)
         if not integral:
             raise _UnsupportedMetadata('unverified_ppn_normal_choice_lifecycle')
@@ -573,13 +573,14 @@ def _ppn_vat_balance(form):
         stored = _ppn_source_number(form, ('VATUnderOrOverPaid', 'VAT'), evidence)
         if stored is None or _decimal(stored) != floored:
             raise _UnsupportedMetadata('unverified_ppn_final_balance_lifecycle')
-    return (floored, all(value == value.to_integral_value() for value in values), evidence)
+    return (floored, all(value == value.to_integral_value() for value in values), evidence, unchanged)
 
 
 def _project_ppn_vat_balance(form):
-    total, _, evidence = _ppn_vat_balance(form)
-    return {'value': _number(str(total), 0, locale='id-ID'),
-            'rule': 'late_percentage_change_normal_vat_balance', 'provenance': evidence}
+    total, _, evidence, unchanged = _ppn_vat_balance(form)
+    rule = ('stored_balance_reconciled_unchanged_percentages' if unchanged else
+            'late_percentage_change_normal_vat_balance')
+    return {'value': _number(str(total), 0, locale='id-ID'), 'rule': rule, 'provenance': evidence}
 
 
 def project_ppn_amount(form, control, *, model, lc_footer=None):
