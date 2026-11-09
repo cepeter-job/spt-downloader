@@ -10,6 +10,22 @@ from pph21_observer_fixture import browser as browser
 VENDOR_BUILD = b'/* SYNTHETIC ORDER VENDOR -- no portal code */'
 
 
+def test_reference_order_build_absent_pin_and_asset_stays_no_proof(monkeypatch):
+    from types import SimpleNamespace
+    from coretax_masa_observer import _reference_order_build
+    monkeypatch.setattr(coretax_json, 'REFERENCE_ORDER_SHA256', None)
+    page = SimpleNamespace(evaluate=lambda *args: None)
+    assert _reference_order_build(page, None) is None
+
+
+def test_reference_order_build_valid_pin_missing_asset_stays_no_proof(monkeypatch):
+    from types import SimpleNamespace
+    from coretax_masa_observer import _reference_order_build
+    monkeypatch.setattr(coretax_json, 'REFERENCE_ORDER_SHA256', 'a' * 64)
+    page = SimpleNamespace(evaluate=lambda *args: None)
+    assert _reference_order_build(page, None) is None
+
+
 def non_script_asset(fixture, vendor):
     if vendor not in ('fetch-only', 'preload-only'):
         return

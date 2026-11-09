@@ -672,7 +672,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     try:
         digest = page.evaluate(_BUILD_HASH, CIT_SOURCE_URL)
         _check_cancel(check_cancel)
-        if digest != approved_digest:
+        # Both digests must be positive 64-hex SHAs; None == None must
+        # never admit a build (missing pin + missing asset).
+        if (not isinstance(digest, str) or not isinstance(approved_digest, str)
+                or len(digest) != 64 or len(approved_digest) != 64
+                or any(c not in '0123456789abcdef' for c in digest + approved_digest)
+                or digest != approved_digest):
             return unavailable()
         stage = 'tabs'
         view, tabs = _tabs(page)
