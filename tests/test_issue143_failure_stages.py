@@ -456,6 +456,33 @@ def test_corporate_observe_timing_emitted_on_refusal(monkeypatch, tmp_path):
     assert all(isinstance(row['duration_ms'], float) for row in rows)
 
 
+def test_corporate_observe_timing_closes_slow_l3_refusal(monkeypatch, tmp_path):
+    import coretax_corporate
+    from spt_desktop import diagnostics
+
+    # Inject a deterministic observer-local monotonic clock. A refused grid
+    # observer must retain the costly current stage, not just earlier stages.
+    clock = [100.0]
+    monkeypatch.setattr(coretax_corporate, 'time',
+                        SimpleNamespace(monotonic=lambda: clock[0]))
+
+    def slow_l3(*args, **kwargs):
+        clock[0] += 90.0
+        return None
+
+    monkeypatch.setattr(coretax_corporate, '_observe_l3', slow_l3)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms, _ = _observe_with_tabs(monkeypatch, [False, False], ['Induk', 'L3'])
+    assert forms is None
+    rows = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_timing']
+    failing = [e for e in rows if e['corporate_observer_stage'] == 'l3']
+    assert len(failing) == 1
+    assert failing[0]['form_ordinal'] == 1
+    assert failing[0]['duration_ms'] >= 90_000
+    assert len(rows) == len({(e['corporate_observer_stage'], e.get('form_ordinal'))
+                            for e in rows})
+
+
 def _observe_with_capture(monkeypatch, tmp_path, *, missing_tab=None):
     import coretax_browser
     import coretax_corporate
