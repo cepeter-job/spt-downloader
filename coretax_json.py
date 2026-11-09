@@ -1037,8 +1037,11 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             raise _UnsupportedMetadata('unverified_corporate_actual_months') from None
         if not (1 <= start <= 12 and 1 <= end <= 12):
             raise _UnsupportedMetadata('unverified_corporate_actual_months')
-        # Wrap across year-end: Nov->Feb is 4 months, not 22.
-        derived = ((end - start) % 12) + 1
+        # Cross-year wraps are unsupported: the 525 fallback's odd 13-End+Start
+        # rule is itself unreviewed, so fail closed instead of guessing.
+        if start > end:
+            raise _UnsupportedMetadata('unverified_corporate_actual_months')
+        derived = end - start + 1
         if int(str(months)) != derived:
             raise _UnsupportedMetadata('unverified_corporate_actual_months')
         metadata['ActualMonths'] = int(str(months))
@@ -1322,8 +1325,10 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                             try:
                                 # USD totals have no FormData counterpart; validate
                                 # numeric shape only (evidence, not reconciliation).
-                                Decimal(str(payload['TaxBaseUsd']))
-                                Decimal(str(payload['IncomeTaxUsd']))
+                                usd = [Decimal(str(payload['TaxBaseUsd'])),
+                                       Decimal(str(payload['IncomeTaxUsd']))]
+                                if any(not value.is_finite() for value in usd):
+                                    raise _UnsupportedMetadata('unverified_corporate_l4_footer')
                                 if (Decimal(str(payload['TaxBase'])) != Decimal(str(stored['TotalTaxBase']))
                                         or Decimal(str(payload['IncomeTax']))
                                         != Decimal(str(stored['TotalFinalIncomeTaxPayable']))):

@@ -24,7 +24,7 @@ DOC = {'DocumentId': 'SYNTHETIC', 'DocumentAggregateIdentifier': 'SYNTHETIC-AGGR
        'CreationDate': '02-01-2025'}
 
 
-def with_schema(form, *, nulls=None, months=None, prefill='00000000-0000-4000-8000-000000000001',
+def with_schema(form, *, nulls=None, months=None, prefill='11111111-2222-4000-8000-333333333333',
                 receipt=True):
     for key in (nulls or SCHEMA_NULL):
         form[key] = None
@@ -52,10 +52,22 @@ def test_null_allowlist_and_metadata_pass_together():
     assert result['provenance']['corporate_metadata']['ActualMonths'] == 6
     prefill = result['provenance']['corporate_metadata']['PrefillFromId']
     assert prefill['format'] == 'uuid' and len(prefill['sha256']) == 64
+    dump = json.dumps(result['provenance'])
+    assert '11111111-2222-4000-8000-333333333333' not in dump
 
 
-@pytest.mark.parametrize('start,end,months', [(11, 2, '4'), (12, 1, '2'), (1, 12, '12'), (6, 6, '1')])
-def test_actual_months_wraps_across_year_end(start, end, months):
+def test_document_leaves_retained_in_private_provenance_only():
+    form = with_schema(current_form())
+    form['AuditOpinion'] = dict(DOC)
+    result = adapt([primary_with_outer_periods(form)])
+    eligible(result)
+    rows = result['provenance']['corporate_metadata']['AuditOpinion']['rows']
+    assert any(row[2] == DOC['FileName'] for row in rows)
+    assert 'attachments' not in result
+
+
+@pytest.mark.parametrize('start,end,months', [(1, 12, '12'), (6, 6, '1'), (3, 9, '7')])
+def test_actual_months_normal_ranges_pass(start, end, months):
     form = with_schema(current_form())
     form['ActualMonths'] = Number(months)
     item = primary(form)
@@ -65,6 +77,21 @@ def test_actual_months_wraps_across_year_end(start, end, months):
     item['context'].update(bytes=len(item['body']),
                            sha256=hashlib.sha256(item['body']).hexdigest())
     eligible(adapt([item]))
+
+
+@pytest.mark.parametrize('start,end', [(11, 2), (12, 1)])
+def test_actual_months_cross_year_wraps_fail_closed(start, end):
+    form = with_schema(current_form())
+    form['ActualMonths'] = Number('4' if (start, end) == (11, 2) else '2')
+    item = primary(form)
+    envelope = json.loads(item['body'])
+    envelope['Payload'].update(PeriodMonthStart=start, PeriodMonthEnd=end)
+    item['body'] = wire(envelope).encode()
+    item['context'].update(bytes=len(item['body']),
+                           sha256=hashlib.sha256(item['body']).hexdigest())
+    result = adapt([item])
+    assert result['eligible'] is False
+    assert 'unverified_corporate_actual_months' in result['reason']
 
 
 @pytest.mark.parametrize('defect', ['nonnull-null-key', 'bad-months', 'string-months', 'months-mismatch',
@@ -160,7 +187,6 @@ def test_l4_footer_contradictions_are_fatal():
 
 
 def _l4_packets(*, footer_tax_base='100', with_footer=True):
-    from support_json_corpus import ORIGIN, RECORD_ID, source_row
     form = with_schema(current_form())
     form['ListOfIncomeSubjectToFinalTaxAndNonTaxableObject'] = {
         'TotalTaxBase': Number('100'), 'TotalFinalIncomeTaxPayable': Number('7'),
@@ -228,6 +254,25 @@ def test_l4_footer_non_numeric_usd_refuses():
         request={'ReturnSheetRecordId': RECORD_ID, 'First': 0, 'Rows': 10}))
     bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
         'Payload': {'TaxBase': Number('100'), 'TaxBaseUsd': 'SYNTHETIC-USD',
+                    'IncomeTax': Number('7'), 'IncomeTaxUsd': Number('0')}}, 3,
+        endpoint=footer_url, request={'ReturnSheetRecordId': RECORD_ID}))
+    result = adapt(bodies, forms=forms)
+    assert result['eligible'] is False
+    assert 'unverified_corporate_l4_footer' in result['reason']
+
+
+@pytest.mark.parametrize('usd', ['NaN', 'Infinity'])
+def test_l4_footer_nonfinite_usd_refuses(usd):
+    from support_json_corpus import RECORD_ID, source_row
+    form = _l4_packets()
+    forms, grid_url, footer_url = _l4_forms()
+    bodies = [primary_with_outer_periods(form)]
+    bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
+        'Payload': {'Data': [source_row()], 'TotalRecords': 1, 'Index': None}}, 2,
+        endpoint=grid_url,
+        request={'ReturnSheetRecordId': RECORD_ID, 'First': 0, 'Rows': 10}))
+    bodies.append(packet({'IsSuccessful': True, 'ErrorCode': 0,
+        'Payload': {'TaxBase': Number('100'), 'TaxBaseUsd': usd,
                     'IncomeTax': Number('7'), 'IncomeTaxUsd': Number('0')}}, 3,
         endpoint=footer_url, request={'ReturnSheetRecordId': RECORD_ID}))
     result = adapt(bodies, forms=forms)
