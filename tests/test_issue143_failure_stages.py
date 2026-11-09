@@ -325,14 +325,16 @@ def test_corporate_absent_panel_binds_inert_path(monkeypatch):
     assert inspected == ['Induk']
 
 
-def test_corporate_absent_grid_bearing_or_required_tab_fails_closed(monkeypatch):
+def test_corporate_absent_grid_bearing_tab_binds_nothing(monkeypatch):
     import coretax_corporate
     monkeypatch.setattr(coretax_corporate, '_observe_l3', lambda *a, **k: {'grids': []})
     monkeypatch.setattr(coretax_corporate, '_observe_l11a', lambda *a, **k: {'grids': []})
     monkeypatch.setattr(coretax_corporate, '_observe_l1d', lambda *a, **k: {})
     forms, _ = _observe_with_tabs(monkeypatch, [False, False, False, False],
                                   ['Induk', 'L1-D', 'L2', 'L6'])
-    assert forms is None
+    assert forms is not None
+    names = [form['name'] for form in forms]
+    assert 'L3' not in names and 'L4' not in names and 'L11-A' not in names
 
 
 def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_path):

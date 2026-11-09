@@ -950,10 +950,6 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                                   'paths': [[FORMS[absent][1]]],
                                   'disabled': True,
                                   'grids': [], 'responses': [], 'dependencies': []})
-            for absent in FORMS:
-                if absent not in names:
-                    stage = 'induk' if absent == 'Induk' else 'tabs'
-                    return unavailable()
             return forms
         stage = 'induk'
         return unavailable()
