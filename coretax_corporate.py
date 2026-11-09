@@ -1,10 +1,11 @@
 """Readonly corporate UI bindings pinned to reviewed public build bytes."""
 import json
 import time
+from coretax_build_pins import load_build_pins
 from coretax_json import ORIGIN, JsonSafetyError
 
 CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js'
-CIT_SOURCE_SHA256 = '500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153'
+CIT_SOURCE_SHA256 = load_build_pins().get(CIT_SOURCE_URL)
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),
  'L1-B': ('rshshr-citr-l1b-form', 'L1bFormData'),
@@ -671,7 +672,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     try:
         digest = page.evaluate(_BUILD_HASH, CIT_SOURCE_URL)
         _check_cancel(check_cancel)
-        if digest != approved_digest:
+        # Both digests must be positive 64-hex SHAs; None == None must
+        # never admit a build (missing pin + missing asset).
+        if (not isinstance(digest, str) or not isinstance(approved_digest, str)
+                or len(digest) != 64 or len(approved_digest) != 64
+                or any(c not in '0123456789abcdef' for c in digest + approved_digest)
+                or digest != approved_digest):
             return unavailable()
         stage = 'tabs'
         view, tabs = _tabs(page)

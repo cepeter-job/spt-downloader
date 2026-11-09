@@ -28,9 +28,9 @@ def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tm
         monkeypatch.setattr(coretax_corporate, '_tabs',
                             lambda page: (object(), SimpleNamespace(count=lambda: 0)))
     page = SimpleNamespace(url='https://synthetic.invalid/view',
-                           evaluate=lambda *a: 'approved')
+                           evaluate=lambda *a: 'c' * 64)
     record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
-    approved = 'different' if stage == 'build' else 'approved'
+    approved = 'd' * 64 if stage == 'build' else 'c' * 64
     with diagnostics.session(tmp_path, 'worker') as log:
         forms = coretax_corporate.observe_forms(
             page, record, ('synthetic', 2025, 'period'), object(), approved_digest=approved)
@@ -40,6 +40,38 @@ def test_corporate_unsupported_stage_keeps_whole_record_fallback(monkeypatch, tm
     assert len(events) == 1 and events[0]['corporate_observer_stage'] == stage
     assert events[0].get('form_ordinal') is None
     assert 'SYNTHETIC-ID' not in json.dumps(events)
+
+
+@pytest.mark.parametrize('observed,approved,expected', [
+    (None, None, 'build'),
+    (None, 'a' * 64, 'build'),
+    ('a' * 64, None, 'build'),
+    ('a' * 64, 'b' * 64, 'build'),
+    ('a' * 64, 'a' * 64, 'tabs'),
+])
+def test_corporate_build_gate_never_admits_missing_or_mismatched_digests(
+        monkeypatch, tmp_path, observed, approved, expected):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(count=lambda: 0)))
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: observed)
+    record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
+    with diagnostics.session(tmp_path, 'worker') as log:
+        forms = coretax_corporate.observe_forms(
+            page, record, ('synthetic', 2025, 'period'), object(), approved_digest=approved)
+        assert log.flush()
+    assert forms is None
+    events = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_unavailable']
+    assert len(events) == 1 and events[0]['corporate_observer_stage'] == expected
 
 
 def test_corporate_observer_exception_keeps_safe_type_not_exception_text(monkeypatch, tmp_path):
@@ -60,7 +92,7 @@ def test_corporate_observer_exception_keeps_safe_type_not_exception_text(monkeyp
     with diagnostics.session(tmp_path, 'worker') as log:
         result = coretax_corporate.observe_forms(
             page, {'list_url': secret, 'record_id': secret},
-            ('synthetic', 2025, 'period'), object(), approved_digest='approved')
+            ('synthetic', 2025, 'period'), object(), approved_digest='d' * 64)
         assert log.flush()
     assert result is None
     event, = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_unavailable']

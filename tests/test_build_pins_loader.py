@@ -38,3 +38,12 @@ def test_checked_in_pins_cover_all_observer_sources():
     pins = load_build_pins()
     assert len(pins) == 6
     assert all(digest and len(digest) == 64 for digest in pins.values())
+
+
+def test_single_source_constants_match_the_pin_file():
+    """Duplicate digest constants must not drift from build-pins.json."""
+    import coretax_corporate
+    import coretax_json
+    pins = load_build_pins()
+    assert coretax_corporate.CIT_SOURCE_SHA256 == pins[coretax_corporate.CIT_SOURCE_URL]
+    assert coretax_json.REFERENCE_ORDER_SHA256 == pins[coretax_json.REFERENCE_ORDER_SOURCE]
