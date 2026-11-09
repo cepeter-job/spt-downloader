@@ -169,6 +169,63 @@ def test_narrow_normal_nonnegative_final_balance_clears_stale_choice(choice, bal
     assert ('VATUnderOrOverPaid', 'VAT') not in paths
 
 
+def _normal_overpaid_carry_source():
+    source = raw_source('CARRY_FORWARD')
+    source.update(json.loads(json.dumps(balance_source())))
+    source['ReturnSheetModel'] = 'NORMAL'
+    source.update(BasedOnType=None, InputTaxPercentageGoods=0, InputTaxPercentageServices=0,
+        OutputTaxMustBeSelfCollected={'VAT': 0}, VATIsDepositedInAdvance={'VAT': 12},
+        InputTaxCanBeCalculated={'VAT': 30}, VATCollectedByVATCollector={'VAT': 3},
+        VATUnderOrOverPaid={'VAT': -45})
+    source['DomesticDeliveriesUsingOtherValue']['VAT'] = 0
+    return source
+
+
+def test_normal_overpaid_carry_forward_projects_choice():
+    result = project(_normal_overpaid_carry_source(), model='NORMAL')
+    assert result['value'] == 'CARRY_FORWARD'
+    assert result['rule'] == 'normal_carry_forward_overpaid'
+
+
+@pytest.mark.parametrize('choice', ['FAST_REFUND', 'FORWARD_REFUND'])
+def test_normal_overpaid_refund_choices_stay_unverified(choice):
+    source = _normal_overpaid_carry_source()
+    source['AskedTo'] = choice
+    with pytest.raises(_UnsupportedMetadata):
+        project(source, model='NORMAL')
+
+
+def _normal_unchanged_live_source():
+    source = _normal_overpaid_carry_source()
+    source.update(InputTaxPercentageGoods=90, InputTaxPercentageServices=0,
+                  VATUnderOrOverPaid={'VAT': -45})
+    return source
+
+
+def test_normal_unchanged_live_path_projects_balance_and_carry_choice():
+    from coretax_masa_bindings import project_ppn_amount
+    form = _corporate_json(json.dumps(_normal_unchanged_live_source()))
+    amount = project_ppn_amount(form, 'VATIsUnderOrOverPaid', model='NORMAL')
+    assert amount['value'] == '-45'
+    assert amount['rule'] == 'stored_balance_reconciled_unchanged_percentages'
+    result = project(_normal_unchanged_live_source(), model='NORMAL')
+    assert result['value'] == 'CARRY_FORWARD'
+    assert result['rule'] == 'normal_carry_forward_overpaid'
+
+
+@pytest.mark.parametrize('stored', [-44, None])
+def test_normal_unchanged_live_path_rejects_mismatched_or_missing_stored(stored):
+    from coretax_masa_bindings import project_ppn_amount
+    source = _normal_unchanged_live_source()
+    if stored is None:
+        del source['VATUnderOrOverPaid']
+    else:
+        source['VATUnderOrOverPaid'] = {'VAT': stored}
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(_corporate_json(json.dumps(source)),
+                           'VATIsUnderOrOverPaid', model='NORMAL')
+
+
 @pytest.mark.parametrize('defect', ['missing-choice', 'missing-facility', 'object-facility',
     'missing-period', 'unsafe-turnover', 'string-export', 'fractional-export'])
 def test_unproved_choice_dependencies_do_not_gain_native_eligibility(defect):
