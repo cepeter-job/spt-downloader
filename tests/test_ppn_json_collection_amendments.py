@@ -93,3 +93,25 @@ def test_nested_amendment_condition_is_not_inferred_from_outer_model():
     data = _corporate_json('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":123}}')
     with pytest.raises(_UnsupportedMetadata):
         project_ppn_amount(data, 'VATandSTLGUnderOverpaidDueAmmendmentVAT', model='AMENDMENT')
+
+
+@pytest.mark.parametrize('suffix', ['SellingPrice', 'OtherTaxBase', 'VAT', 'STLG'])
+def test_normal_inert_amendment_totals_project_zero_without_footer(suffix):
+    data = _corporate_json(
+        '{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},'
+        '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"SellingPrice":null,"OtherTaxBase":null,'
+        '"VAT":null,"SalesTaxLuxuryGoods":null},'
+        '"VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended":null}')
+    root_control = 'VATandSTLGUnderOverpaidDueAmmendment' + suffix
+    result = project_ppn_amount(data, root_control, model='NORMAL')
+    assert result['value'] == '0'
+    assert result['rule'] == 'direct_final_path'
+    lc_control = 'VATandSTLGCollectedByOtherPartiesUnderOverpaidDueAmmendment' + suffix
+    assert project_ppn_amount(data, lc_control, model='NORMAL')['value'] == '0'
+
+
+def test_normal_mismatched_nested_amendment_still_refuses():
+    data = _corporate_json('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"AMENDMENT"},'
+                           '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":123}}')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(data, 'VATandSTLGUnderOverpaidDueAmmendmentVAT', model='NORMAL')
