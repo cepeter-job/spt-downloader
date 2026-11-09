@@ -86,8 +86,15 @@ for an absent panel still refuses (`unverified_corporate_disabled_panel`).
 ## Review hardening (PR #210 follow-up)
 
 - Absent-panel bindings are restricted to the exact reviewed omission set
-  (`L1-B`, `L8`, CDP-enumerated live tab list). Any other absent FORMS
-  panel fails closed via observer `unavailable`; objects stay refused.
+  (`L1-B`, `L8`, CDP-enumerated live tab list). Every other missing FORM
+  remains unbound and non-null source evidence is refused by the adapter.
+  To cover the remaining absent-tab **and absent-root** gap, the observer
+  requires all 15 non-exempt tabs for the exact shipped, hash-pinned
+  `525` asset before it can admit native JSON. Incomplete pinned tab
+  inventories return `unavailable` (whole-record DOM fallback).
+  Synthetic test builds with a different asset digest continue to test
+  partial-tab adapter scenarios; a dedicated test pins the reviewed digest
+  and refuses missing L3/L4/L9/L10-A/L11-A.
 - Timing attribution closes the previous tab segment before adopting the
   next ordinal; segments are emitted on refusal paths too
   (bounded, value-free) so failed live runs still show where time went.
