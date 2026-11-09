@@ -93,3 +93,54 @@ def test_nested_amendment_condition_is_not_inferred_from_outer_model():
     data = _corporate_json('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":123}}')
     with pytest.raises(_UnsupportedMetadata):
         project_ppn_amount(data, 'VATandSTLGUnderOverpaidDueAmmendmentVAT', model='AMENDMENT')
+
+
+@pytest.mark.parametrize('suffix', ['SellingPrice', 'OtherTaxBase', 'VAT', 'STLG'])
+def test_normal_inert_amendment_totals_project_zero_without_footer(suffix):
+    data = _corporate_json(
+        '{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},'
+        '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"SellingPrice":null,"OtherTaxBase":null,'
+        '"VAT":null,"SalesTaxLuxuryGoods":null},'
+        '"VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended":null}')
+    root_control = 'VATandSTLGUnderOverpaidDueAmmendment' + suffix
+    result = project_ppn_amount(data, root_control, model='NORMAL')
+    assert result['value'] == '0'
+    assert result['rule'] == 'direct_final_path'
+    lc_control = 'VATandSTLGCollectedByOtherPartiesUnderOverpaidDueAmmendment' + suffix
+    lc_result = project_ppn_amount(data, lc_control, model='NORMAL')
+    assert lc_result['value'] == '0'
+    assert lc_result['rule'] == 'normal_inert_amendment_zero'
+
+
+@pytest.mark.parametrize('defect', ['nonnull', 'missing-root', 'missing-leaf', 'malformed-root'])
+def test_normal_inert_amendment_branch_rejects_anything_but_null_leaves(defect):
+    raw = ('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},'
+           '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":null},"'
+           'VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended":{"VAT":null}}')
+    if defect == 'nonnull':
+        raw = raw.replace('"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":null}',
+                          '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":123}')
+    elif defect == 'missing-root':
+        raw = '{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"}}'
+    elif defect == 'missing-leaf':
+        raw = raw.replace('"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":null}',
+                          '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{}')
+    else:
+        raw = raw.replace('"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":null}',
+                          '"VATAndSTLGUnderOfOverPaidDueToAmmendment":123')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(_corporate_json(raw), 'VATandSTLGUnderOverpaidDueAmmendmentVAT', model='NORMAL')
+
+
+def test_normal_mismatched_nested_amendment_still_refuses():
+    data = _corporate_json('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"AMENDMENT"},'
+                           '"VATAndSTLGUnderOfOverPaidDueToAmmendment":{"VAT":123}}')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(data, 'VATandSTLGUnderOverpaidDueAmmendmentVAT', model='NORMAL')
+
+
+def test_normal_inert_lc_rejects_a_nonnull_prior():
+    data = _corporate_json('{"A1FormListOfExportTaxableGoodsOrServices":{"ReturnSheetModel":"NORMAL"},'
+                           '"VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended":{"VAT":5}}')
+    with pytest.raises(_UnsupportedMetadata):
+        project_ppn_amount(data, 'VATandSTLGCollectedByOtherPartiesUnderOverpaidDueAmmendmentVAT', model='NORMAL')

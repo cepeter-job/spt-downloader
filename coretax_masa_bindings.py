@@ -498,13 +498,31 @@ def _project_ppn_collection(form, control, model, lc_footer):
     evidence = []
     if conditional:
         nested = _source_scalar(form, ('A1FormListOfExportTaxableGoodsOrServices', 'ReturnSheetModel'), evidence)
-        if model != 'AMENDMENT' or nested != 'AMENDMENT':
+        # NORMAL filings carry inert null amendment leaves; project them
+        # directly without borrowing amendment/footer semantics. A nested
+        # AMENDMENT under a NORMAL outer (or a missing key) still refuses.
+        if model == 'NORMAL':
+            if nested != 'NORMAL':
+                raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
+        elif model != 'AMENDMENT' or nested != 'AMENDMENT':
             raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
     if root is not None:
+        # NORMAL inert roots are proven only as present dicts with null
+        # leaves (live 2026-11-09); anything else is an unreviewed lifecycle.
+        if conditional and model == 'NORMAL':
+            container = form.get(root)
+            if not isinstance(container, dict) or leaf not in container or container[leaf] is not None:
+                raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
         value = _ppn_source_number(form, (root, leaf), evidence)
         rendered = ('0' if zero else '') if value is None else _number(value, 0, locale='id-ID')
-        return {'value': rendered, 'rule': 'nested_amendment_stored' if conditional else 'direct_final_path',
+        return {'value': rendered,
+                'rule': 'nested_amendment_stored' if conditional and model == 'AMENDMENT' else 'direct_final_path',
                 'provenance': evidence}
+    if model == 'NORMAL':
+        prior = _ppn_source_number(form, ('VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended', leaf), evidence)
+        if prior is not None:
+            raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
+        return {'value': '0', 'rule': 'normal_inert_amendment_zero', 'provenance': evidence}
     if not isinstance(lc_footer, dict):
         raise _UnsupportedMetadata('missing_ppn_amendment_lc_footer')
     prior = _ppn_source_number(form, ('VATAndSTLGCollectedByOtherPartiesUnderOrOverPaidOnAmmended', leaf), evidence)
