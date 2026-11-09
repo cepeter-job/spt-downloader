@@ -422,3 +422,57 @@ def test_corporate_observe_timing_emitted_on_refusal(monkeypatch, tmp_path):
     rows = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_timing']
     assert rows
     assert any(row['corporate_observer_stage'] == 'build' for row in rows)
+    assert all(isinstance(row['duration_ms'], float) for row in rows)
+
+
+def _observe_with_capture(monkeypatch, tmp_path, *, missing_tab=None):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+
+    class Tab:
+        def __init__(self, name, disabled):
+            self.name, self.disabled = name, disabled
+
+        def evaluate(self, *a):
+            return self.disabled
+
+        def inner_text(self):
+            return self.name
+
+    captions = ['Induk', 'L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9',
+                'L10-A', 'L10-B', 'L10-C', 'L10-D', 'L11-A', 'L11-B', 'L11-C']
+    assert missing_tab is None or missing_tab in captions
+    present = [c for c in captions if c != missing_tab]
+
+    def fake_tabs(page):
+        return object(), SimpleNamespace(count=lambda: len(present),
+                                         nth=lambda i: Tab(present[i], True))
+
+    monkeypatch.setattr(coretax_corporate, '_tabs', fake_tabs)
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'c' * 64)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms = coretax_corporate.observe_forms(
+            page, {'list_url': 'https://synthetic.invalid/list',
+                   'record_id': 'SYNTHETIC-ID'},
+            ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
+    return forms, records(tmp_path)
+
+
+def test_corporate_observe_timing_exactly_once_on_missing_required_tab(monkeypatch, tmp_path):
+    forms, all_rows = _observe_with_capture(monkeypatch, tmp_path, missing_tab='L3')
+    assert forms is None
+    rows = [e for e in all_rows if e['event'] == 'corporate.observe_timing']
+    assert rows
+    import collections
+    counts = collections.Counter((row['corporate_observer_stage'],
+                                  row.get('form_ordinal')) for row in rows)
+    assert max(counts.values()) == 1

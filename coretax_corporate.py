@@ -683,9 +683,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     ordinal_safe = None
     # Privacy-safe per-stage timings for the observe-performance follow-up.
     # Records stage name, form ordinal, and duration only — never values,
-    # URLs, digests, or page state. Emitted on the success path.
+    # URLs, digests, or page state. Emitted exactly once on success or
+    # refusal so even a slow failing stage keeps its measured time.
     _segments = []
     _segment_start = time.monotonic()
+    _emitted = False
 
     def _advance(new_stage):
         nonlocal stage, _segment_start
@@ -694,6 +696,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
         stage, _segment_start = new_stage, time.monotonic()
 
     def _emit_timings():
+        # Exactly-once: close the running segment, then flush every measured
+        # one. A refusal sees the failing stage's elapsed time; a second
+        # call is a no-op so unavailable/error paths can't duplicate rows.
+        nonlocal _emitted
+        if _emitted:
+            return
+        _segments.append((stage, (time.monotonic() - _segment_start) * 1000,
+                          ordinal_safe))
+        _emitted = True
         for seg_stage, duration_ms, seg_ordinal in _segments:
             fields = {'corporate_observer_stage': seg_stage,
                       'duration_ms': duration_ms}
@@ -926,8 +937,6 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
             forms.append(binding)
-        _segments.append((stage, (time.monotonic() - _segment_start) * 1000,
-                          ordinal_safe))
         _emit_timings()
         if 'Induk' in names:
             # Two reviewed panels are absent from the live tab set; they get
