@@ -82,3 +82,14 @@ null roots had no declared path at all.
 Fix: FORMS panels missing from the tab list declare the same path-only,
 null/missing-inert binding (no tab touched, no grids). Object-valued JSON
 for an absent panel still refuses (`unverified_corporate_disabled_panel`).
+
+## Review hardening (PR #210 follow-up)
+
+- Absent-panel bindings are restricted to the exact reviewed omission set
+  (`L1-B`, `L8`, CDP-enumerated live tab list). Any other absent FORMS
+  panel fails closed via observer `unavailable`; objects stay refused.
+- Timing attribution closes the previous tab segment before adopting the
+  next ordinal; segments are emitted on refusal paths too
+  (bounded, value-free) so failed live runs still show where time went.
+- A duplicated set assertion was removed mid-draft; the disabled-binding
+  contradiction cases live in `tests/test_corporate_schema_expansion.py`.

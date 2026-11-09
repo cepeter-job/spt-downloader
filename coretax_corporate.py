@@ -705,6 +705,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
+        # Emit already-measured stage segments so even a late refusal keeps
+        # the bounded, value-free performance trail.
+        _emit_timings()
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
                            corporate_observer_stage=stage, form_ordinal=ordinal_safe,
                            corporate_l3_reason=l3_reason,
@@ -735,8 +738,8 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
         forms, names = [], set()
         for ordinal in range(tabs.count()):
             _check_cancel(check_cancel)
-            ordinal_safe = ordinal
             _advance('tab')
+            ordinal_safe = ordinal
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
                 # A disabled FORMS panel still binds its JSON root path: the
@@ -927,16 +930,21 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                           ordinal_safe))
         _emit_timings()
         if 'Induk' in names:
-            # Panels entirely absent from the live tab set still declare a
-            # path-only binding under the same null/missing inert rule the
-            # adapter enforces for disabled tabs; objects stay refused.
-            for absent in FORMS:
+            # Two reviewed panels are absent from the live tab set; they get
+            # the same path-only, null/missing-inert binding as disabled
+            # tabs. Any other absent FORMS panel has no reviewed omission
+            # evidence and fails closed (objects stay refused either way).
+            for absent in ('L1-B', 'L8'):
                 if absent not in names:
                     names.add(absent)
                     forms.append({'name': absent,
                                   'paths': [[FORMS[absent][1]]],
                                   'disabled': True,
                                   'grids': [], 'responses': [], 'dependencies': []})
+            for absent in FORMS:
+                if absent not in names:
+                    stage = 'induk' if absent == 'Induk' else 'tabs'
+                    return unavailable()
             return forms
         stage = 'induk'
         return unavailable()
