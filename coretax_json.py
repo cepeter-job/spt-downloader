@@ -691,6 +691,10 @@ def _corporate_bindings(observed_forms):
             raise JsonSafetyError('Observed form names are missing or ambiguous')
         names.add(form['name'])
         section = {'name': form['name'], 'fields': [], 'tables': [], 'text': ''}
+        if 'disabled' in form:
+            if type(form['disabled']) is not bool:
+                raise JsonSafetyError('Observed source disabled marker is invalid')
+            section['disabled'] = form['disabled']
         sections.append(section)
         if 'primary' in form:
             binding = form['primary']
@@ -1062,6 +1066,20 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             raise _UnsupportedMetadata('unverified_corporate_receipt_status')
         metadata['ElectronicReceiptSubmission'] = root['ElectronicReceiptSubmission']
         _corporate_rows(root['ElectronicReceiptSubmission'], ('ElectronicReceiptSubmission',), metadata_rows)
+    # A declared disabled panel carries no DOM proof; its JSON root is bound
+    # only when the source value is exactly null/missing (this also gives the
+    # inert null evidence row a pointer). Any other value refuses closed,
+    # so stored data can never enter through an uninspected panel.
+    disabled_paths = [path for path, section in paths if section.get('disabled')]
+    for path in disabled_paths:
+        value = root
+        for token in path:
+            if not isinstance(value, dict) or token not in value:
+                break
+            value = value[token]
+        else:
+            if value is not None:
+                raise _UnsupportedMetadata('unverified_corporate_disabled_panel')
     doc_keys = {'DocumentAggregateIdentifier', 'DocumentId', 'FileName', 'DocumentType', 'CreationDate'}
     for name in ('AuditOpinion', 'FinancialStatement', 'OtherDocuments'):
         if name not in root:
@@ -1104,6 +1122,20 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
         # The backend omits the empty L10-A section; the frontend reads it
         # via ?. and the grid coverage below stands on its own.
         if tuple(path) == ('DeclarationTransactionRelatedParties',) and path[0] not in root:
+            continue
+        # A declared disabled panel is inert only when its root is absent;
+        # a non-null value is refused above, a missing one is skipped here.
+        if section.get('disabled'):
+            value = root
+            for token in path:
+                if not isinstance(value, dict) or token not in value:
+                    break
+                value = value[token]
+            else:
+                rows = []
+                _corporate_rows(value, path, rows)
+                section['tables'].append(_corporate_table(_corporate_pointer(path), rows))
+                continue
             continue
         value = root
         for token in path:

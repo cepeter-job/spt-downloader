@@ -150,6 +150,37 @@ def test_declared_l10a_path_skips_only_when_absent():
     eligible(result)
 
 
+def _disabled_forms(root_key):
+    forms = observed()
+    forms.append({'name': 'L1-B', 'paths': [[root_key]], 'disabled': True,
+                  'grids': [], 'responses': [], 'dependencies': []})
+    return forms
+
+
+def test_disabled_panel_null_root_passes():
+    form = with_schema(current_form())
+    form['L1bFormData'] = None
+    result = adapt([primary_with_outer_periods(form)],
+                   forms=_disabled_forms('L1bFormData'))
+    eligible(result)
+
+
+def test_disabled_panel_missing_root_passes():
+    form = with_schema(current_form())
+    result = adapt([primary_with_outer_periods(form)],
+                   forms=_disabled_forms('L1bFormData'))
+    eligible(result)
+
+
+def test_disabled_panel_object_root_refuses():
+    form = with_schema(current_form())
+    form['L1bFormData'] = {'AnyField': Number('1')}
+    result = adapt([primary_with_outer_periods(form)],
+                   forms=_disabled_forms('L1bFormData'))
+    assert result['eligible'] is False
+    assert 'unverified_corporate_disabled_panel' in result['reason']
+
+
 def _l4_footer_events(*requests, url=None):
     from coretax_json import ORIGIN
     base = url or (ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid/footer')

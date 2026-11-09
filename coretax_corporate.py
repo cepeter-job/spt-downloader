@@ -720,6 +720,17 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             stage = 'tab'
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
+                # A disabled FORMS panel still binds its JSON root path: the
+                # adapter admits it only when the source value is exactly
+                # null/absent (inert empty form), never for stored objects.
+                disabled_name = tab.inner_text().strip()
+                if disabled_name not in FORMS or disabled_name in names:
+                    return unavailable()
+                names.add(disabled_name)
+                forms.append({'name': disabled_name,
+                              'paths': [[FORMS[disabled_name][1]]],
+                              'disabled': True,
+                              'grids': [], 'responses': [], 'dependencies': []})
                 continue
             name = tab.inner_text().strip()
             if name not in FORMS or name in names:
