@@ -939,10 +939,19 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
-            # Two reviewed panels are absent from the live tab set; they get
-            # the same path-only, null/missing-inert binding as disabled
-            # tabs. Any other absent FORMS panel has no reviewed omission
-            # evidence and fails closed (objects stay refused either way).
+            # The shipped, hash-pinned 525 build has a CDP-reviewed 15-tab
+            # inventory: all FORMS other than L1-B and L8 must be visible.
+            # An absent required tab with an omitted JSON root would not
+            # produce an uncovered evidence row, so downstream evidence
+            # matching alone cannot prove completeness. Refuse this exact
+            # reviewed build when its native tab inventory is incomplete.
+            # Other asset builds need their own reviewed inventory before
+            # their approved pin can adopt this completeness contract.
+            if digest == CIT_SOURCE_SHA256 and (
+                    set(FORMS) - {'L1-B', 'L8'} - names):
+                return unavailable()
+            # Only L1-B and L8 are reviewed as legitimately absent.
+            # Their path-only bindings remain strictly null/missing-inert.
             for absent in ('L1-B', 'L8'):
                 if absent not in names:
                     names.add(absent)
