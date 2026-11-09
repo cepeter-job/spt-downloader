@@ -1136,17 +1136,9 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             continue
         # A declared disabled panel is inert only when its root is absent;
         # a non-null value is refused above, a missing one is skipped here.
+        # Emit no table for the inert null: there is no data to export under
+        # a disabled/absent panel (mirrors the L10-A absent skip).
         if section.get('disabled'):
-            value = root
-            for token in path:
-                if not isinstance(value, dict) or token not in value:
-                    break
-                value = value[token]
-            else:
-                rows = []
-                _corporate_rows(value, path, rows)
-                section['tables'].append(_corporate_table(_corporate_pointer(path), rows))
-                continue
             continue
         value = root
         for token in path:
