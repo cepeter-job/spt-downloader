@@ -91,11 +91,12 @@ verifikasi sumber, identitas, dan pembatasan tetap wajib.
 
 ### Waktu tahap observer Corporate
 
-`corporate.observe_timing` mencatat waktu per segmen tahap observer pada
-jalur sukses (`corporate_observer_stage` + `duration_ms` + `form_ordinal`),
-tanpa nilai, URL, digest, atau status halaman. Catatan ini mengukur biaya
-`json_observe` per tahap untuk tindak lanjut performa (#208) dan tidak
-mengubah hasil adopsi JSON.
+`corporate.observe_timing` mencatat waktu per segmen tahap observer
+(`corporate_observer_stage` + `duration_ms` + `form_ordinal`), tanpa nilai,
+URL, digest, atau status halaman. Catatan diterbitkan idempoten pada jalur
+sukses maupun penolakan (segmen berjalan ditutup terlebih dahulu), sehingga
+pelacakan performa (#208) tetap memberi data pada live run yang gagal.
+Catatan ini tidak mengubah hasil adopsi JSON.
 
 Pada tahap `l11a`, `corporate_l11a_reason` memisahkan pin/provider, lifetime,
 jumlah tabel, ancestry/grup, paginator, perubahan metadata, bentuk/offset request,

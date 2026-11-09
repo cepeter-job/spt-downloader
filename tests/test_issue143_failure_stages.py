@@ -204,7 +204,12 @@ def test_corporate_disabled_panel_binds_inert_path_without_inspection(monkeypatc
         def inner_text(self):
             return self.name
 
-    tabs = [Tab('Induk', False), Tab('L1-B', True)]
+    tabs = [Tab('Induk', False), Tab('L1-D', True), Tab('L1-B', True),
+            Tab('L2', True), Tab('L3', True), Tab('L4', True), Tab('L6', True),
+            Tab('L7', True), Tab('L8', True), Tab('L9', True),
+            Tab('L10-A', True), Tab('L10-B', True), Tab('L10-C', True),
+            Tab('L10-D', True), Tab('L11-A', True), Tab('L11-B', True),
+            Tab('L11-C', True)]
 
     def fake_tabs(page):
         return object(), SimpleNamespace(count=lambda: len(tabs),
@@ -227,8 +232,12 @@ def test_corporate_disabled_panel_binds_inert_path_without_inspection(monkeypatc
                'record_id': 'SYNTHETIC-ID'},
         ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
     assert forms is not None
-    assert [form['name'] for form in forms] == ['Induk', 'L1-B']
-    disabled = forms[1]
+    assert [form['name'] for form in forms] == ['Induk', 'L1-D', 'L1-B', 'L2',
+                                                'L3', 'L4', 'L6', 'L7', 'L8',
+                                                'L9', 'L10-A', 'L10-B',
+                                                'L10-C', 'L10-D', 'L11-A',
+                                                'L11-B', 'L11-C']
+    disabled = forms[[form['name'] for form in forms].index('L1-B')]
     assert disabled['disabled'] is True
     assert disabled['paths'] == [['L1bFormData']]
     assert disabled['grids'] == [] and disabled['responses'] == []
@@ -288,20 +297,23 @@ def test_corporate_disabled_duplicate_or_unknown_caption_fails_closed(monkeypatc
     forms, _ = _observe_with_tabs(monkeypatch, [False, True],
                                   ['Induk', 'Surat Tanpa Panel'])
     assert forms is None
-    forms, inspected = _observe_with_tabs(monkeypatch, [True, False],
-                                          ['L1-B', 'Induk'])
+    captions = ['L1-B', 'Induk', 'L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L8',
+                'L9', 'L10-A', 'L10-B', 'L10-C', 'L10-D', 'L11-A',
+                'L11-B', 'L11-C']
+    tabs = [True, False] + [True] * 15
+    forms, inspected = _observe_with_tabs(monkeypatch, tabs, captions)
     assert forms is not None
-    assert [form['name'] for form in forms] == ['L1-B', 'Induk']
+    assert forms[0]['name'] == 'L1-B'
     assert forms[0]['disabled'] is True
     assert inspected == ['Induk']
 
 
 def test_corporate_absent_panel_binds_inert_path(monkeypatch):
-    import coretax_corporate
-    monkeypatch.setattr(coretax_corporate, '_observe_l1d', lambda *a, **k: {})
-    forms, inspected = _observe_with_tabs(monkeypatch, [False] * 8,
-                                          ['Induk', 'L1-D', 'L2', 'L6', 'L10-B',
-                                           'L10-C', 'L10-D', 'L11-B'])
+    forms, inspected = _observe_with_tabs(monkeypatch, [False] + [True] * 14,
+                                          ['Induk', 'L1-D', 'L2', 'L3', 'L4',
+                                           'L6', 'L7', 'L9', 'L10-A', 'L10-B',
+                                           'L10-C', 'L10-D', 'L11-A', 'L11-B',
+                                           'L11-C'])
     assert forms is not None
     names = [form['name'] for form in forms]
     assert 'L1-B' in names and 'L8' in names
@@ -310,8 +322,7 @@ def test_corporate_absent_panel_binds_inert_path(monkeypatch):
     assert absent['paths'] == [['L1bFormData']]
     assert absent['grids'] == [] and absent['responses'] == []
     assert absent['dependencies'] == []
-    assert inspected == ['Induk', 'L1-D', 'L2', 'L6', 'L10-B',
-                         'L10-C', 'L10-D', 'L11-B']
+    assert inspected == ['Induk']
 
 
 def test_corporate_absent_grid_bearing_or_required_tab_fails_closed(monkeypatch):
@@ -346,7 +357,12 @@ def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_pat
         def inner_text(self):
             return self.name
 
-    fake = [Tab('Induk', False), Tab('L1-B', True)]
+    fake = [Tab('Induk', False), Tab('L1-D', True), Tab('L1-B', True),
+            Tab('L2', True), Tab('L3', True), Tab('L4', True), Tab('L6', True),
+            Tab('L7', True), Tab('L8', True), Tab('L9', True),
+            Tab('L10-A', True), Tab('L10-B', True), Tab('L10-C', True),
+            Tab('L10-D', True), Tab('L11-A', True), Tab('L11-B', True),
+            Tab('L11-C', True)]
 
     def fake_tabs(page):
         return object(), SimpleNamespace(count=lambda: len(fake),
@@ -370,7 +386,7 @@ def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_pat
     ordinals = [row['form_ordinal'] for row in rows if 'form_ordinal' in row]
     # segments close in tab order: the L1-B tab's own segment must carry
     # ordinal 1, not the following tab's.
-    assert set(ordinals) == {0, 1}
+    assert set(ordinals) == set(range(17))
     assert ordinals == sorted(ordinals)
     for row in rows:
         assert row['corporate_observer_stage'] in (
