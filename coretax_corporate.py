@@ -3,8 +3,8 @@ import json
 import time
 from coretax_json import ORIGIN, JsonSafetyError
 
-CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
-CIT_SOURCE_SHA256 = 'fcd6d4a9244d6562a294675e802732562a9510621fbb9abbe651fa4de143048d'
+CIT_SOURCE_URL = ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js'
+CIT_SOURCE_SHA256 = '500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153'
 FORMS = {
  'Induk': ('rshshr-citr-main-form', 'MainFormData'),
  'L1-B': ('rshshr-citr-l1b-form', 'L1bFormData'),

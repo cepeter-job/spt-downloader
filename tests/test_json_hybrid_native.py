@@ -17,7 +17,7 @@ import coretax_browser as driver
 import support_json_corpus as corpus
 import support_financial_browser as financial
 
-ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.ec1edffbb4a91d20.js'
+ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js'
 BUILD = b'/* SYNTHETIC CORPORATE BUILD -- no portal code or taxpayer data */'
 PDF_URL = corpus.ORIGIN + '/synthetic-existing/statement.pdf'
 GROUPS = ((1, 'Group 1'), (1, 'Group 2'), (1, 'Group 3'), (1, 'Group 4'), (1, 'Other Group'),
