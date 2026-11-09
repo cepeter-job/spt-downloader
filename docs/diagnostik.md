@@ -89,6 +89,14 @@ hash/URL atau isi dari browser. Field yang tidak ada bukan bukti tahap sukses.
 Refusal tetap mengembalikan `None` dan memilih fallback seluruh record ke DOM;
 verifikasi sumber, identitas, dan pembatasan tetap wajib.
 
+### Waktu tahap observer Corporate
+
+`corporate.observe_timing` mencatat waktu per segmen tahap observer pada
+jalur sukses (`corporate_observer_stage` + `duration_ms` + `form_ordinal`),
+tanpa nilai, URL, digest, atau status halaman. Catatan ini mengukur biaya
+`json_observe` per tahap untuk tindak lanjut performa (#208) dan tidak
+mengubah hasil adopsi JSON.
+
 Pada tahap `l11a`, `corporate_l11a_reason` memisahkan pin/provider, lifetime,
 jumlah tabel, ancestry/grup, paginator, perubahan metadata, bentuk/offset request,
 inventori grid dan katalog yang belum teramati. Contoh kategori tetap adalah

@@ -681,6 +681,25 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     from spt_desktop import diagnostics
     stage = 'build'
     ordinal_safe = None
+    # Privacy-safe per-stage timings for the observe-performance follow-up.
+    # Records stage name, form ordinal, and duration only — never values,
+    # URLs, digests, or page state. Emitted on the success path.
+    _segments = []
+    _segment_start = time.monotonic()
+
+    def _advance(new_stage):
+        nonlocal stage, _segment_start
+        _segments.append((stage, (time.monotonic() - _segment_start) * 1000,
+                          ordinal_safe))
+        stage, _segment_start = new_stage, time.monotonic()
+
+    def _emit_timings():
+        for seg_stage, duration_ms, seg_ordinal in _segments:
+            fields = {'corporate_observer_stage': seg_stage,
+                      'duration_ms': duration_ms}
+            if seg_ordinal is not None:
+                fields['form_ordinal'] = seg_ordinal
+            diagnostics.record('corporate.observe_timing', **fields)
 
     def unavailable(error=None, *, l3_reason=None, l3_table_shape=None,
                     l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
@@ -709,7 +728,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or any(c not in '0123456789abcdef' for c in digest + approved_digest)
                 or digest != approved_digest):
             return unavailable()
-        stage = 'tabs'
+        _advance('tabs')
         view, tabs = _tabs(page)
         if not tabs.count():
             return unavailable()
@@ -717,7 +736,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
         for ordinal in range(tabs.count()):
             _check_cancel(check_cancel)
             ordinal_safe = ordinal
-            stage = 'tab'
+            _advance('tab')
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
                 # A disabled FORMS panel still binds its JSON root path: the
@@ -736,13 +755,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name not in FORMS or name in names:
                 return unavailable()
             names.add(name)
-            stage = 'panel'
+            _advance('panel')
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
                 return unavailable()
             _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
-            stage = 'form'
+            _advance('form')
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
                 return unavailable()
@@ -751,7 +770,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
             if name == 'L3':
-                stage = 'l3'
+                _advance('l3')
                 if 'Induk' not in names:
                     return unavailable(l3_reason='induk_order')
                 l3_diagnostic = {}
@@ -764,7 +783,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                                        l3_extra_owner=l3_diagnostic.get('extra_owner'))
                 binding.update(inspected)
             if name == 'L11-A':
-                stage = 'l11a'
+                _advance('l11a')
                 if 'Induk' not in names:
                     return unavailable(l11a_reason='induk_order')
                 l11a_diagnostic = {}
@@ -782,7 +801,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable(l3_reason='visibility_changed', l11a_reason='visibility_changed')
                 binding['projection']['visibility_binding'] = 'current-induk-enabled-v1'
             if name == 'L1-D':
-                stage = 'l1d'
+                _advance('l1d')
                 if 'Induk' not in names:
                     return unavailable()
                 projection = _observe_l1d(page, form, capture, digest, check_cancel)
@@ -790,7 +809,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable()
                 binding['projection'] = projection
             if name == 'L8':
-                stage = 'l8'
+                _advance('l8')
                 if 'Induk' not in names:
                     return unavailable()
                 projection = _observe_l8(page, form, capture, digest, check_cancel)
@@ -798,7 +817,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable()
                 binding['projection'] = projection
             if name == 'L7':
-                stage = 'l7'
+                _advance('l7')
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
@@ -818,7 +837,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
             if name == 'L11-C':
-                stage = 'l11c'
+                _advance('l11c')
                 from coretax_corporate_projection import L11C_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
                 from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
@@ -850,7 +869,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'route': page.url, **environment, 'references': references,
                     'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
-            stage = 'grid'
+            _advance('grid')
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)
                 if grids.count() != len(groups):
@@ -904,6 +923,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
             forms.append(binding)
+        _segments.append((stage, (time.monotonic() - _segment_start) * 1000,
+                          ordinal_safe))
+        _emit_timings()
         if 'Induk' in names:
             return forms
         stage = 'induk'

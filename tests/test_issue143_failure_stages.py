@@ -294,3 +294,55 @@ def test_corporate_disabled_duplicate_or_unknown_caption_fails_closed(monkeypatc
     assert [form['name'] for form in forms] == ['L1-B', 'Induk']
     assert forms[0]['disabled'] is True
     assert inspected == ['Induk']
+
+
+def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_path):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+
+    class Tab:
+        def __init__(self, name, disabled):
+            self.name, self.disabled = name, disabled
+
+        def evaluate(self, *a):
+            return self.disabled
+
+        def inner_text(self):
+            return self.name
+
+    fake = [Tab('Induk', False), Tab('L1-B', True)]
+
+    def fake_tabs(page):
+        return object(), SimpleNamespace(count=lambda: len(fake),
+                                         nth=lambda i: fake[i])
+
+    monkeypatch.setattr(coretax_corporate, '_tabs', fake_tabs)
+    form = SimpleNamespace(count=lambda: 1, is_visible=lambda: True)
+    panel = SimpleNamespace(locator=lambda selector: form)
+    monkeypatch.setattr(coretax_corporate, '_native_panel',
+                        lambda page, view, tab, caption, record, cc: panel)
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'c' * 64)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms = coretax_corporate.observe_forms(
+            page, {'list_url': 'https://synthetic.invalid/list',
+                   'record_id': 'SYNTHETIC-ID'},
+            ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
+    assert forms is not None
+    rows = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_timing']
+    assert rows
+    for row in rows:
+        assert row['corporate_observer_stage'] in (
+            'build', 'tabs', 'tab', 'panel', 'form', 'grid')
+        assert 0 <= row['duration_ms'] <= 604_800_000
+    dump = json.dumps(rows)
+    assert 'Induk' not in dump and 'L1-B' not in dump and 'SYNTHETIC' not in dump
+    assert 'synthetic.invalid' not in dump
