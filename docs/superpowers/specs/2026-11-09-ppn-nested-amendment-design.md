@@ -33,13 +33,14 @@ In `_project_ppn_collection`, branch the nested check by `model`:
 
 - `NORMAL`: require `nested == 'NORMAL'` (mismatch or missing still
   refuses with `unverified_ppn_nested_amendment_branch`). Root-bound
-  conditional controls then project via the existing direct stored path
-  (`null` leaves → `0`, rule `direct_final_path` instead of
+  conditional controls additionally require the present root dict with a
+  null leaf (the only live-proven inert shape); non-null, missing or
+  malformed also refuses. They then project via the existing direct stored
+  path (`null` → `0`, rule `direct_final_path` instead of
   `nested_amendment_stored`, since no amendment subscription owns them).
-  The LC-bound (`root=None`) controls return `0` with the prior evidence
-  (`rule=normal_inert_amendment_zero`) without reading the LC footer.
-- `AMENDMENT`: unchanged — still require `nested == 'AMENDMENT'` and keep
-  the nested/LC amendment semantics.
+  The LC-bound (`root=None`) controls return `0` only when the prior leaf
+  is null (`rule=normal_inert_amendment_zero`); a non-null prior still
+  refuses. AMENDMENT behaviour is unchanged.
 
 ## What does not change
 

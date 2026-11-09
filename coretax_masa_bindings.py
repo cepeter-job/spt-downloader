@@ -507,6 +507,12 @@ def _project_ppn_collection(form, control, model, lc_footer):
         elif model != 'AMENDMENT' or nested != 'AMENDMENT':
             raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
     if root is not None:
+        # NORMAL inert roots are proven only as present dicts with null
+        # leaves (live 2026-11-09); anything else is an unreviewed lifecycle.
+        if conditional and model == 'NORMAL':
+            container = form.get(root)
+            if not isinstance(container, dict) or leaf not in container or container[leaf] is not None:
+                raise _UnsupportedMetadata('unverified_ppn_nested_amendment_branch')
         value = _ppn_source_number(form, (root, leaf), evidence)
         rendered = ('0' if zero else '') if value is None else _number(value, 0, locale='id-ID')
         return {'value': rendered,
