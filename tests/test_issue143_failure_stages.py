@@ -204,7 +204,12 @@ def test_corporate_disabled_panel_binds_inert_path_without_inspection(monkeypatc
         def inner_text(self):
             return self.name
 
-    tabs = [Tab('Induk', False), Tab('L1-B', True)]
+    tabs = [Tab('Induk', False), Tab('L1-D', True), Tab('L1-B', True),
+            Tab('L2', True), Tab('L3', True), Tab('L4', True), Tab('L6', True),
+            Tab('L7', True), Tab('L8', True), Tab('L9', True),
+            Tab('L10-A', True), Tab('L10-B', True), Tab('L10-C', True),
+            Tab('L10-D', True), Tab('L11-A', True), Tab('L11-B', True),
+            Tab('L11-C', True)]
 
     def fake_tabs(page):
         return object(), SimpleNamespace(count=lambda: len(tabs),
@@ -227,8 +232,12 @@ def test_corporate_disabled_panel_binds_inert_path_without_inspection(monkeypatc
                'record_id': 'SYNTHETIC-ID'},
         ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
     assert forms is not None
-    assert [form['name'] for form in forms] == ['Induk', 'L1-B']
-    disabled = forms[1]
+    assert [form['name'] for form in forms] == ['Induk', 'L1-D', 'L1-B', 'L2',
+                                                'L3', 'L4', 'L6', 'L7', 'L8',
+                                                'L9', 'L10-A', 'L10-B',
+                                                'L10-C', 'L10-D', 'L11-A',
+                                                'L11-B', 'L11-C']
+    disabled = forms[[form['name'] for form in forms].index('L1-B')]
     assert disabled['disabled'] is True
     assert disabled['paths'] == [['L1bFormData']]
     assert disabled['grids'] == [] and disabled['responses'] == []
@@ -288,9 +297,243 @@ def test_corporate_disabled_duplicate_or_unknown_caption_fails_closed(monkeypatc
     forms, _ = _observe_with_tabs(monkeypatch, [False, True],
                                   ['Induk', 'Surat Tanpa Panel'])
     assert forms is None
-    forms, inspected = _observe_with_tabs(monkeypatch, [True, False],
-                                          ['L1-B', 'Induk'])
+    captions = ['L1-B', 'Induk', 'L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L8',
+                'L9', 'L10-A', 'L10-B', 'L10-C', 'L10-D', 'L11-A',
+                'L11-B', 'L11-C']
+    tabs = [True, False] + [True] * 15
+    forms, inspected = _observe_with_tabs(monkeypatch, tabs, captions)
     assert forms is not None
-    assert [form['name'] for form in forms] == ['L1-B', 'Induk']
+    assert forms[0]['name'] == 'L1-B'
     assert forms[0]['disabled'] is True
     assert inspected == ['Induk']
+
+
+def test_corporate_absent_panel_binds_inert_path(monkeypatch):
+    forms, inspected = _observe_with_tabs(monkeypatch, [False] + [True] * 14,
+                                          ['Induk', 'L1-D', 'L2', 'L3', 'L4',
+                                           'L6', 'L7', 'L9', 'L10-A', 'L10-B',
+                                           'L10-C', 'L10-D', 'L11-A', 'L11-B',
+                                           'L11-C'])
+    assert forms is not None
+    names = [form['name'] for form in forms]
+    assert 'L1-B' in names and 'L8' in names
+    absent = forms[names.index('L1-B')]
+    assert absent['disabled'] is True
+    assert absent['paths'] == [['L1bFormData']]
+    assert absent['grids'] == [] and absent['responses'] == []
+    assert absent['dependencies'] == []
+    assert inspected == ['Induk']
+
+
+def test_corporate_absent_grid_bearing_tab_binds_nothing(monkeypatch):
+    import coretax_corporate
+    monkeypatch.setattr(coretax_corporate, '_observe_l3', lambda *a, **k: {'grids': []})
+    monkeypatch.setattr(coretax_corporate, '_observe_l11a', lambda *a, **k: {'grids': []})
+    monkeypatch.setattr(coretax_corporate, '_observe_l1d', lambda *a, **k: {})
+    forms, _ = _observe_with_tabs(monkeypatch, [False, False, False, False],
+                                  ['Induk', 'L1-D', 'L2', 'L6'])
+    assert forms is not None
+    names = [form['name'] for form in forms]
+    assert 'L3' not in names and 'L4' not in names and 'L11-A' not in names
+
+
+@pytest.mark.parametrize('missing', ['L3', 'L4', 'L9', 'L10-A', 'L11-A'])
+def test_pinned_corporate_build_refuses_unseen_required_grid_tab(monkeypatch, missing):
+    import coretax_corporate
+
+    # A synthetic pin standing in for the reviewed 525 asset: unlike a
+    # generic fixture build, its mandatory 15-tab inventory is contractual.
+    monkeypatch.setattr(coretax_corporate, 'CIT_SOURCE_SHA256', 'c' * 64)
+    required = [name for name in coretax_corporate.FORMS
+                if name not in ('L1-B', 'L8') and name != missing]
+    assert required[0] == 'Induk'
+    forms, inspected = _observe_with_tabs(
+        monkeypatch, [False] + [True] * (len(required) - 1), required)
+    assert forms is None
+    assert inspected == ['Induk']
+
+
+def test_pinned_corporate_build_accepts_reviewed_fifteen_tab_inventory(monkeypatch):
+    import coretax_corporate
+
+    monkeypatch.setattr(coretax_corporate, 'CIT_SOURCE_SHA256', 'c' * 64)
+    required = [name for name in coretax_corporate.FORMS
+                if name not in ('L1-B', 'L8')]
+    forms, inspected = _observe_with_tabs(
+        monkeypatch, [False] + [True] * (len(required) - 1), required)
+    assert forms is not None
+    assert {item['name'] for item in forms} == set(coretax_corporate.FORMS)
+    assert inspected == ['Induk']
+
+
+def test_corporate_observe_timing_records_stage_bounds_only(monkeypatch, tmp_path):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+
+    class Tab:
+        def __init__(self, name, disabled):
+            self.name, self.disabled = name, disabled
+
+        def evaluate(self, *a):
+            return self.disabled
+
+        def inner_text(self):
+            return self.name
+
+    fake = [Tab('Induk', False), Tab('L1-D', True), Tab('L1-B', True),
+            Tab('L2', True), Tab('L3', True), Tab('L4', True), Tab('L6', True),
+            Tab('L7', True), Tab('L8', True), Tab('L9', True),
+            Tab('L10-A', True), Tab('L10-B', True), Tab('L10-C', True),
+            Tab('L10-D', True), Tab('L11-A', True), Tab('L11-B', True),
+            Tab('L11-C', True)]
+
+    def fake_tabs(page):
+        return object(), SimpleNamespace(count=lambda: len(fake),
+                                         nth=lambda i: fake[i])
+
+    monkeypatch.setattr(coretax_corporate, '_tabs', fake_tabs)
+    form = SimpleNamespace(count=lambda: 1, is_visible=lambda: True)
+    panel = SimpleNamespace(locator=lambda selector: form)
+    monkeypatch.setattr(coretax_corporate, '_native_panel',
+                        lambda page, view, tab, caption, record, cc: panel)
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'c' * 64)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms = coretax_corporate.observe_forms(
+            page, {'list_url': 'https://synthetic.invalid/list',
+                   'record_id': 'SYNTHETIC-ID'},
+            ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
+    assert forms is not None
+    rows = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_timing']
+    assert rows
+    ordinals = [row['form_ordinal'] for row in rows if 'form_ordinal' in row]
+    # segments close in tab order: the L1-B tab's own segment must carry
+    # ordinal 1, not the following tab's.
+    assert set(ordinals) == set(range(17))
+    assert ordinals == sorted(ordinals)
+    for row in rows:
+        assert row['corporate_observer_stage'] in (
+            'build', 'tabs', 'tab', 'panel', 'form', 'grid')
+        assert 0 <= row['duration_ms'] <= 604_800_000
+    dump = json.dumps(rows)
+    assert 'Induk' not in dump and 'L1-B' not in dump and 'SYNTHETIC' not in dump
+    assert 'synthetic.invalid' not in dump
+
+
+def test_corporate_observe_timing_emitted_on_refusal(monkeypatch, tmp_path):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(
+                            count=lambda: 0)))
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'c' * 64)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms = coretax_corporate.observe_forms(
+            page, {'list_url': 'https://synthetic.invalid/list',
+                   'record_id': 'SYNTHETIC-ID'},
+            ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
+    assert forms is None
+    rows = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_timing']
+    assert rows
+    assert any(row['corporate_observer_stage'] == 'build' for row in rows)
+    assert all(isinstance(row['duration_ms'], float) for row in rows)
+
+
+def test_corporate_observe_timing_closes_slow_l3_refusal(monkeypatch, tmp_path):
+    import coretax_corporate
+    from spt_desktop import diagnostics
+
+    # Inject a deterministic observer-local monotonic clock. A refused grid
+    # observer must retain the costly current stage, not just earlier stages.
+    clock = [100.0]
+    monkeypatch.setattr(coretax_corporate, 'time',
+                        SimpleNamespace(monotonic=lambda: clock[0]))
+
+    def slow_l3(*args, **kwargs):
+        clock[0] += 90.0
+        return None
+
+    monkeypatch.setattr(coretax_corporate, '_observe_l3', slow_l3)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms, _ = _observe_with_tabs(monkeypatch, [False, False], ['Induk', 'L3'])
+    assert forms is None
+    rows = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_timing']
+    failing = [e for e in rows if e['corporate_observer_stage'] == 'l3']
+    assert len(failing) == 1
+    assert failing[0]['form_ordinal'] == 1
+    assert failing[0]['duration_ms'] >= 90_000
+    assert len(rows) == len({(e['corporate_observer_stage'], e.get('form_ordinal'))
+                            for e in rows})
+
+
+def _observe_with_capture(monkeypatch, tmp_path, *, missing_tab=None):
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+
+    class Tab:
+        def __init__(self, name, disabled):
+            self.name, self.disabled = name, disabled
+
+        def evaluate(self, *a):
+            return self.disabled
+
+        def inner_text(self):
+            return self.name
+
+    captions = ['Induk', 'L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L9',
+                'L10-A', 'L10-B', 'L10-C', 'L10-D', 'L11-A', 'L11-B', 'L11-C']
+    assert missing_tab is None or missing_tab in captions
+    present = [c for c in captions if c != missing_tab]
+
+    def fake_tabs(page):
+        return object(), SimpleNamespace(count=lambda: len(present),
+                                         nth=lambda i: Tab(present[i], True))
+
+    monkeypatch.setattr(coretax_corporate, '_tabs', fake_tabs)
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'c' * 64)
+    with diagnostics.session(tmp_path, 'worker'):
+        forms = coretax_corporate.observe_forms(
+            page, {'list_url': 'https://synthetic.invalid/list',
+                   'record_id': 'SYNTHETIC-ID'},
+            ('synthetic', 2025, 'period'), object(), approved_digest='c' * 64)
+    return forms, records(tmp_path)
+
+
+def test_corporate_observe_timing_exactly_once_on_missing_required_tab(monkeypatch, tmp_path):
+    forms, all_rows = _observe_with_capture(monkeypatch, tmp_path, missing_tab='L3')
+    # An absent required panel leaves the observation structurally complete
+    # here; the adapter refuses its uncovered evidence. Timings must still
+    # flush unduplicated on the success path.
+    assert forms is not None
+    rows = [e for e in all_rows if e['event'] == 'corporate.observe_timing']
+    assert rows
+    import collections
+    counts = collections.Counter((row['corporate_observer_stage'],
+                                  row.get('form_ordinal')) for row in rows)
+    assert max(counts.values()) == 1

@@ -71,3 +71,32 @@ not omitted).
   return unavailable (intentional fail-closed — the inspected tab set is
   exactly the `FORMS` set); disabled-then-enabled rebinding order remains
   independent, so either order binds correctly.
+
+## Follow-up: tabs absent from the live tab set (confirmed via CDP)
+
+PR #207 live rerun still fell back to DOM with `unmapped…`. A controlled
+Edge probe on the live detail enumerated **15 tabs** — `L1-B` and `L8` are
+absent (not disabled). The observer iterates only visible tabs, so their
+null roots had no declared path at all.
+
+Fix: FORMS panels missing from the tab list declare the same path-only,
+null/missing-inert binding (no tab touched, no grids). Object-valued JSON
+for an absent panel still refuses (`unverified_corporate_disabled_panel`).
+
+## Review hardening (PR #210 follow-up)
+
+- Absent-panel bindings are restricted to the exact reviewed omission set
+  (`L1-B`, `L8`, CDP-enumerated live tab list). Every other missing FORM
+  remains unbound and non-null source evidence is refused by the adapter.
+  To cover the remaining absent-tab **and absent-root** gap, the observer
+  requires all 15 non-exempt tabs for the exact shipped, hash-pinned
+  `525` asset before it can admit native JSON. Incomplete pinned tab
+  inventories return `unavailable` (whole-record DOM fallback).
+  Synthetic test builds with a different asset digest continue to test
+  partial-tab adapter scenarios; a dedicated test pins the reviewed digest
+  and refuses missing L3/L4/L9/L10-A/L11-A.
+- Timing attribution closes the previous tab segment before adopting the
+  next ordinal; segments are emitted on refusal paths too
+  (bounded, value-free) so failed live runs still show where time went.
+- A duplicated set assertion was removed mid-draft; the disabled-binding
+  contradiction cases live in `tests/test_corporate_schema_expansion.py`.

@@ -30,7 +30,7 @@ def test_owned_l8_observer_native_custody_and_replay_never_read_business_values(
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
-            assert forms is not None and [f['name'] for f in forms] == ['Induk', 'L8']
+            assert forms is not None and [f['name'] for f in forms] == ['Induk', 'L8', 'L1-B']
             assert forms[1]['projection']['kind'] == 'corporate-l8-v1'
             assert forms[1]['projection']['builds'] == fixture.pins
             saved = capture.drain()

@@ -238,6 +238,8 @@ def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(br
         assert all(g['complete'] and g['received'] == g['total'] for g in coverage['grids'])
         declared = [g for g in coverage['grids'] if g['total'] == 60]
         assert len(declared) == 1
+        # Inert, null-only L1-B/L8 bindings contribute coverage evidence,
+        # but are deliberately excluded from published workbook sections.
         assert {s['name'] for s in record['sections']} == {'Induk', 'L4', 'L9', 'L10-A'}
         target = [t for section in record['sections'] if section['name'] == 'L9'
                   for t in section['tables'] if t['name'] == declared[0]['name']]

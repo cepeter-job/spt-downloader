@@ -1136,17 +1136,9 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             continue
         # A declared disabled panel is inert only when its root is absent;
         # a non-null value is refused above, a missing one is skipped here.
+        # Emit no table for the inert null: there is no data to export under
+        # a disabled/absent panel (mirrors the L10-A absent skip).
         if section.get('disabled'):
-            value = root
-            for token in path:
-                if not isinstance(value, dict) or token not in value:
-                    break
-                value = value[token]
-            else:
-                rows = []
-                _corporate_rows(value, path, rows)
-                section['tables'].append(_corporate_table(_corporate_pointer(path), rows))
-                continue
             continue
         value = root
         for token in path:
@@ -1445,5 +1437,10 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         return {'eligible': False, 'reason': ','.join(dict.fromkeys(reasons)), 'sections': [],
                 'coverage': coverage, 'provenance': provenance}
     coverage['complete'] = True
-    return {'eligible': True, 'reason': 'verified_corporate_source_coverage', 'sections': sections,
+    # Inert absent/disabled roots have already passed null-only checks and
+    # contributed to the evidence coverage above. Keep them in `sections`
+    # through semantic projection (which pairs forms by position), but do
+    # not publish them as empty workbook worksheets.
+    published_sections = [section for section in sections if not section.get('disabled')]
+    return {'eligible': True, 'reason': 'verified_corporate_source_coverage', 'sections': published_sections,
             'coverage': coverage, 'provenance': provenance}
