@@ -65,18 +65,70 @@ def worker_source(root: Path) -> Path:
     return source
 
 
+# This is an allowlist, not a blacklist of known injection names. Keep the
+# Windows environment required by CPython, Chromium/Playwright, Win32 profile
+# folders, subprocess lookup and corporate HTTPS/SOCKS networking. No debug,
+# preload, user-site or package-index policy is forwarded from the GUI.
+_OS_ENV_ALLOWLIST = frozenset({
+    'SYSTEMROOT', 'WINDIR', 'SYSTEMDRIVE', 'OS',
+    'PATH', 'PATHEXT', 'COMSPEC',
+    'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'HOME',
+    'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'ALLUSERSPROFILE', 'PUBLIC',
+    'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432',
+    'COMMONPROGRAMFILES', 'COMMONPROGRAMFILES(X86)', 'COMMONPROGRAMW6432',
+    'TEMP', 'TMP',
+    'USERNAME', 'USERDOMAIN', 'USERDNSDOMAIN', 'LOGONSERVER',
+    'PROCESSOR_ARCHITECTURE', 'PROCESSOR_ARCHITEW6432', 'NUMBER_OF_PROCESSORS',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+    'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE',
+    # Custom Node trust roots remain supported for managed Playwright drivers;
+    # NODE_OPTIONS, NODE_PATH, NODE_DEBUG and TLS bypass flags are excluded.
+    'NODE_EXTRA_CA_CERTS',
+})
+_UV_TRUST_ALLOWLIST = frozenset({'UV_NATIVE_TLS', 'UV_SYSTEM_CERTS'})
+_OWNED_PYTHON_ENV = {
+    'PYTHONUTF8': '1',
+    'PYTHONIOENCODING': 'utf-8',
+    'PYTHONNOUSERSITE': '1',
+    'PYTHONBREAKPOINT': '0',
+}
+
+
+def _inherited_process_environment():
+    """Snapshot only approved OS, proxy and trust variables.
+
+    Match names case-insensitively for Windows. Preserve original key spelling
+    and values because lower-case proxy variables are used in some networks.
+    Never log or serialize the environment (proxy URLs may hold credentials).
+    """
+    return {name: value for name, value in os.environ.items()
+            if name.upper() in _OS_ENV_ALLOWLIST}
+
+
+def worker_environment():
+    """Minimal inherited environment for the authenticated Python/Node worker.
+
+    Do not inherit Python startup hooks, preload/debug flags, Playwright
+    overrides, untrusted Node options, uv policy, or virtualenv selectors.
+    The owned Playwright CA manager supplies NODE_USE_SYSTEM_CA on Windows.
+    """
+    environment = _inherited_process_environment()
+    environment.update(_OWNED_PYTHON_ENV)
+    return environment
+
+
 def bootstrap_environment(root: Path):
-    """Keep network trust/proxy settings while owning uv policy and storage."""
+    """Minimal uv/Python bootstrap environment with owned storage and policy."""
     root = Path(root).resolve()
-    network_tls = {'UV_NATIVE_TLS', 'UV_SYSTEM_CERTS'}
-    environment = {name: value for name, value in os.environ.items()
-                   if not name.upper().startswith('UV_') or name in network_tls}
+    environment = _inherited_process_environment()
+    # These two uv settings affect certificate trust but cannot redirect an
+    # index, interpreter, cache or package installation to an unowned path.
+    environment.update({name: value for name, value in os.environ.items()
+                        if name.upper() in _UV_TRUST_ALLOWLIST})
+    environment.update(_OWNED_PYTHON_ENV)
     environment.update({'UV_NO_CONFIG': '1',
                         'UV_PYTHON_INSTALL_DIR': str(root / 'python'),
-                        'UV_CACHE_DIR': str(root / 'cache'), 'PYTHONUTF8': '1',
-                        'PYTHONIOENCODING': 'utf-8'})
-    for name in ('PYTHONHOME', 'PYTHONPATH', 'VIRTUAL_ENV'):
-        environment.pop(name, None)
+                        'UV_CACHE_DIR': str(root / 'cache')})
     return environment
 
 
