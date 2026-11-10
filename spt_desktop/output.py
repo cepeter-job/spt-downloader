@@ -18,7 +18,7 @@ from coretax_exporter import (validate_export_run, validate_scope, workbook_grou
 from coretax_pdf import (attachment_declarations, verified_declarations, pdf_custody,
                          copy_held_pdfs, _verify_stream)
 from coretax_json_capture import verified_json_names, json_custody, copy_held_json, verify_existing_json
-from .paths import safe_taxpayer_name
+from .paths import safe_taxpayer_name, reject_windows_device_component
 from .output_windows import DirectoryGuard, locked_file, move_no_replace as _move_no_replace
 
 
@@ -116,6 +116,7 @@ def _parent(run, downloads):
     downloads = _safe_path(downloads)
     parent = downloads
     for component in (f'{npwp} - {name}', str(year)):
+        reject_windows_device_component(component)
         _case_component(parent, component)
         parent = _safe_path(parent / component)
     return parent
