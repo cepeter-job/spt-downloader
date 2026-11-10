@@ -13,8 +13,9 @@ import support_json_corpus as corpus
 
 class Fixture:
     def __init__(self, browser, monkeypatch, *, model='Normal', migrated=False, defect=None,
-                 classification_source='outer'):
+                 classification_source='outer', omitted_5322=False, body_layout_defect=None):
         self.record, self.defect = selected(model), defect
+        self.omitted_5322, self.body_layout_defect = omitted_5322, body_layout_defect
         self.non_script = next(((url, mode) for label, url in
             (('corporate', ASSET), ('main', MAIN), ('vendor', VENDOR))
             for mode in ('fetch-only', 'preload-only') if defect == label + '-' + mode), None)
@@ -27,6 +28,11 @@ class Fixture:
         assert classification_source in ('outer', 'current')
         factory = current_classification_envelope if classification_source == 'current' else envelope
         value = factory(model, migrated)
+        if omitted_5322 and body_layout_defect != 'present-5322':
+            form = json.loads(value['Payload']['CurrentFormData'])
+            form['L1dFormData']['L1dTreeData'] = [n for n in form['L1dFormData']['L1dTreeData']
+                                               if n['Data']['AccountCode'] != '5322']
+            value['Payload']['CurrentFormData'] = corpus.wire(form)
         if defect == 'non-services':
             value['Payload']['BusinessClassification'] = 'BC01'
         if defect == 'missing-5322':
@@ -87,10 +93,22 @@ class Fixture:
             labels = list(headings)
             if self.defect == 'header' and index == 0:
                 labels[0] = 'SYNTHETIC UNKNOWN HEADER'
+            body = '<tr>' + '<td>SYNTHETIC DOM BAIT<input value="SYNTHETIC DOM INPUT"></td>' * len(labels) + '</tr>'
+            if index == 0 and self.omitted_5322:
+                count = {'short-body': 33, 'long-body': 35}.get(self.body_layout_defect or '', 34)
+                body *= count
+                if self.body_layout_defect in ('colspan', 'rowspan'):
+                    body = body.replace('<td>', '<td ' + self.body_layout_defect + '="2">', 1)
+                elif self.body_layout_defect == 'short-row':
+                    body = body.replace('<td>SYNTHETIC DOM BAIT<input value="SYNTHETIC DOM INPUT"></td>', '', 1)
+                elif self.body_layout_defect == 'long-row':
+                    body = body.replace('</tr>', '<td>SYNTHETIC EXTRA BAIT</td></tr>', 1)
+                elif self.body_layout_defect == 'hidden-row':
+                    body = body.replace('<tr>', '<tr style="display:none">', 1)
+            extra = '<tbody></tbody>' if index == 0 and self.body_layout_defect == 'extra-body' else ''
             table = ('<p-table><table><thead><tr>' + ''.join('<th>' + html.escape(v) + '</th>' for v in labels)
-                + '</tr></thead><tbody><tr>'
-                + '<td>SYNTHETIC DOM BAIT<input value="SYNTHETIC DOM INPUT"></td>' * len(labels)
-                + '</tr></tbody><tfoot><tr>' + '<td>SYNTHETIC DOM BAIT</td>' * len(labels)
+                + '</tr></thead><tbody>' + body + '</tbody>' + extra
+                + '<tfoot><tr>' + '<td>SYNTHETIC DOM BAIT</td>' * len(labels)
                 + '</tr></tfoot></table></p-table>')
             if self.defect == 'table-outside-p-table' and index == 1:
                 table = table.replace('<p-table><table>', '<p-table></p-table><table>').replace('</table></p-table>', '</table>')
