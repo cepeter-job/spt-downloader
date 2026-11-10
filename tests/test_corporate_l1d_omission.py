@@ -161,6 +161,29 @@ def test_pure_omission_is_exactly_34_existing_rows_without_defaults_or_source_mu
                 assert table['rows'][destination['row']][0] == entry['value']
 
 
+@pytest.mark.parametrize('layer', ['pure', 'native'])
+@pytest.mark.parametrize('amount', [None, 0, 77], ids=['present-null', 'present-zero', 'present-nonzero'])
+def test_present_5322_is_preserved_without_an_omission_marker(layer, amount):
+    raw = full_source()
+    l1d_source.tree_row(raw, '5322').update(Amount=amount, FinalAmount=amount)
+    if layer == 'pure':
+        result = project(raw)
+        table = result['tables'][0]
+        assert result.get('omitted_account_codes', []) == []
+    else:
+        value, observed, record = native_case(raw)
+        del observed[1]['projection']['body_layout']
+        result, _ = adapt(value, observed, record)
+        assert result['eligible'] and result['coverage']['complete'], result['reason']
+        section, = [s for s in result['sections'] if s['name'] == 'L1-D']
+        table = section['tables'][0]
+        proof, = [p for p in result['provenance']['projections'] if p['form'] == 'L1-D']
+        assert 'body_layout' not in proof and proof.get('omitted_account_codes', []) == []
+    row, = [r for r in table['rows'] if r[0] == '5322']
+    assert table['body_row_count'] == 35
+    assert row[2] == row[9] == ('' if amount is None else str(amount))
+
+
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
 @pytest.mark.parametrize('migrated', [False, True])
 def test_current_induk_omission_reaches_native_with_separate_layout_and_real_leaf_provenance(model, migrated):

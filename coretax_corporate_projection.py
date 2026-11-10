@@ -483,8 +483,10 @@ def _apply_l11c(binding, section, observed_forms, *, root, payload, record, even
 def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event):
     proof = binding['projection']
     if (not isinstance(proof, dict)
-            or set(proof) - {'visibility_binding'} != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
+            or set(proof) - {'visibility_binding', 'body_layout'} != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
             or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
+            or 'body_layout' in proof and (proof['body_layout'] != L1D_OMISSION_LAYOUT
+                or proof.get('visibility_binding') != 'current-induk-enabled-v1')
             or proof['kind'] != 'corporate-l1d-v1' or proof['builds'] != L1D_BUILD_DIGESTS
             or proof['route'] != event['frame_url'] or binding.get('paths') != [['L1dFormData']]
             or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])):
@@ -540,7 +542,8 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
             raise _UnsupportedMetadata('unverified_corporate_l1d_grid_owner')
     result = project_l1d(root.get('L1dFormData'), migrated=payload['IsMigrated'],
         headers=[t['headers'] for t in tables], footer_spans=[t['footer_spans'] for t in tables],
-        tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'])
+        tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'],
+        body_layout=proof.get('body_layout'))
     section['tables'] = result['tables']
     if not outer_present:
         entry = _evidence(main['BusinessClassification'], ['MainFormData', 'BusinessClassification'])
@@ -551,6 +554,8 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
         entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
     return {'form': 'L1-D', 'kind': proof['kind'], 'builds': dict(proof['builds']),
             'route': proof['route'], 'values': result['provenance'],
+            **({'body_layout': proof['body_layout'], 'omitted_account_codes': result['omitted_account_codes']}
+               if 'body_layout' in proof else {}),
             **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}
 
 
@@ -779,6 +784,7 @@ _L1D_BALANCE_ROWS = [[('group', 'body', None, 'Aset Lancar', None),
 
 _L1D_FIELDS = ('Amount', 'NonTaxableObject', 'SubjectToFinalTax', 'NonFinal',
                'PositiveFiscalCorrection', 'NegativeFiscalCorrection', 'FinalAmount')
+L1D_OMISSION_LAYOUT = 'absent-5322-34x10-v1'
 _L1D_ORDER = ['Pendapatan:', '4021', '4013', '5020', '4300', '4199', 'Beban Usaha',
     *[str(code) for code in range(5311, 5323)], '5399', '5400', '4500',
     'Pendapatan Non Usaha', '4501', '4503', '4511', '4599', '4600',
@@ -819,7 +825,8 @@ def _l1d_sum(values):
     return result
 
 
-def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, timezone_name):
+def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, timezone_name,
+                body_layout=None):
     """Pure source transformation; caller must separately prove fresh lifetime.
 
     This helper cannot authorize a native record. It copies reported totals
@@ -827,7 +834,8 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
     """
     if (type(migrated) is not bool or tax_type != 'ICT_RCIT' or locale != 'id-ID'
             or timezone_name != 'Asia/Jakarta' or headers != _L1D_HEADERS
-            or footer_spans != [[[1] * 10], [[1, 1, 1]], [[1, 1, 1]]]):
+            or footer_spans != [[[1] * 10], [[1, 1, 1]], [[1, 1, 1]]]
+            or body_layout is not None and body_layout != L1D_OMISSION_LAYOUT):
         raise _UnsupportedMetadata('unverified_corporate_l1d_structure')
     roots = {'L1dTreeData', 'L1dTreeTotalRow', 'L1dAssets', 'L1dLiabilitiesAndEquity'}
     if (not isinstance(form, dict) or set(form) != roots
@@ -882,10 +890,15 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                 walk(children, [*path, index, 'Children'], depth + 1)
 
     walk(form['L1dTreeData'], ['L1dTreeData'])
-    if set(nodes) != codes:
+    # The pinned lookup returns undefined for absent 5322. With the owned
+    # 34x10 proof, pTableBody renders no row; never manufacture a node or zero.
+    omitted_codes = ['5322'] if body_layout is not None else []
+    if set(nodes) != codes - set(omitted_codes):
         raise _UnsupportedMetadata('missing_corporate_l1d_account')
     body = []
     for code in _L1D_ORDER:
+        if code in omitted_codes:
+            continue
         if code not in codes:
             body.append(['', code, *([''] * 8)])
             continue
@@ -972,7 +985,8 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
             else:
                 rows.append(row)
         tables.append(table(index, rows, foot))
-    return {'tables': tables, 'provenance': provenance}
+    return {'tables': tables, 'provenance': provenance,
+            **({'omitted_account_codes': omitted_codes} if body_layout is not None else {})}
 
 
 _L3_ROOT = 'ListIncomeTaxWithheldByOtherParties'
