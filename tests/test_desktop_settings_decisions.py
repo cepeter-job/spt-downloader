@@ -420,9 +420,10 @@ def test_manual_prune_previews_then_requires_explicit_confirmation(
     monkeypatch.setattr(gui, 'downloads_folder', lambda: path / 'Downloads')
     monkeypatch.setattr(gui, 'preview_published_jobs',
                         lambda *a, **kw: calls.append('preview') or
-                        {'eligible_jobs': 2, 'estimated_bytes': 2 * 1024 * 1024})
+                        {'eligible_jobs': 2, 'estimated_bytes': 2 * 1024 * 1024,
+                         'candidate_ids': ('1' * 32, '2' * 32), 'scan_complete': True})
     monkeypatch.setattr(gui, 'prune_published_jobs',
-                        lambda *a, **kw: calls.append('delete') or 2)
+                        lambda *a, **kw: calls.append(('delete', kw['allowed_ids'])) or 2)
     monkeypatch.setattr(gui.messagebox, 'askyesno',
                         lambda title, message, **kw: prompts.append((title, message)) or confirmed)
     monkeypatch.setattr(gui.messagebox, 'showinfo',
@@ -430,7 +431,8 @@ def test_manual_prune_previews_then_requires_explicit_confirmation(
     button(dialog, 'Pangkas job lama').invoke()
     assert app._manual_prune_busy  # New export cannot begin during preview/delete.
     _pump_manual_prune(root)
-    assert calls == (['preview', 'delete'] if confirmed else ['preview'])
+    assert calls == (['preview', ('delete', ('1' * 32, '2' * 32))]
+                     if confirmed else ['preview'])
     assert len(prompts) == 1 and '2 job' in prompts[0][1]
     assert '2.0 MiB' in prompts[0][1]
     assert all('0000000000000001' not in message for _, message in prompts + notices)
@@ -453,3 +455,35 @@ def test_manual_prune_refuses_unsaved_retention_change(settings, monkeypatch):
     assert notices and 'Simpan' in notices[0][0]
     assert not app._manual_prune_busy
     assert app.preferences['keep_jobs'] == 10 and not writes
+
+
+def test_incomplete_preview_never_presents_delete_confirmation(settings, monkeypatch):
+    from types import SimpleNamespace
+    root, app, ctl, dialog, path, writes, errors = settings
+    notices, calls = [], []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'downloads_folder', lambda: path / 'Downloads')
+    monkeypatch.setattr(gui, 'preview_published_jobs',
+                        lambda *a, **kw: calls.append('preview') or {
+                            'eligible_jobs': 1, 'estimated_bytes': 1024,
+                            'candidate_ids': ('1' * 32,), 'scan_complete': False})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: pytest.fail('Incomplete preview must not delete'))
+    monkeypatch.setattr(gui.messagebox, 'askyesno',
+                        lambda *a, **kw: pytest.fail('Incomplete preview must not ask confirmation'))
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kw: notices.append((title, message)))
+    button(dialog, 'Pangkas job lama').invoke()
+    _pump_manual_prune(root)
+    assert calls == ['preview']
+    assert len(notices) == 1 and 'belum lengkap' in notices[0][0]
+    assert not app._manual_prune_busy
+    assert not ctl.active and not ctl.exports and not writes and not errors
