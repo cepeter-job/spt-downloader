@@ -2,7 +2,7 @@
 
 Date: 2026-11-10
 
-Status: **Implemented and merged through #231 under separate operator merge approval; this design PR remains open and unmerged.** The historical investigation below was source/artifact-only plus authorized value-free operator-browser probes and same-origin public JavaScript GETs; no PDF action or replay was used during diagnosis. Current hosted implementation verification is recorded in section 8. The AGENTS.md contracts for both merged fixes were subsequently applied through a freshly authorized normal protected edit in #228, still pending documentation merge. Real operator PDF completion remains unproved.
+Status: **Implemented and merged through #231; the operator separately authorized publication of design records #227/#228 and their AGENTS.md contract follow-up.** The historical investigation below was source/artifact-only plus authorized value-free operator-browser probes and same-origin public JavaScript GETs; no PDF action or replay was used during diagnosis. Hosted implementation verification is recorded in section 8. The contracts for both merged fixes are maintained in AGENTS.md through #228. Documentation publication does not establish real operator PDF completion.
 
 ## Outcome
 
@@ -132,7 +132,7 @@ Do not change:
 
 Historical diagnosis performed: read-only sanitized saved-data/log analysis; job/build association; repository lineage/diff and source/test inspection; independent public-source hashes; authorized read-only live structure and public-JavaScript GET probes. At that diagnosis stage no pytest, product imports, source/frozen tests, Tk/browser fixtures, builds, EXE runs, PDF action, document request/replay or publication was performed. Later hosted RED/GREEN and build evidence is recorded separately below.
 
-The historical implementation gates were subsequently completed by #231; see section 8. This documentation PR still requires its own merge authorization. The related AGENTS.md contracts are now included in #228, not yet on main. Actual portal PDF transport/authentication/signature/custody and whole-run completion remain to be exercised by an application-owned exact-build live run.
+The historical implementation gates were subsequently completed by #231; see section 8. Documentation publication was separately authorized, with the related AGENTS.md contracts maintained through #228. Actual portal PDF transport/authentication/signature/custody and whole-run completion remain to be exercised by an application-owned exact-build live run.
 
 ## 8. Implemented state and remaining documentation gate
 
@@ -140,5 +140,5 @@ The historical implementation gates were subsequently completed by #231; see sec
 - The final modern branch preserves transparent field-wrapper association while refusing borrowed headings from adjacent empty fields, including explicit-ID variants. Modern admission rejects an extra non-pi icon and ambiguous financial groups without rejecting multiple PDF rows within one uniquely bound group. Legacy and modern action/header branches remain coupled; no transport or OtherDocuments permission was added.
 - After #229 merged, combined head `70d2528113eb71e203a73aadbe01a6959c5bb204` passed Build `42809281591`. Four downloaded Windows JUnit artifacts independently confirmed all 194 new L3/PDF cases passed, no new skips/failures/errors and no older Windows failures/errors. CodeQL, all four shards, coverage, packaging, exact-ID readback and uploaded-EXE bootstrap/reuse/cancellation passed before #231 merge.
 - Official main Build `42813223671` then passed, including artifact provenance, exact seven-file readback and packaged bootstrap. Its tree equals the verified combined head. These checks prove synthetic/build behavior and artifact identity, not a real portal download or whole-run COMPLETE result.
-- Earlier protected-file attempts timed out without applying contract text. After fresh explicit operator authorization, one normal protected edit succeeded in #228. That PR now carries the actual AGENTS.md contracts for both merged fixes; this PDF design PR does not duplicate them. No alternate write path or runtime code change was used. The contracts remain pending documentation merge, not operator live acceptance.
-- This design PR remains unmerged pending separate approval. Operator-owned build-matched native/PDF acceptance, declared COMPLETE PDF bytes/custody, mapping and whole-run completion remain independent gates.
+- Earlier protected-file attempts timed out without applying contract text. After fresh explicit operator authorization, one normal protected edit succeeded in #228. The actual AGENTS.md contracts for both merged fixes are maintained there; this PDF design record does not duplicate them. No alternate write path or runtime code change was used. Publishing those contracts is not operator live acceptance.
+- The operator separately authorized publication of both design records. Operator-owned build-matched native/PDF acceptance, declared COMPLETE PDF bytes/custody, mapping and whole-run completion remain independent gates.
