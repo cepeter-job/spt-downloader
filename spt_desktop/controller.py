@@ -1,6 +1,5 @@
 """A thin stdlib GUI controller owns workers and distrusts stale/partial events."""
 import json
-import os
 from pathlib import Path
 import queue
 import re
@@ -8,7 +7,7 @@ import subprocess  # nosec B404 - Reviewed owned process/runtime lifecycle; no u
 import threading
 import time
 import uuid
-from .runtime import SetupCancelled,ensure_runtime,worker_source
+from .runtime import SetupCancelled,ensure_runtime,worker_source,worker_environment
 from . import diagnostics
 from .windows import ProcessJob
 from .paths import downloads_folder
@@ -123,10 +122,9 @@ class JobController:
                     reap_profiles(self.root)
                     python=ensure_runtime(self.root,status,self._cancel.is_set)
                 if self._cancel.is_set():raise SetupCancelled('Persiapan dibatalkan.')
-                environment=os.environ.copy()
-                environment.update({'PYTHONUTF8':'1','PYTHONIOENCODING':'utf-8'})
-                environment.pop('PYTHONPATH',None);environment.pop('PYTHONHOME',None)
-                environment.pop('DEBUG',None);environment.pop('PWDEBUG',None)
+                # The trusted GUI owns an explicit env allowlist; never let
+                # inherited Python/Node/Playwright startup hooks reach the worker.
+                environment=worker_environment()
                 argv=[str(python),'-u','-m','spt_desktop.worker',*arguments,
                       '--root',str(self.root),'--job-id',job_id,'--browser',browser]
                 if not headless:argv.append('--visible')

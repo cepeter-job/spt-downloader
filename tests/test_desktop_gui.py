@@ -84,8 +84,19 @@ def controlled_worker(tmp_path,monkeypatch):
     import io,time,sys
     controller=module('controller')
     state={}
-    monkeypatch.setenv('DEBUG','pw:api')
-    monkeypatch.setenv('PWDEBUG','console')
+    # Synthetic hostile parent variables must never reach the worker/driver.
+    for name, value in {
+        'DEBUG': 'pw:api', 'PWDEBUG': 'console',
+        'NODE_OPTIONS': '--require SYNTHETIC_PRELOAD.js',
+        'NODE_PATH': 'SYNTHETIC_UNOWNED_MODULES',
+        'PLAYWRIGHT_BROWSERS_PATH': 'SYNTHETIC_BROWSER_OVERRIDE',
+        'PYTHONPATH': 'SYNTHETIC_PYTHON_OVERRIDE',
+        'PYTHONINSPECT': '1',
+        'NODE_TLS_REJECT_UNAUTHORIZED': '0',
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv('HTTPS_PROXY', 'http://proxy.invalid:8080')
+    monkeypatch.setenv('SSL_CERT_FILE', str(tmp_path / 'synthetic-corporate-ca.pem'))
     downloads=tmp_path/'Downloads'
     final=downloads/'SYNTHETIC_RESULT';final.mkdir(parents=True)
     (final/'resume.xlsx').write_bytes(b'SYNTHETIC TRANSPORT FIXTURE ONLY, NOT AN EXCEL EXPORT')
@@ -102,6 +113,8 @@ def controlled_worker(tmp_path,monkeypatch):
         def spawn(self,argv,**kwargs):
             state['argv']=argv
             state['env_keys']=set(kwargs['env'])
+            state['env_safe']={name:kwargs['env'].get(name) for name in
+                               ('HTTPS_PROXY','SSL_CERT_FILE','PYTHONBREAKPOINT','PYTHONNOUSERSITE')}
             job_id=argv[argv.index('--job-id')+1]
             event={'job_id':job_id,'type':'terminal','stage':'finished','status':'COMPLETE',
                    'percent':100,'output':str(final),'message':'Synthetic transport complete'}
@@ -165,7 +178,13 @@ def test_worker_exit_zero_alone_is_not_success(controlled_worker):
 
 def test_worker_cannot_inherit_credential_logging_debug_flags(controlled_worker):
     ctl,child,state,events=controlled_worker
-    assert 'DEBUG' not in state['env_keys'] and 'PWDEBUG' not in state['env_keys']
+    blocked={'DEBUG','PWDEBUG','NODE_OPTIONS','NODE_PATH','PLAYWRIGHT_BROWSERS_PATH',
+             'PYTHONPATH','PYTHONINSPECT','NODE_TLS_REJECT_UNAUTHORIZED'}
+    assert blocked.isdisjoint(state['env_keys'])
+    assert state['env_safe']=={
+        'HTTPS_PROXY':'http://proxy.invalid:8080',
+        'SSL_CERT_FILE':str(ctl.root.parent/'synthetic-corporate-ca.pem'),
+        'PYTHONBREAKPOINT':'0','PYTHONNOUSERSITE':'1'}
 
 
 def finish_controller(ctl):
