@@ -144,10 +144,12 @@ def test_native_observer_follows_current_binding(browser, tmp_path, monkeypatch,
         forms = observe(max_pages=5)
         assert fixture.page.evaluate('nativeRebound') is True
         assert forms is not None
-        assert len(forms) == {'corporate': 1, 'PPN': 7, 'PPh Unifikasi': 4,
+        assert len(forms) == {'corporate': 3, 'PPN': 7, 'PPh Unifikasi': 4,
                               'PPh Pasal 21/26': 5}[family]
         clicks = fixture.page.evaluate('nativeTabClicks')
-        assert len(clicks) == len(forms) and len(set(clicks)) == len(clicks)
+        assert len(clicks) == len(set(clicks))
+        # Inert absent Corporate roots have provenance bindings, not clickable tabs.
+        assert set(clicks) == {form['name'] for form in forms if not form.get('disabled')}
         assert fixture.page.evaluate('window.valueReads') == 0
         assert not fixture.unexpected
         assert capture.drain()['complete'] is True
@@ -162,10 +164,12 @@ def test_native_observer_retries_stale_post_click_binding(browser, tmp_path, mon
         assert fixture.page.evaluate('nativeRebound') is True
         assert fixture.page.evaluate('nativeReadinessRetries') >= 1
         assert forms is not None
-        assert len(forms) == {'corporate': 4, 'PPN': 7, 'PPh Unifikasi': 4,
+        assert len(forms) == {'corporate': 6, 'PPN': 7, 'PPh Unifikasi': 4,
                               'PPh Pasal 21/26': 5}[family]
         clicks = fixture.page.evaluate('nativeTabClicks')
-        assert len(clicks) == len(forms) and len(set(clicks)) == len(clicks)
+        assert len(clicks) == len(set(clicks))
+        # Inert absent Corporate roots have provenance bindings, not clickable tabs.
+        assert set(clicks) == {form['name'] for form in forms if not form.get('disabled')}
         assert fixture.page.evaluate('window.valueReads') == 0
         assert not fixture.unexpected
         assert capture.drain()['complete'] is True
@@ -216,7 +220,7 @@ def test_native_observer_accepts_unique_visible_initially_unbound_panel(
             "tab => tab.removeAttribute('aria-controls')")
         forms = observe(max_pages=5)
         assert forms is not None
-        assert len(forms) == {'corporate': 1, 'PPN': 7, 'PPh Unifikasi': 4,
+        assert len(forms) == {'corporate': 3, 'PPN': 7, 'PPh Unifikasi': 4,
                               'PPh Pasal 21/26': 5}[family]
         assert fixture.page.evaluate('window.valueReads') == 0
         assert not fixture.unexpected

@@ -33,7 +33,7 @@ def test_owned_l11a_view_keeps_original_pages_catalogs_checkpoint_and_compact_sa
             page = open_selected(fixture, capture)
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             assert forms is not None, 'Native L11-A owned observer is not implemented'
-            assert [form['name'] for form in forms] == ['Induk', 'L11-A']
+            assert [form['name'] for form in forms] == ['Induk', 'L11-A', 'L1-B', 'L8']
             proof = forms[1]['projection']
             assert proof['kind'] == 'corporate-l11a-v1' and proof['builds'] == fixture.pins
             assert [t['component'] for t in proof['tables']] == OWNERS

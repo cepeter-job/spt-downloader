@@ -347,18 +347,18 @@ def test_documentation_push_cannot_cancel_or_replace_an_unfinished_main_code_bui
 def test_every_uv_bootstrap_checks_the_reviewed_platform_archive_bytes():
     from support_workflows import load_workflow
 
-    # Official uv 0.13.4 release asset digests, recorded independently of the
+    # Official uv 0.13.7 release asset digests, recorded independently of the
     # setup action's remotely resolved release manifest.
     reviewed = {
-        'ubuntu-24.04': '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f',
-        'windows-2022': 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225',
+        'ubuntu-24.04': 'c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83',
+        'windows-2022': '0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021',
     }
     checked = 0
     for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
         for job in load_workflow(path)['jobs'].values():
             for step in job.get('steps', []):
                 if step.get('uses', '').startswith('astral-sh/setup-uv@'):
-                    assert step['with']['version'] == '0.13.4'
+                    assert step['with']['version'] == '0.13.7'
                     assert step['with'].get('checksum') == reviewed[job['runs-on']], (
                         'Bootstrap uv must fail if its reviewed archive bytes change')
                     checked += 1

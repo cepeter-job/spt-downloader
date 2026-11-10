@@ -483,7 +483,8 @@ def _apply_l11c(binding, section, observed_forms, *, root, payload, record, even
 def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event):
     proof = binding['projection']
     if (not isinstance(proof, dict)
-            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
+            or set(proof) - {'visibility_binding'} != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables'}
+            or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
             or proof['kind'] != 'corporate-l1d-v1' or proof['builds'] != L1D_BUILD_DIGESTS
             or proof['route'] != event['frame_url'] or binding.get('paths') != [['L1dFormData']]
             or binding.get('grids', []) or binding.get('responses', []) or binding.get('dependencies', [])):
@@ -499,10 +500,22 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
     literal = record.get('meta', {}).get('Model SPT')
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
              if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    # The pinned parent initially reads the outer classification, then the
+    # Induk callback selects Services from original current MainFormData.
+    # Only an absent outer key may use that branch, with enabled-tab proof.
+    main = root.get('MainFormData')
+    current_present = isinstance(main, dict) and 'BusinessClassification' in main
+    current_services = (current_present and type(main['BusinessClassification']) is str
+                        and main['BusinessClassification'] == 'BC04')
+    outer_present = 'BusinessClassification' in payload
+    services = ((type(payload['BusinessClassification']) is str
+                 and payload['BusinessClassification'] == 'BC04'
+                 and (not current_present or current_services)) if outer_present else
+                current_services and proof.get('visibility_binding') == 'current-induk-enabled-v1')
     if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
             or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
-            or payload.get('BusinessClassification') != 'BC04'
+            or not services
             or type(payload.get('IsMigrated')) is not bool
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
         raise _UnsupportedMetadata('unverified_corporate_l1d_submitted_lifecycle')
@@ -529,10 +542,16 @@ def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event
         headers=[t['headers'] for t in tables], footer_spans=[t['footer_spans'] for t in tables],
         tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'])
     section['tables'] = result['tables']
+    if not outer_present:
+        entry = _evidence(main['BusinessClassification'], ['MainFormData', 'BusinessClassification'])
+        entry.update(destination={'form': 'L1-D', 'control': 'classification'},
+                     rule='current-induk-services-enabled-v1')
+        result['provenance'].append(entry)
     for entry in result['provenance']:
         entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
     return {'form': 'L1-D', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-            'route': proof['route'], 'values': result['provenance']}
+            'route': proof['route'], 'values': result['provenance'],
+            **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}
 
 
 def _apply_l8(binding, section, observed_forms, *, root, payload, record, event):

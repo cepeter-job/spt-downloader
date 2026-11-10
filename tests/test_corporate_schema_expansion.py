@@ -150,6 +150,70 @@ def test_declared_l10a_path_skips_only_when_absent():
     eligible(result)
 
 
+def _disabled_forms(root_key):
+    forms = observed()
+    forms.append({'name': 'L1-B', 'paths': [[root_key]], 'disabled': True,
+                  'grids': [], 'responses': [], 'dependencies': []})
+    return forms
+
+
+def test_disabled_panel_null_root_passes():
+    form = with_schema(current_form())
+    form['L1bFormData'] = None
+    result = adapt([primary_with_outer_periods(form)],
+                   forms=_disabled_forms('L1bFormData'))
+    eligible(result)
+    # A null root is proved by source coverage, not exported as a blank form.
+    assert 'L1-B' not in {section['name'] for section in result['sections']}
+    assert result['coverage']['complete']
+
+
+def test_disabled_panel_missing_root_passes():
+    form = with_schema(current_form())
+    result = adapt([primary_with_outer_periods(form)],
+                   forms=_disabled_forms('L1bFormData'))
+    eligible(result)
+    assert 'L1-B' not in {section['name'] for section in result['sections']}
+    assert result['coverage']['complete']
+
+
+@pytest.mark.parametrize('value', [
+    {'AnyField': Number('1')},
+    [Number('1')],
+    'SYNTHETIC',
+    Number('7'),
+])
+def test_disabled_panel_nonnull_roots_refuse(value):
+    form = with_schema(current_form())
+    form['L1bFormData'] = value
+    result = adapt([primary_with_outer_periods(form)],
+                   forms=_disabled_forms('L1bFormData'))
+    assert result['eligible'] is False
+    assert 'unverified_corporate_disabled_panel' in result['reason']
+
+
+@pytest.mark.parametrize('bad', [
+    {'grids': [{'name': 'x', 'endpoint': 'x', 'pages': [{'request_json': {}, 'offset': 0}]}]},
+    {'responses': [{'name': 'x', 'endpoint': 'x', 'requests': [{}]}]},
+    {'dependencies': [{'endpoint': 'x', 'request_json': {}}]},
+    {'projection': {'kind': 'x'}},
+    {'primary': {'endpoint': 'x', 'request_json': None}},
+    {'paths': [['L1bFormData'], ['L1dFormData']]},
+    {'paths': [['L1bFormData', 'Nested']]},
+    {'disabled': False},
+])
+def test_disabled_binding_contradictions_raise(bad):
+    from coretax_json import JsonSafetyError
+    form = with_schema(current_form())
+    forms = _disabled_forms('L1bFormData')
+    forms[1].update(bad)
+    try:
+        adapt([primary_with_outer_periods(form)], forms=forms)
+    except JsonSafetyError:
+        return
+    raise AssertionError('contradictory disabled binding must raise')
+
+
 def _l4_footer_events(*requests, url=None):
     from coretax_json import ORIGIN
     base = url or (ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid/footer')

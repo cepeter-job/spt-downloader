@@ -681,11 +681,44 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
     from spt_desktop import diagnostics
     stage = 'build'
     ordinal_safe = None
+    # Privacy-safe per-stage timings for the observe-performance follow-up.
+    # Records stage name, form ordinal, and duration only — never values,
+    # URLs, digests, or page state. Emitted exactly once on success or
+    # refusal so even a slow failing stage keeps its measured time.
+    _segments = []
+    _segment_start = time.monotonic()
+    _emitted = False
+
+    def _advance(new_stage):
+        nonlocal stage, _segment_start
+        _segments.append((stage, (time.monotonic() - _segment_start) * 1000,
+                          ordinal_safe))
+        stage, _segment_start = new_stage, time.monotonic()
+
+    def _emit_timings():
+        # Exactly-once: close the running segment, then flush every measured
+        # one. A refusal sees the failing stage's elapsed time; a second
+        # call is a no-op so unavailable/error paths can't duplicate rows.
+        nonlocal _emitted
+        if _emitted:
+            return
+        _segments.append((stage, (time.monotonic() - _segment_start) * 1000,
+                          ordinal_safe))
+        _emitted = True
+        for seg_stage, duration_ms, seg_ordinal in _segments:
+            fields = {'corporate_observer_stage': seg_stage,
+                      'duration_ms': duration_ms}
+            if seg_ordinal is not None:
+                fields['form_ordinal'] = seg_ordinal
+            diagnostics.record('corporate.observe_timing', **fields)
 
     def unavailable(error=None, *, l3_reason=None, l3_table_shape=None,
                     l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
+        # Emit already-measured stage segments so even a late refusal keeps
+        # the bounded, value-free performance trail.
+        _emit_timings()
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
                            corporate_observer_stage=stage, form_ordinal=ordinal_safe,
                            corporate_l3_reason=l3_reason,
@@ -709,29 +742,40 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or any(c not in '0123456789abcdef' for c in digest + approved_digest)
                 or digest != approved_digest):
             return unavailable()
-        stage = 'tabs'
+        _advance('tabs')
         view, tabs = _tabs(page)
         if not tabs.count():
             return unavailable()
         forms, names = [], set()
         for ordinal in range(tabs.count()):
             _check_cancel(check_cancel)
+            _advance('tab')
             ordinal_safe = ordinal
-            stage = 'tab'
             tab = tabs.nth(ordinal)
             if tab.evaluate('(e)=>e.closest("li").classList.contains("p-disabled")||e.getAttribute("aria-disabled")==="true"'):
+                # A disabled FORMS panel still binds its JSON root path: the
+                # adapter admits it only when the source value is exactly
+                # null/absent (inert empty form), never for stored objects.
+                disabled_name = tab.inner_text().strip()
+                if disabled_name not in FORMS or disabled_name in names:
+                    return unavailable()
+                names.add(disabled_name)
+                forms.append({'name': disabled_name,
+                              'paths': [[FORMS[disabled_name][1]]],
+                              'disabled': True,
+                              'grids': [], 'responses': [], 'dependencies': []})
                 continue
             name = tab.inner_text().strip()
             if name not in FORMS or name in names:
                 return unavailable()
             names.add(name)
-            stage = 'panel'
+            _advance('panel')
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
                 return unavailable()
             _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
-            stage = 'form'
+            _advance('form')
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
                 return unavailable()
@@ -740,7 +784,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
             if name == 'L3':
-                stage = 'l3'
+                _advance('l3')
                 if 'Induk' not in names:
                     return unavailable(l3_reason='induk_order')
                 l3_diagnostic = {}
@@ -753,7 +797,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                                        l3_extra_owner=l3_diagnostic.get('extra_owner'))
                 binding.update(inspected)
             if name == 'L11-A':
-                stage = 'l11a'
+                _advance('l11a')
                 if 'Induk' not in names:
                     return unavailable(l11a_reason='induk_order')
                 l11a_diagnostic = {}
@@ -771,15 +815,21 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable(l3_reason='visibility_changed', l11a_reason='visibility_changed')
                 binding['projection']['visibility_binding'] = 'current-induk-enabled-v1'
             if name == 'L1-D':
-                stage = 'l1d'
+                _advance('l1d')
                 if 'Induk' not in names:
                     return unavailable()
-                projection = _observe_l1d(page, form, capture, digest, check_cancel)
-                if projection is None:
+                _check_cancel(check_cancel)
+                if not _enabled_form_binding(form, tab, name):
                     return unavailable()
+                projection = _observe_l1d(page, form, capture, digest, check_cancel)
+                _check_cancel(check_cancel)
+                _check_corporate_route(page.url, selected)
+                if projection is None or not _enabled_form_binding(form, tab, name):
+                    return unavailable()
+                projection['visibility_binding'] = 'current-induk-enabled-v1'
                 binding['projection'] = projection
             if name == 'L8':
-                stage = 'l8'
+                _advance('l8')
                 if 'Induk' not in names:
                     return unavailable()
                 projection = _observe_l8(page, form, capture, digest, check_cancel)
@@ -787,7 +837,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable()
                 binding['projection'] = projection
             if name == 'L7':
-                stage = 'l7'
+                _advance('l7')
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
@@ -807,7 +857,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
             if name == 'L11-C':
-                stage = 'l11c'
+                _advance('l11c')
                 from coretax_corporate_projection import L11C_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
                 from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
@@ -839,7 +889,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'route': page.url, **environment, 'references': references,
                     'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
-            stage = 'grid'
+            _advance('grid')
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)
                 if grids.count() != len(groups):
@@ -893,7 +943,28 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
             forms.append(binding)
+        _emit_timings()
         if 'Induk' in names:
+            # The shipped, hash-pinned 525 build has a CDP-reviewed 15-tab
+            # inventory: all FORMS other than L1-B and L8 must be visible.
+            # An absent required tab with an omitted JSON root would not
+            # produce an uncovered evidence row, so downstream evidence
+            # matching alone cannot prove completeness. Refuse this exact
+            # reviewed build when its native tab inventory is incomplete.
+            # Other asset builds need their own reviewed inventory before
+            # their approved pin can adopt this completeness contract.
+            if digest == CIT_SOURCE_SHA256 and (
+                    set(FORMS) - {'L1-B', 'L8'} - names):
+                return unavailable()
+            # Only L1-B and L8 are reviewed as legitimately absent.
+            # Their path-only bindings remain strictly null/missing-inert.
+            for absent in ('L1-B', 'L8'):
+                if absent not in names:
+                    names.add(absent)
+                    forms.append({'name': absent,
+                                  'paths': [[FORMS[absent][1]]],
+                                  'disabled': True,
+                                  'grids': [], 'responses': [], 'dependencies': []})
             return forms
         stage = 'induk'
         return unavailable()

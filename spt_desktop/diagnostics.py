@@ -35,7 +35,7 @@ EVENTS = frozenset({
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.paginator_refused', 'mpn.observer_refused', 'mpn.grid_wait_timeout',
-    'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'table.elapsed_budget',
+    'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
