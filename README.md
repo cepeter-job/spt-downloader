@@ -55,6 +55,8 @@ Downloads ditentukan melalui Windows Known Folder API, termasuk lokasi yang dipi
 
 Nama folder memakai nama wajib pajak dari hasil pencarian NPWP yang cocok persis. Hanya komponen nama berkas yang disanitasi; nama sumber tetap literal di Excel. Nama wajib pajak yang hilang atau Downloads yang tidak dapat ditulisi menghasilkan error. Aplikasi tidak membuat nama pengganti atau diam-diam mengganti tujuan.
 
+Windows memperlakukan `CON`, `PRN`, `AUX`, `NUL`, nama `COM`/`LPT` tertentu, dan bentuk dengan ekstensi sebagai perangkat, bukan berkas. CLI dan desktop menolak **komponen path final** yang tepat cocok dengan nama perangkat tersebut. Nama pajak seperti `CON` tetap sah bila berada di dalam folder berawalan NPWP (`<NPWP> - CON`); workbook tetap menggunakan prefiks `SPT_`. Nama sumber di metadata/Excel tidak diubah, dan penolakan tidak mengizinkan penggantian otomatis.
+
 Saat penggantian disetujui, desktop memakai folder ekspor sebelumnya yang ditampilkan pada dialog. Aplikasi memeriksa ulang folder dan file tersebut sebelum menggantinya; perubahan sejak konfirmasi menghentikan publikasi.
 
 Workbook, checkpoint, dan profil merupakan data rahasia lokal. Workbook tidak terenkripsi. Jangan unggah berkas tersebut, cookie, kredensial, atau tangkapan layar berisi data wajib pajak ke issue, PR, log publik, atau percakapan.
