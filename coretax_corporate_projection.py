@@ -1009,6 +1009,9 @@ _L3_A_FIELDS = ('Name', 'CountryCode', 'DateOfTransaction', 'IncomeCode', 'NetIn
     'PayableRupiah', 'PayableCurrency', 'AmountForeignCurrency', 'CreditCalculated')
 _L3_B_FIELDS = ('Name', 'TIN', 'TaxType', 'TaxBase', 'IncomeTax',
     'WithholdingSlipsNumber', 'WithholdingSlipsDate')
+_L3_B_METADATA = ('IncomeTaxUsd', 'IsManually', 'TableSource', 'Index', 'Action')
+_L3_B_ROW_FIELDS = frozenset(('RecordId', *_L3_B_FIELDS))
+_L3_B_EXTENDED_FIELDS = _L3_B_ROW_FIELDS | frozenset(_L3_B_METADATA)
 _L3_LABELS = ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')
 _L3_CAPTIONS = (
     'PENGEMBALIAN/PENGURANGAN PAJAK PENGHASILAN LUAR NEGERI (PASAL 24) YANG TELAH DIKREDITKAN UNTUK TAHUN SEBELUMNYA',
@@ -1035,12 +1038,14 @@ def _l3_sum(values):
     return result
 
 
-def _l3_date(value, *, offline=False):
+def _l3_date(value, *, offline=False, domestic_jakarta_midnight=False):
     if value is None or offline and value == '':
         return ''
-    if type(value) is not str or not re.fullmatch(
+    if type(value) is not str or not (re.fullmatch(
             r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
-            r'(?:\.[0-9]{1,3})?Z)?', value):
+            r'(?:\.[0-9]{1,3})?Z)?', value)
+            or domestic_jakarta_midnight is True and not offline and re.fullmatch(
+                r'[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00\+07:00', value)):
         raise _UnsupportedMetadata('unsupported_corporate_l3_date')
     try:
         date = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -1140,12 +1145,18 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
             raise _UnsupportedMetadata('incomplete_corporate_l3_pages')
         total = page['total']
         for local_index, row in enumerate(page['data']):
-            if not isinstance(row, dict) or set(row) != {'RecordId', *_L3_B_FIELDS}:
+            if not isinstance(row, dict) or set(row) not in (_L3_B_ROW_FIELDS, _L3_B_EXTENDED_FIELDS):
+                raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
+            extended = set(row) == _L3_B_EXTENDED_FIELDS
+            if extended and (row['IsManually'] is not True or row['TableSource'] is not None
+                    or row['Action'] is not None or _l3_integer(row['Index']) != 0
+                    or _l3_integer(row['IncomeTaxUsd']) != 0):
                 raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             text(row['RecordId'])
             brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
                 label(row['TaxType'], 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
-                text(row['WithholdingSlipsNumber']), _l3_date(row['WithholdingSlipsDate'])])
+                text(row['WithholdingSlipsNumber']),
+                _l3_date(row['WithholdingSlipsDate'], domestic_jakarta_midnight=True)])
             evidence(row['RecordId'], ['Data', local_index, 'RecordId'],
                 {'table': 'L3/domestic', 'row': len(brows) - 1}, source='grid', page_index=page_index,
                 rule='non-displayed-row-key')
@@ -1155,6 +1166,19 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                     rule='bound-reference-label' if field == 'TaxType' else 'date-id-jakarta'
                     if field == 'WithholdingSlipsDate' else 'number-id-fraction-0'
                     if field in ('TaxBase', 'IncomeTax') else 'literal-source')
+            if extended:
+                for field in _L3_B_METADATA:
+                    path = ['Data', local_index, field]
+                    destination = {'table': 'L3/domestic', 'row': len(brows) - 1, 'metadata': field}
+                    if field == 'IsManually':
+                        # Only the reviewed literal true is admitted above. Do not
+                        # widen shared Masa scalar evidence to accept booleans.
+                        provenance.append({'path': path, 'type': 'boolean', 'value': row[field],
+                            'source': 'grid', 'page_index': page_index, 'destination': destination,
+                            'rule': 'non-displayed-domestic-row-metadata'})
+                    else:
+                        evidence(row[field], path, destination, source='grid', page_index=page_index,
+                                 rule='non-displayed-domestic-row-metadata')
     if len(brows) != total:
         raise _UnsupportedMetadata('incomplete_corporate_l3_pages')
     amounts = {key: _l3_integer(value, nullish=True) for key, value in footer_payload.items()}
