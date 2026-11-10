@@ -580,3 +580,65 @@ def test_interrupted_prune_reports_incomplete_and_restart_cannot_repeat_delete(
     assert restarted == {'removed': 0, 'incomplete': True}
     assert old.is_dir()
     assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+
+
+@pytest.mark.parametrize('mutation', ('invalid-json-replacement', 'same-bytes-replacement'))
+def test_replaced_seal_during_published_output_verification_never_authorizes_deletion(
+        tmp_path, monkeypatch, mutation):
+    """Regression: an old valid seal cannot authorize deleting a later seal."""
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    newest = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(newest, (1_700_000_001, 1_700_000_001))
+    receipt = old / prune.SEAL
+    first = receipt.read_bytes()
+    original = prune._hash_held_output
+    touched = []
+
+    def replace_after_valid_seal_was_parsed(stream, *, deadline=None):
+        if not touched:
+            touched.append(True)
+            if mutation == 'invalid-json-replacement':
+                altered = dict(json.loads(first))
+                altered['schema'] = 999  # Cannot authorize any pruning.
+                receipt.write_text(json.dumps(altered), encoding='utf-8')
+            else:
+                replacement = old / 'replacement-seal-tmp'
+                replacement.write_bytes(first)
+                os.replace(replacement, receipt)
+                assert receipt.read_bytes() == first  # Same bytes, new identity.
+        return original(stream, deadline=deadline)
+
+    monkeypatch.setattr(prune, '_hash_held_output',
+                        replace_after_valid_seal_was_parsed)
+    outcome = prune.prune_published_jobs(root, downloads, keep=1, report=True)
+    assert touched and outcome == {'removed': 0, 'incomplete': True}
+    assert receipt.is_file() and old.is_dir() and newest.is_dir()
+    assert (old / 'run.json').is_file()
+    assert (old / 'source.txt').read_bytes() == b'SYNTHETIC PRIVATE SOURCE'
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+
+
+def test_original_seal_bytes_are_the_fingerprint_used_for_deletion(
+        tmp_path, monkeypatch):
+    """Changed seal metadata with the same shape is still not deletion authority."""
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    newest = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(newest, (1_700_000_001, 1_700_000_001))
+    receipt = old / prune.SEAL
+    original = prune._hash_held_output
+
+    def swap_valid_json_fields(stream, *, deadline=None):
+        claim = json.loads(receipt.read_text(encoding='utf-8'))
+        claim['run_sha256'] = '0' * 64
+        receipt.write_text(json.dumps(claim), encoding='utf-8')
+        return original(stream, deadline=deadline)
+
+    monkeypatch.setattr(prune, '_hash_held_output', swap_valid_json_fields)
+    assert prune.prune_published_jobs(root, downloads, keep=1, report=True) == {
+        'removed': 0, 'incomplete': True}
+    assert old.is_dir() and newest.is_dir()
+    assert (published / 'resume.xlsx').is_file()
