@@ -107,9 +107,19 @@ def _read_json_fingerprinted(path, *, max_bytes=_MAX_SEAL_BYTES, deadline=None):
         if ((opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
                 != (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns)):
             raise ValueError('Job metadata changed while opening')
-        _check_deadline(deadline)
-        raw = stream.read(max_bytes + 1)
-        _check_deadline(deadline)
+        chunks = []
+        received = 0
+        while True:
+            _check_deadline(deadline)
+            part = stream.read(min(1024 * 1024, max_bytes + 1 - received))
+            _check_deadline(deadline)
+            if not part:
+                break
+            received += len(part)
+            if received > max_bytes:
+                raise ValueError('Job pruning metadata exceeds its bound')
+            chunks.append(part)
+        raw = b''.join(chunks)
         after = os.fstat(stream.fileno())
         if (len(raw) != initial.st_size or
                 (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
