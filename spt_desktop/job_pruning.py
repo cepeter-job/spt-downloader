@@ -59,14 +59,25 @@ def _read_json(path, *, max_bytes=_MAX_SEAL_BYTES):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def _hash_file(path):
+def _check_deadline(deadline):
+    if deadline is not None and time.monotonic() >= deadline:
+        raise TimeoutError('Job verification budget exceeded')
+
+
+def _hash_file(path, *, deadline=None):
+    _check_deadline(deadline)
     initial = _plain(path)
     digest = hashlib.sha256()
     with path.open('rb') as stream:
         opened = os.fstat(stream.fileno())
         if _identity(opened) != _identity(initial) or opened.st_size != initial.st_size:
             raise ValueError('Job file changed during verification')
-        for piece in iter(lambda: stream.read(1024 * 1024), b''):
+        while True:
+            _check_deadline(deadline)
+            piece = stream.read(1024 * 1024)
+            _check_deadline(deadline)
+            if not piece:
+                break
             digest.update(piece)
         after = os.fstat(stream.fileno())
     current = _plain(path)
@@ -75,10 +86,11 @@ def _hash_file(path):
             or (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns)
             != (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns)):
         raise ValueError('Job file changed during verification')
+    _check_deadline(deadline)
     return initial.st_size, digest.hexdigest()
 
 
-def _hash_held_output(stream):
+def _hash_held_output(stream, *, deadline=None):
     """Hash the exact file held under Windows deny-write/delete custody.
 
     The caller retains the stream (and its guarded path ancestors) until the
@@ -89,12 +101,18 @@ def _hash_held_output(stream):
     if not _ordinary(info):
         raise ValueError('Published output is not an ordinary unique file')
     digest = hashlib.sha256()
-    for piece in iter(lambda: stream.read(1024 * 1024), b''):
+    while True:
+        _check_deadline(deadline)
+        piece = stream.read(1024 * 1024)
+        _check_deadline(deadline)
+        if not piece:
+            break
         digest.update(piece)
     after = os.fstat(stream.fileno())
     if ((after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
             != (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)):
         raise ValueError('Published output changed under custody')
+    _check_deadline(deadline)
     return [info.st_size, digest.hexdigest()]
 
 
@@ -105,6 +123,7 @@ def _tree_digest(job, *, deadline, include_bytes=False):
     total_bytes = 0
     stack = [job]
     while stack:
+        _check_deadline(deadline)
         folder = stack.pop()
         _plain(folder, directory=True)
         with os.scandir(folder) as entries:
@@ -124,7 +143,7 @@ def _tree_digest(job, *, deadline, include_bytes=False):
                 h.update(b'D\0' + rel.encode('utf-8') + b'\0')
                 stack.append(path)
             elif _ordinary(info):
-                size, digest = _hash_file(path)
+                size, digest = _hash_file(path, deadline=deadline)
                 total_bytes += size
                 h.update(b'F\0' + rel.encode('utf-8') + b'\0'
                          + str(size).encode('ascii') + b'\0' + digest.encode('ascii') + b'\0')
@@ -221,7 +240,7 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None):
     run = _read_json(job / 'run.json', max_bytes=16 * 1024 * 1024)
     if not isinstance(run, dict):
         return False
-    if run.get('complete') is not True or _hash_file(job / 'run.json')[1] != data['run_sha256']:
+    if run.get('complete') is not True or _hash_file(job / 'run.json', deadline=deadline)[1] != data['run_sha256']:
         return False
     if any(p.name.startswith('publication-recovery-') for p in job.iterdir()):
         return False
@@ -249,7 +268,7 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None):
         # TOCTOU window identified by the independent review.
         guard.include(_checked_ancestors(target.parent))
         stream = outputs.enter_context(locked_file(target))
-        if _hash_held_output(stream) != claim:
+        if _hash_held_output(stream, deadline=deadline) != claim:
             return False
     if preview_bytes is not None:
         # This is only an estimate; execution rechecks every byte and lock.
@@ -281,24 +300,29 @@ def _candidates(root, keep, exclude):
 
 
 def preview_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=None):
-    """Non-destructive, bounded estimate of jobs passing the actual deletion gates.
+    """Read-only verified subset with an explicit partial-scan flag.
 
-    No job IDs, source metadata or published paths are returned. The caller
-    must obtain fresh authorization and re-run the checks when deleting.
+    Candidate IDs are *private process-local authorizations*, not display or
+    diagnostic data. Deletion must intersect them with the newest-N policy
+    again and revalidate every seal, directory and output under native guards.
     """
     validate_keep_jobs(keep)
+    empty = {'eligible_jobs': 0, 'estimated_bytes': 0,
+             'candidate_ids': (), 'scan_complete': True}
     if keep == 0 or not _windows():
-        return {'eligible_jobs': 0, 'estimated_bytes': 0}
+        return empty
     with _PRUNE_LOCK:
         candidates = _candidates(root, keep, exclude)
         global_deadline = time.monotonic() + 120
-        count, size = 0, 0
+        eligible, bytes_total, complete = [], 0, True
         for job in candidates:
             if time.monotonic() >= global_deadline:
+                complete = False
                 break
             try:
                 deadline = min(time.monotonic() + 60, global_deadline)
                 measurements = []
+                # Pin before reading the seal, run.json or source tree.
                 with DirectoryGuard() as source_guard:
                     source_guard.include(_checked_ancestors(job))
                     with DirectoryGuard() as output_guard, ExitStack() as handles:
@@ -306,18 +330,39 @@ def preview_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=N
                                          outputs=handles, guard=output_guard,
                                          preview_bytes=measurements):
                             continue
-                count += 1
-                size += measurements[0]
+                eligible.append(job.name)
+                bytes_total += measurements[0]
             except (OSError, ValueError, TypeError, KeyError, RecursionError,
                     TimeoutError, UnicodeError):
-                # A doubtful candidate cannot be shown as eligible.
-                continue
-        return {'eligible_jobs': count, 'estimated_bytes': size}
+                # Keep the safe verified subset, but never confirm a partial
+                # preview; otherwise a locked/unknown job could be overlooked.
+                complete = False
+        return {'eligible_jobs': len(eligible), 'estimated_bytes': bytes_total,
+                'candidate_ids': tuple(eligible), 'scan_complete': complete}
 
 
-def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=None):
-    """Best-effort idle-only cleanup. Revalidate every candidate after preview."""
+def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
+                         exclude=None, allowed_ids=None):
+    """Revalidate the newest-N policy and every file before any deletion.
+
+    allowed_ids=None is automatic pruning. Manual pruning passes the exact IDs
+    from a complete, explicitly confirmed read-only preview; never delete a
+    newly eligible, previously skipped or newly discovered job.
+    """
     validate_keep_jobs(keep)
+    if allowed_ids is not None:
+        if (not isinstance(allowed_ids, (tuple, frozenset))
+                or len(allowed_ids) > 4096
+                or any(type(name) is not str or not _JOB.fullmatch(name)
+                       for name in allowed_ids)):
+            raise ValueError('Invalid approved prune candidate set')
+        approved = frozenset(allowed_ids)
+        if len(approved) != len(allowed_ids):
+            raise ValueError('Duplicate approved prune candidates')
+        if not approved:
+            return 0
+    else:
+        approved = None
     if keep == 0 or not _windows():
         return 0
     with _PRUNE_LOCK:
@@ -326,23 +371,30 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=Non
             removed = 0
             global_deadline = time.monotonic() + 120
             for job in candidates:
+                if approved is not None and job.name not in approved:
+                    continue
                 if time.monotonic() >= global_deadline:
                     break
                 try:
                     deadline = min(time.monotonic() + 60, global_deadline)
-                    # Hold all published output handles through private deletion.
-                    with DirectoryGuard() as output_guard, ExitStack() as output_handles:
-                        if not _eligible(job, Path(downloads), deadline=deadline,
-                                         outputs=output_handles, guard=output_guard):
-                            continue
+                    # The source ancestry is pinned *before* reading any seal.
+                    # Keep it held through the entire irreversible deletion,
+                    # alongside output handles denying write/delete sharing.
+                    with DirectoryGuard() as source_guard:
                         expected = _checked_ancestors(job)
-                        with DirectoryGuard() as source_guard:
-                            source_guard.include(expected)
+                        source_guard.include(expected)
+                        with DirectoryGuard() as output_guard, ExitStack() as outputs:
+                            if not _eligible(job, Path(downloads), deadline=deadline,
+                                             outputs=outputs, guard=output_guard):
+                                continue
                             from .profile_lifecycle import _remove_tree
-                            _remove_tree(job, expected[job], source_guard, expected, deadline)
-                        removed += 1
+                            _remove_tree(job, expected[job], source_guard,
+                                         expected, deadline)
+                            removed += 1
                 except (OSError, ValueError, TypeError, KeyError, RecursionError,
                         TimeoutError, UnicodeError):
+                    # Uncertain or interrupted candidates are retained for
+                    # their next explicit inspection, not marked as deleted.
                     continue
             return removed
         except (OSError, ValueError, TypeError):
