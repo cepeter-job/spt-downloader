@@ -313,3 +313,194 @@ def test_manual_preview_and_background_prune_are_serialized(tmp_path, monkeypatc
     assert observed['preview']['eligible_jobs'] == 1
     assert observed['deleted'] == 1
     assert newest.is_dir() and not old.exists()
+
+
+def test_preview_only_authorizes_exact_verified_ids_and_ignores_later_eligibility(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    skipped = _job(root, 1, complete=True, sealed=True, final=published)
+    approved = _job(root, 2, complete=True, sealed=True, final=published)
+    recent = _job(root, 3, complete=False)
+    for index, job in enumerate((skipped, approved, recent)):
+        os.utime(job, (1_700_000_000 + index, 1_700_000_000 + index))
+    original = prune._eligible
+
+    def fail_first_during_preview(job, *args, **kwargs):
+        if job == skipped and kwargs.get('preview_bytes') is not None:
+            raise TimeoutError('synthetic preview-only timeout')
+        return original(job, *args, **kwargs)
+
+    monkeypatch.setattr(prune, '_eligible', fail_first_during_preview)
+    preview = prune.preview_published_jobs(root, downloads, keep=1)
+    assert preview['eligible_jobs'] == 1
+    assert preview['scan_complete'] is False
+    assert preview['candidate_ids'] == (approved.name,)
+    # The skipped job now passes checks, but can NEVER expand a confirmation.
+    assert prune.prune_published_jobs(root, downloads, keep=1,
+                                      allowed_ids=preview['candidate_ids']) == 1
+    assert skipped.is_dir() and recent.is_dir() and not approved.exists()
+    assert (published / 'resume.xlsx').is_file()
+
+
+def test_missing_legacy_seal_does_not_make_entire_preview_incomplete(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    legacy = _job(root, 1, complete=True)
+    sealed = _job(root, 2, complete=True, sealed=True, final=published)
+    _job(root, 3, complete=False)
+    for index, job in enumerate((legacy, sealed)):
+        os.utime(job, (1_700_000_000 + index, 1_700_000_000 + index))
+    preview = prune.preview_published_jobs(root, downloads, keep=1)
+    assert preview['scan_complete'] is True
+    assert preview['candidate_ids'] == (sealed.name,)
+    assert legacy.exists()
+
+
+@pytest.mark.parametrize('ids', [
+    ('../escape',), ('ABC',), (None,), ('a' * 32, 'a' * 32),
+    ['a' * 32], 'a' * 32,
+])
+def test_untrusted_candidate_sets_fail_closed(tmp_path, monkeypatch, ids):
+    root, downloads, _ = _root(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match='approved prune'):
+        prune.prune_published_jobs(root, downloads, keep=1, allowed_ids=ids)
+
+
+def test_source_guard_is_held_before_eligibility_and_until_removal(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    recent = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(recent, (1_700_000_001, 1_700_000_001))
+    original_guard = prune.DirectoryGuard
+    original_eligible = prune._eligible
+    from spt_desktop import profile_lifecycle
+    original_remove = profile_lifecycle._remove_tree
+    guards, checks = [], []
+
+    class ObservedGuard(original_guard):
+        def __enter__(self):
+            guards.append(self)
+            return super().__enter__()
+
+        def __exit__(self, *exc):
+            try:
+                return super().__exit__(*exc)
+            finally:
+                guards.remove(self)
+
+    def require_guard(*args, **kwargs):
+        assert any(old in guard._entries for guard in guards)
+        checks.append('verify')
+        return original_eligible(*args, **kwargs)
+
+    def require_guard_for_delete(*args, **kwargs):
+        assert any(old in guard._entries for guard in guards)
+        assert checks == ['verify']
+        return original_remove(*args, **kwargs)
+
+    monkeypatch.setattr(prune, 'DirectoryGuard', ObservedGuard)
+    monkeypatch.setattr(prune, '_eligible', require_guard)
+    monkeypatch.setattr(profile_lifecycle, '_remove_tree', require_guard_for_delete)
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 1
+    assert not guards and not old.exists()
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Win32 native directory identity lease')
+def test_win32_source_directory_cannot_be_replaced_during_verification(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    recent = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(recent, (1_700_000_001, 1_700_000_001))
+    original = prune._eligible
+
+    def try_replace(job, *args, **kwargs):
+        replacement = job.with_name(job.name + '-renamed')
+        with pytest.raises(OSError):
+            os.replace(job, replacement)
+        assert job.exists()
+        return original(job, *args, **kwargs)
+
+    monkeypatch.setattr(prune, '_eligible', try_replace)
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 1
+    assert not old.exists() and recent.is_dir()
+
+
+def test_source_and_published_file_hashing_respects_chunk_deadline(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    source = root / 'hash-synthetic.bin'
+    source.write_bytes(b'X' * (3 * 1024 * 1024))
+    real_clock = prune.time.monotonic
+
+    def force_midstream_expiration(func):
+        ticks = iter([0.1 * n for n in range(1, 100)])
+        monkeypatch.setattr(prune.time, 'monotonic', lambda: next(ticks))
+        try:
+            with pytest.raises(TimeoutError):
+                func()
+        finally:
+            monkeypatch.setattr(prune.time, 'monotonic', real_clock)
+
+    force_midstream_expiration(lambda: prune._hash_file(source, deadline=0.35))
+    with source.open('rb') as stream:
+        force_midstream_expiration(
+            lambda: prune._hash_held_output(stream, deadline=0.35))
+    assert source.read_bytes() == b'X' * (3 * 1024 * 1024)
+
+
+def test_crash_mid_prune_is_fail_closed_on_restart_and_preserves_downloads(
+        tmp_path, monkeypatch):
+    from spt_desktop import profile_lifecycle
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    recent = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(recent, (1_700_000_001, 1_700_000_001))
+    real_remove = profile_lifecycle._remove_tree
+
+    def interrupted_remove(*args, **kwargs):
+        (old / 'source.txt').unlink()
+        raise OSError('synthetic interruption after initial deletion')
+
+    monkeypatch.setattr(profile_lifecycle, '_remove_tree', interrupted_remove)
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 0
+    assert old.is_dir() and recent.is_dir()
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+    monkeypatch.setattr(profile_lifecycle, '_remove_tree', real_remove)
+    # A restart cannot treat the now-broken seal as authorization.
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 0
+    assert old.is_dir()
+
+
+def test_preview_space_accounting_is_exact_for_unmodified_synthetic_tree(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    recent = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(recent, (1_700_000_001, 1_700_000_001))
+    expected = sum(path.stat().st_size for path in old.rglob('*') if path.is_file())
+    preview = prune.preview_published_jobs(root, downloads, keep=1)
+    assert preview['scan_complete'] is True
+    assert preview['estimated_bytes'] == expected
+    assert old.is_dir()  # preview must not change the file count or bytes
+    assert prune.prune_published_jobs(
+        root, downloads, keep=1, allowed_ids=preview['candidate_ids']) == 1
+    assert recent.is_dir()
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+
+
+def test_pruning_diagnostics_allow_only_bounded_aggregate_numbers():
+    from spt_desktop import diagnostics
+    assert {'jobs.prune_preview', 'jobs.manual_pruned'} <= diagnostics.EVENTS
+    clean = diagnostics._safe_fields({
+        'count': 2, 'estimated_bytes': 1048576,
+        'candidate_ids': ('a' * 32,), 'npwp': 'SYNTHETIC_PRIVATE_ID',
+        'path': 'SECRET'})
+    assert clean == {'count': 2, 'estimated_bytes': 1048576}
+    assert 'estimated_bytes' not in diagnostics._safe_fields(
+        {'estimated_bytes': (1 << 50) + 1})
