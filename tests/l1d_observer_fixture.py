@@ -4,7 +4,7 @@ import html
 import json
 
 import coretax_corporate_projection as projection
-from test_corporate_l1d_native import DETAIL, envelope
+from test_corporate_l1d_native import DETAIL, envelope, current_classification_envelope
 from test_corporate_l1d_projection import HEADERS
 from test_corporate_l7_native import ASSET, BUILD, MAIN, MAIN_BUILD, selected
 from test_corporate_l11c_native import VENDOR, VENDOR_BUILD
@@ -12,7 +12,8 @@ import support_json_corpus as corpus
 
 
 class Fixture:
-    def __init__(self, browser, monkeypatch, *, model='Normal', migrated=False, defect=None):
+    def __init__(self, browser, monkeypatch, *, model='Normal', migrated=False, defect=None,
+                 classification_source='outer'):
         self.record, self.defect = selected(model), defect
         self.non_script = next(((url, mode) for label, url in
             (('corporate', ASSET), ('main', MAIN), ('vendor', VENDOR))
@@ -23,7 +24,9 @@ class Fixture:
         self.assets = {ASSET: BUILD, MAIN: MAIN_BUILD, VENDOR: VENDOR_BUILD}
         self.pins = {url: hashlib.sha256(raw).hexdigest() for url, raw in self.assets.items()}
         monkeypatch.setattr(projection, 'L1D_BUILD_DIGESTS', self.pins, raising=False)
-        value = envelope(model, migrated)
+        assert classification_source in ('outer', 'current')
+        factory = current_classification_envelope if classification_source == 'current' else envelope
+        value = factory(model, migrated)
         if defect == 'non-services':
             value['Payload']['BusinessClassification'] = 'BC01'
         if defect == 'missing-5322':
