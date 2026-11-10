@@ -167,6 +167,7 @@ class App:
         self._settings_dialog=None
         self._credential_status=None
         self._settings_close=None
+        self._settings_refresh=None
         self._manual_prune_busy=False
         self._interaction=None
         self._interaction_seen=set()
@@ -230,6 +231,8 @@ class App:
         excluded = getattr(self.controller, 'job_id', None)
         work = queue.Queue(maxsize=1)
         self._manual_prune_busy = True
+        if self._settings_refresh is not None:
+            self._settings_refresh(preserve_status=True)
         self._credential_status.set('Memeriksa job lama yang aman untuk dipangkas...')
 
         def inspect():
@@ -298,6 +301,8 @@ class App:
                         'File hasil Downloads dan data login tidak dihapus.',
                         parent=dialog)
             if self._settings_dialog is dialog and dialog.winfo_exists():
+                if self._settings_refresh is not None:
+                    self._settings_refresh(preserve_status=True)
                 self._credential_status.set(
                     'Pemangkasan selesai atau dibatalkan. Nilai retensi tetap tersimpan.')
 
@@ -1203,6 +1208,7 @@ class App:
             password.set('');dialog.grab_release();dialog.destroy()
             self._settings_dialog=None;self._credential_status=None
             self._settings_close=None
+            self._settings_refresh=None
             self.settings_button.focus_set()
             if shutdown_request is not None:
                 shutdown_request()
@@ -1267,7 +1273,7 @@ class App:
             return_button.focus_set()
         def save():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
-            if self.controller.active:return False
+            if self.controller.active or self._manual_prune_busy:return False
             try:
                 if password.get():
                     if not identifier.get().strip():raise ValueError('Masukkan akun sebelum menyimpan password.')
@@ -1305,7 +1311,7 @@ class App:
             return True
         def remove():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
-            if self.controller.active:return
+            if self.controller.active or self._manual_prune_busy:return
             if not messagebox.askyesno('Hapus login yang disimpan?','Hapus login Satu yang disimpan oleh aplikasi ini?',parent=dialog,default='no'):return
             try:delete_login(LOGIN_ORIGIN)
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
@@ -1336,6 +1342,7 @@ class App:
         prune_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
         self._settings_close=close
+        self._settings_refresh=refresh
         for variable in (identifier,password,browser,hidden,detail_source,keep_jobs):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         refresh()
