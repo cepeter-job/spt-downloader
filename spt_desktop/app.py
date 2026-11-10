@@ -246,9 +246,10 @@ class App:
 
         def delete():
             try:
-                removed = prune_published_jobs(self.workspace, downloads, keep,
-                                               exclude=excluded, allowed_ids=approved_ids)
-                work.put(('deleted', removed))
+                outcome = prune_published_jobs(self.workspace, downloads, keep,
+                                               exclude=excluded, allowed_ids=approved_ids,
+                                               report=True)
+                work.put(('deleted', outcome))
             except (OSError, ValueError, TypeError, RuntimeError):
                 work.put(('delete_error', None))
 
@@ -312,11 +313,21 @@ class App:
                                'periksa hasil ulang sebelum mencoba kembali.')
                     messagebox.showerror('Pemangkasan tidak tersedia', message, parent=dialog)
                 else:
-                    diagnostics.record('jobs.manual_pruned', count=result)
-                    messagebox.showinfo('Pemangkasan selesai',
-                        f'{result} job lama berhasil dipangkas setelah verifikasi ulang. '
-                        'File hasil Downloads dan data login tidak dihapus.',
-                        parent=dialog)
+                    removed = result['removed']
+                    diagnostics.record('jobs.manual_pruned', count=removed)
+                    if result['incomplete']:
+                        messagebox.showwarning('Pemangkasan belum tuntas',
+                            f'{removed} job selesai dipangkas, tetapi ada kandidat yang '
+                            'tidak berhasil diverifikasi atau dihapus sepenuhnya. '
+                            'Sisa capture dan checkpoint mungkin tidak lengkap; '
+                            'jangan menganggap job tersebut berhasil dibersihkan. '
+                            'Tinjau kembali sebelum mencoba lagi. Hasil Downloads '
+                            'dan data login tidak dihapus.', parent=dialog)
+                    else:
+                        messagebox.showinfo('Pemangkasan selesai',
+                            f'{removed} job lama berhasil dipangkas setelah verifikasi ulang. '
+                            'File hasil Downloads dan data login tidak dihapus.',
+                            parent=dialog)
             if self._settings_dialog is dialog and dialog.winfo_exists():
                 if self._settings_refresh is not None:
                     self._settings_refresh(preserve_status=True)
