@@ -175,7 +175,8 @@ def test_native_windows_keeps_all_published_handles_through_private_deletion(tmp
     original_remove = profile_lifecycle._remove_tree
     observed = []
 
-    def attempt_concurrent_mutations(*args):
+    def attempt_concurrent_mutations(*args, **kwargs):
+        # The verified source inventory is passed as a keyword-only argument.
         # This runs AFTER _eligible has verified every output and immediately
         # BEFORE the first irreversible private-job deletion.
         assert old.is_dir()
@@ -189,7 +190,7 @@ def test_native_windows_keeps_all_published_handles_through_private_deletion(tmp
                 os.replace(replacement, target)
             assert replacement.is_file()
             observed.append(target.name)
-        return original_remove(*args)
+        return original_remove(*args, **kwargs)
 
     monkeypatch.setattr(profile_lifecycle, '_remove_tree', attempt_concurrent_mutations)
     assert prune.prune_published_jobs(root, downloads, keep=1) == 1
