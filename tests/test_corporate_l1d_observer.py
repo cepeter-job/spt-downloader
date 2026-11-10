@@ -7,7 +7,7 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_browser as driver
-from coretax_corporate import observe_forms
+import coretax_corporate as observer
 from coretax_json import JsonSafetyError, adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l1d_observer_fixture import Fixture, ASSET
@@ -36,7 +36,7 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
-            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             assert forms is not None
             assert [f['name'] for f in forms] == ['Induk', 'L1-D', 'L1-B', 'L8']
             assert all(f.get('disabled') is True and f['paths'] == [[root]]
@@ -104,7 +104,7 @@ def test_unproved_live_l1d_structure_or_source_retains_whole_record_fallback(
                 # This fixture is statically malformed; preserve the production readiness budget.
                 assert page.locator('rshshr-citr-l1d-form').get_attribute('style') == 'display:none'
                 monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
-            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             manifest = capture.drain()
             assert manifest['complete']
             result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms or [])
@@ -128,7 +128,7 @@ def test_live_l1d_stop_remains_cancellation_after_owned_view(browser, tmp_path, 
             def cancel():
                 raise driver.CaptureCancelled('SYNTHETIC STOP')
             with pytest.raises(driver.CaptureCancelled):
-                observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
                     approved_digest=fixture.pins[ASSET], check_cancel=cancel)
             assert not list(tmp_path.rglob('manifest.json'))
         assert capture._component_document is None
@@ -158,7 +158,6 @@ def test_fixture_rejects_business_text_reads_through_enclosing_elements(browser,
 @pytest.mark.parametrize('defect', ['disabled', 'panel-rebound'])
 def test_l1d_enabled_proof_is_rechecked_around_observation(
         browser, tmp_path, monkeypatch, when, defect):
-    import coretax_corporate as observer
     fixture = Fixture(browser, monkeypatch, classification_source='current')
 
     def change_owner():
@@ -191,7 +190,7 @@ def test_l1d_enabled_proof_is_rechecked_around_observation(
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
-            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture,
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
                                   approved_digest=fixture.pins[ASSET])
             assert forms is None
             capture.drain()
@@ -205,7 +204,6 @@ def test_l1d_enabled_proof_is_rechecked_around_observation(
 
 @pytest.mark.parametrize('when', ['before', 'after'])
 def test_l1d_route_identity_change_remains_fatal(browser, tmp_path, monkeypatch, when):
-    import coretax_corporate as observer
     fixture = Fixture(browser, monkeypatch, classification_source='current')
 
     def change_route():
@@ -235,7 +233,7 @@ def test_l1d_route_identity_change_remains_fatal(browser, tmp_path, monkeypatch,
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
             with pytest.raises(JsonSafetyError):
-                observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
                               approved_digest=fixture.pins[ASSET])
             assert fixture.page.evaluate('window.businessReads') == 0
             assert fixture.page.evaluate('window.forbiddenClicks') == 0
