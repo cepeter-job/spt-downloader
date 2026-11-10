@@ -215,3 +215,101 @@ def test_native_windows_active_writer_blocks_prune_and_preserves_source(tmp_path
     # eligible again. The failed first attempt performed no destructive step.
     assert prune.prune_published_jobs(root, downloads, keep=1) == 1
     assert not old.exists()
+
+
+def test_manual_preview_is_read_only_and_retains_ten_of_twelve(tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    jobs = [_job(root, i, complete=True, sealed=True, final=published)
+            for i in range(1, 13)]
+    for index, job in enumerate(jobs):
+        os.utime(job, (1_700_000_000 + index, 1_700_000_000 + index))
+    original = (published / 'resume.xlsx').read_bytes()
+    estimate = prune.preview_published_jobs(root, downloads, keep=10)
+    assert estimate['eligible_jobs'] == 2
+    assert estimate['estimated_bytes'] >= 2 * len(b'SYNTHETIC PRIVATE SOURCE')
+    assert all(job.is_dir() for job in jobs)  # Preview cannot remove anything.
+    assert prune.prune_published_jobs(root, downloads, keep=10) == 2
+    assert all(not job.exists() for job in jobs[:2])
+    assert all(job.is_dir() for job in jobs[2:])
+    assert (published / 'resume.xlsx').read_bytes() == original
+
+
+def test_manual_preview_respects_saved_count_and_excluded_job(tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    middle = _job(root, 2, complete=True, sealed=True, final=published)
+    newest = _job(root, 3, complete=False)
+    for index, job in enumerate((old, middle, newest)):
+        os.utime(job, (1_700_000_000 + index, 1_700_000_000 + index))
+    assert prune.preview_published_jobs(root, downloads, keep=1)['eligible_jobs'] == 2
+    assert prune.preview_published_jobs(
+        root, downloads, keep=1, exclude=old.name)['eligible_jobs'] == 1
+    assert prune.preview_published_jobs(root, downloads, keep=10)['eligible_jobs'] == 0
+    assert prune.preview_published_jobs(root, downloads, keep=0)['eligible_jobs'] == 0
+    assert old.is_dir() and middle.is_dir() and newest.is_dir()
+
+
+def test_manual_preview_does_not_authorize_deletion_after_evidence_change(
+        tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    _job(root, 2, complete=False)
+    assert prune.preview_published_jobs(root, downloads, keep=1)['eligible_jobs'] == 1
+    (old / 'source.txt').write_bytes(b'CHANGED AFTER PREVIEW')
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 0
+    assert old.is_dir()
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+
+
+def test_manual_preview_fail_closed_on_recovery_and_links(tmp_path, monkeypatch):
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    _job(root, 2, complete=False)
+    (root / 'jobs' / '.spt-publish-recovery').mkdir()
+    with pytest.raises(ValueError, match='recovery'):
+        prune.preview_published_jobs(root, downloads, keep=1)
+    (root / 'jobs' / '.spt-publish-recovery').rmdir()
+    try:
+        (old / 'source-link').symlink_to(published / 'resume.xlsx')
+    except (OSError, NotImplementedError):
+        pytest.skip('Symlink unavailable')
+    assert prune.preview_published_jobs(root, downloads, keep=1)['eligible_jobs'] == 0
+
+
+def test_manual_preview_and_background_prune_are_serialized(tmp_path, monkeypatch):
+    import threading
+
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    newest = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(newest, (1_700_000_001, 1_700_000_001))
+    entered = threading.Event()
+    released = threading.Event()
+    original = prune._eligible
+
+    def stalled(*args, **kwargs):
+        entered.set()
+        assert released.wait(10), 'Synthetic preview must be released'
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(prune, '_eligible', stalled)
+    observed = {}
+    preview = threading.Thread(target=lambda: observed.setdefault(
+        'preview', prune.preview_published_jobs(root, downloads, keep=1)))
+    delete = threading.Thread(target=lambda: observed.setdefault(
+        'deleted', prune.prune_published_jobs(root, downloads, keep=1)))
+    preview.start()
+    try:
+        assert entered.wait(10)
+        delete.start()
+        assert old.is_dir()
+    finally:
+        released.set()
+        preview.join(15)
+        if delete.ident is not None:
+            delete.join(15)
+    assert not preview.is_alive() and not delete.is_alive()
+    assert observed['preview']['eligible_jobs'] == 1
+    assert observed['deleted'] == 1
+    assert newest.is_dir() and not old.exists()
