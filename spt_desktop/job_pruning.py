@@ -116,7 +116,7 @@ def _hash_held_output(stream, *, deadline=None):
     return [info.st_size, digest.hexdigest()]
 
 
-def _tree_digest(job, *, deadline, include_bytes=False):
+def _tree_digest(job, *, deadline, include_bytes=False, inventory=None):
     """Hash bounded relative inventory and actual bytes; never follow links."""
     h = hashlib.sha256()
     count = 0
@@ -140,10 +140,16 @@ def _tree_digest(job, *, deadline, include_bytes=False):
             if count > _LIMIT:
                 raise ValueError('Job inventory exceeds the safety bound')
             if _ordinary(info, directory=True):
+                if inventory is not None:
+                    inventory[rel] = ('D', info.st_dev, info.st_ino)
                 h.update(b'D\0' + rel.encode('utf-8') + b'\0')
                 stack.append(path)
             elif _ordinary(info):
                 size, digest = _hash_file(path, deadline=deadline)
+                if inventory is not None:
+                    verified = _plain(path)
+                    inventory[rel] = ('F', verified.st_dev, verified.st_ino,
+                                      size, verified.st_mtime_ns, digest)
                 total_bytes += size
                 h.update(b'F\0' + rel.encode('utf-8') + b'\0'
                          + str(size).encode('ascii') + b'\0' + digest.encode('ascii') + b'\0')
@@ -228,7 +234,7 @@ def _published_target(final, name):
     return target
 
 
-def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None):
+def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None, source_inventory=None):
     data = _read_json(job / SEAL)
     if (not isinstance(data, dict) or set(data) != {'schema', 'job_id', 'run_sha256', 'tree_entries', 'tree_sha256',
                      'output', 'files'}
@@ -244,7 +250,8 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None):
         return False
     if any(p.name.startswith('publication-recovery-') for p in job.iterdir()):
         return False
-    tree = _tree_digest(job, deadline=deadline, include_bytes=preview_bytes is not None)
+    tree = _tree_digest(job, deadline=deadline, include_bytes=preview_bytes is not None,
+                        inventory=source_inventory)
     count, digest = tree[:2]
     if (count, digest) != (data['tree_entries'], data['tree_sha256']):
         return False
@@ -271,6 +278,14 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None):
         if _hash_held_output(stream, deadline=deadline) != claim:
             return False
     _check_deadline(deadline)
+    if source_inventory is not None:
+        # The seal is intentionally excluded from the stored tree digest,
+        # but is still a verified file that a deletion may touch.
+        seal = job / SEAL
+        size, digest = _hash_file(seal, deadline=deadline)
+        info = _plain(seal)
+        source_inventory[SEAL] = ('F', info.st_dev, info.st_ino,
+                                  size, info.st_mtime_ns, digest)
     if preview_bytes is not None:
         # This is only an estimate; execution rechecks every byte and lock.
         preview_bytes.append(tree[2] + _plain(job / SEAL).st_size)
@@ -349,7 +364,7 @@ def preview_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=N
 
 
 def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
-                         exclude=None, allowed_ids=None):
+                         exclude=None, allowed_ids=None, report=False):
     """Revalidate the newest-N policy and every file before any deletion.
 
     allowed_ids=None is automatic pruning. Manual pruning passes the exact IDs
@@ -357,6 +372,8 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
     newly eligible, previously skipped or newly discovered job.
     """
     validate_keep_jobs(keep)
+    if type(report) is not bool:
+        raise ValueError('Invalid pruning result reporting mode')
     if allowed_ids is not None:
         if (not isinstance(allowed_ids, (tuple, frozenset))
                 or len(allowed_ids) > 4096
@@ -367,20 +384,22 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
         if len(approved) != len(allowed_ids):
             raise ValueError('Duplicate approved prune candidates')
         if not approved:
-            return 0
+            return {'removed': 0, 'incomplete': False} if report else 0
     else:
         approved = None
     if keep == 0 or not _windows():
-        return 0
+        return {'removed': 0, 'incomplete': bool(approved)} if report else 0
     with _PRUNE_LOCK:
         try:
             candidates = _candidates(root, keep, exclude)
             removed = 0
+            incomplete = False
             global_deadline = time.monotonic() + 120
             for job in candidates:
                 if approved is not None and job.name not in approved:
                     continue
                 if time.monotonic() >= global_deadline:
+                    incomplete = True
                     break
                 try:
                     deadline = min(time.monotonic() + 60, global_deadline)
@@ -391,18 +410,27 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
                         expected = _checked_ancestors(job)
                         source_guard.include(expected)
                         with DirectoryGuard() as output_guard, ExitStack() as outputs:
+                            verified = {}
                             if not _eligible(job, Path(downloads), deadline=deadline,
-                                             outputs=outputs, guard=output_guard):
+                                             outputs=outputs, guard=output_guard,
+                                             source_inventory=verified):
+                                incomplete = True
                                 continue
                             from .profile_lifecycle import _remove_tree
+                            # _remove_tree must refuse any entries not in the
+                            # already-hashed inventory *before* deleting a byte.
+                            # Files added after its own scan cannot be removed:
+                            # only the approved snapshot drives unlink.
                             _remove_tree(job, expected[job], source_guard,
-                                         expected, deadline)
+                                         expected, deadline, verified_inventory=verified)
                             removed += 1
                 except (OSError, ValueError, TypeError, KeyError, RecursionError,
                         TimeoutError, UnicodeError):
-                    # Uncertain or interrupted candidates are retained for
-                    # their next explicit inspection, not marked as deleted.
+                    # A deletion may have removed some approved files before
+                    # an OS error; never claim fully successful housekeeping.
+                    incomplete = True
                     continue
-            return removed
+            incomplete = incomplete or (approved is not None and removed != len(approved))
+            return {'removed': removed, 'incomplete': bool(incomplete)} if report else removed
         except (OSError, ValueError, TypeError):
-            return 0
+            return {'removed': 0, 'incomplete': True} if report else 0
