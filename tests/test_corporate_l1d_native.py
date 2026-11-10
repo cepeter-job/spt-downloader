@@ -1,5 +1,6 @@
 """Source-proven L1-D packet/semantic/export integration; runners only."""
 from copy import deepcopy
+import json
 
 import pytest
 from openpyxl import load_workbook
@@ -185,3 +186,81 @@ def test_l1d_source_contradiction_is_fatal_before_semantic_fallback(observed, de
         raw['context']['component_lifetime']['detail_owner'] = False
     with pytest.raises(JsonSafetyError):
         adapt_corporate_detail([raw], selected(), corpus.SCOPE, bindings() if observed else [])
+
+
+def current_classification_envelope(model='Normal', migrated=False):
+    """Live-shaped source: classification belongs to current Induk, not outer."""
+    value = envelope(model, migrated)
+    del value['Payload']['BusinessClassification']
+    form = json.loads(value['Payload']['CurrentFormData'])
+    form['MainFormData']['BusinessClassification'] = 'BC04'
+    value['Payload']['CurrentFormData'] = corpus.wire(form)
+    return value
+
+
+@pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
+@pytest.mark.parametrize('migrated', [False, True])
+def test_current_induk_services_with_enabled_l1d_proof_reaches_native(model, migrated):
+    value = current_classification_envelope(model, migrated)
+    observed = bindings()
+    observed[1]['projection']['visibility_binding'] = 'current-induk-enabled-v1'
+    raw, record = packet(value), selected(model)
+    before = deepcopy((raw, record, observed))
+    result = adapt_corporate_detail([raw], record, corpus.SCOPE, observed)
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    assert (raw, record, observed) == before
+    projection, = [p for p in result['provenance']['projections'] if p['form'] == 'L1-D']
+    assert projection['visibility_binding'] == 'current-induk-enabled-v1'
+    assert any(e['path'] == ['MainFormData', 'BusinessClassification']
+               and e['container'] == ['Payload', 'CurrentFormData']
+               and e['response_sequence'] == raw['context']['sequence']
+               and e['value'] == 'BC04'
+               and e['rule'] == 'current-induk-services-enabled-v1'
+               for e in projection['values'])
+
+
+@pytest.mark.parametrize('defect', ['missing-marker', 'unknown-marker', 'null-marker',
+    'missing-main', 'missing-current', 'null-current', 'wrong-current', 'numeric-current',
+    'outer-null', 'outer-conflict', 'outer-numeric', 'legacy-current-conflict',
+    'legacy-current-null', 'missing-lifetime'])
+def test_current_induk_services_requires_bound_uncontradicted_classification(defect):
+    value, observed = current_classification_envelope(), bindings()
+    proof = observed[1]['projection']
+    proof['visibility_binding'] = 'current-induk-enabled-v1'
+    if defect == 'missing-marker':
+        del proof['visibility_binding']
+    elif defect in ('unknown-marker', 'null-marker'):
+        proof['visibility_binding'] = None if defect == 'null-marker' else 'SYNTHETIC UNKNOWN'
+    elif defect.startswith('outer-'):
+        value['Payload']['BusinessClassification'] = {
+            'outer-null': None, 'outer-conflict': 'BC01', 'outer-numeric': 4}[defect]
+    elif defect != 'missing-lifetime':
+        form = json.loads(value['Payload']['CurrentFormData'])
+        if defect == 'missing-main':
+            del form['MainFormData']
+        elif defect == 'missing-current':
+            del form['MainFormData']['BusinessClassification']
+        else:
+            form['MainFormData']['BusinessClassification'] = {
+                'null-current': None, 'wrong-current': 'BC01', 'numeric-current': 4,
+                'legacy-current-conflict': 'BC01', 'legacy-current-null': None}[defect]
+            if defect.startswith('legacy-'):
+                value['Payload']['BusinessClassification'] = 'BC04'
+                del proof['visibility_binding']
+        value['Payload']['CurrentFormData'] = corpus.wire(form)
+    raw = packet(value)
+    if defect == 'missing-lifetime':
+        del raw['context']['component_lifetime']
+    before = deepcopy((raw, observed))
+    result = adapt_corporate_detail([raw], selected(), corpus.SCOPE, observed)
+    assert not result['eligible'] and result['sections'] == []
+    assert not result['coverage']['complete']
+    assert (raw, observed) == before
+
+
+def test_matching_outer_and_current_classifications_keep_legacy_l1d_readable():
+    value = current_classification_envelope()
+    value['Payload']['BusinessClassification'] = 'BC04'
+    result = adapt_corporate_detail([packet(value)], selected(), corpus.SCOPE, bindings())
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+

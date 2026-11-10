@@ -26,11 +26,13 @@ def open_selected(fixture, capture):
     return page
 
 
+@pytest.mark.parametrize('classification_source', ['outer', 'current'])
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
 @pytest.mark.parametrize('migrated', [False, True])
 def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export(
-        browser, tmp_path, monkeypatch, model, migrated):
-    fixture = Fixture(browser, monkeypatch, model=model, migrated=migrated)
+        browser, tmp_path, monkeypatch, model, migrated, classification_source):
+    fixture = Fixture(browser, monkeypatch, model=model, migrated=migrated,
+                      classification_source=classification_source)
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
@@ -43,6 +45,7 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
                                        (forms[3], 'CalculationFacilitiesIncomeTaxRateReduction')))
             proof = forms[1]['projection']
             assert proof['kind'] == 'corporate-l1d-v1' and proof['builds'] == fixture.pins
+            assert proof['visibility_binding'] == 'current-induk-enabled-v1'
             assert [t['component'] for t in proof['tables']] == [f'rsh-citr-l1d-grid{i}' for i in (1, 2, 3)]
             assert [t['source_structure'] for t in proof['tables']] == [
                 {'form': 'L1-D', 'component': f'rsh-citr-l1d-grid{i}',
@@ -147,3 +150,53 @@ def test_fixture_rejects_business_text_reads_through_enclosing_elements(browser,
             assert page.evaluate('window.businessReads') == 6
     finally:
         fixture.close()
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+@pytest.mark.parametrize('defect', ['disabled', 'panel-rebound'])
+def test_l1d_enabled_proof_is_rechecked_around_observation(
+        browser, tmp_path, monkeypatch, when, defect):
+    import coretax_corporate as observer
+    fixture = Fixture(browser, monkeypatch, classification_source='current')
+
+    def change_owner():
+        fixture.page.evaluate('''defect => {
+            const tab=[...document.querySelectorAll('[role=tab]')]
+                .find(t=>t.textContent.trim()==='L1-D');
+            if(defect==='disabled')tab.setAttribute('aria-disabled','true');
+            else tab.setAttribute('aria-controls','SYNTHETIC-FOREIGN-PANEL');
+        }''', defect)
+
+    if when == 'before':
+        original_panel = observer._native_panel
+
+        def changed_panel(*args, **kwargs):
+            panel = original_panel(*args, **kwargs)
+            if args[3] == 'L1-D':
+                change_owner()
+            return panel
+
+        monkeypatch.setattr(observer, '_native_panel', changed_panel)
+    else:
+        original_l1d = observer._observe_l1d
+
+        def changed_l1d(*args, **kwargs):
+            proof = original_l1d(*args, **kwargs)
+            change_owner()
+            return proof
+
+        monkeypatch.setattr(observer, '_observe_l1d', changed_l1d)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                                  approved_digest=fixture.pins[ASSET])
+            assert forms is None
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms or [])
+            assert not result['eligible'] and result['sections'] == []
+            assert fixture.page.evaluate('window.businessReads') == 0
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
+    finally:
+        fixture.close()
+
