@@ -120,8 +120,9 @@ def test_unproved_live_l1d_structure_or_source_retains_whole_record_fallback(
         fixture.close()
 
 
-def test_live_l1d_stop_remains_cancellation_after_owned_view(browser, tmp_path, monkeypatch):
-    fixture = Fixture(browser, monkeypatch)
+@pytest.mark.parametrize('omitted_5322', [False, True])
+def test_live_l1d_stop_remains_cancellation_after_owned_view(browser, tmp_path, monkeypatch, omitted_5322):
+    fixture = Fixture(browser, monkeypatch, omitted_5322=omitted_5322)
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
@@ -156,9 +157,10 @@ def test_fixture_rejects_business_text_reads_through_enclosing_elements(browser,
 
 @pytest.mark.parametrize('when', ['before', 'after'])
 @pytest.mark.parametrize('defect', ['disabled', 'panel-rebound'])
+@pytest.mark.parametrize('omitted_5322', [False, True])
 def test_l1d_enabled_proof_is_rechecked_around_observation(
-        browser, tmp_path, monkeypatch, when, defect):
-    fixture = Fixture(browser, monkeypatch, classification_source='current')
+        browser, tmp_path, monkeypatch, when, defect, omitted_5322):
+    fixture = Fixture(browser, monkeypatch, classification_source='current', omitted_5322=omitted_5322)
 
     def change_owner():
         fixture.page.evaluate('''defect => {
@@ -203,8 +205,9 @@ def test_l1d_enabled_proof_is_rechecked_around_observation(
 
 
 @pytest.mark.parametrize('when', ['before', 'after'])
-def test_l1d_route_identity_change_remains_fatal(browser, tmp_path, monkeypatch, when):
-    fixture = Fixture(browser, monkeypatch, classification_source='current')
+@pytest.mark.parametrize('omitted_5322', [False, True])
+def test_l1d_route_identity_change_remains_fatal(browser, tmp_path, monkeypatch, when, omitted_5322):
+    fixture = Fixture(browser, monkeypatch, classification_source='current', omitted_5322=omitted_5322)
 
     def change_route():
         foreign = DETAIL.replace(corpus.RECORD_ID, 'SYNTHETIC-FOREIGN-RECORD')

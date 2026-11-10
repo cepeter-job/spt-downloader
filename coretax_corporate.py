@@ -182,10 +182,21 @@ def _turn_grid(page, table, max_pages, check_cancel):
         owner.dispose()
 
 
+_L1D_OMISSION_SHAPE = '''table => {
+    if(!table.isConnected || table.tBodies.length!==1)return false;
+    const rows=[...table.tBodies[0].rows];
+    const visible=e=>!!e.getClientRects().length &&
+        !['hidden','collapse'].includes(getComputedStyle(e).visibility);
+    return rows.length===34 && rows.every(row=>visible(row) && row.cells.length===10 &&
+        [...row.cells].every(cell=>cell.closest('table')===table &&
+            cell.colSpan===1 && cell.rowSpan===1 && visible(cell)));
+}'''
+
+
 def _observe_l1d(page, form, capture, digest, check_cancel):
     """Inspect only owned structure, loaded providers and fresh lifetime."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
-    from coretax_corporate_projection import L1D_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_corporate_projection import L1D_BUILD_DIGESTS, L1D_OMISSION_LAYOUT, MAIN_SOURCE, VENDOR_SOURCE
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
     if digest != L1D_BUILD_DIGESTS.get(CIT_SOURCE_URL):
         return None
@@ -207,7 +218,7 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
             or vendor_digest != L1D_BUILD_DIGESTS.get(VENDOR_SOURCE)
             or form.locator('table').count() != 3):
         return None
-    tables = []
+    tables, body_layout = [], None
     for index in range(3):
         _check_cancel(check_cancel)
         selector = f'rsh-citr-l1d-grid{index + 1}'
@@ -239,13 +250,24 @@ def _observe_l1d(page, form, capture, digest, check_cancel):
         _check_cancel(check_cancel)
         tables.append({'component': selector, 'source_structure': structure,
                        'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
+        if index == 0:
+            # Structural proof only: never read body text or control values.
+            if table.evaluate(_L1D_OMISSION_SHAPE) is True:
+                body_layout = L1D_OMISSION_LAYOUT
+            _check_cancel(check_cancel)
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
     if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
         return None
+    if body_layout is not None:
+        stable = form.locator('rsh-citr-l1d-grid1 table').evaluate(_L1D_OMISSION_SHAPE)
+        _check_cancel(check_cancel)
+        if stable is not True:
+            return None
     return {'kind': 'corporate-l1d-v1', 'builds': {
         CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
-        'route': page.url, **environment, 'tables': tables}
+        'route': page.url, **environment, 'tables': tables,
+        **({'body_layout': body_layout} if body_layout is not None else {})}
 
 
 def _observe_l8(page, form, capture, digest, check_cancel):
