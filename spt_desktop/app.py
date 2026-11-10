@@ -241,7 +241,7 @@ class App:
                                                 exclude=excluded)
                 work.put(('preview', result))
             except (OSError, ValueError, TypeError, RuntimeError):
-                work.put(('error', None))
+                work.put(('preview_error', None))
 
         def delete():
             try:
@@ -249,7 +249,7 @@ class App:
                                                exclude=excluded)
                 work.put(('deleted', removed))
             except (OSError, ValueError, TypeError, RuntimeError):
-                work.put(('error', None))
+                work.put(('delete_error', None))
 
         def receive():
             if self._disposed:
@@ -290,10 +290,12 @@ class App:
                     self._manual_prune_busy = False
             else:
                 self._manual_prune_busy = False
-                if kind == 'error':
-                    messagebox.showerror('Pemangkasan tidak tersedia',
-                        'Pemeriksaan keamanan job tidak berhasil. Tidak ada penghapusan yang dikonfirmasi.',
-                        parent=dialog)
+                if kind in ('preview_error', 'delete_error'):
+                    message = ('Pratinjau gagal dan tidak ada penghapusan dilakukan.'
+                               if kind == 'preview_error' else
+                               'Pemangkasan mengalami gangguan. Sebagian job mungkin sudah dipangkas; '
+                               'periksa hasil ulang sebelum mencoba kembali.')
+                    messagebox.showerror('Pemangkasan tidak tersedia', message, parent=dialog)
                 else:
                     diagnostics.record('jobs.manual_pruned', count=result)
                     messagebox.showinfo('Pemangkasan selesai',
