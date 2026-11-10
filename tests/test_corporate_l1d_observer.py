@@ -7,8 +7,8 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_browser as driver
-from coretax_corporate import observe_forms
-from coretax_json import adapt_corporate_detail
+import coretax_corporate as observer
+from coretax_json import JsonSafetyError, adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l1d_observer_fixture import Fixture, ASSET
 from test_json_hybrid_native import browser as browser
@@ -26,15 +26,17 @@ def open_selected(fixture, capture):
     return page
 
 
+@pytest.mark.parametrize('classification_source', ['outer', 'current'])
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
 @pytest.mark.parametrize('migrated', [False, True])
 def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export(
-        browser, tmp_path, monkeypatch, model, migrated):
-    fixture = Fixture(browser, monkeypatch, model=model, migrated=migrated)
+        browser, tmp_path, monkeypatch, model, migrated, classification_source):
+    fixture = Fixture(browser, monkeypatch, model=model, migrated=migrated,
+                      classification_source=classification_source)
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
-            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             assert forms is not None
             assert [f['name'] for f in forms] == ['Induk', 'L1-D', 'L1-B', 'L8']
             assert all(f.get('disabled') is True and f['paths'] == [[root]]
@@ -43,6 +45,7 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
                                        (forms[3], 'CalculationFacilitiesIncomeTaxRateReduction')))
             proof = forms[1]['projection']
             assert proof['kind'] == 'corporate-l1d-v1' and proof['builds'] == fixture.pins
+            assert proof['visibility_binding'] == 'current-induk-enabled-v1'
             assert [t['component'] for t in proof['tables']] == [f'rsh-citr-l1d-grid{i}' for i in (1, 2, 3)]
             assert [t['source_structure'] for t in proof['tables']] == [
                 {'form': 'L1-D', 'component': f'rsh-citr-l1d-grid{i}',
@@ -59,7 +62,9 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
             fixture.record['detail_url'] = DETAIL
             replay = adapt_corporate_detail(checkpoint_bodies(tmp_path, manifest, fixture.record, corpus.SCOPE),
                 fixture.record, corpus.SCOPE, forms)
+            assert replay['eligible'] and replay['coverage']['complete'], replay['reason']
             assert replay['sections'] == result['sections']
+            assert replay['provenance'] == result['provenance']
             assert fixture.page.evaluate('window.businessReads') == 0
             assert fixture.page.evaluate('window.forbiddenClicks') == 0
         fixture.record.update(capture_complete=True, sections=result['sections'])
@@ -99,7 +104,7 @@ def test_unproved_live_l1d_structure_or_source_retains_whole_record_fallback(
                 # This fixture is statically malformed; preserve the production readiness budget.
                 assert page.locator('rshshr-citr-l1d-form').get_attribute('style') == 'display:none'
                 monkeypatch.setattr(driver, 'DETAIL_PANEL_TIMEOUT', 2)
-            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             manifest = capture.drain()
             assert manifest['complete']
             result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms or [])
@@ -123,7 +128,7 @@ def test_live_l1d_stop_remains_cancellation_after_owned_view(browser, tmp_path, 
             def cancel():
                 raise driver.CaptureCancelled('SYNTHETIC STOP')
             with pytest.raises(driver.CaptureCancelled):
-                observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
                     approved_digest=fixture.pins[ASSET], check_cancel=cancel)
             assert not list(tmp_path.rglob('manifest.json'))
         assert capture._component_document is None
@@ -145,5 +150,92 @@ def test_fixture_rejects_business_text_reads_through_enclosing_elements(browser,
             assert page.evaluate('window.businessReads') == 6
             assert page.locator('rsh-citr-l1d-grid1 th').first.inner_text() == 'KODE AKUN'
             assert page.evaluate('window.businessReads') == 6
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+@pytest.mark.parametrize('defect', ['disabled', 'panel-rebound'])
+def test_l1d_enabled_proof_is_rechecked_around_observation(
+        browser, tmp_path, monkeypatch, when, defect):
+    fixture = Fixture(browser, monkeypatch, classification_source='current')
+
+    def change_owner():
+        fixture.page.evaluate('''defect => {
+            const tab=[...document.querySelectorAll('[role=tab]')]
+                .find(t=>t.textContent.trim()==='L1-D');
+            if(defect==='disabled')tab.setAttribute('aria-disabled','true');
+            else tab.setAttribute('aria-controls','SYNTHETIC-FOREIGN-PANEL');
+        }''', defect)
+
+    if when == 'before':
+        original_panel = observer._native_panel
+
+        def changed_panel(*args, **kwargs):
+            panel = original_panel(*args, **kwargs)
+            if args[3] == 'L1-D':
+                change_owner()
+            return panel
+
+        monkeypatch.setattr(observer, '_native_panel', changed_panel)
+    else:
+        original_l1d = observer._observe_l1d
+
+        def changed_l1d(*args, **kwargs):
+            proof = original_l1d(*args, **kwargs)
+            change_owner()
+            return proof
+
+        monkeypatch.setattr(observer, '_observe_l1d', changed_l1d)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                                  approved_digest=fixture.pins[ASSET])
+            assert forms is None
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms or [])
+            assert not result['eligible'] and result['sections'] == []
+            assert fixture.page.evaluate('window.businessReads') == 0
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+def test_l1d_route_identity_change_remains_fatal(browser, tmp_path, monkeypatch, when):
+    fixture = Fixture(browser, monkeypatch, classification_source='current')
+
+    def change_route():
+        foreign = DETAIL.replace(corpus.RECORD_ID, 'SYNTHETIC-FOREIGN-RECORD')
+        fixture.page.evaluate('url => history.replaceState({}, "", url)', foreign)
+
+    if when == 'before':
+        original_panel = observer._native_panel
+
+        def changed_panel(*args, **kwargs):
+            panel = original_panel(*args, **kwargs)
+            if args[3] == 'L1-D':
+                change_route()
+            return panel
+
+        monkeypatch.setattr(observer, '_native_panel', changed_panel)
+    else:
+        original_l1d = observer._observe_l1d
+
+        def changed_l1d(*args, **kwargs):
+            proof = original_l1d(*args, **kwargs)
+            change_route()
+            return proof
+
+        monkeypatch.setattr(observer, '_observe_l1d', changed_l1d)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            with pytest.raises(JsonSafetyError):
+                observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                              approved_digest=fixture.pins[ASSET])
+            assert fixture.page.evaluate('window.businessReads') == 0
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
     finally:
         fixture.close()

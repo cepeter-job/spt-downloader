@@ -330,6 +330,9 @@ def test_corporate_absent_grid_bearing_tab_binds_nothing(monkeypatch):
     monkeypatch.setattr(coretax_corporate, '_observe_l3', lambda *a, **k: {'grids': []})
     monkeypatch.setattr(coretax_corporate, '_observe_l11a', lambda *a, **k: {'grids': []})
     monkeypatch.setattr(coretax_corporate, '_observe_l1d', lambda *a, **k: {})
+    # This composition-only double has no DOM handles; ownership is exercised
+    # by the real L1-D browser fixture, not this name inventory.
+    monkeypatch.setattr(coretax_corporate, '_enabled_form_binding', lambda *a: True)
     forms, _ = _observe_with_tabs(monkeypatch, [False, False, False, False],
                                   ['Induk', 'L1-D', 'L2', 'L6'])
     assert forms is not None
