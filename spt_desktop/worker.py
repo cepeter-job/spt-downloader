@@ -22,6 +22,7 @@ from .interaction import ConsentTimeout, Requests, select_records
 from .output import existing_outputs, publish_workbooks
 from .paths import downloads_folder
 from .profile_lifecycle import temporary_profile
+from .job_pruning import seal_completed_job
 
 
 def playwright_factory():
@@ -137,6 +138,14 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
             overwrite = True
         final=publish_workbooks(run,folder,downloads,job_id,check_cancel=check_cancel,
                                 overwrite=overwrite,expected_outputs=previous)
+        if run['complete'] is True:
+            try:
+                # A private, optional seal authorizes later bounded pruning.
+                # Failure leaves the capture intact; it cannot invalidate an
+                # already verified and published output.
+                seal_completed_job(root, job_id, run, final, downloads)
+            except Exception:  # nosec B110 - Optional, private retention seal may not replace verified export status.
+                pass
         progress.finished(bool(run['complete']),final)
         return 0 if run['complete'] else 2
     except CaptureCancelled as error:
