@@ -12,7 +12,7 @@ LOCAL_APP_DATA = 'F1B32785-6FBA-4FCF-9D55-7B8E7F157091'
 # Match the Win32 device namespace even with extensions (NUL.txt).
 # The superscript digits are explicitly reserved for COM/LPT on Windows.
 _DEVICE_STEMS = frozenset({'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$'})
-_DEVICE_PORT = re.compile(r'(?:COM|LPT)[0-9¹²³]', re.IGNORECASE)
+_DEVICE_PORT = re.compile(r'(?:COM|LPT)[1-9¹²³]', re.IGNORECASE)
 
 
 def reject_windows_device_component(component: str) -> None:
