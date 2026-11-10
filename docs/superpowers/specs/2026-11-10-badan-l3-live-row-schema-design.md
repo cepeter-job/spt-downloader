@@ -2,7 +2,7 @@
 
 Date: 2026-11-10
 
-Status: Operator-approved for implementation, regressions, hosted CI and the related approval-protected AGENTS.md update. Merge is not authorized. The final independent shared-renderer proof below is complete. Runtime execution remains hosted-CI-only. This proposal is separate from financial-PDF discovery and performance work.
+Status: Implemented and merged through #229 under separate operator merge approval. This design PR remains open and unmerged. The sections below retain the historical pre-fix investigation and approved scope; current implementation verification is recorded in section 7. The requested AGENTS.md contract update remains blocked pending protected-file approval. Runtime execution remains hosted-CI-only; operator live acceptance is not established. Financial-PDF discovery and performance remain separate scopes.
 
 ## Outcome and acceptance boundary
 
@@ -109,3 +109,11 @@ After operator approval, use a fresh implementation branch from current origin/m
 AST/diff/source inspection is not behavior-test evidence. A full hosted green run and synthetic native case are not acceptance of the real submitted return. The operator must run the exact verified build and the correlated live source result must become `native_verified`; PDF capture and final mapping/publication completeness remain separate gates. A later distinct refusal is still unresolved, never silently marked fixed.
 
 No performance/pagination-size change, retry, timeout increase, new catalog GET, missing-account synthesis, unsupported attachment download, template-slot invention or publication change belongs in this PR. Update the applicable AGENTS.md contract only through its normal approval-protected edit after approval; do not overwrite unrelated current-main instructions.
+
+## 7. Implemented state and remaining documentation gate
+
+- Implementation #229 was merged as `7da937e906462889430179e24edae977c1fc90f2`. Its final pre-merge head `5b5605b6842d5a9afc2acb7a3564270cfda2974e` passed full hosted Build `42800307173`, including all 77 schema/date cases and 10 actual native/custody/workbook cases.
+- The combined L3 and financial-PDF head `70d2528113eb71e203a73aadbe01a6959c5bb204` passed Build `42809281591`. Four downloaded Windows JUnit artifacts independently confirmed all 194 new cases passed, with no new skips/failures/errors or older Windows failures/errors. CodeQL, all four Windows shards, coverage, packaging, exact uploaded-artifact readback and packaged bootstrap passed.
+- Official main `e5e0e988f1908d08c8a730d5a27e17665772b681` passed Build `42813223671`, including CodeQL, Windows workloads, packaging/readback/bootstrap and artifact provenance. Its source tree equals the verified combined head. These are hosted synthetic/build results, not operator native acceptance.
+- The operator subsequently requested the deferred AGENTS.md contracts. One normal protected-file edit was attempted; its approval prompt timed out, so no contract text was applied. No alternate write path or retry was used. This design update records status only and does not substitute for the blocked AGENTS.md edit.
+- The design PR still needs its own merge authorization. A correlated application-owned exact-build `native_verified` result, real portal PDF completion, mapping and whole-run completion remain separate unproved gates. No L11-A/L11-C expansion is included.
