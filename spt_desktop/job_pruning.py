@@ -90,6 +90,52 @@ def _hash_file(path, *, deadline=None):
     return initial.st_size, digest.hexdigest()
 
 
+def _read_json_fingerprinted(path, *, max_bytes=_MAX_SEAL_BYTES, deadline=None):
+    """Parse exactly the bytes bound to the deletion inventory.
+
+    Use one checked reader for content and fingerprint. A directory lease only
+    pins ancestry: it cannot prevent a child seal or run.json replacement.
+    The original identity, timestamp, size and digest are checked again after
+    published-output verification and by the native deletion path.
+    """
+    _check_deadline(deadline)
+    initial = _plain(path)
+    if initial.st_size > max_bytes:
+        raise ValueError('Job pruning metadata exceeds its bound')
+    with locked_file(path) as stream:
+        opened = os.fstat(stream.fileno())
+        if ((opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
+                != (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns)):
+            raise ValueError('Job metadata changed while opening')
+        _check_deadline(deadline)
+        raw = stream.read(max_bytes + 1)
+        _check_deadline(deadline)
+        after = os.fstat(stream.fileno())
+        if (len(raw) != initial.st_size or
+                (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+                != (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns)):
+            raise ValueError('Job metadata changed during reading')
+    current = _plain(path)
+    if ((current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns)
+            != (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns)):
+        raise ValueError('Job metadata changed during reading')
+    _check_deadline(deadline)
+    if len(raw) > max_bytes:
+        raise ValueError('Job pruning metadata exceeds its bound')
+    fingerprint = ('F', initial.st_dev, initial.st_ino,
+                   initial.st_size, initial.st_mtime_ns,
+                   hashlib.sha256(raw).hexdigest())
+    return json.loads(raw), fingerprint
+
+
+def _matches_fingerprint(path, fingerprint, *, deadline):
+    """Refuse even a same-content replacement with a different file identity."""
+    size, digest = _hash_file(path, deadline=deadline)
+    current = _plain(path)
+    return ('F', current.st_dev, current.st_ino,
+            size, current.st_mtime_ns, digest) == fingerprint
+
+
 def _hash_held_output(stream, *, deadline=None):
     """Hash the exact file held under Windows deny-write/delete custody.
 
@@ -235,7 +281,7 @@ def _published_target(final, name):
 
 
 def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None, source_inventory=None):
-    data = _read_json(job / SEAL)
+    data, verified_seal = _read_json_fingerprinted(job / SEAL, deadline=deadline)
     if (not isinstance(data, dict) or set(data) != {'schema', 'job_id', 'run_sha256', 'tree_entries', 'tree_sha256',
                      'output', 'files'}
             or data['schema'] != 1 or data['job_id'] != job.name
@@ -243,10 +289,11 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None, s
             or not isinstance(data['files'], dict) or not data['files']
             or len(data['files']) > _LIMIT):
         return False
-    run = _read_json(job / 'run.json', max_bytes=16 * 1024 * 1024)
+    run, verified_run = _read_json_fingerprinted(
+        job / 'run.json', max_bytes=16 * 1024 * 1024, deadline=deadline)
     if not isinstance(run, dict):
         return False
-    if run.get('complete') is not True or _hash_file(job / 'run.json', deadline=deadline)[1] != data['run_sha256']:
+    if run.get('complete') is not True or verified_run[-1] != data['run_sha256']:
         return False
     if any(p.name.startswith('publication-recovery-') for p in job.iterdir()):
         return False
@@ -277,18 +324,21 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None, s
         stream = outputs.enter_context(locked_file(target))
         if _hash_held_output(stream, deadline=deadline) != claim:
             return False
-    _check_deadline(deadline)
+    # Match the original parsed and authenticated metadata, NOT the current
+    # bytes after the potentially long published-output hash. Never authorize
+    # deletion of a replacement seal, even if its JSON shape is valid.
+    if (not _matches_fingerprint(job / SEAL, verified_seal, deadline=deadline)
+            or not _matches_fingerprint(job / 'run.json', verified_run, deadline=deadline)):
+        return False
     if source_inventory is not None:
-        # The seal is intentionally excluded from the stored tree digest,
-        # but is still a verified file that a deletion may touch.
-        seal = job / SEAL
-        size, digest = _hash_file(seal, deadline=deadline)
-        info = _plain(seal)
-        source_inventory[SEAL] = ('F', info.st_dev, info.st_ino,
-                                  size, info.st_mtime_ns, digest)
+        if source_inventory.get('run.json') != verified_run:
+            return False
+        # Seal is deliberately absent from the publication tree digest.
+        # Its inventory entry must come from the *parsed* original handle.
+        source_inventory[SEAL] = verified_seal
     if preview_bytes is not None:
-        # This is only an estimate; execution rechecks every byte and lock.
-        preview_bytes.append(tree[2] + _plain(job / SEAL).st_size)
+        # Only verified bytes contribute to the read-only estimate.
+        preview_bytes.append(tree[2] + verified_seal[3])
     return True
 
 
