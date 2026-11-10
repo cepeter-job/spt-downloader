@@ -195,6 +195,23 @@ Offline A admits an empty date as blank under its explicit null conversion;
 active B admits null as blank but refuses empty-string dates in the bounded subset.
 The approved resource and independent native/Induk/PDF gates remain unchanged.
 
+Active L3-B rows admit only the exact legacy eight-key inventory or that entire
+inventory plus IncomeTaxUsd, IsManually, TableSource, Index and Action. The added
+profile requires safe integral JSON-number zero for Index and IncomeTaxUsd,
+literal true for IsManually, and explicit null for TableSource and Action.
+Booleans/numeric strings cannot substitute for numeric tokens; missing, partial,
+unknown or case-changed keys remain unsupported. Preserve all original leaves,
+numeric lexemes, page/Data-row coordinates and response provenance. Retain the
+five added leaves as nondisplayed typed metadata, with boolean evidence local
+to this reviewed L3 profile rather than widening shared Masa evidence. Index
+does not replace page-local display numbering; body sums do not replace the
+captured footer. Only the active domestic-B caller opts into the exact ASCII
+YYYY-MM-DDT00:00:00+07:00 grammar, valid source calendar years 1970..2100, under
+the existing id-ID/Asia/Jakarta proof. Preserve the complete source date string,
+legacy date-only/UTC behavior and default-off L3-A/L11-A semantics. No arbitrary
+offset/time/fraction parsing, dropped metadata, new transport or mapping scope
+follows from this compatibility branch.
+
 Native L3 separately requires the exact submitted Rupiah `?view=true` route,
 preceding Induk, valid explicit predecessor encoding, positive fresh owned SPA
 lifetime and numeric1 outer/current IsIncomeTaxOverseas flags for legacy proofs.
@@ -228,6 +245,40 @@ JSON-hybrid output retains only selected capture manifests and accepted original
 `resume.xlsx` contains the global summary/index/audit. Every observed tax type gets a separate workbook per literal source period/year and literal `Model SPT`: Normal, Pembetulan 1, Pembetulan 2 and subsequent amendments must never share one workbook. Periodic types remain under `SPT Masa 21`, `SPT Masa Unifikasi` and `SPT Masa PPN`. Badan uses `SPT_Badan_<period>_<model>.xlsx`; periodic and other type filenames likewise include source period and model. Each workbook contains all observed form-only sheets for its own model. Use simple form names and minimal numeric suffixes only for workbook-local collisions; preserve raw period/model strings and leading zeroes in metadata and physical proof, never group by a display-normalized amendment label. Validate old combined exports before choosing a new final folder; do not silently rewrite or delete old combined workbooks or their PDFs. Preserve the entire folder hierarchy and exact relative links; reject case-insensitive path collisions and verify NPWP/year/basis before replacing outputs. Keep raw source values and duplicates in checkpoints; numeric analysis columns are optional. PPN verified monetary slots use native Excel numbers under strict id-ID syntax and a 15-digit precision guard; period/year, identifiers and invoice columns remain literal text. Malformed or unsafe-precision monetary strings remain text rather than being guessed or rounded. PPh Pasal 21/26 uses the approved sanitized user template for observed Induk/L-IA/L-IB/L-II/L-III forms: preserve cell styles, number formats, merges, dimensions and page layout; grow data rows by copying their original styles. For these observed PPh21 forms, omit the redundant raw/extra-source display block; preserve the entire unchanged checkpoint and report unsupported or ambiguous bindings as unresolved/PARTIAL in the resume mapping audit. Unsupported PPh21 forms continue through the generic renderer. PPN and PPh Unifikasi likewise use the approved clean layouts for observed reference forms only; bind multi-level headers and repeated labels to their visible group, never guess JSON aliases. For PPN, omit the redundant extra/unmapped block from exported forms; keep source captures unchanged and report unresolved bindings in the resume mapping audit. Its observed Period display supplies the month/year header, and Status Penyampaian is not displayed. Other Masa forms retain explicit raw source evidence below the form for incomplete tables unless an approved presentation exception applies. Never ship sample taxpayer values or reference defaults (including a compensation choice) from reference templates.
 
 Financial PDFs are limited to ordinary inspected read-only links or the reviewed existing-document POST exposed by the FinancialStatement grid on the verified selected corporate Induk. POST support requires a verified Service-Worker-blocked owned context, matching loaded source pins, an inspected bound Unduh control, exact same-origin download route, final selected taxpayer identity and a single authenticated request; capture and abort the application request before one bounded stream replay. Do not broaden general POST permissions, guess document identifiers or retain authentication headers in diagnostics/checkpoints. Preserve explicit record/scope declarations, size/signature/hash checks, byte custody, cancellation and relative links; metadata alone is not a downloaded PDF. Publish only declared COMPLETE PDFs, never unrelated files in the job folder. Unsupported controls and failed downloads remain PARTIAL; do not invent API endpoints or remote generation actions. See docs/pdf-keuangan-post.md for the reviewed source contract.
+
+Modern financial discovery is a separate, coupled header/action profile, not
+generic tolerance for extra headers or title-or-aria fallback. Require the
+unique visible selected main form and exact ui-grid-documents/nui-grid/p-table/
+table ownership, two flat three-cell header rows, the NO./FILENAME/TINDAKAN
+captions and the blank ng-filterrow with filename-only text-filter host/input
+counts [0,1,0]. Read no filter values and grant no action permission to header
+controls. Modern POST requires exactly one financially bound recognized table;
+multiple PDF rows within that one group remain supported. Its approved caption
+must have a proved local heading association; explicit caption/aria references
+must agree with it. Transparent wrappers may ascend to the field's direct label,
+but headings nested in adjacent fields, including an empty former financial
+field, cannot lend permission. Missing, hidden, ambiguous or contradictory local
+scope refuses even with an explicit ID reference. The flat PDF body row must
+have one visible enabled button[type=button].ng-actbtn.p-button-secondary action,
+literal aria-label=Unduh, no title/href, exactly one total i and one sole pi
+download icon; preserve the existing inline-handler exclusions. Preserve the
+separate legacy single-header/exact-title branch and reject unreviewed hybrids.
+Modern recognition does not widen ordinary table-derived GET links; existing
+approved direct links remain unchanged. Keep the same descriptors, original-node
+WeakMap identity, row/document snapshots and immediate pre-click revalidation.
+OtherDocuments, guessed document metadata, generation, retries, new endpoints
+and general POST permission remain excluded.
+
+Behavioral changes to these profiles require hosted regressions for closed L3
+schema/date/typed provenance and actual observer/adapter/held replay/reopened
+workbook, plus modern financial header/action coupling, local-scope loss with
+and without explicit IDs, transparent wrappers, duplicate groups versus multiple
+rows, extra icons, replaced nodes and the existing bounded POST transaction.
+Keep full exact-head CodeQL, Windows shards, coverage, packaging, exact uploaded
+artifact readback and packaged bootstrap gates. Source/AST inspection, value-free
+operator probes and synthetic CI do not establish live acceptance: application-
+owned build-matched native_verified and declared COMPLETE PDF bytes/custody must
+be proved separately; neither certifies mapping or whole-run completion alone.
 
 Tab-panel readiness uses one shared 30-second deadline. Each locator read gets at most 1000 ms and the remaining budget, checks Stop first, and must not authorize capture after the final read exceeds the deadline. Keep caption/current control binding, controlled-binding history, unique owning view and actual visibility checks. One separate 1000 ms value-free timeout probe is diagnostic evidence only; it cannot authorize capture or a PDF request.
 
