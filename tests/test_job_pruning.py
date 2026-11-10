@@ -504,3 +504,79 @@ def test_pruning_diagnostics_allow_only_bounded_aggregate_numbers():
     assert clean == {'count': 2, 'estimated_bytes': 1048576}
     assert 'estimated_bytes' not in diagnostics._safe_fields(
         {'estimated_bytes': (1 << 50) + 1})
+
+
+def test_late_recovery_marker_after_source_hash_aborts_without_deleting_anything(
+        tmp_path, monkeypatch):
+    """A marker inserted while validating published outputs was never sealed."""
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    latest = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(latest, (1_700_000_001, 1_700_000_001))
+    original = prune._hash_held_output
+    marker = old / 'publication-recovery-late.json'
+    seen = []
+
+    def inject_after_source_validation(stream, *, deadline=None):
+        marker.write_text('{"synthetic": true}', encoding='utf-8')
+        seen.append(True)
+        return original(stream, deadline=deadline)
+
+    monkeypatch.setattr(prune, '_hash_held_output', inject_after_source_validation)
+    result = prune.prune_published_jobs(root, downloads, keep=1, report=True)
+    assert seen and result == {'removed': 0, 'incomplete': True}
+    assert marker.exists()
+    assert (old / prune.SEAL).is_file()
+    assert (old / 'source.txt').read_bytes() == b'SYNTHETIC PRIVATE SOURCE'
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+
+
+def test_marker_added_after_deletion_inventory_is_never_deleted(
+        tmp_path, monkeypatch):
+    """Only enumerated, previously sealed files may be touched during cleanup."""
+    from spt_desktop import profile_lifecycle
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    newer = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(newer, (1_700_000_001, 1_700_000_001))
+    original = profile_lifecycle._tree
+    marker = old / 'publication-recovery-after-scan'
+
+    def inject_after_enumeration(*args, **kwargs):
+        directories, files = original(*args, **kwargs)
+        marker.write_text('SYNTHETIC RECOVERY IN PROGRESS', encoding='utf-8')
+        return directories, files
+
+    monkeypatch.setattr(profile_lifecycle, '_tree', inject_after_enumeration)
+    result = prune.prune_published_jobs(root, downloads, keep=1, report=True)
+    assert result == {'removed': 0, 'incomplete': True}
+    assert marker.read_text(encoding='utf-8') == 'SYNTHETIC RECOVERY IN PROGRESS'
+    assert old.is_dir() and newer.is_dir()
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+
+
+def test_interrupted_prune_reports_incomplete_and_restart_cannot_repeat_delete(
+        tmp_path, monkeypatch):
+    from spt_desktop import profile_lifecycle
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    newer = _job(root, 2, complete=False)
+    os.utime(old, (1_700_000_000, 1_700_000_000))
+    os.utime(newer, (1_700_000_001, 1_700_000_001))
+    original = profile_lifecycle._remove_tree
+
+    def interrupt_after_one_unlink(*args, **kwargs):
+        (old / 'source.txt').unlink()
+        raise OSError('Synthetic partial prune after first unlink')
+
+    monkeypatch.setattr(profile_lifecycle, '_remove_tree', interrupt_after_one_unlink)
+    result = prune.prune_published_jobs(root, downloads, keep=1, report=True)
+    assert result == {'removed': 0, 'incomplete': True}
+    assert old.is_dir() and newer.is_dir()
+    monkeypatch.setattr(profile_lifecycle, '_remove_tree', original)
+    restarted = prune.prune_published_jobs(root, downloads, keep=1, report=True)
+    assert restarted == {'removed': 0, 'incomplete': True}
+    assert old.is_dir()
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
