@@ -30,7 +30,8 @@ EVENTS = frozenset({
     'operation.failed', 'operation.cancelled', 'phase.started', 'phase.completed',
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
-    'worker.stderr_discarded', 'worker.finished', 'jobs.pruned', 'worker.forced_stop', 'worker.stop',
+    'worker.stderr_discarded', 'worker.finished', 'jobs.pruned',
+    'jobs.prune_preview', 'jobs.manual_pruned', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
@@ -246,6 +247,10 @@ def _safe_fields(fields):
         value = fields.get(name)
         if type(value) is int and 0 <= value <= 10_000_000:
             result[name] = value
+    # Bounded aggregate disk estimate; never emit the candidate IDs or paths.
+    estimate = fields.get('estimated_bytes')
+    if type(estimate) is int and 0 <= estimate <= 1 << 50:
+        result['estimated_bytes'] = estimate
     mismatch_count = fields.get('mpn_parent_mismatch_count')
     if type(mismatch_count) is int and 1 <= mismatch_count <= 7:
         result['mpn_parent_mismatch_count'] = mismatch_count
