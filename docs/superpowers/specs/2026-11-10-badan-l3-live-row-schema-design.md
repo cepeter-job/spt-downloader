@@ -2,7 +2,7 @@
 
 Date: 2026-11-10
 
-Status: Proposal only. Operator approval is required before production changes. Runtime execution remains hosted-CI-only. This proposal is separate from financial-PDF discovery and performance work.
+Status: Operator-approved for implementation, regressions, hosted CI and the related approval-protected AGENTS.md update. Merge is not authorized. The final independent shared-renderer proof below is complete. Runtime execution remains hosted-CI-only. This proposal is separate from financial-PDF discovery and performance work.
 
 ## Outcome and acceptance boundary
 
@@ -55,14 +55,31 @@ The visible owned L3 form contains one B grid and one actual table. Its first he
 Reviewed corporate L3-B component is around decoded-character offsets 2253200..2259850 in the pinned corporate provider:
 
 - The submitted branch excludes TINDAKAN; the ordinary Rupiah branch excludes the USD column.
-- The first displayed number is the page-local `gridModel.Data.indexOf(row) + 1`, not source `Index`.
-- `IsManually`, `TableSource` and action configuration concern edit/delete actions, which are not admitted in this submitted read-only branch.
+- The actual shared type-row renderer uses page-local `rowIndex + 1`, not source `Index`. The component also defines an equivalent showIndex callback, but the real renderer is the decisive proof.
+- `IsManually`, `TableSource` and action configuration concern edit/delete actions, which are not admitted in this submitted read-only branch. TableSource is not globally unused: a parent accounting-validation callback also inspects it. Requiring literal null deliberately excludes that branch.
 - The parent stores emitted B data, but final totals are patched from the separate captured B-footer endpoint, not inferred from displayed rows.
 - The active date column is explicitly `type: 'date'`; the existing source-proven locale/timezone gates remain mandatory.
 
 `project_l3` currently rejects the thirteen-key row before monetary, catalog-label, date and footer projection. `_apply_l3` already binds owned current source, the submitted route/lifetime/Induk visibility, exact requests and four observed catalogs before invoking this helper. Its raw pages, sequences, paths and source bytes must remain unchanged.
 
-Independent tracing of the shared date renderer and explicit-offset parser is required before implementation; record its exact public-source anchors in the approval revision. Do not substitute a general assumption about browser date parsing for that chain.
+Independent tracing establishes that this active date column uses Day.js, not Angular DatePipe. The chain below was rehashed against the approved providers, and the parent independently checked the format helper, parser and accounting-validation anchors. Offsets here are zero-based UTF-8 byte offsets, unlike the approximate decoded-character component region above.
+
+| Provider / byte anchor | Source-proven behavior |
+| --- | --- |
+| Corporate 2253816..2254254 and 2254839 | Metadata affects edit/delete predicates; submitted construction excludes TINDAKAN. |
+| Corporate 2255651 | Ordinary Rupiah construction excludes the IncomeTaxUsd body column. |
+| MAIN 4224852, wired at 4241600..4243450 | Actual row renderer emits page-local rowIndex plus one. |
+| Corporate 2298739..2298950 | B-change stores rows; only TableSource TAXPAYER_ACCOUNTING enters the additional accounting validation. Literal null excludes it. |
+| Corporate 2294627 / 2295426 | Separate footer request and populateFooterGrid2 copy captured footer operands; no body-row sum supplies final totals. |
+| Corporate 2255910; MAIN 4226303, 4241774, 4243402 | Active WithholdingSlipsDate type-date renderer calls formatDate with the source field and configured format. |
+| MAIN 4298773..4299200; default 2732882 | Format helper uses one-argument Day.js and maps dd-MM-yyyy to DD-MM-YYYY. |
+| MAIN 4204870; vendor 191706, 193618..194220 | Import resolves Day.js module71764. Its component-constructor regex has no signed-offset alternative; canonical explicit-offset strings reach new Date(originalString). |
+| Vendor 194081 and 197034..197216 | Local getFullYear/getMonth/getDate provide the formatted day. Existing independently proved Asia/Jakarta environment therefore remains essential. |
+| Vendor 202370 / 204131 | CustomParseFormat does not reinterpret this one-argument call; without a format argument it delegates to the original parser. |
+
+The five new metadata leaves must remain typed source evidence. Shared Masa `_evidence` currently rejects booleans; handle only the reviewed literal-True IsManually provenance locally instead of widening that shared helper. Corporate raw evidence already represents it as type boolean and value true.
+
+The date helper is shared beyond L3-A: L11-A also calls `_l3_date`. A separate default-off option or L3-B-only helper is mandatory; only the active-B caller may opt into the new offset branch. Do not globally widen the helper grammar.
 
 ## 4. Proposed closed extension
 
@@ -70,7 +87,7 @@ Independent tracing of the shared date renderer and explicit-offset parser is re
 2. For the added branch require the actual reviewed typed metadata: Index is JSON numeric zero, IsManually is literal true, TableSource and Action are explicit null, and IncomeTaxUsd is exact safe integral numeric zero. Reject bool-as-zero, ordinary numeric strings, unsafe numeric tokens, objects/arrays, missing keys and nonreviewed values. Never fill missing values or delete extras to fit the legacy schema.
 3. Preserve each added value and original numeric lexeme as typed source provenance with the original page index and Data-row path. Existing `_apply_l3` then binds the actual response sequence and Payload container. Explicitly classify these as retained nondisplayed source metadata; do not claim a worksheet cell or fabricate a rendered USD column. Keep original response bytes and leaves untouched.
 4. Extend only active-B date handling to the source-proven explicit `+07:00` form. Bound it to a valid ISO calendar within the existing year limits and the existing id-ID/Asia/Jakarta environment; preserve the original full date string in source provenance. The initial candidate is the observed seconds/midnight form only. Any justified wider time/fraction support must be written into the reviewed design first. Do not add other offsets, arbitrary Python date parser syntax, local machine clock/timezone, or a generic strip-offset operation.
-5. Preserve legacy date-only/UTC-Z support and all offline-A date/null/empty-string semantics. Active-B null remains blank; empty-string and malformed dates remain unsupported. Do not silently broaden the offline helper merely because A and B share code.
+5. Preserve legacy date-only/UTC-Z support and all offline-A/L11-A date/null/empty-string semantics. Active-B null remains blank; empty-string and malformed dates remain unsupported. Do not silently broaden the shared helper for other consumers.
 6. Preserve exact monetary arithmetic, raw code/label bindings, duplicate row order, page-local row numbering, authoritative footer inputs, all three footer layouts, overwritten/unused controls, unresolved standalone fields and template scope. No sums of B rows may replace captured footers.
 
 Unknown variants remain whole-record DOM fallback. Known source/identity/snapshot contradictions remain fatal. Stop remains cancellation. This grants no new transport, request, native environment, template mapping or financial-PDF permission.
@@ -80,7 +97,7 @@ Unknown variants remain whole-record DOM fallback. Known source/identity/snapsho
 After operator approval, use a fresh implementation branch from current origin/main; keep this proposal separate. No local product imports or runtime execution.
 
 1. Add a clearly synthetic exact thirteen-key plus Jakarta-offset case through the real pure projector. Confirm hosted RED is the exact domestic-row key-set refusal, not a fixture/import error. Then minimally implement this bounded behavior.
-2. Independently prove the date gate: use a legacy eight-key B row with the reviewed offset so the schema guard cannot mask the date refusal. Verify the formatted date and retained original date string together. Include invalid calendars/year bounds, offset variants, whitespace, unexpected fractions, empty string and bool/nonstring inputs; preserve offline-A behavior.
+2. Independently prove the date gate: use a legacy eight-key B row with the reviewed offset so the schema guard cannot mask the date refusal. Verify the formatted date and retained original date string together. Include invalid calendars/year bounds, offset variants, whitespace, unexpected fractions, empty string and bool/nonstring inputs; preserve offline-A and L11-A behavior.
 3. Negative schema/metadata matrix: missing each added/base field, unknown extras, partial extensions, wrong casing, bool-as-zero, string/number marker distinctions, changed Index/IsManually/TableSource/Action/IncomeTaxUsd and precision. Assert refusal without mutation or discarded leaves.
 4. Positive provenance tests: all five added leaves retain exact type/lexeme/path/page index and later actual response sequence/container. Reject mutated original bytes and changed metadata during held replay; a caller-provided proof cannot invent or replace source leaves.
 5. At least two B pages including a partial final page and duplicates; also one inexpensive pure synthetic 466-page/4654-row inventory test to cover the real count boundary without live taxpayer data. Assert order, duplicate retention, local numbering and complete normalized page coverage.
