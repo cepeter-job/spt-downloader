@@ -4,6 +4,7 @@ A completed export's private capture is not the published output.  Old jobs
 without a new-version seal, incomplete jobs and recovery material are retained.
 Never infer deletion rights from age, folder name, or run['complete'] alone.
 """
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -12,7 +13,7 @@ import re
 import sys
 import time
 
-from .output_windows import DirectoryGuard
+from .output_windows import DirectoryGuard, locked_file
 from .profile_lifecycle import _identity, _ordinary
 
 DEFAULT_KEEP_JOBS = 10
@@ -73,6 +74,26 @@ def _hash_file(path):
             != (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns)):
         raise ValueError('Job file changed during verification')
     return initial.st_size, digest.hexdigest()
+
+
+def _hash_held_output(stream):
+    """Hash the exact file held under Windows deny-write/delete custody.
+
+    The caller retains the stream (and its guarded path ancestors) until the
+    private job has been removed or the deletion has been refused.  A second
+    by-path open would not carry this guarantee.
+    """
+    info = os.fstat(stream.fileno())
+    if not _ordinary(info):
+        raise ValueError('Published output is not an ordinary unique file')
+    digest = hashlib.sha256()
+    for piece in iter(lambda: stream.read(1024 * 1024), b''):
+        digest.update(piece)
+    after = os.fstat(stream.fileno())
+    if ((after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            != (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)):
+        raise ValueError('Published output changed under custody')
+    return [info.st_size, digest.hexdigest()]
 
 
 def _tree_digest(job, *, deadline):
@@ -183,7 +204,7 @@ def _published_target(final, name):
     return target
 
 
-def _eligible(job, downloads, *, deadline):
+def _eligible(job, downloads, *, deadline, outputs, guard):
     data = _read_json(job / SEAL)
     if (not isinstance(data, dict) or set(data) != {'schema', 'job_id', 'run_sha256', 'tree_entries', 'tree_sha256',
                      'output', 'files'}
@@ -216,8 +237,13 @@ def _eligible(job, downloads, *, deadline):
                 or not re.fullmatch(r'[0-9a-f]{64}', claim[1])):
             return False
         target = _published_target(final, name)
-        _checked_ancestors(target.parent)
-        if list(_hash_file(target)) != claim:
+        # Pin the full ancestry, then retain this file's native read handle.
+        # locked_file denies WRITE and DELETE sharing on Windows.  Acquiring
+        # every declared file before any job mutation closes the verify/delete
+        # TOCTOU window identified by the independent review.
+        guard.include(_checked_ancestors(target.parent))
+        stream = outputs.enter_context(locked_file(target))
+        if _hash_held_output(stream) != claim:
             return False
     return True
 
@@ -255,14 +281,20 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=Non
                 continue
             try:
                 deadline = min(time.monotonic() + 60, global_deadline)
-                if not _eligible(job, Path(downloads), deadline=deadline):
-                    continue
-                expected = _checked_ancestors(job)
-                with DirectoryGuard() as guard:
-                    guard.include(expected)
-                    from .profile_lifecycle import _remove_tree
-                    _remove_tree(job, expected[job], guard, expected, deadline)
-                removed += 1
+                # The ExitStack stays open THROUGH irreversible private-tree
+                # removal, not merely while comparing the published hashes.
+                # Either a writer is already active (custody fails closed),
+                # or all declared outputs stay immutable until deletion ends.
+                with DirectoryGuard() as output_guard, ExitStack() as output_handles:
+                    if not _eligible(job, Path(downloads), deadline=deadline,
+                                     outputs=output_handles, guard=output_guard):
+                        continue
+                    expected = _checked_ancestors(job)
+                    with DirectoryGuard() as source_guard:
+                        source_guard.include(expected)
+                        from .profile_lifecycle import _remove_tree
+                        _remove_tree(job, expected[job], source_guard, expected, deadline)
+                    removed += 1
             except (OSError, ValueError, TypeError, KeyError, RecursionError, TimeoutError, UnicodeError):
                 # Preserve all uncertain candidates; never alter a job outcome.
                 continue

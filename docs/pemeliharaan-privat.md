@@ -63,7 +63,12 @@ memerlukan pemulihan **selalu dipertahankan**.
 
 Sebelum menghapus setiap kandidat, aplikasi memeriksa kembali fingerprint
 keseluruhan pohon privat, hash manifest asli, daftar dan hash seluruh file
-publikasi yang tercatat di Downloads. Output yang hilang/ditimpa/berubah,
+publikasi yang tercatat di Downloads. Setiap file hasil publikasi dipegang
+dengan handle Windows yang menolak penulisan dan penggantian/penghapusan
+selama pemeriksaan sampai **seluruh** penghapusan pohon privat selesai.
+Jika pengguna/Excel sudah memegang output untuk ditulis, pruning ditolak;
+tidak ada fallback berbasis nama path atau hash sekali pakai.
+Output yang hilang/ditimpa/berubah,
 reparse point, hardlink, file terkunci, identitas folder yang berubah,
 notice recovery, atau symlink menyebabkan pruning ditolak. Pruning
 berjalan di thread terpisah setelah worker dan pembaca selesai; kegagalan

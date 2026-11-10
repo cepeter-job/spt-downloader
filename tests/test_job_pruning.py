@@ -152,3 +152,66 @@ def test_saved_preference_defaults_and_rejects_invalid_retention(tmp_path):
         with pytest.raises(ValueError):
             save_preferences(tmp_path, {'keep_jobs': invalid})
     assert load_preferences(tmp_path)['keep_jobs'] == 100
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Native Windows share-denial regression')
+def test_native_windows_keeps_all_published_handles_through_private_deletion(tmp_path, monkeypatch):
+    """A replacement/write at the precise deletion boundary must be denied."""
+    from spt_desktop import profile_lifecycle
+
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    second = published / 'attachment.pdf'
+    second.write_bytes(b'SYNTHETIC SECOND PUBLISHED SOURCE')
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    receipt_file = old / prune.SEAL
+    receipt = json.loads(receipt_file.read_text())
+    receipt['files']['attachment.pdf'] = list(prune._hash_file(second))
+    receipt_file.write_text(json.dumps(receipt))
+    newest = _job(root, 2, complete=False)
+    old_time = 1_700_000_000
+    os.utime(old, (old_time, old_time))
+    os.utime(newest, (old_time + 1, old_time + 1))
+
+    original_remove = profile_lifecycle._remove_tree
+    observed = []
+
+    def attempt_concurrent_mutations(*args):
+        # This runs AFTER _eligible has verified every output and immediately
+        # BEFORE the first irreversible private-job deletion.
+        assert old.is_dir()
+        for target in (published / 'resume.xlsx', second):
+            with pytest.raises(OSError):
+                with target.open('r+b') as writer:
+                    writer.write(b'MODIFIED')
+            replacement = target.parent / ('replacement-' + target.name)
+            replacement.write_bytes(b'REPLACEMENT MUST REMAIN SEPARATE')
+            with pytest.raises(OSError):
+                os.replace(replacement, target)
+            assert replacement.is_file()
+            observed.append(target.name)
+        return original_remove(*args)
+
+    monkeypatch.setattr(profile_lifecycle, '_remove_tree', attempt_concurrent_mutations)
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 1
+    assert set(observed) == {'resume.xlsx', 'attachment.pdf'}
+    assert not old.exists()
+    assert (published / 'resume.xlsx').read_bytes() == b'SYNTHETIC PUBLISHED WORKBOOK'
+    assert second.read_bytes() == b'SYNTHETIC SECOND PUBLISHED SOURCE'
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Native Windows share-denial regression')
+def test_native_windows_active_writer_blocks_prune_and_preserves_source(tmp_path, monkeypatch):
+    """A pre-existing writer must prevent exclusive output custody."""
+    root, downloads, published = _root(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=True, sealed=True, final=published)
+    newest = _job(root, 2, complete=False)
+    old_time = 1_700_000_000
+    os.utime(old, (old_time, old_time))
+    os.utime(newest, (old_time + 1, old_time + 1))
+    with (published / 'resume.xlsx').open('r+b'):
+        assert prune.prune_published_jobs(root, downloads, keep=1) == 0
+        assert old.exists()
+    # After the real writer closes, the original sealed COMPLETE job is
+    # eligible again. The failed first attempt performed no destructive step.
+    assert prune.prune_published_jobs(root, downloads, keep=1) == 1
+    assert not old.exists()
