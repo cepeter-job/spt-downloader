@@ -168,7 +168,8 @@ def _tree(folder, identity, guard, expected, deadline):
     return directories, files
 
 
-def _remove_tree(folder, identity, guard, expected, deadline):
+def _remove_tree(folder, identity, guard, expected, deadline, *,
+                 verified_inventory=None):
     try:
         info = folder.lstat()
     except FileNotFoundError:
@@ -176,12 +177,44 @@ def _remove_tree(folder, identity, guard, expected, deadline):
     if not _ordinary(info, directory=True) or _identity(info) != identity:
         raise ValueError('Owned profile directory identity changed')
     directories, files = _tree(folder, identity, guard, expected, deadline)
+    if verified_inventory is not None:
+        # A published COMPLETE job is not the generic temporary-profile case.
+        # The deletion snapshot must match the exact filenames, file bytes
+        # and identities already validated against the private publication seal.
+        # In particular, a late publication-recovery marker or new source file
+        # cannot be picked up by _tree() and silently deleted.
+        from .job_pruning import _hash_file
+        observed = {}
+        for path, wanted in directories:
+            if path != folder:
+                observed[path.relative_to(folder).as_posix()] = ('D', *wanted)
+        for path, wanted in files:
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Verified job snapshot exceeded time budget')
+            info = path.lstat()
+            if not _ordinary(info) or _identity(info) != wanted:
+                raise ValueError('Verified source file identity changed')
+            size, digest = _hash_file(path, deadline=deadline)
+            observed[path.relative_to(folder).as_posix()] = (
+                'F', *wanted, size, info.st_mtime_ns, digest)
+        if observed != verified_inventory:
+            raise ValueError('Verified job source inventory changed before deletion')
     for path, wanted in files:
         if time.monotonic() >= deadline:
             raise TimeoutError('Profile recovery removal budget exceeded')
         info = path.lstat()
         if not _ordinary(info) or _identity(info) != wanted:
             raise ValueError('Owned profile file identity changed')
+        if verified_inventory is not None:
+            fingerprint = verified_inventory[path.relative_to(folder).as_posix()]
+            if (info.st_size, info.st_mtime_ns) != (fingerprint[3], fingerprint[4]):
+                raise ValueError('Verified source file state changed during deletion')
+            if sys.platform == 'win32':
+                # Delete the exact hashed native object under deny-write/delete
+                # custody rather than unlinking a replaceable pathname.
+                from .output_windows import delete_verified
+                delete_verified(path, fingerprint[1:], deadline=deadline)
+                continue
         path.unlink()
     for path, wanted in reversed(directories):
         if time.monotonic() >= deadline:

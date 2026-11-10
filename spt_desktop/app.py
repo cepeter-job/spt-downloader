@@ -2,7 +2,9 @@
 from datetime import date
 import json
 import os
+import queue
 import re
+import threading
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
@@ -13,7 +15,9 @@ from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
 from .ui_views import MainView
 from .ui_theme import configure_dialog, dip_to_px, effective_scale
-from .job_pruning import DEFAULT_KEEP_JOBS, validate_keep_jobs
+from .job_pruning import (DEFAULT_KEEP_JOBS, validate_keep_jobs,
+                          preview_published_jobs, prune_published_jobs)
+from .paths import downloads_folder
 
 #punto ami priyono
 
@@ -163,6 +167,8 @@ class App:
         self._settings_dialog=None
         self._credential_status=None
         self._settings_close=None
+        self._settings_refresh=None
+        self._manual_prune_busy=False
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
@@ -201,8 +207,138 @@ class App:
                 'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
                 parent=self._settings_dialog or self.root)
 
+    def _prune_old_jobs(self, dialog, dirty):
+        """Dry-run, confirm, then revalidate in an idle worker before deleting."""
+        if self._manual_prune_busy or self.controller.active or self._disposed:
+            return
+        if dirty():
+            messagebox.showinfo('Simpan pengaturan',
+                'Simpan atau abaikan perubahan Pengaturan sebelum memangkas job.',
+                parent=dialog)
+            return
+        keep = self.preferences['keep_jobs']
+        if keep == 0:
+            messagebox.showinfo('Pemangkasan nonaktif',
+                'Ubah jumlah job disimpan ke 1–100 lalu Simpan. Nilai 0 menonaktifkan pemangkasan.',
+                parent=dialog)
+            return
+        try:
+            downloads = downloads_folder()
+        except (OSError, ValueError):
+            messagebox.showerror('Pemangkasan tidak tersedia',
+                'Folder Downloads Windows tidak dapat diverifikasi.', parent=dialog)
+            return
+        excluded = getattr(self.controller, 'job_id', None)
+        work = queue.Queue(maxsize=1)
+        approved_ids = ()  # Never written to UI or diagnostics.
+        self._manual_prune_busy = True
+        if self._settings_refresh is not None:
+            self._settings_refresh(preserve_status=True)
+        self._credential_status.set('Memeriksa job lama yang aman untuk dipangkas...')
+
+        def inspect():
+            try:
+                result = preview_published_jobs(self.workspace, downloads, keep,
+                                                exclude=excluded)
+                work.put(('preview', result))
+            except (OSError, ValueError, TypeError, RuntimeError):
+                work.put(('preview_error', None))
+
+        def delete():
+            try:
+                outcome = prune_published_jobs(self.workspace, downloads, keep,
+                                               exclude=excluded, allowed_ids=approved_ids,
+                                               report=True)
+                work.put(('deleted', outcome))
+            except (OSError, ValueError, TypeError, RuntimeError):
+                work.put(('delete_error', None))
+
+        def receive():
+            nonlocal approved_ids
+            if self._disposed:
+                return
+            try:
+                kind, result = work.get_nowait()
+            except queue.Empty:
+                self.root.after(100, receive)
+                return
+            if kind == 'preview':
+                total = result['eligible_jobs']
+                size = result['estimated_bytes']
+                if not result['scan_complete']:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Pratinjau belum lengkap',
+                        'Sebagian job belum dapat diverifikasi atau batas waktu pemeriksaan habis. '
+                        'Tidak ada job yang dihapus; coba lagi setelah masalah selesai.', parent=dialog)
+                elif not total:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Tidak ada job yang memenuhi syarat',
+                        'Tidak ada job lama bersegel COMPLETE dan terverifikasi untuk dipangkas.',
+                        parent=dialog)
+                elif self.controller.active:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Job sedang berjalan',
+                        'Pemangkasan dibatalkan karena ada pekerjaan aktif.', parent=dialog)
+                else:
+                    approved_ids = tuple(result['candidate_ids'])
+                    if len(approved_ids) != total:
+                        self._manual_prune_busy = False
+                        messagebox.showerror('Pratinjau tidak konsisten',
+                            'Kandidat job tidak cocok dengan jumlah yang diverifikasi.', parent=dialog)
+                        if self._settings_dialog is dialog and dialog.winfo_exists():
+                            self._settings_refresh(preserve_status=True)
+                        return
+                    diagnostics.record('jobs.prune_preview', count=total, estimated_bytes=size)
+                    confirmed = messagebox.askyesno('Konfirmasi pemangkasan job',
+                        f'{total} job lama memenuhi syarat. Perkiraan ruang: '
+                        f'{size / (1024 * 1024):.1f} MiB.\n\n'
+                        'Capture mentah dan checkpoint job ini akan dihapus permanen; '
+                        'file hasil Downloads, akun, dan profil browser tetap disimpan. '
+                        'Pemeriksaan kepemilikan dan file akan diulang sebelum penghapusan. '
+                        'Jumlah yang dihapus dapat lebih sedikit. Lanjutkan?',
+                        parent=dialog, default='no')
+                    if confirmed and not self.controller.active:
+                        self._credential_status.set('Memangkas hanya job lama yang masih aman...')
+                        threading.Thread(target=delete, name='spt-manual-prune',
+                                         daemon=True).start()
+                        self.root.after(100, receive)
+                        return
+                    self._manual_prune_busy = False
+            else:
+                self._manual_prune_busy = False
+                if kind in ('preview_error', 'delete_error'):
+                    message = ('Pratinjau gagal dan tidak ada penghapusan dilakukan.'
+                               if kind == 'preview_error' else
+                               'Pemangkasan mengalami gangguan. Sebagian job mungkin sudah dipangkas; '
+                               'periksa hasil ulang sebelum mencoba kembali.')
+                    messagebox.showerror('Pemangkasan tidak tersedia', message, parent=dialog)
+                else:
+                    removed = result['removed']
+                    diagnostics.record('jobs.manual_pruned', count=removed)
+                    if result['incomplete']:
+                        messagebox.showwarning('Pemangkasan belum tuntas',
+                            f'{removed} job selesai dipangkas, tetapi ada kandidat yang '
+                            'tidak berhasil diverifikasi atau dihapus sepenuhnya. '
+                            'Sisa capture dan checkpoint mungkin tidak lengkap; '
+                            'jangan menganggap job tersebut berhasil dibersihkan. '
+                            'Tinjau kembali sebelum mencoba lagi. Hasil Downloads '
+                            'dan data login tidak dihapus.', parent=dialog)
+                    else:
+                        messagebox.showinfo('Pemangkasan selesai',
+                            f'{removed} job lama berhasil dipangkas setelah verifikasi ulang. '
+                            'File hasil Downloads dan data login tidak dihapus.',
+                            parent=dialog)
+            if self._settings_dialog is dialog and dialog.winfo_exists():
+                if self._settings_refresh is not None:
+                    self._settings_refresh(preserve_status=True)
+                self._credential_status.set(
+                    'Pemangkasan selesai atau dibatalkan. Nilai retensi tetap tersimpan.')
+
+        threading.Thread(target=inspect, name='spt-prune-preview', daemon=True).start()
+        self.root.after(100, receive)
+
     def start(self):
-        if self.controller.active or self._closing or self._disposed:
+        if self.controller.active or self._closing or self._disposed or self._manual_prune_busy:
             return
         errors = scope_errors(self.npwp.get(), self.year.get())
         self.view.show_errors(errors)
@@ -330,8 +466,8 @@ class App:
         self.view.dispose()
 
     def request_close(self):
-        if self._disposed:
-            return
+        if self._disposed or self._manual_prune_busy:
+            return  # Keep the window and its worker alive until cleanup finishes.
         if self._settings_close is not None and not self.controller.active:
             self._settings_close(on_closed=self.request_close)
             return
@@ -1090,8 +1226,8 @@ class App:
             return pending_preferences or bool(password.get()) or selected()!=self.preferences
         def refresh(*args,preserve_status=False):
             active=self.controller.active
-            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button]:
-                widget.state(['disabled' if active else '!disabled'])
+            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button,prune_button]:
+                widget.state(['disabled' if active or self._manual_prune_busy else '!disabled'])
             if not active and not preserve_status:
                 self._credential_status.set('Perubahan belum disimpan. Pilih Simpan untuk menerapkannya.' if dirty() else
                     'Akun tersimpan dipakai saat Mulai unduh; akun kosong memakai login manual.')
@@ -1100,11 +1236,14 @@ class App:
             password.set('');dialog.grab_release();dialog.destroy()
             self._settings_dialog=None;self._credential_status=None
             self._settings_close=None
+            self._settings_refresh=None
             self.settings_button.focus_set()
             if shutdown_request is not None:
                 shutdown_request()
         def close(*, on_closed=None):
             nonlocal decision_dialog, shutdown_request
+            if self._manual_prune_busy:
+                return
             if on_closed is not None:
                 shutdown_request = on_closed
             if self.controller.active:
@@ -1162,7 +1301,7 @@ class App:
             return_button.focus_set()
         def save():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
-            if self.controller.active:return False
+            if self.controller.active or self._manual_prune_busy:return False
             try:
                 if password.get():
                     if not identifier.get().strip():raise ValueError('Masukkan akun sebelum menyimpan password.')
@@ -1200,7 +1339,7 @@ class App:
             return True
         def remove():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
-            if self.controller.active:return
+            if self.controller.active or self._manual_prune_busy:return
             if not messagebox.askyesno('Hapus login yang disimpan?','Hapus login Satu yang disimpan oleh aplikasi ini?',parent=dialog,default='no'):return
             try:delete_login(LOGIN_ORIGIN)
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
@@ -1226,8 +1365,12 @@ class App:
             self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai unduh.')
         save_button=ttk.Button(buttons,text='Simpan',command=save);save_button.pack(side='left',padx=(0,8))
         remove_button=ttk.Button(buttons,text=copy_text('settings.delete'),command=remove);remove_button.pack(side='left',padx=(0,8))
+        prune_button=ttk.Button(buttons,text='Pangkas job lama',
+            command=lambda: self._prune_old_jobs(dialog,dirty))
+        prune_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
         self._settings_close=close
+        self._settings_refresh=refresh
         for variable in (identifier,password,browser,hidden,detail_source,keep_jobs):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         refresh()

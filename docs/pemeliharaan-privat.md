@@ -84,3 +84,38 @@ otomatis, organisasi wajib menilai kebutuhan penyimpanan dan backup
 terenkripsi secara terpisah. Pengaturan ini **tidak** menyatakan
 backup telah berhasil atau kewajiban retensi instansi sudah terpenuhi.
 Job historis tetap memerlukan prosedur backup dan penghapusan manual.
+
+## Pemangkasan manual dari Pengaturan
+
+Klik **Pangkas job lama** setelah menyimpan pengaturan retensi (1–100; 10
+secara default). Aplikasi terlebih dahulu melakukan **pratinjau tanpa
+menghapus**: jumlah job lama yang masih memiliki segel COMPLETE yang sah
+serta perkiraan ukuran data privat yang dapat dibebaskan (MiB). Tinjauan
+berjalan di thread terpisah, sementara aplikasi tidak memulai job baru
+atau menyimpan perubahan pengaturan. Jumlah yang bisa dihapus dapat
+berkurang jika file berubah, dikunci, atau hilang setelah pratinjau.
+Pratinjau yang terhenti karena batas waktu atau gagal memeriksa satu kandidat
+**tidak dapat dikonfirmasi**; tidak ada penghapusan. Hanya kandidat yang
+terdaftar pada pratinjau lengkap yang dapat dihapus setelah konfirmasi;
+pekerjaan lain yang baru memenuhi syarat tidak ikut dihapus.
+
+Hanya setelah dialog konfirmasi eksplisit diterima, aplikasi mengulang
+pemeriksaan keseluruhan: status COMPLETE, segel dan hash pohon sumber,
+identitas direktori, checksum semua output Downloads dengan handle Windows
+yang menolak perubahan, dan recovery. Sumber dipin dengan handle direktori
+sebelum membaca segel hingga penghapusan selesai. Daftar file dan identitas
+hasil verifikasi dicocokkan ulang sebelum penghapusan; file baru yang muncul
+di tengah operasi **tidak** termasuk dalam daftar hapus. Jika ada perubahan
+yang tak bisa dibuktikan aman, pekerjaan dipertahankan atau penghapusan
+dilaporkan belum tuntas. Ketika sebagian file telah terhapus lalu Windows
+menolak kelanjutannya, UI memberikan peringatan; tidak menyatakan semua job
+berhasil dibersihkan. Tenggat pemeriksaan diperiksa di antara blok pembacaan
+file; pembacaan I/O yang sedang terblokir tidak dapat dihentikan tepat pada
+milidetik batas waktu.
+Tidak ada nama NPWP, job ID,
+path privat, atau data transaksi dalam pratinjau/diagnostik. Jika salah
+satu syarat gagal, job tersebut tidak dihapus. Tindakan ini tidak
+menghapus hasil Downloads, profil atau sandi. Nilai **0** menonaktifkan
+pemangkasan otomatis maupun manual. *Perkiraan* ukuran tidak termasuk
+biaya metadata filesystem dan bukan janji jumlah byte yang pasti dibebaskan.
+

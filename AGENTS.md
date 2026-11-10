@@ -907,6 +907,7 @@ rules do not weaken capture/custody/publication checks or alter desktop outcomes
 - The bottom-right bug-report contact uses its own 12-point font and retains wrapping and bottom-right placement. Compact windows reserve enough vertical space for the summary and initial inputs; retain existing horizontal wrapping measurements. Source/frozen self-tests verify its effective font size and real geometry; do not enlarge shared caption/status styles to achieve this.
 - The SPT selection list uses presentation-only period captions: exact case-insensitive PPh Badan displays `Tahunan`; recognized monthly numbers, same-month period codes and Indonesian month/year captions display the month name. Ambiguous periods remain literal. Preserve original metadata, checkpoint/export periods, identifiers, search by source values, original chronology keys and inventory-order consent IDs.
 - The GUI is a thin stdlib/Tkinter launcher. Do not import Playwright/openpyxl into its process; prepare the isolated worker with uv and copy only `spt_desktop.runtime.WORKER_FILES`. Update that explicit allowlist when adding worker modules; never recursively package workspace/profile/output directories.
+- The GUI owns a **minimal subprocess environment policy** in `spt_desktop.runtime.worker_environment` and `bootstrap_environment`. Do not forward `os.environ.copy()` to the worker, Python probes or uv. Retain only approved Windows OS/profile/temp paths, HTTP(S)/SOCKS proxy, and certificate trust variables; force fixed safe Python startup settings; exclude inherited Node/Playwright/Python debug/preload controls and external uv index/config flags. Synthetic tests must verify unsafe injection denial and supported corporate proxy/CA compatibility. Never log proxy/CA environment values. See [worker environment policy](docs/worker-environment.md).
 - Windows Job Objects must contain suspended children **before** resuming them; uv-created virtualenv Python launchers can spawn an interpreter before Python code runs. Preserve start authorization, cooperative cancellation, 15-second forced owned-tree cleanup and main-thread-only UI callbacks. Success requires terminal COMPLETE, matching exit code, verified output and completed owned cleanup—not a zero exit alone.
 - Saved credentials belong only to Windows Credential Manager and exact approved origins. Never print fill exceptions, inherit Playwright credential-debug flags, guess login actions or click generic form-submit controls. Require inspected sign-in intent and no unknown challenge/fields; otherwise manual visible login. No MFA/CAPTCHA bypass.
 - Application-owned CLI and desktop download contexts explicitly use browser locale `id-ID` and timezone `Asia/Jakarta`, matching the reviewed Indonesian display/date consumers. Keep service workers blocked and native observer environment checks strict. External reused browsers retain their own environment and unsupported environments use explicit whole-record DOM fallback; never infer the browser locale from the workstation or portal URL.
@@ -1100,6 +1101,24 @@ at all (lazy grid rendering after tab activation); present-but-unbound tables
 remain definitive refusals without polling. Template-mapping entries persist
 unmapped field/table identities (form, label, field, group) alongside their
 counts so the exact not-mapped subset is inspectable from run data.
+
+## Manual private-job pruning safety
+
+Manual Settings pruning must first present only the count and approximate
+bytes of *currently eligible* sealed COMPLETE jobs, then obtain explicit
+confirmation with a safe default of No. The preview must not mutate files. An incomplete scan (deadline,
+unverifiable or locked candidate) never permits manual confirmation. Keep the
+exact verified candidate IDs private in process memory and use only that set
+when the user approves; reapply newest-N/exclusion policy at deletion time.
+Pin the source directory before eligibility checks and keep the lease until
+deleting the verified tree; check deadlines between source/output file chunks.
+Both automatic and manual pruning serialize through the same bounded,
+identity-checked, no-clobber verification and deletion path. Revalidate all
+source bytes and immutable held published Downloads outputs after confirmation.
+Never purge historical/unsealed, partial, active, recovery-bearing, unknown,
+locked or redirected jobs. Prevent GUI export and preference changes during
+manual housekeeping. Do not expose taxpayer names, paths or job IDs in
+preview, confirmation or diagnostics.
 
 ## Automatic completed-job pruning (Settings)
 

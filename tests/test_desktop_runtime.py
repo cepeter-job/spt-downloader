@@ -480,3 +480,120 @@ def test_source_payload_is_explicit_and_excludes_outputs_profiles_and_gui():
     assert 'locks/runtime.txt' in runtime.WORKER_FILES
     assert not any(any(x in name for x in ['output/', 'profile/', '.venv/', 'tests/', 'app.py'])
                    for name in runtime.WORKER_FILES)
+
+
+def test_allowlisted_owned_environments_strip_untrusted_startup_hooks(monkeypatch, tmp_path):
+    runtime = runtime_module()
+    injected = {
+        'PYTHONPATH': 'SYNTHETIC_MALICIOUS_MODULE_PATH',
+        'PYTHONHOME': 'SYNTHETIC_PYTHONHOME',
+        'PYTHONSTARTUP': 'SYNTHETIC_STARTUP_SCRIPT',
+        'PYTHONBREAKPOINT': 'malicious.module.breakpoint',
+        'PYTHONINSPECT': '1',
+        'PYTHONWARNINGS': 'error',
+        'PYTHONUSERBASE': 'SYNTHETIC_USERSITE',
+        'VIRTUAL_ENV': 'SYNTHETIC_UNOWNED_VENV',
+        'NODE_OPTIONS': '--require SYNTHETIC_PRELOAD.js',
+        'NODE_PATH': 'SYNTHETIC_UNOWNED_NODE_PATH',
+        'NODE_DEBUG': 'pw:api',
+        'NODE_TLS_REJECT_UNAUTHORIZED': '0',
+        'NODE_USE_SYSTEM_CA': '0',
+        'PLAYWRIGHT_BROWSERS_PATH': 'SYNTHETIC_BROWSER_OVERRIDE',
+        'PLAYWRIGHT_NODEJS_PATH': 'SYNTHETIC_DRIVER_OVERRIDE',
+        'PWDEBUG': 'console',
+        'DEBUG': 'pw:api',
+        'UV_INDEX_URL': 'https://synthetic.invalid/simple',
+        'UV_NO_CONFIG': '0',
+        'UV_PYTHON_INSTALL_MIRROR': 'https://synthetic.invalid/downloads',
+        'PIP_INDEX_URL': 'https://synthetic.invalid/index',
+        'ELECTRON_RUN_AS_NODE': '1',
+        'UNREVIEWED_POLICY_VAR': 'SECRET',
+    }
+    for name, value in injected.items():
+        monkeypatch.setenv(name, value)
+    for environment in (runtime.worker_environment(),
+                        runtime.bootstrap_environment(tmp_path / 'Owned workspace')):
+        assert set(injected).isdisjoint(environment.keys() - {
+            'PYTHONBREAKPOINT', 'UV_NO_CONFIG'})
+        assert environment['PYTHONBREAKPOINT'] == '0'
+        assert environment['PYTHONNOUSERSITE'] == '1'
+        assert environment['PYTHONUTF8'] == '1'
+        assert environment['PYTHONIOENCODING'] == 'utf-8'
+        assert environment.get('UV_NO_CONFIG', '1') == '1'
+    assert 'UV_NO_CONFIG' not in runtime.worker_environment()
+    assert 'PYTHONSTARTUP' not in runtime.worker_environment()
+    assert all(os.environ.get(name) == value for name, value in injected.items())
+
+
+def test_allowlist_preserves_windows_shell_network_proxy_and_custom_trust(
+        monkeypatch, tmp_path):
+    runtime = runtime_module()
+    supported = {
+        'SystemRoot': r'C:\\SYNTHETIC_WINDOWS',
+        'WINDIR': r'C:\\SYNTHETIC_WINDOWS',
+        'PATH': r'C:\\SYNTHETIC_WINDOWS\\System32;C:\\SYNTHETIC_PROGRAM',
+        'PATHEXT': '.COM;.EXE;.BAT',
+        'ComSpec': r'C:\\SYNTHETIC_WINDOWS\\System32\\cmd.exe',
+        'USERPROFILE': r'C:\\Users\\SYNTHETIC USER',
+        'LOCALAPPDATA': r'C:\\Users\\SYNTHETIC USER\\AppData\\Local',
+        'APPDATA': r'C:\\Users\\SYNTHETIC USER\\AppData\\Roaming',
+        'TEMP': r'C:\\Users\\SYNTHETIC USER\\AppData\\Local\\Temp',
+        'TMP': r'C:\\Users\\SYNTHETIC USER\\AppData\\Local\\Temp',
+        'HTTPS_PROXY': 'http://127.0.0.1:1080',
+        'HTTP_PROXY': 'http://proxy.invalid:8080',
+        'ALL_PROXY': 'socks5://127.0.0.1:1080',
+        'NO_PROXY': 'localhost,127.0.0.1,.internal.invalid',
+        'SSL_CERT_FILE': str(tmp_path / 'synthetic CA.pem'),
+        'SSL_CERT_DIR': str(tmp_path / 'synthetic certificates'),
+        'REQUESTS_CA_BUNDLE': str(tmp_path / 'synthetic requests CA.pem'),
+        'CURL_CA_BUNDLE': str(tmp_path / 'synthetic CURL CA.pem'),
+        'NODE_EXTRA_CA_CERTS': str(tmp_path / 'synthetic node CA.pem'),
+    }
+    for name, value in supported.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv('UV_NATIVE_TLS', 'true')
+    monkeypatch.setenv('UV_SYSTEM_CERTS', 'true')
+    for make in (runtime.worker_environment, lambda: runtime.bootstrap_environment(tmp_path)):
+        actual = make()
+        for name, value in supported.items():
+            matching = [v for key, v in actual.items() if key.upper() == name.upper()]
+            assert matching == [value], name
+        assert not {'NODE_OPTIONS', 'PWDEBUG', 'PYTHONPATH'} & actual.keys()
+    worker = runtime.worker_environment()
+    bootstrap = runtime.bootstrap_environment(tmp_path)
+    assert 'UV_NATIVE_TLS' not in worker and 'UV_SYSTEM_CERTS' not in worker
+    assert bootstrap['UV_NATIVE_TLS'] == 'true' and bootstrap['UV_SYSTEM_CERTS'] == 'true'
+    assert bootstrap['UV_NO_CONFIG'] == '1'
+    assert bootstrap['UV_CACHE_DIR'] == str(tmp_path / 'cache')
+    assert bootstrap['UV_PYTHON_INSTALL_DIR'] == str(tmp_path / 'python')
+    assert all(os.environ.get(name) == value for name, value in supported.items())
+
+
+@pytest.mark.parametrize('name', [
+    'NODE_OPTIONS', 'NODE_PATH', 'PLAYWRIGHT_BROWSERS_PATH', 'PYTHONPATH',
+    'PYTHONINSPECT', 'PYTHONBREAKPOINT', 'UV_INDEX_URL',
+])
+def test_owned_environment_policy_is_case_insensitive(monkeypatch, name):
+    runtime = runtime_module()
+    monkeypatch.setenv(name.lower(), 'SYNTHETIC_UNTRUSTED')
+    environment = runtime.worker_environment()
+    assert not any(key.upper() == name for key in environment
+                   if key.upper() != 'PYTHONBREAKPOINT')
+    if name == 'PYTHONBREAKPOINT':
+        assert environment['PYTHONBREAKPOINT'] == '0'
+
+
+def test_lowercase_proxy_spelling_is_forwarded_without_interpreter_overrides(
+        monkeypatch):
+    runtime = runtime_module()
+    monkeypatch.setenv('https_proxy', 'socks5://127.0.0.1:1080')
+    monkeypatch.setenv('no_proxy', 'localhost,127.0.0.1')
+    monkeypatch.setenv('node_options', '--require BAD.js')
+    worker = runtime.worker_environment()
+    bootstrap = runtime.bootstrap_environment(Path('SYNTHETIC_ROOT'))
+    for environment in (worker, bootstrap):
+        assert any(k.upper() == 'HTTPS_PROXY' and v == 'socks5://127.0.0.1:1080'
+                   for k, v in environment.items())
+        assert any(k.upper() == 'NO_PROXY' and v == 'localhost,127.0.0.1'
+                   for k, v in environment.items())
+        assert not any(k.upper() == 'NODE_OPTIONS' for k in environment)
