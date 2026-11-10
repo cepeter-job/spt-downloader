@@ -1101,6 +1101,19 @@ remain definitive refusals without polling. Template-mapping entries persist
 unmapped field/table identities (form, label, field, group) alongside their
 counts so the exact not-mapped subset is inspectable from run data.
 
+## Manual private-job pruning safety
+
+Manual Settings pruning must first present only the count and approximate
+bytes of *currently eligible* sealed COMPLETE jobs, then obtain explicit
+confirmation with a safe default of No. The preview must not mutate files.
+Both automatic and manual pruning serialize through the same bounded,
+identity-checked, no-clobber verification and deletion path. Revalidate all
+source bytes and immutable held published Downloads outputs after confirmation.
+Never purge historical/unsealed, partial, active, recovery-bearing, unknown,
+locked or redirected jobs. Prevent GUI export and preference changes during
+manual housekeeping. Do not expose taxpayer names, paths or job IDs in
+preview, confirmation or diagnostics.
+
 ## Automatic completed-job pruning (Settings)
 
 Desktop Settings allows 0–100 retained jobs (default 10, 0 disables).
