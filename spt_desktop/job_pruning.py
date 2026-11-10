@@ -325,6 +325,10 @@ def preview_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=N
                 # Pin before reading the seal, run.json or source tree.
                 with DirectoryGuard() as source_guard:
                     source_guard.include(_checked_ancestors(job))
+                    try:
+                        _plain(job / SEAL)
+                    except FileNotFoundError:
+                        continue  # Expected legacy/unsealed job, not a partial scan.
                     with DirectoryGuard() as output_guard, ExitStack() as handles:
                         if not _eligible(job, Path(downloads), deadline=deadline,
                                          outputs=handles, guard=output_guard,
