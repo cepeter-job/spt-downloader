@@ -4,13 +4,16 @@ Login CLI diselesaikan pengguna di browser. Validasi data bersama dipakai oleh
 CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
 """
 from spt_desktop import diagnostics
+from spt_desktop.paths import reject_windows_device_component
 import argparse
 from contextlib import contextmanager, ExitStack
 from datetime import datetime
 import hashlib
 import json
 import os
+import re
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 import sys
@@ -71,6 +74,8 @@ def output_path(folder, name):
             or any(part in ('', '.', '..') or part.endswith((' ', '.')) for part in name.split('/'))
             or Path(name).is_absolute()):
         raise ValueError('Invalid workbook filename')
+    for part in name.split('/'):
+        reject_windows_device_component(part)
     root = Path(folder).absolute()
     path = root / name
     for component in [root, *[root.joinpath(*name.split('/')[:i]) for i in range(1, len(name.split('/'))+1)]]:
@@ -446,8 +451,8 @@ def save_output(run, folder, *, json_source=None):
 
 
 def validate_debug_endpoint(value):
-    """Terima hanya origin loopback eksplisit tanpa kredensial atau rute URL."""
-    message = '--reuse-browser must be a localhost HTTP debugging origin without credentials, path or query'
+    """Accept only an explicit loopback HTTP CDP origin with a fixed port."""
+    message = '--reuse-browser requires a localhost HTTP origin with a port and no credentials, path or query'
     if not isinstance(value, str) or any(ord(c) <= 32 or ord(c) == 127 for c in value):
         raise ValueError(message)
     try:
@@ -455,13 +460,67 @@ def validate_debug_endpoint(value):
         port = endpoint.port
     except ValueError as error:
         raise ValueError(message) from error
-    if (endpoint.scheme not in ('http', 'https') or
+    if (endpoint.scheme != 'http' or
             endpoint.hostname not in ('127.0.0.1', 'localhost', '::1') or
             endpoint.username is not None or endpoint.password is not None or
             endpoint.path not in ('', '/') or endpoint.params or endpoint.query or endpoint.fragment or
-            endpoint.netloc.endswith(':') or port == 0):
+            endpoint.netloc.endswith(':') or port is None or port == 0):
         raise ValueError(message)
     return value
+
+
+def validate_cdp_profile(endpoint, profile):
+    """Fail before connecting unless Chromium published an ephemeral port for this profile.
+
+    DevToolsActivePort is a profile-to-port binding, not a cryptographic
+    attestation against a malicious same-user local process.
+    """
+    validate_debug_endpoint(endpoint)
+    original = Path(profile).expanduser()
+    if original.is_symlink() or not original.is_dir():
+        raise ValueError('CDP reuse requires an existing dedicated browser profile')
+    profile = original.resolve()
+    marker = profile / 'DevToolsActivePort'
+    try:
+        info = marker.lstat()
+        if (not stat.S_ISREG(info.st_mode) or
+                getattr(info, 'st_file_attributes', 0) & 1024 or
+                not 1 <= info.st_size <= 512):
+            raise ValueError('CDP profile marker is not a regular small file')
+        lines = marker.read_text(encoding='ascii').splitlines()
+    except (OSError, UnicodeError) as error:
+        raise ValueError('CDP reuse requires a Chromium DevToolsActivePort profile marker') from error
+    if (len(lines) != 2 or not lines[0].isdigit() or
+            int(lines[0]) != urlparse(endpoint).port or
+            not re.fullmatch(r'/devtools/browser/[A-Za-z0-9-]{8,128}', lines[1])):
+        raise ValueError('CDP endpoint does not match the dedicated profile debugging port')
+    return profile
+
+
+def validate_cdp_browser(browser, profile):
+    """Require command-line evidence of the chosen profile, not contexts[0] alone."""
+    try:
+        session = browser.new_browser_cdp_session()
+        try:
+            metadata = session.send('Browser.getBrowserCommandLine')
+        finally:
+            session.detach()
+    except Exception as error:
+        raise ValueError('CDP browser launch identity is unavailable; reuse refused') from error
+    arguments = metadata.get('arguments') if isinstance(metadata, dict) else None
+    if not isinstance(arguments, list) or not all(isinstance(item, str) for item in arguments):
+        raise ValueError('CDP browser command-line evidence is missing')
+    directories = [arg.split('=', 1)[1] for arg in arguments
+                   if arg.startswith('--user-data-dir=')]
+    if ('--remote-debugging-port=0' not in arguments or len(directories) != 1
+            or '--user-data-dir' in arguments or
+            not Path(directories[0]).is_absolute() or
+            Path(directories[0]).resolve() != profile):
+        raise ValueError('CDP browser was not launched with the selected dedicated profile and ephemeral port')
+    contexts = browser.contexts
+    if len(contexts) != 1:
+        raise ValueError('CDP browser must expose exactly one unambiguous default context')
+    return contexts[0]
 
 
 def authenticate(page, noninteractive):
@@ -496,7 +555,7 @@ def parser():
     cli.add_argument('--from-json', type=Path, help='Rebuild Excel offline from an existing run.json')
     cli.add_argument('--browser', choices=['msedge', 'chrome'], default='msedge')
     cli.add_argument('--profile', type=Path, default=BASE / 'browser-profile', help='Dedicated persistent profile, never your personal browser profile')
-    cli.add_argument('--reuse-browser', nargs='?', const='http://127.0.0.1:9235', help='Connect to an already opened local automation browser')
+    cli.add_argument('--reuse-browser', metavar='HTTP_ORIGIN', help='Explicitly reuse a dedicated local Chromium profile launched with --remote-debugging-port=0')
     cli.add_argument('--non-interactive', action='store_true', help='Requires NPWP/year and an authenticated session; never prompts for credentials')
     cli.add_argument('--inventory-only', action='store_true', help='Capture SPT list only; output is explicitly PARTIAL for full-detail scope')
     cli.add_argument('--detail-limit', type=int, help='Test-only detail limit; output stays PARTIAL if any return remains unexported')
@@ -608,7 +667,7 @@ def _main(argv=None):
     print('READ-ONLY: no submission, cancellation, PDF-generation or email actions.')
     if args.reuse_browser:
         try:
-            validate_debug_endpoint(args.reuse_browser)
+            reused_profile = validate_cdp_profile(args.reuse_browser, args.profile)
         except ValueError as error:
             cli.error(str(error))
     start = time.monotonic()
@@ -624,7 +683,7 @@ def _main(argv=None):
             playwright = manager.__enter__()
             if args.reuse_browser:
                 browser = playwright.chromium.connect_over_cdp(args.reuse_browser, timeout=20000)
-                context = browser.contexts[0]
+                context = validate_cdp_browser(browser, reused_profile)
             else:
                 owned_context = playwright.chromium.launch_persistent_context(str(args.profile.resolve()), channel=args.browser,
                     headless=False, no_viewport=True, service_workers='block',

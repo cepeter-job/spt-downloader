@@ -32,6 +32,7 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
   names with explicit same-name re-exports; do not bulk-remove imports based on
   lint alone. The adopted Bugbear subset is B006/B012/B016/B018/B020; remaining
   findings require contract-specific triage before enabling additional rules.
+- The frozen GUI `--self-test` is a release gate: always use explicit `require(condition, fixed_description)` checks within `spt_gui.self_test`, never Python `assert` (which disappears under `-O` / `PYTHONOPTIMIZE`). A failure must exit nonzero and disclose only its fixed synthetic check label; keep the self-test offline and free of account/browser access. The existing `build_desktop.py` EXE invocation and report validation remain mandatory.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
@@ -653,6 +654,18 @@ retain their actual source_structure, headers and footer spans without reading
 body/footer values or inputs. Require explicit valid PreviousFormData encoding,
 the complete current L1dFormData and the reviewed safe code/mask/total projection.
 Bind every projected value to its original response sequence/container/path.
+The optional body_layout=absent-5322-34x10-v1 admits only the exact reviewed
+account set minus5322, with current-induk-enabled-v1 visibility proof and a
+stable owned first-table body of34 visible rows, ten visible unspanned cells
+each, observed structurally without reading business values. The pinned
+lookup/PrimeNG outlet emits no row for that absent node. Emit34 real rows;
+never invent a node, account label, placeholder or zero. Preserve all remaining
+source leaves, masks, safe ordered arithmetic and seven/four footer/balance
+checks. Retain body_layout and omitted_account_codes separately in projection
+provenance, not as fake raw leaves. Other/multiple missing codes, a present5322
+with omission proof, unknown/null proof, or changed body shape stays unsupported.
+Old missing5322 captures without the new proof remain ineligible. The full
+31-code/35-row branch and its dynamic template growth remain unchanged.
 Missing proof uses whole-record fallback; known lifetime/encoding contradictions
 remain fatal. Replay must retain manifest custody. This branch does not certify
 Induk mapping, financial PDFs or other corporate forms.
@@ -1087,3 +1100,18 @@ at all (lazy grid rendering after tab activation); present-but-unbound tables
 remain definitive refusals without polling. Template-mapping entries persist
 unmapped field/table identities (form, label, field, group) alongside their
 counts so the exact not-mapped subset is inspectable from run data.
+
+## Automatic completed-job pruning (Settings)
+
+Desktop Settings allows 0–100 retained jobs (default 10, 0 disables).
+The background pruning path is bounded to jobs explicitly sealed after
+verified COMPLETE publication by the version that supports the seal.
+A checkpoint or folder age is never a deletion permit. Ten newest run
+directories (including failed/partial) are protected; older unsealed,
+modified, redirected, in-use or recovery-bearing jobs are always retained.
+The seal binds the private source inventory and current published output
+hashes, which must be checked again before any removal. Published
+Downloads outputs are not deleted. This does not supply independent
+backup or authorize deleting historical, unsealed captures.
+Tests must exercise partial, failure, tampering, new files, symlinks,
+recovery notices, disabled/invalid limits and GUI persistence.

@@ -27,6 +27,7 @@ from openpyxl.chart import BarChart, Reference
 from openpyxl.utils import get_column_letter
 from coretax_resume_layout import apply_resume_layout
 from coretax_mpn import validate_mpn
+from spt_desktop.paths import reject_windows_device_component
 
 NAVY, BLUE, PALE, GRAY = '17365D', '2463A0', 'EDF3FA', '64748B'
 INVALID_XML_TEXT = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]')
@@ -392,6 +393,8 @@ def workbook_groups(run, *, legacy=False):
                 raise ValueError('Unsupported source period/model filename length')
             if tax in periodic:
                 filename = f'SPT Masa {periodic[tax]}/{filename}'
+        for full_component in filename.split('/'):
+            reject_windows_device_component(full_component)
         # Sanitasi nama Windows dapat menyamakan teks periode/model yang berbeda;
         # identitas literal tetap pembeda agar satu workbook tidak menimpa lainnya.
         folded = filename.casefold()

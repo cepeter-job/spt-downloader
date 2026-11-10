@@ -30,7 +30,7 @@ EVENTS = frozenset({
     'operation.failed', 'operation.cancelled', 'phase.started', 'phase.completed',
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
-    'worker.stderr_discarded', 'worker.finished', 'worker.forced_stop', 'worker.stop',
+    'worker.stderr_discarded', 'worker.finished', 'jobs.pruned', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
     'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',

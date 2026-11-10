@@ -42,7 +42,7 @@ WORKER_FILES = (
     'spt_desktop/worker.py', 'spt_desktop/interaction.py', 'spt_desktop/output_windows.py',
     'spt_desktop/diagnostics.py', 'spt_desktop/diagnostic_store.py',
     'spt_desktop/build_info.py', 'spt_desktop/publication_recovery.py',
-    'spt_desktop/profile_lifecycle.py',
+    'spt_desktop/profile_lifecycle.py', 'spt_desktop/job_pruning.py',
     'coretax_detail_source.py',
     'coretax_transport.py',
 )

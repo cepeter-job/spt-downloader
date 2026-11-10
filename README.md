@@ -55,6 +55,8 @@ Downloads ditentukan melalui Windows Known Folder API, termasuk lokasi yang dipi
 
 Nama folder memakai nama wajib pajak dari hasil pencarian NPWP yang cocok persis. Hanya komponen nama berkas yang disanitasi; nama sumber tetap literal di Excel. Nama wajib pajak yang hilang atau Downloads yang tidak dapat ditulisi menghasilkan error. Aplikasi tidak membuat nama pengganti atau diam-diam mengganti tujuan.
 
+Windows memperlakukan `CON`, `PRN`, `AUX`, `NUL`, nama `COM`/`LPT` tertentu, dan bentuk dengan ekstensi sebagai perangkat, bukan berkas. CLI dan desktop menolak **komponen path final** yang tepat cocok dengan nama perangkat tersebut. Nama pajak seperti `CON` tetap sah bila berada di dalam folder berawalan NPWP (`<NPWP> - CON`); workbook tetap menggunakan prefiks `SPT_`. Nama sumber di metadata/Excel tidak diubah, dan penolakan tidak mengizinkan penggantian otomatis.
+
 Saat penggantian disetujui, desktop memakai folder ekspor sebelumnya yang ditampilkan pada dialog. Aplikasi memeriksa ulang folder dan file tersebut sebelum menggantinya; perubahan sejak konfirmasi menghentikan publikasi.
 
 Workbook, checkpoint, dan profil merupakan data rahasia lokal. Workbook tidak terenkripsi. Jangan unggah berkas tersebut, cookie, kredensial, atau tangkapan layar berisi data wajib pajak ke issue, PR, log publik, atau percakapan.
@@ -122,7 +124,7 @@ CLI tetap memakai argumen dan checkpoint untuk menentukan cakupan serta folder o
 
 Pasang `uv` sesuai [kebijakan toolchain](docs/python-314.md), lalu jalankan **setup.cmd** dari checkout ini. Setelah setup berhasil, jalankan **run.cmd** untuk mengisi NPWP dan tahun secara interaktif. Login dilakukan langsung di browser terpisah; selesaikan password, CAPTCHA, atau MFA di sana, lalu tekan Enter pada terminal bila diminta.
 
-`run.cmd` dapat memakai ulang browser automation lokal pada port 9235 yang sudah aktif. Browser baru biasa tidak mengaktifkan port debugging. Jangan mengekspos endpoint debugging ke jaringan atau memakai profil browser pribadi.
+`run.cmd` **selalu membuka browser milik CLI sendiri** dan tidak lagi memeriksa port 9235 atau memakai sesi login yang kebetulan aktif. Penggunaan ulang lewat CDP adalah opsi lanjutan yang harus diminta secara eksplisit dengan `--reuse-browser` serta `--profile` yang cocok. Jangan mengekspos endpoint debugging ke jaringan atau memakai profil pribadi.
 
 Contoh berikut untuk **Command Prompt**. Ganti `NPWP_16_DIGIT_ANDA` dengan NPWP yang memang berwenang Anda akses; placeholder sengaja bukan NPWP valid. Tentukan folder baru di luar checkout untuk data lokal.
 
@@ -130,13 +132,32 @@ Contoh berikut untuk **Command Prompt**. Ganti `NPWP_16_DIGIT_ANDA` dengan NPWP 
 .venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --output "%LOCALAPPDATA%\SPTDownloader-CLI\run-baru" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\profile"
 ```
 
-Bila browser automation yang sesuai sudah login:
+### Penggunaan ulang browser CDP (khusus pengguna ahli)
+
+**Normal:** gunakan `run.cmd` tanpa `--reuse-browser`; CLI meluncurkan profil terpisah yang dikelola aplikasi. Tidak ada pemeriksaan port debugging otomatis.
+
+**Opsi lanjutan:** di Command Prompt terpisah, jalankan Microsoft Edge dengan direktori profil khusus dan **port acak**. Contoh berikut memakai lokasi instalasi Edge standar (sesuaikan bila berbeda):
 
 ```bat
-.venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --output "%LOCALAPPDATA%\SPTDownloader-CLI\run-baru" --reuse-browser http://127.0.0.1:9235
+start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --user-data-dir="%LOCALAPPDATA%\SPTDownloader-CLI\cdp-profile" --remote-debugging-port=0 --enable-automation --no-first-run
 ```
 
-Endpoint harus berupa origin HTTP/HTTPS loopback tanpa kredensial, path, query, atau fragment. Tutup browser automation setelah selesai; proses lokal lain mungkin dapat mengakses endpoint selama browser tersebut terbuka.
+Setelah browser berjalan, lihat baris **pertama** dari `DevToolsActivePort` untuk nomor port, lalu gantikan `PORT_DARI_FILE` di perintah ekspor dengan angka itu. Baris kedua merupakan identitas debugging browser dan tidak perlu dikirim ke issue atau log.
+
+```bat
+type "%LOCALAPPDATA%\SPTDownloader-CLI\cdp-profile\DevToolsActivePort"
+.venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --output "%LOCALAPPDATA%\SPTDownloader-CLI\run-baru" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\cdp-profile" --reuse-browser http://127.0.0.1:PORT_DARI_FILE
+```
+
+Opsi ini hanya menerima origin **HTTP loopback dengan port eksplisit**, berkas `DevToolsActivePort` asli yang cocok, command line Chromium dengan `--remote-debugging-port=0` dan `--user-data-dir` persis sama, serta satu default context. Jika salah satu bukti tidak tersedia, reuse ditolak dan CLI **tidak** beralih ke context lain. Port tetap tidak boleh diakses oleh perangkat lain. Pemeriksaan ini mengurangi risiko salah memilih sesi, **bukan** bukti kriptografis bila proses lokal dengan hak pengguna yang sama sudah berbahaya.
+
+Untuk melanjutkan checkpoint CLI yang sama:
+
+```bat
+.venv\Scripts\python.exe coretax.py --resume "%LOCALAPPDATA%\SPTDownloader-CLI\run-sebelumnya" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\cdp-profile" --reuse-browser http://127.0.0.1:PORT_DARI_FILE
+```
+
+Tutup browser CDP secara manual setelah ekspor. Pilihan ini tidak digunakan oleh aplikasi desktop.
 
 ### Checkpoint dan pemulihan CLI
 

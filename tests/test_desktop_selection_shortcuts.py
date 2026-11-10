@@ -301,12 +301,33 @@ def test_empty_or_no_match_disables_shortcuts_and_confirmation(tmp_path, empty):
         assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
 
 
-def test_stale_job_shortcut_cannot_select_or_reply(tmp_path):
+@pytest.mark.parametrize('name', NAMES)
+def test_stale_job_shortcut_cannot_select_or_reply(tmp_path, monkeypatch, name):
     with window(tmp_path, inventory()) as (root, app, controller, dialog):
+        # Own the poll boundary: root.update() may otherwise retire this dialog
+        # before the assertion, depending on whether the 100ms timer is due.
+        poll = app._poll_after
+        assert poll is not None
+        root.after_cancel(poll)
+        app._poll_after = None
+        tree = named_widget(dialog, 'records')
+        selection_calls = []
+        original = tree.selection_set
+
+        def selection_set(*items):
+            selection_calls.append(items)
+            return original(*items)
+
+        monkeypatch.setattr(tree, 'selection_set', selection_set)
         controller.job_id = 'different-synthetic-job'
-        named_widget(dialog, 'select_all').invoke()
+        named_widget(dialog, name).invoke()
+        assert not selected(dialog) and not selection_calls
+        # Stale-job cleanup is valid; verify it without enumerating destroyed
+        # widgets, while preserving the no-selection/no-consent contract.
+        app._poll()
         root.update()
-        assert not selected(dialog) and not controller.replies and not controller.stopped
+        assert not dialog.winfo_exists() and app._interaction is None
+        assert not selection_calls and not controller.replies and not controller.stopped
 
 
 def test_shortcuts_fit_the_compact_dialog_without_horizontal_clipping(tmp_path):

@@ -9,6 +9,24 @@ import uuid
 DOWNLOADS = '374DE290-123F-4565-9164-39C4925E467B'
 LOCAL_APP_DATA = 'F1B32785-6FBA-4FCF-9D55-7B8E7F157091'
 
+# Match the Win32 device namespace even with extensions (NUL.txt).
+# The superscript digits are explicitly reserved for COM/LPT on Windows.
+_DEVICE_STEMS = frozenset({'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$'})
+_DEVICE_PORT = re.compile(r'(?:COM|LPT)[1-9¹²³]', re.IGNORECASE)
+
+
+def reject_windows_device_component(component: str) -> None:
+    """Refuse a complete Windows path component that aliases a device.
+
+    Taxpayer source text is not a complete component until the NPWP prefix
+    has been added. Never change literal source values or workbook labels.
+    """
+    if not isinstance(component, str):
+        raise ValueError('Invalid Windows path component')
+    stem = component.rstrip(' .').split('.', 1)[0].rstrip(' ')
+    if stem.upper() in _DEVICE_STEMS or _DEVICE_PORT.fullmatch(stem):
+        raise ValueError('Windows reserved device filename component')
+
 
 class _GUID(ctypes.Structure):
     _fields_ = [('Data1', ctypes.c_uint32), ('Data2', ctypes.c_uint16),
