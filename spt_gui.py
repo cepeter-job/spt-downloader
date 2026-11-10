@@ -16,6 +16,17 @@ from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
 from spt_desktop.windows import InstanceLock
 
 
+
+class SelfTestFailure(AssertionError):
+    """A fixed-label GUI release-gate failure that survives Python -O."""
+
+
+def require(condition, description):
+    """Keep packaged release-gate checks active even with PYTHONOPTIMIZE."""
+    if not condition:
+        raise SelfTestFailure('GUI self-test failed: ' + description)
+
+
 def self_test(report=None):
     class SyntheticController:
         # Injection proves that constructing/rendering the GUI never prepares a worker.
@@ -73,7 +84,7 @@ def self_test(report=None):
             root.deiconify()
             contact=app.view.bugreport_label
             contact_font=root.tk.call('ttk::style','lookup',contact.cget('style'),'-font')
-            assert int(root.tk.call('font','actual',contact_font,'-size'))==12
+            require(int(root.tk.call('font','actual',contact_font,'-size'))==12, "footer font size")
             positions=[]
             for width,height in ((540,430),(800,620)):
                 root.geometry(f'{width}x{height}')
@@ -95,65 +106,66 @@ def self_test(report=None):
                     and contact.winfo_rooty()>=app.results_label.winfo_rooty()+app.results_label.winfo_height()))
                 del settled
             bugreport_footer={'text':str(contact.cget('text')),'bottom_right':all(positions)}
-            assert bugreport_footer=={'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}
+            require(bugreport_footer=={'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}, "footer text and placement")
             root.withdraw()
-            assert app.start_button.cget('text')=='Mulai unduh'
-            assert app.npwp.get()==''
-            assert app.stop_button.instate(['disabled'])
+            require(app.start_button.cget('text')=='Mulai unduh', "start button caption")
+            require(app.npwp.get()=='', "blank initial NPWP")
+            require(app.stop_button.instate(['disabled']), "stop button initially disabled")
             dialog=app.settings();root.update_idletasks()
             def descendants(widget):
                 for child in widget.winfo_children():
                     yield child;yield from descendants(child)
             main_labels={w.cget('text') for w in descendants(root) if w.winfo_class()=='TLabel'}
             personal_use_labels=sorted(text for text in main_labels if 'for personal use' in text)
-            assert personal_use_labels==['Coretax → Excel · for personal use only']
-            assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels)
+            require(personal_use_labels==['Coretax → Excel · for personal use only'], "personal-use heading")
+            require(not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels), "private/readonly labels absent")
             widgets=list(descendants(dialog))
             from spt_desktop.credentials import LOGIN_ORIGIN,ALLOWED_ORIGINS
             origin_selector=any(w.winfo_class()=='TCombobox' and
                 any(origin in tuple(w.cget('values')) for origin in ALLOWED_ORIGINS) for w in widgets)
             automatic_login={'origin_selector_present':origin_selector,
                 'credential_origin':'satu' if app.preferences['login_origin']==LOGIN_ORIGIN else 'other'}
-            assert not origin_selector
-            assert 'Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}
+            require(not origin_selector, "login origin selector absent")
+            require('Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}, "login origin label absent")
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
-            assert {'Simpan','Hapus login','Tutup','Buka folder log'}<=labels
-            assert not {'Cek login','Batalkan cek'}.intersection(labels)
-            assert not dialog.bind('<Alt-c>')
-            assert any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets)
+            require({'Simpan','Hapus login','Tutup','Buka folder log'}<=labels, "settings actions present")
+            require(not {'Cek login','Batalkan cek'}.intersection(labels), "legacy login actions absent")
+            require(not dialog.bind('<Alt-c>'), "legacy login shortcut absent")
+            require(any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets), "password entry masked")
             background=[w for w in widgets if w.winfo_class()=='TCheckbutton']
-            assert len(background)==1
+            require(len(background)==1, "exactly one background toggle")
             headings=[w for w in descendants(root) if w.winfo_class()=='TLabel'
                       and str(w.cget('style'))=='Title.TLabel']
-            assert len(headings)==1
+            require(len(headings)==1, "exactly one heading")
             ui_text={'title':headings[0].cget('text'),'background':background[0].cget('text'),
                      'results':app.results_label.cget('text')}
-            assert root.title()==ui_text['title']
-            assert ui_text=={
+            require(root.title()==ui_text['title'], "window title")
+            require((ui_text=={
                 'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                 'background':'jalankan proses sedot di background',
-                'results':'Hasil Sedot berada di folder Downloads Windows'}
+                'results':'Hasil Sedot berada di folder Downloads Windows'}), "actual UI captions")
             gui_controls=sorted({w.cget('text') for w in descendants(root)
                                  if w.winfo_class()=='TButton'})
             modes=[w for w in widgets if w.winfo_class()=='TCombobox'
                    and tuple(w.cget('values'))==('DOM','JSON-hybrid (pilot)')]
-            assert len(modes)==1 and modes[0].get()=='JSON-hybrid (pilot)' and modes[0].instate(['readonly'])
+            require(len(modes)==1 and modes[0].get()=='JSON-hybrid (pilot)' and modes[0].instate(['readonly']), "single read-only source selector")
             mode_control={'labels':list(modes[0].cget('values')),'default':app.preferences['detail_source']}
             modes[0].current(1)
             next(w for w in widgets if w.winfo_class()=='TButton' and w.cget('text')=='Simpan').invoke()
             from spt_desktop.app import load_preferences
             mode_control['saved']=load_preferences(Path(folder))['detail_source']
-            assert mode_control['saved']=='json-first'
+            require(mode_control['saved']=='json-first', "saved JSON source preference")
             app._settings_close()
-            assert all((resource_root()/name).is_file() for name in WORKER_FILES)
-            if getattr(sys,'frozen',False):assert (resource_root()/'tools'/'uv.exe').is_file()
+            require(all((resource_root()/name).is_file() for name in WORKER_FILES), "worker resources bundled")
+            if getattr(sys,'frozen',False):
+                require((resource_root()/'tools'/'uv.exe').is_file(), "frozen uv bundled")
             app.npwp.set('0000000000000001');app.year.set('2025')
             app.preferences['identifier']='SYNTHETIC_ACCOUNT'
             app.start()
             automatic_login['account_forwarded']=app.controller.account=='SYNTHETIC_ACCOUNT'
-            assert automatic_login=={'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
+            require(automatic_login=={'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}, "automatic account forwarded")
             mode_control['started']=app.controller.detail_source
-            assert mode_control['started']=='json-first'
+            require(mode_control['started']=='json-first', "started JSON source")
             app.on_event({'job_id':app.controller.job_id, 'type':'selection_required',
                           'request_id':'a'*32, 'stage':'selection', 'percent':20,
                           'message':'Synthetic selection self-test'})
@@ -162,36 +174,36 @@ def self_test(report=None):
             tree=next(w for w in descendants(selection) if w.winfo_class()=='Treeview')
             initial=list(tree.get_children())
             initial_ids=[tree.item(iid,'values')[3] for iid in initial]
-            assert initial_ids==[
+            require((initial_ids==[
                 'synthetic-badan-two','synthetic-badan-one','synthetic-21','synthetic-unifikasi',
                 'synthetic-ppn-normal','synthetic-ppn-one','synthetic-ppn-two',
-                '::synthetic {return}; [literal] / id','synthetic-ppn-feb']
-            assert not tree.selection()
+                '::synthetic {return}; [literal] / id','synthetic-ppn-feb']), "synthetic initial inventory order")
+            require(not tree.selection(), "initial selection empty")
             # Header and reply oracles refer to inventory order, not the new display order.
             by_id={tree.item(iid,'values')[3]:iid for iid in initial}
             original=[by_id[record['record_id']] for record in app.controller.read_request(None)['records']]
             shortcuts={w.winfo_name():w for w in descendants(selection) if w.winfo_class()=='TCheckbutton'}
             shortcut_report={'labels':[shortcuts['select_'+name].cget('text')
                                       for name in ('all','latest','potput','ppn')]}
-            assert shortcut_report['labels']==['All','Pemb. Terakhir','PPh Potput','PPN']
+            require(shortcut_report['labels']==['All','Pemb. Terakhir','PPh Potput','PPN'], "selection shortcut labels")
             shortcuts['select_all'].invoke();root.update()
             shortcut_report['all_count']=len(tree.selection())
-            assert shortcut_report['all_count']==9
+            require(shortcut_report['all_count']==9, "select-all count")
             shortcuts['select_all'].invoke();root.update()
-            assert not tree.selection()
+            require(not tree.selection(), "select-all clearing")
             shortcuts['select_latest'].invoke();root.update()
             shortcut_report['latest_ids']=[tree.item(iid,'values')[3] for iid in original if iid in tree.selection()]
-            assert shortcut_report['latest_ids']==[
+            require((shortcut_report['latest_ids']==[
                 '::synthetic {return}; [literal] / id','synthetic-badan-one','synthetic-21',
-                'synthetic-ppn-feb','synthetic-unifikasi']
+                'synthetic-ppn-feb','synthetic-unifikasi']), "latest-selection shortcut")
             shortcuts['select_ppn'].invoke();shortcuts['select_potput'].invoke();root.update()
             shortcut_report['combined_ids']=[tree.item(iid,'values')[3] for iid in original if iid in tree.selection()]
-            assert shortcut_report['combined_ids']==[
-                '::synthetic {return}; [literal] / id','synthetic-21','synthetic-ppn-feb','synthetic-unifikasi']
-            assert not hasattr(app.controller,'selection_reply')
+            require((shortcut_report['combined_ids']==[
+                '::synthetic {return}; [literal] / id','synthetic-21','synthetic-ppn-feb','synthetic-unifikasi']), "combined-selection shortcuts")
+            require(not hasattr(app.controller,'selection_reply'), "selection reply not premature")
             shortcuts['select_all'].invoke();shortcuts['select_all'].invoke();root.update()
             shortcut_report['cleared']=not tree.selection()
-            assert shortcut_report['cleared']
+            require(shortcut_report['cleared'], "shortcut clearing retained")
             chosen=(original[0],original[3])
             tree.selection_set(chosen)
             tree.event_generate('<<TreeviewSelect>>')
@@ -201,29 +213,29 @@ def self_test(report=None):
                      'default_ordered_ids':initial_ids}
             values={iid:tuple(tree.item(iid,'values')) for iid in original}
             sorting['period_labels']=[values[iid][1] for iid in original]
-            assert sorting['period_labels']==[
+            require((sorting['period_labels']==[
                 'Januari','Tahunan','Februari','Tahunan','Januari',
-                'Januari','Januari','Februari','Januari']
+                'Januari','Januari','Februari','Januari']), "source period labels")
             # Independent literal oracles: never compute expectations with the sort key.
             for expected_order in ((3,1,2,8,4,5,6,0,7),(4,5,6,0,7,8,2,3,1)):
                 root.tk.call(tree.heading('type','command'))
                 root.update()
                 observed=list(tree.get_children())
-                assert observed==[original[index] for index in expected_order]
+                require(observed==[original[index] for index in expected_order], "sort order")
                 sorting['ordered_ids'].append([tree.item(iid,'values')[3] for iid in observed])
-                assert set(tree.selection())==set(chosen)
-                assert {iid:tuple(tree.item(iid,'values')) for iid in observed}==values
+                require(set(tree.selection())==set(chosen), "selection preserved while sorting")
+                require({iid:tuple(tree.item(iid,'values')) for iid in observed}==values, "sort preserves literal row values")
                 sorting['directions'].append(tree.heading('type','text'))
             next(w for w in descendants(selection) if w.winfo_class()=='TButton'
                  and w.cget('text')=='Sedot SPT terpilih').invoke()
             expected_ids=[values[iid][3] for iid in chosen]
-            assert app.controller.selection_reply==('selection','a'*32,{'selected_ids':expected_ids,'mpn':False})
-            assert app._interaction is None
+            require(app.controller.selection_reply==('selection','a'*32,{'selected_ids':expected_ids,'mpn':False}), "selected identifiers forwarded")
+            require(app._interaction is None, "interaction released")
             sorting['confirmed_ids']=app.controller.selection_reply[2]['selected_ids']
             sorting['selection_preserved']=True
             app.on_event({'job_id':app.controller.job_id,'type':'progress','stage':'details',
                           'percent':42,'message':'Self-test synthetic progress'})
-            assert app.percent.get()=='42%'
+            require(app.percent.get()=='42%', "progress percentage rendered")
             diagnostic_report=diagnostics.self_test(Path(folder)/'diagnostic-test')
             data={'diagnostics':diagnostic_report,'ok':True,'python':sys.version.split()[0],'bits':struct.calcsize('P')*8,
                   'python_implementation':platform.python_implementation(),
@@ -266,7 +278,14 @@ def main(argv=None):
         if args.report is None:parser.error('--runtime-self-test requires --report')
         from scripts.ci_runtime import packaged_self_test
         return packaged_self_test(args.report)
-    if args.self_test:return self_test(args.report)
+    if args.self_test:
+        try:
+            return self_test(args.report)
+        except SelfTestFailure as error:
+            # The description is a fixed label; never print widget contents.
+            if sys.stderr is not None:
+                print(str(error), file=sys.stderr)
+            return 1
     with diagnostics.session(diagnostics.default_root(), 'gui'):
         return _run_gui()
 
