@@ -230,6 +230,7 @@ class App:
             return
         excluded = getattr(self.controller, 'job_id', None)
         work = queue.Queue(maxsize=1)
+        approved_ids = ()  # Never written to UI or diagnostics.
         self._manual_prune_busy = True
         if self._settings_refresh is not None:
             self._settings_refresh(preserve_status=True)
@@ -246,12 +247,13 @@ class App:
         def delete():
             try:
                 removed = prune_published_jobs(self.workspace, downloads, keep,
-                                               exclude=excluded)
+                                               exclude=excluded, allowed_ids=approved_ids)
                 work.put(('deleted', removed))
             except (OSError, ValueError, TypeError, RuntimeError):
                 work.put(('delete_error', None))
 
         def receive():
+            nonlocal approved_ids
             if self._disposed:
                 return
             try:
@@ -262,8 +264,12 @@ class App:
             if kind == 'preview':
                 total = result['eligible_jobs']
                 size = result['estimated_bytes']
-                diagnostics.record('jobs.prune_preview', count=total, bytes=size)
-                if not total:
+                if not result['scan_complete']:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Pratinjau belum lengkap',
+                        'Sebagian job belum dapat diverifikasi atau batas waktu pemeriksaan habis. '
+                        'Tidak ada job yang dihapus; coba lagi setelah masalah selesai.', parent=dialog)
+                elif not total:
                     self._manual_prune_busy = False
                     messagebox.showinfo('Tidak ada job yang memenuhi syarat',
                         'Tidak ada job lama bersegel COMPLETE dan terverifikasi untuk dipangkas.',
@@ -273,6 +279,15 @@ class App:
                     messagebox.showinfo('Job sedang berjalan',
                         'Pemangkasan dibatalkan karena ada pekerjaan aktif.', parent=dialog)
                 else:
+                    approved_ids = tuple(result['candidate_ids'])
+                    if len(approved_ids) != total:
+                        self._manual_prune_busy = False
+                        messagebox.showerror('Pratinjau tidak konsisten',
+                            'Kandidat job tidak cocok dengan jumlah yang diverifikasi.', parent=dialog)
+                        if self._settings_dialog is dialog and dialog.winfo_exists():
+                            self._settings_refresh(preserve_status=True)
+                        return
+                    diagnostics.record('jobs.prune_preview', count=total, estimated_bytes=size)
                     confirmed = messagebox.askyesno('Konfirmasi pemangkasan job',
                         f'{total} job lama memenuhi syarat. Perkiraan ruang: '
                         f'{size / (1024 * 1024):.1f} MiB.\n\n'
