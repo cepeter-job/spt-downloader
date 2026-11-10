@@ -84,3 +84,24 @@ otomatis, organisasi wajib menilai kebutuhan penyimpanan dan backup
 terenkripsi secara terpisah. Pengaturan ini **tidak** menyatakan
 backup telah berhasil atau kewajiban retensi instansi sudah terpenuhi.
 Job historis tetap memerlukan prosedur backup dan penghapusan manual.
+
+## Pemangkasan manual dari Pengaturan
+
+Klik **Pangkas job lama** setelah menyimpan pengaturan retensi (1–100; 10
+secara default). Aplikasi terlebih dahulu melakukan **pratinjau tanpa
+menghapus**: jumlah job lama yang masih memiliki segel COMPLETE yang sah
+serta perkiraan ukuran data privat yang dapat dibebaskan (MiB). Tinjauan
+berjalan di thread terpisah, sementara aplikasi tidak memulai job baru
+atau menyimpan perubahan pengaturan. Jumlah yang bisa dihapus dapat
+berkurang jika file berubah, dikunci, atau hilang setelah pratinjau.
+
+Hanya setelah dialog konfirmasi eksplisit diterima, aplikasi mengulang
+pemeriksaan keseluruhan: status COMPLETE, segel dan hash pohon sumber,
+identitas direktori, checksum semua output Downloads dengan handle Windows
+yang menolak perubahan, dan recovery. Tidak ada nama NPWP, job ID,
+path privat, atau data transaksi dalam pratinjau/diagnostik. Jika salah
+satu syarat gagal, job tersebut tidak dihapus. Tindakan ini tidak
+menghapus hasil Downloads, profil atau sandi. Nilai **0** menonaktifkan
+pemangkasan otomatis maupun manual. *Perkiraan* ukuran tidak termasuk
+biaya metadata filesystem dan bukan janji jumlah byte yang pasti dibebaskan.
+
