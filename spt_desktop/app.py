@@ -152,8 +152,12 @@ class App:
         self._previous_callback = root.report_callback_exception
         root.report_callback_exception = self._report_callback
         self.preferences=load_preferences(self.workspace)
-        self.controller=controller or JobController(self.workspace,self.on_event)
-        if isinstance(self.controller, JobController):
+        # Only the controller created by this App owns its retention policy.
+        # Self-test deliberately injects a synthetic controller and may replace
+        # the JobController factory with a non-type sentinel.
+        self._owns_controller=controller is None
+        self.controller=JobController(self.workspace,self.on_event) if controller is None else controller
+        if self._owns_controller:
             self.controller.keep_jobs=self.preferences['keep_jobs']
         self._closing=False;self._result=None
         self._settings_dialog=None
@@ -1173,7 +1177,7 @@ class App:
                     raise ValueError('Isi password baru ketika mengganti akun; atau pertahankan akun kosong untuk login manual.')
                 preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
-                if isinstance(self.controller,JobController):
+                if self._owns_controller:
                     self.controller.keep_jobs=preferences['keep_jobs']
             except ValueError:
                 messagebox.showerror('Pengaturan belum disimpan',
@@ -1215,7 +1219,7 @@ class App:
                 messagebox.showerror('Pengaturan belum disimpan',message,parent=dialog)
                 return
             self.preferences = preferences
-            if isinstance(self.controller,JobController):
+            if self._owns_controller:
                 self.controller.keep_jobs=preferences['keep_jobs']
             pending_preferences = False
             refresh()
