@@ -577,6 +577,23 @@ def test_owned_environment_policy_is_case_insensitive(monkeypatch, name):
     runtime = runtime_module()
     monkeypatch.setenv(name.lower(), 'SYNTHETIC_UNTRUSTED')
     environment = runtime.worker_environment()
-    assert name.lower() not in environment
+    assert not any(key.upper() == name for key in environment
+                   if key.upper() != 'PYTHONBREAKPOINT')
     if name == 'PYTHONBREAKPOINT':
         assert environment['PYTHONBREAKPOINT'] == '0'
+
+
+def test_lowercase_proxy_spelling_is_forwarded_without_interpreter_overrides(
+        monkeypatch):
+    runtime = runtime_module()
+    monkeypatch.setenv('https_proxy', 'socks5://127.0.0.1:1080')
+    monkeypatch.setenv('no_proxy', 'localhost,127.0.0.1')
+    monkeypatch.setenv('node_options', '--require BAD.js')
+    worker = runtime.worker_environment()
+    bootstrap = runtime.bootstrap_environment(Path('SYNTHETIC_ROOT'))
+    for environment in (worker, bootstrap):
+        assert any(k.upper() == 'HTTPS_PROXY' and v == 'socks5://127.0.0.1:1080'
+                   for k, v in environment.items())
+        assert any(k.upper() == 'NO_PROXY' and v == 'localhost,127.0.0.1'
+                   for k, v in environment.items())
+        assert not any(k.upper() == 'NODE_OPTIONS' for k in environment)
