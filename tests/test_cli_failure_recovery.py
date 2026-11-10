@@ -230,8 +230,23 @@ def test_partially_acquired_driver_is_closed_when_enter_raises(cli, monkeypatch,
     assert cli.exports == 0
 
 
-def test_reused_browser_context_is_not_closed_by_cli(cli):
-    assert cli.invoke('--reuse-browser', 'http://127.0.0.1:9235') == 1
+def test_reused_browser_context_is_not_closed_by_cli(cli, tmp_path, monkeypatch):
+    import coretax
+    profile = tmp_path / 'dedicated-cdp-profile'
+    profile.mkdir()
+    (profile / 'DevToolsActivePort').write_text(
+        '9235\\n/devtools/browser/ABCDEF123456\\n', encoding='ascii')
+
+    def verified_context(browser, expected_profile):
+        # This test isolates the cleanup contract. The CDP launch-identity
+        # validator is covered independently in test_cli_cdp_reuse.py.
+        assert expected_profile == profile.resolve()
+        assert len(browser.contexts) == 1
+        return browser.contexts[0]
+
+    monkeypatch.setattr(coretax, 'validate_cdp_browser', verified_context)
+    assert cli.invoke('--reuse-browser', 'http://127.0.0.1:9235',
+                      '--profile', str(profile)) == 1
     assert cli.closed == ['page', 'driver']
     assert cli.exports == 0
 
