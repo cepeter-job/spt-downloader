@@ -215,7 +215,15 @@ def test_owned_live_l3_native_source_held_replay_and_saved_workbook_keep_indepen
             # Locate by the preserved slip identifier, not new template slots.
             body = [list(row[:8]) for row in sheet.iter_rows(values_only=True) if row[6] == '000001']
             assert body == [[*row[:4], int(row[4]), int(row[5]), *row[6:]] for row in expected]
-            totals = [row[5] for row in sheet if row[0].value in {r[0] for r in FOOTERS}]
+            assert [row[0].value for row in sheet
+                    if row[0].value in {r[0] for r in FOOTERS}] == ['JUMLAH', *[r[0] for r in FOOTERS]]
+            # L3-A also has a JUMLAH footer. Bind these three totals to the
+            # already-verified domestic body, rather than matching both tables.
+            last_body_row = max(row[0].row for row in sheet if row[6].value == '000001')
+            footer_rows = [row for row in sheet.iter_rows(min_row=last_body_row + 1)
+                           if row[0].value in {r[0] for r in FOOTERS}]
+            assert [row[0].value for row in footer_rows] == [r[0] for r in FOOTERS]
+            totals = [row[5] for row in footer_rows]
             assert [cell.value for cell in totals] == [40, 1, 41]
             assert all('Rp' in cell.number_format and '0.00' not in cell.number_format for cell in totals)
             assert not any(cell.value == 'Data sumber tambahan / belum dipetakan' for row in sheet for cell in row)
