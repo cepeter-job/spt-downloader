@@ -13,10 +13,11 @@ from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
 from .ui_views import MainView
 from .ui_theme import configure_dialog, dip_to_px, effective_scale
+from .job_pruning import DEFAULT_KEEP_JOBS, validate_keep_jobs
 
 #punto ami priyono
 
-DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'json-first'}
+DEFAULTS={'browser':'msedge','headless':True,'login_origin':LOGIN_ORIGIN,'identifier':'','detail_source':'json-first','keep_jobs':DEFAULT_KEEP_JOBS}
 DETAIL_SOURCE_LABELS={'dom':'DOM','json-first':'JSON-hybrid (pilot)'}
 _SELECTION_MONTHS = ('Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
                      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember')
@@ -125,6 +126,8 @@ def load_preferences(root):
     if isinstance(data.get('identifier'),str) and len(data['identifier'])<=256:result['identifier']=data['identifier']
     if type(data.get('detail_source')) is str and data['detail_source'] in DETAIL_SOURCE_LABELS:
         result['detail_source']=data['detail_source']
+    if type(data.get('keep_jobs')) is int and 0 <= data['keep_jobs'] <= 100:
+        result['keep_jobs']=data['keep_jobs']
     return result
 
 
@@ -132,6 +135,7 @@ def save_preferences(root,data):
     allowed={key:data.get(key,default) for key,default in DEFAULTS.items()}
     allowed['login_origin']=LOGIN_ORIGIN
     validate_detail_source(allowed['detail_source'])
+    validate_keep_jobs(allowed['keep_jobs'])
     if allowed['browser'] not in ('msedge','chrome') or allowed['login_origin'] not in ALLOWED_ORIGINS:
         raise ValueError('Preferensi browser/origin tidak valid.')
     if type(allowed['headless']) is not bool or not isinstance(allowed['identifier'],str):
@@ -148,7 +152,13 @@ class App:
         self._previous_callback = root.report_callback_exception
         root.report_callback_exception = self._report_callback
         self.preferences=load_preferences(self.workspace)
-        self.controller=controller or JobController(self.workspace,self.on_event)
+        # Only the controller created by this App owns its retention policy.
+        # Self-test deliberately injects a synthetic controller and may replace
+        # the JobController factory with a non-type sentinel.
+        self._owns_controller=controller is None
+        self.controller=JobController(self.workspace,self.on_event) if controller is None else controller
+        if self._owns_controller:
+            self.controller.keep_jobs=self.preferences['keep_jobs']
         self._closing=False;self._result=None
         self._settings_dialog=None
         self._credential_status=None
@@ -1040,21 +1050,29 @@ class App:
         identifier=tk.StringVar(dialog,value=self.preferences['identifier']);password=tk.StringVar(dialog)
         browser=tk.StringVar(dialog,value=self.preferences['browser']);hidden=tk.BooleanVar(dialog,value=self.preferences['headless'])
         detail_source=tk.StringVar(dialog,value=DETAIL_SOURCE_LABELS[self.preferences['detail_source']])
+        keep_jobs=tk.StringVar(dialog,value=str(self.preferences['keep_jobs']))
         self._credential_status=tk.StringVar(dialog,value='Akun tersimpan dipakai saat Mulai unduh; akun kosong memakai login manual.')
         controls=[('Akun / username',ttk.Entry(frame,textvariable=identifier,width=40)),
                   ('Password baru',ttk.Entry(frame,textvariable=password,show='●',width=40)),
                   ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
                   ('Sumber detail SPT',ttk.Combobox(frame,textvariable=detail_source,
-                    values=tuple(DETAIL_SOURCE_LABELS.values()),state='readonly',width=25))]
+                    values=tuple(DETAIL_SOURCE_LABELS.values()),state='readonly',width=25)),
+                  ('Jumlah job disimpan (0 = nonaktif)',ttk.Spinbox(frame,from_=0,to=100,
+                    textvariable=keep_jobs,width=8))]
         for row,(label,widget) in enumerate(controls):
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
-        hidden_button.grid(row=4,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan, lalu pilih Mulai unduh. CAPTCHA/MFA diselesaikan di browser.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
-        buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
+        hidden_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Job sukses lama hanya dipangkas setelah hasil COMPLETE\n'
+                  'diterbitkan dan terverifikasi. Default 10 job terakhir.\n'
+                  'Job PARTIAL/gagal tetap disimpan. Pruning menghapus capture\n'
+                  'mentah dan checkpoint lama untuk rebuild offline.',
+                  wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan, lalu pilih Mulai unduh. CAPTCHA/MFA diselesaikan di browser.',wraplength=520).grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
+        buttons=ttk.Frame(frame);buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=10,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=11,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         decision_dialog = None
         pending_preferences = False
@@ -1064,8 +1082,10 @@ class App:
         shutdown_request = None
         def selected():
             mode=next(key for key,label in DETAIL_SOURCE_LABELS.items() if label==detail_source.get())
+            count=keep_jobs.get()
+            parsed=int(count) if re.fullmatch(r'[0-9]{1,3}',count) else count
             return {'browser':browser.get(),'headless':hidden.get(),'login_origin':LOGIN_ORIGIN,
-                    'identifier':identifier.get(),'detail_source':mode}
+                    'identifier':identifier.get(),'detail_source':mode,'keep_jobs':parsed}
         def dirty():
             return pending_preferences or bool(password.get()) or selected()!=self.preferences
         def refresh(*args,preserve_status=False):
@@ -1157,9 +1177,11 @@ class App:
                     raise ValueError('Isi password baru ketika mengganti akun; atau pertahankan akun kosong untuk login manual.')
                 preferences=selected()
                 save_preferences(self.workspace,preferences);self.preferences=preferences
+                if self._owns_controller:
+                    self.controller.keep_jobs=preferences['keep_jobs']
             except ValueError:
                 messagebox.showerror('Pengaturan belum disimpan',
-                    'Periksa akun dan password baru saat mengganti akun. Akun kosong memakai login manual.',parent=dialog)
+                    'Periksa akun, password, dan jumlah job disimpan (0–100). Akun kosong memakai login manual.',parent=dialog)
                 return False
             except OSError as error:
                 diagnostics.record('settings.failed', error=error, level='ERROR')
@@ -1197,6 +1219,8 @@ class App:
                 messagebox.showerror('Pengaturan belum disimpan',message,parent=dialog)
                 return
             self.preferences = preferences
+            if self._owns_controller:
+                self.controller.keep_jobs=preferences['keep_jobs']
             pending_preferences = False
             refresh()
             self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai unduh.')
@@ -1204,7 +1228,7 @@ class App:
         remove_button=ttk.Button(buttons,text=copy_text('settings.delete'),command=remove);remove_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
         self._settings_close=close
-        for variable in (identifier,password,browser,hidden,detail_source):traces.append((variable,variable.trace_add('write',refresh)))
+        for variable in (identifier,password,browser,hidden,detail_source,keep_jobs):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         refresh()
         controls[0][1].focus_set()

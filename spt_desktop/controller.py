@@ -14,6 +14,7 @@ from .windows import ProcessJob
 from .paths import downloads_folder
 from .interaction import read_message, select_records, write_reply
 from .profile_lifecycle import reap_profiles
+from .job_pruning import DEFAULT_KEEP_JOBS, prune_published_jobs
 from coretax_detail_source import validate_detail_source
 
 
@@ -72,6 +73,7 @@ class JobController:
         self._preparing=False
         self._prepare_thread=None
         self._profile_cleanup_thread=None
+        self.keep_jobs=DEFAULT_KEEP_JOBS
         self._readers=[]
         self._terminal=None
         self._stop_at=None
@@ -306,6 +308,24 @@ class JobController:
         diagnostics.record('worker.finished', job_id=self.job_id, operation=self.operation,
                            status=event.get('status'), exit_code=exit_code)
         self.on_event(event)
+        # All owned worker and reader handles are closed.  Prune only older
+        # successfully sealed jobs, asynchronously so the UI stays responsive.
+        # Never delete this run, and never change its terminal status.
+        if self.keep_jobs:
+            root, keep, finished_job = self.root, self.keep_jobs, self.job_id
+
+            def prune_after_terminal():
+                try:
+                    count = prune_published_jobs(
+                        root, downloads_folder(), keep, exclude=finished_job)
+                except (OSError, ValueError):
+                    # Storage housekeeping cannot change the verified terminal result.
+                    return
+                if count:
+                    diagnostics.record('jobs.pruned', count=count)
+
+            threading.Thread(target=prune_after_terminal,
+                             name='spt-job-prune', daemon=True).start()
 
     def poll(self):
         if not self.active:return False
