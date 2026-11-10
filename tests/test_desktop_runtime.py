@@ -556,7 +556,8 @@ def test_allowlist_preserves_windows_shell_network_proxy_and_custom_trust(
     for make in (runtime.worker_environment, lambda: runtime.bootstrap_environment(tmp_path)):
         actual = make()
         for name, value in supported.items():
-            assert actual[name] == value, name
+            matching = [v for key, v in actual.items() if key.upper() == name.upper()]
+            assert matching == [value], name
         assert not {'NODE_OPTIONS', 'PWDEBUG', 'PYTHONPATH'} & actual.keys()
     worker = runtime.worker_environment()
     bootstrap = runtime.bootstrap_environment(tmp_path)
