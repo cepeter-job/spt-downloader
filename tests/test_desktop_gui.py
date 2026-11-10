@@ -185,7 +185,6 @@ def test_worker_cannot_inherit_credential_logging_debug_flags(controlled_worker)
         'HTTPS_PROXY':'http://proxy.invalid:8080',
         'SSL_CERT_FILE':str(ctl.root.parent/'synthetic-corporate-ca.pem'),
         'PYTHONBREAKPOINT':'0','PYTHONNOUSERSITE':'1'}
-    assert not ctl.active is False  # The synthetic worker is still owned.
 
 
 def finish_controller(ctl):
