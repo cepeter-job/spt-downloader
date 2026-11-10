@@ -2,7 +2,7 @@
 
 Date: 2026-11-10
 
-Status: **Source/live-confirmed proposal; operator approval is required before implementation.** The initial child investigation was source/artifact-only. The parent subsequently performed authorized value-free operator-browser probes and same-origin public JavaScript GETs. No product/test execution, PDF click, document request, replay or publication was performed.
+Status: **Source/live-confirmed and operator-approved for implementation, regressions, hosted CI and the related AGENTS.md contract update; merge is not authorized.** The initial child investigation was source/artifact-only. The parent subsequently performed authorized value-free operator-browser probes and same-origin public JavaScript GETs. No product/test execution, PDF click, document request, replay or publication was performed during diagnosis.
 
 ## Outcome
 
@@ -132,4 +132,4 @@ Do not change:
 
 Performed: read-only sanitized saved-data/log analysis; job/build association; repository lineage/diff and source/test inspection; independent public-source hashes; authorized read-only live structure and public-JavaScript GET probes. No pytest, product imports, source/frozen tests, Tk/browser fixtures, builds, EXE runs, PDF action, document request/replay or publication was performed. There is no execution-based RED/GREEN claim.
 
-**Next gate:** operator approval of this bounded selector/admission change, then synthetic hosted RED/GREEN, independent review and full exact-head CI. No production/test changes precede that approval. Actual PDF transport/authentication/signature/custody and whole-run completion remain to be exercised by the later application-owned exact-build live run.
+**Next gate:** synthetic hosted RED/GREEN on the approved fresh implementation branch, then independent review and full exact-head CI. Operator approval covers the bounded design, tests and contract update, not merge. Actual PDF transport/authentication/signature/custody and whole-run completion remain to be exercised by the later application-owned exact-build live run.
