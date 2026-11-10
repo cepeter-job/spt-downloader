@@ -30,6 +30,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import time
 
 
 _GENERIC_READ = 0x80000000
@@ -268,7 +269,7 @@ def locked_file(path):
             raise ValueError('Output file changed while being read')
 
 
-def delete_verified(path, expected):
+def delete_verified(path, expected, *, deadline=None):
     """Delete the exact fingerprinted file through its still-held Windows handle.
 
     ``expected`` is (device, inode, size, mtime_ns, sha256). Ordinary ancestors
@@ -307,12 +308,21 @@ def delete_verified(path, expected):
             check(os.fstat(descriptor))
             check(_file_info(path))
             digest = hashlib.sha256()
-            for chunk in iter(lambda: os.read(descriptor, 1048576), b''):
+            while True:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError('Verified deletion hash budget exceeded')
+                chunk = os.read(descriptor, 1048576)
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError('Verified deletion hash budget exceeded')
+                if not chunk:
+                    break
                 digest.update(chunk)
             check(os.fstat(descriptor))
             check(_file_info(path))
             if digest.hexdigest() != expected[4]:
                 raise ValueError('Output file bytes changed before deletion')
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError('Verified deletion budget exceeded')
             import msvcrt
             disposition = _FileDispositionInfo(1)
             # Unlike FILE_FLAG_DELETE_ON_CLOSE at open time, this cannot mark
