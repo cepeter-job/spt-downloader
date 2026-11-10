@@ -1038,12 +1038,14 @@ def _l3_sum(values):
     return result
 
 
-def _l3_date(value, *, offline=False):
+def _l3_date(value, *, offline=False, domestic_jakarta_midnight=False):
     if value is None or offline and value == '':
         return ''
-    if type(value) is not str or not re.fullmatch(
+    if type(value) is not str or not (re.fullmatch(
             r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
-            r'(?:\.[0-9]{1,3})?Z)?', value):
+            r'(?:\.[0-9]{1,3})?Z)?', value)
+            or domestic_jakarta_midnight is True and not offline and re.fullmatch(
+                r'[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00\+07:00', value)):
         raise _UnsupportedMetadata('unsupported_corporate_l3_date')
     try:
         date = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -1153,7 +1155,8 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
             text(row['RecordId'])
             brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
                 label(row['TaxType'], 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
-                text(row['WithholdingSlipsNumber']), _l3_date(row['WithholdingSlipsDate'])])
+                text(row['WithholdingSlipsNumber']),
+                _l3_date(row['WithholdingSlipsDate'], domestic_jakarta_midnight=True)])
             evidence(row['RecordId'], ['Data', local_index, 'RecordId'],
                 {'table': 'L3/domestic', 'row': len(brows) - 1}, source='grid', page_index=page_index,
                 rule='non-displayed-row-key')
