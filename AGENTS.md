@@ -653,6 +653,18 @@ retain their actual source_structure, headers and footer spans without reading
 body/footer values or inputs. Require explicit valid PreviousFormData encoding,
 the complete current L1dFormData and the reviewed safe code/mask/total projection.
 Bind every projected value to its original response sequence/container/path.
+The optional body_layout=absent-5322-34x10-v1 admits only the exact reviewed
+account set minus5322, with current-induk-enabled-v1 visibility proof and a
+stable owned first-table body of34 visible rows, ten visible unspanned cells
+each, observed structurally without reading business values. The pinned
+lookup/PrimeNG outlet emits no row for that absent node. Emit34 real rows;
+never invent a node, account label, placeholder or zero. Preserve all remaining
+source leaves, masks, safe ordered arithmetic and seven/four footer/balance
+checks. Retain body_layout and omitted_account_codes separately in projection
+provenance, not as fake raw leaves. Other/multiple missing codes, a present5322
+with omission proof, unknown/null proof, or changed body shape stays unsupported.
+Old missing5322 captures without the new proof remain ineligible. The full
+31-code/35-row branch and its dynamic template growth remain unchanged.
 Missing proof uses whole-record fallback; known lifetime/encoding contradictions
 remain fatal. Replay must retain manifest custody. This branch does not certify
 Induk mapping, financial PDFs or other corporate forms.
