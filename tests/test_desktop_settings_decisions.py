@@ -365,3 +365,32 @@ def test_return_discard_reopen_and_save_retire_old_dialog_callbacks(settings):
     assert app._settings_dialog is None and root.grab_current() is None
     assert root.focus_get() is app.settings_button
     assert persisted(path)['browser'] == 'chrome' and not writes and not errors
+
+
+def test_retention_setting_defaults_to_ten_and_persists_without_credential_changes(settings):
+    root, app, ctl, dialog, path, writes, errors = settings
+    spinner = next(w for w in widgets(dialog) if w.winfo_class() == 'TSpinbox')
+    assert spinner.get() == '10'
+    spinner.delete(0, 'end')
+    spinner.insert(0, '3')
+    root.update()
+    assert app.preferences['keep_jobs'] == 10  # Dirty until saved.
+    button(dialog, 'Simpan').invoke()
+    root.update()
+    assert persisted(path)['keep_jobs'] == 3
+    assert app.preferences['keep_jobs'] == 3
+    assert not writes and not errors
+
+
+def test_invalid_retention_input_does_not_get_saved_or_claim_success(settings):
+    root, app, ctl, dialog, path, writes, errors = settings
+    spinner = next(w for w in widgets(dialog) if w.winfo_class() == 'TSpinbox')
+    spinner.delete(0, 'end')
+    spinner.insert(0, '101')
+    root.update()
+    button(dialog, 'Simpan').invoke()
+    root.update()
+    assert errors and persisted(path)['keep_jobs'] == 10
+    assert app.preferences['keep_jobs'] == 10
+    assert app._settings_dialog is dialog and dialog.winfo_exists()
+    assert not writes

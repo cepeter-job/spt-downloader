@@ -1087,3 +1087,18 @@ at all (lazy grid rendering after tab activation); present-but-unbound tables
 remain definitive refusals without polling. Template-mapping entries persist
 unmapped field/table identities (form, label, field, group) alongside their
 counts so the exact not-mapped subset is inspectable from run data.
+
+## Automatic completed-job pruning (Settings)
+
+Desktop Settings allows 0–100 retained jobs (default 10, 0 disables).
+The background pruning path is bounded to jobs explicitly sealed after
+verified COMPLETE publication by the version that supports the seal.
+A checkpoint or folder age is never a deletion permit. Ten newest run
+directories (including failed/partial) are protected; older unsealed,
+modified, redirected, in-use or recovery-bearing jobs are always retained.
+The seal binds the private source inventory and current published output
+hashes, which must be checked again before any removal. Published
+Downloads outputs are not deleted. This does not supply independent
+backup or authorize deleting historical, unsealed captures.
+Tests must exercise partial, failure, tampering, new files, symlinks,
+recovery notices, disabled/invalid limits and GUI persistence.

@@ -48,3 +48,34 @@ Maintainer **@cepeter** memeriksa kegagalan Actions dan alert keamanan. Pastikan
 langganan notifikasi benar-benar diterima pada akun maintainer dengan pemeriksaan
 terjadwal; keberadaan workflow atau daftar penanggung jawab bukan bukti pengiriman.
 Pedoman pelaporan privat ada pada [SECURITY.md](../SECURITY.md).
+
+## Retensi job otomatis (mulai versi dengan segel publikasi)
+
+Di Pengaturan, isi **Jumlah job disimpan**. Nilai awal **10** berarti
+aplikasi menjaga **10 direktori job terbaru** (termasuk PARTIAL dan gagal),
+lalu setelah worker berhenti mencoba menghapus job yang lebih lama **hanya**
+jika sebelumnya berhasil mencapai COMPLETE dan memiliki segel lokal
+.spt-published-prune-v1.json yang diterbitkan sesudah publikasi terverifikasi.
+Isi **0** untuk mematikan pruning otomatis; rentang angka 0–100. Pekerjaan
+baru yang sudah selesai namun tanpa segel, pekerjaan sebelum versi ini,
+checkpoint PARTIAL/ERROR/CANCELLED/BLOCKED, atau folder yang terdeteksi
+memerlukan pemulihan **selalu dipertahankan**.
+
+Sebelum menghapus setiap kandidat, aplikasi memeriksa kembali fingerprint
+keseluruhan pohon privat, hash manifest asli, daftar dan hash seluruh file
+publikasi yang tercatat di Downloads. Output yang hilang/ditimpa/berubah,
+reparse point, hardlink, file terkunci, identitas folder yang berubah,
+notice recovery, atau symlink menyebabkan pruning ditolak. Pruning
+berjalan di thread terpisah setelah worker dan pembaca selesai; kegagalan
+pruning tidak mengubah status terminal. Tidak ada pruning folder acak
+berdasarkan umur atau nama, tidak menghapus arsip hasil di Downloads,
+dan tidak menghapus profile, cache sesi atau runtime.
+
+**Penting:** hasil terpublikasi di Downloads bukan salinan seluruh
+bukti mentah (respons JSON, inventaris checkpoint, atau riwayat audit).
+Pruning sebuah job menghilangkan sumber privat yang diperlukan untuk
+rebuild offline atau audit lebih lanjut. Sebelum memanfaatkan retensi
+otomatis, organisasi wajib menilai kebutuhan penyimpanan dan backup
+terenkripsi secara terpisah. Pengaturan ini **tidak** menyatakan
+backup telah berhasil atau kewajiban retensi instansi sudah terpenuhi.
+Job historis tetap memerlukan prosedur backup dan penghapusan manual.
