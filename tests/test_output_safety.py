@@ -200,6 +200,7 @@ def test_failed_replacement_rolls_back_completed_replacements(tmp_path, monkeypa
     'http://localhost:9235?proxy=elsewhere', 'http://localhost:9235#secret',
     'http://localhost:99999', 'http://localhost:0', 'http://localhost:',
     'http://localhost:9235\n', 'http://127.0.0.1.evil.invalid:9235',
+    'https://localhost:9235', 'http://localhost',
 ])
 def test_debugging_endpoint_rejects_ambiguous_or_credential_urls(url):
     validator = getattr(coretax, 'validate_debug_endpoint', None)
@@ -210,7 +211,7 @@ def test_debugging_endpoint_rejects_ambiguous_or_credential_urls(url):
 
 @pytest.mark.parametrize('url', [
     'http://127.0.0.1:9235', 'http://localhost:9235/',
-    'http://[::1]:9235', 'https://localhost:9235',
+    'http://[::1]:9235',
 ])
 def test_debugging_endpoint_accepts_explicit_loopback_origins(url):
     validator = getattr(coretax, 'validate_debug_endpoint', None)
