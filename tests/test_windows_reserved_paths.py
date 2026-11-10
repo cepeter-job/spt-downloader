@@ -17,7 +17,7 @@ from spt_desktop.paths import reject_windows_device_component, safe_taxpayer_nam
 @pytest.mark.parametrize('component', [
     'CON', 'con', 'CoN.txt', 'con .xlsx', 'CON.', 'CON ',
     'PRN', 'aux', 'NUL', 'nul.json', 'NUL .tmp',
-    'COM0', 'COM1', 'com9.txt', 'LPT0', 'LPT1', 'lpt9.CSV',
+    'COM1', 'com9.txt', 'LPT1', 'lpt9.CSV',
     'COM¹', 'com².txt', 'Com³.xls', 'LPT¹', 'lpt².xlsx', 'LPT³',
     'CONIN$', 'CONOUT$', 'conin$.log', 'conout$.txt',
 ])
@@ -27,6 +27,7 @@ def test_reserved_windows_components_are_always_rejected(component):
 
 
 @pytest.mark.parametrize('component', [
+    'COM0', 'COM0.csv', 'LPT0', 'LPT0.xlsx',
     'COM10', 'LPT10.xlsx', 'CONTAINER', 'AUXILIARY.xlsx',
     'nulled.csv', 'NUL file.xlsx', 'CON_2025.xlsx',
     'PT CON.xlsx', 'NÚL.xlsx', 'コン.xlsx',
@@ -41,7 +42,7 @@ def test_nondevice_components_are_preserved(component):
     'CON', 'nul.xlsx', 'COM1.csv', 'COM².xlsx',
     'LPT³.txt', 'SPT Masa PPN/NUL.xlsx',
     'SPT Masa PPN/Con.pdf', 'CON/child.xlsx',
-    'SPT Masa 21/COM0/result.xlsx',
+    'SPT Masa 21/COM1/result.xlsx',
 ])
 def test_cli_rejects_reserved_component_before_filesystem_access(tmp_path, relative):
     before = list(tmp_path.iterdir())
@@ -50,8 +51,12 @@ def test_cli_rejects_reserved_component_before_filesystem_access(tmp_path, relat
     assert list(tmp_path.iterdir()) == before
 
 
-def test_cli_accepts_prefixed_real_workbook_paths(tmp_path):
-    wanted = 'SPT Masa PPN/SPT_PPN_NUL_Normal.xlsx'
+@pytest.mark.parametrize('wanted', [
+    'SPT Masa PPN/SPT_PPN_NUL_Normal.xlsx',
+    'COM0.csv', 'LPT0.xlsx',
+    'SPT Masa 21/COM0/result.xlsx',
+])
+def test_cli_accepts_nonreserved_output_paths(tmp_path, wanted):
     assert coretax.output_path(tmp_path, wanted) == tmp_path / wanted
 
 
