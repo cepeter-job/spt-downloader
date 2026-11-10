@@ -94,8 +94,8 @@ jobs:
         id: uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.4'
-          checksum: '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f'
+          version: '0.13.7'
+          checksum: 'c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -226,8 +226,8 @@ jobs:
         id: uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.4'
-          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          version: '0.13.7'
+          checksum: '0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true
@@ -343,8 +343,8 @@ jobs:
       - name: Set up pinned uv and audit dependency cache
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.4'
-          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          version: '0.13.7'
+          checksum: '0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021'
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
           cache-python: true
@@ -420,8 +420,8 @@ jobs:
       - name: Set up pinned uv, build wheel cache and managed Python cache
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          version: '0.13.4'
-          checksum: 'ccec7508a07d9933d7cb1261880633efcf1f30d6e6eddab21823f1dae6f23225'
+          version: '0.13.7'
+          checksum: '0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021'
           python-version: ${{ matrix.python }}
           enable-cache: true
           cache-python: true

@@ -51,7 +51,7 @@ def artifact(tmp_path):
         runtime_packages={'playwright': '1.64.0', 'openpyxl': '3.1.5'},
         runtime_lock_digest='f' * 64,
         versions={'python': '3.14.8', 'tcl': '8.6.15', 'tk': '8.6.15',
-                  'uv': '0.13.4', 'pyinstaller': '6.22.3'})
+                  'uv': '0.13.7', 'pyinstaller': '6.22.3'})
     (tmp_path / 'distribution-sbom.json').write_text(json.dumps(sbom), encoding='utf-8')
     return tmp_path
 
@@ -370,12 +370,12 @@ def test_native_sbom_records_observed_bytes_and_worker_delivery_scope(
         runtime_packages={'playwright': '1.64.0', 'openpyxl': '3.1.5'},
         runtime_lock_digest='f' * 64,
         versions={'python': '3.14.8', 'tcl': tcl_tk_version, 'tk': tcl_tk_version,
-                  'uv': '0.13.4', 'pyinstaller': '6.22.3'})
+                  'uv': '0.13.7', 'pyinstaller': '6.22.3'})
     assert data['bomFormat'] == 'CycloneDX' and data['specVersion'] == '1.6'
     assert data['metadata']['component']['version'] == identity['commit']
     assert data['metadata']['component']['hashes'] == [{'alg': 'SHA-256', 'content': 'e' * 64}]
     components = {item['bom-ref']: item for item in data['components']}
-    assert components['native:tools/uv.exe']['version'] == '0.13.4'
+    assert components['native:tools/uv.exe']['version'] == '0.13.7'
     assert components['native:python314.dll']['version'] == '3.14.8'
     assert components['native:' + tk_name]['version'] == tcl_tk_version
     assert {'name': 'spt:version_evidence', 'value': 'validated frozen Tk self-test'} in (

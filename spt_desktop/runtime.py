@@ -14,7 +14,7 @@ from .windows import ProcessJob
 from . import diagnostics
 from .build_info import read_build_info
 
-UV_VERSION = '0.13.4'
+UV_VERSION = '0.13.7'
 PYTHON_PROFILES = {'production': '3.14.8'}
 RUNTIME_LOCK = 'locks/runtime.txt'
 # Daftar eksplisit ini adalah batas paket worker; jangan salin workspace
