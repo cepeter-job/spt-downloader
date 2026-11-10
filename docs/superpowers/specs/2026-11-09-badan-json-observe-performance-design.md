@@ -55,8 +55,53 @@ segments and normal refusal paths. The implementation distinguishes
 `l3`/`l11a`/other observed-form stages. This is **coarse
 attribution only**: a long `l3` segment does not by itself distinguish
 paginator clicking, marker polling, overlay waits, source requests or
-other observer work. No post-instrumentation build-matched live
-per-substage analysis is established by this design document.
+other observer work. New build-matched **coarse** diagnostic data are available below; detailed
+per-paginator/marker/overlay/request attribution remains unmeasured.
+
+### Observed stage timings, 10 November 2026 — read-only local logs
+
+Inspected the **locally retained privacy-safe diagnostic events** on
+DESKTOP-FR702P6, without copying taxpayer identities, raw response payloads,
+URLs or output filenames into the repository. The latest completed run uses
+merge commit [`4e84bfb`](https://github.com/cepeter-job/spt-downloader/commit/4e84bfb253ec4d4eeb3c7ec9f3ea2d4b67592921)
+(PR #215), build workflow `42744813416`, attempt 1. The preceding
+instrumented comparison build is `7f250af`, workflow `42717280592`,
+attempt 1. These are **different builds**, not proof of identical SPT
+scope or a controlled performance improvement.
+
+| Diagnostic (duration) | Earlier `7f250af` | Latest `4e84bfb` |
+| --- | ---: | ---: |
+| `phase.completed:json_observe` | 671,744.93 ms | **582,493.19 ms** |
+| `phase.completed:json_project` | 15,011.88 ms | 12,683.06 ms |
+| `phase.completed:return_detail` (includes DOM fallback) | 1,257,907.63 ms | **1,120,792.14 ms** |
+| Stage `l3` | **475,541.5 ms** | **414,012.9 ms** |
+| `l3` share of `json_observe` | **70.8%** | **71.1%** |
+| Combined stage `grid` | 53,164.3 ms | 48,251.0 ms |
+| Combined stage `panel` | 47,881.8 ms | 39,662.6 ms |
+| Stage `l11a` | 23,560.1 ms | 23,720.5 ms |
+| Stage `build` | 21,681.4 ms | 16,012.5 ms |
+
+Both runs emitted **67 `corporate.observe_timing` records**. In the
+latest run, `json_observe` was about **52.0%** of the full
+`return_detail` interval. The `l3` stage clearly dominates
+**observer-stage wall time** in both runs; this does **not** establish
+how its time is divided across paginator clicks, marker polling,
+overlay wait, backend responses or processing.
+
+**Crucial acceptance distinction:** both runs requested `json-first`
+but emitted `detail.source: dom / adapter_ineligible`, recorded
+`pdf.partial`, and subsequently hit a DOM table elapsed-budget
+refusal. The latest run reached `operation.finished: PARTIAL` by
+10:22:54 WIB, not COMPLETE. The independent PDF failure remains
+unresolved. Neither run proves `native_verified` or validates an
+optimized JSON-first workload.
+
+**Priority adjustment:** start Step 0b by separating L3 reset/advance,
+marker-change, overlay wait and independently bounded request/response
+completion counters on this exact native path. Only after measured
+same-record/page-scope evidence should an inspected native page-size
+control be considered. Keep panel/grid timing as secondary hypotheses;
+do not attribute `l3` time to any one sub-operation yet.
 
 The reviewed `_turn_grid.advance` path clicks the existing native
 paginator, **polls the visible page marker approximately every 100 ms**
