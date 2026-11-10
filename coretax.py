@@ -4,6 +4,7 @@ Login CLI diselesaikan pengguna di browser. Validasi data bersama dipakai oleh
 CLI dan worker desktop; batas keamanannya dijelaskan di docs/arsitektur.md.
 """
 from spt_desktop import diagnostics
+from spt_desktop.paths import reject_windows_device_component
 import argparse
 from contextlib import contextmanager, ExitStack
 from datetime import datetime
@@ -73,6 +74,8 @@ def output_path(folder, name):
             or any(part in ('', '.', '..') or part.endswith((' ', '.')) for part in name.split('/'))
             or Path(name).is_absolute()):
         raise ValueError('Invalid workbook filename')
+    for part in name.split('/'):
+        reject_windows_device_component(part)
     root = Path(folder).absolute()
     path = root / name
     for component in [root, *[root.joinpath(*name.split('/')[:i]) for i in range(1, len(name.split('/'))+1)]]:
