@@ -263,4 +263,3 @@ def test_matching_outer_and_current_classifications_keep_legacy_l1d_readable():
     value['Payload']['BusinessClassification'] = 'BC04'
     result = adapt_corporate_detail([packet(value)], selected(), corpus.SCOPE, bindings())
     assert result['eligible'] and result['coverage']['complete'], result['reason']
-

@@ -638,9 +638,15 @@ This metadata alone does not enable L1-D or certify source pins, mapping or PDF
 completion.
 
 Native L1-D additionally requires all three loaded corporate/main/vendor pins,
-the literal submitted current-View route/model, preceding observed Induk, outer
-BC04 classification and an explicit boolean IsMigrated. Observe the unique
-visible L1-D form and all three exact table/component/A-B accordion owners;
+the literal submitted current-View route/model, preceding observed Induk and an
+explicit boolean IsMigrated. Keep legacy explicit outer BC04 classification;
+only an absent outer key may use exact current MainFormData BC04 with the optional
+current-induk-enabled-v1 visibility binding, independently rechecked on the owned
+enabled L1-D tab/form/panel before and after observation. Explicit outer null,
+wrong/malformed classification, conflicting present current classification and
+unknown/missing required proof remain unsupported. Preserve the admitted current
+classification's original path and optional marker in projection provenance.
+Observe the unique visible L1-D form and all three exact table/component/A-B accordion owners;
 require script-provider evidence for every pinned asset, not fetch/preload alone,
 and validate the actual table's p-table/first-financial-wrapper ancestor chain;
 retain their actual source_structure, headers and footer spans without reading

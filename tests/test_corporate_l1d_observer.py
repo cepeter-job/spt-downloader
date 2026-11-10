@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 import coretax
 import coretax_browser as driver
 from coretax_corporate import observe_forms
-from coretax_json import adapt_corporate_detail
+from coretax_json import JsonSafetyError, adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l1d_observer_fixture import Fixture, ASSET
 from test_json_hybrid_native import browser as browser
@@ -62,7 +62,9 @@ def test_actual_owned_spa_observer_to_custody_native_checkpoint_and_saved_export
             fixture.record['detail_url'] = DETAIL
             replay = adapt_corporate_detail(checkpoint_bodies(tmp_path, manifest, fixture.record, corpus.SCOPE),
                 fixture.record, corpus.SCOPE, forms)
+            assert replay['eligible'] and replay['coverage']['complete'], replay['reason']
             assert replay['sections'] == result['sections']
+            assert replay['provenance'] == result['provenance']
             assert fixture.page.evaluate('window.businessReads') == 0
             assert fixture.page.evaluate('window.forbiddenClicks') == 0
         fixture.record.update(capture_complete=True, sections=result['sections'])
@@ -200,3 +202,42 @@ def test_l1d_enabled_proof_is_rechecked_around_observation(
     finally:
         fixture.close()
 
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+def test_l1d_route_identity_change_remains_fatal(browser, tmp_path, monkeypatch, when):
+    import coretax_corporate as observer
+    fixture = Fixture(browser, monkeypatch, classification_source='current')
+
+    def change_route():
+        foreign = DETAIL.replace(corpus.RECORD_ID, 'SYNTHETIC-FOREIGN-RECORD')
+        fixture.page.evaluate('url => history.replaceState({}, "", url)', foreign)
+
+    if when == 'before':
+        original_panel = observer._native_panel
+
+        def changed_panel(*args, **kwargs):
+            panel = original_panel(*args, **kwargs)
+            if args[3] == 'L1-D':
+                change_route()
+            return panel
+
+        monkeypatch.setattr(observer, '_native_panel', changed_panel)
+    else:
+        original_l1d = observer._observe_l1d
+
+        def changed_l1d(*args, **kwargs):
+            proof = original_l1d(*args, **kwargs)
+            change_route()
+            return proof
+
+        monkeypatch.setattr(observer, '_observe_l1d', changed_l1d)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            with pytest.raises(JsonSafetyError):
+                observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                              approved_digest=fixture.pins[ASSET])
+            assert fixture.page.evaluate('window.businessReads') == 0
+            assert fixture.page.evaluate('window.forbiddenClicks') == 0
+    finally:
+        fixture.close()

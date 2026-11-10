@@ -818,9 +818,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 _advance('l1d')
                 if 'Induk' not in names:
                     return unavailable()
-                projection = _observe_l1d(page, form, capture, digest, check_cancel)
-                if projection is None:
+                _check_cancel(check_cancel)
+                if not _enabled_form_binding(form, tab, name):
                     return unavailable()
+                projection = _observe_l1d(page, form, capture, digest, check_cancel)
+                _check_cancel(check_cancel)
+                _check_corporate_route(page.url, selected)
+                if projection is None or not _enabled_form_binding(form, tab, name):
+                    return unavailable()
+                projection['visibility_binding'] = 'current-induk-enabled-v1'
                 binding['projection'] = projection
             if name == 'L8':
                 _advance('l8')
