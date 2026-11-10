@@ -94,11 +94,19 @@ serta perkiraan ukuran data privat yang dapat dibebaskan (MiB). Tinjauan
 berjalan di thread terpisah, sementara aplikasi tidak memulai job baru
 atau menyimpan perubahan pengaturan. Jumlah yang bisa dihapus dapat
 berkurang jika file berubah, dikunci, atau hilang setelah pratinjau.
+Pratinjau yang terhenti karena batas waktu atau gagal memeriksa satu kandidat
+**tidak dapat dikonfirmasi**; tidak ada penghapusan. Hanya kandidat yang
+terdaftar pada pratinjau lengkap yang dapat dihapus setelah konfirmasi;
+pekerjaan lain yang baru memenuhi syarat tidak ikut dihapus.
 
 Hanya setelah dialog konfirmasi eksplisit diterima, aplikasi mengulang
 pemeriksaan keseluruhan: status COMPLETE, segel dan hash pohon sumber,
 identitas direktori, checksum semua output Downloads dengan handle Windows
-yang menolak perubahan, dan recovery. Tidak ada nama NPWP, job ID,
+yang menolak perubahan, dan recovery. Sumber dipin dengan handle direktori
+sebelum membaca segel hingga penghapusan selesai. Tenggat pemeriksaan
+diperiksa di antara blok pembacaan file; pembacaan I/O yang sedang terblokir
+tidak dapat dihentikan tepat pada milidetik batas waktu.
+Tidak ada nama NPWP, job ID,
 path privat, atau data transaksi dalam pratinjau/diagnostik. Jika salah
 satu syarat gagal, job tersebut tidak dihapus. Tindakan ini tidak
 menghapus hasil Downloads, profil atau sandi. Nilai **0** menonaktifkan
