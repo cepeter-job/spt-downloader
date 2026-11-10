@@ -169,3 +169,35 @@ def test_multiple_pdf_rows_in_one_financial_group_are_not_duplicate_groups(post_
                control['identity'] for control in controls)
     assert len({control['identity'] for control in controls}) == 2
     assert_no_click_or_wire(page, wire)
+
+
+@pytest.mark.parametrize('explicit_label_ids', [False, True], ids=['local-labels', 'explicit-label-ids'])
+def test_local_financial_heading_outside_transparent_grid_wrapper_remains_bound(post_routed, explicit_label_ids):
+    page, wire = post_routed(content=common_owner_content(explicit_label_ids))
+    assert_common_owner_layout(page, explicit_label_ids)
+    # The pinned renderer places each LABEL beside an inner DIV containing the
+    # document grid, not necessarily beside the grid element itself.
+    assert page.evaluate('''() => {
+        const common = document.querySelector('#synthetic-common-accordion');
+        for (const grid of [...common.querySelectorAll('ui-grid-documents')]) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'synthetic-transparent-grid-wrapper';
+            grid.before(wrapper);
+            wrapper.append(grid);
+        }
+        return [...common.children].every(field => {
+            const label = field.firstElementChild;
+            const wrapper = label.nextElementSibling;
+            const grid = wrapper.firstElementChild;
+            return label.tagName === 'LABEL' && wrapper.tagName === 'DIV' &&
+                wrapper.parentElement === field && wrapper.children.length === 1 &&
+                grid.tagName === 'UI-GRID-DOCUMENTS' && grid.parentElement === wrapper &&
+                grid.querySelector('table').closest('.p-accordion-tab') === common;
+        });
+    }''')
+
+    control, = real_scan(page)
+
+    assert control['method'] == 'POST' and control['label'] == CURRENT_LABEL
+    assert control['filename'] == 'synthetic-financial.pdf' and control['identity']
+    assert_no_click_or_wire(page, wire)
