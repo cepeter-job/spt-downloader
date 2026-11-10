@@ -103,9 +103,15 @@ Hanya setelah dialog konfirmasi eksplisit diterima, aplikasi mengulang
 pemeriksaan keseluruhan: status COMPLETE, segel dan hash pohon sumber,
 identitas direktori, checksum semua output Downloads dengan handle Windows
 yang menolak perubahan, dan recovery. Sumber dipin dengan handle direktori
-sebelum membaca segel hingga penghapusan selesai. Tenggat pemeriksaan
-diperiksa di antara blok pembacaan file; pembacaan I/O yang sedang terblokir
-tidak dapat dihentikan tepat pada milidetik batas waktu.
+sebelum membaca segel hingga penghapusan selesai. Daftar file dan identitas
+hasil verifikasi dicocokkan ulang sebelum penghapusan; file baru yang muncul
+di tengah operasi **tidak** termasuk dalam daftar hapus. Jika ada perubahan
+yang tak bisa dibuktikan aman, pekerjaan dipertahankan atau penghapusan
+dilaporkan belum tuntas. Ketika sebagian file telah terhapus lalu Windows
+menolak kelanjutannya, UI memberikan peringatan; tidak menyatakan semua job
+berhasil dibersihkan. Tenggat pemeriksaan diperiksa di antara blok pembacaan
+file; pembacaan I/O yang sedang terblokir tidak dapat dihentikan tepat pada
+milidetik batas waktu.
 Tidak ada nama NPWP, job ID,
 path privat, atau data transaksi dalam pratinjau/diagnostik. Jika salah
 satu syarat gagal, job tersebut tidak dihapus. Tindakan ini tidak
