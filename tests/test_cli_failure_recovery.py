@@ -235,7 +235,7 @@ def test_reused_browser_context_is_not_closed_by_cli(cli, tmp_path, monkeypatch)
     profile = tmp_path / 'dedicated-cdp-profile'
     profile.mkdir()
     (profile / 'DevToolsActivePort').write_text(
-        '9235\\n/devtools/browser/ABCDEF123456\\n', encoding='ascii')
+        '9235\n/devtools/browser/ABCDEF123456\n', encoding='ascii')
 
     def verified_context(browser, expected_profile):
         # This test isolates the cleanup contract. The CDP launch-identity
