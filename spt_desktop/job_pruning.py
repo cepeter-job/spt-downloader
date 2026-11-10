@@ -270,6 +270,7 @@ def _eligible(job, downloads, *, deadline, outputs, guard, preview_bytes=None):
         stream = outputs.enter_context(locked_file(target))
         if _hash_held_output(stream, deadline=deadline) != claim:
             return False
+    _check_deadline(deadline)
     if preview_bytes is not None:
         # This is only an estimate; execution rechecks every byte and lock.
         preview_bytes.append(tree[2] + _plain(job / SEAL).st_size)
@@ -341,6 +342,8 @@ def preview_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *, exclude=N
                 # Keep the safe verified subset, but never confirm a partial
                 # preview; otherwise a locked/unknown job could be overlooked.
                 complete = False
+        if time.monotonic() >= global_deadline:
+            complete = False
         return {'eligible_jobs': len(eligible), 'estimated_bytes': bytes_total,
                 'candidate_ids': tuple(eligible), 'scan_complete': complete}
 
