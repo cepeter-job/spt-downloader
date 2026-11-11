@@ -1,6 +1,7 @@
 """Readonly corporate UI bindings pinned to reviewed public build bytes."""
 import json
 import time
+from time import perf_counter as _paginator_clock
 from coretax_build_pins import load_build_pins
 from coretax_json import ORIGIN, JsonSafetyError
 
@@ -122,6 +123,7 @@ def _native_panel(page, view, tab, caption, record, check_cancel):
 
 def _turn_grid(page, table, max_pages, check_cancel):
     from coretax_browser import _check_cancel, _click_table_paginator, wait_idle
+    from spt_desktop import diagnostics
     if type(max_pages) is not int or max_pages <= 0:
         return False
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
@@ -131,23 +133,47 @@ def _turn_grid(page, table, max_pages, check_cancel):
     if owner is None:
         return False
 
-    def advance(control, state):
+    # Aggregate across the owned grid; never emit per-page request/DOM data.
+    # Capture the clock separately from `time.monotonic` used by real deadlines.
+    # Instrumentation cannot change clicks, retries, Stop or admission.
+    steps = {step: [0.0, 0] for step in (
+        'reset_click', 'reset_marker_wait', 'reset_overlay_wait',
+        'advance_click', 'advance_marker_wait', 'advance_overlay_wait')}
+    wall_start = _paginator_clock()
+
+    def timed(step, action):
+        began = _paginator_clock()
+        try:
+            return action()
+        finally:
+            steps[step][0] += (_paginator_clock() - began) * 1000
+            steps[step][1] += 1
+
+    def advance(control, state, direction):
         if control.count() != 1:
             return False
         handle = control.element_handle()
         try:
-            _click_table_paginator(handle, owner, check_cancel)
-        except RuntimeError:
-            return False
+            try:
+                timed(direction + '_click',
+                      lambda: _click_table_paginator(handle, owner, check_cancel))
+            except RuntimeError:
+                return False
         finally:
             handle.dispose()
-        deadline = time.monotonic() + 30
-        while marker.inner_text() == state:
-            _check_cancel(check_cancel)
-            if time.monotonic() >= deadline:
-                return False
-            page.wait_for_timeout(100)
-        wait_idle(page)
+
+        def marker_change():
+            deadline = time.monotonic() + 30
+            while marker.inner_text() == state:
+                _check_cancel(check_cancel)
+                if time.monotonic() >= deadline:
+                    return False
+                page.wait_for_timeout(100)
+            return True
+
+        if not timed(direction + '_marker_wait', marker_change):
+            return False
+        timed(direction + '_overlay_wait', lambda: wait_idle(page))
         return True
 
     try:
@@ -160,7 +186,7 @@ def _turn_grid(page, table, max_pages, check_cancel):
             if not previous.count():
                 break
             state = marker.inner_text()
-            if state in resets or not advance(previous, state):
+            if state in resets or not advance(previous, state, 'reset'):
                 return False
             resets.add(state)
         if table.locator(previous_selector).count():
@@ -175,12 +201,26 @@ def _turn_grid(page, table, max_pages, check_cancel):
             next_button = table.locator(next_selector)
             if not next_button.count():
                 return True
-            if ordinal + 1 >= max_pages or not advance(next_button, state):
+            if ordinal + 1 >= max_pages or not advance(next_button, state, 'advance'):
                 return False
         return False
     finally:
         owner.dispose()
-
+        wall_ms = (_paginator_clock() - wall_start) * 1000
+        attributed_ms = sum(duration for duration, _ in steps.values())
+        for step, (duration, count) in steps.items():
+            if count:
+                diagnostics.record('native.paginator_timing',
+                                   native_paginator_step=step, duration_ms=duration,
+                                   count=count)
+        # Locator checks/other synchronous host work stay separate from the
+        # click, marker poll and overlay waits; a residual is not "network time".
+        diagnostics.record('native.paginator_timing',
+                           native_paginator_step='other',
+                           duration_ms=max(0.0, wall_ms - attributed_ms), count=1)
+        diagnostics.record('native.paginator_timing',
+                           native_paginator_step='total', duration_ms=wall_ms,
+                           count=1)
 
 _L1D_OMISSION_SHAPE = '''table => {
     if(!table.isConnected || table.tBodies.length!==1)return false;
