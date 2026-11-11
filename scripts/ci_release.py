@@ -221,8 +221,13 @@ def verify_payload(folder, source):
                     'run_attempt': source['run_attempt']}:
         raise ValueError('Release build identity does not match its selected source.')
     if files == DISTRIBUTION_FILES:
+        from spt_desktop.build_info import is_valid_build_info
+
         update_path = folder / 'update.json'
-        if update_path.stat().st_size > 4096 or _json(update_path) != identity:
+        if update_path.stat().st_size > 4096:
+            raise ValueError('Release update.json exceeds its strict size bound.')
+        update_identity = _json(update_path)
+        if not is_valid_build_info(update_identity) or update_identity != identity:
             raise ValueError('Release update.json differs from its exact source build identity.')
     report = _json(folder / 'build-selftest.json')
     expected = {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
