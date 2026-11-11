@@ -710,7 +710,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     if expired:
                         diagnostics.record('table.elapsed_budget', level='WARNING',
                                            table_elapsed_stage='state_poll',
-                                           pages=result['pages'])
+                                           pages=result['pages'],
+                                           duration_ms=(_diagnostic_clock()-page_started)*1000,
+                                           table_click_ms=click_ms,
+                                           table_poll_ms=(_diagnostic_clock()-poll_started)*1000)
                     break
                 page.wait_for_timeout(120)
         except PlaywrightTimeoutError as error:
@@ -741,7 +744,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
                                table_elapsed_stage='before_dom_read',
-                               pages=result['pages'])
+                               pages=result['pages'],
+                               duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms)
             break
         verify_ms = 0.0  # Verification is part of the atomic DOM read.
         dom_started = _diagnostic_clock()
@@ -795,7 +801,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
-                               table_elapsed_stage='before_dom_read', pages=result['pages'])
+                               table_elapsed_stage='before_dom_read', pages=result['pages'],
+                               duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_dom_ms=dom_ms)
             break
         if snapshot is None or 'refusal' in snapshot:
             result['complete'] = False
@@ -827,7 +836,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
-                               table_elapsed_stage='before_dom_read', pages=result['pages'])
+                               table_elapsed_stage='before_dom_read', pages=result['pages'],
+                               duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_dom_ms=dom_ms)
             break
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:
