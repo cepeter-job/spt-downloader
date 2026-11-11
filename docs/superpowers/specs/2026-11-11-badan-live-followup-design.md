@@ -2,7 +2,7 @@
 
 Date: 2026-11-11
 
-Status: Proposed bounded design, awaiting explicit operator approval. Independent source/data investigations completed; the existing negative-main refusal is intentional and the later DOM loading sub-cause remains unproved. No implementation, hosted RED/GREEN or live acceptance is claimed. This proposal is not merge authorization.
+Status: Operator approved scope A (strict L7) plus B (DOM diagnostics only), related normal protected contract edits and hosted tests-first CI, through an explicit clarification response. Independent design review passed with no blockers; both coverage suggestions are included. Implementation is in progress on separate feature worktrees. No implementation GREEN or live acceptance is claimed. Design/implementation merges remain unauthorized.
 
 ## 1. Verified baseline and live outcome
 
@@ -115,4 +115,4 @@ Application-owned exact-build live acceptance remains separate: new manifest-own
 
 ## 7. Approval checkpoint
 
-Recommended choice: approve A (strict L7 profile with its new owned proof) plus B (DOM diagnostics only), tests-first hosted CI and the related normal contract edits. This authorizes implementation preparation, not merge, not native acceptance and not a speculative loading repair. Alternatively approve one workstream only. If approval is absent, keep the implementation and protected contract unchanged and leave this as a design-only proposal.
+Recorded decision: the operator selected **L7 ketat + diagnostik L3 + kontrak + CI** for the reviewed proposal at `e8bac59db9ceb90b621a39c231f104d10723ced1`. This approves A (strict L7 profile with its new owned proof), B (DOM diagnostics only), synthetic hosted tests-first CI and related normal protected contract edits. It does not authorize merge, a speculative loading repair, local product execution, private-data upload or a claim of native/live acceptance. Implementation must preserve these scope boundaries and the independent verification gates above.
