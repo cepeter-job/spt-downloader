@@ -54,6 +54,35 @@ def test_renderer_timing_schema_drops_invalid_private_values_without_coercion(fi
     assert 'SYNTHETIC_PRIVATE_RENDERER_VALUE' not in json.dumps(events)
 
 
+@pytest.mark.parametrize('step', [
+    'reset_click', 'reset_marker_wait', 'reset_overlay_wait',
+    'advance_click', 'advance_marker_wait', 'advance_overlay_wait',
+    'other', 'total',
+])
+def test_native_paginator_timing_keeps_only_fixed_enums_and_bounded_aggregates(
+        tmp_path, step):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_PAGINATOR_REQUEST'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('native.paginator_timing', native_paginator_step=step,
+                 duration_ms=100.12345, count=2,
+                 request_json=private, url=private, marker=private)
+        d.record('native.paginator_timing', native_paginator_step=private,
+                 duration_ms=float('nan'), count=True,
+                 request_json=private, url=private)
+        assert log.flush()
+    events = [row for row in records(tmp_path)
+              if row['event'] == 'native.paginator_timing']
+    assert len(events) == 2
+    assert events[0]['native_paginator_step'] == step
+    assert events[0]['duration_ms'] == 100.12
+    assert events[0]['count'] == 2
+    assert 'native_paginator_step' not in events[1]
+    assert 'duration_ms' not in events[1]
+    assert 'count' not in events[1]
+    assert private not in json.dumps(events)
+
+
 def test_mpn_source_rejection_schema_keeps_only_fixed_stage_and_safe_error(tmp_path):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_MPN_VALUE'
