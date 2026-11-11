@@ -662,7 +662,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 result['complete'] = False
                 result['warning'] = 'Table capture elapsed budget exceeded'
                 diagnostics.record('table.elapsed_budget', level='WARNING',
-                                   table_elapsed_stage='before_next_click', pages=result['pages'])
+                                   table_elapsed_stage='before_next_click', pages=result['pages'],
+                                   duration_ms=(_diagnostic_clock()-page_started)*1000)
                 break
             if status != 'advanced':
                 raise RuntimeError('Unsupported pagination cursor state')
