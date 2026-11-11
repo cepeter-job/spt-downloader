@@ -19,7 +19,10 @@ def verifier():
 
 
 @pytest.fixture
-def artifact(tmp_path):
+def artifact(tmp_path, monkeypatch):
+    # Most synthetic artifact fixtures model an attested, trusted-main push.
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.setenv('GITHUB_REF', 'refs/heads/main')
     for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt'):
         (tmp_path / name).write_bytes(b'SYNTHETIC CHECKSUM FIXTURE; NOT A REAL EXECUTABLE')
     (tmp_path / 'build-selftest.json').write_text(json.dumps({
@@ -42,6 +45,7 @@ def artifact(tmp_path):
     }))
     identity = {'schema': 1, 'commit': 'a' * 40, 'run_id': '123', 'run_attempt': 2}
     (tmp_path / 'build-info.json').write_text(json.dumps(identity), encoding='utf-8')
+    (tmp_path / 'update.json').write_text(json.dumps(identity), encoding='utf-8')
     sbom = delivery_module('ci_sbom').make_sbom(
         build_info=identity,
         executable_digest=hashlib.sha256((tmp_path / 'SPTDownloader.exe').read_bytes()).hexdigest(),
@@ -60,7 +64,7 @@ def test_readback_checks_each_allowed_file_and_actual_selftest_version(artifact)
     module = verifier()
     module.write_checksums(artifact, '3.14.8')
     module.verify(artifact, '3.14.8')
-    assert len((artifact / 'SHA256SUMS.txt').read_text().splitlines()) == 6
+    assert len((artifact / 'SHA256SUMS.txt').read_text().splitlines()) == 7
     with pytest.raises(ValueError, match='Python'):
         module.verify(artifact, '3.11.17')
 
@@ -214,6 +218,21 @@ def test_release_source_cannot_promote_untrusted_or_incomplete_evidence(damage):
         delivery_module('ci_release').validate_source(run, jobs, artifact_data, **expected)
 
 
+def test_release_accepts_exact_legacy_seven_file_archive(tmp_path):
+    import zipfile
+
+    module = delivery_module('ci_release')
+    archive = tmp_path / 'legacy.zip'
+    with zipfile.ZipFile(archive, 'w') as output:
+        for name in module.LEGACY_DISTRIBUTION_FILES:
+            output.writestr(name, b'SYNTHETIC LEGACY BYTES')
+    target = tmp_path / 'legacy-unpacked'
+    module.extract_verified_archive(
+        archive, target, digest='sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest(),
+        size=archive.stat().st_size)
+    assert {path.name for path in target.iterdir()} == module.LEGACY_DISTRIBUTION_FILES
+
+
 def test_release_archive_digest_and_allowlist_are_checked_before_extraction(tmp_path):
     import hashlib
     import zipfile
@@ -221,7 +240,7 @@ def test_release_archive_digest_and_allowlist_are_checked_before_extraction(tmp_
     module = delivery_module('ci_release')
     archive = tmp_path / 'synthetic.zip'
     names = ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
-             'build-info.json', 'distribution-sbom.json', 'SHA256SUMS.txt')
+             'build-info.json', 'distribution-sbom.json', 'update.json', 'SHA256SUMS.txt')
     with zipfile.ZipFile(archive, 'w') as output:
         for name in names:
             output.writestr(name, b'SYNTHETIC ARCHIVE FIXTURE')
@@ -248,7 +267,7 @@ def test_release_archive_rejects_traversal_extra_case_collision_and_duplicates(t
         warnings.simplefilter('ignore', UserWarning)
         with zipfile.ZipFile(archive, 'w') as output:
             for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
-                         'build-info.json', 'distribution-sbom.json', 'SHA256SUMS.txt', extra):
+                         'build-info.json', 'distribution-sbom.json', 'update.json', 'SHA256SUMS.txt', extra):
                 output.writestr(name, b'SYNTHETIC')
     with pytest.raises(ValueError, match='allowlist|duplicate|path|archive'):
         module.extract_verified_archive(archive, tmp_path / 'target',
@@ -284,7 +303,7 @@ def test_durable_rollback_retains_provenance_for_the_original_archive_digest():
     assert steps[0]['with']['subject-digest'] == 'sha256:${{ needs.package.outputs.artifact_digest }}'
 
 
-def test_seven_file_distribution_requires_build_identity_and_sbom_before_checksums(artifact):
+def test_eight_file_distribution_requires_build_identity_and_sbom_before_checksums(artifact):
     (artifact / 'build-info.json').unlink()
     (artifact / 'distribution-sbom.json').unlink()
     with pytest.raises(ValueError, match='build-info|SBOM|sbom|distribution'):
@@ -308,6 +327,109 @@ def test_recomputed_checksums_do_not_authorize_mismatched_distribution_metadata(
     path.write_text(json.dumps(data), encoding='utf-8')
     with pytest.raises(ValueError, match='SBOM'):
         verifier().write_checksums(artifact, '3.14.8')
+
+
+@pytest.mark.parametrize('event,ref', [
+    ('pull_request', 'refs/pull/239/merge'),
+    ('workflow_dispatch', 'refs/heads/main'),
+    ('push', 'refs/heads/feature'),
+])
+def test_untrusted_builds_use_seven_files_and_cannot_generate_update_json(
+        artifact, monkeypatch, event, ref):
+    module = verifier()
+    monkeypatch.setenv('GITHUB_EVENT_NAME', event)
+    monkeypatch.setenv('GITHUB_REF', ref)
+    (artifact / 'update.json').unlink()
+    with pytest.raises(ValueError, match='trusted main push'):
+        module.write_update_json(artifact, '3.14.8')
+    module.write_checksums(artifact, '3.14.8')
+    module.verify(artifact, '3.14.8')
+    assert len((artifact / 'SHA256SUMS.txt').read_text(encoding='ascii').splitlines()) == 6
+    assert not (artifact / 'update.json').exists()
+
+
+@pytest.mark.parametrize('event,ref', [
+    ('pull_request', 'refs/pull/239/merge'),
+    ('workflow_dispatch', 'refs/heads/main'),
+    ('push', 'refs/heads/feature'),
+])
+def test_untrusted_builds_reject_an_injected_update_json(artifact, monkeypatch, event, ref):
+    module = verifier()
+    monkeypatch.setenv('GITHUB_EVENT_NAME', event)
+    monkeypatch.setenv('GITHUB_REF', ref)
+    with pytest.raises(ValueError, match='forbidden'):
+        module.write_checksums(artifact, '3.14.8')
+    with pytest.raises(ValueError, match='forbidden'):
+        module.verify(artifact, '3.14.8')
+
+
+def test_trusted_main_push_requires_update_manifest_even_if_other_bytes_are_valid(artifact):
+    module = verifier()
+    (artifact / 'update.json').unlink()
+    with pytest.raises(ValueError, match='update.json'):
+        module.write_checksums(artifact, '3.14.8')
+    with pytest.raises(ValueError, match='allowlist'):
+        module.verify(artifact, '3.14.8')
+
+
+def test_update_manifest_is_recreated_from_checked_build_identity(artifact):
+    module = verifier()
+    (artifact / 'update.json').unlink()
+    module.write_update_json(artifact, '3.14.8')
+    assert json.loads((artifact / 'update.json').read_text(encoding='utf-8')) == (
+        json.loads((artifact / 'build-info.json').read_text(encoding='utf-8')))
+    with pytest.raises(ValueError, match='overwrite'):
+        module.write_update_json(artifact, '3.14.8')
+    module.write_checksums(artifact, '3.14.8')
+    module.verify(artifact, '3.14.8')
+
+
+@pytest.mark.parametrize('damage', ['missing', 'wrong-commit', 'wrong-run', 'wrong-attempt',
+                                    'extra-key', 'bad-schema-type'])
+def test_update_manifest_must_match_identity_even_with_recomputed_checksums(artifact, damage):
+    module = verifier()
+    module.write_checksums(artifact, '3.14.8')
+    path = artifact / 'update.json'
+    update = json.loads(path.read_text(encoding='utf-8'))
+    if damage == 'missing':
+        path.unlink()
+    else:
+        if damage == 'wrong-commit':
+            update['commit'] = 'b' * 40
+        elif damage == 'wrong-run':
+            update['run_id'] = '124'
+        elif damage == 'wrong-attempt':
+            update['run_attempt'] = 3
+        elif damage == 'extra-key':
+            update['untrusted'] = True
+        else:
+            update['schema'] = True
+        path.write_text(json.dumps(update), encoding='utf-8')
+    if damage != 'missing':
+        (artifact / 'SHA256SUMS.txt').write_text(module.checksums(artifact), encoding='ascii')
+    with pytest.raises(ValueError, match='update.json|allowlist'):
+        module.verify(artifact, '3.14.8')
+
+
+def test_release_verifies_new_update_manifest_and_retains_legacy_seven_file_support(artifact):
+    release = delivery_module('ci_release')
+    writer = verifier()
+    writer.write_checksums(artifact, '3.14.8')
+    source = source_evidence()[3]
+    release.verify_payload(artifact, source)
+
+    update = artifact / 'update.json'
+    update.write_text(json.dumps({'schema': 1, 'commit': 'b' * 40,
+                                  'run_id': '123', 'run_attempt': 2}), encoding='utf-8')
+    (artifact / 'SHA256SUMS.txt').write_text(writer.checksums(artifact), encoding='ascii')
+    with pytest.raises(ValueError, match='update.json'):
+        release.verify_payload(artifact, source)
+
+    update.unlink()
+    (artifact / 'SHA256SUMS.txt').write_text(
+        ''.join(hashlib.sha256((artifact / name).read_bytes()).hexdigest() + '  ' + name + '\n'
+                for name in release.LEGACY_PAYLOAD), encoding='ascii')
+    release.verify_payload(artifact, source)
 
 
 def test_build_info_uses_exact_github_identity_and_rejects_absent_or_invalid_values(tmp_path, monkeypatch):

@@ -76,6 +76,19 @@ def persisted(path):
     return json.loads((path / 'preferences.json').read_text(encoding='utf-8'))
 
 
+def test_settings_shows_requested_cache_and_login_copy(settings):
+    root, app, ctl, dialog, path, writes, errors = settings
+    labels = [str(w.cget('text')) for w in widgets(dialog)
+              if w.winfo_class() == 'TLabel']
+    assert 'jumlah cache job (0 = nonaktif)' in labels
+    assert 'Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.' in labels
+    assert not any('Job sukses lama hanya dipangkas' in label for label in labels)
+    assert not any('CAPTCHA/MFA diselesaikan' in label for label in labels)
+    assert not any('Coretax → Satu' in label for label in labels)
+    assert button(dialog, 'bersihkan cache job')
+    assert not writes and not errors
+
+
 def test_dirty_close_defaults_to_return_and_preserves_edits(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     change_browser(dialog)
@@ -394,3 +407,132 @@ def test_invalid_retention_input_does_not_get_saved_or_claim_success(settings):
     assert app.preferences['keep_jobs'] == 10
     assert app._settings_dialog is dialog and dialog.winfo_exists()
     assert not writes
+
+
+def _pump_manual_prune(root):
+    # Tk receives the worker result only through the main-thread after queue.
+    root.after(300, root.quit)
+    root.mainloop()
+
+
+@pytest.mark.parametrize('confirmed', [True, False])
+def test_manual_prune_previews_then_requires_explicit_confirmation(
+        settings, monkeypatch, confirmed):
+    from types import SimpleNamespace
+    root, app, ctl, dialog, path, writes, errors = settings
+    calls, prompts, notices = [], [], []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'downloads_folder', lambda: path / 'Downloads')
+    monkeypatch.setattr(gui, 'preview_published_jobs',
+                        lambda *a, **kw: calls.append('preview') or
+                        {'eligible_jobs': 2, 'estimated_bytes': 2 * 1024 * 1024,
+                         'candidate_ids': ('1' * 32, '2' * 32), 'scan_complete': True})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: calls.append(('delete', kw['allowed_ids'])) or
+                        {'removed': 2, 'incomplete': False})
+    monkeypatch.setattr(gui.messagebox, 'askyesno',
+                        lambda title, message, **kw: prompts.append((title, message)) or confirmed)
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kw: notices.append((title, message)))
+    button(dialog, 'bersihkan cache job').invoke()
+    assert app._manual_prune_busy  # New export cannot begin during preview/delete.
+    _pump_manual_prune(root)
+    assert calls == (['preview', ('delete', ('1' * 32, '2' * 32))]
+                     if confirmed else ['preview'])
+    assert len(prompts) == 1 and '2 job' in prompts[0][1]
+    assert '2.0 MiB' in prompts[0][1]
+    assert all('0000000000000001' not in message for _, message in prompts + notices)
+    assert not app._manual_prune_busy
+    assert not ctl.active and not ctl.exports and not writes and not errors
+
+
+def test_manual_prune_refuses_unsaved_retention_change(settings, monkeypatch):
+    root, app, ctl, dialog, path, writes, errors = settings
+    spinner = next(w for w in widgets(dialog) if w.winfo_class() == 'TSpinbox')
+    spinner.delete(0, 'end')
+    spinner.insert(0, '1')
+    root.update()
+    notices = []
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kw: notices.append((title, message)))
+    monkeypatch.setattr(gui, 'preview_published_jobs',
+                        lambda *a, **kw: pytest.fail('No preview before saved settings'))
+    button(dialog, 'bersihkan cache job').invoke()
+    assert notices and 'Simpan' in notices[0][0]
+    assert not app._manual_prune_busy
+    assert app.preferences['keep_jobs'] == 10 and not writes
+
+
+def test_incomplete_preview_never_presents_delete_confirmation(settings, monkeypatch):
+    from types import SimpleNamespace
+    root, app, ctl, dialog, path, writes, errors = settings
+    notices, calls = [], []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'downloads_folder', lambda: path / 'Downloads')
+    monkeypatch.setattr(gui, 'preview_published_jobs',
+                        lambda *a, **kw: calls.append('preview') or {
+                            'eligible_jobs': 1, 'estimated_bytes': 1024,
+                            'candidate_ids': ('1' * 32,), 'scan_complete': False})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: pytest.fail('Incomplete preview must not delete'))
+    monkeypatch.setattr(gui.messagebox, 'askyesno',
+                        lambda *a, **kw: pytest.fail('Incomplete preview must not ask confirmation'))
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kw: notices.append((title, message)))
+    button(dialog, 'bersihkan cache job').invoke()
+    _pump_manual_prune(root)
+    assert calls == ['preview']
+    assert len(notices) == 1 and 'belum lengkap' in notices[0][0]
+    assert not app._manual_prune_busy
+    assert not ctl.active and not ctl.exports and not writes and not errors
+
+
+def test_manual_prune_warns_after_partial_source_removal(settings, monkeypatch):
+    from types import SimpleNamespace
+    root, app, ctl, dialog, path, writes, errors = settings
+    warnings, infos, calls = [], [], []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'downloads_folder', lambda: path / 'Downloads')
+    monkeypatch.setattr(gui, 'preview_published_jobs',
+                        lambda *a, **kw: {'eligible_jobs': 1, 'estimated_bytes': 1000,
+                                         'candidate_ids': ('1' * 32,), 'scan_complete': True})
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *a, **kw: calls.append(kw) or
+                        {'removed': 0, 'incomplete': True})
+    monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *a, **kw: True)
+    monkeypatch.setattr(gui.messagebox, 'showwarning',
+                        lambda title, message, **kw: warnings.append((title, message)))
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kw: infos.append((title, message)))
+    button(dialog, 'bersihkan cache job').invoke()
+    _pump_manual_prune(root)
+    assert calls and calls[0]['report'] is True
+    assert calls[0]['allowed_ids'] == ('1' * 32,)
+    assert len(warnings) == 1 and 'belum tuntas' in warnings[0][0]
+    assert 'checkpoint' in warnings[0][1]
+    assert not infos and not errors and not writes
+    assert not app._manual_prune_busy and not ctl.active and not ctl.exports

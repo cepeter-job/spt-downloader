@@ -2,7 +2,10 @@
 from datetime import date
 import json
 import os
+import queue
 import re
+import threading
+import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
@@ -13,7 +16,23 @@ from .ui_copy import copy_text
 from .ui_state import ExportState, begin_export, scope_errors, reduce_export, mark_stopping, record_reply
 from .ui_views import MainView
 from .ui_theme import configure_dialog, dip_to_px, effective_scale
-from .job_pruning import DEFAULT_KEEP_JOBS, validate_keep_jobs
+from .job_pruning import (DEFAULT_KEEP_JOBS, validate_keep_jobs,
+                          preview_published_jobs, prune_published_jobs)
+from .paths import downloads_folder
+from .build_info import read_build_info
+from . import update_notice
+
+# Maintainer-approved personal OneDrive within the organizational Microsoft 365
+# tenant, intentionally shared with colleagues in the organization. '/personal/'
+# identifies its storage location; it does not imply public access or a team site.
+# The maintainer confirmed this exact destination. Because the repository
+# and binary are public, the path exposes the owner's account identifier;
+# this disclosure and its lifecycle implications require explicit review.
+# Personnel changes, link revocation, or folder moves require a reviewed URL
+# migration; no permissions, credentials, or download links come from Worker JSON.
+UPDATE_FOLDER_URL = ('https://kemenkeu-my.sharepoint.com/my?'
+    'id=%2Fpersonal%2Fpuntoami%5Fpriyono%5Fkemenkeu%5Fgo%5Fid%2FDocuments%2FSPT%20Downloader'
+    '&ga=1')
 
 #punto ami priyono
 
@@ -163,6 +182,8 @@ class App:
         self._settings_dialog=None
         self._credential_status=None
         self._settings_close=None
+        self._settings_refresh=None
+        self._manual_prune_busy=False
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
@@ -170,6 +191,11 @@ class App:
         self._poll_after = None
         self._poll_failed = False
         self._disposed = False
+        self._update_after = None
+        self._update_pending = False
+        self._update_results = queue.Queue(maxsize=1)
+        self._update_seen = set()
+        self._update_dialog = None
         root.title(copy_text('app.title'))
         self.view = MainView(root, year_default=str(date.today().year),
                             on_start=self.start, on_stop=self.stop,
@@ -188,6 +214,122 @@ class App:
         root.bind('<Destroy>', self._on_destroy, add='+')
         self.npwp_entry.focus_set()
         self._poll_after = root.after(100, self._poll)
+        # Synthetic GUI self-tests inject a controller and must stay offline.
+        # The authorized Cloudflare Worker endpoint is a fixed nonempty constant.
+        if self._owns_controller:
+            self._update_after = root.after(4000, self.check_updates)
+
+    def check_updates(self, manual=False):
+        """Fetch public release metadata off Tk's thread, never touching Coretax."""
+        self._update_after = None
+        if self._disposed or self._closing or self._update_pending:
+            return
+        if self.controller.active:
+            if manual:
+                messagebox.showinfo('Pekerjaan sedang berjalan',
+                    'Pemeriksaan pembaruan tersedia setelah pekerjaan selesai.',
+                    parent=self._settings_dialog or self.root)
+            else:
+                self._update_after = self.root.after(15000, self.check_updates)
+            return
+        installed = read_build_info()
+        if installed is None:
+            if manual:
+                messagebox.showinfo('Identitas build tidak tersedia',
+                    'Versi aplikasi tidak dapat diverifikasi.', parent=self._settings_dialog or self.root)
+            return
+        self._update_pending = True
+
+        def worker():
+            try:
+                result = ('ok', update_notice.fetch_notice(update_notice.MANIFEST_URL, installed))
+            except update_notice.UpdateLookupError:
+                result = ('unavailable', None)
+            except Exception:
+                # No exception text, URL, local path, credential, or taxpayer
+                # information is allowed into update UI or diagnostics.
+                result = ('unavailable', None)
+            self._update_results.put(result)
+
+        threading.Thread(target=worker, daemon=True, name='spt-update-check').start()
+        self._update_after = self.root.after(200, lambda: self._receive_update(manual))
+
+    def _receive_update(self, manual=False):
+        self._update_after = None
+        if self._disposed:
+            return
+        try:
+            state, notice = self._update_results.get_nowait()
+        except queue.Empty:
+            self._update_after = self.root.after(200, lambda: self._receive_update(manual))
+            return
+        self._update_pending = False
+        if notice is not None and (self.controller.active or self._interaction is not None
+                                   or self._settings_dialog is not None and not manual):
+            # Do not interrupt active work, a source-selection dialog, or Settings.
+            self._update_results.put((state, notice))
+            self._update_pending = True
+            self._update_after = self.root.after(2000, lambda: self._receive_update(manual))
+            return
+        if state != 'ok':
+            if manual:
+                messagebox.showinfo('Pemeriksaan tidak tersedia',
+                    'Pembaruan belum dapat diperiksa. Coba lagi ketika jaringan tersedia.',
+                    parent=self._settings_dialog or self.root)
+        elif notice is None:
+            if manual:
+                messagebox.showinfo('Pembaruan',
+                    'Tidak ada pembaruan yang lebih baru dan terverifikasi.',
+                    parent=self._settings_dialog or self.root)
+        elif notice.run_id not in self._update_seen:
+            self._update_seen.add(notice.run_id)
+            self._show_update_notice(notice)
+        if not manual and self._owns_controller:
+            self._update_after = self.root.after(24 * 60 * 60 * 1000, self.check_updates)
+
+    def _show_update_notice(self, notice):
+        """Show one short, dismissible notice; browser navigation is user-initiated."""
+        if self._disposed or self._closing or self._update_dialog is not None:
+            return
+        parent = self._settings_dialog or self.root
+        dialog = tk.Toplevel(parent)
+        self._update_dialog = dialog
+        dialog.title('Pembaruan')
+        dialog.transient(parent)
+        frame = ttk.Frame(dialog, padding=18)
+        frame.pack(fill='both', expand=True)
+        ttk.Label(frame, text='update tersedia',
+                  style='SPT.Heading.TLabel').pack(anchor='w', pady=(0, 12))
+        actions = ttk.Frame(frame)
+        actions.pack(anchor='e')
+        prior_grab = self.root.grab_current()
+        if prior_grab is not None:
+            dialog.grab_set()
+
+        def dismiss():
+            self._update_dialog = None
+            if self.root.grab_current() is dialog:
+                dialog.grab_release()
+            dialog.destroy()
+            if (prior_grab is not None and prior_grab.winfo_exists()
+                    and not self._disposed):
+                prior_grab.grab_set()
+
+        def open_folder():
+            # Fixed approved SharePoint folder; never follow a URL from the manifest.
+            try:
+                opened = webbrowser.open(UPDATE_FOLDER_URL, new=2)
+            except (OSError, webbrowser.Error):
+                opened = False
+            if opened:
+                dismiss()
+            else:
+                messagebox.showerror('Browser tidak tersedia',
+                    'Folder pembaruan tidak dapat dibuka.', parent=dialog)
+
+        ttk.Button(actions, text='Update', command=open_folder).pack(side='left', padx=(0, 8))
+        ttk.Button(actions, text='Close', command=dismiss).pack(side='left')
+        dialog.protocol('WM_DELETE_WINDOW', dismiss)
 
     def _report_callback(self, kind, error, trace):
         diagnostics.record('gui.callback_failed', error=error, level='ERROR')
@@ -201,8 +343,138 @@ class App:
                 'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
                 parent=self._settings_dialog or self.root)
 
+    def _prune_old_jobs(self, dialog, dirty):
+        """Dry-run, confirm, then revalidate in an idle worker before deleting."""
+        if self._manual_prune_busy or self.controller.active or self._disposed:
+            return
+        if dirty():
+            messagebox.showinfo('Simpan pengaturan',
+                'Simpan atau abaikan perubahan Pengaturan sebelum memangkas job.',
+                parent=dialog)
+            return
+        keep = self.preferences['keep_jobs']
+        if keep == 0:
+            messagebox.showinfo('Pemangkasan nonaktif',
+                'Ubah jumlah cache job ke 1–100 lalu Simpan. Nilai 0 menonaktifkan pemangkasan.',
+                parent=dialog)
+            return
+        try:
+            downloads = downloads_folder()
+        except (OSError, ValueError):
+            messagebox.showerror('Pemangkasan tidak tersedia',
+                'Folder Downloads Windows tidak dapat diverifikasi.', parent=dialog)
+            return
+        excluded = getattr(self.controller, 'job_id', None)
+        work = queue.Queue(maxsize=1)
+        approved_ids = ()  # Never written to UI or diagnostics.
+        self._manual_prune_busy = True
+        if self._settings_refresh is not None:
+            self._settings_refresh(preserve_status=True)
+        self._credential_status.set('Memeriksa job lama yang aman untuk dipangkas...')
+
+        def inspect():
+            try:
+                result = preview_published_jobs(self.workspace, downloads, keep,
+                                                exclude=excluded)
+                work.put(('preview', result))
+            except (OSError, ValueError, TypeError, RuntimeError):
+                work.put(('preview_error', None))
+
+        def delete():
+            try:
+                outcome = prune_published_jobs(self.workspace, downloads, keep,
+                                               exclude=excluded, allowed_ids=approved_ids,
+                                               report=True)
+                work.put(('deleted', outcome))
+            except (OSError, ValueError, TypeError, RuntimeError):
+                work.put(('delete_error', None))
+
+        def receive():
+            nonlocal approved_ids
+            if self._disposed:
+                return
+            try:
+                kind, result = work.get_nowait()
+            except queue.Empty:
+                self.root.after(100, receive)
+                return
+            if kind == 'preview':
+                total = result['eligible_jobs']
+                size = result['estimated_bytes']
+                if not result['scan_complete']:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Pratinjau belum lengkap',
+                        'Sebagian job belum dapat diverifikasi atau batas waktu pemeriksaan habis. '
+                        'Tidak ada job yang dihapus; coba lagi setelah masalah selesai.', parent=dialog)
+                elif not total:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Tidak ada job yang memenuhi syarat',
+                        'Tidak ada job lama bersegel COMPLETE dan terverifikasi untuk dipangkas.',
+                        parent=dialog)
+                elif self.controller.active:
+                    self._manual_prune_busy = False
+                    messagebox.showinfo('Job sedang berjalan',
+                        'Pemangkasan dibatalkan karena ada pekerjaan aktif.', parent=dialog)
+                else:
+                    approved_ids = tuple(result['candidate_ids'])
+                    if len(approved_ids) != total:
+                        self._manual_prune_busy = False
+                        messagebox.showerror('Pratinjau tidak konsisten',
+                            'Kandidat job tidak cocok dengan jumlah yang diverifikasi.', parent=dialog)
+                        if self._settings_dialog is dialog and dialog.winfo_exists():
+                            self._settings_refresh(preserve_status=True)
+                        return
+                    diagnostics.record('jobs.prune_preview', count=total, estimated_bytes=size)
+                    confirmed = messagebox.askyesno('Konfirmasi pemangkasan job',
+                        f'{total} job lama memenuhi syarat. Perkiraan ruang: '
+                        f'{size / (1024 * 1024):.1f} MiB.\n\n'
+                        'Capture mentah dan checkpoint job ini akan dihapus permanen; '
+                        'file hasil Downloads, akun, dan profil browser tetap disimpan. '
+                        'Pemeriksaan kepemilikan dan file akan diulang sebelum penghapusan. '
+                        'Jumlah yang dihapus dapat lebih sedikit. Lanjutkan?',
+                        parent=dialog, default='no')
+                    if confirmed and not self.controller.active:
+                        self._credential_status.set('Memangkas hanya job lama yang masih aman...')
+                        threading.Thread(target=delete, name='spt-manual-prune',
+                                         daemon=True).start()
+                        self.root.after(100, receive)
+                        return
+                    self._manual_prune_busy = False
+            else:
+                self._manual_prune_busy = False
+                if kind in ('preview_error', 'delete_error'):
+                    message = ('Pratinjau gagal dan tidak ada penghapusan dilakukan.'
+                               if kind == 'preview_error' else
+                               'Pemangkasan mengalami gangguan. Sebagian job mungkin sudah dipangkas; '
+                               'periksa hasil ulang sebelum mencoba kembali.')
+                    messagebox.showerror('Pemangkasan tidak tersedia', message, parent=dialog)
+                else:
+                    removed = result['removed']
+                    diagnostics.record('jobs.manual_pruned', count=removed)
+                    if result['incomplete']:
+                        messagebox.showwarning('Pemangkasan belum tuntas',
+                            f'{removed} job selesai dipangkas, tetapi ada kandidat yang '
+                            'tidak berhasil diverifikasi atau dihapus sepenuhnya. '
+                            'Sisa capture dan checkpoint mungkin tidak lengkap; '
+                            'jangan menganggap job tersebut berhasil dibersihkan. '
+                            'Tinjau kembali sebelum mencoba lagi. Hasil Downloads '
+                            'dan data login tidak dihapus.', parent=dialog)
+                    else:
+                        messagebox.showinfo('Pemangkasan selesai',
+                            f'{removed} job lama berhasil dipangkas setelah verifikasi ulang. '
+                            'File hasil Downloads dan data login tidak dihapus.',
+                            parent=dialog)
+            if self._settings_dialog is dialog and dialog.winfo_exists():
+                if self._settings_refresh is not None:
+                    self._settings_refresh(preserve_status=True)
+                self._credential_status.set(
+                    'Pemangkasan selesai atau dibatalkan. Nilai retensi tetap tersimpan.')
+
+        threading.Thread(target=inspect, name='spt-prune-preview', daemon=True).start()
+        self.root.after(100, receive)
+
     def start(self):
-        if self.controller.active or self._closing or self._disposed:
+        if self.controller.active or self._closing or self._disposed or self._manual_prune_busy:
             return
         errors = scope_errors(self.npwp.get(), self.year.get())
         self.view.show_errors(errors)
@@ -327,11 +599,25 @@ class App:
                 # Root teardown may already have removed the pending poll command.
                 pass
             self._poll_after = None
+        if self._update_after is not None:
+            try:
+                self.root.after_cancel(self._update_after)
+            except tk.TclError:
+                # Root teardown may already have removed the pending callback.
+                pass
+            self._update_after = None
+        if self._update_dialog is not None:
+            try:
+                self._update_dialog.destroy()
+            except tk.TclError:
+                # Root teardown may already have destroyed this widget.
+                pass
+            self._update_dialog = None
         self.view.dispose()
 
     def request_close(self):
-        if self._disposed:
-            return
+        if self._disposed or self._manual_prune_busy:
+            return  # Keep the window and its worker alive until cleanup finishes.
         if self._settings_close is not None and not self.controller.active:
             self._settings_close(on_closed=self.request_close)
             return
@@ -1057,22 +1343,19 @@ class App:
                   ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
                   ('Sumber detail SPT',ttk.Combobox(frame,textvariable=detail_source,
                     values=tuple(DETAIL_SOURCE_LABELS.values()),state='readonly',width=25)),
-                  ('Jumlah job disimpan (0 = nonaktif)',ttk.Spinbox(frame,from_=0,to=100,
+                  ('jumlah cache job (0 = nonaktif)',ttk.Spinbox(frame,from_=0,to=100,
                     textvariable=keep_jobs,width=8))]
         for row,(label,widget) in enumerate(controls):
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
         hidden_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Job sukses lama hanya dipangkas setelah hasil COMPLETE\n'
-                  'diterbitkan dan terverifikasi. Default 10 job terakhir.\n'
-                  'Job PARTIAL/gagal tetap disimpan. Pruning menghapus capture\n'
-                  'mentah dan checkpoint lama untuk rebuild offline.',
-                  wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan, lalu pilih Mulai unduh. CAPTCHA/MFA diselesaikan di browser.',wraplength=520).grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
-        buttons=ttk.Frame(frame);buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=10,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=11,column=0,columnspan=2,sticky='w',pady=(4,0))
+        ttk.Label(frame,text='Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=9,column=0,columnspan=2,sticky='w',pady=(4,0))
+        ttk.Button(frame, text='Cek pembaruan', command=lambda:self.check_updates(manual=True)).grid(
+            row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         decision_dialog = None
         pending_preferences = False
@@ -1090,8 +1373,8 @@ class App:
             return pending_preferences or bool(password.get()) or selected()!=self.preferences
         def refresh(*args,preserve_status=False):
             active=self.controller.active
-            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button]:
-                widget.state(['disabled' if active else '!disabled'])
+            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button,prune_button]:
+                widget.state(['disabled' if active or self._manual_prune_busy else '!disabled'])
             if not active and not preserve_status:
                 self._credential_status.set('Perubahan belum disimpan. Pilih Simpan untuk menerapkannya.' if dirty() else
                     'Akun tersimpan dipakai saat Mulai unduh; akun kosong memakai login manual.')
@@ -1100,11 +1383,14 @@ class App:
             password.set('');dialog.grab_release();dialog.destroy()
             self._settings_dialog=None;self._credential_status=None
             self._settings_close=None
+            self._settings_refresh=None
             self.settings_button.focus_set()
             if shutdown_request is not None:
                 shutdown_request()
         def close(*, on_closed=None):
             nonlocal decision_dialog, shutdown_request
+            if self._manual_prune_busy:
+                return
             if on_closed is not None:
                 shutdown_request = on_closed
             if self.controller.active:
@@ -1162,7 +1448,7 @@ class App:
             return_button.focus_set()
         def save():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
-            if self.controller.active:return False
+            if self.controller.active or self._manual_prune_busy:return False
             try:
                 if password.get():
                     if not identifier.get().strip():raise ValueError('Masukkan akun sebelum menyimpan password.')
@@ -1181,7 +1467,7 @@ class App:
                     self.controller.keep_jobs=preferences['keep_jobs']
             except ValueError:
                 messagebox.showerror('Pengaturan belum disimpan',
-                    'Periksa akun, password, dan jumlah job disimpan (0–100). Akun kosong memakai login manual.',parent=dialog)
+                    'Periksa akun, password, dan jumlah cache job (0–100). Akun kosong memakai login manual.',parent=dialog)
                 return False
             except OSError as error:
                 diagnostics.record('settings.failed', error=error, level='ERROR')
@@ -1200,7 +1486,7 @@ class App:
             return True
         def remove():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
-            if self.controller.active:return
+            if self.controller.active or self._manual_prune_busy:return
             if not messagebox.askyesno('Hapus login yang disimpan?','Hapus login Satu yang disimpan oleh aplikasi ini?',parent=dialog,default='no'):return
             try:delete_login(LOGIN_ORIGIN)
             except OSError:messagebox.showerror('Tidak dapat menghapus','Windows menolak penghapusan kredensial aplikasi.',parent=dialog);return
@@ -1226,8 +1512,12 @@ class App:
             self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai unduh.')
         save_button=ttk.Button(buttons,text='Simpan',command=save);save_button.pack(side='left',padx=(0,8))
         remove_button=ttk.Button(buttons,text=copy_text('settings.delete'),command=remove);remove_button.pack(side='left',padx=(0,8))
+        prune_button=ttk.Button(buttons,text='bersihkan cache job',
+            command=lambda: self._prune_old_jobs(dialog,dirty))
+        prune_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
         self._settings_close=close
+        self._settings_refresh=refresh
         for variable in (identifier,password,browser,hidden,detail_source,keep_jobs):traces.append((variable,variable.trace_add('write',refresh)))
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         refresh()

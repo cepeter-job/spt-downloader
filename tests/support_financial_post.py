@@ -43,7 +43,8 @@ def post_routed(browser, monkeypatch):
     def create(*, payload=None, endpoint=ENDPOINT, label=LABEL,
                component='rshshr-citr-main-form', body=PDF,
                content_type='application/pdf', status=200, headers=None,
-               count=1, change_scope=None, script=SCRIPT, detail_url=DETAIL):
+               count=1, change_scope=None, script=SCRIPT, detail_url=DETAIL,
+               content=None):
         context = browser.new_context(service_workers='block')
         context._spt_financial_route_policy = 'service_workers_blocked'
         contexts.append(context)
@@ -60,9 +61,11 @@ def post_routed(browser, monkeypatch):
                 '<tbody><tr><td>1</td><td>synthetic-statement.pdf</td><td>'
                 '<button id="financial-download" type="button" title="Unduh" '
                 'class="p-button-secondary"><span class="pi pi-download"></span></button>'
-                '</td></tr></tbody></table></ui-grid-documents></section></' + component + '></main>'
-                '<script>window.syntheticClicks=0;window.syntheticOptions=' + json.dumps(options) + ';</script>'
-                '<script src="' + SCRIPT_PATH + '"></script>')
+                '</td></tr></tbody></table></ui-grid-documents></section></' + component + '></main>')
+        if content is not None:
+            html = '<main class="main-content"><h1>Induk</h1>' + content + '</main>'
+        html += ('<script>window.syntheticClicks=0;window.syntheticOptions=' + json.dumps(options) + ';</script>'
+                 '<script src="' + SCRIPT_PATH + '"></script>')
 
         def route(intercept):
             request = intercept.request

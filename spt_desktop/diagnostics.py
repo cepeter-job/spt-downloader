@@ -30,10 +30,11 @@ EVENTS = frozenset({
     'operation.failed', 'operation.cancelled', 'phase.started', 'phase.completed',
     'phase.failed', 'phase.cancelled', 'progress', 'runtime.reused', 'runtime.install',
     'runtime.command', 'worker.spawned', 'worker.authorized', 'worker.protocol_rejected',
-    'worker.stderr_discarded', 'worker.finished', 'jobs.pruned', 'worker.forced_stop', 'worker.stop',
+    'worker.stderr_discarded', 'worker.finished', 'jobs.pruned',
+    'jobs.prune_preview', 'jobs.manual_pruned', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
-    'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
+    'native.paginator_timing', 'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.paginator_refused', 'mpn.observer_refused', 'mpn.grid_wait_timeout',
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
@@ -64,6 +65,9 @@ ENUMS = {
     'mpn_mismatch_reference_state': frozenset({'all_reference_missing',
         'some_reference_missing', 'references_observed', 'no_reference_mismatch'}),
     'corporate_l3_table_shape': frozenset({'zero', 'one', 'more_than_two'}),
+    'native_paginator_step': frozenset({'reset_probe', 'reset_click', 'reset_marker_wait',
+        'reset_overlay_wait', 'advance_probe', 'advance_click', 'advance_marker_wait',
+        'advance_overlay_wait', 'other', 'total'}),
     'mpn_catalog_variant_kind': frozenset({'not_observed', 'query_variant', 'path_variant'}),
     'table_page_stage': frozenset({'initial', 'advanced'}),
     'table_elapsed_stage': frozenset({'before_next_click', 'state_poll', 'before_dom_read'}),
@@ -246,6 +250,10 @@ def _safe_fields(fields):
         value = fields.get(name)
         if type(value) is int and 0 <= value <= 10_000_000:
             result[name] = value
+    # Bounded aggregate disk estimate; never emit the candidate IDs or paths.
+    estimate = fields.get('estimated_bytes')
+    if type(estimate) is int and 0 <= estimate <= 1 << 50:
+        result['estimated_bytes'] = estimate
     mismatch_count = fields.get('mpn_parent_mismatch_count')
     if type(mismatch_count) is int and 1 <= mismatch_count <= 7:
         result['mpn_parent_mismatch_count'] = mismatch_count

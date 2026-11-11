@@ -47,36 +47,82 @@ _SCAN = r'''() => {
         return rows.length === 1 && JSON.stringify([...rows[0].cells].map(c=>c.innerText.trim())) ===
             JSON.stringify(['NO.','FILENAME','TINDAKAN']);
     };
+    const forms = [...root.querySelectorAll('rshshr-citr-main-form')].filter(visible);
+    const modernAttachmentTable = table => {
+        const grid = table.closest('ui-grid-documents'), nui = table.closest('nui-grid');
+        const prime = table.closest('p-table');
+        if (forms.length !== 1 || !grid || !nui || !prime ||
+            table.closest('rshshr-citr-main-form') !== forms[0] ||
+            grid.parentElement.closest('ui-grid-documents,nui-grid,p-table,table,rshshr-citr-main-form') !== forms[0] ||
+            nui.closest('ui-grid-documents') !== grid || prime.closest('nui-grid') !== nui ||
+            grid.querySelector('ui-grid-documents,ui-grid,rshshr-citr-main-form') ||
+            grid.querySelectorAll('nui-grid').length !== 1 ||
+            grid.querySelectorAll('p-table').length !== 1 || grid.querySelectorAll('table').length !== 1 ||
+            ![forms[0], grid, nui, prime, table].every(visible)) return false;
+        const head = table.tHead, rows = head ? [...head.rows] : [];
+        if (rows.length !== 2 || rows[0].classList.contains('ng-filterrow') ||
+            !rows[1].classList.contains('ng-filterrow') || rows.some(row=>
+                !visible(row) || row.cells.length !== 3 || row.children.length !== 3 ||
+                [...row.cells].some(cell=>!visible(cell) || cell.colSpan !== 1 || cell.rowSpan !== 1))) return false;
+        const captions = ['NO.','FILENAME','TINDAKAN'];
+        if ([...rows[0].cells].some((cell, index)=>cell.innerText.trim() !== captions[index] ||
+                cell.textContent.trim() !== captions[index]) || rows[1].textContent.trim() ||
+            head.querySelector('a,button,select,textarea,[contenteditable],' +
+                '[role="button"],[role="checkbox"],[role="combobox"],[role="listbox"],' +
+                '[role="radio"],[role="slider"],[role="spinbutton"],[role="switch"],' +
+                '[role="textbox"],[role="searchbox"],table,ui-grid-documents,ui-grid,' +
+                'nui-grid,p-table,rshshr-citr-main-form,' + boundary)) return false;
+        const hosts = [...head.querySelectorAll('nui-grid-filter-control')];
+        const inputs = [...head.querySelectorAll('input')];
+        if (hosts.length !== 1 || inputs.length !== 1) return false;
+        const host = hosts[0], input = inputs[0], cells = [...rows[1].cells];
+        return cells.every((cell, index)=>
+                cell.querySelectorAll('nui-grid-filter-control').length === (index === 1 ? 1 : 0) &&
+                cell.querySelectorAll('input').length === (index === 1 ? 1 : 0)) &&
+            host.closest('th,td') === cells[1] && input.closest('nui-grid-filter-control') === host &&
+            input.getAttribute('type') === 'text' && visible(host) && visible(input);
+    };
     const tableLabel = table => {
-        // Bind only the observed attachment-table shape, never an arbitrary grid.
-        if (!attachmentTable(table)) return null;
+        // Bind only the observed attachment-table shapes, never an arbitrary grid.
+        const modern = modernAttachmentTable(table);
+        if (!attachmentTable(table) && !modern) return null;
+        const explicit = table.hasAttribute('aria-labelledby') || !!table.caption;
+        let label = null;
         if (table.hasAttribute('aria-labelledby')) {
             const ids = table.getAttribute('aria-labelledby').trim().split(/\s+/);
             if (ids.length !== 1 || !ids[0]) return null;
             const matches = [...document.querySelectorAll('[id]')].filter(el=>el.id===ids[0]);
             if (matches.length !== 1 || !root.contains(matches[0]) || owner(matches[0]) !== owner(table)) return null;
-            const label = approved(matches[0]);
+            label = approved(matches[0]);
             // Explicit contradictory/hidden ownership cannot fall back to nearby text.
             if (table.caption && approved(table.caption)?.trim() !== label?.trim()) return null;
-            return label;
-        }
-        if (table.caption) return approved(table.caption);
+        } else if (table.caption) label = approved(table.caption);
+        if (explicit && !modern) return label;
+        // A shared accordion alone cannot let an ID reference override a local heading.
         const candidates = [];
         for (let node=table; node && node!==owner(table); node=node.parentElement) {
             if (node!==table && node.matches('table')) return null;
             for (let sibling=node.previousElementSibling; sibling; sibling=sibling.previousElementSibling) {
                 if (sibling.matches('table,'+boundary) || sibling.querySelector('table,'+boundary)) return null;
+                // Modern field labels must be direct siblings, not nested in an adjacent field.
+                // Ascending transparent grid wrappers still reaches the field's direct label.
+                if (modern && !sibling.matches(headings) && sibling.querySelector(headings)) return null;
                 const found = [...(sibling.matches(headings)?[sibling]:[]), ...sibling.querySelectorAll(headings)]
                     .filter(visible);
                 candidates.push(...found);
             }
-            if (candidates.length) return candidates.length===1 && owner(candidates[0])===owner(table)
-                ? approved(candidates[0]) : null;
+            if (candidates.length) {
+                if (candidates.length !== 1 || owner(candidates[0]) !== owner(table)) return null;
+                const nearby = approved(candidates[0]);
+                if (explicit && nearby?.trim() !== label?.trim()) return null;
+                return explicit ? label : nearby;
+            }
         }
-        return null;
+        return modern ? null : label;
     };
     // Pengamatan struktur sendiri tidak mengizinkan request.
-    const tables = [...root.querySelectorAll('table')].filter(visible).filter(attachmentTable);
+    const tables = [...root.querySelectorAll('table')].filter(visible)
+        .filter(table=>attachmentTable(table) || modernAttachmentTable(table));
     const observations = [];
     for (const table of tables) {
         const candidates = [...table.querySelectorAll('a,button,input,[role="button"]')]
@@ -96,7 +142,8 @@ _SCAN = r'''() => {
         'a,button,input[type="button"],input[type="submit"],input[type="reset"]')].filter(visible).map(el => {
         const direct = el.innerText || el.value || el.getAttribute('aria-label') || '';
         const table = el.tagName==='A' ? el.closest('table') : null;
-        const label = labels.has(direct.trim()) ? direct : table ? tableLabel(table) : null;
+        // Modern header recognition grants no table-derived ordinary GET scope.
+        const label = labels.has(direct.trim()) ? direct : table && attachmentTable(table) ? tableLabel(table) : null;
         if (!label) return null;
         return {label,
                 href: el.tagName === 'A' ? el.getAttribute('href') : null,
@@ -105,9 +152,12 @@ _SCAN = r'''() => {
                 unsafe: el.tagName !== 'A' || el.hasAttribute('onclick') ||
                         el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')};
     }).filter(Boolean);
-    const forms = [...root.querySelectorAll('rshshr-citr-main-form')].filter(visible);
     if (forms.length === 1) {
+        const financialTables = tables.filter(table=>tableLabel(table));
         for (const table of tables) {
+            const modern = modernAttachmentTable(table);
+            // Count groups, not PDF rows; ambiguous financial groups grant no modern POST scope.
+            if (modern && financialTables.length !== 1) continue;
             const label = tableLabel(table), grid = table.closest('ui-grid-documents');
             if (!label || !grid || table.closest('rshshr-citr-main-form') !== forms[0] ||
                 grid.querySelectorAll('table').length !== 1) continue;
@@ -117,13 +167,23 @@ _SCAN = r'''() => {
                 if (!visible(row) || cells.length !== 3 || cells.some(c=>c.colSpan!==1 || c.rowSpan!==1) ||
                     !/^\d+$/.test(cells[0].innerText.trim()) ||
                     !/\.pdf$/i.test(cells[1].innerText.trim()) || actions.length !== 1) continue;
+                if (modern && (row.children.length !== 3 || cells.some(c=>!visible(c)) ||
+                    row.querySelector('table,ui-grid-documents,nui-grid,p-table'))) continue;
                 const button = actions[0];
                 if (button.tagName !== 'BUTTON' || button.getAttribute('type') !== 'button' ||
-                    button.getAttribute('title') !== 'Unduh' || button.disabled ||
+                    button.disabled || button.matches(':disabled') ||
                     button.getAttribute('aria-disabled') === 'true' || !cells[2].contains(button) ||
                     !button.classList.contains('p-button-secondary') ||
                     button.querySelectorAll('.pi.pi-download').length !== 1 ||
                     ['onclick','onmousedown','onpointerdown'].some(name=>button.hasAttribute(name))) continue;
+                if (modern) {
+                    if (button.hasAttribute('title') || button.getAttribute('aria-label') !== 'Unduh' ||
+                        !button.classList.contains('ng-actbtn') || button.hasAttribute('href') ||
+                        button.querySelectorAll('i').length !== 1 ||
+                        button.querySelectorAll('i.pi.pi-download').length !== 1 ||
+                        button.querySelectorAll('.pi').length !== 1) continue;
+                } else if (button.getAttribute('title') !== 'Unduh' || button.hasAttribute('aria-label') ||
+                    button.classList.contains('ng-actbtn')) continue;
                 // WeakMap mengikat node asli; clone identik tidak mewarisi izin.
                 if (!window._spt_financial_nodes) Object.defineProperty(window, '_spt_financial_nodes',
                     {value: new WeakMap(), configurable: true});

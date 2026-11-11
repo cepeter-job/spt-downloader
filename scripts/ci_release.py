@@ -14,8 +14,10 @@ import zipfile
 
 
 WORKFLOW = '.github/workflows/windows-build.yml'
-PAYLOAD = ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
-           'build-info.json', 'distribution-sbom.json')
+LEGACY_PAYLOAD = ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json',
+                  'build-info.json', 'distribution-sbom.json')
+PAYLOAD = (*LEGACY_PAYLOAD, 'update.json')
+LEGACY_DISTRIBUTION_FILES = frozenset((*LEGACY_PAYLOAD, 'SHA256SUMS.txt'))
 DISTRIBUTION_FILES = frozenset((*PAYLOAD, 'SHA256SUMS.txt'))
 ARCHIVE = 'SPTDownloader-Windows-x64.zip'
 SUBJECTS = ('SPTDownloader.exe', 'SHA256SUMS.txt', 'build-info.json', 'distribution-sbom.json', ARCHIVE)
@@ -116,7 +118,8 @@ def extract_verified_archive(archive, target, *, digest, size):
     with zipfile.ZipFile(archive) as source:
         entries = source.infolist()
         names = [item.filename for item in entries]
-        if len(names) != len(set(names)) or set(names) != DISTRIBUTION_FILES:
+        if (len(names) != len(set(names))
+                or set(names) not in (DISTRIBUTION_FILES, LEGACY_DISTRIBUTION_FILES)):
             raise ValueError('Archive differs from the exact distribution allowlist or has duplicate paths.')
         for item in entries:
             kind = stat.S_IFMT(item.external_attr >> 16)
@@ -205,16 +208,29 @@ def _manifest(folder):
 
 def verify_payload(folder, source):
     """Use the stable delivery schema so older releases do not depend on today's GUI controls."""
-    if ({path.name for path in folder.iterdir()} != DISTRIBUTION_FILES
+    files = {path.name for path in folder.iterdir()}
+    if (files not in (DISTRIBUTION_FILES, LEGACY_DISTRIBUTION_FILES)
             or any(path.is_symlink() or not path.is_file() for path in folder.iterdir())):
         raise ValueError('Release payload differs from its exact distribution allowlist.')
-    expected_manifest = ''.join(_hash(folder / name) + '  ' + name + '\n' for name in PAYLOAD)
+    payload = PAYLOAD if files == DISTRIBUTION_FILES else LEGACY_PAYLOAD
+    expected_manifest = ''.join(_hash(folder / name) + '  ' + name + '\n' for name in payload)
     if (folder / 'SHA256SUMS.txt').read_text(encoding='ascii') != expected_manifest:
         raise ValueError('Release distribution checksum manifest does not match all payload bytes.')
     identity = _json(folder / 'build-info.json')
     if identity != {'schema': 1, 'commit': source['commit'], 'run_id': str(source['run_id']),
                     'run_attempt': source['run_attempt']}:
         raise ValueError('Release build identity does not match its selected source.')
+    if files == DISTRIBUTION_FILES:
+        # Reuse the application's canonical build identity schema; do not
+        # invent a weaker verifier solely for the Cloudflare update manifest.
+        from spt_desktop.build_info import is_valid_build_info
+
+        update_path = folder / 'update.json'
+        if update_path.stat().st_size > 4096:
+            raise ValueError('Release update.json exceeds its strict size bound.')
+        update_identity = _json(update_path)
+        if not is_valid_build_info(update_identity) or update_identity != identity:
+            raise ValueError('Release update.json differs from its exact source build identity.')
     report = _json(folder / 'build-selftest.json')
     expected = {'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
                 'credentials_accessed': False, 'live_scrape': False, 'free_threaded': False,
