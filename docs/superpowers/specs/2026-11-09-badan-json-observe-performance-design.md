@@ -1,9 +1,14 @@
 # Corporate `json_observe` performance — measured, proof-preserving follow-up
 
-Original proposal: 2026-11-09. Review corrections / status: 2026-11-10.
-Scope: design and measurement planning **only** in PR #208, separated from
-the correctness change in #207. Changes to production traversal, pagination
-or source admission require their own reviewed implementation PRs.
+Original proposal: 2026-11-09. Updated evidence/status: **2026-11-11**.
+Scope: design and measurement planning **only** in PR #208. The production
+instrumentation and performance implementation were separately reviewed,
+tested and merged through [#234](https://github.com/cepeter-job/spt-downloader/pull/234)
+and [#236](https://github.com/cepeter-job/spt-downloader/pull/236); this
+proposal **does not** change either of their runtime contracts. Corporate L7
+native correctness and DOM initial-loading diagnostics are independently
+tracked by [#235](https://github.com/cepeter-job/spt-downloader/pull/235)
+(open at this update).
 
 ## What the recorded runs actually establish
 
@@ -55,14 +60,16 @@ segments and normal refusal paths. The implementation distinguishes
 `l3`/`l11a`/other observed-form stages. This is **coarse
 attribution only**: a long `l3` segment does not by itself distinguish
 paginator clicking, marker polling, overlay waits, source requests or
-other observer work. New build-matched **coarse** diagnostic data are available below; detailed
-per-paginator/marker/overlay/request attribution remains unmeasured.
+other observer work. The following original readings are historical; **#234 later
+added aggregated per-paginator timing**, and #236 added owned-probe timing.
+Request/response arrival chronology remains unmeasured. See the 11 November
+section below before selecting another optimization.
 
-### Observed stage timings, 10 November 2026 — read-only local logs
+### Historical stage timings, 10 November 2026 — read-only local logs
 
 Inspected the **locally retained privacy-safe diagnostic events** on
 DESKTOP-FR702P6, without copying taxpayer identities, raw response payloads,
-URLs or output filenames into the repository. The latest completed run uses
+URLs or output filenames into the repository. The latest completed run **for this historical comparison** uses
 merge commit [`4e84bfb`](https://github.com/cepeter-job/spt-downloader/commit/4e84bfb253ec4d4eeb3c7ec9f3ea2d4b67592921)
 (PR #215), build workflow `42744813416`, attempt 1. The preceding
 instrumented comparison build is `7f250af`, workflow `42717280592`,
@@ -82,7 +89,7 @@ scope or a controlled performance improvement.
 | Stage `build` | 21,681.4 ms | 16,012.5 ms |
 
 Both runs emitted **67 `corporate.observe_timing` records**. In the
-latest run, `json_observe` was about **52.0%** of the full
+10 November run, `json_observe` was about **52.0%** of the full
 `return_detail` interval. The `l3` stage clearly dominates
 **observer-stage wall time** in both runs; this does **not** establish
 how its time is divided across paginator clicks, marker polling,
@@ -91,17 +98,18 @@ overlay wait, backend responses or processing.
 **Crucial acceptance distinction:** both runs requested `json-first`
 but emitted `detail.source: dom / adapter_ineligible`, recorded
 `pdf.partial`, and subsequently hit a DOM table elapsed-budget
-refusal. The latest run reached `operation.finished: PARTIAL` by
-10:22:54 WIB, not COMPLETE. The independent PDF failure remains
-unresolved. Neither run proves `native_verified` or validates an
+refusal. The 10 November run reached `operation.finished: PARTIAL` by
+10:22:54 WIB, not COMPLETE. Its PDF was PARTIAL **at that time**;
+the later 11 November runs reported completed PDF attachments but still
+PARTIAL SPT capture. Neither run proves `native_verified` or validates an
 optimized JSON-first workload.
 
-**Priority adjustment:** start Step 0b by separating L3 reset/advance,
-marker-change, overlay wait and independently bounded request/response
-completion counters on this exact native path. Only after measured
-same-record/page-scope evidence should an inspected native page-size
-control be considered. Keep panel/grid timing as secondary hypotheses;
-do not attribute `l3` time to any one sub-operation yet.
+**Historical priority decision (10 November):** separate L3 reset/advance,
+marker-change, overlay wait and request/response attribution. The first
+part has since been delivered by #234 and #236, but initial-versus-navigation
+request/response chronology remains open. Only after the relevant source
+proof should a native page-size control be considered. Panel/grid timing
+remains a secondary hypothesis.
 
 The reviewed `_turn_grid.advance` path clicks the existing native
 paginator, **polls the visible page marker approximately every 100 ms**
@@ -116,17 +124,108 @@ L4 footer requests and repeated reviewed JavaScript-bundle hash reads.
 Repeated request counts alone do not establish whether a response was
 cached, retried, independently required or responsible for wall time.
 
+## Verified 11 November 2026 follow-up — #234 diagnostics and #236 optimization
+
+The operator executed the **same selected large Corporate SPT and tax scope**
+on DESKTOP-FR702P6 using the #234 artifact (`428cc6c` source build,
+workflow `42951082441`) and the #236 artifact (`ad042af6` CI PR
+merge ref, workflow `42963381072`). The latter build has the **same Git
+tree** as squash-merged [`main` `8281fe58`](https://github.com/cepeter-job/spt-downloader/commit/8281fe58a2bf8298bd33157b5dd9f77c5fbe27e0).
+Both runs selected the same record and scope but **their inventory SHA-256
+digests differ**, so the snapshots and environment must not be called fully
+identical. All numbers below come from locally retained sanitized diagnostic
+events, not uploaded taxpayer files.
+
+| Timed component | #234 baseline | #236 candidate | Difference |
+| --- | ---: | ---: | ---: |
+| `json_observe` | 608.725 s | **586.130 s** | -22.595 s (-3.71%) |
+| `corporate.observe_timing: l3` | 437.925 s | **418.143 s** | -19.782 s (-4.52%) |
+| Owned L3-B `native.paginator_timing: total` | 435.430 s | **414.997 s** | -20.433 s (-4.69%) |
+| Native L3-B Next advances | 465 | 465 | unchanged |
+| `return_detail`, including DOM fallback | 1,211.158 s | **998.835 s** | -212.323 s (-17.53%) |
+| Source decision | DOM / `adapter_ineligible` | DOM / `adapter_ineligible` | unchanged |
+| Terminal status | **PARTIAL** | **PARTIAL** | unchanged |
+
+Only the primary L3-B paginator is shown in the paginator row, **not the sum
+over all 19 native paginator invocations**. In both runs 465 Next actions
+visited 466 native source pages for a 4,654-row, observed `Rows=10` grid.
+The newer exact-head instrumented implementation retained the owned 10-row
+request/offset contract; no native rows-per-page dropdown was verified
+for a safe 100-row alternative, and the unrelated DOM 500-row cap is **not**
+native page-size evidence.
+
+| L3-B substep for 465 Next actions | #234 | #236 |
+| --- | ---: | ---: |
+| `advance_overlay_wait` | 221.161 s | 211.741 s |
+| `advance_click` | 34.665 s | 72.763 s |
+| `advance_marker_wait` | 16.426 s | 20.503 s |
+| Old `other` host/locator residual | 163.178 s | not comparable |
+| New `advance_probe` (owned marker/control lookup) | not instrumented | 109.946 s |
+| New residual `other` | not comparable | about 0.04 s |
+
+The #236 change replaces repeated locator checks with a single
+`NATIVE_PAGINATOR_INSPECT_JS` evaluation on the original `p-table`,
+then a guarded `NATIVE_PAGINATOR_CLICK_JS` evaluation. It does **not**
+remove source work, skip pages, shorten overlay waits, weaken control
+actionability or bypass Stop. The probe now measures formerly unattributed
+work, so the fall in `other` from 163 s to near zero is **reclassification,
+not a 163-second speedup**. Click time was higher in #236. The measured
+total is approximately 20.4 s lower, but this is **one run per build with
+different inventory hashes**; do not advertise a causal, reproducible
+performance win without controlled repetitions.
+
+### Acceptance status and separate correctness failures
+
+- **#234 run:** `json-first` fell back to DOM. The DOM L3-B capture
+  reached an elapsed-budget refusal at `before_dom_read`, after one
+  500-row page of 4,654, leaving the run PARTIAL.
+- **#236 run:** native source remained `dom / adapter_ineligible`, with
+  retained manifest reason **`unverified_corporate_l7_main_lifecycle`**
+  (not a pagination-speed refusal). Subsequent DOM L3 table ordinal 3
+  raised a `TimeoutError`; its incomplete L3-B table was not included
+  among the 36 other complete tables. Overall `capture_complete=false`,
+  `run.complete=false`, terminal **PARTIAL** at **12:59:52 WIB**.
+- The #236 run's financial PDF attachment is marked **COMPLETE**, and
+  workbook export, verification and publication phases completed; these
+  do **not** prove that the Corporate workbook has complete SPT content.
+- This is **neither** native JSON admission **nor** full 4,654-row
+  capture acceptance. Keep [issue #161](https://github.com/cepeter-job/spt-downloader/issues/161)
+  OPEN and address strict L7/DOM diagnostics in the independently reviewed
+  [PR #235](https://github.com/cepeter-job/spt-downloader/pull/235).
+  Do not claim that a performance PR repairs L7, a PDF or a DOM timeout.
+
+### Updated implementation status
+
+1. **Stage 0a: DONE** — coarse `corporate.observe_timing`.
+2. **Stage 0b/part 1: DONE** — #234 fixed-enum reset/advance click,
+   marker-change, overlay/settling, total/other aggregate times. These
+   timings include normal refusal and Stop paths.
+3. **Stage 0b/part 1 follow-up: DONE** — #236 owned-probe RPC
+   optimization and `reset_probe`/`advance_probe` timing, independently
+   reviewed and merged to `main`; one operator live follow-up remains
+   PARTIAL, with only preliminary timing improvement.
+4. **Stage 0b/part 2: OPEN** — separately bound, privacy-safe,
+   first-open-vs-navigation request/response completion counts and
+   correlation to fixed endpoint categories; no early prefetch inference.
+5. **Stage 1 native page size: NOT APPROVED** — inspect the real owned
+   native dropdown first and prove it supports a larger option and emits
+   originally UI-triggered, complete contiguous source requests; never
+   synthesize `Rows=100` POSTs. Source admission must remain fail-closed.
+6. **Stage 2 packet reuse: NOT APPROVED** — requires separate
+   design/security review and complete same-attempt source/lifetime proof.
+
 ## Next steps, in evidence-first order
 
-### Step 0b — fine-grained, privacy-safe attribution (next implementation)
+### Step 0b — remaining request/response chronology (proposed)
 
-Instrument bounded, **fixed-enum** substeps within the existing observer
+Extend the already merged, bounded, **fixed-enum** native timing events
 without changing source calls, control flow, request ownership or capture
-admission:
+admission. Do not reimplement #234/#236 or duplicate their probes:
 
-- Per-form `tab_open`, panel readiness and form binding; per-grid
-  `paginator_reset`, `paginator_advance`, `marker_change_wait`
-  and `overlay_idle_wait`; separate build-pin fetch/verification.
+- Retain merged per-grid `reset_probe`, `advance_probe`, reset/advance
+  click, marker-change, overlay wait and total timings. Add only any
+  justified fixed form/grid category or pin-verification timestamps
+  that the current existing events cannot explain.
 - Report elapsed milliseconds, form ordinal, fixed grid category, page
   transition counts, total-page counts, and distinct request/response
   completion counts by fixed **endpoint category**. Preserve separate
@@ -142,10 +241,12 @@ admission:
   financial data. Fixed enum and aggregate counts only. Keep Stop,
   lifetime, build pins and refusal behavior unchanged.
 
-**Gate:** one operator-authorized, build-matched completed live rerun with
-a reconciled stage breakdown before selecting any optimization. A failed
-native admission still yields useful timing evidence, but **is not**
-success evidence for JSON-first capture.
+**Gate:** the #236 operator-run has supplied measured step timings, but
+was PARTIAL, with no native admission and differing inventory checksum.
+Before approving further optimization, obtain source-compatible repeat
+measurements, verify UI ownership for any new control, and establish a
+concrete bottleneck and complete acceptance criteria. Incomplete native
+admission supplies diagnostic evidence **only**, not JSON-first success.
 
 ### Step 1 — test native page-size control only if timings justify it
 
@@ -190,9 +291,11 @@ PDF completeness.
 
 ## Acceptance and sequencing
 
-1. **Measurement evidence:** reviewed, bounded per-grid and per-stage
-   timings with request/response counts and opening-vs-navigation arrival
-   chronology for an exact, identifiable build and capture attempt.
+1. **Measurement evidence:** #234/#236 aggregated per-grid and per-stage
+   timing is implemented and has a preliminary same-SPT comparison;
+   request/response completion counts and opening-vs-navigation arrival
+   chronology remain **pending** for any proposal relying on packet reuse
+   or fewer source fetches.
 2. **Optional optimization:** a measured reduction in `json_observe`
    and page/request overhead relative to the **same selected SPT, same
    source total/scope and comparable live conditions**, with no
@@ -203,11 +306,16 @@ PDF completeness.
    exact-head portable, dependency/security, Windows shards, packaging,
    artifact-readback and bootstrap CI. Independent peer review and
    authorized merge required.
-4. **Live acceptance:** install the exact verified merged artifact,
-   obtain an operator-run id-ID `detail.source=native_verified` with
-   full worksheet/source-count parity and independently verified
-   financial-PDF custody/publication. Track this under #161, not as
-   proof furnished by this design PR.
+4. **Live acceptance:** the #236 merged-tree artifact was verified and
+   run but returned PARTIAL (L7 refusal plus DOM L3 timeout), so the
+   end-to-end gate remains **open**. Require an operator-run id-ID
+   `detail.source=native_verified`, complete L3-B 4,654-row source-
+   to-workbook parity and independently verified financial-PDF custody/
+   publication, or a separately supported fully complete DOM fallback.
+   Track this under #161, not as proof furnished by design PR #208.
 
-PR #208 should remain **design-only**; subsequent implementation PRs
-must reference this plan and replace hypotheses with evidence.
+PR #208 remains **design-only** and should be rebased/synchronized with
+current `main` before review. Merged #234/#236 are completed stages,
+not changes delivered by this design document. Any next runtime proposal
+must link exact-build evidence and remain independent of the open #235
+correctness gate.
