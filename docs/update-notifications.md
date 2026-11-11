@@ -6,20 +6,30 @@ OneDrive, or Microsoft authentication to check for an update.
 
 The notification has exactly one message, **`update tersedia`**, and two buttons:
 
-- **Update** opens the user-approved organizational OneDrive/SharePoint folder
-  in the default browser. The application does not download or install files.
+- **Update** opens the maintainer-approved, organization-shared **personal
+  OneDrive** folder in the default browser. The application does not download
+  or install files.
 - **Close** dismisses the notification without opening the browser.
 
-The download folder remains organization-restricted. A user may need to sign
-in to Microsoft 365 to view files after clicking Update. The static destination
-URL is embedded in the application only, never taken from the public JSON.
+The folder is in an organizational Microsoft 365 tenant but has a `/personal/`
+storage path; it is **not** a team-site document library. The owner has
+explicitly confirmed that its existing sharing policy permits people in the
+organization to access it, and requested this exact destination. The URL does
+contain the account identifier and is visible in this public repository and
+installed application, but provides **no credentials or permission by itself**.
+Accessing the private files may still require Microsoft 365 sign-in and
+organization membership. This accepted tradeoff avoids creating an unrelated
+team site; the link is not guaranteed to survive an owner departure, an account
+rename, a folder move, or a changed sharing policy. Any migration requires a
+reviewed change to the single `UPDATE_FOLDER_URL` constant and a new verified
+app build. The destination is never taken from the public Worker JSON.
 
 ## Manually publish metadata
 
 This hostname uses **Cloudflare Workers (`workers.dev`)**, not Pages. The
 application checks the **root path `/`**, not `/latest.json`. The current
-root returned HTTP 200, `application/json` and an **empty body** on the
-Fortinet-managed test PC; that is a valid network check, but not an update
+root returned HTTP 200, `application/json` and an **empty body** during
+initial endpoint validation; that is a connectivity result, not an update
 manifest. Until you publish JSON, no automatic notification appears.
 
 When a **main** release has passed all CI, independent review, manual
@@ -86,8 +96,9 @@ If the Worker is empty, malformed, blocked, or offline, automatic checks do
 nothing; they never block Coretax or local export. Only the release notice
 has the two buttons.
 
-Test the exact root on a Fortinet-managed PC after each deployment, confirming
-HTTP 200, valid JSON and TLS. Earlier connectivity tests were successful, but
+Test the exact root from the intended organizational network after each
+deployment, confirming HTTP 200, valid JSON and TLS. Initial connectivity
+checks succeeded, but
 that is not proof the final metadata has been published. Cloudflare Workers
 deployments remain **manual**; this repository does not publish or update the
 Worker. No executable installation, Microsoft Graph, or automatic OneDrive
@@ -97,3 +108,17 @@ A notice is **informational** and is not an executable authenticity signal.
 The Worker response is not cryptographically signed. If installation or
 artifact authorization is added in the future, independently verified
 signatures and stronger release verification will be required.
+
+## Rollback and publication risk
+
+A manifest rolled back to a smaller `run_id` will not notify a newer installed
+build. Conversely, a manually deployed manifest advertising a **newer but
+unaccepted** run can trigger an informational notification even if that build
+should not be distributed. **This is an accepted residual risk of an unsigned,
+operator-published informational manifest**, not proof of release acceptance.
+Only an approved main-branch artifact with completed CI, independent review,
+verified provenance and available organizational downloads should be announced.
+The operator is responsible for restoring the last accepted manifest or an
+empty response immediately upon discovering an incorrect publication; clients
+must fail silently on invalid/empty responses. No automatic installation or
+file integrity decision is based on this metadata.
