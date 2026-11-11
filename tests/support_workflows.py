@@ -315,7 +315,10 @@ def validate_production(document):
     download_indices = {i for i, _ in all_downloads}
     for i, step in enumerate(steps):
         if i not in download_indices and step.get('id') != 'coverage-proof':
-            _success_only(step)
+            if _runs(step, '-m', 'scripts.ci_artifact', 'update-json'):
+                _success_only(step, "github.event_name == 'push' && github.ref == 'refs/heads/main'")
+            else:
+                _success_only(step)
     for _, step in downloads:
         label = step['with']['name'].split('-python', 1)[0].removeprefix('test-inventory-')
         _success_only(step, expected_downloads[label])
@@ -329,7 +332,8 @@ def validate_production(document):
     source_i, _ = _one(steps, lambda s: _runs(s, 'spt_gui.py', '--self-test'))
     build_i, _ = _one(steps, lambda s: _runs(s, 'build_desktop.py'))
     sbom_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_sbom', 'create'))
-    update_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'update-json'))
+    update_i, update_step = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'update-json'))
+    assert _expression(update_step['if']) == "github.event_name=='push'&&github.ref=='refs/heads/main'"
     checksum_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'write-checksums'))
     upload_i, upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact') and s.get('id') == 'upload')
     assert upload.get('id') == 'upload'
