@@ -168,3 +168,96 @@ def test_automatic_check_reschedules_next_day(tmp_path, monkeypatch, result):
         app._dispose()
     finally:
         root.destroy()
+
+
+@pytest.mark.parametrize(('outcome', 'factory'), [
+    ('up_to_date', lambda: None),
+    ('update_available', lambda: update_notice.UpdateNotice('b' * 40, '420', 1)),
+    ('unavailable', lambda: update_notice.UpdateLookupError('PRIVATE URL and token')),
+])
+def test_update_lookup_logs_safe_outcome_and_bounded_elapsed(
+        monkeypatch, outcome, factory):
+    emitted = []
+    monkeypatch.setattr(gui.diagnostics, 'record',
+                        lambda event, **fields: emitted.append((event, fields)))
+    value = factory()
+
+    def fake_fetch(url, installed):
+        assert url == update_notice.MANIFEST_URL
+        assert installed == {'synthetic': True}
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(update_notice, 'fetch_notice', fake_fetch)
+    state, notice = gui._fetch_update_with_logging({'synthetic': True}, manual=True)
+    assert (state, notice) == (('unavailable', None) if outcome == 'unavailable'
+                               else ('ok', value))
+    assert len(emitted) == 1
+    event, fields = emitted[0]
+    assert event == 'update.check'
+    assert fields['update_check_result'] == outcome
+    assert fields['update_check_trigger'] == 'manual'
+    assert type(fields['duration_ms']) is float
+    assert fields['duration_ms'] >= 0
+    assert set(fields) == {'duration_ms', 'update_check_result', 'update_check_trigger'}
+    assert 'PRIVATE' not in str(fields)
+
+
+def test_check_updates_logs_invalid_build_and_throttles_active_deferrals(tmp_path, monkeypatch):
+    events = []
+    monkeypatch.setattr(gui.diagnostics, 'record',
+                        lambda event, **kw: events.append((event, kw)))
+    monkeypatch.setattr(gui, 'read_build_info', lambda: None)
+    monkeypatch.setattr(gui.messagebox, 'showinfo', lambda *args, **kwargs: None)
+    controller = Controller()
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=controller)
+        controller.active = True
+        app.check_updates()
+        assert events[-1] == ('update.check', {'update_check_result': 'deferred_active',
+                                              'update_check_trigger': 'automatic'})
+        root.after_cancel(app._update_after)
+        app.check_updates()
+        assert len(events) == 1
+        root.after_cancel(app._update_after)
+        controller.active = False
+        app.check_updates(manual=True)
+        assert events[-1] == ('update.check', {'update_check_result': 'invalid_build',
+                                              'update_check_trigger': 'manual'})
+        assert app._update_after is None and not app._update_pending
+        app._dispose()
+    finally:
+        controller.active = False
+        root.destroy()
+
+
+def test_update_notice_deferral_logs_once_until_presented(tmp_path, monkeypatch):
+    events = []
+    monkeypatch.setattr(gui.diagnostics, 'record',
+                        lambda event, **kw: events.append((event, kw)))
+    root = tk.Tk()
+    controller = Controller()
+    try:
+        app = gui.App(root, tmp_path, controller=controller)
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._update_pending = True
+        app._update_results.put(('ok', notice))
+        controller.active = True
+        app._receive_update(manual=False)
+        assert events == [('update.check', {'update_check_result': 'notice_deferred',
+                                             'update_check_trigger': 'automatic'})]
+        root.after_cancel(app._update_after)
+        app._receive_update(manual=False)
+        assert len(events) == 1
+        root.after_cancel(app._update_after)
+        controller.active = False
+        app._receive_update(manual=False)
+        assert app._update_dialog is not None
+        assert not app._update_notice_deferred_logged
+        button(app._update_dialog, 'Close').invoke()
+        app._dispose()
+    finally:
+        controller.active = False
+        root.destroy()
