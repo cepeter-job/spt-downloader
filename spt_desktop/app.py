@@ -1202,8 +1202,8 @@ class App:
         hidden_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,text='Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=9,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
+        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=9,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         decision_dialog = None
         pending_preferences = False
