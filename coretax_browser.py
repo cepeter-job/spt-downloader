@@ -514,6 +514,15 @@ class _InitialLoadingDiagnostics:
 
 
 
+def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks):
+    """Bounded preparation timings; only large-table candidates, no DOM values."""
+    if max_page_size >= 250:
+        diagnostics.record('table.reset_timing', table_reset_step=stage,
+                           form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                           table_ordinal=ordinal, count=clicks,
+                           duration_ms=(_diagnostic_clock() - started) * 1000)
+
+
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
     with ExitStack() as resources:
@@ -532,6 +541,7 @@ def _dispose_table_handle(handle):
 def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_size, resources):
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
+    preparation_started = _diagnostic_clock()
     handle = table.element_handle()
     resources.callback(_dispose_table_handle, handle)
     # Diagnostics ON and OFF use the same inspected, read-only owner path.
@@ -543,12 +553,15 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     if observer is not None:
         resources.callback(observer.close)
         observer.stage = 'size_action'
+    size_started = _diagnostic_clock()
     try:
         maximize_page_size(page, container_handle, max_page_size=max_page_size)
     except PlaywrightTimeoutError as exc:
         if observer is not None:
             observer.emit('size_idle_timeout', error=exc)
         raise
+    finally:
+        _record_large_table_reset('size_action', size_started, ordinal, max_page_size, 1)
     if observer is not None:
         observer.emit('size_complete')
     if max_page_size >= 250:
@@ -557,39 +570,52 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         selected = label.inner_text().strip() if label else ''
         if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
             raise RuntimeError('L3-B page size exceeds inspected pilot limit')
-    first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
-    if first:
-        if observer is not None:
-            observer.stage = 'first_click'
-        _click_table_paginator(first, container_handle, check_cancel)
-        if observer is not None:
-            observer.stage = 'first_idle'
-        try:
-            wait_idle(page)
-        except PlaywrightTimeoutError as exc:
+    first_started = _diagnostic_clock()
+    first_clicks = 0
+    try:
+        first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
+        if first:
             if observer is not None:
-                observer.emit('first_idle_timeout', error=exc)
-            raise
-        if observer is not None:
-            observer.emit('first_idle_complete')
+                observer.stage = 'first_click'
+            _click_table_paginator(first, container_handle, check_cancel)
+            first_clicks = 1
+            if observer is not None:
+                observer.stage = 'first_idle'
+            try:
+                wait_idle(page)
+            except PlaywrightTimeoutError as exc:
+                if observer is not None:
+                    observer.emit('first_idle_timeout', error=exc)
+                raise
+            if observer is not None:
+                observer.emit('first_idle_complete')
+    finally:
+        _record_large_table_reset('first_navigation', first_started, ordinal, max_page_size, first_clicks)
     # Sebagian tabel menyimpan halaman terakhir dan hanya menyediakan Prev.
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
-    for _ in range(max_pages):
-        _check_cancel(check_cancel)
-        previous = container_handle.query_selector(previous_selector)
-        if not previous:
-            break
-        state = container_handle.evaluate(STATE_JS)
-        _click_table_paginator(previous, container_handle, check_cancel)
-        wait_idle(page)
-        if container_handle.evaluate(STATE_JS) == state:
-            raise RuntimeError('Table pagination did not return to the first page')
-    if container_handle.query_selector(previous_selector):
-        raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    rewind_started = _diagnostic_clock()
+    rewind_clicks = 0
+    try:
+        for _ in range(max_pages):
+            _check_cancel(check_cancel)
+            previous = container_handle.query_selector(previous_selector)
+            if not previous:
+                break
+            state = container_handle.evaluate(STATE_JS)
+            _click_table_paginator(previous, container_handle, check_cancel)
+            rewind_clicks += 1
+            wait_idle(page)
+            if container_handle.evaluate(STATE_JS) == state:
+                raise RuntimeError('Table pagination did not return to the first page')
+        if container_handle.query_selector(previous_selector):
+            raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    finally:
+        _record_large_table_reset('previous_rewind', rewind_started, ordinal, max_page_size, rewind_clicks)
     # The preparation interval ends before any table snapshot/cursor work.
     # Release request-object references and listeners immediately.
     if observer is not None:
         observer.close()
+    _record_large_table_reset('total_pre_read', preparation_started, ordinal, max_page_size, 1)
     first_read_started = _diagnostic_clock()
     result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
