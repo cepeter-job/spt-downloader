@@ -86,7 +86,8 @@ def parse_manifest(raw):
             raise ValueError('published')
         date.fromisoformat(published)
         if (not isinstance(notes, str) or len(notes) > 320 or
-                any(ord(char) < 32 or ord(char) == 127 for char in notes)):
+                any(ord(char) < 32 or ord(char) == 127 for char in notes)
+                or '://' in notes or 'www.' in notes.casefold()):
             raise ValueError('notes')
         if not isinstance(commit, str) or re.fullmatch(r'[0-9a-f]{40}', commit) is None:
             raise ValueError('commit')
