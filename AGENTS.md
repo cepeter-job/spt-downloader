@@ -40,19 +40,20 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 
 ## Public update notification boundary
 
-Public update announcements are an optional **informational-only** desktop
-feature. The default Cloudflare Pages manifest endpoint remains unconfigured
-until its exact hostname is proved owned and reachable from an approved
-Fortinet-protected workstation. Do not add GitHub, Graph, OneDrive login,
-automatic downloads, executable replacement or network access to source/worker
-scraping paths. The notifier uses a named User-Agent, bounded HTTPS-only,
-same-origin/no-redirect JSON read, strict metadata and build-info validation,
-and a background thread communicating with Tk only through a queue. Failed
-checks never block application startup or an active job. No public manifest may
-contain a personal SharePoint URL or authorization material; release text is
-display-only and never an install authority. Activation/publication requires
-verified source-main release artifacts, independent peer review, CI-green
-Windows self-test and a live endpoint connectivity check. See
+Public update announcements are **informational-only** and fetched from the
+user-approved exact `https://divine-hill-13fc.punzer4.workers.dev/` Worker
+root; no Cloudflare Pages or `/latest.json` route is used. The operator
+manually deploys four-field release JSON only after CI/review, verified
+source-main release publication and distribution acceptance. No PR build,
+unreviewed source commit, OneDrive credentials, private metadata or public
+download links may be advertised. The GUI says only `update tersedia`,
+provides **Update** (opens the fixed organization-permissioned SharePoint
+folder in the user's browser) and **Close** (dismisses). No auto-download,
+installer, GitHub/Graph client call or Coretax/worker network mutation is
+permitted. Updates are checked off Tk's thread with a bounded no-redirect
+HTTPS JSON GET, strict source-build identity validation, no source tax data,
+and idle-only notifications. Failed checks never block jobs; keep synthetic
+offline tests and frozen GUI self-test gates. See
 [update notification contract](docs/update-notifications.md).
 
 ## Data and access safety
