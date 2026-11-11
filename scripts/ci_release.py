@@ -221,6 +221,8 @@ def verify_payload(folder, source):
                     'run_attempt': source['run_attempt']}:
         raise ValueError('Release build identity does not match its selected source.')
     if files == DISTRIBUTION_FILES:
+        # Reuse the application's canonical build identity schema; do not
+        # invent a weaker verifier solely for the Cloudflare update manifest.
         from spt_desktop.build_info import is_valid_build_info
 
         update_path = folder / 'update.json'
