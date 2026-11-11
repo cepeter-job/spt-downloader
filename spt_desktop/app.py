@@ -25,8 +25,9 @@ from . import update_notice
 # Maintainer-approved personal OneDrive within the organizational Microsoft 365
 # tenant, intentionally shared with colleagues in the organization. '/personal/'
 # identifies its storage location; it does not imply public access or a team site.
-# The maintainer explicitly confirmed this destination and accepts that the
-# account identifier is visible in the distributed application and source.
+# The maintainer confirmed this exact destination. Because the repository
+# and binary are public, the path exposes the owner's account identifier;
+# this disclosure and its lifecycle implications require explicit review.
 # Personnel changes, link revocation, or folder moves require a reviewed URL
 # migration; no permissions, credentials, or download links come from Worker JSON.
 UPDATE_FOLDER_URL = ('https://kemenkeu-my.sharepoint.com/my?'
