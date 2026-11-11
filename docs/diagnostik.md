@@ -130,6 +130,27 @@ Tahap ini belum memisahkan kronologi request/response maupun membuktikan
 pilihan ukuran halaman native. Live acceptance membutuhkan run yang cocok
 dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 
+`table.initial_loading` (PR #235) merekam tahapan persiapan DOM pertama:
+`size_complete`, `size_idle_timeout`, `first_idle_complete`, dan
+`first_idle_timeout`, ordinal form/tabel, durasi serta hitungan lifecycle
+request-object yang dipantau sementara. Tidak ada URL, NPWP, identitas
+record, header, body, isi pajak, nama dokumen, atau nilai DOM yang dibaca.
+Request tidak dipetakan secara spekulatif ke pemilik tabel;
+`table_request_scope` hanya `other_unbound` atau `unavailable` jika
+overflow/registrasi tidak lengkap.
+
+Untuk menjamin jalur Stop dan timeout asli, **tidak ada lagi probe CDP,
+panggilan struktural tambahan, WeakRef, setTimeout, maupun penulisan
+property window dari diagnostik**. Semua kategori struktural
+`table_loading_scope`, `table_loading_first_match`, dan
+`table_owner_state` sengaja dilaporkan `unavailable`, termasuk ketika
+overlay tabel sendiri, tabel lain atau BlockUI tampak pada fixture.
+Tidak dilaporkan `none` atau `target_datatable` tanpa bukti. Pengamatan
+request dihentikan dan referensinya dilepas saat persiapan selesai atau
+pada kegagalan/Stop melalui cleanup yang sudah dimiliki capture.
+Saat logging `OFF`, observer tidak dipasang. Perilaku klik, durasi tunggu,
+pemilihan source, PARTIAL, dan pemrosesan panel berikutnya tidak berubah.
+
 Pada tahap `l11a`, `corporate_l11a_reason` memisahkan pin/provider, lifetime,
 jumlah tabel, ancestry/grup, paginator, perubahan metadata, bentuk/offset request,
 inventori grid dan katalog yang belum teramati. Contoh kategori tetap adalah

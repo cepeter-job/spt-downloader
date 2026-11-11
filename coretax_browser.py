@@ -22,6 +22,7 @@ import re
 import json
 import os
 from contextlib import ExitStack, nullcontext
+from contextvars import ContextVar
 from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlparse
@@ -429,6 +430,89 @@ def _click_table_paginator(control, container, check_cancel):
 
 TABLE_CAPTURE_BUDGET_SECONDS = 180
 
+_INITIAL_FORM_ORDINAL = ContextVar('spt_initial_loading_form_ordinal', default=1)
+class _InitialLoadingDiagnostics:
+    """One optional held-owner preparation observer, never capture authority."""
+
+    _MAX_REQUESTS = 64
+    def __init__(self, page, ordinal):
+        self.page = page
+        self.ordinal = ordinal
+        self.form_ordinal = _INITIAL_FORM_ORDINAL.get()
+        self.started = _diagnostic_clock()
+        self.stage = 'prepare_entry'
+        self.requests = {}
+        self.counts = {'observed': 0, 'finished': 0, 'failed': 0}
+        self.overflow = False
+        self.listeners = []
+        for name, callback in (('request', self._on_request),
+                               ('requestfinished', self._on_finished),
+                               ('requestfailed', self._on_failed)):
+            try:
+                page.on(name, callback)
+                self.listeners.append((name, callback))
+            except Exception:
+                # Optional diagnostic listener registration is best effort.
+                self.overflow = True
+                break
+
+    def _on_request(self, request):
+        try:
+            if request in self.requests:
+                return
+            if len(self.requests) >= self._MAX_REQUESTS:
+                self.overflow = True
+                return
+            # Request objects only: never read headers, URL, data or response.
+            self.requests[request] = [self.stage, 'pending']
+            self.counts['observed'] += 1
+        except Exception:
+            self.overflow = True
+
+    def _done(self, request, state):
+        try:
+            entry = self.requests.get(request)
+            if entry is not None and entry[1] == 'pending':
+                entry[1] = state
+                self.counts[state] += 1
+        except Exception:
+            self.overflow = True
+
+    def _on_finished(self, request):
+        self._done(request, 'finished')
+
+    def _on_failed(self, request):
+        self._done(request, 'failed')
+
+    def emit(self, stage, *, error=None):
+        try:
+            # Never attach CDP on a timeout/Stop path. Request-object metrics
+            # are value-free, but cannot prove the owner of a visible overlay.
+            diagnostics.record('table.initial_loading',
+                level='WARNING' if error is not None else 'INFO', error=error,
+                table_initial_stage=stage, table_loading_scope='unavailable',
+                table_loading_first_match='unavailable', table_owner_state='unavailable',
+                table_request_scope='unavailable' if self.overflow else 'other_unbound',
+                table_request_observed=self.counts['observed'],
+                table_request_finished=self.counts['finished'],
+                table_request_failed=self.counts['failed'],
+                table_request_pending=sum(v[1] == 'pending' for v in self.requests.values()),
+                form_ordinal=self.form_ordinal, table_ordinal=self.ordinal,
+                duration_ms=(_diagnostic_clock() - self.started) * 1000)
+        except Exception:
+            # Always preserve the original timeout/Stop/capture outcome.
+            return None
+
+    def close(self):
+        for event, handler in reversed(self.listeners):
+            try:
+                self.page.remove_listener(event, handler)
+            except Exception:  # nosec B110 - Optional listener cleanup cannot mask capture errors.
+                pass  # Optional listener cleanup must not mask capture results.
+        self.listeners.clear()
+        self.requests.clear()
+
+
 
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
@@ -449,9 +533,24 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     handle = table.element_handle()
-    container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
+    resources.callback(_dispose_table_handle, handle)
+    # Diagnostics ON and OFF use the same inspected, read-only owner path.
+    # Both handles are registered exactly once with the owned ExitStack.
+    container_handle = handle.evaluate_handle(
+        "e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     resources.callback(_dispose_table_handle, container_handle)
-    maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    observer = _InitialLoadingDiagnostics(page, ordinal) if diagnostics.active() else None
+    if observer is not None:
+        resources.callback(observer.close)
+        observer.stage = 'size_action'
+    try:
+        maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    except PlaywrightTimeoutError as exc:
+        if observer is not None:
+            observer.emit('size_idle_timeout', error=exc)
+        raise
+    if observer is not None:
+        observer.emit('size_complete')
     if max_page_size >= 250:
         # A previously selected larger page must not bypass the pilot limit.
         label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
@@ -460,8 +559,19 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
+        if observer is not None:
+            observer.stage = 'first_click'
         _click_table_paginator(first, container_handle, check_cancel)
-        wait_idle(page)
+        if observer is not None:
+            observer.stage = 'first_idle'
+        try:
+            wait_idle(page)
+        except PlaywrightTimeoutError as exc:
+            if observer is not None:
+                observer.emit('first_idle_timeout', error=exc)
+            raise
+        if observer is not None:
+            observer.emit('first_idle_complete')
     # Sebagian tabel menyimpan halaman terakhir dan hanya menyediakan Prev.
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
     for _ in range(max_pages):
@@ -476,6 +586,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             raise RuntimeError('Table pagination did not return to the first page')
     if container_handle.query_selector(previous_selector):
         raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    # The preparation interval ends before any table snapshot/cursor work.
+    # Release request-object references and listeners immediately.
+    if observer is not None:
+        observer.close()
     first_read_started = _diagnostic_clock()
     result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
@@ -940,8 +1054,12 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                     # 500 rows stays negligible versus the grid fetch.
                     max_page_size = 500
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
-                    captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
-                                             max_page_size=max_page_size)
+                    form_token = _INITIAL_FORM_ORDINAL.set(len(sections) + 1)
+                    try:
+                        captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
+                                                 max_page_size=max_page_size)
+                    finally:
+                        _INITIAL_FORM_ORDINAL.reset(form_token)
                     timing.update(body_rows=captured.get('body_row_count'), pages=captured.get('pages'),
                                   status='COMPLETE' if captured['complete'] else 'PARTIAL')
                 if financial_required and name in ('L1-D', 'L9'):

@@ -37,6 +37,11 @@ class Document:
     def dispose(self):
         self.disposed = True
 
+    def evaluate_handle(self, script):
+        # Coarse Document tests do not claim either optional child history.
+        assert 'corporate-l7-history' in script or 'dependent_seen' in script
+        return None
+
 
 def setup(*, owned=True, url=LIST):
     context = Context()

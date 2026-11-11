@@ -23,6 +23,9 @@ def _corporate_pins(urls):
     return {url: pins[url] for url in urls if url in pins}
 
 BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE))
+L7_NEGATIVE_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
+L7_OWNER_CHAIN = ['rshshr-corporate-income-tax-return', 'rshshr-citr-l7-form',
+                  'rsh-citr-l7-grid1', 'p-table', 'table']
 L11C_BUILD_DIGESTS = {**BUILD_DIGESTS, **_corporate_pins((VENDOR_SOURCE,))}
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
@@ -55,10 +58,13 @@ _MAX_INTEGER = 999999999999999
 def _integer(value):
     if type(value) is not _CorporateNumber:
         raise _UnsupportedMetadata('unsupported_corporate_l7_numeric_type')
-    number = _decimal(value)
-    if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
-        raise _UnsupportedMetadata('unsupported_corporate_l7_numeric_precision')
-    return int(number)
+    try:
+        number = _decimal(value)
+        if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
+            raise _UnsupportedMetadata('unsupported_corporate_l7_numeric_precision')
+        return int(number)
+    except DecimalException:
+        raise _UnsupportedMetadata('unsupported_corporate_l7_numeric_precision') from None
 
 
 def _year(value):
@@ -79,7 +85,10 @@ def l7_headers(year):
 def project_l7(form, *, main_form, period_year, headers, footer_spans, tax_type, locale):
     """Caller proves submitted initialization, current source, loaded pins and route.
 
-    The pinned parent/Induk/L7 feedback supplies a stable nonnegative main input.
+    Nonnegative inputs retain the legacy initialization rule. Negative inputs
+    require the closed current-main subset and raw first-profit identity below;
+    callers independently prove Payload absence/null predicates and continuous
+    capture-owned lifetime. This pure calculation grants no native admission.
     Preserve reported totals only after proving equality with the six ordered
     JS reductions. Exact integral operands and partial sums avoid float guesses.
     """
@@ -97,13 +106,22 @@ def project_l7(form, *, main_form, period_year, headers, footer_spans, tax_type,
         raise _UnsupportedMetadata('unsupported_corporate_l7_source_shape')
     main_value = main_form['NetIncomeBeforeTax']
     main_number = _integer(main_value)
-    if main_number < 0:
+    negative = main_number < 0
+    if negative and (tax_type != 'ICT_RCIT'
+            or any(key not in main_form for key in ('IsIncomeUnder', 'IsIncomeSolely', 'IsCarriedForward', 'TaxYear'))
+            or main_form['IsIncomeSolely'] is not None
+            or _integer(main_form['IsIncomeUnder']) != 0
+            or _integer(main_form['IsCarriedForward']) != 1
+            or type(main_form['TaxYear']) is not _CorporateNumber
+            or _year(main_form['TaxYear']) != year):
         raise _UnsupportedMetadata('unverified_corporate_l7_main_lifecycle')
     years = [_year(row['TaxYear']) for row in form[L7_BODY]]
     if year not in years:
         # Pinned child dereferences find(currentYear) when main first changes.
         raise _UnsupportedMetadata('unverified_corporate_l7_current_year_row')
     first_current = years.index(year)
+    if negative and _integer(form[L7_BODY][first_current]['FiscalNetProfitIncome']) != main_number:
+        raise _UnsupportedMetadata('unverified_corporate_l7_raw_profit_identity')
     totals, rows, provenance = [0] * 6, [], []
     for index, source in enumerate(form[L7_BODY]):
         values = [_integer(source[key]) for key in row_keys[1:]]
@@ -133,7 +151,8 @@ def project_l7(form, *, main_form, period_year, headers, footer_spans, tax_type,
                      rule='reconciled-reported-total/angular-number-1.0-0-id')
         provenance.append(entry)
     main_entry = _evidence(main_value, ['MainFormData', 'NetIncomeBeforeTax'])
-    main_entry.update(rule='submitted-nonnegative-main-invariant',
+    main_entry.update(rule=('submitted-stable-negative-main/raw-profit-identity' if negative
+                            else 'submitted-nonnegative-main-invariant'),
                       destination={'table': 'L7', 'row': first_current, 'column': 2})
     provenance.append(main_entry)
     count = len(rows)
@@ -637,6 +656,33 @@ def _apply_l8(binding, section, observed_forms, *, root, payload, record, event)
             'route': proof['route'], 'values': result['provenance']}
 
 
+def _l7_negative_profile(binding, *, root, payload, record, event, route, table):
+    """Only a distinct capability plus final capture-owned facts admit negatives."""
+    proof = binding.get('raw_negative_projection')
+    fields = record.get('source_fields', {})
+    pins = L7_NEGATIVE_BUILD_DIGESTS
+    urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+    if (not isinstance(proof, dict) or proof.get('kind') != 'corporate-l7-stable-negative-v1'
+            or set(pins) != urls or set(proof.get('builds', {})) != urls
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                   for mapping in (pins, proof['builds']) for value in mapping.values())
+            or proof['builds'] != pins or proof['route'] != route + '?view=true'
+            or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
+            or proof['timezone'] != 'Asia/Jakarta'
+            or proof['visibility_binding'] != 'current-induk-enabled-v1'
+            or proof['tables'] != [{**table, 'owner_chain': L7_OWNER_CHAIN}]
+            or event.get('component_lifetime') is None or event.get('corporate_l7_lifetime') is None
+            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or root.get('TaxType') != 'ICT_RCIT'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or 'IsCarriedForward' in payload):
+        raise _UnsupportedMetadata('unverified_corporate_l7_raw_negative_lifecycle')
+    return proof
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -704,14 +750,39 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         if (not isinstance(table, dict) or set(table) != {'component', 'headers', 'footer_spans'}
                 or table['component'] != 'rsh-citr-l7-grid1'):
             raise _UnsupportedMetadata('unverified_corporate_l7_grid_owner')
+        main = root.get('MainFormData')
+        if not isinstance(main, dict):
+            raise _UnsupportedMetadata('unsupported_corporate_l7_source_shape')
+        negative = _integer(main.get('NetIncomeBeforeTax')) < 0
+        if negative:
+            proof = _l7_negative_profile(binding, root=root, payload=payload, record=record,
+                                         event=event, route=route, table=table)
         result = project_l7(root.get(L7_ROOT), main_form=root.get('MainFormData'),
             period_year=payload.get('PeriodYear'), headers=table['headers'], footer_spans=table['footer_spans'],
             tax_type=fields.get('TaxTypeCode'), locale=proof['locale'])
         section['tables'] = [result['table']]
+        if negative:
+            # Typed originals retain their actual source owner. Absence is not
+            # a null leaf and therefore belongs only in the presence report.
+            for values, prefix, owner, keys in (
+                    (main, ['MainFormData'], 'current',
+                     ('TaxYear', 'IsIncomeUnder', 'IsIncomeSolely', 'IsCarriedForward')),
+                    (root, [], 'current', ('TaxType',)),
+                    (payload, [], 'primary', ('PeriodYear', 'ReturnSheetStatusCode',
+                     'ReturnSheetModel', 'PreviousFormData', 'LastSubmittedFormData'))):
+                for key in keys:
+                    entry = _evidence(values[key], prefix + [key])
+                    entry.update(source=owner, rule='retained-original-raw-negative-predicate',
+                                 destination={'table': 'L7', 'control': 'stable-raw-negative'})
+                    result['provenance'].append(entry)
         for entry in result['provenance']:
-            entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+            entry.update(response_sequence=event['sequence'], container=(['Payload']
+                if entry.get('source') == 'primary' else ['Payload', 'CurrentFormData']))
         projected.append({'form': 'L7', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-                          'route': proof['route'], 'values': result['provenance']})
+                          'route': proof['route'], 'values': result['provenance'],
+                          **({'presence_facts': [{'response_sequence': event['sequence'],
+                              'container': ['Payload'], 'path': ['IsCarriedForward'], 'present': False,
+                              'rule': 'outer-carry-absent/current-induk-enable'}]} if negative else {})})
     return projected
 
 

@@ -2,6 +2,14 @@
 
 Status: implemented, reviewed and runner-verified on 2026-10-23 in merged [PR #88](https://github.com/cepeter-job/spt-downloader/pull/88). Includes native readiness PR #85, dated references PR #86, inventory PR #89 and main through Excel-formatting PR #90, as requested by the user. This closes the focused L7/consolidation increment, not the complete JSON program.
 
+## Additive follow-up candidate (2026-11-11)
+
+The [strict current-only raw-negative candidate](2026-11-11-corporate-l7-stable-negative.md)
+adds a separate optional capability and capture-owned continuous L7 history.
+It does not widen negative permission on `corporate-l7-v1`. Its hosted GREEN,
+independent review and live acceptance remain pending; the historical runner
+and artifact evidence below does not verify that new implementation.
+
 ## Supported behavior
 
 The observer admits the inspected L7 component with one table, exact multilevel headers and footer spans, both loaded corporate/main source digests, the literal selected non-history route, and Indonesian locale. Observation reads structure only. L7 uses its embedded source array; it does not invent a loadcit endpoint. Known route tax/aggregate contradictions remain fatal before unsupported-build or unreadable-MIME fallback. A known selected-versus-response status contradiction remains fatal before binding fallback.

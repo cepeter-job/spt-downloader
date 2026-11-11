@@ -1,5 +1,6 @@
 """Readonly corporate UI bindings pinned to reviewed public build bytes."""
 import json
+import re
 import time
 from time import perf_counter as _paginator_clock
 from coretax_build_pins import load_build_pins
@@ -246,6 +247,74 @@ _L1D_OMISSION_SHAPE = '''table => {
         [...row.cells].every(cell=>cell.closest('table')===table &&
             cell.colSpan===1 && cell.rowSpan===1 && visible(cell)));
 }'''
+
+
+def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_cancel):
+    """Additive value-free capability; v1 survives unavailable optional proof."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import (L7_NEGATIVE_BUILD_DIGESTS, L7_OWNER_CHAIN,
+                                              MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
+
+    def read(operation):
+        _check_cancel(check_cancel)
+        try:
+            result = operation()
+        except JsonSafetyError:
+            _check_cancel(check_cancel)
+            raise
+        except Exception:
+            result = None  # Driver/source unavailability never certifies a provider.
+        _check_cancel(check_cancel)
+        # Reconcile callback-pumped route/Document contradictions even when an
+        # optional driver operation failed. Stop remains outside the catch.
+        capture.observe_component_lifetime(check_cancel=check_cancel)
+        return result
+
+    pins = L7_NEGATIVE_BUILD_DIGESTS
+    urls = (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE)
+    if any(not callable(getattr(capture, name, None)) for name in
+           ('observe_component_lifetime', 'bind_l7_structure', 'observe_l7_lifetime')):
+        return None  # Legacy structural callers need no new optional protocol.
+    if (set(pins) != set(urls) or any(type(value) is not str
+            or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())):
+        return None
+    if read(lambda: _enabled_form_binding(form, tab, 'L7')) is not True:
+        return None
+    table = grid.locator('table')
+    if not capture.bind_l7_structure(form, grid, table, tab, panel, phase='start', check_cancel=check_cancel):
+        return None
+    first = read(lambda: table.evaluate(TABLE.replace('GROUP', '()=>""')))
+    environment = read(lambda: page.evaluate('''() => ({locale:navigator.language,
+        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})'''))
+    if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
+        return None
+    builds = {}
+    for url in urls:
+        # Preserve MAIN's 5MiB reader. Only this optional capability strengthens
+        # provider predicates; generic/v1 readers remain byte-for-byte separate.
+        script = _PPN_MAIN_BUILD_HASH if url == MAIN_SOURCE else _BUILD_HASH
+        script = script.replace('s=>s.src===url', 's=>s.isConnected&&s.src===url').replace(
+            'e=>e.name===url)', "e=>e.name===url&&e.initiatorType==='script')")
+        digest = read(lambda: page.evaluate(script, url))
+        if type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}', digest) or digest != pins[url]:
+            return None
+        builds[url] = digest
+    last = read(lambda: table.evaluate(TABLE.replace('GROUP', '()=>""')))
+    expected = legacy['tables'][0]
+    if (not isinstance(first, dict) or not isinstance(last, dict)
+            or any(sample.get(key) != expected[key] for sample in (first, last)
+                   for key in ('headers', 'footer_spans'))
+            or page.url != legacy['route']
+            or read(lambda: _enabled_form_binding(form, tab, 'L7')) is not True):
+        return None
+    if not capture.bind_l7_structure(form, grid, table, tab, panel, phase='end', check_cancel=check_cancel):
+        return None
+    if capture.observe_l7_lifetime(check_cancel=check_cancel) is None:
+        return None
+    return {'kind': 'corporate-l7-stable-negative-v1', 'builds': builds,
+            'route': legacy['route'], **environment, 'visibility_binding': 'current-induk-enabled-v1',
+            'tables': [{**expected, 'owner_chain': list(L7_OWNER_CHAIN)}]}
 
 
 def _observe_l1d(page, form, capture, digest, check_cancel):
@@ -933,6 +1002,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url, 'locale': locale,
                     'tables': [{'component': 'rsh-citr-l7-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
+                strong = _observe_l7_negative(page, form, grid, tab, panel, capture,
+                                               binding['projection'], check_cancel)
+                if strong is not None:
+                    binding['raw_negative_projection'] = strong
             if name == 'L11-C':
                 _advance('l11c')
                 from coretax_corporate_projection import L11C_BUILD_DIGESTS, MAIN_SOURCE, VENDOR_SOURCE
