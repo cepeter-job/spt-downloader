@@ -41,6 +41,86 @@ def test_actual_table_failure_keeps_safe_proof_and_recovers_later_panel(
     assert message not in serialized and 'SYNTHETIC_PRIVATE_CLASS' not in serialized
 
 
+def test_first_reset_loading_timeout_records_initial_loading_without_changing_partial(
+        routed, tmp_path, monkeypatch):
+    from playwright.sync_api import Locator
+    from support_browser_protocol import capture_failures
+
+    page, requests = routed(control='')
+    secret = 'SYNTHETIC_PRIVATE_INITIAL_LOADING'
+    page.evaluate('''secret => {
+        window.syntheticFirstClicks = 0;
+        const table = document.querySelector('#induk table');
+        const owner = document.createElement('p-table');
+        table.replaceWith(owner);
+        owner.innerHTML = '<div class="p-datatable"><div class="p-paginator">' +
+            '<button class="p-paginator-first" type="button">First</button>' +
+            '<span class="p-paginator-page p-highlight">2</span></div>' +
+            '<div class="p-datatable-loading-overlay" hidden ' +
+            'style="width:20px;height:20px"></div></div>';
+        owner.firstElementChild.prepend(table);
+        const overlay = owner.querySelector('.p-datatable-loading-overlay');
+        overlay.setAttribute('data-private', secret);
+        table.querySelector('td').textContent = secret;
+        owner.querySelector('button').onclick = event => {
+            window.syntheticFirstClicks++;
+            event.currentTarget.disabled = true;
+            owner.querySelector('.p-highlight').textContent = '1';
+            overlay.hidden = false;
+        };
+    }''', secret)
+    timeout = driver.PlaywrightTimeoutError(secret)
+    failures = capture_failures(monkeypatch)  # Delegates to the real recorder.
+    original_wait = Locator.wait_for
+    loading_waits = []
+
+    def controlled_loading_timeout(locator, *args, **kwargs):
+        # Keep real wait_idle and the inspected click; avoid a 45-second sleep.
+        # The overlay becomes visible only after First, and hides with Induk
+        # when later-panel recovery runs. No size or request race is modelled.
+        if (locator.page is page and kwargs.get('state') == 'hidden'
+                and kwargs.get('timeout') == 45000
+                and page.locator('#induk .p-datatable-loading-overlay').is_visible()):
+            loading_waits.append(page.evaluate('window.syntheticFirstClicks'))
+            raise timeout
+        return original_wait(locator, *args, **kwargs)
+
+    monkeypatch.setattr(Locator, 'wait_for', controlled_loading_timeout)
+    root = tmp_path / 'diagnostics'
+    with driver.diagnostics.session(root, 'worker') as log:
+        result = driver.capture_detail(page)
+        assert log.flush()
+
+    # Preconditions must pass before the feature RED: the real initial wait
+    # raises the original exception, no table snapshot is accepted, recovery
+    # reaches the next panel, and the dispatched First action is never retried.
+    assert loading_waits == [1]
+    assert len(failures) == 1 and failures[0] is timeout
+    assert page.evaluate('window.syntheticFirstClicks') == 1
+    assert result['capture_complete'] is False
+    assert [section['name'] for section in result['sections']] == ['Induk', 'L1D']
+    assert result['sections'][0]['tables'] == []
+    assert result['sections'][1]['fields']
+    assert result['errors'] == [{'object': 'Induk/table 1', 'message': 'capture_timeout'}]
+    assert requests == [('GET', DETAIL)]
+    rows = diagnostic_records(root)
+    partial = [row for row in rows if row['event'] == 'capture.partial']
+    assert len(partial) == 1 and partial[0]['error']['type'] == 'TimeoutError'
+    assert not any(row['event'] == 'table.page_timing' for row in rows)
+    assert secret not in json.dumps([result['errors'], rows])
+
+    # Diagnostic-feature RED, not evidence of the live loading sub-cause.
+    initial = [row for row in rows if row['event'] == 'table.initial_loading'
+               and row.get('table_initial_stage') == 'first_idle_timeout']
+    assert len(initial) == 1, 'Missing initial-loading diagnostic after First wait timeout'
+    event = initial[0]
+    assert event['table_initial_stage'] == 'first_idle_timeout'
+    assert event['table_loading_scope'] == 'target_datatable'
+    assert event['table_loading_first_match'] == 'target_datatable'
+    assert event['form_ordinal'] == event['table_ordinal'] == 1
+    assert event['error']['type'] == 'TimeoutError'
+
+
 def test_stop_from_actual_table_capture_is_not_demoted_to_partial(routed, tmp_path, monkeypatch):
     page, requests = routed(control='')
 
