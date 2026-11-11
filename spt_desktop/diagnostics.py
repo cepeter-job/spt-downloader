@@ -40,11 +40,15 @@ EVENTS = frozenset({
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
     'table.initial_loading',
-    'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
+    'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed', 'update.check',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'update_check_result': frozenset({'started', 'already_pending', 'deferred_active',
+        'invalid_build', 'up_to_date', 'update_available', 'unavailable',
+        'notice_deferred'}),
+    'update_check_trigger': frozenset({'manual', 'automatic'}),
     'mpn_ownership_reason': frozenset({'navigation', 'frame', 'method',
         'page_route', 'request_url', 'resource_kind'}),
     'mpn_parent_field': frozenset({'accounting_type', 'accounting_detail',
