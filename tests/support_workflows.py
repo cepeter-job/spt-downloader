@@ -329,6 +329,7 @@ def validate_production(document):
     source_i, _ = _one(steps, lambda s: _runs(s, 'spt_gui.py', '--self-test'))
     build_i, _ = _one(steps, lambda s: _runs(s, 'build_desktop.py'))
     sbom_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_sbom', 'create'))
+    update_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'update-json'))
     checksum_i, _ = _one(steps, lambda s: _runs(s, '-m', 'scripts.ci_artifact', 'write-checksums'))
     upload_i, upload = _one(steps, lambda s: _action(s, 'actions/upload-artifact') and s.get('id') == 'upload')
     assert upload.get('id') == 'upload'
@@ -337,7 +338,7 @@ def validate_production(document):
     assert set(upload['with']['path'].split()) == {
         'dist/SPTDownloader.exe', 'dist/LICENSE.txt', 'dist/README.txt',
         'dist/build-selftest.json', 'dist/build-info.json', 'dist/distribution-sbom.json',
-        'dist/SHA256SUMS.txt'}
+        'dist/update.json', 'dist/SHA256SUMS.txt'}
     readback_i, readback = _one(steps, lambda s: _action(s, 'actions/download-artifact')
                               and 'artifact-ids' in s.get('with', {}))
     assert _expression(readback['with']['artifact-ids']) == 'steps.upload.outputs.artifact-id'
@@ -354,9 +355,11 @@ def validate_production(document):
     assert smoke_upload['with']['path'] == '${{ runner.temp }}/packaged-bootstrap.json'
     assert smoke_upload['with']['name'] == 'packaged-bootstrap-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
     assert smoke_upload['with']['if-no-files-found'] == 'error'
-    for index in (identity_i, source_i, build_i, sbom_i, checksum_i, verify_i):
+    for index in (identity_i, source_i, build_i, sbom_i, update_i, checksum_i, verify_i):
         _single_command(steps[index])
-    assert max(i for i, _ in downloads) < inventory_i < identity_i < source_i < build_i < sbom_i < checksum_i < upload_i < readback_i < verify_i < smoke_i < smoke_upload_i
+    assert (max(i for i, _ in downloads) < inventory_i < identity_i < source_i
+            < build_i < sbom_i < update_i < checksum_i < upload_i < readback_i
+            < verify_i < smoke_i < smoke_upload_i)
     _, attest_download = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/download-artifact'))
     assert attest_download['with']['name'] == upload['with']['name']
     _, attest = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/attest') and 'subject-path' in s.get('with', {}))
