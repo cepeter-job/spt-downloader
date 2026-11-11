@@ -161,12 +161,9 @@ def _turn_grid(page, table, max_pages, check_cancel):
 
     def advance(state, selector, direction):
         _check_cancel(check_cancel)
-        try:
-            clicked = timed(direction + '_click',
-                            lambda: owner.evaluate(NATIVE_PAGINATOR_CLICK_JS,
-                                                   {'selector': selector, 'marker': state}))
-        except RuntimeError:
-            return False
+        clicked = timed(direction + '_click',
+                        lambda: owner.evaluate(NATIVE_PAGINATOR_CLICK_JS,
+                                               {'selector': selector, 'marker': state}))
         if clicked is not True:
             return False
 
