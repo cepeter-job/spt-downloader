@@ -183,7 +183,28 @@ def test_initial_loading_diagnostics_use_unchanged_owner_selector(
     assert result['capture_complete'] and requests == [('GET', DETAIL)]
     assert expressions and all(script == expected for script in expressions)
     assert page.evaluate(
-        "Object.keys(window).every(key => !key.startsWith('__spt_table_initial_'))")
+        "Object.getOwnPropertyNames(window).every(key => !key.startsWith('__spt_table_initial_'))")
+
+
+
+@pytest.mark.parametrize('level', ['INFO', 'OFF'])
+def test_owned_table_handles_are_disposed_once(routed, tmp_path, monkeypatch, level):
+    page, requests = routed(control='')
+    original = driver._dispose_table_handle
+    disposed = []
+
+    def tracked_dispose(handle):
+        disposed.append(handle)
+        return original(handle)
+
+    monkeypatch.setattr(driver, '_dispose_table_handle', tracked_dispose)
+    with driver.diagnostics.session(tmp_path / level, 'worker', level=level) as log:
+        result = driver.capture_detail(page)
+        assert log.flush()
+    assert result['capture_complete'] and requests == [('GET', DETAIL)]
+    assert disposed
+    assert len({id(handle) for handle in disposed}) == len(disposed)
+
 
 
 def test_partial_initial_loading_listener_registration_is_cleaned():

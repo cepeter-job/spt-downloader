@@ -402,32 +402,12 @@ def _click_table_paginator(control, container, check_cancel):
 TABLE_CAPTURE_BUDGET_SECONDS = 180
 
 _INITIAL_FORM_ORDINAL = ContextVar('spt_initial_loading_form_ordinal', default=1)
-_INITIAL_OWNER_REF_JS = """(table, key) => {
-    const owner=table.closest('p-table')||table.closest('.p-datatable')||table.parentElement;
-    try {
-      if(owner && typeof WeakRef==='function') {
-        Object.defineProperty(window,key,{configurable:true,enumerable:false,
-          value:new WeakRef(owner)});
-        setTimeout(()=>{try{delete window[key]}catch(e){}},120000);
-      }
-    } catch(e) {} // Optional diagnostics must not affect owner acquisition.
-    return owner;
-}"""
-
-
 class _InitialLoadingDiagnostics:
     """One optional held-owner preparation observer, never capture authority."""
 
     _MAX_REQUESTS = 64
-    _SCOPE = frozenset({'target_datatable', 'other_datatable', 'blockui',
-                        'mixed', 'none', 'unavailable'})
-    _FIRST = frozenset({'target_datatable', 'other_datatable', 'blockui',
-                        'none', 'unavailable'})
-
-    def __init__(self, page, owner_key, capture_deadline, ordinal):
+    def __init__(self, page, ordinal):
         self.page = page
-        self.owner_key = owner_key
-        self.deadline = capture_deadline
         self.ordinal = ordinal
         self.form_ordinal = _INITIAL_FORM_ORDINAL.get()
         self.started = _diagnostic_clock()
@@ -475,63 +455,14 @@ class _InitialLoadingDiagnostics:
     def _on_failed(self, request):
         self._done(request, 'failed')
 
-    def _probe(self):
-        """Chrome engine enforces the JS limit; timeout/unbound means unknown."""
-        unavailable = ('unavailable', 'unavailable', 'unavailable')
-        remaining = int(min(1000, max(0, (self.deadline - time.monotonic()) * 1000)))
-        if remaining <= 0:
-            return unavailable
-        session = None
-        try:
-            session = self.page.context.new_cdp_session(self.page)
-            # Only identity/connection and visible overlay categories. No text,
-            # selectors from source, business fields, values or checked state.
-            expression = """(() => {
-              const ref=window[KEY], owner=ref && ref.deref && ref.deref();
-              try { delete window[KEY]; } catch(e) {}
-              if(!owner || !owner.isConnected || owner.ownerDocument!==document)
-                return {scope:'unavailable',first:'unavailable',owner:'detached'};
-              const list=document.querySelectorAll('.p-datatable-loading-overlay,.p-blockui');
-              if(list.length>64) return {scope:'unavailable',first:'unavailable',owner:'unavailable'};
-              const classify=n=>n.matches('.p-blockui')?'blockui':
-                owner.contains(n)?'target_datatable':
-                n.closest('p-table,.p-datatable')?'other_datatable':'unavailable';
-              const visible=n=>!!n.getClientRects().length &&
-                getComputedStyle(n).visibility!=='hidden';
-              const found=[];
-              for(const n of list) if(visible(n)) found.push(classify(n));
-              const kinds=new Set(found);
-              return {scope:kinds.size===0?'none':kinds.size>1?'mixed':found[0],
-                first:found.length?found[0]:'none',owner:'held'};
-            })()""".replace('KEY', json.dumps(self.owner_key))
-            reply = session.send('Runtime.evaluate', {
-                'expression': expression, 'returnByValue': True, 'silent': True,
-                'timeout': remaining, 'awaitPromise': False})
-            payload = reply.get('result', {}).get('value') if not reply.get('exceptionDetails') else None
-            if (not isinstance(payload, dict)
-                    or payload.get('scope') not in self._SCOPE
-                    or payload.get('first') not in self._FIRST
-                    or payload.get('owner') not in ('held', 'detached', 'unavailable')):
-                return unavailable
-            return payload['scope'], payload['first'], payload['owner']
-        except Exception:
-            # CDP diagnostics can be unavailable; never mask the original wait.
-            return unavailable
-        finally:
-            if session is not None:
-                try:
-                    session.detach()
-                except Exception:  # nosec B110 - CDP diagnostic cleanup cannot override the original exception.
-                    pass  # Best-effort diagnostic remote cleanup.
-
     def emit(self, stage, *, error=None):
         try:
-            scope, first, owner = self._probe() if error is not None else (
-                'unavailable', 'unavailable', 'unavailable')
+            # Never attach CDP on a timeout/Stop path. Request-object metrics
+            # are value-free, but cannot prove the owner of a visible overlay.
             diagnostics.record('table.initial_loading',
                 level='WARNING' if error is not None else 'INFO', error=error,
-                table_initial_stage=stage, table_loading_scope=scope,
-                table_loading_first_match=first, table_owner_state=owner,
+                table_initial_stage=stage, table_loading_scope='unavailable',
+                table_loading_first_match='unavailable', table_owner_state='unavailable',
                 table_request_scope='unavailable' if self.overflow else 'other_unbound',
                 table_request_observed=self.counts['observed'],
                 table_request_finished=self.counts['finished'],
@@ -574,13 +505,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     handle = table.element_handle()
     resources.callback(_dispose_table_handle, handle)
-    enabled = diagnostics.active()
-    owner_key = '__spt_table_initial_' + uuid4().hex if enabled else None
-    container_handle = (handle.evaluate_handle(_INITIAL_OWNER_REF_JS, owner_key)
-                        if enabled else handle.evaluate_handle(
-                            "e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement"))
+    # Diagnostics ON and OFF use the same inspected, read-only owner path.
+    # Both handles are registered exactly once with the owned ExitStack.
+    container_handle = handle.evaluate_handle(
+        "e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     resources.callback(_dispose_table_handle, container_handle)
-    observer = _InitialLoadingDiagnostics(page, owner_key, capture_deadline, ordinal) if enabled else None
+    observer = _InitialLoadingDiagnostics(page, ordinal) if diagnostics.active() else None
     if observer is not None:
         resources.callback(observer.close)
         observer.stage = 'size_action'
