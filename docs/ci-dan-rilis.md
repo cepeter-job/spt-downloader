@@ -241,7 +241,14 @@ Job portable dan Windows produksi menyimpan JUnit
 terpisah. Inventory tetap memakai nama dan format pokok yang dikonsumsi gate
 packaging. Upload inventory dan diagnostik tetap dicoba ketika langkah pytest
 gagal, termasuk kegagalan assertion, fixture, atau collection; kegagalan tersebut
-tetap membuat job gagal. Artifact distribusi memakai tujuh berkas eksplisit di bawah.
+tetap membuat job gagal. Setiap build Windows menghasilkan `dist/update.json` (schema 1,
+`commit`, `run_id`, `run_attempt`) dari `build-info.json` yang tervalidasi
+setelah SBOM dibuat, sebelum checksum dihitung. File ini ikut diunggah bersama
+executable dalam artifact delapan berkas, masuk `SHA256SUMS.txt`, dan wajib
+identik dengan identitas build saat readback. Artifact PR/dispatch bukan kandidat
+publikasi otomatis; hanya build push `main` yang lulus semua gate dan attestation
+boleh dipakai untuk memperbarui Worker Cloudflare. Workflow ini **tidak**
+melakukan deployment Cloudflare atau mengubah `update.json` yang sedang live.
 
 Inventory sekarang mencatat exit status dan durasi setiap sesi pytest. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
 tersimpan. Setup diukur dengan timestamp Unix wall-clock sejak setelah checkout hingga
