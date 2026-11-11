@@ -88,6 +88,7 @@ def test_settings_shows_requested_cache_and_login_copy(settings):
     assert button(dialog, 'bersihkan cache job')
     assert not writes and not errors
 
+
 def test_dirty_close_defaults_to_return_and_preserves_edits(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     change_browser(dialog)
