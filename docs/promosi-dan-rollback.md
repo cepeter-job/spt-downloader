@@ -13,8 +13,13 @@ harus identik dengan `build-info.json`, serta format tujuh berkas sebelumnya
 untuk mempertahankan rollback historis. Artifact lama yang hanya mempunyai
 lima berkas tetap tidak memenuhi skema promosi ini. Keduanya memerlukan lima
 attestation yang sama; `update.json` pada format baru dicakup checksum manifest
-dan digest ZIP yang sudah di-attest. Ketersediaan workflow dan tes sintetis tidak membuktikan bahwa release
-produksi sudah diterbitkan atau rollback pada mesin pengguna sudah dilakukan.
+dan digest ZIP yang sudah di-attest. Format tujuh berkas hanya untuk
+kompatibilitas distribusi dan rollback historis: **artifact legacy tidak
+mengandung `update.json` dan tidak boleh digunakan sebagai sumber manifest
+pembaruan Cloudflare**. Untuk publikasi manifest, pilih hanya artifact delapan
+berkas dari push `main` yang sudah terverifikasi. Ketersediaan workflow dan tes
+sintetis tidak membuktikan bahwa release produksi sudah diterbitkan atau rollback
+pada mesin pengguna sudah dilakukan.
 
 ## Identitas dan gate sumber
 
