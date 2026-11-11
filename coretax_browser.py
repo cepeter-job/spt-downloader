@@ -247,6 +247,35 @@ PAGINATOR_CLICK_JS = r'''(e, owner, deadline) => {
  return true;
 }'''
 
+# Inspect only paginator controls and a non-business page marker inside the
+# original owned p-table. One remote evaluation replaces repeated locator
+# count/state/handle lookups per page. Refuse nested/foreign ownership and
+# never look for a replacement owner in the Document.
+NATIVE_PAGINATOR_INSPECT_JS = r'''(owner, selector) => {
+ if (!owner.isConnected || owner.ownerDocument!==document) return {status:'invalid'};
+ const markers=owner.querySelectorAll('.p-paginator-current');
+ if(markers.length!==1 || markers[0].closest('p-table')!==owner)
+   return {status:'invalid'};
+ const controls=owner.querySelectorAll(selector);
+ if(controls.length>1 || (controls.length===1 && controls[0].closest('p-table')!==owner))
+   return {status:'invalid'};
+ return {status:controls.length===1?'ready':'absent', marker:markers[0].innerText};
+}'''
+
+# Recheck the exact inspected marker and the same unique owned control at
+# click time, then delegate to the existing inspected actionability contract.
+# No synthesized request, page-size selection, DOM body read or shortcut.
+NATIVE_PAGINATOR_CLICK_JS = r'''(owner, {selector, marker}) => {
+ if(!owner.isConnected || owner.ownerDocument!==document) return false;
+ const markers=owner.querySelectorAll('.p-paginator-current');
+ if(markers.length!==1 || markers[0].closest('p-table')!==owner ||
+    markers[0].innerText!==marker) return false;
+ const controls=owner.querySelectorAll(selector);
+ if(controls.length!==1 || controls[0].closest('p-table')!==owner) return false;
+ return (OWNED_CLICK)(controls[0],owner);
+}'''.replace('OWNED_CLICK', '(' + PAGINATOR_CLICK_JS + ')')
+
+
 # Private remote object only: no page globals, persistent state or hashed rows.
 TABLE_CURSOR_INIT_JS = r'''owner => ({
  owner, document:owner.ownerDocument, href:owner.ownerDocument.location.href,

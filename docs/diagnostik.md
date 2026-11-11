@@ -100,13 +100,24 @@ Catatan ini tidak mengubah hasil adopsi JSON.
 
 `native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
 pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
-Field `native_paginator_step` dibatasi ke `reset_click`,
-`reset_marker_wait`, `reset_overlay_wait`, `advance_click`,
-`advance_marker_wait`, `advance_overlay_wait`, `other`, dan `total`.
+Field `native_paginator_step` dibatasi ke `reset_probe`,
+`reset_click`, `reset_marker_wait`, `reset_overlay_wait`,
+`advance_probe`, `advance_click`, `advance_marker_wait`,
+`advance_overlay_wait`, `other`, dan `total`. Probe membaca hanya
+status serta teks marker paginator dari *p-table* yang sama, tidak membaca
+isi tabel bisnis. Probe dan klik masing-masing satu evaluasi browser dengan
+verifikasi ulang kepemilikan; tombol dan marker ambigu/berubah tetap ditolak.
+Keduanya mengurangi panggilan locator terpisah per halaman tanpa mengubah
+aksi Next/Previous, sumber/request, pilihan rows-per-page, atau page limit.
 `duration_ms` adalah waktu aktual di boundary Playwright; `count` jumlah
 operasi untuk tahap itu. `total` memuat satu panggilan, sedangkan `other`
-adalah residual nonnegatif termasuk pemeriksaan selector dan overhead host,
-**bukan otomatis waktu jaringan**. Tahap yang tidak dijalankan tidak menghasilkan
+adalah residual nonnegatif termasuk pemeriksaan host dan pembuangan
+handle, **bukan otomatis waktu jaringan**. Pada jalur baru, `*_probe`
+mengisolasi waktu inspeksi marker + kontrol native yang sebelumnya ikut
+`other`; `*_click` mencakup validasi ulang dan pemanggilan click.
+`*_overlay_wait` tetap mempertahankan waktu stabilisasi 180 ms per
+transisi; `*_marker_wait` menggunakan pemeriksaan tiap 100 ms. Tidak
+boleh menyimpulkan latensi backend secara langsung dari keduanya. Tahap yang tidak dijalankan tidak menghasilkan
 event (kecuali `other`/`total`). Semua tahap tetap direkam saat refusal,
 Stop maupun exception sepanjang owner awal berhasil diperoleh, tanpa mengubah
 aksi atau deadline. Event ini dipakai bersama urutan

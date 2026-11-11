@@ -55,8 +55,8 @@ def test_renderer_timing_schema_drops_invalid_private_values_without_coercion(fi
 
 
 @pytest.mark.parametrize('step', [
-    'reset_click', 'reset_marker_wait', 'reset_overlay_wait',
-    'advance_click', 'advance_marker_wait', 'advance_overlay_wait',
+    'reset_probe', 'reset_click', 'reset_marker_wait', 'reset_overlay_wait',
+    'advance_probe', 'advance_click', 'advance_marker_wait', 'advance_overlay_wait',
     'other', 'total',
 ])
 def test_native_paginator_timing_keeps_only_fixed_enums_and_bounded_aggregates(
