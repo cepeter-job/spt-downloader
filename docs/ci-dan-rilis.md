@@ -241,7 +241,16 @@ Job portable dan Windows produksi menyimpan JUnit
 terpisah. Inventory tetap memakai nama dan format pokok yang dikonsumsi gate
 packaging. Upload inventory dan diagnostik tetap dicoba ketika langkah pytest
 gagal, termasuk kegagalan assertion, fixture, atau collection; kegagalan tersebut
-tetap membuat job gagal. Artifact distribusi memakai tujuh berkas eksplisit di bawah.
+tetap membuat job gagal. Hanya build `push` ke `refs/heads/main` menghasilkan
+`dist/update.json` (schema 1, `commit`, `run_id`, `run_attempt`) dari
+`build-info.json` yang tervalidasi setelah SBOM dibuat dan sebelum checksum
+dihitung. Artifact dari push `main` memiliki delapan berkas termasuk
+`update.json`; artifact PR dan `workflow_dispatch` tetap hanya tujuh berkas
+tanpa manifest pembaruan. Checksum, readback, dan validator CI memaksakan
+allowlist sesuai konteks event/ref serta menolak manifest yang disisipkan pada
+build non-`main`. Hanya push `main` yang lulus semua gate dan attestation
+boleh menjadi sumber pembaruan Worker Cloudflare. Workflow ini **tidak**
+melakukan deployment Cloudflare atau mengubah `update.json` live.
 
 Inventory sekarang mencatat exit status dan durasi setiap sesi pytest. Identitas commit, run ID, attempt, dan hit/miss kedua cache ikut
 tersimpan. Setup diukur dengan timestamp Unix wall-clock sejak setelah checkout hingga

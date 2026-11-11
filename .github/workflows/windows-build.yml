@@ -571,6 +571,9 @@ jobs:
         run: .venv/Scripts/python.exe build_desktop.py --python-profile "$env:PYTHON_PROFILE" --output dist
       - name: Inventory the actual packaged native bytes and managed worker dependencies
         run: .venv/Scripts/python.exe -m scripts.ci_sbom create dist --python-version "$env:PYTHON_VERSION"
+      - name: Create update.json only for a trusted main push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: .venv/Scripts/python.exe -m scripts.ci_artifact update-json dist --python-version "$env:PYTHON_VERSION"
       - name: Validate frozen report and record artifact checksums
         run: .venv/Scripts/python.exe -m scripts.ci_artifact write-checksums dist --python-version "$env:PYTHON_VERSION"
       - name: Upload the exact verified Windows payload
@@ -588,6 +591,7 @@ jobs:
             dist/build-selftest.json
             dist/build-info.json
             dist/distribution-sbom.json
+            dist/update.json
             dist/SHA256SUMS.txt
       - name: Read back the uploaded artifact by its exact artifact ID
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -595,7 +599,7 @@ jobs:
           artifact-ids: ${{ steps.upload.outputs.artifact-id }}
           path: ${{ runner.temp }}/artifact-readback
           merge-multiple: true
-      - name: Verify the downloaded bytes and seven-file allowlist
+      - name: Verify the downloaded bytes and context-specific allowlist
         run: >-
           .venv/Scripts/python.exe -m scripts.ci_artifact verify
           "$env:RUNNER_TEMP/artifact-readback" --python-version "$env:PYTHON_VERSION"
