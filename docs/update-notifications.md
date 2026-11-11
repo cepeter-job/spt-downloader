@@ -44,21 +44,28 @@ valid JSON body over HTTPS with **no redirect**. For a manually edited
 Cloudflare Worker, an example return expression is:
 
 ```javascript
-return new Response(JSON.stringify({
-  schema: 1,
-  commit: "REPLACE_WITH_VERIFIED_LOWERCASE_40_CHARACTER_COMMIT_SHA",
-  run_id: "REPLACE_WITH_VERIFIED_NUMERIC_RUN_ID",
-  run_attempt: 1
-}), {
-  status: 200,
-  headers: {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
+export default {
+  async fetch(request) {
+    if (new URL(request.url).pathname !== "/") {
+      return new Response("Not found", { status: 404 });
+    }
+    return new Response(JSON.stringify({
+      schema: 1,
+      commit: "REPLACE_WITH_VERIFIED_LOWERCASE_40_CHARACTER_COMMIT_SHA",
+      run_id: "REPLACE_WITH_VERIFIED_NUMERIC_RUN_ID",
+      run_attempt: 1
+    }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store"
+      }
+    });
   }
-});
+};
 ```
 
-This code belongs inside the Worker's `fetch` handler. It is an example only,
+This is a complete example Worker module to paste into the manual deployment editor,
 not a live verified release and not an instruction to run a new unreviewed
 release. Do not put credentials, download links, tax records, or personal
 information in the public response.
