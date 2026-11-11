@@ -169,6 +169,15 @@ tanpa menaikkan batas waktu 180 detik, tanpa mengubah request/klik,
 dan tanpa menerima baris yang tidak terverifikasi. Untuk pembuktian
 diperlukan operator-run build yang cocok dan hasil terminal tetap jujur.
 
+Pada penolakan `table.elapsed_budget` setelah aksi halaman, event yang sama
+sekarang dapat menyertakan durasi host untuk `duration_ms` seluruh aksi,
+`table_click_ms`, `table_poll_ms`, `table_idle_ms`, dan
+`table_dom_ms` **hanya bila tahap itu sudah dicapai**. Kategori
+`before_next_click` dapat mencatat durasi persiapan advance cursor
+yang dihentikan sebelum klik. Field tambahan memakai sanitizer numerik
+yang sudah ada, tanpa response, marker, URL, atau perubahan keputusan
+PARTIAL. Ketiadaan field bukan berarti durasi nol.
+
 `table.initial_loading` (PR #235) merekam tahapan persiapan DOM pertama:
 `size_complete`, `size_idle_timeout`, `first_idle_complete`, dan
 `first_idle_timeout`, ordinal form/tabel, durasi serta hitungan lifecycle
