@@ -41,8 +41,13 @@ def test_actual_table_failure_keeps_safe_proof_and_recovers_later_panel(
     assert message not in serialized and 'SYNTHETIC_PRIVATE_CLASS' not in serialized
 
 
+@pytest.mark.parametrize('overlay_kind, expected_scope', [
+    ('target', 'target_datatable'),
+    ('foreign', 'other_datatable'),
+    ('blockui', 'blockui'),
+])
 def test_first_reset_loading_timeout_records_initial_loading_without_changing_partial(
-        routed, tmp_path, monkeypatch):
+        routed, tmp_path, monkeypatch, overlay_kind, expected_scope):
     from playwright.sync_api import Locator
     from support_browser_protocol import capture_failures
 
@@ -69,6 +74,30 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
             overlay.hidden = false;
         };
     }''', secret)
+    if overlay_kind != 'target':
+        page.evaluate('''kind => {
+            const owner = document.querySelector('#induk p-table');
+            const targetOverlay = owner.querySelector('.p-datatable-loading-overlay');
+            const container = document.createElement(kind === 'blockui' ? 'div' : 'p-table');
+            if(kind === 'blockui') {
+                container.className = 'p-blockui';
+                container.style.cssText = 'width:20px;height:20px';
+                container.hidden = true;
+            } else {
+                container.innerHTML = '<div class="p-datatable-loading-overlay" hidden ' +
+                    'style="width:20px;height:20px"></div>';
+            }
+            document.body.appendChild(container);
+            const otherOverlay = kind === 'blockui' ? container :
+                container.querySelector('.p-datatable-loading-overlay');
+            const button = owner.querySelector('button');
+            const originalClick = button.onclick;
+            button.onclick = event => {
+                originalClick(event);
+                targetOverlay.hidden = true;
+                otherOverlay.hidden = false;
+            };
+        }''', overlay_kind)
     timeout = driver.PlaywrightTimeoutError(secret)
     failures = capture_failures(monkeypatch)  # Delegates to the real recorder.
     original_wait = Locator.wait_for
@@ -80,7 +109,7 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
         # when later-panel recovery runs. No size or request race is modelled.
         if (locator.page is page and kwargs.get('state') == 'hidden'
                 and kwargs.get('timeout') == 45000
-                and page.locator('#induk .p-datatable-loading-overlay').is_visible()):
+                and page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').count()):
             loading_waits.append(page.evaluate('window.syntheticFirstClicks'))
             raise timeout
         return original_wait(locator, *args, **kwargs)
@@ -115,10 +144,25 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
     assert len(initial) == 1, 'Missing initial-loading diagnostic after First wait timeout'
     event = initial[0]
     assert event['table_initial_stage'] == 'first_idle_timeout'
-    assert event['table_loading_scope'] == 'target_datatable'
-    assert event['table_loading_first_match'] == 'target_datatable'
+    assert event['table_loading_scope'] == expected_scope
+    assert event['table_loading_first_match'] == expected_scope
     assert event['form_ordinal'] == event['table_ordinal'] == 1
     assert event['error']['type'] == 'TimeoutError'
+
+
+
+def test_initial_loading_extra_observers_are_disabled_with_logging_off(
+        routed, tmp_path, monkeypatch):
+    page, requests = routed(control='')
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('Diagnostics OFF installed an extra loading observer')
+
+    monkeypatch.setattr(driver, '_InitialLoadingDiagnostics', forbidden)
+    with driver.diagnostics.session(tmp_path / 'off', 'worker', level='OFF'):
+        result = driver.capture_detail(page)
+    assert result['capture_complete'] and requests == [('GET', DETAIL)]
+
 
 
 def test_stop_from_actual_table_capture_is_not_demoted_to_partial(routed, tmp_path, monkeypatch):

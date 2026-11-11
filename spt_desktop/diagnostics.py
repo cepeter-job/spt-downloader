@@ -34,11 +34,12 @@ EVENTS = frozenset({
     'jobs.prune_preview', 'jobs.manual_pruned', 'worker.forced_stop', 'worker.stop',
     'consent.requested', 'consent.replied', 'consent.timeout', 'consent.dialog_presented', 'capture.partial', 'pdf.partial', 'pdf.discovery',
     'pdf.request_rejected', 'pdf.request_captured', 'mpn.source_rejected',
-    'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
+    'native.paginator_timing', 'mpn.capture_failed', 'mpn.detail_readiness_failed', 'mpn.parent_binding_mismatch', 'mpn.unfiltered_refused',
     'mpn.paginator_refused', 'mpn.observer_refused', 'mpn.grid_wait_timeout',
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
+    'table.initial_loading',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
@@ -65,8 +66,19 @@ ENUMS = {
     'mpn_mismatch_reference_state': frozenset({'all_reference_missing',
         'some_reference_missing', 'references_observed', 'no_reference_mismatch'}),
     'corporate_l3_table_shape': frozenset({'zero', 'one', 'more_than_two'}),
+    'native_paginator_step': frozenset({'reset_click', 'reset_marker_wait',
+        'reset_overlay_wait', 'advance_click', 'advance_marker_wait',
+        'advance_overlay_wait', 'other', 'total'}),
     'mpn_catalog_variant_kind': frozenset({'not_observed', 'query_variant', 'path_variant'}),
     'table_page_stage': frozenset({'initial', 'advanced'}),
+    'table_initial_stage': frozenset({'size_idle_timeout', 'first_idle_timeout',
+        'first_idle_complete', 'size_complete'}),
+    'table_loading_scope': frozenset({'target_datatable', 'other_datatable',
+        'blockui', 'mixed', 'none', 'unavailable'}),
+    'table_loading_first_match': frozenset({'target_datatable', 'other_datatable',
+        'blockui', 'none', 'unavailable'}),
+    'table_owner_state': frozenset({'held', 'detached', 'unavailable'}),
+    'table_request_scope': frozenset({'other_unbound', 'unavailable'}),
     'table_elapsed_stage': frozenset({'before_next_click', 'state_poll', 'before_dom_read'}),
     'table_dom_stage': frozenset({'post_pagination'}),
     'table_state_stage': frozenset({'poll', 'verify'}),
@@ -172,7 +184,8 @@ ENUMS = {
         'check_error', 'cancelled', 'cross_origin_write', 'origin_not_allowed',
         'code_exchange_allowed', 'code_exchange_failed', 'home_detected', 'search_opened'}),
 }
-COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'page_rows', 'page_size_cap', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls',
+COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'page_rows', 'page_size_cap', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls', 'table_request_observed',
+    'table_request_finished', 'table_request_failed', 'table_request_pending',
     'search_requests', 'search_responses', 'search_failed', 'search_http_1xx', 'search_http_2xx',
     'search_http_3xx', 'search_http_4xx', 'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
@@ -477,6 +490,11 @@ def job_context(job_id):
         yield
     finally:
         _job.reset(token)
+
+
+def active():
+    """Only active logging may install optional browser diagnostics."""
+    return _active is not None and not _active._closed and _active.level != 'OFF'
 
 
 def record(event, **fields):

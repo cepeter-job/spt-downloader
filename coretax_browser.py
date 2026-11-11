@@ -22,6 +22,7 @@ import re
 import json
 import os
 from contextlib import ExitStack, nullcontext
+from contextvars import ContextVar
 from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlparse
@@ -400,6 +401,158 @@ def _click_table_paginator(control, container, check_cancel):
 
 TABLE_CAPTURE_BUDGET_SECONDS = 180
 
+_INITIAL_FORM_ORDINAL = ContextVar('spt_initial_loading_form_ordinal', default=1)
+_INITIAL_OWNER_REF_JS = """(table, key) => {
+    const owner=table.closest('p-table')||table.closest('.p-datatable')||table.parentElement;
+    try {
+      if(owner && typeof WeakRef==='function') {
+        Object.defineProperty(window,key,{configurable:true,enumerable:false,
+          value:new WeakRef(owner)});
+        setTimeout(()=>{try{delete window[key]}catch(e){}},120000);
+      }
+    } catch(e) {} // Optional diagnostics must not affect owner acquisition.
+    return owner;
+}"""
+
+
+class _InitialLoadingDiagnostics:
+    """One optional held-owner preparation observer, never capture authority."""
+
+    _MAX_REQUESTS = 64
+    _SCOPE = frozenset({'target_datatable', 'other_datatable', 'blockui',
+                        'mixed', 'none', 'unavailable'})
+    _FIRST = frozenset({'target_datatable', 'other_datatable', 'blockui',
+                        'none', 'unavailable'})
+
+    def __init__(self, page, owner_key, capture_deadline, ordinal):
+        self.page = page
+        self.owner_key = owner_key
+        self.deadline = capture_deadline
+        self.ordinal = ordinal
+        self.form_ordinal = _INITIAL_FORM_ORDINAL.get()
+        self.started = _diagnostic_clock()
+        self.stage = 'prepare_entry'
+        self.requests = {}
+        self.counts = {'observed': 0, 'finished': 0, 'failed': 0}
+        self.overflow = False
+        self.listeners = []
+        for name, callback in (('request', self._on_request),
+                               ('requestfinished', self._on_finished),
+                               ('requestfailed', self._on_failed)):
+            try:
+                page.on(name, callback)
+                self.listeners.append((name, callback))
+            except Exception:
+                # Optional diagnostic listener registration is best effort.
+                self.overflow = True
+                break
+
+    def _on_request(self, request):
+        try:
+            if request in self.requests:
+                return
+            if len(self.requests) >= self._MAX_REQUESTS:
+                self.overflow = True
+                return
+            # Request objects only: never read headers, URL, data or response.
+            self.requests[request] = [self.stage, 'pending']
+            self.counts['observed'] += 1
+        except Exception:
+            self.overflow = True
+
+    def _done(self, request, state):
+        try:
+            entry = self.requests.get(request)
+            if entry is not None and entry[1] == 'pending':
+                entry[1] = state
+                self.counts[state] += 1
+        except Exception:
+            self.overflow = True
+
+    def _on_finished(self, request):
+        self._done(request, 'finished')
+
+    def _on_failed(self, request):
+        self._done(request, 'failed')
+
+    def _probe(self):
+        """Chrome engine enforces the JS limit; timeout/unbound means unknown."""
+        unavailable = ('unavailable', 'unavailable', 'unavailable')
+        remaining = int(min(1000, max(0, (self.deadline - time.monotonic()) * 1000)))
+        if remaining <= 0:
+            return unavailable
+        session = None
+        try:
+            session = self.page.context.new_cdp_session(self.page)
+            # Only identity/connection and visible overlay categories. No text,
+            # selectors from source, business fields, values or checked state.
+            expression = """(() => {
+              const ref=window[KEY], owner=ref && ref.deref && ref.deref();
+              try { delete window[KEY]; } catch(e) {}
+              if(!owner || !owner.isConnected || owner.ownerDocument!==document)
+                return {scope:'unavailable',first:'unavailable',owner:'detached'};
+              const list=document.querySelectorAll('.p-datatable-loading-overlay,.p-blockui');
+              if(list.length>64) return {scope:'unavailable',first:'unavailable',owner:'unavailable'};
+              const classify=n=>n.matches('.p-blockui')?'blockui':
+                owner.contains(n)?'target_datatable':
+                n.closest('p-table,.p-datatable')?'other_datatable':'unavailable';
+              const visible=n=>!!n.getClientRects().length &&
+                getComputedStyle(n).visibility!=='hidden';
+              const found=[];
+              for(const n of list) if(visible(n)) found.push(classify(n));
+              const kinds=new Set(found);
+              return {scope:kinds.size===0?'none':kinds.size>1?'mixed':found[0],
+                first:found.length?found[0]:'none',owner:'held'};
+            })()""".replace('KEY', json.dumps(self.owner_key))
+            reply = session.send('Runtime.evaluate', {
+                'expression': expression, 'returnByValue': True, 'silent': True,
+                'timeout': remaining, 'awaitPromise': False})
+            payload = reply.get('result', {}).get('value') if not reply.get('exceptionDetails') else None
+            if (not isinstance(payload, dict)
+                    or payload.get('scope') not in self._SCOPE
+                    or payload.get('first') not in self._FIRST
+                    or payload.get('owner') not in ('held', 'detached', 'unavailable')):
+                return unavailable
+            return payload['scope'], payload['first'], payload['owner']
+        except Exception:
+            # CDP diagnostics can be unavailable; never mask the original wait.
+            return unavailable
+        finally:
+            if session is not None:
+                try:
+                    session.detach()
+                except Exception:
+                    pass  # Best-effort diagnostic remote cleanup.
+
+    def emit(self, stage, *, error=None):
+        try:
+            scope, first, owner = self._probe() if error is not None else (
+                'unavailable', 'unavailable', 'unavailable')
+            diagnostics.record('table.initial_loading',
+                level='WARNING' if error is not None else 'INFO', error=error,
+                table_initial_stage=stage, table_loading_scope=scope,
+                table_loading_first_match=first, table_owner_state=owner,
+                table_request_scope='unavailable' if self.overflow else 'other_unbound',
+                table_request_observed=self.counts['observed'],
+                table_request_finished=self.counts['finished'],
+                table_request_failed=self.counts['failed'],
+                table_request_pending=sum(v[1] == 'pending' for v in self.requests.values()),
+                form_ordinal=self.form_ordinal, table_ordinal=self.ordinal,
+                duration_ms=(_diagnostic_clock() - self.started) * 1000)
+        except Exception:
+            # Always preserve the original timeout/Stop/capture outcome.
+            return None
+
+    def close(self):
+        for event, handler in reversed(self.listeners):
+            try:
+                self.page.remove_listener(event, handler)
+            except Exception:
+                pass  # Optional listener cleanup must not mask capture results.
+        self.listeners.clear()
+        self.requests.clear()
+
+
 
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
@@ -420,9 +573,25 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     handle = table.element_handle()
-    container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
+    resources.callback(_dispose_table_handle, handle)
+    enabled = diagnostics.active()
+    owner_key = '__spt_table_initial_' + uuid4().hex if enabled else None
+    container_handle = (handle.evaluate_handle(_INITIAL_OWNER_REF_JS, owner_key)
+                        if enabled else handle.evaluate_handle(
+                            "e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement"))
     resources.callback(_dispose_table_handle, container_handle)
-    maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    observer = _InitialLoadingDiagnostics(page, owner_key, capture_deadline, ordinal) if enabled else None
+    if observer is not None:
+        resources.callback(observer.close)
+        observer.stage = 'size_action'
+    try:
+        maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    except PlaywrightTimeoutError as exc:
+        if observer is not None:
+            observer.emit('size_idle_timeout', error=exc)
+        raise
+    if observer is not None:
+        observer.emit('size_complete')
     if max_page_size >= 250:
         # A previously selected larger page must not bypass the pilot limit.
         label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
@@ -431,8 +600,19 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
     if first:
+        if observer is not None:
+            observer.stage = 'first_click'
         _click_table_paginator(first, container_handle, check_cancel)
-        wait_idle(page)
+        if observer is not None:
+            observer.stage = 'first_idle'
+        try:
+            wait_idle(page)
+        except PlaywrightTimeoutError as exc:
+            if observer is not None:
+                observer.emit('first_idle_timeout', error=exc)
+            raise
+        if observer is not None:
+            observer.emit('first_idle_complete')
     # Sebagian tabel menyimpan halaman terakhir dan hanya menyediakan Prev.
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
     for _ in range(max_pages):
@@ -911,8 +1091,12 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                     # 500 rows stays negligible versus the grid fetch.
                     max_page_size = 500
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
-                    captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
-                                             max_page_size=max_page_size)
+                    form_token = _INITIAL_FORM_ORDINAL.set(len(sections) + 1)
+                    try:
+                        captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
+                                                 max_page_size=max_page_size)
+                    finally:
+                        _INITIAL_FORM_ORDINAL.reset(form_token)
                     timing.update(body_rows=captured.get('body_row_count'), pages=captured.get('pages'),
                                   status='COMPLETE' if captured['complete'] else 'PARTIAL')
                 if financial_required and name in ('L1-D', 'L9'):

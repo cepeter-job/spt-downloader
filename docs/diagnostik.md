@@ -98,6 +98,46 @@ sukses maupun penolakan (segmen berjalan ditutup terlebih dahulu), sehingga
 pelacakan performa (#208) tetap memberi data pada live run yang gagal.
 Catatan ini tidak mengubah hasil adopsi JSON.
 
+`native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
+pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
+Field `native_paginator_step` dibatasi ke `reset_click`,
+`reset_marker_wait`, `reset_overlay_wait`, `advance_click`,
+`advance_marker_wait`, `advance_overlay_wait`, `other`, dan `total`.
+`duration_ms` adalah waktu aktual di boundary Playwright; `count` jumlah
+operasi untuk tahap itu. `total` memuat satu panggilan, sedangkan `other`
+adalah residual nonnegatif termasuk pemeriksaan selector dan overhead host,
+**bukan otomatis waktu jaringan**. Tahap yang tidak dijalankan tidak menghasilkan
+event (kecuali `other`/`total`). Semua tahap tetap direkam saat refusal,
+Stop maupun exception sepanjang owner awal berhasil diperoleh, tanpa mengubah
+aksi atau deadline. Event ini dipakai bersama urutan
+`corporate.observe_timing(l3)`; karena paginator dipakai juga oleh observer
+lain, jangan mengatribusikan semua event `native.paginator_timing` ke L3
+tanpa konteks rangkaian waktu yang cocok. Tidak ada nilai baris, label,
+request, response, query parameter, URL, identity, atau file path yang dicatat.
+
+Tahap ini belum memisahkan kronologi request/response maupun membuktikan
+pilihan ukuran halaman native. Live acceptance membutuhkan run yang cocok
+dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
+
+`table.initial_loading` (PR #235) adalah diagnostik persiapan halaman pertama
+DOM yang tidak mengubah klik First, ukuran halaman, Stop, atau timeout. Event
+dibatasi ke kategori tahap `size_complete`, `size_idle_timeout`,
+`first_idle_complete`, `first_idle_timeout`; klasifikasi overlay
+`target_datatable`, `other_datatable`, `blockui`, `mixed`,
+`none`, atau `unavailable`. Kategori first match dinilai terhadap
+owner asli yang dipegang, bukan tabel pengganti. Kegagalan/overflow menjadi
+`unavailable`, tidak pernah dinilai sebagai siap. Hanya ordinal, jenis
+kategori, hitungan request-object dan durasi yang diizinkan; tidak ada URL,
+NPWP, header, body, nilai pajak, nama dokumen, atau identitas sumber.
+Request yang teramati dikategorikan `other_unbound`, bukan bukti
+kepemilikan tabel atau dugaan penyebab jaringan.
+
+Probe opsional memakai batas eksekusi JavaScript Chromium 1000 ms melalui
+`Runtime.evaluate.timeout`, tetapi angka itu **tidak** menjamin batas
+end-to-end transport DevTools/Playwright. Gangguan probe tidak boleh menutupi
+exception asli, meloloskan halaman, atau mengubah PARTIAL. Saat diagnostik
+OFF tidak ada listener request atau panggilan struktural tambahan.
+
 Pada tahap `l11a`, `corporate_l11a_reason` memisahkan pin/provider, lifetime,
 jumlah tabel, ancestry/grup, paginator, perubahan metadata, bentuk/offset request,
 inventori grid dan katalog yang belum teramati. Contoh kategori tetap adalah
