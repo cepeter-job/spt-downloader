@@ -603,12 +603,14 @@ class App:
             try:
                 self.root.after_cancel(self._update_after)
             except tk.TclError:
+                # Root teardown may already have removed the pending callback.
                 pass
             self._update_after = None
         if self._update_dialog is not None:
             try:
                 self._update_dialog.destroy()
             except tk.TclError:
+                # Root teardown may already have destroyed this widget.
                 pass
             self._update_dialog = None
         self.view.dispose()
