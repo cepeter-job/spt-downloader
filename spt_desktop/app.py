@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import threading
+import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
@@ -18,6 +19,20 @@ from .ui_theme import configure_dialog, dip_to_px, effective_scale
 from .job_pruning import (DEFAULT_KEEP_JOBS, validate_keep_jobs,
                           preview_published_jobs, prune_published_jobs)
 from .paths import downloads_folder
+from .build_info import read_build_info
+from . import update_notice
+
+# Maintainer-approved personal OneDrive within the organizational Microsoft 365
+# tenant, intentionally shared with colleagues in the organization. '/personal/'
+# identifies its storage location; it does not imply public access or a team site.
+# The maintainer confirmed this exact destination. Because the repository
+# and binary are public, the path exposes the owner's account identifier;
+# this disclosure and its lifecycle implications require explicit review.
+# Personnel changes, link revocation, or folder moves require a reviewed URL
+# migration; no permissions, credentials, or download links come from Worker JSON.
+UPDATE_FOLDER_URL = ('https://kemenkeu-my.sharepoint.com/my?'
+    'id=%2Fpersonal%2Fpuntoami%5Fpriyono%5Fkemenkeu%5Fgo%5Fid%2FDocuments%2FSPT%20Downloader'
+    '&ga=1')
 
 #punto ami priyono
 
@@ -176,6 +191,11 @@ class App:
         self._poll_after = None
         self._poll_failed = False
         self._disposed = False
+        self._update_after = None
+        self._update_pending = False
+        self._update_results = queue.Queue(maxsize=1)
+        self._update_seen = set()
+        self._update_dialog = None
         root.title(copy_text('app.title'))
         self.view = MainView(root, year_default=str(date.today().year),
                             on_start=self.start, on_stop=self.stop,
@@ -194,6 +214,122 @@ class App:
         root.bind('<Destroy>', self._on_destroy, add='+')
         self.npwp_entry.focus_set()
         self._poll_after = root.after(100, self._poll)
+        # Synthetic GUI self-tests inject a controller and must stay offline.
+        # The authorized Cloudflare Worker endpoint is a fixed nonempty constant.
+        if self._owns_controller:
+            self._update_after = root.after(4000, self.check_updates)
+
+    def check_updates(self, manual=False):
+        """Fetch public release metadata off Tk's thread, never touching Coretax."""
+        self._update_after = None
+        if self._disposed or self._closing or self._update_pending:
+            return
+        if self.controller.active:
+            if manual:
+                messagebox.showinfo('Pekerjaan sedang berjalan',
+                    'Pemeriksaan pembaruan tersedia setelah pekerjaan selesai.',
+                    parent=self._settings_dialog or self.root)
+            else:
+                self._update_after = self.root.after(15000, self.check_updates)
+            return
+        installed = read_build_info()
+        if installed is None:
+            if manual:
+                messagebox.showinfo('Identitas build tidak tersedia',
+                    'Versi aplikasi tidak dapat diverifikasi.', parent=self._settings_dialog or self.root)
+            return
+        self._update_pending = True
+
+        def worker():
+            try:
+                result = ('ok', update_notice.fetch_notice(update_notice.MANIFEST_URL, installed))
+            except update_notice.UpdateLookupError:
+                result = ('unavailable', None)
+            except Exception:
+                # No exception text, URL, local path, credential, or taxpayer
+                # information is allowed into update UI or diagnostics.
+                result = ('unavailable', None)
+            self._update_results.put(result)
+
+        threading.Thread(target=worker, daemon=True, name='spt-update-check').start()
+        self._update_after = self.root.after(200, lambda: self._receive_update(manual))
+
+    def _receive_update(self, manual=False):
+        self._update_after = None
+        if self._disposed:
+            return
+        try:
+            state, notice = self._update_results.get_nowait()
+        except queue.Empty:
+            self._update_after = self.root.after(200, lambda: self._receive_update(manual))
+            return
+        self._update_pending = False
+        if notice is not None and (self.controller.active or self._interaction is not None
+                                   or self._settings_dialog is not None and not manual):
+            # Do not interrupt active work, a source-selection dialog, or Settings.
+            self._update_results.put((state, notice))
+            self._update_pending = True
+            self._update_after = self.root.after(2000, lambda: self._receive_update(manual))
+            return
+        if state != 'ok':
+            if manual:
+                messagebox.showinfo('Pemeriksaan tidak tersedia',
+                    'Pembaruan belum dapat diperiksa. Coba lagi ketika jaringan tersedia.',
+                    parent=self._settings_dialog or self.root)
+        elif notice is None:
+            if manual:
+                messagebox.showinfo('Pembaruan',
+                    'Tidak ada pembaruan yang lebih baru dan terverifikasi.',
+                    parent=self._settings_dialog or self.root)
+        elif notice.run_id not in self._update_seen:
+            self._update_seen.add(notice.run_id)
+            self._show_update_notice(notice)
+        if not manual and self._owns_controller:
+            self._update_after = self.root.after(24 * 60 * 60 * 1000, self.check_updates)
+
+    def _show_update_notice(self, notice):
+        """Show one short, dismissible notice; browser navigation is user-initiated."""
+        if self._disposed or self._closing or self._update_dialog is not None:
+            return
+        parent = self._settings_dialog or self.root
+        dialog = tk.Toplevel(parent)
+        self._update_dialog = dialog
+        dialog.title('Pembaruan')
+        dialog.transient(parent)
+        frame = ttk.Frame(dialog, padding=18)
+        frame.pack(fill='both', expand=True)
+        ttk.Label(frame, text='update tersedia',
+                  style='SPT.Heading.TLabel').pack(anchor='w', pady=(0, 12))
+        actions = ttk.Frame(frame)
+        actions.pack(anchor='e')
+        prior_grab = self.root.grab_current()
+        if prior_grab is not None:
+            dialog.grab_set()
+
+        def dismiss():
+            self._update_dialog = None
+            if self.root.grab_current() is dialog:
+                dialog.grab_release()
+            dialog.destroy()
+            if (prior_grab is not None and prior_grab.winfo_exists()
+                    and not self._disposed):
+                prior_grab.grab_set()
+
+        def open_folder():
+            # Fixed approved SharePoint folder; never follow a URL from the manifest.
+            try:
+                opened = webbrowser.open(UPDATE_FOLDER_URL, new=2)
+            except (OSError, webbrowser.Error):
+                opened = False
+            if opened:
+                dismiss()
+            else:
+                messagebox.showerror('Browser tidak tersedia',
+                    'Folder pembaruan tidak dapat dibuka.', parent=dialog)
+
+        ttk.Button(actions, text='Update', command=open_folder).pack(side='left', padx=(0, 8))
+        ttk.Button(actions, text='Close', command=dismiss).pack(side='left')
+        dialog.protocol('WM_DELETE_WINDOW', dismiss)
 
     def _report_callback(self, kind, error, trace):
         diagnostics.record('gui.callback_failed', error=error, level='ERROR')
@@ -463,6 +599,20 @@ class App:
                 # Root teardown may already have removed the pending poll command.
                 pass
             self._poll_after = None
+        if self._update_after is not None:
+            try:
+                self.root.after_cancel(self._update_after)
+            except tk.TclError:
+                # Root teardown may already have removed the pending callback.
+                pass
+            self._update_after = None
+        if self._update_dialog is not None:
+            try:
+                self._update_dialog.destroy()
+            except tk.TclError:
+                # Root teardown may already have destroyed this widget.
+                pass
+            self._update_dialog = None
         self.view.dispose()
 
     def request_close(self):
@@ -1204,6 +1354,8 @@ class App:
         buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
         ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=9,column=0,columnspan=2,sticky='w',pady=(4,0))
+        ttk.Button(frame, text='Cek pembaruan', command=lambda:self.check_updates(manual=True)).grid(
+            row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         decision_dialog = None
         pending_preferences = False
