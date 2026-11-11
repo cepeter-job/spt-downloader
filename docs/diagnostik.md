@@ -175,9 +175,19 @@ dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 - `size_action`: satu pemanggilan pemilihan ukuran halaman yang **sudah ada**,
   termasuk menunggu idle jika ukuran berubah; `count=1` berarti pemanggilan,
   bukan jumlah perubahan atau request.
-- `first_navigation`: pencarian tombol First, klik jika tersedia, dan
-  `wait_idle` aslinya; `count=0/1` berarti jumlah klik First yang
-  berhasil diajukan.
+- `pilot_guard`: verifikasi ulang ukuran halaman yang **sudah ada**
+  setelah `size_action` (termasuk locator/label asli). `count=1`
+  berarti verifikasi dipanggil, bukan keberhasilan atau perubahan ukuran.
+- `first_lookup`: hanya pencarian tombol First yang sudah ada.
+  `count=1` berarti kontrol ditemukan, bukan diklik.
+- `first_click`: hanya validasi dan klik First yang sudah ada.
+  `count=1` berarti klik telah berhasil diajukan, bukan respons selesai.
+- `first_idle`: penantian loading overlay global dan 180 ms settle
+  **asli**, sesudah klik First. `count=1` berarti wait dijalankan
+  meskipun timeout; tidak mengklaim overlay milik tabel ini.
+- `first_navigation`: interval inklusif pencarian, klik jika tersedia,
+  dan `wait_idle` aslinya; `count=0/1` berarti jumlah klik First yang
+  berhasil diajukan. **Jangan menjumlahkan** tahap ini dengan tahap anak.
 - `previous_rewind`: seluruh loop Previous, verifikasi state,
   `wait_idle` serta pemeriksaan limit yang sudah ada. `count` adalah
   jumlah klik Previous yang berhasil diajukan, **bukan** bukti respons
@@ -194,6 +204,17 @@ sendirinya membuktikan waktu jaringan. Event tiap tahap tidak boleh
 dijumlahkan begitu saja dengan `total_pre_read`, karena total mencakup
 semua tahap. Penyebaran event hanya pada large-table candidate mencegah
 log spam untuk tabel kecil.
+
+**Tindak lanjut 11 November 2026 (build `df60d3d7`):** operator-run
+berakhir PARTIAL pada form 4/tabel 3, `first_idle_timeout` setelah
+60,14 detik sejak awal persiapan. `size_action` 1,49 detik dan interval
+`first_navigation` 45,18 detik; jeda sekitar 13,5 detik sebelum
+`first_navigation` belum dipisahkan. Dua request-object yang teramati
+sudah selesai pada timeout; bukti itu tidak memastikan backend idle
+atau overlay sasaran. Tahap baru hanya memisahkan batas waktu pemanggilan
+yang **sudah terjadi**, tanpa RPC/browser lookup, perubahan klik,
+deadlines, dan tanpa mengubah PARTIAL atau native JSON. Live run baru
+perlu membuktikan penyebab visual idle sebelum ada perubahan perilaku.
 
 **Alasan penambahan:** pada 11 November 2026 build `8726aae5`, log
 mencatat `first_idle_complete` di 15:01:19 WIB tetapi

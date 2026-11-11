@@ -215,14 +215,47 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     assert page.evaluate('moves') == 4
     rows = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
     steps = {row['table_reset_step']: row for row in rows}
-    assert set(steps) == {'size_action', 'first_navigation',
+    assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
+                          'first_click', 'first_idle', 'first_navigation',
                           'previous_rewind', 'total_pre_read'}
+    assert steps['pilot_guard']['count'] == 1
+    assert steps['first_lookup']['count'] == 1
+    assert steps['first_click']['count'] == 1
+    assert steps['first_idle']['count'] == 1
     assert steps['first_navigation']['count'] == 1
+    assert steps['first_navigation']['duration_ms'] >= steps['first_idle']['duration_ms']
     assert steps['previous_rewind']['count'] == 2
     assert steps['previous_rewind']['duration_ms'] > 0
     assert steps['total_pre_read']['duration_ms'] >= steps['previous_rewind']['duration_ms']
     assert all(row['form_ordinal'] == 1 and row['table_ordinal'] == 3 for row in rows)
     assert all(set(row).isdisjoint({'url', 'body', 'marker', 'table_text'}) for row in rows)
+
+
+def test_large_dom_first_idle_timeout_preserves_original_failure_and_timing(
+        page, tmp_path, monkeypatch):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate('at=1; draw()')
+    def original_wait_times_out(_page):
+        raise driver.PlaywrightTimeoutError('synthetic first idle timeout')
+
+    monkeypatch.setattr(driver, 'wait_idle', original_wait_times_out)
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.PlaywrightTimeoutError):
+            driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    # No retry, Previous, Next, DOM snapshot or altered source acceptance.
+    assert page.evaluate('moves') == 1
+    records_for_reset = [row for row in records(tmp_path)
+                         if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in records_for_reset}
+    assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
+                          'first_click', 'first_idle', 'first_navigation'}
+    assert steps['first_idle']['count'] == 1
+    assert steps['first_navigation']['count'] == 1
+    assert steps['first_navigation']['duration_ms'] >= steps['first_idle']['duration_ms']
+    assert not any(row['event'] == 'table.page_timing'
+                   for row in records(tmp_path))
+    assert all('error' not in row for row in records_for_reset)
 
 
 def test_small_dom_table_does_not_emit_large_reset_diagnostics(page, tmp_path):

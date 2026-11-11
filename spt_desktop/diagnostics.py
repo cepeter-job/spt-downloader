@@ -45,7 +45,8 @@ EVENTS = frozenset({
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
-    'table_reset_step': frozenset({'size_action', 'first_navigation',
+    'table_reset_step': frozenset({'size_action', 'pilot_guard', 'first_lookup',
+        'first_click', 'first_idle', 'first_navigation',
         'previous_rewind', 'total_pre_read'}),
     'update_check_result': frozenset({'started', 'already_pending', 'deferred_active',
         'invalid_build', 'up_to_date', 'update_available', 'unavailable',
