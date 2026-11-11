@@ -571,7 +571,8 @@ jobs:
         run: .venv/Scripts/python.exe build_desktop.py --python-profile "$env:PYTHON_PROFILE" --output dist
       - name: Inventory the actual packaged native bytes and managed worker dependencies
         run: .venv/Scripts/python.exe -m scripts.ci_sbom create dist --python-version "$env:PYTHON_VERSION"
-      - name: Create update.json for this exact commit and run attempt
+      - name: Create update.json only for a trusted main push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: .venv/Scripts/python.exe -m scripts.ci_artifact update-json dist --python-version "$env:PYTHON_VERSION"
       - name: Validate frozen report and record artifact checksums
         run: .venv/Scripts/python.exe -m scripts.ci_artifact write-checksums dist --python-version "$env:PYTHON_VERSION"
@@ -598,7 +599,7 @@ jobs:
           artifact-ids: ${{ steps.upload.outputs.artifact-id }}
           path: ${{ runner.temp }}/artifact-readback
           merge-multiple: true
-      - name: Verify the downloaded bytes and eight-file allowlist
+      - name: Verify the downloaded bytes and context-specific allowlist
         run: >-
           .venv/Scripts/python.exe -m scripts.ci_artifact verify
           "$env:RUNNER_TEMP/artifact-readback" --python-version "$env:PYTHON_VERSION"
