@@ -19,7 +19,10 @@ def verifier():
 
 
 @pytest.fixture
-def artifact(tmp_path):
+def artifact(tmp_path, monkeypatch):
+    # Most synthetic artifact fixtures model an attested, trusted-main push.
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+    monkeypatch.setenv('GITHUB_REF', 'refs/heads/main')
     for name in ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt'):
         (tmp_path / name).write_bytes(b'SYNTHETIC CHECKSUM FIXTURE; NOT A REAL EXECUTABLE')
     (tmp_path / 'build-selftest.json').write_text(json.dumps({
@@ -324,6 +327,49 @@ def test_recomputed_checksums_do_not_authorize_mismatched_distribution_metadata(
     path.write_text(json.dumps(data), encoding='utf-8')
     with pytest.raises(ValueError, match='SBOM'):
         verifier().write_checksums(artifact, '3.14.8')
+
+
+@pytest.mark.parametrize('event,ref', [
+    ('pull_request', 'refs/pull/239/merge'),
+    ('workflow_dispatch', 'refs/heads/main'),
+    ('push', 'refs/heads/feature'),
+])
+def test_untrusted_builds_use_seven_files_and_cannot_generate_update_json(
+        artifact, monkeypatch, event, ref):
+    module = verifier()
+    monkeypatch.setenv('GITHUB_EVENT_NAME', event)
+    monkeypatch.setenv('GITHUB_REF', ref)
+    (artifact / 'update.json').unlink()
+    with pytest.raises(ValueError, match='trusted main push'):
+        module.write_update_json(artifact, '3.14.8')
+    module.write_checksums(artifact, '3.14.8')
+    module.verify(artifact, '3.14.8')
+    assert len((artifact / 'SHA256SUMS.txt').read_text(encoding='ascii').splitlines()) == 6
+    assert not (artifact / 'update.json').exists()
+
+
+@pytest.mark.parametrize('event,ref', [
+    ('pull_request', 'refs/pull/239/merge'),
+    ('workflow_dispatch', 'refs/heads/main'),
+    ('push', 'refs/heads/feature'),
+])
+def test_untrusted_builds_reject_an_injected_update_json(artifact, monkeypatch, event, ref):
+    module = verifier()
+    monkeypatch.setenv('GITHUB_EVENT_NAME', event)
+    monkeypatch.setenv('GITHUB_REF', ref)
+    with pytest.raises(ValueError, match='forbidden'):
+        module.write_checksums(artifact, '3.14.8')
+    with pytest.raises(ValueError, match='forbidden'):
+        module.verify(artifact, '3.14.8')
+
+
+def test_trusted_main_push_requires_update_manifest_even_if_other_bytes_are_valid(artifact):
+    module = verifier()
+    (artifact / 'update.json').unlink()
+    with pytest.raises(ValueError, match='update.json'):
+        module.write_checksums(artifact, '3.14.8')
+    with pytest.raises(ValueError, match='allowlist'):
+        module.verify(artifact, '3.14.8')
 
 
 def test_update_manifest_is_recreated_from_checked_build_identity(artifact):
