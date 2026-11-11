@@ -76,6 +76,19 @@ def persisted(path):
     return json.loads((path / 'preferences.json').read_text(encoding='utf-8'))
 
 
+def test_settings_shows_requested_cache_and_login_copy(settings):
+    root, app, ctl, dialog, path, writes, errors = settings
+    labels = [str(w.cget('text')) for w in widgets(dialog)
+              if w.winfo_class() == 'TLabel']
+    assert 'jumlah cache job (0 = nonaktif)' in labels
+    assert 'Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.' in labels
+    assert not any('Job sukses lama hanya dipangkas' in label for label in labels)
+    assert not any('CAPTCHA/MFA diselesaikan' in label for label in labels)
+    assert not any('Coretax → Satu' in label for label in labels)
+    assert button(dialog, 'bersihkan cache job')
+    assert not writes and not errors
+
+
 def test_dirty_close_defaults_to_return_and_preserves_edits(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     change_browser(dialog)
@@ -429,7 +442,7 @@ def test_manual_prune_previews_then_requires_explicit_confirmation(
                         lambda title, message, **kw: prompts.append((title, message)) or confirmed)
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kw: notices.append((title, message)))
-    button(dialog, 'Pangkas job lama').invoke()
+    button(dialog, 'bersihkan cache job').invoke()
     assert app._manual_prune_busy  # New export cannot begin during preview/delete.
     _pump_manual_prune(root)
     assert calls == (['preview', ('delete', ('1' * 32, '2' * 32))]
@@ -452,7 +465,7 @@ def test_manual_prune_refuses_unsaved_retention_change(settings, monkeypatch):
                         lambda title, message, **kw: notices.append((title, message)))
     monkeypatch.setattr(gui, 'preview_published_jobs',
                         lambda *a, **kw: pytest.fail('No preview before saved settings'))
-    button(dialog, 'Pangkas job lama').invoke()
+    button(dialog, 'bersihkan cache job').invoke()
     assert notices and 'Simpan' in notices[0][0]
     assert not app._manual_prune_busy
     assert app.preferences['keep_jobs'] == 10 and not writes
@@ -482,7 +495,7 @@ def test_incomplete_preview_never_presents_delete_confirmation(settings, monkeyp
                         lambda *a, **kw: pytest.fail('Incomplete preview must not ask confirmation'))
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kw: notices.append((title, message)))
-    button(dialog, 'Pangkas job lama').invoke()
+    button(dialog, 'bersihkan cache job').invoke()
     _pump_manual_prune(root)
     assert calls == ['preview']
     assert len(notices) == 1 and 'belum lengkap' in notices[0][0]
@@ -515,7 +528,7 @@ def test_manual_prune_warns_after_partial_source_removal(settings, monkeypatch):
                         lambda title, message, **kw: warnings.append((title, message)))
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kw: infos.append((title, message)))
-    button(dialog, 'Pangkas job lama').invoke()
+    button(dialog, 'bersihkan cache job').invoke()
     _pump_manual_prune(root)
     assert calls and calls[0]['report'] is True
     assert calls[0]['allowed_ids'] == ('1' * 32,)
