@@ -179,7 +179,8 @@ def test_initial_loading_diagnostics_use_unchanged_owner_selector(
     monkeypatch.setattr(ElementHandle, 'evaluate_handle', capture_owner_expression)
     with driver.diagnostics.session(tmp_path / level, 'worker', level=level) as log:
         result = driver.capture_detail(page)
-        assert log.flush()
+        # OFF deliberately has no background logger thread to flush.
+        assert log.flush() is (level != 'OFF')
     assert result['capture_complete'] and requests == [('GET', DETAIL)]
     assert expressions and all(script == expected for script in expressions)
     assert page.evaluate(
@@ -200,7 +201,8 @@ def test_owned_table_handles_are_disposed_once(routed, tmp_path, monkeypatch, le
     monkeypatch.setattr(driver, '_dispose_table_handle', tracked_dispose)
     with driver.diagnostics.session(tmp_path / level, 'worker', level=level) as log:
         result = driver.capture_detail(page)
-        assert log.flush()
+        # OFF deliberately has no background logger thread to flush.
+        assert log.flush() is (level != 'OFF')
     assert result['capture_complete'] and requests == [('GET', DETAIL)]
     assert disposed
     assert len({id(handle) for handle in disposed}) == len(disposed)
