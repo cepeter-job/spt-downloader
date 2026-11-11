@@ -219,7 +219,7 @@ class App:
         keep = self.preferences['keep_jobs']
         if keep == 0:
             messagebox.showinfo('Pemangkasan nonaktif',
-                'Ubah jumlah job disimpan ke 1–100 lalu Simpan. Nilai 0 menonaktifkan pemangkasan.',
+                'Ubah jumlah cache job ke 1–100 lalu Simpan. Nilai 0 menonaktifkan pemangkasan.',
                 parent=dialog)
             return
         try:
@@ -1193,22 +1193,17 @@ class App:
                   ('Browser',ttk.Combobox(frame,textvariable=browser,values=('msedge','chrome'),state='readonly',width=20)),
                   ('Sumber detail SPT',ttk.Combobox(frame,textvariable=detail_source,
                     values=tuple(DETAIL_SOURCE_LABELS.values()),state='readonly',width=25)),
-                  ('Jumlah job disimpan (0 = nonaktif)',ttk.Spinbox(frame,from_=0,to=100,
+                  ('jumlah cache job (0 = nonaktif)',ttk.Spinbox(frame,from_=0,to=100,
                     textvariable=keep_jobs,width=8))]
         for row,(label,widget) in enumerate(controls):
             ttk.Label(frame,text=label).grid(row=row,column=0,sticky='w',padx=(0,12),pady=7)
             widget.grid(row=row,column=1,sticky='ew',pady=7)
         hidden_button=ttk.Checkbutton(frame,text='jalankan proses sedot di background',variable=hidden)
         hidden_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Job sukses lama hanya dipangkas setelah hasil COMPLETE\n'
-                  'diterbitkan dan terverifikasi. Default 10 job terakhir.\n'
-                  'Job PARTIAL/gagal tetap disimpan. Pruning menghapus capture\n'
-                  'mentah dan checkpoint lama untuk rebuild offline.',
-                  wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,text='Login otomatis melalui Coretax → Satu. Akun kosong memakai login manual.\nPassword tersimpan tidak ditampilkan. Kosongkan untuk mempertahankannya.\nSimpan perubahan, lalu pilih Mulai unduh. CAPTCHA/MFA diselesaikan di browser.',wraplength=520).grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
-        buttons=ttk.Frame(frame);buttons.grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=10,column=0,columnspan=2,sticky='w',pady=8)
-        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=11,column=0,columnspan=2,sticky='w',pady=(4,0))
+        ttk.Label(frame,text='Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.',wraplength=520).grid(row=6,column=0,columnspan=2,sticky='w',pady=8)
+        buttons=ttk.Frame(frame);buttons.grid(row=7,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Label(frame,textvariable=self._credential_status,wraplength=520).grid(row=8,column=0,columnspan=2,sticky='w',pady=8)
+        ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=9,column=0,columnspan=2,sticky='w',pady=(4,0))
         traces=[]
         decision_dialog = None
         pending_preferences = False
@@ -1320,7 +1315,7 @@ class App:
                     self.controller.keep_jobs=preferences['keep_jobs']
             except ValueError:
                 messagebox.showerror('Pengaturan belum disimpan',
-                    'Periksa akun, password, dan jumlah job disimpan (0–100). Akun kosong memakai login manual.',parent=dialog)
+                    'Periksa akun, password, dan jumlah cache job (0–100). Akun kosong memakai login manual.',parent=dialog)
                 return False
             except OSError as error:
                 diagnostics.record('settings.failed', error=error, level='ERROR')
@@ -1365,7 +1360,7 @@ class App:
             self._credential_status.set('Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai unduh.')
         save_button=ttk.Button(buttons,text='Simpan',command=save);save_button.pack(side='left',padx=(0,8))
         remove_button=ttk.Button(buttons,text=copy_text('settings.delete'),command=remove);remove_button.pack(side='left',padx=(0,8))
-        prune_button=ttk.Button(buttons,text='Pangkas job lama',
+        prune_button=ttk.Button(buttons,text='bersihkan cache job',
             command=lambda: self._prune_old_jobs(dialog,dirty))
         prune_button.pack(side='left',padx=(0,8))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
