@@ -11,8 +11,32 @@ from spt_desktop.runtime import PYTHON_PROFILES
 
 
 BASE_PAYLOAD = ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json')
-PAYLOAD = BASE_PAYLOAD + ('build-info.json', 'distribution-sbom.json')
+UPDATE_JSON = 'update.json'
+LEGACY_PAYLOAD = BASE_PAYLOAD + ('build-info.json', 'distribution-sbom.json')
+PAYLOAD = LEGACY_PAYLOAD + (UPDATE_JSON,)
 MANIFEST = 'SHA256SUMS.txt'
+
+
+def trusted_main_push():
+    return (os.environ.get('GITHUB_EVENT_NAME') == 'push'
+            and os.environ.get('GITHUB_REF') == 'refs/heads/main')
+
+
+def selected_payload(folder):
+    """Require eight files on trusted-main CI, seven on PR/dispatch CI.
+
+    Outside GitHub Actions, accept either exact format so historical artifacts
+    can still be inspected locally without forge event variables.
+    """
+    folder = Path(folder)
+    update = folder / UPDATE_JSON
+    if 'GITHUB_EVENT_NAME' in os.environ or 'GITHUB_REF' in os.environ:
+        with_update = trusted_main_push()
+        if not with_update and (update.exists() or update.is_symlink()):
+            raise ValueError('update.json is forbidden outside a trusted main push.')
+    else:
+        with_update = update.exists() or update.is_symlink()
+    return PAYLOAD if with_update else LEGACY_PAYLOAD
 
 
 def checked_report(folder, python_version):
@@ -68,6 +92,28 @@ def write_build_info(folder, python_version):
     path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
 
 
+def checked_update_json(folder, identity):
+    path = Path(folder) / UPDATE_JSON
+    if (path.is_symlink() or not path.is_file() or path.stat().st_size > 4096):
+        raise ValueError('Distribution update.json is missing, linked or oversized.')
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if not is_valid_build_info(data) or data != identity:
+        raise ValueError('Distribution update.json does not match the immutable build identity.')
+    return data
+
+
+def write_update_json(folder, python_version):
+    if not trusted_main_push():
+        raise ValueError('update.json may only be generated on a trusted main push.')
+    if python_version not in PYTHON_PROFILES.values():
+        raise ValueError('Update manifest requires a reviewed Python version.')
+    identity = checked_build_info(folder)
+    path = Path(folder) / UPDATE_JSON
+    if path.exists() or path.is_symlink():
+        raise ValueError('Refusing to overwrite an existing update.json destination.')
+    path.write_text(json.dumps(identity, indent=2) + '\n', encoding='utf-8')
+
+
 def checked_distribution(folder):
     from scripts.ci_sbom import validate_sbom
 
@@ -84,7 +130,7 @@ def checked_distribution(folder):
 
 def checksums(folder):
     lines = []
-    for name in PAYLOAD:
+    for name in selected_payload(folder):
         with (folder / name).open('rb') as stream:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         lines.append(f'{digest}  {name}\n')
@@ -94,7 +140,9 @@ def checksums(folder):
 def write_checksums(folder, python_version):
     folder = Path(folder)
     checked_report(folder, python_version)
-    checked_distribution(folder)
+    identity = checked_distribution(folder)
+    if UPDATE_JSON in selected_payload(folder):
+        checked_update_json(folder, identity)
     (folder / MANIFEST).write_text(checksums(folder), encoding='ascii')
 
 
@@ -102,10 +150,13 @@ def verify(folder, python_version):
     folder = Path(folder)
     # Periksa isi arsip sebelum hash: manifest yang benar tidak mengesahkan
     # berkas tambahan seperti profil browser atau log pribadi.
-    if {path.name for path in folder.iterdir()} != set(PAYLOAD) | {MANIFEST}:
-        raise ValueError('Downloaded artifact differs from the exact seven-file allowlist.')
+    payload = selected_payload(folder)
+    if {path.name for path in folder.iterdir()} != set(payload) | {MANIFEST}:
+        raise ValueError('Downloaded artifact differs from the exact context-specific allowlist.')
     checked_report(folder, python_version)
-    checked_distribution(folder)
+    identity = checked_distribution(folder)
+    if UPDATE_JSON in payload:
+        checked_update_json(folder, identity)
     path = folder / MANIFEST
     if path.is_symlink() or not path.is_file() or path.read_text(encoding='ascii') != checksums(folder):
         raise ValueError('Artifact SHA256SUMS is incomplete or does not match the downloaded bytes.')
@@ -113,11 +164,12 @@ def verify(folder, python_version):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('build-info', 'write-checksums', 'verify'))
+    parser.add_argument('command', choices=('build-info', 'update-json', 'write-checksums', 'verify'))
     parser.add_argument('folder', type=Path)
     parser.add_argument('--python-version', required=True)
     args = parser.parse_args(argv)
-    functions = {'build-info': write_build_info, 'write-checksums': write_checksums, 'verify': verify}
+    functions = {'build-info': write_build_info, 'update-json': write_update_json,
+                 'write-checksums': write_checksums, 'verify': verify}
     functions[args.command](args.folder, args.python_version)
     print('Completed ' + args.command + ' for Python ' + args.python_version)
 
