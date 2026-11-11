@@ -851,3 +851,48 @@ def test_update_check_diagnostics_reject_objects_and_out_of_range_duration(tmp_p
     assert all('duration_ms' not in row for row in events)
     assert all('update_check_result' not in row for row in events[:5])
     assert all('update_check_trigger' not in row for row in events[:5])
+
+@pytest.mark.parametrize('step', [
+    'size_action', 'first_navigation', 'previous_rewind', 'total_pre_read',
+])
+def test_large_dom_reset_diagnostic_only_emits_fixed_bounded_metadata(tmp_path, step):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_DOM_RESET_MARKER'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.reset_timing', table_reset_step=step, duration_ms=120000.1234,
+                 count=7, form_ordinal=4, table_ordinal=3,
+                 url=private, response=private, marker=private, request=private,
+                 headers=private, body=private)
+        d.record('table.reset_timing', table_reset_step=private,
+                 duration_ms=float('inf'), count=-1, source_total=private,
+                 form_ordinal=True, table_ordinal=private)
+        assert log.flush()
+    entries = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
+    assert len(entries) == 2
+    assert entries[0]['table_reset_step'] == step
+    assert entries[0]['duration_ms'] == 120000.12
+    assert entries[0]['count'] == 7
+    assert entries[0]['form_ordinal'] == 4 and entries[0]['table_ordinal'] == 3
+    assert 'table_reset_step' not in entries[1]
+    assert 'duration_ms' not in entries[1]
+    assert 'count' not in entries[1]
+    assert 'form_ordinal' not in entries[1]
+    assert 'table_ordinal' not in entries[1]
+    assert private not in json.dumps(entries)
+
+
+def test_large_dom_reset_diagnostic_does_not_stringify_untrusted_fields(tmp_path):
+    d = diagnostics()
+
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Reset diagnostics cannot stringify private objects')
+
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.reset_timing', table_reset_step=Untrusted(),
+                 duration_ms=-1, count=True, request=Untrusted())
+        assert log.flush()
+    event, = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
+    assert 'table_reset_step' not in event
+    assert 'duration_ms' not in event
+    assert 'count' not in event

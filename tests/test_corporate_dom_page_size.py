@@ -4,7 +4,9 @@ from math import ceil
 import pytest
 
 import coretax_browser as driver
+from spt_desktop import diagnostics as d
 from support_isolated_browser import browser as browser, context as context
+from test_diagnostics import records
 
 
 CAPTION = 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'
@@ -184,3 +186,83 @@ def test_large_page_capture_stop_after_first_move_propagates(page):
         capture(page, check_cancel=stop)
     assert page.evaluate('sizeChanges') == [500]
     assert page.evaluate('moves') == 1
+
+
+def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clicks(
+        page, tmp_path):
+    table = fixture(page, total=601, selected=500)
+    # Synthetic page: First legitimately lands on page 3 and the existing
+    # inspected Previous fallback must restore page 1. Never skip source pages.
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        prev.textContent = 'Previous';
+        first.after(prev);
+        const previousDraw = window.draw;
+        window.draw = () => { previousDraw(); prev.disabled = at === 0; };
+        first.onclick = () => { moves++; at = 2; draw(); };
+        prev.onclick = () => { moves++; at--; draw(); };
+        at = 4;
+        draw();
+    }""")
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(captured, 601)
+    assert captured['pages'] == 2
+    # First (one), Previous (two), Next (one) are the original required actions.
+    assert page.evaluate('moves') == 4
+    rows = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in rows}
+    assert set(steps) == {'size_action', 'first_navigation',
+                          'previous_rewind', 'total_pre_read'}
+    assert steps['first_navigation']['count'] == 1
+    assert steps['previous_rewind']['count'] == 2
+    assert steps['previous_rewind']['duration_ms'] > 0
+    assert steps['total_pre_read']['duration_ms'] >= steps['previous_rewind']['duration_ms']
+    assert all(row['form_ordinal'] == 1 and row['table_ordinal'] == 3 for row in rows)
+    assert all(set(row).isdisjoint({'url', 'body', 'marker', 'table_text'}) for row in rows)
+
+
+def test_small_dom_table_does_not_emit_large_reset_diagnostics(page, tmp_path):
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 100, max_page_size=100)
+        assert log.flush()
+    assert_rows(captured, 101)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.reset_timing']
+
+
+def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapsed(
+        page, tmp_path):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const drawOriginal = window.draw;
+        window.draw = () => { drawOriginal(); prev.disabled = at === 0; };
+        first.onclick = () => { moves++; at = 2; draw(); };
+        prev.onclick = () => { moves++; at--; draw(); };
+        at = 4;
+        draw();
+    }""")
+
+    def cancel_after_first_previous():
+        if page.evaluate('moves') >= 2:
+            raise driver.CaptureCancelled('synthetic stop')
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled):
+            driver.capture_table(page, table, 3, 100,
+                                 check_cancel=cancel_after_first_previous,
+                                 max_page_size=500)
+        assert log.flush()
+    assert page.evaluate('moves') == 2
+    timing = [row for row in records(tmp_path)
+              if row['event'] == 'table.reset_timing']
+    assert any(row['table_reset_step'] == 'previous_rewind'
+               and row['count'] == 1 for row in timing)
+    assert all(row['duration_ms'] >= 0 for row in timing)

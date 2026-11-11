@@ -39,12 +39,14 @@ EVENTS = frozenset({
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
-    'table.initial_loading',
+    'table.initial_loading', 'table.reset_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed', 'update.check',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'table_reset_step': frozenset({'size_action', 'first_navigation',
+        'previous_rewind', 'total_pre_read'}),
     'update_check_result': frozenset({'started', 'already_pending', 'deferred_active',
         'invalid_build', 'up_to_date', 'update_available', 'unavailable',
         'notice_deferred'}),

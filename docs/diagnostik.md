@@ -166,6 +166,54 @@ Tahap ini belum memisahkan kronologi request/response maupun membuktikan
 pilihan ukuran halaman native. Live acceptance membutuhkan run yang cocok
 dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 
+### Pembagian waktu reset tabel DOM besar (#161)
+
+`table.reset_timing` hanya diterbitkan untuk tabel dengan batas
+`max_page_size >= 250` (jalur besar L3-B), tanpa pembacaan DOM tambahan.
+`table_reset_step` berupa kategori tetap:
+
+- `size_action`: satu pemanggilan pemilihan ukuran halaman yang **sudah ada**,
+  termasuk menunggu idle jika ukuran berubah; `count=1` berarti pemanggilan,
+  bukan jumlah perubahan atau request.
+- `first_navigation`: pencarian tombol First, klik jika tersedia, dan
+  `wait_idle` aslinya; `count=0/1` berarti jumlah klik First yang
+  berhasil diajukan.
+- `previous_rewind`: seluruh loop Previous, verifikasi state,
+  `wait_idle` serta pemeriksaan limit yang sudah ada. `count` adalah
+  jumlah klik Previous yang berhasil diajukan, **bukan** bukti respons
+  server atau total halaman; event tetap dicatat pada Stop/exception.
+- `total_pre_read`: total waktu persiapan sebelum memulai pembacaan
+  sel halaman pertama (`TABLE_JS`). Tidak termasuk biaya snapshot
+  pertama, yang sudah tercatat sebagai `table.page_timing:initial`.
+
+Semua catatan hanya membawa `form_ordinal`, `table_ordinal`,
+`duration_ms` dan `count` yang sudah lolos sanitizer. Tidak ada label
+paginator, isi/identitas baris, URL, request atau nama dokumen.
+Durasi berasal dari boundary host/Playwright dan tidak dengan
+sendirinya membuktikan waktu jaringan. Event tiap tahap tidak boleh
+dijumlahkan begitu saja dengan `total_pre_read`, karena total mencakup
+semua tahap. Penyebaran event hanya pada large-table candidate mencegah
+log spam untuk tabel kecil.
+
+**Alasan penambahan:** pada 11 November 2026 build `8726aae5`, log
+mencatat `first_idle_complete` di 15:01:19 WIB tetapi
+`table.page_timing:initial` baru di 15:03:20 WIB (jeda ~121 detik).
+Tidak ada event di antara keduanya; loop Previous memang dijalankan
+di area tersebut tetapi jumlah klik dan waktunya **belum terbukti**.
+Pengukuran baru dibuat untuk membedakan biaya reset dari pembacaan DOM,
+tanpa menaikkan batas waktu 180 detik, tanpa mengubah request/klik,
+dan tanpa menerima baris yang tidak terverifikasi. Untuk pembuktian
+diperlukan operator-run build yang cocok dan hasil terminal tetap jujur.
+
+Pada penolakan `table.elapsed_budget` setelah aksi halaman, event yang sama
+sekarang dapat menyertakan durasi host untuk `duration_ms` seluruh aksi,
+`table_click_ms`, `table_poll_ms`, `table_idle_ms`, dan
+`table_dom_ms` **hanya bila tahap itu sudah dicapai**. Kategori
+`before_next_click` dapat mencatat durasi persiapan advance cursor
+yang dihentikan sebelum klik. Field tambahan memakai sanitizer numerik
+yang sudah ada, tanpa response, marker, URL, atau perubahan keputusan
+PARTIAL. Ketiadaan field bukan berarti durasi nol.
+
 `table.initial_loading` (PR #235) merekam tahapan persiapan DOM pertama:
 `size_complete`, `size_idle_timeout`, `first_idle_complete`, dan
 `first_idle_timeout`, ordinal form/tabel, durasi serta hitungan lifecycle
