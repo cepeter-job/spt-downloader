@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import threading
+import time
 import webbrowser
 from pathlib import Path
 import tkinter as tk
@@ -165,6 +166,31 @@ def save_preferences(root,data):
     temporary.replace(root/'preferences.json')
 
 
+def _record_update_check(outcome, manual, duration_ms=None):
+    """Record only fixed update outcomes and duration, never response metadata."""
+    fields = {'update_check_result': outcome,
+              'update_check_trigger': 'manual' if manual else 'automatic'}
+    if duration_ms is not None:
+        fields['duration_ms'] = max(0.0, duration_ms)
+    diagnostics.record('update.check', **fields)
+
+
+def _fetch_update_with_logging(installed, manual):
+    """Isolate network work from Tk; never log the URL, manifest or exception."""
+    began = time.monotonic()
+    try:
+        notice = update_notice.fetch_notice(update_notice.MANIFEST_URL, installed)
+    except Exception:
+        # Preserve the original fail-silent contract for network/format failures.
+        result = ('unavailable', None)
+        outcome = 'unavailable'
+    else:
+        result = ('ok', notice)
+        outcome = 'update_available' if notice is not None else 'up_to_date'
+    _record_update_check(outcome, manual, (time.monotonic() - began) * 1000)
+    return result
+
+
 class App:
     def __init__(self,root,workspace,controller=None):
         self.root=root;self.workspace=Path(workspace)
@@ -196,6 +222,8 @@ class App:
         self._update_results = queue.Queue(maxsize=1)
         self._update_seen = set()
         self._update_dialog = None
+        self._update_deferred_logged = False
+        self._update_notice_deferred_logged = False
         root.title(copy_text('app.title'))
         self.view = MainView(root, year_default=str(date.today().year),
                             on_start=self.start, on_stop=self.stop,
@@ -222,9 +250,16 @@ class App:
     def check_updates(self, manual=False):
         """Fetch public release metadata off Tk's thread, never touching Coretax."""
         self._update_after = None
-        if self._disposed or self._closing or self._update_pending:
+        if self._disposed or self._closing:
+            return
+        if self._update_pending:
+            _record_update_check('already_pending', manual)
             return
         if self.controller.active:
+            # Automatic retries run every 15s; emit only one deferral per job.
+            if manual or not self._update_deferred_logged:
+                _record_update_check('deferred_active', manual)
+            self._update_deferred_logged = True
             if manual:
                 messagebox.showinfo('Pekerjaan sedang berjalan',
                     'Pemeriksaan pembaruan tersedia setelah pekerjaan selesai.',
@@ -232,24 +267,19 @@ class App:
             else:
                 self._update_after = self.root.after(15000, self.check_updates)
             return
+        self._update_deferred_logged = False
         installed = read_build_info()
         if installed is None:
+            _record_update_check('invalid_build', manual)
             if manual:
                 messagebox.showinfo('Identitas build tidak tersedia',
                     'Versi aplikasi tidak dapat diverifikasi.', parent=self._settings_dialog or self.root)
             return
         self._update_pending = True
+        _record_update_check('started', manual)
 
         def worker():
-            try:
-                result = ('ok', update_notice.fetch_notice(update_notice.MANIFEST_URL, installed))
-            except update_notice.UpdateLookupError:
-                result = ('unavailable', None)
-            except Exception:
-                # No exception text, URL, local path, credential, or taxpayer
-                # information is allowed into update UI or diagnostics.
-                result = ('unavailable', None)
-            self._update_results.put(result)
+            self._update_results.put(_fetch_update_with_logging(installed, manual))
 
         threading.Thread(target=worker, daemon=True, name='spt-update-check').start()
         self._update_after = self.root.after(200, lambda: self._receive_update(manual))
@@ -267,10 +297,14 @@ class App:
         if notice is not None and (self.controller.active or self._interaction is not None
                                    or self._settings_dialog is not None and not manual):
             # Do not interrupt active work, a source-selection dialog, or Settings.
+            if not self._update_notice_deferred_logged:
+                _record_update_check('notice_deferred', manual)
+            self._update_notice_deferred_logged = True
             self._update_results.put((state, notice))
             self._update_pending = True
             self._update_after = self.root.after(2000, lambda: self._receive_update(manual))
             return
+        self._update_notice_deferred_logged = False
         if state != 'ok':
             if manual:
                 messagebox.showinfo('Pemeriksaan tidak tersedia',
