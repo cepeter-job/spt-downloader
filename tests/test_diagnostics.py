@@ -804,6 +804,54 @@ def test_source_and_frozen_diagnostic_selftest_exercises_auth_categories(tmp_pat
     assert result['submitted'] is False
 
 
+
+@pytest.mark.parametrize(('result', 'trigger'), [
+    ('started', 'automatic'), ('already_pending', 'manual'),
+    ('deferred_active', 'automatic'), ('invalid_build', 'manual'),
+    ('up_to_date', 'automatic'), ('update_available', 'manual'),
+    ('unavailable', 'automatic'), ('notice_deferred', 'automatic'),
+])
+def test_update_check_diagnostics_keep_only_bounded_safe_fields(tmp_path, result, trigger):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_UPDATE_URL_OR_TOKEN'
+    with d.session(tmp_path, 'gui') as log:
+        d.record('update.check', update_check_result=result, update_check_trigger=trigger,
+                 duration_ms=123.456, url=secret, manifest=secret, commit=secret,
+                 run_id=secret, exception=ValueError(secret), message=secret)
+        d.record('update.check', update_check_result=secret, update_check_trigger=secret,
+                 duration_ms=float('nan'), body=secret)
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'update.check']
+    assert len(events) == 2
+    assert events[0]['update_check_result'] == result
+    assert events[0]['update_check_trigger'] == trigger
+    assert events[0]['duration_ms'] == 123.46
+    assert 'update_check_result' not in events[1]
+    assert 'update_check_trigger' not in events[1]
+    assert 'duration_ms' not in events[1]
+    assert secret not in json.dumps(events)
+
+
+def test_update_check_diagnostics_reject_objects_and_out_of_range_duration(tmp_path):
+    d = diagnostics()
+
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Update diagnostics must not stringify unknown data')
+
+    with d.session(tmp_path, 'gui') as log:
+        for bad in (Untrusted(), True, None, 42, 'PRIVATE'):
+            d.record('update.check', update_check_result=bad, update_check_trigger=bad,
+                     duration_ms=-1, extra=bad)
+        d.record('update.check', update_check_result='up_to_date',
+                 update_check_trigger='automatic', duration_ms=604_800_001)
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'update.check']
+    assert len(events) == 6
+    assert all('duration_ms' not in row for row in events)
+    assert all('update_check_result' not in row for row in events[:5])
+    assert all('update_check_trigger' not in row for row in events[:5])
+
 @pytest.mark.parametrize('step', [
     'size_action', 'first_navigation', 'previous_rewind', 'total_pre_read',
 ])

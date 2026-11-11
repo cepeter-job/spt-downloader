@@ -44,6 +44,42 @@ Pesan exception, chain, locals, baris kode, path lengkap, URL, NPWP, tahun/nama 
 
 `phase.completed` berarti fungsi keluar normal, **bukan** bukti hasil pajak COMPLETE. Gunakan `worker.finished` yang berasal dari rekonsiliasi controller, beserta Audit hasil untuk lingkup data. Error yang sudah ditangani sebagai PARTIAL tetap mempunyai event diagnostik tanpa mengubah status bisnis.
 
+## Diagnostik pemeriksaan pembaruan
+
+`update.check` merekam status pemeriksaan **manifest publik** Cloudflare Worker
+pada log **GUI**, baik ketika dijadwalkan otomatis maupun saat pengguna
+memilih **Cek pembaruan**. Field `update_check_trigger` hanya `automatic`
+atau `manual`. Field `update_check_result` dibatasi pada kategori berikut:
+
+- `started`: identitas build lokal tersedia dan pekerjaan pemeriksaan
+  asinkron dijadwalkan; belum berarti jaringan berhasil.
+- `up_to_date`: respons valid tidak mengumumkan build yang lebih baru
+  daripada yang terpasang.
+- `update_available`: manifest valid mengumumkan run ID yang lebih baru;
+  bukan jaminan tanda tangan, review, atau kelayakan instalasi.
+- `unavailable`: jaringan, HTTP, skema/manifest, atau pemanggilan gagal;
+  tidak ada teks exception atau alamat yang dicatat.
+- `invalid_build`: metadata build terpasang tidak bisa diverifikasi,
+  sehingga aplikasi **tidak** menghubungi Worker.
+- `deferred_active`: pemeriksaan ditunda ketika tugas SPT masih aktif;
+  satu event saja untuk rangkaian retry otomatis per pekerjaan.
+- `already_pending`: permintaan baru diabaikan karena pemeriksaan
+  sebelumnya belum selesai.
+- `notice_deferred`: respons memuat manifest baru, tetapi dialog
+  pemberitahuan menunggu selesainya pekerjaan/interaksi/Pengaturan;
+  event tidak diulang pada setiap polling dialog.
+
+Untuk hasil yang berasal dari jaringan, `duration_ms` mengukur durasi
+panggilan pemeriksaan di thread latar, **tidak** termasuk penjadwalan Tk,
+penundaan dialog, atau navigasi browser. Tidak ada durasi pada event yang
+hanya memeriksa status UI. Bahkan jika `update_available` tercatat,
+aplikasi **tidak otomatis mengunduh atau memasang** executable. Log tidak
+memuat URL Worker/OneDrive, respons/manifest mentah, commit atau run ID
+pembaruan yang diumumkan, token, data pajak, atau error message. Metadata
+build terpasang yang sudah diizinkan oleh schema log tetap tersedia pada
+envelope umum. `SPT_LOG_LEVEL=OFF` menonaktifkan event ini, dan ketiadaan
+event pada log lama tidak membuktikan bahwa update check tidak dijalankan.
+
 ## Diagnostik sumber MPN
 
 `mpn.source_rejected` menyimpan penolakan sumber pertama dengan tahap tetap
