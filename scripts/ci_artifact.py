@@ -11,7 +11,8 @@ from spt_desktop.runtime import PYTHON_PROFILES
 
 
 BASE_PAYLOAD = ('SPTDownloader.exe', 'LICENSE.txt', 'README.txt', 'build-selftest.json')
-PAYLOAD = BASE_PAYLOAD + ('build-info.json', 'distribution-sbom.json')
+UPDATE_JSON = 'update.json'
+PAYLOAD = BASE_PAYLOAD + ('build-info.json', 'distribution-sbom.json', UPDATE_JSON)
 MANIFEST = 'SHA256SUMS.txt'
 
 
@@ -68,6 +69,26 @@ def write_build_info(folder, python_version):
     path.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
 
 
+def checked_update_json(folder, identity):
+    path = Path(folder) / UPDATE_JSON
+    if (path.is_symlink() or not path.is_file() or path.stat().st_size > 4096):
+        raise ValueError('Distribution update.json is missing, linked or oversized.')
+    data = json.loads(path.read_text(encoding='utf-8'))
+    if not is_valid_build_info(data) or data != identity:
+        raise ValueError('Distribution update.json does not match the immutable build identity.')
+    return data
+
+
+def write_update_json(folder, python_version):
+    if python_version not in PYTHON_PROFILES.values():
+        raise ValueError('Update manifest requires a reviewed Python version.')
+    identity = checked_build_info(folder)
+    path = Path(folder) / UPDATE_JSON
+    if path.exists() or path.is_symlink():
+        raise ValueError('Refusing to overwrite an existing update.json destination.')
+    path.write_text(json.dumps(identity, indent=2) + '\n', encoding='utf-8')
+
+
 def checked_distribution(folder):
     from scripts.ci_sbom import validate_sbom
 
@@ -94,7 +115,8 @@ def checksums(folder):
 def write_checksums(folder, python_version):
     folder = Path(folder)
     checked_report(folder, python_version)
-    checked_distribution(folder)
+    identity = checked_distribution(folder)
+    checked_update_json(folder, identity)
     (folder / MANIFEST).write_text(checksums(folder), encoding='ascii')
 
 
@@ -103,9 +125,10 @@ def verify(folder, python_version):
     # Periksa isi arsip sebelum hash: manifest yang benar tidak mengesahkan
     # berkas tambahan seperti profil browser atau log pribadi.
     if {path.name for path in folder.iterdir()} != set(PAYLOAD) | {MANIFEST}:
-        raise ValueError('Downloaded artifact differs from the exact seven-file allowlist.')
+        raise ValueError('Downloaded artifact differs from the exact eight-file allowlist.')
     checked_report(folder, python_version)
-    checked_distribution(folder)
+    identity = checked_distribution(folder)
+    checked_update_json(folder, identity)
     path = folder / MANIFEST
     if path.is_symlink() or not path.is_file() or path.read_text(encoding='ascii') != checksums(folder):
         raise ValueError('Artifact SHA256SUMS is incomplete or does not match the downloaded bytes.')
@@ -113,11 +136,12 @@ def verify(folder, python_version):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('build-info', 'write-checksums', 'verify'))
+    parser.add_argument('command', choices=('build-info', 'update-json', 'write-checksums', 'verify'))
     parser.add_argument('folder', type=Path)
     parser.add_argument('--python-version', required=True)
     args = parser.parse_args(argv)
-    functions = {'build-info': write_build_info, 'write-checksums': write_checksums, 'verify': verify}
+    functions = {'build-info': write_build_info, 'update-json': write_update_json,
+                 'write-checksums': write_checksums, 'verify': verify}
     functions[args.command](args.folder, args.python_version)
     print('Completed ' + args.command + ' for Python ' + args.python_version)
 
