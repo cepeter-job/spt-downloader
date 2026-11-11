@@ -122,7 +122,10 @@ def _native_panel(page, view, tab, caption, record, check_cancel):
 
 
 def _turn_grid(page, table, max_pages, check_cancel):
-    from coretax_browser import _check_cancel, _click_table_paginator, wait_idle
+    from coretax_browser import (
+        _check_cancel, wait_idle, NATIVE_PAGINATOR_INSPECT_JS,
+        NATIVE_PAGINATOR_CLICK_JS,
+    )
     from spt_desktop import diagnostics
     if type(max_pages) is not int or max_pages <= 0:
         return False
@@ -133,12 +136,13 @@ def _turn_grid(page, table, max_pages, check_cancel):
     if owner is None:
         return False
 
-    # Aggregate across the owned grid; never emit per-page request/DOM data.
-    # Capture the clock separately from `time.monotonic` used by real deadlines.
-    # Instrumentation cannot change clicks, retries, Stop or admission.
+    # Keep the original table owner and marker deadlines. Per-page control
+    # inspection now takes one owned renderer RPC; clicking takes one more.
+    # Only fixed timing categories are logged; marker text never leaves memory.
     steps = {step: [0.0, 0] for step in (
-        'reset_click', 'reset_marker_wait', 'reset_overlay_wait',
-        'advance_click', 'advance_marker_wait', 'advance_overlay_wait')}
+        'reset_probe', 'reset_click', 'reset_marker_wait', 'reset_overlay_wait',
+        'advance_probe', 'advance_click', 'advance_marker_wait',
+        'advance_overlay_wait')}
     wall_start = _paginator_clock()
 
     def timed(step, action):
@@ -149,18 +153,19 @@ def _turn_grid(page, table, max_pages, check_cancel):
             steps[step][0] += (_paginator_clock() - began) * 1000
             steps[step][1] += 1
 
-    def advance(control, state, direction):
-        if control.count() != 1:
+    def inspect(selector, direction):
+        # The owned p-table must remain connected and unambiguous. Do not
+        # re-resolve against the document or infer a page from business rows.
+        return timed(direction + '_probe',
+                     lambda: owner.evaluate(NATIVE_PAGINATOR_INSPECT_JS, selector))
+
+    def advance(state, selector, direction):
+        _check_cancel(check_cancel)
+        clicked = timed(direction + '_click',
+                        lambda: owner.evaluate(NATIVE_PAGINATOR_CLICK_JS,
+                                               {'selector': selector, 'marker': state}))
+        if clicked is not True:
             return False
-        handle = control.element_handle()
-        try:
-            try:
-                timed(direction + '_click',
-                      lambda: _click_table_paginator(handle, owner, check_cancel))
-            except RuntimeError:
-                return False
-        finally:
-            handle.dispose()
 
         def marker_change():
             deadline = time.monotonic() + 30
@@ -182,26 +187,36 @@ def _turn_grid(page, table, max_pages, check_cancel):
         resets = set()
         for _ in range(max_pages):
             _check_cancel(check_cancel)
-            previous = table.locator(previous_selector)
-            if not previous.count():
+            previous = inspect(previous_selector, 'reset')
+            if previous.get('status') == 'absent':
                 break
-            state = marker.inner_text()
-            if state in resets or not advance(previous, state, 'reset'):
+            if previous.get('status') != 'ready' or type(previous.get('marker')) is not str:
+                return False
+            state = previous['marker']
+            if state in resets or not advance(state, previous_selector, 'reset'):
                 return False
             resets.add(state)
-        if table.locator(previous_selector).count():
+        # The reset must demonstrably reach the first page; no bounded
+        # fallback can treat a remaining Previous control as complete.
+        _check_cancel(check_cancel)
+        previous = inspect(previous_selector, 'reset')
+        if previous.get('status') != 'absent':
             return False
+
         seen = set()
         for ordinal in range(max_pages):
             _check_cancel(check_cancel)
-            state = marker.inner_text()
+            next_page = inspect(next_selector, 'advance')
+            if (next_page.get('status') not in ('ready', 'absent')
+                    or type(next_page.get('marker')) is not str):
+                return False
+            state = next_page['marker']
             if state in seen:
                 return False
             seen.add(state)
-            next_button = table.locator(next_selector)
-            if not next_button.count():
+            if next_page['status'] == 'absent':
                 return True
-            if ordinal + 1 >= max_pages or not advance(next_button, state, 'advance'):
+            if ordinal + 1 >= max_pages or not advance(state, next_selector, 'advance'):
                 return False
         return False
     finally:
@@ -213,14 +228,14 @@ def _turn_grid(page, table, max_pages, check_cancel):
                 diagnostics.record('native.paginator_timing',
                                    native_paginator_step=step, duration_ms=duration,
                                    count=count)
-        # Locator checks/other synchronous host work stay separate from the
-        # click, marker poll and overlay waits; a residual is not "network time".
+        # Residual covers non-probe host checks and accounting, not network.
         diagnostics.record('native.paginator_timing',
                            native_paginator_step='other',
                            duration_ms=max(0.0, wall_ms - attributed_ms), count=1)
         diagnostics.record('native.paginator_timing',
                            native_paginator_step='total', duration_ms=wall_ms,
                            count=1)
+
 
 _L1D_OMISSION_SHAPE = '''table => {
     if(!table.isConnected || table.tBodies.length!==1)return false;
