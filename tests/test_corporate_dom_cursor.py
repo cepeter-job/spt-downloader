@@ -328,3 +328,24 @@ def test_renderer_timing_does_not_extend_terminal_or_generic_reply_shapes(contex
     cursor.dispose()
     owner.dispose()
     page.close()
+
+
+def test_expired_large_cursor_logs_bounded_advance_time_without_new_click(
+        context, monkeypatch, tmp_path):
+    page = context.new_page()
+    page.route('**/*', lambda route: route.abort())
+    table = fixture(page, total=601, selected=250)
+    monkeypatch.setattr(driver, 'TABLE_CAPTURE_BUDGET_SECONDS', 0)
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 3, 1000, max_page_size=250)
+        assert log.flush()
+    assert not captured['complete'] and captured['pages'] == 1
+    assert captured['body_row_count'] == 250
+    assert page.evaluate('moves') == 0
+    rows = [row for row in records(tmp_path) if row['event'] == 'table.elapsed_budget']
+    assert len(rows) == 1
+    assert rows[0]['table_elapsed_stage'] == 'before_next_click'
+    assert type(rows[0]['duration_ms']) in (int, float)
+    assert rows[0]['duration_ms'] >= 0
+    assert all('url' not in row and 'body' not in row for row in rows)
+    page.close()
