@@ -1,14 +1,20 @@
 """Windows Tk notification tests; network and browser launch are stubbed."""
 import tkinter as tk
 
+import pytest
+
 from spt_desktop import app as gui
 from spt_desktop import update_notice
 from support_gui import Controller, button, widgets
 
 
-def test_update_button_does_not_access_coretax_or_browser(tmp_path, monkeypatch):
+def test_check_updates_without_valid_build_does_not_fetch_or_open_browser(tmp_path, monkeypatch):
     notices = []
     monkeypatch.setattr(gui, 'read_build_info', lambda: None)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('No update fetch or browser navigation without valid build identity')
+    monkeypatch.setattr(update_notice, 'fetch_notice', forbidden)
+    monkeypatch.setattr(gui.webbrowser, 'open', forbidden)
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, text, **kw: notices.append(title))
     root = tk.Tk()
@@ -77,6 +83,88 @@ def test_update_from_settings_restores_settings_grab(tmp_path, monkeypatch):
         assert opened == [gui.UPDATE_FOLDER_URL]
         assert root.grab_current() is settings
         assert settings.winfo_exists()
+        app._dispose()
+    finally:
+        root.destroy()
+
+
+def test_automatic_notice_deferred_until_active_job_finishes(tmp_path):
+    root = tk.Tk()
+    controller = Controller()
+    try:
+        app = gui.App(root, tmp_path, controller=controller)
+        controller.active = True
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._update_pending = True
+        app._update_results.put(('ok', notice))
+        app._receive_update(manual=False)
+        assert app._update_pending
+        assert app._update_results.qsize() == 1
+        assert app._update_dialog is None
+        assert app._update_after is not None
+        assert not app._update_seen
+
+        root.after_cancel(app._update_after)
+        controller.active = False
+        app._receive_update(manual=False)
+        assert not app._update_pending
+        assert app._update_results.empty()
+        assert app._update_dialog is not None
+        assert app._update_seen == {'420'}
+        button(app._update_dialog, 'Close').invoke()
+        app._dispose()
+    finally:
+        controller.active = False
+        root.destroy()
+
+
+def test_automatic_notice_deferred_until_settings_closed(tmp_path):
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=Controller())
+        root.update()
+        settings = app.settings()
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._update_pending = True
+        app._update_results.put(('ok', notice))
+        app._receive_update(manual=False)
+        assert app._update_pending
+        assert app._update_results.qsize() == 1
+        assert app._update_dialog is None
+        assert root.grab_current() is settings
+
+        root.after_cancel(app._update_after)
+        app._settings_close()
+        app._receive_update(manual=False)
+        assert not app._update_pending
+        assert app._update_results.empty()
+        assert app._update_dialog is not None
+        assert root.grab_current() is None
+        button(app._update_dialog, 'Close').invoke()
+        app._dispose()
+    finally:
+        root.destroy()
+
+
+@pytest.mark.parametrize('result', [('ok', None), ('unavailable', None)])
+def test_automatic_check_reschedules_next_day(tmp_path, monkeypatch, result):
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=Controller())
+        app._owns_controller = True  # Exercise production scheduling without constructing a real worker.
+        scheduled = []
+        actual_after = root.after
+        def capture_after(milliseconds, callback, *args):
+            scheduled.append(milliseconds)
+            return actual_after(milliseconds, callback, *args)
+        monkeypatch.setattr(root, 'after', capture_after)
+        app._update_pending = True
+        app._update_results.put(result)
+        app._receive_update(manual=False)
+        assert not app._update_pending
+        assert scheduled == [24 * 60 * 60 * 1000]
+        assert app._update_after is not None
+        assert app._update_dialog is None
         app._dispose()
     finally:
         root.destroy()
