@@ -8,9 +8,12 @@ berhasil. Default `publish=false` hanya menyiapkan kandidat beserta bukti yang d
 ditinjau. Workflow tidak membangun ulang aplikasi dan tidak memakai artifact dari
 PR, fork, dispatch build, run gagal, atau attempt lain.
 
-Fitur ini memerlukan format tujuh berkas dan kelima attestation yang diperkenalkan
-bersamanya. Artifact lama yang hanya mempunyai lima berkas tidak memenuhi skema
-promosi ini. Ketersediaan workflow dan tes sintetis tidak membuktikan bahwa release
+Promosi menerima format delapan berkas terbaru, termasuk `update.json` yang
+harus identik dengan `build-info.json`, serta format tujuh berkas sebelumnya
+untuk mempertahankan rollback historis. Artifact lama yang hanya mempunyai
+lima berkas tetap tidak memenuhi skema promosi ini. Keduanya memerlukan lima
+attestation yang sama; `update.json` pada format baru dicakup checksum manifest
+dan digest ZIP yang sudah di-attest. Ketersediaan workflow dan tes sintetis tidak membuktikan bahwa release
 produksi sudah diterbitkan atau rollback pada mesin pengguna sudah dilakukan.
 
 ## Identitas dan gate sumber
@@ -26,9 +29,12 @@ yang sama. Nama artifact, ukuran, digest SHA-256, branch, repository asal dan st
 kedaluwarsa diperiksa sebelum arsip diunduh.
 
 Digest dan ukuran ZIP diperiksa sebelum ekstraksi. ZIP wajib berisi tepat tujuh
-nama distribusi; path di luar root, direktori tambahan, tautan, duplikasi nama,
-enkripsi dan ukuran di luar batas ditolak. Manifest enam berkas, core frozen
-self-test, identitas build dan ikatan SBOM ke executable diverifikasi. Verifier
+(legacy) atau delapan (baru) nama distribusi; path di luar root, direktori
+tambahan, tautan, duplikasi nama, enkripsi dan ukuran di luar batas ditolak.
+Manifest checksum mencakup enam (legacy) atau tujuh (baru) payload. Pada
+format baru, `update.json` juga wajib cocok dengan commit, run ID, dan
+attempt sumber; core frozen self-test, identitas build, dan ikatan SBOM ke
+executable selalu diverifikasi. Verifier
 release menggunakan kontrak pengiriman yang stabil; pemulihan release lama tidak
 bergantung pada daftar kontrol GUI pada source terbaru.
 
@@ -37,7 +43,7 @@ Kelima subject berikut wajib mempunyai provenance yang cocok:
 | Subject | Fungsi |
 | --- | --- |
 | `SPTDownloader.exe` | Mengikat byte executable akhir. |
-| `SHA256SUMS.txt` | Mengikat manifest enam berkas distribusi. |
+| `SHA256SUMS.txt` | Mengikat manifest enam (legacy) atau tujuh (baru) berkas distribusi, termasuk `update.json` pada format baru. |
 | `build-info.json` | Mengikat commit, run ID dan attempt yang tertanam dalam aplikasi. |
 | `distribution-sbom.json` | Mengikat inventaris native dan ruang lingkup worker. |
 | `SPTDownloader-Windows-x64.zip` | Mengikat byte arsip Actions asli, termasuk setelah retensinya berakhir. |
