@@ -215,6 +215,21 @@ def test_release_source_cannot_promote_untrusted_or_incomplete_evidence(damage):
         delivery_module('ci_release').validate_source(run, jobs, artifact_data, **expected)
 
 
+def test_release_accepts_exact_legacy_seven_file_archive(tmp_path):
+    import zipfile
+
+    module = delivery_module('ci_release')
+    archive = tmp_path / 'legacy.zip'
+    with zipfile.ZipFile(archive, 'w') as output:
+        for name in module.LEGACY_DISTRIBUTION_FILES:
+            output.writestr(name, b'SYNTHETIC LEGACY BYTES')
+    target = tmp_path / 'legacy-unpacked'
+    module.extract_verified_archive(
+        archive, target, digest='sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest(),
+        size=archive.stat().st_size)
+    assert {path.name for path in target.iterdir()} == module.LEGACY_DISTRIBUTION_FILES
+
+
 def test_release_archive_digest_and_allowlist_are_checked_before_extraction(tmp_path):
     import hashlib
     import zipfile
