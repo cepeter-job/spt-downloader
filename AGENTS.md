@@ -45,8 +45,14 @@ user-approved exact `https://divine-hill-13fc.punzer4.workers.dev/` Worker
 root; no Cloudflare Pages or `/latest.json` route is used. The operator
 manually deploys four-field release JSON only after CI/review, verified
 source-main release publication and distribution acceptance. No PR build,
-unreviewed source commit, OneDrive credentials, private metadata or public
-download links may be advertised. The GUI says only `update tersedia`,
+unreviewed source commit, OneDrive credentials, private metadata, or
+download links supplied by public Worker metadata may be advertised. The
+exception is the fixed in-app navigation destination explicitly approved by
+the owner: an organization-shared folder in the owner's personal OneDrive
+within the organizational tenant, **not** a SharePoint team-site library.
+The folder is access-controlled by Microsoft 365 and its URL is visible in
+source/distributed binaries; loss of owner account, sharing, or folder location
+requires a separately reviewed migration. The GUI says only `update tersedia`,
 provides **Update** (opens the fixed organization-permissioned SharePoint
 folder in the user's browser) and **Close** (dismisses). No auto-download,
 installer, GitHub/Graph client call or Coretax/worker network mutation is
