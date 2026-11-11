@@ -22,8 +22,13 @@ from .paths import downloads_folder
 from .build_info import read_build_info
 from . import update_notice
 
-# Operator-approved organizational folder; this is never read from public JSON.
-# Microsoft 365 continues to enforce its existing access control on downloads.
+# Maintainer-approved personal OneDrive within the organizational Microsoft 365
+# tenant, intentionally shared with colleagues in the organization. '/personal/'
+# identifies its storage location; it does not imply public access or a team site.
+# The maintainer explicitly confirmed this destination and accepts that the
+# account identifier is visible in the distributed application and source.
+# Personnel changes, link revocation, or folder moves require a reviewed URL
+# migration; no permissions, credentials, or download links come from Worker JSON.
 UPDATE_FOLDER_URL = ('https://kemenkeu-my.sharepoint.com/my?'
     'id=%2Fpersonal%2Fpuntoami%5Fpriyono%5Fkemenkeu%5Fgo%5Fid%2FDocuments%2FSPT%20Downloader'
     '&ga=1')
@@ -208,21 +213,15 @@ class App:
         root.bind('<Destroy>', self._on_destroy, add='+')
         self.npwp_entry.focus_set()
         self._poll_after = root.after(100, self._poll)
-        # Never open the network in a synthetic GUI self-test or without an
-        # explicit, reviewed Cloudflare Pages update endpoint.
-        if self._owns_controller and update_notice.MANIFEST_URL:
+        # Synthetic GUI self-tests inject a controller and must stay offline.
+        # The authorized Cloudflare Worker endpoint is a fixed nonempty constant.
+        if self._owns_controller:
             self._update_after = root.after(4000, self.check_updates)
 
     def check_updates(self, manual=False):
         """Fetch public release metadata off Tk's thread, never touching Coretax."""
         self._update_after = None
         if self._disposed or self._closing or self._update_pending:
-            return
-        if not update_notice.MANIFEST_URL:
-            if manual:
-                messagebox.showinfo('Pembaruan belum aktif',
-                    'Alamat pemberitahuan pembaruan belum diterbitkan.',
-                    parent=self._settings_dialog or self.root)
             return
         if self.controller.active:
             if manual:
@@ -284,7 +283,7 @@ class App:
         elif notice.run_id not in self._update_seen:
             self._update_seen.add(notice.run_id)
             self._show_update_notice(notice)
-        if not manual and self._owns_controller and update_notice.MANIFEST_URL:
+        if not manual and self._owns_controller:
             self._update_after = self.root.after(24 * 60 * 60 * 1000, self.check_updates)
 
     def _show_update_notice(self, notice):
