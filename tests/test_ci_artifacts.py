@@ -366,7 +366,8 @@ def test_release_verifies_new_update_manifest_and_retains_legacy_seven_file_supp
 
     update.unlink()
     (artifact / 'SHA256SUMS.txt').write_text(
-        ''.join(writer.checksums(artifact).splitlines(keepends=True)[:-1]), encoding='ascii')
+        ''.join(hashlib.sha256((artifact / name).read_bytes()).hexdigest() + '  ' + name + '\n'
+                for name in release.LEGACY_PAYLOAD), encoding='ascii')
     release.verify_payload(artifact, source)
 
 
