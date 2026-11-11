@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import threading
+import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk,messagebox
@@ -20,6 +21,12 @@ from .job_pruning import (DEFAULT_KEEP_JOBS, validate_keep_jobs,
 from .paths import downloads_folder
 from .build_info import read_build_info
 from . import update_notice
+
+# Operator-approved organizational folder; this is never read from public JSON.
+# Microsoft 365 continues to enforce its existing access control on downloads.
+UPDATE_FOLDER_URL = ('https://kemenkeu-my.sharepoint.com/my?'
+    'id=%2Fpersonal%2Fpuntoami%5Fpriyono%5Fkemenkeu%5Fgo%5Fid%2FDocuments%2FSPT%20Downloader'
+    '&ga=1')
 
 #punto ami priyono
 
@@ -276,39 +283,52 @@ class App:
                     parent=self._settings_dialog or self.root)
         elif notice.run_id not in self._update_seen:
             self._update_seen.add(notice.run_id)
-            if manual:
-                messagebox.showinfo('Pembaruan SPT Downloader tersedia',
-                    f'Versi {notice.version} tersedia.\\n\\n{notice.notes}\\n\\n'
-                    'Unduhan tetap dilakukan secara manual melalui folder organisasi.',
-                    parent=self._settings_dialog or self.root)
-            else:
-                self._show_update_notice(notice)
+            self._show_update_notice(notice)
         if not manual and self._owns_controller and update_notice.MANIFEST_URL:
             self._update_after = self.root.after(24 * 60 * 60 * 1000, self.check_updates)
 
     def _show_update_notice(self, notice):
-        """Nonmodal, dismissible metadata-only notice; never opens a download URL."""
+        """Show one short, dismissible notice; browser navigation is user-initiated."""
         if self._disposed or self._closing or self._update_dialog is not None:
             return
-        dialog = tk.Toplevel(self.root)
+        parent = self._settings_dialog or self.root
+        dialog = tk.Toplevel(parent)
         self._update_dialog = dialog
-        dialog.title('Pembaruan SPT Downloader tersedia')
-        dialog.transient(self.root)
+        dialog.title('Pembaruan')
+        dialog.transient(parent)
         frame = ttk.Frame(dialog, padding=18)
         frame.pack(fill='both', expand=True)
-        ttk.Label(frame, text=f'Versi {notice.version} tersedia.',
-                  style='SPT.Heading.TLabel').pack(anchor='w')
-        ttk.Label(frame, text=notice.notes or 'Pembaruan aplikasi tersedia.',
-                  wraplength=430).pack(anchor='w', pady=(10, 8))
-        ttk.Label(frame, text='File tersedia melalui folder unduhan organisasi. '
-                  'Aplikasi tidak mengunduh atau memasang pembaruan.',
-                  wraplength=430).pack(anchor='w', pady=(0, 12))
+        ttk.Label(frame, text='update tersedia',
+                  style='SPT.Heading.TLabel').pack(anchor='w', pady=(0, 12))
+        actions = ttk.Frame(frame)
+        actions.pack(anchor='e')
+        prior_grab = self.root.grab_current()
+        if prior_grab is not None:
+            dialog.grab_set()
 
         def dismiss():
             self._update_dialog = None
+            if self.root.grab_current() is dialog:
+                dialog.grab_release()
             dialog.destroy()
+            if (prior_grab is not None and prior_grab.winfo_exists()
+                    and not self._disposed):
+                prior_grab.grab_set()
 
-        ttk.Button(frame, text='Nanti saja', command=dismiss).pack(anchor='e')
+        def open_folder():
+            # Fixed approved SharePoint folder; never follow a URL from the manifest.
+            try:
+                opened = webbrowser.open(UPDATE_FOLDER_URL, new=2)
+            except (OSError, webbrowser.Error):
+                opened = False
+            if opened:
+                dismiss()
+            else:
+                messagebox.showerror('Browser tidak tersedia',
+                    'Folder pembaruan tidak dapat dibuka.', parent=dialog)
+
+        ttk.Button(actions, text='Update', command=open_folder).pack(side='left', padx=(0, 8))
+        ttk.Button(actions, text='Close', command=dismiss).pack(side='left')
         dialog.protocol('WM_DELETE_WINDOW', dismiss)
 
     def _report_callback(self, kind, error, trace):
