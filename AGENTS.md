@@ -37,6 +37,24 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
 
+
+## Public update notification boundary
+
+Public update announcements are an optional **informational-only** desktop
+feature. The default Cloudflare Pages manifest endpoint remains unconfigured
+until its exact hostname is proved owned and reachable from an approved
+Fortinet-protected workstation. Do not add GitHub, Graph, OneDrive login,
+automatic downloads, executable replacement or network access to source/worker
+scraping paths. The notifier uses a named User-Agent, bounded HTTPS-only,
+same-origin/no-redirect JSON read, strict metadata and build-info validation,
+and a background thread communicating with Tk only through a queue. Failed
+checks never block application startup or an active job. No public manifest may
+contain a personal SharePoint URL or authorization material; release text is
+display-only and never an install authority. Activation/publication requires
+verified source-main release artifacts, independent peer review, CI-green
+Windows self-test and a live endpoint connectivity check. See
+[update notification contract](docs/update-notifications.md).
+
 ## Data and access safety
 
 - Commit source, documentation and clearly synthetic tests only. Never commit real taxpayer identifiers/records, captured JSON, Excel/PDF outputs, cookies, credentials, browser profiles or local virtual environments.
