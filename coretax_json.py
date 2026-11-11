@@ -150,6 +150,30 @@ def _capture_component_lifetime(value, *, attempt, record_id, source_url, detail
     return dict(value)
 
 
+def _capture_l7_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Closed manifest-owned child history; never manufacture a component fact."""
+    facts = {'fresh_root', 'fresh_l7', 'stable_root', 'stable_form',
+             'stable_grid', 'stable_table', 'enabled_boundaries'}
+    if (not isinstance(value, dict)
+            or set(value) != facts | {'kind', 'attempt', 'record_id', 'source_url', 'detail_url'}
+            or value.get('kind') != 'corporate-l7-spa-v1'
+            or type(attempt) is not str or not re.fullmatch(r'[a-f0-9]{32}', attempt)
+            or type(record_id) is not str or not record_id
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in facts)
+            or not _trusted_origin(source_url) or not _trusted_origin(detail_url)):
+        raise JsonSafetyError('Captured L7 history is invalid or unbound')
+    source, detail = urlparse(source_url), urlparse(detail_url)
+    match = re.fullmatch(r'/returnsheets/id-ID/submitted-returnsheets/([^/]+)', source.path)
+    if (match is None or source.params or source.query or source.fragment
+            or detail.params or detail.query != 'view=true' or detail.fragment
+            or not re.fullmatch(r'/returnsheets/id-ID/corporate-income-tax-return/'
+                + re.escape(match.group(1)) + '/' + re.escape(record_id) + r'/ICT_RCIT/[^/%\\]+', detail.path)):
+        raise JsonSafetyError('Captured L7 history route is unverified')
+    return dict(value)
+
+
 def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
     """Validate the stronger optional L8 history, never inferred during replay."""
     keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url',
@@ -701,11 +725,32 @@ def _corporate_bindings(observed_forms):
             if (not isinstance(declared_paths, list) or len(declared_paths) != 1
                     or not isinstance(declared_paths[0], list)
                     or len(declared_paths[0]) != 1
-                    or 'primary' in form or 'projection' in form
+                    or 'primary' in form or 'projection' in form or 'raw_negative_projection' in form
                     or form.get('grids') or form.get('responses')
                     or form.get('dependencies')):
                 raise JsonSafetyError('Observed source disabled binding is contradictory')
             section['disabled'] = True
+        if 'raw_negative_projection' in form:
+            offer = form['raw_negative_projection']
+            if (form['name'] != 'L7' or form.get('paths') != [['CalculationOfFiscalLossCompensation']]
+                    or not isinstance(form.get('projection'), dict) or 'primary' in form
+                    or any(form.get(key) for key in ('grids', 'responses', 'dependencies'))
+                    or not isinstance(offer, dict)
+                    or set(offer) != {'kind', 'builds', 'route', 'locale', 'timezone', 'visibility_binding', 'tables'}
+                    or any(type(offer[key]) is not str for key in ('kind', 'route', 'locale', 'timezone', 'visibility_binding'))
+                    or not isinstance(offer['builds'], dict)
+                    or any(type(key) is not str or value is not None and type(value) is not str
+                           for key, value in offer['builds'].items())
+                    or not isinstance(offer['tables'], list) or len(offer['tables']) != 1):
+                raise JsonSafetyError('Observed L7 negative capability is malformed or misplaced')
+            table = offer['tables'][0]
+            if (not isinstance(table, dict) or set(table) != {'component', 'headers', 'footer_spans', 'owner_chain'}
+                    or type(table['component']) is not str
+                    or any(not isinstance(table[key], list) for key in ('headers', 'footer_spans', 'owner_chain'))
+                    or any(type(item) is not str for key in ('headers', 'owner_chain') for item in table[key])
+                    or any(not isinstance(row, list) or any(type(n) is not int for n in row)
+                           for row in table['footer_spans'])):
+                raise JsonSafetyError('Observed L7 negative table capability is malformed')
         sections.append(section)
         if 'primary' in form:
             binding = form['primary']
@@ -851,6 +896,12 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured component lifetime has an unsupported owner')
         lifetime = _capture_component_lifetime(ctx['component_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l7_lifetime = None
+    if 'corporate_l7_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L7 history lacks its component lifetime')
+        l7_lifetime = _capture_l7_lifetime(ctx['corporate_l7_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     l8_lifetime = None
     if 'corporate_l8_lifetime' in ctx:
         if lifetime is None:
@@ -880,6 +931,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['clock_interval'] = clock
     if lifetime is not None:
         event['component_lifetime'] = lifetime
+    if l7_lifetime is not None:
+        event['corporate_l7_lifetime'] = l7_lifetime
     if l8_lifetime is not None:
         event['corporate_l8_lifetime'] = l8_lifetime
     if ctx.get('request_json') is not None:
@@ -1222,6 +1275,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
+    l7_lifetimes = set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
@@ -1244,6 +1298,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         if len(lifetimes) != 1:
             raise JsonSafetyError('Corporate component lifetime is missing or mixed within one attempt')
         l8_lifetimes.add(_corporate_request_key(event.get('corporate_l8_lifetime')))
+        l7_lifetimes.add(_corporate_request_key(event.get('corporate_l7_lifetime')))
+        if len(l7_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L7 history is missing or mixed within one attempt')
         if len(l8_lifetimes) != 1:
             raise JsonSafetyError('Corporate L8 history is missing or mixed within one attempt')
         total_bytes += ctx['bytes']

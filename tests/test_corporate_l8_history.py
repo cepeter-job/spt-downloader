@@ -85,7 +85,7 @@ def history_setup():
     guard = History()
     def document(script):
         handle = make_document(script)
-        handle.evaluate_handle = lambda source: guard
+        handle.evaluate_handle = lambda source: guard if 'dependent_seen' in source else None
         return handle
     page.evaluate_handle = document
     return context, page, guard
