@@ -521,7 +521,7 @@ class _InitialLoadingDiagnostics:
             if session is not None:
                 try:
                     session.detach()
-                except Exception:
+                except Exception:  # nosec B110 - CDP diagnostic cleanup cannot override the original exception.
                     pass  # Best-effort diagnostic remote cleanup.
 
     def emit(self, stage, *, error=None):
@@ -547,7 +547,7 @@ class _InitialLoadingDiagnostics:
         for event, handler in reversed(self.listeners):
             try:
                 self.page.remove_listener(event, handler)
-            except Exception:
+            except Exception:  # nosec B110 - Optional listener cleanup cannot mask capture errors.
                 pass  # Optional listener cleanup must not mask capture results.
         self.listeners.clear()
         self.requests.clear()
@@ -627,6 +627,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             raise RuntimeError('Table pagination did not return to the first page')
     if container_handle.query_selector(previous_selector):
         raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    # The preparation interval ends before any table snapshot/cursor work.
+    # Release request-object references and listeners immediately.
+    if observer is not None:
+        observer.close()
     first_read_started = _diagnostic_clock()
     result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000

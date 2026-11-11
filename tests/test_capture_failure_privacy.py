@@ -87,7 +87,9 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
                 container.innerHTML = '<div class="p-datatable-loading-overlay" hidden ' +
                     'style="width:20px;height:20px"></div>';
             }
-            document.body.appendChild(container);
+            // The sibling/global mask stays within Induk's hiding boundary, so
+            // the unmodified later-panel recovery can continue after PARTIAL.
+            document.querySelector('#induk').appendChild(container);
             const otherOverlay = kind === 'blockui' ? container :
                 container.querySelector('.p-datatable-loading-overlay');
             const button = owner.querySelector('button');
