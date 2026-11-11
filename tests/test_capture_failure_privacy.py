@@ -1,5 +1,6 @@
 """Production capture failures retain safe proof, never arbitrary error text."""
 import json
+import threading
 
 import pytest
 
@@ -41,13 +42,9 @@ def test_actual_table_failure_keeps_safe_proof_and_recovers_later_panel(
     assert message not in serialized and 'SYNTHETIC_PRIVATE_CLASS' not in serialized
 
 
-@pytest.mark.parametrize('overlay_kind, expected_scope', [
-    ('target', 'target_datatable'),
-    ('foreign', 'other_datatable'),
-    ('blockui', 'blockui'),
-])
+@pytest.mark.parametrize('overlay_kind', ['target', 'foreign', 'blockui'])
 def test_first_reset_loading_timeout_records_initial_loading_without_changing_partial(
-        routed, tmp_path, monkeypatch, overlay_kind, expected_scope):
+        routed, tmp_path, monkeypatch, overlay_kind):
     from playwright.sync_api import Locator
     from support_browser_protocol import capture_failures
 
@@ -117,6 +114,14 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
         return original_wait(locator, *args, **kwargs)
 
     monkeypatch.setattr(Locator, 'wait_for', controlled_loading_timeout)
+    # A broken DevTools attach would wait before responding. The diagnostics
+    # must never enter this path, regardless of the visible overlay kind.
+    cdp_calls = []
+    def blocking_cdp_session(*args, **kwargs):
+        cdp_calls.append(1)
+        threading.Event().wait(1.25)
+        raise RuntimeError('SYNTHETIC_PRIVATE_CDP_STALL')
+    monkeypatch.setattr(page.context, 'new_cdp_session', blocking_cdp_session)
     root = tmp_path / 'diagnostics'
     with driver.diagnostics.session(root, 'worker') as log:
         result = driver.capture_detail(page)
@@ -126,6 +131,7 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
     # raises the original exception, no table snapshot is accepted, recovery
     # reaches the next panel, and the dispatched First action is never retried.
     assert loading_waits == [1]
+    assert cdp_calls == [], 'Timeout diagnostics must not attach blocking DevTools sessions'
     assert len(failures) == 1 and failures[0] is timeout
     assert page.evaluate('window.syntheticFirstClicks') == 1
     assert result['capture_complete'] is False
@@ -146,10 +152,62 @@ def test_first_reset_loading_timeout_records_initial_loading_without_changing_pa
     assert len(initial) == 1, 'Missing initial-loading diagnostic after First wait timeout'
     event = initial[0]
     assert event['table_initial_stage'] == 'first_idle_timeout'
-    assert event['table_loading_scope'] == expected_scope
-    assert event['table_loading_first_match'] == expected_scope
+    assert event['table_loading_scope'] == 'unavailable'
+    assert event['table_loading_first_match'] == 'unavailable'
+    assert event['table_owner_state'] == 'unavailable'
     assert event['form_ordinal'] == event['table_ordinal'] == 1
     assert event['error']['type'] == 'TimeoutError'
+
+
+
+
+@pytest.mark.parametrize('level', ['INFO', 'OFF'])
+def test_initial_loading_diagnostics_use_unchanged_owner_selector(
+        routed, tmp_path, monkeypatch, level):
+    from playwright.sync_api import ElementHandle
+
+    page, requests = routed(control='')
+    original = ElementHandle.evaluate_handle
+    expressions = []
+    expected = "e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement"
+
+    def capture_owner_expression(handle, expression, *args, **kwargs):
+        if isinstance(expression, str) and "closest('p-table')" in expression:
+            expressions.append(expression)
+        return original(handle, expression, *args, **kwargs)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', capture_owner_expression)
+    with driver.diagnostics.session(tmp_path / level, 'worker', level=level) as log:
+        result = driver.capture_detail(page)
+        assert log.flush()
+    assert result['capture_complete'] and requests == [('GET', DETAIL)]
+    assert expressions and all(script == expected for script in expressions)
+    assert page.evaluate(
+        "Object.keys(window).every(key => !key.startsWith('__spt_table_initial_'))")
+
+
+def test_partial_initial_loading_listener_registration_is_cleaned():
+    class Emitter:
+        def __init__(self):
+            self.listeners = {}
+            self.removed = []
+
+        def on(self, event, callback):
+            if event == 'requestfinished':
+                raise RuntimeError('SYNTHETIC_LISTENER_FAILURE')
+            self.listeners[event] = callback
+
+        def remove_listener(self, event, callback):
+            assert self.listeners.pop(event) is callback
+            self.removed.append(event)
+
+    page = Emitter()
+    observer = driver._InitialLoadingDiagnostics(page, 1)
+    assert observer.overflow
+    assert tuple(page.listeners) == ('request',)
+    observer.close()
+    assert page.listeners == {} and page.removed == ['request']
+    assert observer.requests == {}
 
 
 
