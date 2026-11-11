@@ -51,7 +51,7 @@ Pedoman pelaporan privat ada pada [SECURITY.md](../SECURITY.md).
 
 ## Retensi job otomatis (mulai versi dengan segel publikasi)
 
-Di Pengaturan, isi **Jumlah job disimpan**. Nilai awal **10** berarti
+Di Pengaturan, isi **jumlah cache job**. Nilai awal **10** berarti
 aplikasi menjaga **10 direktori job terbaru** (termasuk PARTIAL dan gagal),
 lalu setelah worker berhenti mencoba menghapus job yang lebih lama **hanya**
 jika sebelumnya berhasil mencapai COMPLETE dan memiliki segel lokal
@@ -87,7 +87,7 @@ Job historis tetap memerlukan prosedur backup dan penghapusan manual.
 
 ## Pemangkasan manual dari Pengaturan
 
-Klik **Pangkas job lama** setelah menyimpan pengaturan retensi (1–100; 10
+Klik **bersihkan cache job** setelah menyimpan pengaturan retensi (1–100; 10
 secara default). Aplikasi terlebih dahulu melakukan **pratinjau tanpa
 menghapus**: jumlah job lama yang masih memiliki segel COMPLETE yang sah
 serta perkiraan ukuran data privat yang dapat dibebaskan (MiB). Tinjauan
