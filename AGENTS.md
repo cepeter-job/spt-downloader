@@ -37,6 +37,31 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
 
+
+## Public update notification boundary
+
+Public update announcements are **informational-only** and fetched from the
+user-approved exact `https://divine-hill-13fc.punzer4.workers.dev/` Worker
+root; no Cloudflare Pages or `/latest.json` route is used. The operator
+manually deploys four-field release JSON only after CI/review, verified
+source-main release publication and distribution acceptance. No PR build,
+unreviewed source commit, OneDrive credentials, private metadata, or
+download links supplied by public Worker metadata may be advertised. The
+exception is the fixed in-app navigation destination explicitly approved by
+the owner: an organization-shared folder in the owner's personal OneDrive
+within the organizational tenant, **not** a SharePoint team-site library.
+The folder is access-controlled by Microsoft 365 and its URL is visible in
+source/distributed binaries; loss of owner account, sharing, or folder location
+requires a separately reviewed migration. The GUI says only `update tersedia`,
+provides **Update** (opens the fixed organization-permissioned SharePoint
+folder in the user's browser) and **Close** (dismisses). No auto-download,
+installer, GitHub/Graph client call or Coretax/worker network mutation is
+permitted. Updates are checked off Tk's thread with a bounded no-redirect
+HTTPS JSON GET, strict source-build identity validation, no source tax data,
+and idle-only notifications. Failed checks never block jobs; keep synthetic
+offline tests and frozen GUI self-test gates. See
+[update notification contract](docs/update-notifications.md).
+
 ## Data and access safety
 
 - Commit source, documentation and clearly synthetic tests only. Never commit real taxpayer identifiers/records, captured JSON, Excel/PDF outputs, cookies, credentials, browser profiles or local virtual environments.
