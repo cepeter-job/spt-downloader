@@ -169,7 +169,9 @@ dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 ### Pembagian waktu reset tabel DOM besar (#161)
 
 `table.reset_timing` hanya diterbitkan untuk tabel dengan batas
-`max_page_size >= 250` (jalur besar L3-B), tanpa pembacaan DOM tambahan.
+`max_page_size >= 250` (jalur besar L3-B). Optimasi berikutnya menambah
+satu pemeriksaan keberadaan Previous yang terbatas pada owner awal,
+tanpa membaca data tabel bisnis.
 `table_reset_step` berupa kategori tetap:
 
 - `size_action`: satu pemanggilan pemilihan ukuran halaman yang **sudah ada**,
@@ -195,6 +197,15 @@ dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
   pemanggilan/percobaan tahap, **bukan** jumlah respons atau klik sukses.
   Semua tahap hanya diterbitkan sekali per tabel besar, termasuk saat
   exception/Stop; tahap yang belum dicapai tidak diterbitkan.
+  Jalur tabel besar kini memeriksa *keberadaan* Previous dengan satu
+  evaluasi JavaScript yang terikat pada owner tabel awal. Jika tidak ada
+  tombol yang memenuhi selector asli, tidak dibuat handle Playwright
+  untuk kontrol yang tidak ada; jika ada, lookup ElementHandle dan
+  validasi klik asli tetap berlaku. Owner yang terlepas ditolak,
+  tidak dicari ulang secara global. Evaluasi ini tetap termasuk
+  `previous_lookup`; waktu browser/transport tidak dijamin lebih cepat
+  hingga teruji pada build-matched live run. Tabel kecil tetap memakai
+  jalur lama. Tidak ada perubahan sumber, Stop, rewind, atau batas 180 detik.
   `previous_limit_lookup` adalah pemeriksaan akhir setelah loop,
   bukan permintaan tambahan. Jumlah klik Previous sukses tetap
   di `previous_rewind.count`.

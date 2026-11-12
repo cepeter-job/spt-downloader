@@ -234,6 +234,17 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
+# The large DOM fallback frequently has no enabled Previous control.
+# A read-only owner-bound presence probe avoids materializing an ElementHandle
+# for an absent control. On a positive probe the original lookup/click guard
+# still rechecks actionability and ownership; this does not authorize a click.
+OWNED_PREVIOUS_PRESENT_JS = r'''(owner, selector) => {
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ return owner.querySelector(selector)!==null;
+}'''
+
+
 PAGINATOR_CLICK_JS = r'''(e, owner, deadline) => {
  const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
  const style = getComputedStyle(e);
@@ -630,15 +641,24 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     rewind_started = _diagnostic_clock()
     rewind_clicks = 0
     # Aggregate repeated Previous operations into one bounded event per stage.
-    # No extra locator/evaluate/click/wait calls; all exception/Stop paths retain
-    # their original propagation and the inclusive previous_rewind timing.
+    # Large tables probe presence on the same owner before materializing an
+    # enabled control. Stop/exception and inclusive timing remain unchanged.
     rewind_timings = {} if max_page_size >= 250 else None
     try:
         for _ in range(max_pages):
             with _timed_rewind_operation(rewind_timings, 'previous_stop_check'):
                 _check_cancel(check_cancel)
             with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
-                previous = container_handle.query_selector(previous_selector)
+                if max_page_size >= 250:
+                    # A missing Previous is the common first-page case.
+                    # Preserve the original handle lookup for present controls.
+                    present = container_handle.evaluate(
+                        OWNED_PREVIOUS_PRESENT_JS, previous_selector)
+                    previous = container_handle.query_selector(previous_selector) if present else None
+                    if present and previous is None:
+                        raise RuntimeError('Table paginator changed during Previous lookup')
+                else:
+                    previous = container_handle.query_selector(previous_selector)
             if not previous:
                 break
             with _timed_rewind_operation(rewind_timings, 'previous_state'):

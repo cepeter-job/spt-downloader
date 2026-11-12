@@ -328,6 +328,85 @@ def test_large_dom_zero_previous_clicks_attributes_lookup_without_retry(
     assert timing['previous_rewind']['duration_ms'] >= timing['previous_lookup']['duration_ms']
 
 
+@pytest.mark.parametrize('limit,expected_remote_lookups', [
+    (500, 1),  # Only the unchanged final page-limit lookup remains.
+    (100, 2),  # Small DOM tables retain the original two lookups.
+])
+def test_absent_previous_uses_owner_bound_probe_without_handle_lookup(
+        page, monkeypatch, limit, expected_remote_lookups):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=100)
+    original = ElementHandle.query_selector
+    observed = []
+
+    def counted(self, selector):
+        if selector == '.p-paginator-prev:not([disabled]):not(.p-disabled)':
+            observed.append(selector)
+        return original(self, selector)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', counted)
+    result = driver.capture_table(page, table, 3, 100, max_page_size=limit)
+    assert_rows(result, 601)
+    assert len(observed) == expected_remote_lookups
+    assert page.evaluate('moves') == ceil(601 / limit) - 1
+
+
+def test_large_previous_probe_still_refuses_changed_control_before_click(
+        page, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        first.after(previous);
+    }""")
+    original = ElementHandle.query_selector
+
+    def disappeared(self, selector):
+        if selector == '.p-paginator-prev:not([disabled]):not(.p-disabled)':
+            return None
+        return original(self, selector)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', disappeared)
+    with pytest.raises(RuntimeError, match='paginator changed during Previous lookup'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0  # No guessed click or pagination.
+
+
+def test_large_previous_probe_rejects_nested_foreign_control(page):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const foreign = document.createElement('p-table');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        foreign.append(previous);
+        document.querySelector('p-table').append(foreign);
+    }""")
+    # A nested paginator may match the selector, but cannot belong to
+    # the original owner. The old guarded click must still reject it.
+    with pytest.raises(RuntimeError, match='Unavailable or unsupported pagination control'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0
+
+
+def test_large_previous_probe_rejects_detached_owner(page):
+    from playwright.sync_api import Error as PlaywrightError
+
+    table = fixture(page, total=601, selected=500)
+    owner = table.element_handle().evaluate_handle(
+        "e=>e.closest('p-table')")
+    try:
+        page.evaluate("document.querySelector('p-table').remove()")
+        with pytest.raises(PlaywrightError, match='Original paginator owner changed'):
+            owner.evaluate(driver.OWNED_PREVIOUS_PRESENT_JS,
+                           '.p-paginator-prev:not([disabled]):not(.p-disabled)')
+    finally:
+        owner.dispose()
+
+
 def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapsed(
         page, tmp_path):
     table = fixture(page, total=601, selected=500)
