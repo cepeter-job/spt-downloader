@@ -188,6 +188,16 @@ dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 - `first_navigation`: interval inklusif pencarian, klik jika tersedia,
   dan `wait_idle` aslinya; `count=0/1` berarti jumlah klik First yang
   berhasil diajukan. **Jangan menjumlahkan** tahap ini dengan tahap anak.
+- `previous_stop_check`, `previous_lookup`, `previous_state`,
+  `previous_click`, `previous_idle`, `previous_verify`, dan
+  `previous_limit_lookup`: durasi agregat setiap jenis operasi
+  **yang sudah ada** di loop Previous. `count` berarti jumlah
+  pemanggilan/percobaan tahap, **bukan** jumlah respons atau klik sukses.
+  Semua tahap hanya diterbitkan sekali per tabel besar, termasuk saat
+  exception/Stop; tahap yang belum dicapai tidak diterbitkan.
+  `previous_limit_lookup` adalah pemeriksaan akhir setelah loop,
+  bukan permintaan tambahan. Jumlah klik Previous sukses tetap
+  di `previous_rewind.count`.
 - `previous_rewind`: seluruh loop Previous, verifikasi state,
   `wait_idle` serta pemeriksaan limit yang sudah ada. `count` adalah
   jumlah klik Previous yang berhasil diajukan, **bukan** bukti respons
@@ -215,6 +225,18 @@ atau overlay sasaran. Tahap baru hanya memisahkan batas waktu pemanggilan
 yang **sudah terjadi**, tanpa RPC/browser lookup, perubahan klik,
 deadlines, dan tanpa mengubah PARTIAL atau native JSON. Live run baru
 perlu membuktikan penyebab visual idle sebelum ada perubahan perilaku.
+
+**Tindak lanjut 12 November 2026:** build PR #242 `a781e778`
+(tree-identik dengan head `5cadfc9`) menghasilkan `previous_rewind`
+53,83 detik dengan **nol klik Previous** pada L3-B form 4/tabel 3.
+Tahap baru memisahkan waktu dalam pemeriksaan Stop, locator, state,
+klik, idle dan verifikasi yang semula tidak bisa dibedakan. Tabel
+kemudian PARTIAL pada 1.500/4.654 baris karena budget 180 detik.
+Log sebelumnya sudah memuat `table.page_timing`: DOM read halaman
+kedua/ketiga 28,74/33,84 detik dan waktu advance/click hingga
+29,52 detik. Instrumentasi baru **bukan** perbaikan latensi atau
+bukti penyebab backend. Tidak ada tambahan operasi browser dan
+pemilihan sumber/Stop/timeout/PARTIAL tidak berubah.
 
 **Alasan penambahan:** pada 11 November 2026 build `8726aae5`, log
 mencatat `first_idle_complete` di 15:01:19 WIB tetapi
