@@ -217,7 +217,18 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     steps = {row['table_reset_step']: row for row in rows}
     assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
                           'first_click', 'first_idle', 'first_navigation',
-                          'previous_rewind', 'total_pre_read'}
+                          'previous_stop_check', 'previous_lookup',
+                          'previous_state', 'previous_click',
+                          'previous_idle', 'previous_verify',
+                          'previous_limit_lookup', 'previous_rewind',
+                          'total_pre_read'}
+    assert steps['previous_stop_check']['count'] == 3
+    assert steps['previous_lookup']['count'] == 3
+    assert steps['previous_state']['count'] == 2
+    assert steps['previous_click']['count'] == 2
+    assert steps['previous_idle']['count'] == 2
+    assert steps['previous_verify']['count'] == 2
+    assert steps['previous_limit_lookup']['count'] == 1
     assert steps['pilot_guard']['count'] == 1
     assert steps['first_lookup']['count'] == 1
     assert steps['first_click']['count'] == 1
@@ -296,6 +307,27 @@ def test_small_dom_table_does_not_emit_large_reset_diagnostics(page, tmp_path):
     assert not [r for r in records(tmp_path) if r['event'] == 'table.reset_timing']
 
 
+def test_large_dom_zero_previous_clicks_attributes_lookup_without_retry(
+        page, tmp_path):
+    table = fixture(page, total=601, selected=500)
+    # First is disabled on page 1 and the synthetic table has no Previous.
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert page.evaluate('moves') == 1  # The original Next only.
+    events = records(tmp_path)
+    timing = {row['table_reset_step']: row for row in events
+              if row['event'] == 'table.reset_timing'}
+    assert timing['previous_rewind']['count'] == 0
+    assert timing['previous_stop_check']['count'] == 1
+    assert timing['previous_lookup']['count'] == 1
+    assert timing['previous_limit_lookup']['count'] == 1
+    assert set(timing).isdisjoint({'previous_state', 'previous_click',
+                                   'previous_idle', 'previous_verify'})
+    assert timing['previous_rewind']['duration_ms'] >= timing['previous_lookup']['duration_ms']
+
+
 def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapsed(
         page, tmp_path):
     table = fixture(page, total=601, selected=500)
@@ -325,6 +357,11 @@ def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapse
     assert page.evaluate('moves') == 2
     timing = [row for row in records(tmp_path)
               if row['event'] == 'table.reset_timing']
-    assert any(row['table_reset_step'] == 'previous_rewind'
-               and row['count'] == 1 for row in timing)
+    steps = {row['table_reset_step']: row for row in timing}
+    assert steps['previous_rewind']['count'] == 1
+    assert steps['previous_stop_check']['count'] == 2
+    assert steps['previous_lookup']['count'] == 1
+    assert steps['previous_click']['count'] == 1
+    assert steps['previous_verify']['count'] == 1
+    assert 'previous_limit_lookup' not in steps
     assert all(row['duration_ms'] >= 0 for row in timing)

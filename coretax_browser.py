@@ -21,7 +21,7 @@ from time import perf_counter as _diagnostic_clock
 import re
 import json
 import os
-from contextlib import ExitStack, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
 from uuid import uuid4
 from pathlib import Path
@@ -523,6 +523,22 @@ def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks):
                            duration_ms=(_diagnostic_clock() - started) * 1000)
 
 
+@contextmanager
+def _timed_rewind_operation(timings, stage):
+    """Aggregate timings of original calls, without extra page/DOM operations."""
+    if timings is None:
+        yield
+        return
+    started = _diagnostic_clock()
+    try:
+        yield
+    finally:
+        duration_ms = (_diagnostic_clock() - started) * 1000
+        current = timings.setdefault(stage, [0.0, 0])
+        current[0] += duration_ms
+        current[1] += 1
+
+
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
     with ExitStack() as resources:
@@ -613,21 +629,38 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
     rewind_started = _diagnostic_clock()
     rewind_clicks = 0
+    # Aggregate repeated Previous operations into one bounded event per stage.
+    # No extra locator/evaluate/click/wait calls; all exception/Stop paths retain
+    # their original propagation and the inclusive previous_rewind timing.
+    rewind_timings = {} if max_page_size >= 250 else None
     try:
         for _ in range(max_pages):
-            _check_cancel(check_cancel)
-            previous = container_handle.query_selector(previous_selector)
+            with _timed_rewind_operation(rewind_timings, 'previous_stop_check'):
+                _check_cancel(check_cancel)
+            with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
+                previous = container_handle.query_selector(previous_selector)
             if not previous:
                 break
-            state = container_handle.evaluate(STATE_JS)
-            _click_table_paginator(previous, container_handle, check_cancel)
-            rewind_clicks += 1
-            wait_idle(page)
-            if container_handle.evaluate(STATE_JS) == state:
-                raise RuntimeError('Table pagination did not return to the first page')
-        if container_handle.query_selector(previous_selector):
-            raise RuntimeError(f'Table reset page limit {max_pages} reached')
+            with _timed_rewind_operation(rewind_timings, 'previous_state'):
+                state = container_handle.evaluate(STATE_JS)
+            with _timed_rewind_operation(rewind_timings, 'previous_click'):
+                _click_table_paginator(previous, container_handle, check_cancel)
+                rewind_clicks += 1
+            with _timed_rewind_operation(rewind_timings, 'previous_idle'):
+                wait_idle(page)
+            with _timed_rewind_operation(rewind_timings, 'previous_verify'):
+                if container_handle.evaluate(STATE_JS) == state:
+                    raise RuntimeError('Table pagination did not return to the first page')
+        with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
+            if container_handle.query_selector(previous_selector):
+                raise RuntimeError(f'Table reset page limit {max_pages} reached')
     finally:
+        if rewind_timings is not None:
+            for step, (duration_ms, count) in rewind_timings.items():
+                diagnostics.record('table.reset_timing', table_reset_step=step,
+                                   form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                                   table_ordinal=ordinal, count=count,
+                                   duration_ms=duration_ms)
         _record_large_table_reset('previous_rewind', rewind_started, ordinal, max_page_size, rewind_clicks)
     # The preparation interval ends before any table snapshot/cursor work.
     # Release request-object references and listeners immediately.

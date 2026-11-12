@@ -854,7 +854,10 @@ def test_update_check_diagnostics_reject_objects_and_out_of_range_duration(tmp_p
 
 @pytest.mark.parametrize('step', [
     'size_action', 'pilot_guard', 'first_lookup', 'first_click', 'first_idle',
-    'first_navigation', 'previous_rewind', 'total_pre_read',
+    'first_navigation', 'previous_rewind', 'previous_stop_check',
+    'previous_lookup', 'previous_state', 'previous_click',
+    'previous_idle', 'previous_verify', 'previous_limit_lookup',
+    'total_pre_read',
 ])
 def test_large_dom_reset_diagnostic_only_emits_fixed_bounded_metadata(tmp_path, step):
     d = diagnostics()
