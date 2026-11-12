@@ -392,7 +392,7 @@ def test_large_previous_probe_rejects_nested_foreign_control(page):
     assert page.evaluate('moves') == 0
 
 
-def test_large_previous_probe_disappearing_at_panel_marks_capture_partial(
+def test_large_previous_probe_disappearing_at_panel_omits_table(
         page, monkeypatch):
     from playwright.sync_api import ElementHandle
 
