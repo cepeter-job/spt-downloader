@@ -35,6 +35,10 @@ def test_packaging_waits_for_exact_uploaded_artifact_before_strict_readback():
     # reports the actual pull-request head as workflow_run.head_sha.
     assert wait['env']['SOURCE_HEAD_SHA'] == '${{ github.event.pull_request.head.sha || github.sha }}'
     assert '$env:SOURCE_HEAD_SHA' in wait['run']
+    # gh api defaults to pretty multi-line JSON; parsing each pipeline item
+    # separately can throw before the exact-artifact readiness gate is reached.
+    assert 'ConvertFrom-Json -InputObject ($json -join "`n")' in wait['run']
+    assert '$json | ConvertFrom-Json' not in wait['run']
     assert readback['with']['artifact-ids'] == wait['env']['ARTIFACT_ID']
     assert wait.get('continue-on-error') is not True
     script = wait['run']

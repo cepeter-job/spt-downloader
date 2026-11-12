@@ -616,7 +616,9 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw 'GitHub artifact-index lookup failed.'
             }
-            $list = $json | ConvertFrom-Json
+            # gh emits pretty multi-line JSON; PowerShell captures native stdout
+            # as an array, so join it before parsing one complete JSON document.
+            $list = ConvertFrom-Json -InputObject ($json -join "`n")
             if ($list.total_count -gt 100) {
               throw 'Artifact index exceeds the reviewed single-page bound.'
             }
