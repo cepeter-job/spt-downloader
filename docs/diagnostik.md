@@ -219,7 +219,10 @@ log spam untuk tabel kecil.
 
 Pengukuran ini **tidak berjalan secara default**. Pada run diagnostik
 yang secara eksplisit diizinkan, aktifkan environment proses
-`SPT_DIAG_DOM_RPC_PROBE=1` bersama log diagnostik. Pada tabel dengan
+`SPT_DIAG_DOM_RPC_PROBE=1` bersama log diagnostik pada **proses GUI
+sebelum worker dijalankan**. Hanya nilai tepat `1` diteruskan oleh
+allowlist worker; flag ini tidak diteruskan ke bootstrap/uv, dan tidak
+tersedia pada job yang sudah berjalan. Pada tabel dengan
 `max_page_size >= 250`, fungsi baca-saja akan mencoba maksimal dua
 RPC tambahan terhadap **owner paginator awal**: satu tepat sebelum
 `previous_lookup` pertama dan satu sebelum `previous_limit_lookup`

@@ -104,7 +104,10 @@ DOM first-page preparation diagnostics are independent of native admission: the 
 
 Optional large-table Previous RPC diagnostic (issue #161) is strictly
 **opt-in** via exact process environment `SPT_DIAG_DOM_RPC_PROBE=1` and
-an active diagnostic session. It never runs with the default setting.
+an active diagnostic session. Only the literal value `1` passes through
+the desktop's *worker-only* environment policy; it is not inherited by
+bootstrap/uv or added to the general OS allowlist. It never runs with
+the default setting.
 When enabled and at least 30 seconds remain in the original 180-second
 table budget, perform at most two read-only same-owner enabled-Previous
 selector probes: once before the first original lookup and once before

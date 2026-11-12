@@ -114,6 +114,10 @@ def worker_environment():
     """
     environment = _inherited_process_environment()
     environment.update(_OWNED_PYTHON_ENV)
+    # Explicit, fixed-value diagnostic permission for the owned worker only.
+    # Do not broaden the OS allowlist or pass this flag to uv/bootstrap.
+    if os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1':
+        environment['SPT_DIAG_DOM_RPC_PROBE'] = '1'
     return environment
 
 
