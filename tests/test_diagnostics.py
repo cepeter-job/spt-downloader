@@ -926,5 +926,4 @@ def test_dom_rpc_probe_schema_admits_only_bounded_timings_and_fixed_states(tmp_p
     assert not {'table_rpc_stage', 'table_rpc_state', 'table_rpc_renderer_ms',
                 'table_rpc_residual_ms', 'duration_ms', 'form_ordinal',
                 'table_ordinal'} & rows[1].keys()
-    import json
     assert secret not in json.dumps(rows)
