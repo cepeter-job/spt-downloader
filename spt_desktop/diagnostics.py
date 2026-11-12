@@ -39,12 +39,16 @@ EVENTS = frozenset({
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
-    'table.initial_loading', 'table.reset_timing',
+    'table.initial_loading', 'table.reset_timing', 'table.browser_rpc_probe',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed', 'update.check',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'table_rpc_stage': frozenset({'before_previous_lookup',
+                                  'before_previous_limit_lookup'}),
+    'table_rpc_state': frozenset({'present', 'absent', 'detached',
+                                  'unavailable', 'error'}),
     'table_reset_step': frozenset({'size_action', 'pilot_guard', 'first_lookup',
         'first_click', 'first_idle', 'first_navigation',
         'previous_rewind', 'previous_stop_check', 'previous_lookup',
@@ -222,6 +226,8 @@ FUNCTIONS = frozenset({'main', '_main', 'run_job', 'run_login_check', 'prepare',
     'validate_export_run', 'export_workbook', 'export_split_workbooks',
     'publish_workbooks', '_replace_selected', '_rollback', '_fingerprint', '_inspect',
     'pdf_custody', '_verify_stream', 'locked_file', 'include', 'self_test'})
+_RUN_PROBE_LABEL_EVENTS = frozenset({
+    'session.started', 'operation.started', 'operation.finished', 'session.closed'})
 _active = None
 _job = ContextVar('diagnostic_job_ref', default=None)
 _detail = ContextVar('diagnostic_detail_fields', default=None)
@@ -284,7 +290,8 @@ def _safe_fields(fields):
         if type(value) is int and -(2 ** 31) <= value < 2 ** 32:
             result[name] = value
     for name in ('table_click_ms', 'table_poll_ms', 'table_idle_ms', 'table_verify_ms', 'table_dom_ms',
-                 'table_advance_renderer_ms', 'table_dom_renderer_ms'):
+                 'table_advance_renderer_ms', 'table_dom_renderer_ms',
+                 'table_rpc_renderer_ms', 'table_rpc_residual_ms'):
         value = fields.get(name)
         if type(value) in (int, float) and 0 <= value <= 604_800_000:
             result[name] = round(value, 2)
@@ -306,6 +313,11 @@ class DiagnosticLog:
         self._build = diagnostic_fields()
         self.session_id = uuid.uuid4().hex
         self.role = role
+        # Immutable, worker-owned run provenance: label the run even when both
+        # optional probes are skipped by their remaining-budget guards.
+        # Never trust an event caller to supply or override this boolean.
+        self._dom_rpc_probe_enabled = (
+            role == 'worker' and os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1')
         self.level = level if type(level) is str and level in LEVELS else 'INFO'
         self.job_ref = job_reference(job_id)
         self.dropped = 0
@@ -353,6 +365,11 @@ class DiagnosticLog:
                        'elapsed_ms': max(0, round((time.monotonic() - self._started) * 1000, 2)),
                        'python': '.'.join(map(str, sys.version_info[:3])),
                        'frozen': bool(getattr(sys, 'frozen', False)), **_safe_fields(fields), **self._build}
+                if self.role == 'worker' and event in _RUN_PROBE_LABEL_EVENTS:
+                    # A fixed run-level flag, not a browser observation and not
+                    # an assertion about source completeness. It cannot be
+                    # overridden by untrusted event fields or caller input.
+                    row['table_rpc_probe_enabled'] = self._dom_rpc_probe_enabled
                 reference = job_reference(job_id) or _job.get() or self.job_ref
                 if reference:
                     row['job_ref'] = reference

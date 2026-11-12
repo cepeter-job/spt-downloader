@@ -900,3 +900,68 @@ def test_large_dom_reset_diagnostic_does_not_stringify_untrusted_fields(tmp_path
     assert 'table_reset_step' not in event
     assert 'duration_ms' not in event
     assert 'count' not in event
+
+
+def test_dom_rpc_probe_schema_admits_only_bounded_timings_and_fixed_states(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_DOM_TIMING_SENTINEL'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.browser_rpc_probe', table_rpc_stage='before_previous_lookup',
+                 table_rpc_state='absent', form_ordinal=4, table_ordinal=3,
+                 duration_ms=110000, table_rpc_renderer_ms=0.6,
+                 table_rpc_residual_ms=109999.4, url=secret, selector=secret,
+                 html=secret, headers=secret, body=secret, control=secret)
+        d.record('table.browser_rpc_probe', table_rpc_stage=secret,
+                 table_rpc_state=secret, table_rpc_renderer_ms=secret,
+                 table_rpc_residual_ms=-1, duration_ms=float('nan'),
+                 form_ordinal=True, table_ordinal=10_000_001)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert rows[0]['table_rpc_stage'] == 'before_previous_lookup'
+    assert rows[0]['table_rpc_state'] == 'absent'
+    assert rows[0]['table_rpc_renderer_ms'] == 0.6
+    assert rows[0]['table_rpc_residual_ms'] == 109999.4
+    assert rows[0]['duration_ms'] == 110000
+    assert not {'table_rpc_stage', 'table_rpc_state', 'table_rpc_renderer_ms',
+                'table_rpc_residual_ms', 'duration_ms', 'form_ordinal',
+                'table_ordinal'} & rows[1].keys()
+    assert secret not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('value,enabled', [('1', True), ('0', False),
+                                           ('true', False), ('', False)])
+@pytest.mark.parametrize('terminal_status', ['COMPLETE', 'PARTIAL'])
+def test_dom_rpc_probe_run_is_labeled_at_start_and_terminal_even_without_probes(
+        tmp_path, monkeypatch, value, enabled, terminal_status):
+    d = diagnostics()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', value)
+    with d.session(tmp_path, 'worker', level='INFO') as log:
+        # Caller-supplied flags must never override trusted run provenance.
+        d.record('operation.started', table_rpc_probe_enabled=not enabled)
+        d.record('operation.finished', status=terminal_status,
+                 table_rpc_probe_enabled=not enabled)
+        assert log.flush()
+    rows = records(tmp_path)
+    tagged = [r for r in rows if r['event'] in (
+        'session.started', 'operation.started', 'operation.finished',
+        'session.closed')]
+    assert len(tagged) == 4
+    assert [r['table_rpc_probe_enabled'] for r in tagged] == [enabled] * 4
+    assert next(r for r in tagged if r['event'] == 'operation.finished')[
+        'status'] == terminal_status
+    assert not any(r['event'] == 'table.browser_rpc_probe' for r in rows)
+
+
+@pytest.mark.parametrize('role', ['gui', 'cli'])
+def test_dom_rpc_probe_run_marker_is_worker_scoped_not_caller_supplied(
+        tmp_path, monkeypatch, role):
+    d = diagnostics()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, role, level='INFO') as log:
+        d.record('operation.started', table_rpc_probe_enabled=True)
+        d.record('operation.finished', status='PARTIAL',
+                 table_rpc_probe_enabled=True)
+        assert log.flush()
+    rows = records(tmp_path)
+    assert all('table_rpc_probe_enabled' not in r for r in rows)

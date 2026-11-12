@@ -597,3 +597,27 @@ def test_lowercase_proxy_spelling_is_forwarded_without_interpreter_overrides(
         assert any(k.upper() == 'NO_PROXY' and v == 'localhost,127.0.0.1'
                    for k, v in environment.items())
         assert not any(k.upper() == 'NODE_OPTIONS' for k in environment)
+
+
+@pytest.mark.parametrize('value,enabled', [
+    ('1', True),
+    ('0', False),
+    ('true', False),
+    (' 1', False),
+    ('SYNTHETIC_UNTRUSTED', False),
+])
+def test_dom_rpc_probe_is_forwarded_only_as_fixed_worker_diagnostic_value(
+        monkeypatch, tmp_path, value, enabled):
+    runtime = runtime_module()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', value)
+    worker = runtime.worker_environment()
+    bootstrap = runtime.bootstrap_environment(tmp_path)
+    assert worker.get('SPT_DIAG_DOM_RPC_PROBE') == ('1' if enabled else None)
+    assert 'SPT_DIAG_DOM_RPC_PROBE' not in bootstrap
+    assert 'SPT_DIAG_DOM_RPC_PROBE' not in runtime._OS_ENV_ALLOWLIST
+
+
+def test_dom_rpc_probe_is_not_forwarded_by_default(monkeypatch):
+    runtime = runtime_module()
+    monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
+    assert 'SPT_DIAG_DOM_RPC_PROBE' not in runtime.worker_environment()
