@@ -242,10 +242,11 @@ class App:
         root.bind('<Destroy>', self._on_destroy, add='+')
         self.npwp_entry.focus_set()
         self._poll_after = root.after(100, self._poll)
+        # Start the automatic check on the first Tk event-loop turn after the
+        # window is built; the fetch itself remains on the background thread.
         # Synthetic GUI self-tests inject a controller and must stay offline.
-        # The authorized Cloudflare Worker endpoint is a fixed nonempty constant.
         if self._owns_controller:
-            self._update_after = root.after(4000, self.check_updates)
+            self._update_after = root.after(0, self.check_updates)
 
     def check_updates(self, manual=False):
         """Fetch public release metadata off Tk's thread, never touching Coretax."""

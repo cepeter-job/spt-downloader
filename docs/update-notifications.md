@@ -89,8 +89,10 @@ comparison, not a signed update proof or Git ancestry verification.
 
 ## Checks and behavior
 
-The app checks automatically after startup and daily while open, with network
-work performed off the Tk UI thread. Manual check is available in Settings via
+The app schedules its first automatic check immediately after the window is
+constructed, on the first Tk event-loop turn (no four-second startup delay),
+and checks again daily while open. Network work runs off the Tk UI thread.
+Manual check is available in Settings via
 **Cek pembaruan**. It defers the popup while an SPT job or interaction is active.
 If the Worker is empty, malformed, blocked, or offline, automatic checks do
 nothing; they never block Coretax or local export. Only the release notice
