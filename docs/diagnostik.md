@@ -202,10 +202,18 @@ tanpa membaca data tabel bisnis.
   tombol yang memenuhi selector asli, tidak dibuat handle Playwright
   untuk kontrol yang tidak ada; jika ada, lookup ElementHandle dan
   validasi klik asli tetap berlaku. Owner yang terlepas ditolak,
-  tidak dicari ulang secara global. Evaluasi ini tetap termasuk
-  `previous_lookup`; waktu browser/transport tidak dijamin lebih cepat
-  hingga teruji pada build-matched live run. Tabel kecil tetap memakai
-  jalur lama. Tidak ada perubahan sumber, Stop, rewind, atau batas 180 detik.
+  tidak dicari ulang secara global. Jika owner terlepas atau Previous
+  menghilang sesudah probe, exception ditangani oleh `capture_panel`:
+  tabel tersebut **tidak ditambahkan** ke hasil, error disanitasi sebagai
+  `capture_failed`, dan record/job tetap non-COMPLETE. Ini **bukan**
+  PARTIAL tabel dengan baris sebelumnya dipertahankan. Kegagalan
+  pagination biasa setelah snapshot awal tetap mengembalikan
+  `complete=False` dengan halaman yang telah diverifikasi.
+  Evaluasi baru tetap termasuk `previous_lookup`; karena memakai
+  transport browser yang sama, dan menambah satu RPC jika Previous
+  tersedia, percepatan **belum terbukti** sebelum live test build-matched.
+  Tabel kecil memakai jalur lama. Sumber, Stop, rewind, dan batas
+  180 detik tidak diubah.
   `previous_limit_lookup` adalah pemeriksaan akhir setelah loop,
   bukan permintaan tambahan. Jumlah klik Previous sukses tetap
   di `previous_rewind.count`.

@@ -107,9 +107,18 @@ selector and the original captured paginator owner. When the control is absent,
 avoid creating a missing Playwright ElementHandle; when present, retain the
 original lookup, actionability/owner check, click, idle and state verification.
 Reject a detached owner or a control disappearing between probe and lookup.
-The original final Previous limit check and smaller-table path are unchanged.
-This is a candidate latency optimization, not verified live speedup, source
-completeness, permission for speculative clicks, or an extended 180s budget.
+These exceptional paths raise, and the existing capture_panel exception handler
+marks the record/run non-COMPLETE, reports capture_failed, and omits that
+table entirely rather than returning a retained-rows table. Previously
+captured rows in that table are not certified. An ordinary bounded pagination
+failure after a successful initial snapshot still returns complete=False and
+retains its prior verified pages. The original final Previous limit check
+and smaller-table path are unchanged. This is a latency hypothesis only:
+the presence probe traverses the same browser transport as the slow lookup,
+and its extra round trip when Previous exists may make that path slower.
+No performance gain or source completeness is established before an
+exact-build operator run; never speculate from synthetic tests. No speculative
+click, new source authority, or extended 180s budget is permitted.
 
 
 Every PPN primary, including Normal, must explicitly bind ReturnSheetStatusCode=SUBMITTED before projection or fallback; missing status is ineligible and contradictory status is fatal. PPN AskedTo is a final-lifecycle projection, not a raw field copy. Negative submitted amendments may preserve a choice only when the facility null-write is excluded and calendar assignment is blocked across both initial and final export stages, by the source invoice/uncollected quartet predicate, or by a stable inactive capture-owned interval bound to outer PeriodYear. With calendar blocked, a proven facility null-write clears only the supported raw null/FAST_REFUND/CARRY_FORWARD branch. Exact source facility codes are AS.09-01/AS.09-02. Nonnegative FORWARD_REFUND requires a proved post-raw distinct clear event and stays unsupported. The narrow Normal nonnegative branch additionally reconciles captured output/input operands to the four/six ordered component sums before deriving its final balance; reject missing/mismatched components and unsafe operands/intermediates. Normal choice inputs are integral within fifteen digits. The shared final-balance amount helper retains only binary-exact direct fractions and exact intermediate arithmetic within that bound. Preserve all contributing source paths; do not use stale stored balances, a replay clock, or DOM checked state. Active-calendar, Normal-negative and other unproved branches use whole-record fallback.

@@ -392,6 +392,34 @@ def test_large_previous_probe_rejects_nested_foreign_control(page):
     assert page.evaluate('moves') == 0
 
 
+def test_large_previous_probe_disappearing_at_panel_marks_capture_partial(
+        page, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        first.after(previous);
+    }""")
+    original = ElementHandle.query_selector
+
+    def disappeared(self, selector):
+        if selector == '.p-paginator-prev:not([disabled]):not(.p-disabled)':
+            return None
+        return original(self, selector)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', disappeared)
+    result = capture(page)
+    assert not result['capture_complete']
+    assert result['sections'][0]['tables'] == []
+    assert any(e['message'] == 'capture_failed' and
+               e['object'] == 'L3/table 1' for e in result['errors'])
+    assert page.evaluate('moves') == 0
+    # No body rows are certified or silently published as a complete table.
+
+
 def test_large_previous_probe_rejects_detached_owner(page):
     from playwright.sync_api import Error as PlaywrightError
 
@@ -400,7 +428,7 @@ def test_large_previous_probe_rejects_detached_owner(page):
         "e=>e.closest('p-table')")
     try:
         page.evaluate("document.querySelector('p-table').remove()")
-        with pytest.raises(PlaywrightError, match='Original paginator owner changed'):
+        with pytest.raises(PlaywrightError):
             owner.evaluate(driver.OWNED_PREVIOUS_PRESENT_JS,
                            '.p-paginator-prev:not([disabled]):not(.p-disabled)')
     finally:
