@@ -234,10 +234,20 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
-# The large DOM fallback frequently has no enabled Previous control.
-# A read-only owner-bound presence probe avoids materializing an ElementHandle
-# for an absent control. On a positive probe the original lookup/click guard
-# still rechecks actionability and ownership; this does not authorize a click.
+# One owner-bound query returns the *original control*, not a boolean that
+# requires a second round-trip to resolve an ElementHandle when it exists.
+# A returned handle is used only by the existing click guard and is disposed
+# after the attempt. Missing Previous yields a JSHandle(null), never a guessed
+# replacement or a document-wide search.
+OWNED_PREVIOUS_CONTROL_JS = r'''(owner, selector) => {
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ return owner.querySelector(selector);
+}'''
+
+# The final post-loop limit check needs only presence, not a button handle.
+# Keep its independent check (including after max_pages iterations), on the
+# same owner with the exact original enabled selector.
 OWNED_PREVIOUS_PRESENT_JS = r'''(owner, selector) => {
  if(!owner.isConnected || owner.ownerDocument!==document)
    throw new Error('Original paginator owner changed');
@@ -641,38 +651,42 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     rewind_started = _diagnostic_clock()
     rewind_clicks = 0
     # Aggregate repeated Previous operations into one bounded event per stage.
-    # Large tables probe presence on the same owner before materializing an
-    # enabled control. Stop/exception and inclusive timing remain unchanged.
+    # Large tables resolve the owned control in a single browser round-trip,
+    # dispose that result on every path, and retain original Stop/actionability
+    # checks, rewind semantics and inclusive timings.
     rewind_timings = {} if max_page_size >= 250 else None
     try:
         for _ in range(max_pages):
             with _timed_rewind_operation(rewind_timings, 'previous_stop_check'):
                 _check_cancel(check_cancel)
-            with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
-                if max_page_size >= 250:
-                    # A missing Previous is the common first-page case.
-                    # Preserve the original handle lookup for present controls.
-                    present = container_handle.evaluate(
-                        OWNED_PREVIOUS_PRESENT_JS, previous_selector)
-                    previous = container_handle.query_selector(previous_selector) if present else None
-                    if present and previous is None:
-                        raise RuntimeError('Table paginator changed during Previous lookup')
-                else:
-                    previous = container_handle.query_selector(previous_selector)
-            if not previous:
-                break
-            with _timed_rewind_operation(rewind_timings, 'previous_state'):
-                state = container_handle.evaluate(STATE_JS)
-            with _timed_rewind_operation(rewind_timings, 'previous_click'):
-                _click_table_paginator(previous, container_handle, check_cancel)
-                rewind_clicks += 1
-            with _timed_rewind_operation(rewind_timings, 'previous_idle'):
-                wait_idle(page)
-            with _timed_rewind_operation(rewind_timings, 'previous_verify'):
-                if container_handle.evaluate(STATE_JS) == state:
-                    raise RuntimeError('Table pagination did not return to the first page')
+            previous_handle = None
+            try:
+                with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
+                    if max_page_size >= 250:
+                        previous_handle = container_handle.evaluate_handle(
+                            OWNED_PREVIOUS_CONTROL_JS, previous_selector)
+                        previous = previous_handle.as_element()
+                    else:
+                        previous = container_handle.query_selector(previous_selector)
+                if not previous:
+                    break
+                with _timed_rewind_operation(rewind_timings, 'previous_state'):
+                    state = container_handle.evaluate(STATE_JS)
+                with _timed_rewind_operation(rewind_timings, 'previous_click'):
+                    _click_table_paginator(previous, container_handle, check_cancel)
+                    rewind_clicks += 1
+                with _timed_rewind_operation(rewind_timings, 'previous_idle'):
+                    wait_idle(page)
+                with _timed_rewind_operation(rewind_timings, 'previous_verify'):
+                    if container_handle.evaluate(STATE_JS) == state:
+                        raise RuntimeError('Table pagination did not return to the first page')
+            finally:
+                if previous_handle is not None:
+                    _dispose_table_handle(previous_handle)
         with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
-            if container_handle.query_selector(previous_selector):
+            if (container_handle.evaluate(OWNED_PREVIOUS_PRESENT_JS, previous_selector)
+                    if max_page_size >= 250
+                    else container_handle.query_selector(previous_selector)):
                 raise RuntimeError(f'Table reset page limit {max_pages} reached')
     finally:
         if rewind_timings is not None:

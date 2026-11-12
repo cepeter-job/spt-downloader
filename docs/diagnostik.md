@@ -197,26 +197,27 @@ tanpa membaca data tabel bisnis.
   pemanggilan/percobaan tahap, **bukan** jumlah respons atau klik sukses.
   Semua tahap hanya diterbitkan sekali per tabel besar, termasuk saat
   exception/Stop; tahap yang belum dicapai tidak diterbitkan.
-  Jalur tabel besar kini memeriksa *keberadaan* Previous dengan satu
-  evaluasi JavaScript yang terikat pada owner tabel awal. Jika tidak ada
-  tombol yang memenuhi selector asli, tidak dibuat handle Playwright
-  untuk kontrol yang tidak ada; jika ada, lookup ElementHandle dan
-  validasi klik asli tetap berlaku. Owner yang terlepas ditolak,
-  tidak dicari ulang secara global. Jika owner terlepas atau Previous
-  menghilang sesudah probe, exception ditangani oleh `capture_panel`:
-  tabel tersebut **tidak ditambahkan** ke hasil, error disanitasi sebagai
-  `capture_failed`, dan record/job tetap non-COMPLETE. Ini **bukan**
-  PARTIAL tabel dengan baris sebelumnya dipertahankan. Kegagalan
+  Jalur tabel besar menggunakan **satu** `evaluate_handle` JavaScript
+  pada owner paginator awal dengan selector enabled Previous yang sama.
+  `as_element()` mengembalikan tombol asli jika ada, atau `None`;
+  tidak ada tahap probe terpisah sebelum lookup handle. Handle sementara
+  selalu dilepas, termasuk saat Stop/error/tombol tidak ditemukan.
+  Tombol yang ditemukan masih harus lolos validasi aksi dan owner asli
+  tepat sebelum klik; tidak ada pencarian ulang global atau klik spekulatif.
+  Jika owner terlepas atau Previous menghilang sebelum klik, exception
+  ditangani oleh `capture_panel`: tabel **tidak ditambahkan** ke hasil,
+  error disanitasi sebagai `capture_failed`, dan record/job non-COMPLETE.
+  Ini bukan PARTIAL tabel dengan baris sebelumnya dipertahankan. Kegagalan
   pagination biasa setelah snapshot awal tetap mengembalikan
-  `complete=False` dengan halaman yang telah diverifikasi.
-  Evaluasi baru tetap termasuk `previous_lookup`; karena memakai
-  transport browser yang sama, dan menambah satu RPC jika Previous
-  tersedia, percepatan **belum terbukti** sebelum live test build-matched.
-  Tabel kecil memakai jalur lama. Sumber, Stop, rewind, dan batas
-  180 detik tidak diubah.
-  `previous_limit_lookup` adalah pemeriksaan akhir setelah loop,
-  bukan permintaan tambahan. Jumlah klik Previous sukses tetap
-  di `previous_rewind.count`.
+  `complete=False` dengan halaman valid yang sudah terverifikasi.
+  `previous_lookup` kini mengukur satu `evaluate_handle` saja.
+  `previous_limit_lookup` tetap diperiksa independen setelah loop
+  (termasuk saat page limit), tetapi satu `evaluate` boolean owner-bound
+  tidak membuat handle yang tidak akan diklik. Tabel kecil tetap memakai
+  jalur lama. Transport yang sama masih bisa lambat; waktu live belum
+  diverifikasi ulang pada implementasi ini. Sumber, Stop, rewind,
+  batas 180 detik dan hasil PARTIAL tetap aman.
+  Jumlah klik Previous sukses tetap di `previous_rewind.count`.
 - `previous_rewind`: seluruh loop Previous, verifikasi state,
   `wait_idle` serta pemeriksaan limit yang sudah ada. `count` adalah
   jumlah klik Previous yang berhasil diajukan, **bukan** bukti respons
