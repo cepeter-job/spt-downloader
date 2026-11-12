@@ -222,15 +222,29 @@ yang secara eksplisit diizinkan, aktifkan environment proses
 `SPT_DIAG_DOM_RPC_PROBE=1` bersama log diagnostik pada **proses GUI
 sebelum worker dijalankan**. Hanya nilai tepat `1` diteruskan oleh
 allowlist worker; flag ini tidak diteruskan ke bootstrap/uv, dan tidak
-tersedia pada job yang sudah berjalan. Pada tabel dengan
+tersedia pada job yang sudah berjalan. **Setiap run worker** dilabeli
+`table_rpc_probe_enabled=true/false` pada `session.started`,
+`operation.started`, `operation.finished`, dan `session.closed`,
+berdasarkan flag worker saat session dimulai. `true` berarti mode
+investigasi diizinkan, **bukan** bukti probe benar-benar dijalankan:
+budget guard dapat melewati keduanya sehingga tidak ada event
+`table.browser_rpc_probe`. Pisahkan seluruh run berlabel `true`
+dari run baseline, termasuk pada analisis COMPLETE/PARTIAL,
+waktu eksekusi, dan perbandingan baris. Penanda ini hanya metadata
+log worker dan tidak ditambahkan pada `run.json`/workbook.
+
+Pada tabel dengan
 `max_page_size >= 250`, fungsi baca-saja akan mencoba maksimal dua
 RPC tambahan terhadap **owner paginator awal**: satu tepat sebelum
 `previous_lookup` pertama dan satu sebelum `previous_limit_lookup`
 akhir. Probe pertama **dilewati** jika sisa budget asli kurang dari
 **120 detik**; probe sebelum limit dilewati jika kurang dari **150 detik**.
 Kedua ambang melampaui observasi panggilan Previous terlama **108,80 detik**
-dengan cadangan lebih besar di tahap akhir. Observasi ini bukan batas
-maksimum latensi browser. Tahap yang dilewati tidak membuat event.
+dengan cadangan lebih besar di tahap akhir. Observasi ini hanya satu
+sampel dan bukan batas maksimum latensi browser; guard 150 detik
+**sering melewati probe tahap akhir pada run lambat**, sehingga hasil
+diagnostik bisa kosong. Catat skip ini dalam laporan run.
+Tahap yang dilewati tidak membuat event.
 Jika loop Previous memiliki banyak klik, tidak dilakukan probe per klik.
 
 Event `table.browser_rpc_probe` hanya membawa:

@@ -128,6 +128,14 @@ The probe result/exception never authorizes a click or overrides the
 normal error path, but time consumed can alter the final outcome. Do not
 use these runs for benchmark acceptance or presume unchanged row coverage.
 Probe exceptions are sanitized without disclosing their messages.
+All worker run-boundary events (`session.started`, `operation.started`,
+`operation.finished`, `session.closed`) carry an immutable
+`table_rpc_probe_enabled` boolean computed from the exact worker
+environment, whether or not a table probe was ultimately sent. Compare
+operator runs only after checking this run-level flag: `true` is an
+**investigative run**, never an unprobed baseline, even if no probe
+event appears because the 120s/150s guards skipped both calls.
+The flag does not certify data completeness or enter business manifests.
 Do not add listeners, CDP attachment, DOM writes, repeated polling,
 timer loops or attempts to compensate for the consumed budget.
 

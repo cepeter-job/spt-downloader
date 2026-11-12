@@ -226,6 +226,8 @@ FUNCTIONS = frozenset({'main', '_main', 'run_job', 'run_login_check', 'prepare',
     'validate_export_run', 'export_workbook', 'export_split_workbooks',
     'publish_workbooks', '_replace_selected', '_rollback', '_fingerprint', '_inspect',
     'pdf_custody', '_verify_stream', 'locked_file', 'include', 'self_test'})
+_RUN_PROBE_LABEL_EVENTS = frozenset({
+    'session.started', 'operation.started', 'operation.finished', 'session.closed'})
 _active = None
 _job = ContextVar('diagnostic_job_ref', default=None)
 _detail = ContextVar('diagnostic_detail_fields', default=None)
@@ -311,6 +313,11 @@ class DiagnosticLog:
         self._build = diagnostic_fields()
         self.session_id = uuid.uuid4().hex
         self.role = role
+        # Immutable, worker-owned run provenance: label the run even when both
+        # optional probes are skipped by their remaining-budget guards.
+        # Never trust an event caller to supply or override this boolean.
+        self._dom_rpc_probe_enabled = (
+            role == 'worker' and os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1')
         self.level = level if type(level) is str and level in LEVELS else 'INFO'
         self.job_ref = job_reference(job_id)
         self.dropped = 0
@@ -358,6 +365,11 @@ class DiagnosticLog:
                        'elapsed_ms': max(0, round((time.monotonic() - self._started) * 1000, 2)),
                        'python': '.'.join(map(str, sys.version_info[:3])),
                        'frozen': bool(getattr(sys, 'frozen', False)), **_safe_fields(fields), **self._build}
+                if self.role == 'worker' and event in _RUN_PROBE_LABEL_EVENTS:
+                    # A fixed run-level flag, not a browser observation and not
+                    # an assertion about source completeness. It cannot be
+                    # overridden by untrusted event fields or caller input.
+                    row['table_rpc_probe_enabled'] = self._dom_rpc_probe_enabled
                 reference = job_reference(job_id) or _job.get() or self.job_ref
                 if reference:
                     row['job_ref'] = reference

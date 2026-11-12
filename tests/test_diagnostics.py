@@ -927,3 +927,41 @@ def test_dom_rpc_probe_schema_admits_only_bounded_timings_and_fixed_states(tmp_p
                 'table_rpc_residual_ms', 'duration_ms', 'form_ordinal',
                 'table_ordinal'} & rows[1].keys()
     assert secret not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('value,enabled', [('1', True), ('0', False),
+                                           ('true', False), ('', False)])
+@pytest.mark.parametrize('terminal_status', ['COMPLETE', 'PARTIAL'])
+def test_dom_rpc_probe_run_is_labeled_at_start_and_terminal_even_without_probes(
+        tmp_path, monkeypatch, value, enabled, terminal_status):
+    d = diagnostics()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', value)
+    with d.session(tmp_path, 'worker', level='INFO') as log:
+        # Caller-supplied flags must never override trusted run provenance.
+        d.record('operation.started', table_rpc_probe_enabled=not enabled)
+        d.record('operation.finished', status=terminal_status,
+                 table_rpc_probe_enabled=not enabled)
+        assert log.flush()
+    rows = records(tmp_path)
+    tagged = [r for r in rows if r['event'] in (
+        'session.started', 'operation.started', 'operation.finished',
+        'session.closed')]
+    assert len(tagged) == 4
+    assert [r['table_rpc_probe_enabled'] for r in tagged] == [enabled] * 4
+    assert next(r for r in tagged if r['event'] == 'operation.finished')[
+        'status'] == terminal_status
+    assert not any(r['event'] == 'table.browser_rpc_probe' for r in rows)
+
+
+@pytest.mark.parametrize('role', ['gui', 'cli'])
+def test_dom_rpc_probe_run_marker_is_worker_scoped_not_caller_supplied(
+        tmp_path, monkeypatch, role):
+    d = diagnostics()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, role, level='INFO') as log:
+        d.record('operation.started', table_rpc_probe_enabled=True)
+        d.record('operation.finished', status='PARTIAL',
+                 table_rpc_probe_enabled=True)
+        assert log.flush()
+    rows = records(tmp_path)
+    assert all('table_rpc_probe_enabled' not in r for r in rows)
