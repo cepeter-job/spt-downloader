@@ -8,6 +8,61 @@ from spt_desktop import update_notice
 from support_gui import Controller, button, widgets
 
 
+def test_production_gui_schedules_automatic_check_on_first_event_loop(
+        tmp_path, monkeypatch):
+    # Use the production ownership path without creating a real worker or
+    # launching a network thread. Startup must not wait for a 4-second timer.
+    monkeypatch.setattr(gui, 'JobController',
+                        lambda workspace, callback: Controller())
+    invoked = []
+
+    def fake_check_updates(self, manual=False):
+        self._update_after = None
+        invoked.append(manual)
+
+    monkeypatch.setattr(gui.App, 'check_updates', fake_check_updates)
+    root = tk.Tk()
+    actual_after = root.after
+    scheduled = []
+
+    def record_after(milliseconds, callback, *args):
+        if getattr(callback, '__func__', None) is fake_check_updates:
+            scheduled.append(milliseconds)
+        return actual_after(milliseconds, callback, *args)
+
+    try:
+        monkeypatch.setattr(root, 'after', record_after)
+        app = gui.App(root, tmp_path)
+        assert app._owns_controller
+        assert scheduled == [0]
+        assert invoked == []
+        root.update()
+        assert invoked == [False]
+        root.update()
+        assert invoked == [False]
+        app._dispose()
+    finally:
+        root.destroy()
+
+
+def test_dispose_before_startup_does_not_check_for_updates(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(gui, 'JobController',
+                        lambda workspace, callback: Controller())
+    invoked = []
+    monkeypatch.setattr(gui.App, 'check_updates',
+                        lambda self: invoked.append('checked'))
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path)
+        assert app._update_after is not None
+        app._dispose()
+        root.update()
+        assert invoked == []
+    finally:
+        root.destroy()
+
+
 def test_check_updates_without_valid_build_does_not_fetch_or_open_browser(tmp_path, monkeypatch):
     notices = []
     monkeypatch.setattr(gui, 'read_build_info', lambda: None)
