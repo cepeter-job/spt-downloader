@@ -260,6 +260,9 @@ def validate_production(document):
         "windows-build-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}")
     assert _expression(document['concurrency']['cancel-in-progress']) == "github.event_name=='pull_request'"
     _permissions(document, {
+        # Packaging polls only the current run's exact uploaded artifact ID
+        # before strict download and digest verification. No write permission.
+        'package': {'contents': 'read', 'actions': 'read'},
         'attest': {'contents': 'read', 'id-token': 'write', 'attestations': 'write'},
         'cleanup': {'contents': 'write', 'pull-requests': 'read'},
     })

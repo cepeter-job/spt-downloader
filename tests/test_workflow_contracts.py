@@ -49,6 +49,20 @@ def test_current_production_workflow_preserves_real_gate_and_artifact_order():
     contract().validate_production(production())
 
 
+@pytest.mark.parametrize('permissions', [
+    {'contents': 'write', 'actions': 'read'},
+    {'contents': 'read', 'actions': 'write'},
+    {'contents': 'read', 'actions': 'read', 'id-token': 'write'},
+    {'contents': 'read'},
+])
+def test_packaging_artifact_index_cannot_widen_or_omit_scoped_permissions(
+        permissions):
+    workflow = deepcopy(production())
+    workflow['jobs']['package']['permissions'] = permissions
+    with pytest.raises(AssertionError, match='package'):
+        contract().validate_production(workflow)
+
+
 def test_windows_coverage_is_combined_and_gated_before_packaging():
     assert hasattr(contract(), 'validate_windows_coverage'), 'Windows coverage pipeline is missing'
     contract().validate_windows_coverage(production())
