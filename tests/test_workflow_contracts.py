@@ -18,6 +18,33 @@ def production():
     return contract().load_workflow(ROOT / '.github/workflows/windows-build.yml')
 
 
+def test_packaging_waits_for_exact_uploaded_artifact_before_strict_readback():
+    workflow = production()
+    package = workflow['jobs']['package']
+    steps = package['steps']
+    upload = next(step for step in steps if step.get('id') == 'upload')
+    wait = next(step for step in steps if step.get('name', '').startswith(
+        'Wait for the uploaded artifact to appear'))
+    readback = next(step for step in steps if 'artifact-ids' in step.get('with', {}))
+    assert steps.index(upload) < steps.index(wait) < steps.index(readback)
+    assert package['permissions'] == {'contents': 'read', 'actions': 'read'}
+    assert wait['env']['ARTIFACT_ID'] == '${{ steps.upload.outputs.artifact-id }}'
+    assert '${{ github.sha }}' in wait['env']['ARTIFACT_NAME']
+    assert '${{ github.run_attempt }}' in wait['env']['ARTIFACT_NAME']
+    # PR artifacts embed the synthetic merge SHA in the name, but the API
+    # reports the actual pull-request head as workflow_run.head_sha.
+    assert wait['env']['SOURCE_HEAD_SHA'] == '${{ github.event.pull_request.head.sha || github.sha }}'
+    assert '$env:SOURCE_HEAD_SHA' in wait['run']
+    assert readback['with']['artifact-ids'] == wait['env']['ARTIFACT_ID']
+    assert wait.get('continue-on-error') is not True
+    script = wait['run']
+    for required in ('-le 15', 'Start-Sleep -Seconds 3',
+                     'Duplicate exact artifact ID', 'workflow_run.head_sha',
+                     'visible = 0', 'visible++', 'throw'):
+        assert required in script
+    assert readback.get('continue-on-error') is not True
+
+
 def test_current_production_workflow_preserves_real_gate_and_artifact_order():
     contract().validate_production(production())
 
