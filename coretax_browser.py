@@ -564,29 +564,47 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         _record_large_table_reset('size_action', size_started, ordinal, max_page_size, 1)
     if observer is not None:
         observer.emit('size_complete')
-    if max_page_size >= 250:
-        # A previously selected larger page must not bypass the pilot limit.
-        label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
-        selected = label.inner_text().strip() if label else ''
-        if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
-            raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+    guard_started = _diagnostic_clock()
+    try:
+        if max_page_size >= 250:
+            # A previously selected larger page must not bypass the pilot limit.
+            label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+            selected = label.inner_text().strip() if label else ''
+            if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
+                raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+    finally:
+        _record_large_table_reset('pilot_guard', guard_started, ordinal, max_page_size, 1)
     first_started = _diagnostic_clock()
     first_clicks = 0
     try:
-        first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
+        lookup_started = _diagnostic_clock()
+        first_found = 0
+        try:
+            first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
+            first_found = int(first is not None)
+        finally:
+            _record_large_table_reset('first_lookup', lookup_started, ordinal, max_page_size, first_found)
         if first:
             if observer is not None:
                 observer.stage = 'first_click'
-            _click_table_paginator(first, container_handle, check_cancel)
-            first_clicks = 1
+            click_started = _diagnostic_clock()
+            try:
+                _click_table_paginator(first, container_handle, check_cancel)
+                first_clicks = 1
+            finally:
+                _record_large_table_reset('first_click', click_started, ordinal, max_page_size, first_clicks)
             if observer is not None:
                 observer.stage = 'first_idle'
+            idle_started = _diagnostic_clock()
             try:
-                wait_idle(page)
-            except PlaywrightTimeoutError as exc:
-                if observer is not None:
-                    observer.emit('first_idle_timeout', error=exc)
-                raise
+                try:
+                    wait_idle(page)
+                except PlaywrightTimeoutError as exc:
+                    if observer is not None:
+                        observer.emit('first_idle_timeout', error=exc)
+                    raise
+            finally:
+                _record_large_table_reset('first_idle', idle_started, ordinal, max_page_size, 1)
             if observer is not None:
                 observer.emit('first_idle_complete')
     finally:
