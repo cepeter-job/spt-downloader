@@ -900,3 +900,31 @@ def test_large_dom_reset_diagnostic_does_not_stringify_untrusted_fields(tmp_path
     assert 'table_reset_step' not in event
     assert 'duration_ms' not in event
     assert 'count' not in event
+
+
+def test_dom_rpc_probe_schema_admits_only_bounded_timings_and_fixed_states(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_DOM_TIMING_SENTINEL'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.browser_rpc_probe', table_rpc_stage='before_previous_lookup',
+                 table_rpc_state='absent', form_ordinal=4, table_ordinal=3,
+                 duration_ms=110000, table_rpc_renderer_ms=0.6,
+                 table_rpc_residual_ms=109999.4, url=secret, selector=secret,
+                 html=secret, headers=secret, body=secret, control=secret)
+        d.record('table.browser_rpc_probe', table_rpc_stage=secret,
+                 table_rpc_state=secret, table_rpc_renderer_ms=secret,
+                 table_rpc_residual_ms=-1, duration_ms=float('nan'),
+                 form_ordinal=True, table_ordinal=10_000_001)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert rows[0]['table_rpc_stage'] == 'before_previous_lookup'
+    assert rows[0]['table_rpc_state'] == 'absent'
+    assert rows[0]['table_rpc_renderer_ms'] == 0.6
+    assert rows[0]['table_rpc_residual_ms'] == 109999.4
+    assert rows[0]['duration_ms'] == 110000
+    assert not {'table_rpc_stage', 'table_rpc_state', 'table_rpc_renderer_ms',
+                'table_rpc_residual_ms', 'duration_ms', 'form_ordinal',
+                'table_ordinal'} & rows[1].keys()
+    import json
+    assert secret not in json.dumps(rows)

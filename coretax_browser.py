@@ -234,6 +234,21 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
+
+# Diagnostic-only: one read-only selector check on the ORIGINAL held owner.
+# performance.now() covers only renderer execution after the RPC begins.
+# The Python call duration minus this value is an inclusive residual: Playwright
+# scheduling, IPC/transport, queueing and serialization, not proven queue time.
+# No body rows, captions, HTML, control handles or request data leave the page.
+DOM_RPC_TIMING_JS = r'''(owner, selector) => {
+ const started=performance.now();
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   return {status:'detached', renderer_ms:performance.now()-started};
+ const present=owner.querySelector(selector)!==null;
+ return {status:present?'present':'absent', renderer_ms:performance.now()-started};
+}'''
+DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS = 30
+
 PAGINATOR_CLICK_JS = r'''(e, owner, deadline) => {
  const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
  const style = getComputedStyle(e);
@@ -539,6 +554,51 @@ def _timed_rewind_operation(timings, stage):
         current[1] += 1
 
 
+def _observe_dom_rpc_delay(owner, selector, *, stage, ordinal, max_page_size,
+                           capture_deadline, check_cancel):
+    """Opt-in, bounded-count diagnostic; never supplies capture/click authority.
+
+    Only active when explicitly requested for a diagnostic operator run.
+    Its extra browser RPC consumes real table time; a successful/failed probe
+    cannot affect the original paginator decision or mask its exceptions.
+    """
+    if (max_page_size < 250 or not diagnostics.active()
+            or os.environ.get('SPT_DIAG_DOM_RPC_PROBE') != '1'
+            or capture_deadline - time.monotonic() < DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS):
+        return
+    _check_cancel(check_cancel)
+    started = _diagnostic_clock()
+    try:
+        observation = owner.evaluate(DOM_RPC_TIMING_JS, selector)
+        duration_ms = (_diagnostic_clock() - started) * 1000
+        state = 'unavailable'
+        renderer_ms = None
+        if type(observation) is dict:
+            observed_state = observation.get('status')
+            observed_ms = observation.get('renderer_ms')
+            if observed_state in ('present', 'absent', 'detached'):
+                state = observed_state
+            if (type(observed_ms) in (int, float)
+                    and 0 <= observed_ms <= min(duration_ms, 604_800_000)):
+                renderer_ms = observed_ms
+        fields = dict(table_rpc_stage=stage, table_rpc_state=state,
+                      form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                      table_ordinal=ordinal, duration_ms=duration_ms)
+        if renderer_ms is not None:
+            fields['table_rpc_renderer_ms'] = renderer_ms
+            fields['table_rpc_residual_ms'] = max(0, duration_ms - renderer_ms)
+        diagnostics.record('table.browser_rpc_probe', **fields)
+    except Exception as exc:
+        # Pure diagnostic failure is contained: never block/replace a real
+        # capture outcome or inspect remote error messages.
+        diagnostics.record('table.browser_rpc_probe', level='WARNING',
+                           error=exc, table_rpc_stage=stage,
+                           table_rpc_state='error',
+                           form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                           table_ordinal=ordinal,
+                           duration_ms=(_diagnostic_clock()-started)*1000)
+
+
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
     with ExitStack() as resources:
@@ -634,9 +694,17 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     # their original propagation and the inclusive previous_rewind timing.
     rewind_timings = {} if max_page_size >= 250 else None
     try:
-        for _ in range(max_pages):
+        for attempt in range(max_pages):
             with _timed_rewind_operation(rewind_timings, 'previous_stop_check'):
                 _check_cancel(check_cancel)
+            if attempt == 0:
+                # At most one read-only probe before the FIRST existing
+                # Previous lookup; no new RPC on ordinary/default captures.
+                _observe_dom_rpc_delay(
+                    container_handle, previous_selector,
+                    stage='before_previous_lookup', ordinal=ordinal,
+                    max_page_size=max_page_size, capture_deadline=capture_deadline,
+                    check_cancel=check_cancel)
             with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
                 previous = container_handle.query_selector(previous_selector)
             if not previous:
@@ -651,6 +719,13 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             with _timed_rewind_operation(rewind_timings, 'previous_verify'):
                 if container_handle.evaluate(STATE_JS) == state:
                     raise RuntimeError('Table pagination did not return to the first page')
+        # Independent, at-most-once final-limit diagnostic, only when ample
+        # capture time remains. No authority to skip the real final check.
+        _observe_dom_rpc_delay(
+            container_handle, previous_selector,
+            stage='before_previous_limit_lookup', ordinal=ordinal,
+            max_page_size=max_page_size, capture_deadline=capture_deadline,
+            check_cancel=check_cancel)
         with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
             if container_handle.query_selector(previous_selector):
                 raise RuntimeError(f'Table reset page limit {max_pages} reached')

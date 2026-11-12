@@ -102,6 +102,24 @@ An **additive, separately versioned** `corporate-l7-stable-negative-v1` capabili
 DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
 
 
+Optional large-table Previous RPC diagnostic (issue #161) is strictly
+**opt-in** via exact process environment `SPT_DIAG_DOM_RPC_PROBE=1` and
+an active diagnostic session. It never runs with the default setting.
+When enabled and at least 30 seconds remain in the original 180-second
+table budget, perform at most two read-only same-owner enabled-Previous
+selector probes: once before the first original lookup and once before
+the existing final limit lookup. Each probe reports Python wall duration
+and page-side `performance.now()` selector duration. Their nonnegative
+difference is an inclusive transport/scheduler/serialization residual,
+**not** pure queueing, network time, or causality. The probe returns only
+a fixed presence/detached enum and timing; no values, HTML, row data,
+request/response or source authority. An extra RPC **consumes the original
+budget** and may shift/slow the job, so diagnostic-enabled runs must not
+be used for benchmark acceptance or assumed to retain more rows.
+Probe errors are sanitized and never change the original outcome.
+Do not add listeners, CDP attachment, DOM writes, repeated polling,
+timer loops or attempts to compensate for the consumed budget.
+
 Every PPN primary, including Normal, must explicitly bind ReturnSheetStatusCode=SUBMITTED before projection or fallback; missing status is ineligible and contradictory status is fatal. PPN AskedTo is a final-lifecycle projection, not a raw field copy. Negative submitted amendments may preserve a choice only when the facility null-write is excluded and calendar assignment is blocked across both initial and final export stages, by the source invoice/uncollected quartet predicate, or by a stable inactive capture-owned interval bound to outer PeriodYear. With calendar blocked, a proven facility null-write clears only the supported raw null/FAST_REFUND/CARRY_FORWARD branch. Exact source facility codes are AS.09-01/AS.09-02. Nonnegative FORWARD_REFUND requires a proved post-raw distinct clear event and stays unsupported. The narrow Normal nonnegative branch additionally reconciles captured output/input operands to the four/six ordered component sums before deriving its final balance; reject missing/mismatched components and unsafe operands/intermediates. Normal choice inputs are integral within fifteen digits. The shared final-balance amount helper retains only binary-exact direct fractions and exact intermediate arithmetic within that bound. Preserve all contributing source paths; do not use stale stored balances, a replay clock, or DOM checked state. Active-calendar, Normal-negative and other unproved branches use whole-record fallback.
 
 For clock-dependent grid catalogs, use only the interval sampled by the same owned capture attempt and require one source version throughout that interval. Preserve optional metadata for old captures; never use the replay machine's clock to resolve missing evidence. Final sampling must retain earlier pending-response counts and refuse late replies as COMPLETE. Native eligibility, mapping, capture/PDF completion and final publication remain separate gates.
