@@ -108,18 +108,26 @@ an active diagnostic session. Only the literal value `1` passes through
 the desktop's *worker-only* environment policy; it is not inherited by
 bootstrap/uv or added to the general OS allowlist. It never runs with
 the default setting.
-When enabled and at least 30 seconds remain in the original 180-second
-table budget, perform at most two read-only same-owner enabled-Previous
-selector probes: once before the first original lookup and once before
-the existing final limit lookup. Each probe reports Python wall duration
-and page-side `performance.now()` selector duration. Their nonnegative
+When enabled, allow at most two read-only same-owner enabled-Previous
+selector probes: the first only if at least **120 seconds** remain in
+the original 180-second table budget, and the independent final-stage
+probe only if at least **150 seconds** remain. The thresholds exceed the
+largest historical **108.80-second** Previous lookup (single observation,
+not a safe upper bound) and add extra margin for the late stage.
+Each probe reports Python wall duration and page-side
+`performance.now()` selector duration. Their nonnegative
 difference is an inclusive transport/scheduler/serialization residual,
 **not** pure queueing, network time, or causality. The probe returns only
 a fixed presence/detached enum and timing; no values, HTML, row data,
 request/response or source authority. An extra RPC **consumes the original
-budget** and may shift/slow the job, so diagnostic-enabled runs must not
-be used for benchmark acceptance or assumed to retain more rows.
-Probe errors are sanitized and never change the original outcome.
+budget** and may shift/slow the job, including changing how many pages
+remain capturable or whether a table ends PARTIAL. These stage-specific
+guards reduce risk **but do not cap an in-flight Playwright evaluate**:
+arbitrary renderer/transport stalls can still exhaust the table budget.
+The probe result/exception never authorizes a click or overrides the
+normal error path, but time consumed can alter the final outcome. Do not
+use these runs for benchmark acceptance or presume unchanged row coverage.
+Probe exceptions are sanitized without disclosing their messages.
 Do not add listeners, CDP attachment, DOM writes, repeated polling,
 timer loops or attempts to compensate for the consumed budget.
 

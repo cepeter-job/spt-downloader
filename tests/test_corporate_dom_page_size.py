@@ -463,19 +463,29 @@ def test_optional_dom_rpc_probe_failures_never_block_original_capture(
     assert secret not in json.dumps(records(tmp_path))
 
 
-def test_optional_dom_rpc_probe_skips_with_insufficient_budget(monkeypatch, tmp_path):
+@pytest.mark.parametrize('stage,seconds_left,simulated_rpc_seconds', [
+    ('before_previous_lookup', 30.01, 36.99),
+    ('before_previous_lookup', 119.9, 130),
+    # 120.1s is above the *first* probe guard but below the stricter
+    # 150s *final* guard; a modeled 130s RPC must not be dispatched.
+    ('before_previous_limit_lookup', 120.1, 130),
+    ('before_previous_limit_lookup', 149.9, 151),
+])
+def test_optional_dom_rpc_probe_skips_unsafe_budget_before_dispatch(
+        monkeypatch, tmp_path, stage, seconds_left, simulated_rpc_seconds):
     import time
 
-    class Owner:
+    class SlowOwner:
         def evaluate(self, _expression, _arg):
-            raise AssertionError('No diagnostic RPC after deadline')
+            raise AssertionError('A slow diagnostic RPC must have been skipped')
 
+    assert seconds_left < simulated_rpc_seconds
     monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
     with d.session(tmp_path, 'worker') as log:
         driver._observe_dom_rpc_delay(
-            Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
-            stage='before_previous_lookup', ordinal=3, max_page_size=500,
-            capture_deadline=time.monotonic() - 1, check_cancel=None)
+            SlowOwner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+            stage=stage, ordinal=3, max_page_size=500,
+            capture_deadline=time.monotonic() + seconds_left, check_cancel=None)
         assert log.flush()
     assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
 
@@ -508,7 +518,7 @@ def test_optional_dom_rpc_probe_preserves_stop_before_browser_rpc(
             driver._observe_dom_rpc_delay(
                 Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
                 stage='before_previous_lookup', ordinal=3, max_page_size=500,
-                capture_deadline=time.monotonic() + 120,
+                capture_deadline=time.monotonic() + 170,
                 check_cancel=stop)
         assert log.flush()
     assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
@@ -526,4 +536,56 @@ def test_optional_dom_rpc_probe_requires_active_diagnostic_session(
     driver._observe_dom_rpc_delay(
         Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
         stage='before_previous_lookup', ordinal=3, max_page_size=500,
-        capture_deadline=time.monotonic() + 120, check_cancel=None)
+        capture_deadline=time.monotonic() + 170, check_cancel=None)
+
+
+def test_optional_dom_rpc_probe_eligible_guard_still_includes_rpc_without_timeout(
+        monkeypatch, tmp_path):
+    import time
+
+    class FastOwner:
+        def evaluate(self, expression, selector):
+            assert expression == driver.DOM_RPC_TIMING_JS
+            assert selector == '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+            return {'status': 'absent', 'renderer_ms': 0.01}
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    for stage in ('before_previous_lookup', 'before_previous_limit_lookup'):
+        with d.session(tmp_path, 'worker') as log:
+            driver._observe_dom_rpc_delay(
+                FastOwner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+                stage=stage, ordinal=3, max_page_size=500,
+                capture_deadline=time.monotonic() + (
+                    driver.DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS[stage] + 1),
+                check_cancel=None)
+            assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert events and all(e['table_rpc_state'] == 'absent' for e in events)
+    # This verifies only the guard; an RPC exceeding the remaining time
+    # cannot be interrupted by a synchronous Playwright evaluate.
+
+
+def test_optional_dom_rpc_probe_skipped_on_full_synthetic_capture_preserves_rows(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    # Both stages fail their pre-dispatch threshold, so no extra RPC may
+    # perturb the original source capture or completion decision.
+    monkeypatch.setattr(driver, 'DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS',
+                        {'before_previous_lookup': 181,
+                         'before_previous_limit_lookup': 181})
+    original = ElementHandle.evaluate
+
+    def fail_if_probed(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise AssertionError('Disallowed probe dispatched')
+        return original(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', fail_if_probed)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']

@@ -247,7 +247,14 @@ DOM_RPC_TIMING_JS = r'''(owner, selector) => {
  const present=owner.querySelector(selector)!==null;
  return {status:present?'present':'absent', renderer_ms:performance.now()-started};
 }'''
-DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS = 30
+# Observed positive-path/absent-control calls reached 108.80s on the
+# pre-PR main baseline (12 Nov); 120s includes ~11s headroom. A stricter
+# 150s guard for the late final check protects time for subsequent capture.
+# These guards reduce risk but cannot time out an already queued sync RPC.
+DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS = {
+    'before_previous_lookup': 120,
+    'before_previous_limit_lookup': 150,
+}
 
 PAGINATOR_CLICK_JS = r'''(e, owner, deadline) => {
  const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
@@ -559,12 +566,16 @@ def _observe_dom_rpc_delay(owner, selector, *, stage, ordinal, max_page_size,
     """Opt-in, bounded-count diagnostic; never supplies capture/click authority.
 
     Only active when explicitly requested for a diagnostic operator run.
-    Its extra browser RPC consumes real table time; a successful/failed probe
-    cannot affect the original paginator decision or mask its exceptions.
+    The probe's result is never used to select/authorize paginator actions.
+    Its extra synchronous browser RPC *can* still consume the table deadline,
+    change remaining page coverage, and cannot be cancelled once dispatched.
+    Only its own exceptions are contained; capture errors/Stop retain authority.
     """
+    guard_seconds = DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS.get(stage)
     if (max_page_size < 250 or not diagnostics.active()
             or os.environ.get('SPT_DIAG_DOM_RPC_PROBE') != '1'
-            or capture_deadline - time.monotonic() < DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS):
+            or guard_seconds is None
+            or capture_deadline - time.monotonic() < guard_seconds):
         return
     _check_cancel(check_cancel)
     started = _diagnostic_clock()

@@ -226,8 +226,11 @@ tersedia pada job yang sudah berjalan. Pada tabel dengan
 `max_page_size >= 250`, fungsi baca-saja akan mencoba maksimal dua
 RPC tambahan terhadap **owner paginator awal**: satu tepat sebelum
 `previous_lookup` pertama dan satu sebelum `previous_limit_lookup`
-akhir. Probe **dilewati** apabila waktu tersisa pada budget asli 180
-detik kurang dari 30 detik; tahap yang dilewati tidak membuat event.
+akhir. Probe pertama **dilewati** jika sisa budget asli kurang dari
+**120 detik**; probe sebelum limit dilewati jika kurang dari **150 detik**.
+Kedua ambang melampaui observasi panggilan Previous terlama **108,80 detik**
+dengan cadangan lebih besar di tahap akhir. Observasi ini bukan batas
+maksimum latensi browser. Tahap yang dilewati tidak membuat event.
 Jika loop Previous memiliki banyak klik, tidak dilakukan probe per klik.
 
 Event `table.browser_rpc_probe` hanya membawa:
@@ -249,12 +252,15 @@ dan pembulatan jam. Probe sendiri merupakan operasi terpisah dari
 `query_selector` asli**. Korelasikan dengan `table.reset_timing`
 untuk mencari indikasi macet di luar eksekusi selector, bukan
 menyatakan akar sebab. Mode opt-in menambah hingga dua panggilan yang
-dapat menghabiskan waktu capture dan mengubah jumlah halaman PARTIAL;
-jangan gunakan run dengan probe sebagai tolok ukur peningkatan performa
-atau sebagai bukti COMPLETE. Capture, Stop, source proof, batas 180
-detik dan verifikasi publikasi tidak diberi kewenangan baru oleh probe.
-Error probe hanya menghasilkan event WARNING aman dan tidak mengubah
-keputusan klik/tabel.
+dapat menghabiskan waktu capture dan mengubah jumlah halaman atau
+status PARTIAL. Batas awal 120/150 detik **bukan timeout RPC**:
+`evaluate` sinkron yang sudah dijalankan tidak dapat diputus saat
+browser/transport macet. Run dengan probe tidak boleh digunakan sebagai
+tolok ukur peningkatan performa atau bukti COMPLETE. Keputusan klik
+tetap mengikuti jalur asli, tetapi konsumsi budget bisa mengubah hasil
+akhir tabel. Capture, Stop, source proof, batas 180 detik dan verifikasi
+publikasi tidak diberi kewenangan baru oleh probe. Error probe
+disanitasi sebagai WARNING; hanya exception probe yang ditahan.
 
 **Tindak lanjut 11 November 2026 (build `df60d3d7`):** operator-run
 berakhir PARTIAL pada form 4/tabel 3, `first_idle_timeout` setelah
