@@ -231,6 +231,35 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     assert all(set(row).isdisjoint({'url', 'body', 'marker', 'table_text'}) for row in rows)
 
 
+def test_large_dom_first_click_stop_preserves_cancel_and_zero_click_timing(
+        page, tmp_path, monkeypatch):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate('at=1; draw()')
+
+    def cancel_during_first_click(_control, _container, _check_cancel):
+        raise driver.CaptureCancelled('synthetic stop during First click')
+
+    monkeypatch.setattr(driver, '_click_table_paginator', cancel_during_first_click)
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled,
+                           match='synthetic stop during First click'):
+            driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+
+    assert page.evaluate('moves') == 0
+    events = records(tmp_path)
+    reset_events = [row for row in events
+                    if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in reset_events}
+    assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
+                          'first_click', 'first_navigation'}
+    assert steps['first_lookup']['count'] == 1
+    assert steps['first_click']['count'] == 0
+    assert steps['first_navigation']['count'] == 0
+    assert all(row['duration_ms'] >= 0 for row in reset_events)
+    assert not any(row['event'] == 'table.page_timing' for row in events)
+
+
 def test_large_dom_first_idle_timeout_preserves_original_failure_and_timing(
         page, tmp_path, monkeypatch):
     table = fixture(page, total=601, selected=500)
