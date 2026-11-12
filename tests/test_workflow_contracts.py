@@ -18,8 +18,53 @@ def production():
     return contract().load_workflow(ROOT / '.github/workflows/windows-build.yml')
 
 
+def test_packaging_waits_for_exact_uploaded_artifact_before_strict_readback():
+    workflow = production()
+    package = workflow['jobs']['package']
+    steps = package['steps']
+    upload = next(step for step in steps if step.get('id') == 'upload')
+    wait = next(step for step in steps if step.get('name', '').startswith(
+        'Wait for the uploaded artifact to appear'))
+    readback = next(step for step in steps if 'artifact-ids' in step.get('with', {}))
+    assert steps.index(upload) < steps.index(wait) < steps.index(readback)
+    assert package['permissions'] == {'contents': 'read', 'actions': 'read'}
+    assert wait['env']['ARTIFACT_ID'] == '${{ steps.upload.outputs.artifact-id }}'
+    assert '${{ github.sha }}' in wait['env']['ARTIFACT_NAME']
+    assert '${{ github.run_attempt }}' in wait['env']['ARTIFACT_NAME']
+    # PR artifacts embed the synthetic merge SHA in the name, but the API
+    # reports the actual pull-request head as workflow_run.head_sha.
+    assert wait['env']['SOURCE_HEAD_SHA'] == '${{ github.event.pull_request.head.sha || github.sha }}'
+    assert '$env:SOURCE_HEAD_SHA' in wait['run']
+    # gh api defaults to pretty multi-line JSON; parsing each pipeline item
+    # separately can throw before the exact-artifact readiness gate is reached.
+    assert 'ConvertFrom-Json -InputObject ($json -join "`n")' in wait['run']
+    assert '$json | ConvertFrom-Json' not in wait['run']
+    assert readback['with']['artifact-ids'] == wait['env']['ARTIFACT_ID']
+    assert wait.get('continue-on-error') is not True
+    script = wait['run']
+    for required in ('-le 15', 'Start-Sleep -Seconds 3',
+                     'Duplicate exact artifact ID', 'workflow_run.head_sha',
+                     'visible = 0', 'visible++', 'throw'):
+        assert required in script
+    assert readback.get('continue-on-error') is not True
+
+
 def test_current_production_workflow_preserves_real_gate_and_artifact_order():
     contract().validate_production(production())
+
+
+@pytest.mark.parametrize('permissions', [
+    {'contents': 'write', 'actions': 'read'},
+    {'contents': 'read', 'actions': 'write'},
+    {'contents': 'read', 'actions': 'read', 'id-token': 'write'},
+    {'contents': 'read'},
+])
+def test_packaging_artifact_index_cannot_widen_or_omit_scoped_permissions(
+        permissions):
+    workflow = deepcopy(production())
+    workflow['jobs']['package']['permissions'] = permissions
+    with pytest.raises(AssertionError, match='package'):
+        contract().validate_production(workflow)
 
 
 def test_windows_coverage_is_combined_and_gated_before_packaging():
