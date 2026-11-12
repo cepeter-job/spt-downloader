@@ -135,6 +135,12 @@ environment, whether or not a table probe was ultimately sent. Compare
 operator runs only after checking this run-level flag: `true` is an
 **investigative run**, never an unprobed baseline, even if no probe
 event appears because the 120s/150s guards skipped both calls.
+The diagnostic writer may drop an event if its bounded queue fills,
+its record exceeds 4096 bytes, or logging fails. A run whose boundary
+records are missing or lack `table_rpc_probe_enabled` is **UNKNOWN**,
+never `false`, and **must not** enter an unprobed baseline or
+performance/completeness comparison. Absence of individual
+`table.browser_rpc_probe` events is not proof that the probe was off.
 The flag does not certify data completeness or enter business manifests.
 Do not add listeners, CDP attachment, DOM writes, repeated polling,
 timer loops or attempts to compensate for the consumed budget.

@@ -230,7 +230,14 @@ investigasi diizinkan, **bukan** bukti probe benar-benar dijalankan:
 budget guard dapat melewati keduanya sehingga tidak ada event
 `table.browser_rpc_probe`. Pisahkan seluruh run berlabel `true`
 dari run baseline, termasuk pada analisis COMPLETE/PARTIAL,
-waktu eksekusi, dan perbandingan baris. Penanda ini hanya metadata
+waktu eksekusi, dan perbandingan baris. **Jika field
+`table_rpc_probe_enabled` hilang pada event batas run, statusnya
+UNKNOWN, bukan `false`.** Logger dapat kehilangan event saat antrean
+penuh, record lebih dari 4096 byte, atau logging gagal. Run dengan
+penanda hilang/tidak lengkap **tidak boleh** diperlakukan sebagai
+baseline tanpa probe atau dimasukkan ke perbandingan performa maupun
+kelengkapan. Tidak adanya event `table.browser_rpc_probe` juga
+bukan bukti probe dimatikan. Penanda ini hanya metadata
 log worker dan tidak ditambahkan pada `run.json`/workbook.
 
 Pada tabel dengan
