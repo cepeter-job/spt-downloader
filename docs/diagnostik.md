@@ -169,7 +169,9 @@ dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 ### Pembagian waktu reset tabel DOM besar (#161)
 
 `table.reset_timing` hanya diterbitkan untuk tabel dengan batas
-`max_page_size >= 250` (jalur besar L3-B), tanpa pembacaan DOM tambahan.
+`max_page_size >= 250` (jalur besar L3-B). Optimasi berikutnya menambah
+satu pemeriksaan keberadaan Previous yang terbatas pada owner awal,
+tanpa membaca data tabel bisnis.
 `table_reset_step` berupa kategori tetap:
 
 - `size_action`: satu pemanggilan pemilihan ukuran halaman yang **sudah ada**,
@@ -195,9 +197,27 @@ dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
   pemanggilan/percobaan tahap, **bukan** jumlah respons atau klik sukses.
   Semua tahap hanya diterbitkan sekali per tabel besar, termasuk saat
   exception/Stop; tahap yang belum dicapai tidak diterbitkan.
-  `previous_limit_lookup` adalah pemeriksaan akhir setelah loop,
-  bukan permintaan tambahan. Jumlah klik Previous sukses tetap
-  di `previous_rewind.count`.
+  Jalur tabel besar menggunakan **satu** `evaluate_handle` JavaScript
+  pada owner paginator awal dengan selector enabled Previous yang sama.
+  `as_element()` mengembalikan tombol asli jika ada, atau `None`;
+  tidak ada tahap probe terpisah sebelum lookup handle. Handle sementara
+  selalu dilepas, termasuk saat Stop/error/tombol tidak ditemukan.
+  Tombol yang ditemukan masih harus lolos validasi aksi dan owner asli
+  tepat sebelum klik; tidak ada pencarian ulang global atau klik spekulatif.
+  Jika owner terlepas atau Previous menghilang sebelum klik, exception
+  ditangani oleh `capture_panel`: tabel **tidak ditambahkan** ke hasil,
+  error disanitasi sebagai `capture_failed`, dan record/job non-COMPLETE.
+  Ini bukan PARTIAL tabel dengan baris sebelumnya dipertahankan. Kegagalan
+  pagination biasa setelah snapshot awal tetap mengembalikan
+  `complete=False` dengan halaman valid yang sudah terverifikasi.
+  `previous_lookup` kini mengukur satu `evaluate_handle` saja.
+  `previous_limit_lookup` tetap diperiksa independen setelah loop
+  (termasuk saat page limit), tetapi satu `evaluate` boolean owner-bound
+  tidak membuat handle yang tidak akan diklik. Tabel kecil tetap memakai
+  jalur lama. Transport yang sama masih bisa lambat; waktu live belum
+  diverifikasi ulang pada implementasi ini. Sumber, Stop, rewind,
+  batas 180 detik dan hasil PARTIAL tetap aman.
+  Jumlah klik Previous sukses tetap di `previous_rewind.count`.
 - `previous_rewind`: seluruh loop Previous, verifikasi state,
   `wait_idle` serta pemeriksaan limit yang sudah ada. `count` adalah
   jumlah klik Previous yang berhasil diajukan, **bukan** bukti respons

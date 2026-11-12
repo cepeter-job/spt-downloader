@@ -189,8 +189,36 @@ def test_large_page_capture_stop_after_first_move_propagates(page):
 
 
 def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clicks(
-        page, tmp_path):
+        page, tmp_path, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
     table = fixture(page, total=601, selected=500)
+    real_query = ElementHandle.query_selector
+    real_handle = ElementHandle.evaluate_handle
+    real_evaluate = ElementHandle.evaluate
+    calls = {'owned': 0, 'legacy': 0, 'final_limit': 0}
+    selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+
+    def track_query(self, value):
+        if value == selector:
+            calls['legacy'] += 1
+        return real_query(self, value)
+
+    def track_handle(self, expression, arg=None):
+        if expression == driver.OWNED_PREVIOUS_CONTROL_JS:
+            assert arg == selector
+            calls['owned'] += 1
+        return real_handle(self, expression, arg)
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.OWNED_PREVIOUS_PRESENT_JS:
+            assert arg == selector
+            calls['final_limit'] += 1
+        return real_evaluate(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', track_query)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', track_handle)
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
     # Synthetic page: First legitimately lands on page 3 and the existing
     # inspected Previous fallback must restore page 1. Never skip source pages.
     page.evaluate("""() => {
@@ -213,6 +241,8 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     assert captured['pages'] == 2
     # First (one), Previous (two), Next (one) are the original required actions.
     assert page.evaluate('moves') == 4
+    # Two Previous controls + final absent probe, without extra handle lookup.
+    assert calls == {'owned': 3, 'legacy': 0, 'final_limit': 1}
     rows = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
     steps = {row['table_reset_step']: row for row in rows}
     assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
@@ -326,6 +356,210 @@ def test_large_dom_zero_previous_clicks_attributes_lookup_without_retry(
     assert set(timing).isdisjoint({'previous_state', 'previous_click',
                                    'previous_idle', 'previous_verify'})
     assert timing['previous_rewind']['duration_ms'] >= timing['previous_lookup']['duration_ms']
+
+
+@pytest.mark.parametrize('limit,expected_legacy,expected_owned', [
+    (500, 0, 1),  # No handle lookup or extra probe on the large-table path.
+    (100, 2, 0),  # Small DOM tables retain their two original lookups.
+])
+def test_absent_previous_uses_one_owned_lookup_and_bounded_final_check(
+        page, monkeypatch, limit, expected_legacy, expected_owned):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=100)
+    old_query = ElementHandle.query_selector
+    old_eval_handle = ElementHandle.evaluate_handle
+    old_evaluate = ElementHandle.evaluate
+    old_dispose = driver._dispose_table_handle
+    legacy_queries, owned_handles, final_checks, disposed = [], [], [], []
+    selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+
+    def track_query(self, value):
+        if value == selector:
+            legacy_queries.append(value)
+        return old_query(self, value)
+
+    def track_handle(self, expression, arg=None):
+        result = old_eval_handle(self, expression, arg)
+        if expression == driver.OWNED_PREVIOUS_CONTROL_JS:
+            assert arg == selector
+            owned_handles.append(result)
+        return result
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.OWNED_PREVIOUS_PRESENT_JS:
+            assert arg == selector
+            final_checks.append(arg)
+        return old_evaluate(self, expression, arg)
+
+    def track_dispose(handle):
+        if any(handle is item for item in owned_handles):
+            disposed.append(handle)
+        return old_dispose(handle)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', track_query)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', track_handle)
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    monkeypatch.setattr(driver, '_dispose_table_handle', track_dispose)
+    result = driver.capture_table(page, table, 3, 100, max_page_size=limit)
+    assert_rows(result, 601)
+    assert len(legacy_queries) == expected_legacy
+    assert len(owned_handles) == expected_owned
+    assert len(disposed) == expected_owned
+    assert len(final_checks) == (1 if limit >= 250 else 0)
+    assert page.evaluate('moves') == ceil(601 / limit) - 1
+
+
+def test_large_previous_owned_handle_refuses_disappearing_control_before_click(
+        page, monkeypatch):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        first.after(previous);
+    }""")
+    original = driver._click_table_paginator
+    original_dispose = driver._dispose_table_handle
+    disposed = []
+
+    def disappear_before_click(control, container, check_cancel):
+        if control.evaluate("(e)=>e.matches('.p-paginator-prev')"):
+            page.evaluate("document.querySelector('.p-paginator-prev').remove()")
+        return original(control, container, check_cancel)
+
+    def tracked_dispose(handle):
+        disposed.append(handle)
+        return original_dispose(handle)
+
+    monkeypatch.setattr(driver, '_click_table_paginator', disappear_before_click)
+    monkeypatch.setattr(driver, '_dispose_table_handle', tracked_dispose)
+    with pytest.raises(RuntimeError, match='Unavailable or unsupported pagination control'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0  # Neither speculative click nor retry.
+    assert len(disposed) >= 3  # Original table, owner and owned Previous.
+
+
+def test_large_previous_probe_rejects_nested_foreign_control(page):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const foreign = document.createElement('p-table');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        foreign.append(previous);
+        document.querySelector('p-table').append(foreign);
+    }""")
+    # A nested paginator may match the selector, but cannot belong to
+    # the original owner. The old guarded click must still reject it.
+    with pytest.raises(RuntimeError, match='Unavailable or unsupported pagination control'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0
+
+
+def test_large_previous_owned_handle_disappearing_at_panel_omits_table(
+        page, monkeypatch):
+    fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        first.after(previous);
+    }""")
+    original = driver._click_table_paginator
+
+    def disappear_before_click(control, container, check_cancel):
+        if control.evaluate("(e)=>e.matches('.p-paginator-prev')"):
+            page.evaluate("document.querySelector('.p-paginator-prev').remove()")
+        return original(control, container, check_cancel)
+
+    monkeypatch.setattr(driver, '_click_table_paginator', disappear_before_click)
+    result = capture(page)
+    assert not result['capture_complete']
+    assert result['sections'][0]['tables'] == []
+    assert any(e['message'] == 'capture_failed' and
+               e['object'] == 'L3/table 1' for e in result['errors'])
+    assert page.evaluate('moves') == 0
+
+
+def test_large_previous_owned_lookup_rejects_detached_owner(page):
+    from playwright.sync_api import Error as PlaywrightError
+
+    table = fixture(page, total=601, selected=500)
+    owner = table.element_handle().evaluate_handle(
+        "e=>e.closest('p-table')")
+    try:
+        page.evaluate("document.querySelector('p-table').remove()")
+        with pytest.raises(PlaywrightError):
+            owner.evaluate_handle(driver.OWNED_PREVIOUS_CONTROL_JS,
+                                  '.p-paginator-prev:not([disabled]):not(.p-disabled)')
+        with pytest.raises(PlaywrightError):
+            owner.evaluate(driver.OWNED_PREVIOUS_PRESENT_JS,
+                           '.p-paginator-prev:not([disabled]):not(.p-disabled)')
+    finally:
+        owner.dispose()
+
+
+def test_large_previous_owned_handle_disposed_on_cancel(page, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const drawOriginal = window.draw;
+        window.draw = () => {drawOriginal();prev.disabled = at === 0;};
+        first.onclick = () => {moves++;at=2;draw();};
+        prev.onclick = () => {moves++;at--;draw();};
+        at=4;draw();
+    }""")
+    old_eval_handle = ElementHandle.evaluate_handle
+    old_dispose = driver._dispose_table_handle
+    old_click = driver._click_table_paginator
+    owned, disposed = [], []
+
+    def track_handle(self, expression, arg=None):
+        h = old_eval_handle(self, expression, arg)
+        if expression == driver.OWNED_PREVIOUS_CONTROL_JS:
+            owned.append(h)
+        return h
+
+    def track_dispose(h):
+        if any(h is x for x in owned):
+            disposed.append(h)
+        return old_dispose(h)
+
+    def stop_during_previous_click(control, container, check_cancel):
+        if control.evaluate("(e)=>e.matches('.p-paginator-prev')"):
+            raise driver.CaptureCancelled('synthetic stop before Previous click')
+        return old_click(control, container, check_cancel)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', track_handle)
+    monkeypatch.setattr(driver, '_dispose_table_handle', track_dispose)
+    monkeypatch.setattr(driver, '_click_table_paginator', stop_during_previous_click)
+    with pytest.raises(driver.CaptureCancelled, match='synthetic stop before Previous click'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 1  # First dispatched, no Previous click.
+    assert len(owned) == len(disposed) == 1
+
+
+def test_large_previous_page_limit_retains_guard_with_owner_bool_lookup(page):
+    table = fixture(page, total=1501, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const drawOriginal=window.draw;
+        window.draw=()=>{drawOriginal();prev.disabled=at===0;};
+        first.onclick=()=>{moves++;at=2;draw();};
+        prev.onclick=()=>{moves++;at--;draw();};
+        at=2;draw();
+    }""")
+    with pytest.raises(RuntimeError, match='Table reset page limit 1 reached'):
+        driver.capture_table(page, table, 3, max_pages=1, max_page_size=500)
+    assert page.evaluate('moves') == 2  # First + bounded Previous only.
 
 
 def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapsed(
