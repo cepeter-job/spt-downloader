@@ -20,7 +20,7 @@ class MissingHandle(Element):
         return None
 
 
-def run(tmp_path, *, available=None, reason=None, element=None):
+def run(tmp_path, *, available=None, reason=None, element=None, drop_history=False):
     context, page, guard = history_setup()
     if reason is not None:
         guard.reason = reason
@@ -32,6 +32,8 @@ def run(tmp_path, *, available=None, reason=None, element=None):
             navigate(page, DETAIL)
             exchange(context, page)
             capture.bind_detail_page(page)
+            if drop_history:
+                capture._l7_history = None
             result = capture.bind_l7_structure(
                 *[element or Element() for _ in range(5)], phase='start')
     return result
@@ -48,13 +50,7 @@ def test_available_history_records_no_gate(tmp_path):
 
 
 def test_missing_history_handle_is_named(tmp_path):
-    context, page, guard = history_setup()
-    with d.session(tmp_path, 'worker'):
-        with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
-            begin(capture)
-            capture._l7_history = None
-            assert capture.bind_l7_structure(*[Element() for _ in range(5)],
-                                             phase='start') is False
+    assert run(tmp_path, drop_history=True) is False
     assert gates(tmp_path) == ['history']
 
 
