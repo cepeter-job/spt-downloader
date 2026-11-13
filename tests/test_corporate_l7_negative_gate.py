@@ -172,11 +172,12 @@ def test_unavailable_lifetime_is_named(tmp_path, monkeypatch):
 
 
 def test_gate_categories_registered_and_value_free(tmp_path, monkeypatch):
-    row = None
     run(tmp_path, monkeypatch, Capture(binds=(False,)), Page(pins()))
     row, = [r for r in records(tmp_path) if r['event'] == EVENT]
     assert set(row) <= {'schema', 'timestamp', 'level', 'event', 'role', 'sequence',
                         'elapsed_ms', 'python', 'frozen', 'job_ref', 'session_id',
+                        'build_commit', 'build_run_id', 'build_run_attempt',
                         'corporate_l7_negative_gate'}
+    assert row['corporate_l7_negative_gate'] == 'structure_start'
     assert row['level'] == 'INFO'
     assert observer.__name__ in diagnostics.MODULES
