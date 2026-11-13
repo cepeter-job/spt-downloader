@@ -589,3 +589,107 @@ def test_optional_dom_rpc_probe_skipped_on_full_synthetic_capture_preserves_rows
         assert log.flush()
     assert_rows(result, 601)
     assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
+        page, tmp_path, monkeypatch):
+    from collections import Counter
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
+    real_evaluate = ElementHandle.evaluate
+    real_handle = ElementHandle.evaluate_handle
+    real_query = ElementHandle.query_selector
+    calls = Counter()
+
+    def tracked_evaluate(self, expression, arg=None):
+        assert expression != driver.DOM_RPC_TIMING_JS
+        calls['evaluate'] += 1
+        return real_evaluate(self, expression, arg)
+
+    def tracked_handle(self, expression, arg=None):
+        calls['evaluate_handle'] += 1
+        return real_handle(self, expression, arg)
+
+    def tracked_query(self, expression):
+        calls['query_selector'] += 1
+        return real_query(self, expression)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', tracked_evaluate)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', tracked_handle)
+    monkeypatch.setattr(ElementHandle, 'query_selector', tracked_query)
+
+    table = fixture(page, total=601, selected=500)
+    assert_rows(driver.capture_table(page, table, 3, 100, max_page_size=500), 601)
+    uninstrumented = calls.copy()
+    calls.clear()
+    table = fixture(page, total=601, selected=500)
+    with d.session(tmp_path, 'worker') as log:
+        assert_rows(driver.capture_table(page, table, 3, 100, max_page_size=500), 601)
+        assert log.flush()
+    # Logging only: exactly the same set of original Playwright method calls.
+    assert calls == uninstrumented
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert 4 <= len(rows) <= driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+    assert {'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
+            'cursor_init', 'cursor_advance', 'cursor_poll',
+            'cursor_snapshot'} <= {r['table_existing_rpc_stage'] for r in rows}
+    assert all(r['table_existing_rpc_outcome'] == 'returned' for r in rows)
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
+    assert all(r['duration_ms'] >= 0 and r['table_rpc_thread_cpu_ms'] >= 0
+               for r in rows)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_passive_rpc_records_raised_call_without_changing_original_exception(
+        tmp_path):
+    secret = 'SYNTHETIC_PRIVATE_RPC_EXCEPTION'
+    slots = [0]
+
+    def synthetic_call(should_fail):
+        if should_fail:
+            raise RuntimeError(secret)
+        return None
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(RuntimeError, match=secret):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500, slots):
+                synthetic_call(True)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 1
+    assert rows[0]['table_existing_rpc_outcome'] == 'raised'
+    import json
+    assert secret not in json.dumps(rows)
+
+
+def test_passive_rpc_stop_and_record_cap_preserve_bounded_diagnostics(tmp_path):
+    slots = [0]
+
+    def synthetic_stop(cancelled):
+        if cancelled:
+            raise driver.CaptureCancelled('synthetic stop')
+        return None
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled):
+            with driver._timed_existing_rpc('cursor_poll', 3, 500, slots):
+                synthetic_stop(True)
+        assert log.flush()
+        slots[0] = driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+        with driver._timed_existing_rpc('cursor_advance', 3, 500, slots):
+            pass
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 1
+    assert rows[0]['table_existing_rpc_outcome'] == 'raised'
+    assert slots[0] == driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+
+
+def test_passive_rpc_disabled_for_small_tables_even_with_diagnostics(page, tmp_path):
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        assert_rows(driver.capture_table(page, table, 1, 100, max_page_size=100),
+                    101)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']

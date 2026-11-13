@@ -561,6 +561,49 @@ def _timed_rewind_operation(timings, stage):
         current[1] += 1
 
 
+# Passive timing wraps existing Playwright RPCs only: it never sends its own
+# browser command, alters JS, sets a timeout or authorizes a capture result.
+# At most 48 fixed-category records per large table, regardless of page count.
+# Python thread CPU excludes CPU on Playwright's Node/browser processes; a
+# tiny CPU time against large wall time proves waiting, not which process caused it.
+PASSIVE_RPC_MAX_EVENTS_PER_TABLE = 48
+
+
+@contextmanager
+def _timed_existing_rpc(stage, ordinal, max_page_size, slots):
+    if (max_page_size < 250 or not diagnostics.active()
+            or slots[0] >= PASSIVE_RPC_MAX_EVENTS_PER_TABLE):
+        yield None
+        return
+    started = _diagnostic_clock()
+    cpu_started = time.thread_time()
+    observation = {}
+    returned = False
+    try:
+        yield observation
+        returned = True
+    finally:
+        # Only local clocks and an allowlisted, bounded diagnostic event.
+        # Neither this observer nor its failure changes the wrapped RPC result.
+        wall_ms = (_diagnostic_clock() - started) * 1000
+        cpu_ms = (time.thread_time() - cpu_started) * 1000
+        slots[0] += 1
+        fields = dict(table_existing_rpc_stage=stage,
+                      table_existing_rpc_outcome='returned' if returned else 'raised',
+                      form_ordinal=_INITIAL_FORM_ORDINAL.get(), table_ordinal=ordinal,
+                      duration_ms=wall_ms, table_rpc_thread_cpu_ms=cpu_ms)
+        renderer_ms = observation.get('renderer_ms')
+        if (type(renderer_ms) in (int, float) and 0 <= renderer_ms <= wall_ms):
+            fields['table_rpc_renderer_ms'] = renderer_ms
+            fields['table_rpc_residual_ms'] = max(0, wall_ms - renderer_ms)
+        try:
+            diagnostics.record('table.existing_rpc_timing', **fields)
+        except Exception:  # nosec B110 - Optional diagnostics may never mask capture or Stop.
+            # Only suppress a logger failure; the wrapped RPC's error/Stop
+            # continues to propagate unchanged through the generator.
+            pass  # nosec B110 - Deliberate best-effort diagnostic containment.
+
+
 def _observe_dom_rpc_delay(owner, selector, *, stage, ordinal, max_page_size,
                            capture_deadline, check_cancel):
     """Opt-in, bounded-count diagnostic; never supplies capture/click authority.
@@ -628,6 +671,7 @@ def _dispose_table_handle(handle):
 def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_size, resources):
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
+    passive_rpc_slots = [0]
     preparation_started = _diagnostic_clock()
     handle = table.element_handle()
     resources.callback(_dispose_table_handle, handle)
@@ -716,8 +760,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     stage='before_previous_lookup', ordinal=ordinal,
                     max_page_size=max_page_size, capture_deadline=capture_deadline,
                     check_cancel=check_cancel)
-            with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
-                previous = container_handle.query_selector(previous_selector)
+            with _timed_existing_rpc('previous_lookup', ordinal, max_page_size,
+                                     passive_rpc_slots):
+                with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
+                    previous = container_handle.query_selector(previous_selector)
             if not previous:
                 break
             with _timed_rewind_operation(rewind_timings, 'previous_state'):
@@ -737,9 +783,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             stage='before_previous_limit_lookup', ordinal=ordinal,
             max_page_size=max_page_size, capture_deadline=capture_deadline,
             check_cancel=check_cancel)
-        with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
-            if container_handle.query_selector(previous_selector):
-                raise RuntimeError(f'Table reset page limit {max_pages} reached')
+        with _timed_existing_rpc('previous_limit_lookup', ordinal, max_page_size,
+                                 passive_rpc_slots):
+            with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
+                if container_handle.query_selector(previous_selector):
+                    raise RuntimeError(f'Table reset page limit {max_pages} reached')
     finally:
         if rewind_timings is not None:
             for step, (duration_ms, count) in rewind_timings.items():
@@ -754,7 +802,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         observer.close()
     _record_large_table_reset('total_pre_read', preparation_started, ordinal, max_page_size, 1)
     first_read_started = _diagnostic_clock()
-    result = table.evaluate(TABLE_JS)
+    with _timed_existing_rpc('initial_snapshot', ordinal, max_page_size,
+                             passive_rpc_slots):
+        result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
     diagnostics.record('table.page_timing', table_page_stage='initial',
                        pages=1, page_rows=len(result['rows']), page_size_cap=max_page_size,
@@ -765,7 +815,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     cursor = None
     if max_page_size >= 250:
         _check_cancel(check_cancel)
-        cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
+        with _timed_existing_rpc('cursor_init', ordinal, max_page_size,
+                                 passive_rpc_slots):
+            cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
         resources.callback(_dispose_table_handle, cursor)
     while True:
         _check_cancel(check_cancel)
@@ -773,8 +825,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         if cursor is not None:
             page_started = _diagnostic_clock()
             remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
-            advance = cursor.evaluate(TABLE_CURSOR_ADVANCE_JS,
-                                      {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+            with _timed_existing_rpc('cursor_advance', ordinal, max_page_size,
+                                     passive_rpc_slots) as timing:
+                advance = cursor.evaluate(TABLE_CURSOR_ADVANCE_JS,
+                                          {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+                if timing is not None and type(advance) is dict:
+                    timing['renderer_ms'] = advance.get('renderer_ms')
             _check_cancel(check_cancel)
             status = advance['status']
             if status == 'done':
@@ -835,7 +891,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         try:
             def unchanged():
                 if cursor is not None:
-                    return not cursor.evaluate(TABLE_CURSOR_POLL_JS)
+                    with _timed_existing_rpc('cursor_poll', ordinal, max_page_size,
+                                             passive_rpc_slots):
+                        return not cursor.evaluate(TABLE_CURSOR_POLL_JS)
                 return container_handle.evaluate(STATE_JS) == state
 
             while unchanged():
@@ -892,7 +950,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         try:
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
-            snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+            with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
+                                     passive_rpc_slots) as timing:
+                snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                if timing is not None and type(snapshot) is dict:
+                    timing['renderer_ms'] = snapshot.get('renderer_ms')
             while cursor is not None:
                 _check_cancel(check_cancel)
                 if time.monotonic() >= capture_deadline:
@@ -902,7 +964,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     raise PlaywrightTimeoutError('Owned table loading readiness deadline exceeded')
                 if not snapshot.get('pending'):
                     break
-                snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
+                                         passive_rpc_slots) as timing:
+                    snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                    if timing is not None and type(snapshot) is dict:
+                        timing['renderer_ms'] = snapshot.get('renderer_ms')
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.

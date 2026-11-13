@@ -965,3 +965,35 @@ def test_dom_rpc_probe_run_marker_is_worker_scoped_not_caller_supplied(
         assert log.flush()
     rows = records(tmp_path)
     assert all('table_rpc_probe_enabled' not in r for r in rows)
+
+
+def test_passive_existing_rpc_timing_fields_are_strictly_allowlisted(tmp_path):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_RPC_STRING'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage='cursor_snapshot',
+                 table_existing_rpc_outcome='returned',
+                 duration_ms=56087.42, table_rpc_thread_cpu_ms=0.6,
+                 table_rpc_renderer_ms=0.3, table_rpc_residual_ms=56087.12,
+                 form_ordinal=4, table_ordinal=3, url=private,
+                 selector=private, result=private, body=private, html=private)
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage=private,
+                 table_existing_rpc_outcome=private,
+                 duration_ms=-1, table_rpc_thread_cpu_ms=private,
+                 table_rpc_renderer_ms=float('nan'), table_rpc_residual_ms=-8,
+                 form_ordinal=True, table_ordinal=10000001, body=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 2
+    assert rows[0]['table_existing_rpc_stage'] == 'cursor_snapshot'
+    assert rows[0]['table_existing_rpc_outcome'] == 'returned'
+    assert rows[0]['table_rpc_thread_cpu_ms'] == 0.6
+    assert rows[0]['table_rpc_renderer_ms'] == 0.3
+    assert rows[0]['table_rpc_residual_ms'] == 56087.12
+    assert not ({'table_existing_rpc_stage', 'table_existing_rpc_outcome',
+                 'duration_ms', 'table_rpc_thread_cpu_ms',
+                 'table_rpc_renderer_ms', 'table_rpc_residual_ms',
+                 'form_ordinal', 'table_ordinal'} & rows[1].keys())
+    assert private not in json.dumps(rows)

@@ -283,6 +283,42 @@ akhir tabel. Capture, Stop, source proof, batas 180 detik dan verifikasi
 publikasi tidak diberi kewenangan baru oleh probe. Error probe
 disanitasi sebagai WARNING; hanya exception probe yang ditahan.
 
+### Waktu RPC Playwright asli tanpa browser call tambahan (#161)
+
+Pengukuran pasif ini **berbeda** dari `SPT_DIAG_DOM_RPC_PROBE=1`,
+yang mengirim probe browser tambahan. Dengan sesi diagnostik normal
+dan `max_page_size >= 250`, event `table.existing_rpc_timing`
+mengukur panggilan Playwright **yang sudah dibutuhkan scraping**:
+`previous_lookup`, `previous_limit_lookup`, `initial_snapshot`,
+`cursor_init`, `cursor_advance`, `cursor_poll` dan
+`cursor_snapshot`. Event memakai ordinal form/tabel, fixed enum
+`table_existing_rpc_stage` dan `table_existing_rpc_outcome`
+(`returned`/`raised`), `duration_ms` (wall-clock Python),
+`table_rpc_thread_cpu_ms` (CPU thread Python saat memanggil),
+dan hanya jika sudah disediakan oleh panggilan asli:
+`table_rpc_renderer_ms` serta selisih
+`table_rpc_residual_ms`. Tidak ada teks kontrol, isi tabel,
+URL, selector, request/response, raw exception maupun identitas
+pengguna. Maksimal **48 event per tabel**; saat ambang tercapai,
+tidak lagi dicatat, dan drop logger juga mungkin terjadi.
+Hilangnya event tidak membuktikan bahwa RPC tidak berjalan.
+
+Tidak ada `evaluate`/locator/handler/CDP/network tambahan, tidak
+ada modifikasi JavaScript halaman atau isi capture. CPU thread
+Python **tidak** menghitung proses Node Playwright atau Chromium.
+Wall-clock tinggi dengan CPU thread rendah merupakan bukti thread
+menunggu, **bukan pengukuran spesifik** IPC, antrean Chromium,
+Node event loop, serialisasi atau network. Durasi renderer yang
+dikembalikan hanya mengukur lingkup JavaScript yang sudah
+diinstrumentasi sebelumnya. Perbedaan wall-versus-renderer
+mencampur semua latensi di luar lingkup itu. Batas 180 detik,
+prioritas Stop, sumber baris, dan COMPLETE/PARTIAL tidak berubah.
+Flag run `table_rpc_probe_enabled` tetap merepresentasikan
+**probe invasif ekstra** saja, bukan event pasif. Hindari klaim
+perbaikan throughput/kelengkapan dari perbedaan run tunggal,
+terutama jika digest katalog berubah. Gunakan sebagai dasar
+penentuan stage bottleneck untuk investigasi terpisah.
+
 **Tindak lanjut 11 November 2026 (build `df60d3d7`):** operator-run
 berakhir PARTIAL pada form 4/tabel 3, `first_idle_timeout` setelah
 60,14 detik sejak awal persiapan. `size_action` 1,49 detik dan interval
