@@ -598,9 +598,10 @@ def _timed_existing_rpc(stage, ordinal, max_page_size, slots):
             fields['table_rpc_residual_ms'] = max(0, wall_ms - renderer_ms)
         try:
             diagnostics.record('table.existing_rpc_timing', **fields)
-        except Exception:
-            # Best-effort instrumentation never masks capture/Stop exceptions.
-            pass
+        except Exception:  # nosec B110 - Optional diagnostics may never mask capture or Stop.
+            # Only suppress a logger failure; the wrapped RPC's error/Stop
+            # continues to propagate unchanged through the generator.
+            pass  # nosec B110 - Deliberate best-effort diagnostic containment.
 
 
 def _observe_dom_rpc_delay(owner, selector, *, stage, ordinal, max_page_size,
