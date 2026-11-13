@@ -373,8 +373,10 @@ class App:
         parent.update_idletasks()
         dialog.update_idletasks()
         width, height = dialog.winfo_reqwidth(), dialog.winfo_reqheight()
-        parent_width = max(parent.winfo_width(), parent.winfo_reqwidth())
-        parent_height = max(parent.winfo_height(), parent.winfo_reqheight())
+        parent_width = (parent.winfo_width() if parent.winfo_width() > 1
+                        else parent.winfo_reqwidth())
+        parent_height = (parent.winfo_height() if parent.winfo_height() > 1
+                         else parent.winfo_reqheight())
         x = parent.winfo_rootx() + (parent_width - width) // 2
         y = parent.winfo_rooty() + (parent_height - height) // 2
         dialog.geometry(f'+{x}+{y}')
