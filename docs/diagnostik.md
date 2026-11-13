@@ -153,6 +153,12 @@ ketersediaan bukti opsional tetap tidak mengubah jalur non-negatif v1.
 skrip halaman dan hanya dipetakan ke enum; teks bebas, node, atribut, dan nilai
 tidak pernah dicatat. Event ini tidak mengubah hasil adopsi JSON.
 
+`corporate.l7_history_arm` mencatat prasyarat pemasangan skrip riwayat L7 pada
+saat View diperiksa: `clear` (tidak ada root/host corporate di dokumen),
+`occupied` (sudah ada root/host corporate), `document` (dokumen yang dipertahankan
+bukan dokumen aktif), atau `unsupported`. Event ini tidak memuat elemen, atribut,
+URL, atau nilai, dan tidak mengubah admission.
+
 `native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
 pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
 Field `native_paginator_step` dibatasi ke `reset_probe`,
