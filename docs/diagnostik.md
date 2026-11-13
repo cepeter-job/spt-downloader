@@ -134,6 +134,16 @@ sukses maupun penolakan (segmen berjalan ditutup terlebih dahulu), sehingga
 pelacakan performa (#208) tetap memberi data pada live run yang gagal.
 Catatan ini tidak mengubah hasil adopsi JSON.
 
+### Gate bukti L7 raw-negative Corporate
+
+`corporate.l7_negative_gate` mencatat `corporate_l7_negative_gate` — kategori
+tetap `protocol`, `pins`, `enabled`, `structure_start`, `environment`,
+`builds`, `table`, `route`, `enabled_end`, `structure_end`, atau `lifetime` —
+setiap kali bukti opsional `raw_negative_projection` L7 tidak tersedia. Event
+ini hanya dinamai pada penolakan; bukti yang lengkap tidak mencatat apa pun.
+Tidak ada URL, digest, route, identitas, atau nilai yang direkam, dan
+ketersediaan bukti opsional tetap tidak mengubah jalur non-negatif v1.
+
 `native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
 pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
 Field `native_paginator_step` dibatasi ke `reset_probe`,

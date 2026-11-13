@@ -251,10 +251,17 @@ _L1D_OMISSION_SHAPE = '''table => {
 
 def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_cancel):
     """Additive value-free capability; v1 survives unavailable optional proof."""
+    from spt_desktop import diagnostics
     from coretax_browser import _check_cancel
     from coretax_corporate_projection import (L7_NEGATIVE_BUILD_DIGESTS, L7_OWNER_CHAIN,
                                               MAIN_SOURCE, VENDOR_SOURCE)
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
+
+    def gate(name):
+        # Fixed enum only: this optional proof must name its own refusal stage
+        # without carrying payloads, digests, routes, identifiers or values.
+        diagnostics.record('corporate.l7_negative_gate', corporate_l7_negative_gate=name)
+        return None
 
     def read(operation):
         _check_cancel(check_cancel)
@@ -275,20 +282,20 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
     urls = (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE)
     if any(not callable(getattr(capture, name, None)) for name in
            ('observe_component_lifetime', 'bind_l7_structure', 'observe_l7_lifetime')):
-        return None  # Legacy structural callers need no new optional protocol.
+        return gate('protocol')  # Legacy structural callers need no new optional protocol.
     if (set(pins) != set(urls) or any(type(value) is not str
             or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())):
-        return None
+        return gate('pins')
     if read(lambda: _enabled_form_binding(form, tab, 'L7')) is not True:
-        return None
+        return gate('enabled')
     table = grid.locator('table')
     if not capture.bind_l7_structure(form, grid, table, tab, panel, phase='start', check_cancel=check_cancel):
-        return None
+        return gate('structure_start')
     first = read(lambda: table.evaluate(TABLE.replace('GROUP', '()=>""')))
     environment = read(lambda: page.evaluate('''() => ({locale:navigator.language,
         timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})'''))
     if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
-        return None
+        return gate('environment')
     builds = {}
     for url in urls:
         # Preserve MAIN's 5MiB reader. Only this optional capability strengthens
@@ -298,20 +305,22 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
             'e=>e.name===url)', "e=>e.name===url&&e.initiatorType==='script')")
         digest = read(lambda: page.evaluate(script, url))
         if type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}', digest) or digest != pins[url]:
-            return None
+            return gate('builds')
         builds[url] = digest
     last = read(lambda: table.evaluate(TABLE.replace('GROUP', '()=>""')))
     expected = legacy['tables'][0]
     if (not isinstance(first, dict) or not isinstance(last, dict)
             or any(sample.get(key) != expected[key] for sample in (first, last)
-                   for key in ('headers', 'footer_spans'))
-            or page.url != legacy['route']
-            or read(lambda: _enabled_form_binding(form, tab, 'L7')) is not True):
-        return None
+                   for key in ('headers', 'footer_spans'))):
+        return gate('table')
+    if page.url != legacy['route']:
+        return gate('route')
+    if read(lambda: _enabled_form_binding(form, tab, 'L7')) is not True:
+        return gate('enabled_end')
     if not capture.bind_l7_structure(form, grid, table, tab, panel, phase='end', check_cancel=check_cancel):
-        return None
+        return gate('structure_end')
     if capture.observe_l7_lifetime(check_cancel=check_cancel) is None:
-        return None
+        return gate('lifetime')
     return {'kind': 'corporate-l7-stable-negative-v1', 'builds': builds,
             'route': legacy['route'], **environment, 'visibility_binding': 'current-induk-enabled-v1',
             'tables': [{**expected, 'owner_chain': list(L7_OWNER_CHAIN)}]}
