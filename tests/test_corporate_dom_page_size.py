@@ -230,6 +230,15 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     assert steps['previous_verify']['count'] == 2
     assert steps['previous_limit_lookup']['count'] == 1
     assert steps['pilot_guard']['count'] == 1
+    # Only existing calls are wrapped: no additional Playwright dispatch.
+    first_parts = [row for row in records(tmp_path)
+                   if row['event'] == 'table.first_page_timing']
+    assert [r['table_first_page_step'] for r in first_parts] == [
+        'pilot_label_lookup', 'pilot_label_text',
+        'first_overlay_wait', 'first_settle_wait']
+    assert all(r['table_first_page_outcome'] == 'returned' for r in first_parts)
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3
+               for r in first_parts)
     assert steps['first_lookup']['count'] == 1
     assert steps['first_click']['count'] == 1
     assert steps['first_idle']['count'] == 1
@@ -293,6 +302,12 @@ def test_large_dom_first_idle_timeout_preserves_original_failure_and_timing(
     assert steps['first_idle']['count'] == 1
     assert steps['first_navigation']['count'] == 1
     assert steps['first_navigation']['duration_ms'] >= steps['first_idle']['duration_ms']
+    # The synthetic monkeypatch replaces wait_idle entirely, so no false
+    # overlay-wait outcome is invented; only actual pilot RPCs were sampled.
+    first_parts = [r for r in records(tmp_path)
+                   if r['event'] == 'table.first_page_timing']
+    assert [r['table_first_page_step'] for r in first_parts] == [
+        'pilot_label_lookup', 'pilot_label_text']
     assert not any(row['event'] == 'table.page_timing'
                    for row in records(tmp_path))
     assert all('error' not in row for row in records_for_reset)

@@ -410,9 +410,55 @@ def _check_cancel(check_cancel):
         check_cancel()
 
 
+# Bound to one original large-table First wait, not ordinary other waits.
+# ContextVar keeps the existing wait_idle(page) call and 45s/180ms constants.
+_FIRST_PAGE_TIMING_SCOPE = ContextVar('spt_first_page_timing_scope', default=None)
+
+
+@contextmanager
+def _timed_first_page_operation(stage, ordinal, max_page_size, observer=None):
+    '''Measure an original call only; never inspect page or authorize readiness.'''
+    if max_page_size < 250 or not diagnostics.active():
+        yield
+        return
+    started = _diagnostic_clock()
+    cpu_started = time.thread_time()
+    returned = False
+    if stage == 'first_overlay_wait' and observer is not None:
+        observer.first_overlay_started = started
+        observer.first_overlay_finished_count = 0
+        observer.first_overlay_last_finished_ms = None
+    try:
+        yield
+        returned = True
+    finally:
+        elapsed_ms = max(0, (_diagnostic_clock() - started) * 1000)
+        cpu_ms = max(0, (time.thread_time() - cpu_started) * 1000)
+        fields = dict(table_first_page_step=stage,
+                      table_first_page_outcome='returned' if returned else 'raised',
+                      form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                      table_ordinal=ordinal,
+                      duration_ms=elapsed_ms,
+                      table_rpc_thread_cpu_ms=cpu_ms)
+        if stage == 'first_overlay_wait' and observer is not None:
+            fields['table_first_page_finished_requests'] = observer.first_overlay_finished_count
+            if observer.first_overlay_last_finished_ms is not None:
+                fields['table_first_page_last_finish_ms'] = observer.first_overlay_last_finished_ms
+            observer.first_overlay_started = None
+        try:
+            diagnostics.record('table.first_page_timing', **fields)
+        except Exception:  # nosec B110 - Optional diagnostic must not mask original wait/Stop.
+            pass  # No control-flow or result authority in this recorder.
+
+
 def wait_idle(page):
-    page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
-    page.wait_for_timeout(180)
+    scope = _FIRST_PAGE_TIMING_SCOPE.get()
+    with (_timed_first_page_operation('first_overlay_wait', *scope)
+          if scope is not None else nullcontext()):
+        page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
+    with (_timed_first_page_operation('first_settle_wait', *scope)
+          if scope is not None else nullcontext()):
+        page.wait_for_timeout(180)
 
 
 def maximize_page_size(page, container, *, max_page_size=100):
@@ -464,6 +510,9 @@ class _InitialLoadingDiagnostics:
         self.form_ordinal = _INITIAL_FORM_ORDINAL.get()
         self.started = _diagnostic_clock()
         self.stage = 'prepare_entry'
+        self.first_overlay_started = None
+        self.first_overlay_finished_count = 0
+        self.first_overlay_last_finished_ms = None
         self.requests = {}
         self.counts = {'observed': 0, 'finished': 0, 'failed': 0}
         self.overflow = False
@@ -498,6 +547,12 @@ class _InitialLoadingDiagnostics:
             if entry is not None and entry[1] == 'pending':
                 entry[1] = state
                 self.counts[state] += 1
+                # Existing unbound request-object lifecycle only; no headers,
+                # URL, payload, response or follow-up browser request is read.
+                if state == 'finished' and self.first_overlay_started is not None:
+                    self.first_overlay_finished_count += 1
+                    self.first_overlay_last_finished_ms = max(
+                        0, (_diagnostic_clock() - self.first_overlay_started) * 1000)
         except Exception:
             self.overflow = True
 
@@ -736,8 +791,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     try:
         if max_page_size >= 250:
             # A previously selected larger page must not bypass the pilot limit.
-            label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
-            selected = label.inner_text().strip() if label else ''
+            with _timed_first_page_operation('pilot_label_lookup', ordinal, max_page_size):
+                label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+            with _timed_first_page_operation('pilot_label_text', ordinal, max_page_size):
+                selected = label.inner_text().strip() if label else ''
             if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
                 raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     finally:
@@ -764,6 +821,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             if observer is not None:
                 observer.stage = 'first_idle'
             idle_started = _diagnostic_clock()
+            # The original global-overlay wait is unchanged. Attribute only
+            # its original boundary and the original 180ms settle, not overlay
+            # identity (which needs an extra DOM call and remains unproved).
+            scope_token = (_FIRST_PAGE_TIMING_SCOPE.set((ordinal, max_page_size, observer))
+                           if observer is not None and max_page_size >= 250 else None)
             try:
                 try:
                     wait_idle(page)
@@ -772,6 +834,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                         observer.emit('first_idle_timeout', error=exc)
                     raise
             finally:
+                if scope_token is not None:
+                    _FIRST_PAGE_TIMING_SCOPE.reset(scope_token)
                 _record_large_table_reset('first_idle', idle_started, ordinal, max_page_size, 1)
             if observer is not None:
                 observer.emit('first_idle_complete')
