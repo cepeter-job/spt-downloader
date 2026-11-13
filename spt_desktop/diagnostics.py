@@ -40,12 +40,16 @@ EVENTS = frozenset({
     'corporate.l7_negative_gate',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
-    'table.initial_loading', 'table.reset_timing', 'table.browser_rpc_probe', 'table.existing_rpc_timing',
+    'table.initial_loading', 'table.reset_timing', 'table.first_page_timing',
+    'table.browser_rpc_probe', 'table.existing_rpc_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed', 'update.check',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'table_first_page_step': frozenset({
+        'pilot_label_lookup', 'pilot_label_text', 'first_overlay_wait', 'first_settle_wait'}),
+    'table_first_page_outcome': frozenset({'returned', 'raised'}),
     'table_existing_rpc_stage': frozenset({
         'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
         'cursor_init', 'cursor_advance', 'cursor_poll', 'cursor_snapshot'}),
@@ -207,6 +211,7 @@ ENUMS = {
 }
 COUNTERS = frozenset({'count', 'processed', 'total', 'verified', 'scanned', 'percent', 'blocked_requests', 'ordinal', 'form_ordinal', 'table_ordinal', 'body_rows', 'pages', 'page_rows', 'page_size_cap', 'grids', 'forms', 'panel_matches', 'document_panel_matches', 'tab_views', 'attachment_tables', 'candidate_controls', 'table_request_observed',
     'table_request_finished', 'table_request_failed', 'table_request_pending',
+    'table_first_page_finished_requests',
     'search_requests', 'search_responses', 'search_failed', 'search_http_1xx', 'search_http_2xx',
     'search_http_3xx', 'search_http_4xx', 'search_http_5xx', 'search_http_401', 'search_http_403', 'search_http_429'})
 ERROR_TYPES = frozenset({'ValueError', 'TypeError', 'RuntimeError', 'OSError', 'PermissionError',
@@ -301,7 +306,7 @@ def _safe_fields(fields):
                  'table_advance_renderer_ms', 'table_dom_renderer_ms',
                  'table_rpc_renderer_ms', 'table_rpc_residual_ms',
                  'table_rpc_thread_cpu_ms', 'table_rpc_direct_child_cpu_ms',
-                 'table_rpc_nested_child_cpu_ms'):
+                 'table_rpc_nested_child_cpu_ms', 'table_first_page_last_finish_ms'):
         value = fields.get(name)
         if type(value) in (int, float) and 0 <= value <= 604_800_000:
             result[name] = round(value, 2)
