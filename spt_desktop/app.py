@@ -297,8 +297,9 @@ class App:
         self._update_pending = False
         if notice is not None and (self.controller.active or self._interaction is not None
                                    or self._settings_dialog is not None and not manual
-                                   or self.root.state() == 'iconic'):
-            # Do not interrupt active work, a source-selection dialog, or Settings.
+                                   or not manual and self.root.state() == 'iconic'):
+            # Automatic checks also wait for a restored main window; a manual
+            # Settings check must not disappear into an invisible retry loop.
             if not self._update_notice_deferred_logged:
                 _record_update_check('notice_deferred', manual)
             self._update_notice_deferred_logged = True
