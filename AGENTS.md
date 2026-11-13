@@ -145,6 +145,30 @@ The flag does not certify data completeness or enter business manifests.
 Do not add listeners, CDP attachment, DOM writes, repeated polling,
 timer loops or attempts to compensate for the consumed budget.
 
+Passive large-table RPC timing for #161 is **separate from the opt-in
+extra-RPC probe**. With the normal diagnostic session active and
+`max_page_size >= 250`, only the **existing** Previous lookups,
+initial table snapshot, cursor initialization, cursor advance, cursor
+poll and cursor snapshot are wrapped with local Python wall-clock and
+`time.thread_time()` reads. Emit up to **48**
+`table.existing_rpc_timing` records per table, fixed stage/outcome enums,
+no values, URLs, selectors, output/capture status or new browser calls.
+A returned renderer duration is attached only when the **existing**
+browser command already returned it; there is no new JavaScript,
+instrumented browser hook or extra network request. `thread_cpu_ms`
+counts only the Python calling thread; low CPU vs wall time means
+the Python thread waited, **not** proof of Node/IPC/renderer queueing.
+`table_rpc_residual_ms` includes all host-vs-JavaScript differences,
+not transport time alone. Records may be missing after the 48-event cap
+or diagnostic logger drops; never infer that an original RPC did not
+run merely because its event is absent. The original 180s deadline,
+Stop priority, source evidence, completeness and result publishing
+remain the only capture authorities; clocks/logging do not change them.
+Do not claim that adding passive logs establishes performance
+equivalence or a causal bottleneck. Run-level
+`table_rpc_probe_enabled` continues to indicate only the
+**additional, invasive opt-in** RPC probe, not passive logging.
+
 Every PPN primary, including Normal, must explicitly bind ReturnSheetStatusCode=SUBMITTED before projection or fallback; missing status is ineligible and contradictory status is fatal. PPN AskedTo is a final-lifecycle projection, not a raw field copy. Negative submitted amendments may preserve a choice only when the facility null-write is excluded and calendar assignment is blocked across both initial and final export stages, by the source invoice/uncollected quartet predicate, or by a stable inactive capture-owned interval bound to outer PeriodYear. With calendar blocked, a proven facility null-write clears only the supported raw null/FAST_REFUND/CARRY_FORWARD branch. Exact source facility codes are AS.09-01/AS.09-02. Nonnegative FORWARD_REFUND requires a proved post-raw distinct clear event and stays unsupported. The narrow Normal nonnegative branch additionally reconciles captured output/input operands to the four/six ordered component sums before deriving its final balance; reject missing/mismatched components and unsafe operands/intermediates. Normal choice inputs are integral within fifteen digits. The shared final-balance amount helper retains only binary-exact direct fractions and exact intermediate arithmetic within that bound. Preserve all contributing source paths; do not use stale stored balances, a replay clock, or DOM checked state. Active-calendar, Normal-negative and other unproved branches use whole-record fallback.
 
 For clock-dependent grid catalogs, use only the interval sampled by the same owned capture attempt and require one source version throughout that interval. Preserve optional metadata for old captures; never use the replay machine's clock to resolve missing evidence. Final sampling must retain earlier pending-response counts and refuse late replies as COMPLETE. Native eligibility, mapping, capture/PDF completion and final publication remain separate gates.

@@ -39,12 +39,16 @@ EVENTS = frozenset({
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
-    'table.initial_loading', 'table.reset_timing', 'table.browser_rpc_probe',
+    'table.initial_loading', 'table.reset_timing', 'table.browser_rpc_probe', 'table.existing_rpc_timing',
     'publish.rollback', 'gui.callback_failed', 'gui.poll_failed', 'gui.failed', 'update.check',
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
 ENUMS = {
+    'table_existing_rpc_stage': frozenset({
+        'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
+        'cursor_init', 'cursor_advance', 'cursor_poll', 'cursor_snapshot'}),
+    'table_existing_rpc_outcome': frozenset({'returned', 'raised'}),
     'table_rpc_stage': frozenset({'before_previous_lookup',
                                   'before_previous_limit_lookup'}),
     'table_rpc_state': frozenset({'present', 'absent', 'detached',
@@ -291,7 +295,8 @@ def _safe_fields(fields):
             result[name] = value
     for name in ('table_click_ms', 'table_poll_ms', 'table_idle_ms', 'table_verify_ms', 'table_dom_ms',
                  'table_advance_renderer_ms', 'table_dom_renderer_ms',
-                 'table_rpc_renderer_ms', 'table_rpc_residual_ms'):
+                 'table_rpc_renderer_ms', 'table_rpc_residual_ms',
+                 'table_rpc_thread_cpu_ms'):
         value = fields.get(name)
         if type(value) in (int, float) and 0 <= value <= 604_800_000:
             result[name] = round(value, 2)
