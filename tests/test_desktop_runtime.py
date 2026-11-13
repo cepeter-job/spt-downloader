@@ -621,3 +621,15 @@ def test_dom_rpc_probe_is_not_forwarded_by_default(monkeypatch):
     runtime = runtime_module()
     monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
     assert 'SPT_DIAG_DOM_RPC_PROBE' not in runtime.worker_environment()
+
+
+@pytest.mark.parametrize('value,forward', [('1', True), ('0', False), ('true', False),
+                                            (' 1', False), ('', False)])
+def test_host_cpu_sampling_only_passes_explicit_worker_flag(
+        monkeypatch, tmp_path, value, forward):
+    runtime = runtime_module()
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', value)
+    assert runtime.worker_environment().get('SPT_DIAG_HOST_CPU') == (
+        '1' if forward else None)
+    assert 'SPT_DIAG_HOST_CPU' not in runtime.bootstrap_environment(tmp_path)
+    assert 'SPT_DIAG_HOST_CPU' not in runtime._OS_ENV_ALLOWLIST

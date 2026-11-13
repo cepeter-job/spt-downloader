@@ -16,6 +16,7 @@ Exception-handling policy for this module:
 """
 
 from spt_desktop import diagnostics
+from spt_desktop import owned_process_cpu
 import time
 from time import perf_counter as _diagnostic_clock
 import re
@@ -567,14 +568,37 @@ def _timed_rewind_operation(timings, stage):
 # Python thread CPU excludes CPU on Playwright's Node/browser processes; a
 # tiny CPU time against large wall time proves waiting, not which process caused it.
 PASSIVE_RPC_MAX_EVENTS_PER_TABLE = 48
+# At most seven pairs of *local* process snapshots per table, opt-in only.
+# The caps sample the first genuine Previous lookup, and up to three original
+# advance/snapshot calls each. Other stages still emit basic passive timings.
+HOST_CPU_STAGE_SAMPLES = {'previous_lookup': 1, 'cursor_advance': 3,
+                          'cursor_snapshot': 3}
+
+
+def _host_cpu_snapshot():
+    try:
+        return owned_process_cpu.snapshot()
+    except Exception:  # nosec B110 - Optional Win32 diagnostics cannot mask original RPC/Stop.
+        return None
+
+
 
 
 @contextmanager
-def _timed_existing_rpc(stage, ordinal, max_page_size, slots):
+def _timed_existing_rpc(stage, ordinal, max_page_size, slots, host_cpu_slots=None):
     if (max_page_size < 250 or not diagnostics.active()
             or slots[0] >= PASSIVE_RPC_MAX_EVENTS_PER_TABLE):
         yield None
         return
+    cpu_before = None
+    cpu_selected = (host_cpu_slots is not None
+                    and os.environ.get('SPT_DIAG_HOST_CPU') == '1'
+                    and owned_process_cpu.supported()
+                    and stage in HOST_CPU_STAGE_SAMPLES
+                    and host_cpu_slots.get(stage, 0) < HOST_CPU_STAGE_SAMPLES[stage])
+    if cpu_selected:
+        host_cpu_slots[stage] = host_cpu_slots.get(stage, 0) + 1
+        cpu_before = _host_cpu_snapshot()
     started = _diagnostic_clock()
     cpu_started = time.thread_time()
     observation = {}
@@ -587,11 +611,23 @@ def _timed_existing_rpc(stage, ordinal, max_page_size, slots):
         # Neither this observer nor its failure changes the wrapped RPC result.
         wall_ms = (_diagnostic_clock() - started) * 1000
         cpu_ms = (time.thread_time() - cpu_started) * 1000
+        # Snapshot after the original elapsed measurement: Win32 enumeration
+        # must not inflate the measured browser-RPC wall duration.
+        cpu_after = _host_cpu_snapshot() if cpu_selected else None
         slots[0] += 1
         fields = dict(table_existing_rpc_stage=stage,
                       table_existing_rpc_outcome='returned' if returned else 'raised',
                       form_ordinal=_INITIAL_FORM_ORDINAL.get(), table_ordinal=ordinal,
                       duration_ms=wall_ms, table_rpc_thread_cpu_ms=cpu_ms)
+        if cpu_selected:
+            try:
+                delta = owned_process_cpu.paired_cpu_delta(cpu_before, cpu_after)
+            except Exception:  # nosec B110 - Optional CPU evidence cannot mask capture.
+                delta = None
+            fields['table_host_cpu_state'] = 'paired' if delta is not None else 'unavailable'
+            if delta is not None:
+                fields['table_rpc_direct_child_cpu_ms'] = delta[0]
+                fields['table_rpc_nested_child_cpu_ms'] = delta[1]
         renderer_ms = observation.get('renderer_ms')
         if (type(renderer_ms) in (int, float) and 0 <= renderer_ms <= wall_ms):
             fields['table_rpc_renderer_ms'] = renderer_ms
@@ -672,6 +708,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
     passive_rpc_slots = [0]
+    host_cpu_slots = {}
     preparation_started = _diagnostic_clock()
     handle = table.element_handle()
     resources.callback(_dispose_table_handle, handle)
@@ -761,7 +798,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     max_page_size=max_page_size, capture_deadline=capture_deadline,
                     check_cancel=check_cancel)
             with _timed_existing_rpc('previous_lookup', ordinal, max_page_size,
-                                     passive_rpc_slots):
+                                     passive_rpc_slots, host_cpu_slots):
                 with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
                     previous = container_handle.query_selector(previous_selector)
             if not previous:
@@ -826,7 +863,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             page_started = _diagnostic_clock()
             remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
             with _timed_existing_rpc('cursor_advance', ordinal, max_page_size,
-                                     passive_rpc_slots) as timing:
+                                     passive_rpc_slots, host_cpu_slots) as timing:
                 advance = cursor.evaluate(TABLE_CURSOR_ADVANCE_JS,
                                           {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
                 if timing is not None and type(advance) is dict:
@@ -951,7 +988,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
             with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
-                                     passive_rpc_slots) as timing:
+                                     passive_rpc_slots, host_cpu_slots) as timing:
                 snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
                 if timing is not None and type(snapshot) is dict:
                     timing['renderer_ms'] = snapshot.get('renderer_ms')
@@ -965,7 +1002,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 if not snapshot.get('pending'):
                     break
                 with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
-                                         passive_rpc_slots) as timing:
+                                         passive_rpc_slots, host_cpu_slots) as timing:
                     snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
                     if timing is not None and type(snapshot) is dict:
                         timing['renderer_ms'] = snapshot.get('renderer_ms')
