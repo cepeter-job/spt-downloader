@@ -49,6 +49,7 @@ ENUMS = {
         'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
         'cursor_init', 'cursor_advance', 'cursor_poll', 'cursor_snapshot'}),
     'table_existing_rpc_outcome': frozenset({'returned', 'raised'}),
+    'table_host_cpu_state': frozenset({'paired', 'unavailable'}),
     'table_rpc_stage': frozenset({'before_previous_lookup',
                                   'before_previous_limit_lookup'}),
     'table_rpc_state': frozenset({'present', 'absent', 'detached',
@@ -296,7 +297,8 @@ def _safe_fields(fields):
     for name in ('table_click_ms', 'table_poll_ms', 'table_idle_ms', 'table_verify_ms', 'table_dom_ms',
                  'table_advance_renderer_ms', 'table_dom_renderer_ms',
                  'table_rpc_renderer_ms', 'table_rpc_residual_ms',
-                 'table_rpc_thread_cpu_ms'):
+                 'table_rpc_thread_cpu_ms', 'table_rpc_direct_child_cpu_ms',
+                 'table_rpc_nested_child_cpu_ms'):
         value = fields.get(name)
         if type(value) in (int, float) and 0 <= value <= 604_800_000:
             result[name] = round(value, 2)
@@ -323,6 +325,8 @@ class DiagnosticLog:
         # Never trust an event caller to supply or override this boolean.
         self._dom_rpc_probe_enabled = (
             role == 'worker' and os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1')
+        self._host_cpu_enabled = (
+            role == 'worker' and os.environ.get('SPT_DIAG_HOST_CPU') == '1')
         self.level = level if type(level) is str and level in LEVELS else 'INFO'
         self.job_ref = job_reference(job_id)
         self.dropped = 0
@@ -375,6 +379,7 @@ class DiagnosticLog:
                     # an assertion about source completeness. It cannot be
                     # overridden by untrusted event fields or caller input.
                     row['table_rpc_probe_enabled'] = self._dom_rpc_probe_enabled
+                    row['table_host_cpu_enabled'] = self._host_cpu_enabled
                 reference = job_reference(job_id) or _job.get() or self.job_ref
                 if reference:
                     row['job_ref'] = reference
