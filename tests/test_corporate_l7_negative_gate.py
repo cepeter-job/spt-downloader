@@ -33,9 +33,12 @@ class Grid:
         return self._table
 
 
+_UNSET = object()
+
+
 class Page:
     def __init__(self, pins, environment=None, url='https://synthetic.invalid/detail?view=true',
-                 digest_override=None):
+                 digest_override=_UNSET):
         self._pins = pins
         self._environment = environment or {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
         self.url = url
@@ -44,7 +47,7 @@ class Page:
     def evaluate(self, script, url=None):
         if 'Intl.DateTimeFormat' in script:
             return self._environment
-        if self._digest_override is not None:
+        if self._digest_override is not _UNSET:
             return self._digest_override
         return self._pins.get(url)
 
