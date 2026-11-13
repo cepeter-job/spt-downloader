@@ -90,9 +90,10 @@ _L7_HISTORY = """(d) => {
      if(index<3){relevant=true;adopt(element,index,removed);return;}
      const scope=inside(element)||inside(target)||roles.includes(element);
      if(scope){relevant=true;adopt(element,index,removed);}
-     else if(!target.isConnected){
-       // A detached intermediate's historic generic-table owner is unknown.
-       // Never restart from its final closest() ancestry.
+     else if(!target.isConnected&&(roles.includes(target)||ancestors.has(target))){
+       // Only a retained role or a remembered chain ancestor is provable L7
+       // attribution; a detached contains() check cannot prove ownership, so
+       // unrelated document teardown is not L7 evidence.
        relevant=true;note('detached');if(debit())unavailable();
      }
    };
