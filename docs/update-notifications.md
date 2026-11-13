@@ -96,8 +96,9 @@ Manual check is available in Settings via
 **Cek pembaruan**. The notice opens centered over its owning window (the
 main app, or Settings when requested there), without a transient flash at
 the screen origin. Automatic notices are deferred while the main window is
-minimized and shown after it is restored. The popup also defers while an
-SPT job or interaction is active.
+minimized and shown after it is restored. A user-triggered check from
+Settings is not delayed merely because the main window is minimized.
+The popup still defers while an SPT job or interaction is active.
 If the Worker is empty, malformed, blocked, or offline, automatic checks do
 nothing; they never block Coretax or local export. Only the release notice
 has the two buttons.
