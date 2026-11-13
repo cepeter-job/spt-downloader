@@ -179,6 +179,37 @@ def test_automatic_notice_waits_for_minimized_app_to_restore(
         root.destroy()
 
 
+def test_manual_settings_notice_is_not_deferred_by_iconic_main(
+        tmp_path, monkeypatch):
+    # The user explicitly triggered a check from Settings. The main window
+    # may be minimized independently; avoid a silent two-second retry loop.
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=Controller())
+        root.update()
+        settings = app.settings()
+        assert root.grab_current() is settings
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._update_pending = True
+        app._update_results.put(('ok', notice))
+        monkeypatch.setattr(root, 'state', lambda: 'iconic')
+
+        app._receive_update(manual=True)
+
+        dialog = app._update_dialog
+        assert dialog is not None and dialog.winfo_ismapped()
+        assert app._update_seen == {'420'}
+        assert not app._update_pending and app._update_results.empty()
+        assert app._update_after is None
+        assert root.grab_current() is dialog
+        button(dialog, 'Close').invoke()
+        assert app._update_dialog is None
+        assert root.grab_current() is settings
+        app._dispose()
+    finally:
+        root.destroy()
+
+
 def test_update_from_settings_restores_settings_grab(tmp_path, monkeypatch):
     opened = []
     monkeypatch.setattr(gui.webbrowser, 'open',
