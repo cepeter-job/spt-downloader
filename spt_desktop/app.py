@@ -378,8 +378,14 @@ class App:
                         else parent.winfo_reqwidth())
         parent_height = (parent.winfo_height() if parent.winfo_height() > 1
                          else parent.winfo_reqheight())
-        x = parent.winfo_rootx() + (parent_width - width) // 2
-        y = parent.winfo_rooty() + (parent_height - height) // 2
+        # Tk's wm.geometry coordinates reference the decorated window frame,
+        # while winfo_root* reports the content origin. Correct for the same
+        # frame offset observed on the already mapped parent; otherwise Windows
+        # shifts the visible notice down by its 31px title bar.
+        frame_dx = parent.winfo_rootx() - parent.winfo_x()
+        frame_dy = parent.winfo_rooty() - parent.winfo_y()
+        x = parent.winfo_rootx() + (parent_width - width) // 2 - frame_dx
+        y = parent.winfo_rooty() + (parent_height - height) // 2 - frame_dy
         dialog.geometry(f'+{x}+{y}')
         dialog.deiconify()
         if prior_grab is not None:
