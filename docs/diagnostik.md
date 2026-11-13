@@ -144,6 +144,15 @@ ini hanya dinamai pada penolakan; bukti yang lengkap tidak mencatat apa pun.
 Tidak ada URL, digest, route, identitas, atau nilai yang direkam, dan
 ketersediaan bukti opsional tetap tidak mengubah jalur non-negatif v1.
 
+`corporate.l7_capture_gate` menamai lapisan custody di bawah gate
+`structure_start`: kategori tetap `component`, `component_end`, `history`,
+`flagged`, `handle_form`/`handle_grid`/`handle_table`/`handle_tab`/`handle_panel`,
+`state_malformed`, `incomplete`, serta `js_*` untuk alasan skrip riwayat anak L7
+(`budget`, `chain`, `enabled`, `roles`, `shape`, `document`, `removed`, `depth`,
+`visibility`, `identity`, `boundary`, `unknown`). Alasan `js_*` berasal dari
+skrip halaman dan hanya dipetakan ke enum; teks bebas, node, atribut, dan nilai
+tidak pernah dicatat. Event ini tidak mengubah hasil adopsi JSON.
+
 `native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
 pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
 Field `native_paginator_step` dibatasi ke `reset_probe`,
