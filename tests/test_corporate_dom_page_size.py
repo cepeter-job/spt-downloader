@@ -645,10 +645,16 @@ def test_passive_rpc_records_raised_call_without_changing_original_exception(
         tmp_path):
     secret = 'SYNTHETIC_PRIVATE_RPC_EXCEPTION'
     slots = [0]
+
+    def synthetic_call(should_fail):
+        if should_fail:
+            raise RuntimeError(secret)
+        return None
+
     with d.session(tmp_path, 'worker') as log:
         with pytest.raises(RuntimeError, match=secret):
             with driver._timed_existing_rpc('cursor_snapshot', 3, 500, slots):
-                raise RuntimeError(secret)
+                synthetic_call(True)
         assert log.flush()
     rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
     assert len(rows) == 1
@@ -659,10 +665,16 @@ def test_passive_rpc_records_raised_call_without_changing_original_exception(
 
 def test_passive_rpc_stop_and_record_cap_preserve_bounded_diagnostics(tmp_path):
     slots = [0]
+
+    def synthetic_stop(cancelled):
+        if cancelled:
+            raise driver.CaptureCancelled('synthetic stop')
+        return None
+
     with d.session(tmp_path, 'worker') as log:
         with pytest.raises(driver.CaptureCancelled):
             with driver._timed_existing_rpc('cursor_poll', 3, 500, slots):
-                raise driver.CaptureCancelled('synthetic stop')
+                synthetic_stop(True)
         assert log.flush()
         slots[0] = driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
         with driver._timed_existing_rpc('cursor_advance', 3, 500, slots):
