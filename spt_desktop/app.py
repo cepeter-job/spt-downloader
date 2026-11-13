@@ -296,8 +296,10 @@ class App:
             return
         self._update_pending = False
         if notice is not None and (self.controller.active or self._interaction is not None
-                                   or self._settings_dialog is not None and not manual):
-            # Do not interrupt active work, a source-selection dialog, or Settings.
+                                   or self._settings_dialog is not None and not manual
+                                   or not manual and self.root.state() == 'iconic'):
+            # Automatic checks also wait for a restored main window; a manual
+            # Settings check must not disappear into an invisible retry loop.
             if not self._update_notice_deferred_logged:
                 _record_update_check('notice_deferred', manual)
             self._update_notice_deferred_logged = True
@@ -328,6 +330,8 @@ class App:
             return
         parent = self._settings_dialog or self.root
         dialog = tk.Toplevel(parent)
+        # Avoid flashing the new window at Tk's default screen origin.
+        dialog.withdraw()
         self._update_dialog = dialog
         dialog.title('Pembaruan')
         dialog.transient(parent)
@@ -338,8 +342,6 @@ class App:
         actions = ttk.Frame(frame)
         actions.pack(anchor='e')
         prior_grab = self.root.grab_current()
-        if prior_grab is not None:
-            dialog.grab_set()
 
         def dismiss():
             self._update_dialog = None
@@ -365,6 +367,29 @@ class App:
         ttk.Button(actions, text='Update', command=open_folder).pack(side='left', padx=(0, 8))
         ttk.Button(actions, text='Close', command=dismiss).pack(side='left')
         dialog.protocol('WM_DELETE_WINDOW', dismiss)
+
+        # Position after Tk has measured the controls, relative to the window
+        # that owns the notice (Settings for a manual check, otherwise the app).
+        # Use screen coordinates so this also works on secondary monitors.
+        parent.update_idletasks()
+        dialog.update_idletasks()
+        width, height = dialog.winfo_reqwidth(), dialog.winfo_reqheight()
+        parent_width = (parent.winfo_width() if parent.winfo_width() > 1
+                        else parent.winfo_reqwidth())
+        parent_height = (parent.winfo_height() if parent.winfo_height() > 1
+                         else parent.winfo_reqheight())
+        # Tk's wm.geometry coordinates reference the decorated window frame,
+        # while winfo_root* reports the content origin. Correct for the same
+        # frame offset observed on the already mapped parent; otherwise Windows
+        # shifts the visible notice down by its 31px title bar.
+        frame_dx = parent.winfo_rootx() - parent.winfo_x()
+        frame_dy = parent.winfo_rooty() - parent.winfo_y()
+        x = parent.winfo_rootx() + (parent_width - width) // 2 - frame_dx
+        y = parent.winfo_rooty() + (parent_height - height) // 2 - frame_dy
+        dialog.geometry(f'+{x}+{y}')
+        dialog.deiconify()
+        if prior_grab is not None:
+            dialog.grab_set()
 
     def _report_callback(self, kind, error, trace):
         diagnostics.record('gui.callback_failed', error=error, level='ERROR')

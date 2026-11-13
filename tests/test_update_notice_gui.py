@@ -120,6 +120,99 @@ def test_close_only_closes_notice_and_update_opens_fixed_folder(tmp_path, monkey
         root.destroy()
 
 
+
+@pytest.mark.parametrize('from_settings', [False, True])
+def test_update_notice_is_centered_on_its_visible_parent(
+        tmp_path, from_settings):
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=Controller())
+        root.geometry('900x620+210+135')
+        root.update()
+        parent = app.settings() if from_settings else root
+        root.update()
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._show_update_notice(notice)
+        root.update_idletasks()
+        dialog = app._update_dialog
+        assert dialog is not None and dialog.winfo_ismapped()
+        parent_center_x = parent.winfo_rootx() + parent.winfo_width() / 2
+        parent_center_y = parent.winfo_rooty() + parent.winfo_height() / 2
+        notice_center_x = dialog.winfo_rootx() + dialog.winfo_width() / 2
+        notice_center_y = dialog.winfo_rooty() + dialog.winfo_height() / 2
+        # Allow small window-manager frame differences on Windows runners.
+        assert abs(notice_center_x - parent_center_x) <= 16
+        assert abs(notice_center_y - parent_center_y) <= 24
+        button(dialog, 'Close').invoke()
+        assert app._update_dialog is None
+        if from_settings:
+            assert root.grab_current() is parent
+        app._dispose()
+    finally:
+        root.destroy()
+
+
+def test_automatic_notice_waits_for_minimized_app_to_restore(
+        tmp_path, monkeypatch):
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=Controller())
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._update_pending = True
+        app._update_results.put(('ok', notice))
+        normal_state = root.state
+        monkeypatch.setattr(root, 'state', lambda: 'iconic')
+        app._receive_update(manual=False)
+        assert app._update_dialog is None
+        assert app._update_pending and app._update_results.qsize() == 1
+        assert app._update_seen == set()
+        assert app._update_after is not None
+
+        root.after_cancel(app._update_after)
+        monkeypatch.setattr(root, 'state', normal_state)
+        app._receive_update(manual=False)
+        assert app._update_dialog is not None
+        assert app._update_seen == {'420'}
+        button(app._update_dialog, 'Close').invoke()
+        app._dispose()
+    finally:
+        root.destroy()
+
+
+def test_manual_settings_notice_is_not_deferred_by_iconic_main(
+        tmp_path, monkeypatch):
+    # The user explicitly triggered a check from Settings. The main window
+    # may be minimized independently; avoid a silent two-second retry loop.
+    root = tk.Tk()
+    try:
+        app = gui.App(root, tmp_path, controller=Controller())
+        root.update()
+        settings = app.settings()
+        assert root.grab_current() is settings
+        notice = update_notice.UpdateNotice('b' * 40, '420', 1)
+        app._update_pending = True
+        app._update_results.put(('ok', notice))
+        monkeypatch.setattr(root, 'state', lambda: 'iconic')
+
+        app._receive_update(manual=True)
+        # On Windows a transient may need one native event-loop pass after
+        # deiconify before Tk reports it as mapped.
+        root.update()
+
+        dialog = app._update_dialog
+        assert dialog is not None and dialog.winfo_ismapped()
+        assert app._update_seen == {'420'}
+        assert not app._update_pending and app._update_results.empty()
+        assert app._update_after is None
+        assert root.grab_current() is dialog
+        button(dialog, 'Close').invoke()
+        assert app._update_dialog is None
+        assert root.grab_current() is settings
+        app._dispose()
+    finally:
+        root.destroy()
+
+
 def test_update_from_settings_restores_settings_grab(tmp_path, monkeypatch):
     opened = []
     monkeypatch.setattr(gui.webbrowser, 'open',
