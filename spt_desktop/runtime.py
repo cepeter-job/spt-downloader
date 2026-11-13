@@ -44,6 +44,7 @@ WORKER_FILES = (
     'spt_desktop/build_info.py', 'spt_desktop/publication_recovery.py',
     'spt_desktop/profile_lifecycle.py', 'spt_desktop/job_pruning.py',
     'coretax_detail_source.py',
+    'spt_desktop/owned_process_cpu.py',
     'coretax_transport.py',
 )
 
@@ -118,6 +119,9 @@ def worker_environment():
     # Do not broaden the OS allowlist or pass this flag to uv/bootstrap.
     if os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1':
         environment['SPT_DIAG_DOM_RPC_PROBE'] = '1'
+    # Separate read-only Win32 child-CPU sampling for existing RPCs.
+    if os.environ.get('SPT_DIAG_HOST_CPU') == '1':
+        environment['SPT_DIAG_HOST_CPU'] = '1'
     return environment
 
 

@@ -997,3 +997,35 @@ def test_passive_existing_rpc_timing_fields_are_strictly_allowlisted(tmp_path):
                  'table_rpc_renderer_ms', 'table_rpc_residual_ms',
                  'form_ordinal', 'table_ordinal'} & rows[1].keys())
     assert private not in json.dumps(rows)
+
+
+def test_host_cpu_event_schema_and_run_marker_are_bounded(tmp_path, monkeypatch):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_HOST_CPU_VALUE'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.existing_rpc_timing', table_host_cpu_state='paired',
+                 table_rpc_direct_child_cpu_ms=1.237,
+                 table_rpc_nested_child_cpu_ms=5.778,
+                 table_existing_rpc_stage='cursor_snapshot',
+                 form_ordinal=4, table_ordinal=3,
+                 pid=secret, process_name=secret, command_line=secret,
+                 process_path=secret, request_body=secret)
+        d.record('table.existing_rpc_timing', table_host_cpu_state=secret,
+                 table_rpc_direct_child_cpu_ms=-1,
+                 table_rpc_nested_child_cpu_ms=secret)
+        d.record('operation.started', table_host_cpu_enabled=False)
+        assert log.flush()
+    rows = records(tmp_path)
+    start, = [r for r in rows if r['event'] == 'session.started']
+    operation, = [r for r in rows if r['event'] == 'operation.started']
+    assert start['table_host_cpu_enabled'] is True
+    assert operation['table_host_cpu_enabled'] is True
+    cpu_rows = [r for r in rows if r['event'] == 'table.existing_rpc_timing']
+    assert cpu_rows[0]['table_host_cpu_state'] == 'paired'
+    assert cpu_rows[0]['table_rpc_direct_child_cpu_ms'] == 1.24
+    assert cpu_rows[0]['table_rpc_nested_child_cpu_ms'] == 5.78
+    assert 'table_host_cpu_state' not in cpu_rows[1]
+    assert 'table_rpc_direct_child_cpu_ms' not in cpu_rows[1]
+    assert 'table_rpc_nested_child_cpu_ms' not in cpu_rows[1]
+    assert secret not in json.dumps(rows)

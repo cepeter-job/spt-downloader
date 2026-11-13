@@ -169,6 +169,38 @@ equivalence or a causal bottleneck. Run-level
 `table_rpc_probe_enabled` continues to indicate only the
 **additional, invasive opt-in** RPC probe, not passive logging.
 
+Optional local Windows process-CPU observation (follow-up #161) is separate
+from both the always-passive RPC wall/thread CPU recorder and
+`SPT_DIAG_DOM_RPC_PROBE`. Only exact worker environment
+`SPT_DIAG_HOST_CPU=1` enables it: the GUI forwards this fixed literal to
+the owned worker, never to bootstrap or the general environment allowlist.
+It enumerates *local* process parent relationships under the current worker
+PID via Toolhelp, then reads GetProcessTimes cumulative CPU ticks from
+descendants at the boundaries of **existing** RPC calls. Never inspect
+command line, process names, browser data, resource URLs, source values,
+or other user processes. Log only aggregated direct-child and deeper-child
+CPU deltas in fixed numeric fields. No Playwright private transport hook,
+CDP, browser evaluate, polling thread, endpoint traffic, Python package
+or running browser process mutation. Bound to the first actual
+Previous lookup and at most three advance and three snapshot calls,
+**seven paired samples (14 Win32 snapshots) per large table**. A
+snapshot failure, process churn, PID reuse, inaccessible child, or
+unsupported OS causes an explicit `unavailable`/missing metric, never
+guessed CPU or inferred idle. Only matching PIDs with unchanged
+creation time and parent-depth count as paired. Direct child is not
+provably the Node driver, deeper child is not provably Chromium;
+CPU consumption cannot identify network/IPC queue wait, and low
+CPU does not prove which process stalled. Windows snapshot enumeration
+has its own bounded overhead *outside* the measured RPC wall time and
+**inside** the original 180s capture budget: host-CPU opt-in runs are
+investigative, **not** performance or row-completeness baselines.
+The immutable worker boundary `table_host_cpu_enabled` labels that
+opt-in; missing boundaries mean UNKNOWN. Never widen deadlines,
+change capture/source authority, hide Stop/errors, or merge these
+diagnostics into business manifests. Documented sampling is not a
+runtime optimization and cannot satisfy #246's positive-Previous
+benchmark.
+
 Every PPN primary, including Normal, must explicitly bind ReturnSheetStatusCode=SUBMITTED before projection or fallback; missing status is ineligible and contradictory status is fatal. PPN AskedTo is a final-lifecycle projection, not a raw field copy. Negative submitted amendments may preserve a choice only when the facility null-write is excluded and calendar assignment is blocked across both initial and final export stages, by the source invoice/uncollected quartet predicate, or by a stable inactive capture-owned interval bound to outer PeriodYear. With calendar blocked, a proven facility null-write clears only the supported raw null/FAST_REFUND/CARRY_FORWARD branch. Exact source facility codes are AS.09-01/AS.09-02. Nonnegative FORWARD_REFUND requires a proved post-raw distinct clear event and stays unsupported. The narrow Normal nonnegative branch additionally reconciles captured output/input operands to the four/six ordered component sums before deriving its final balance; reject missing/mismatched components and unsafe operands/intermediates. Normal choice inputs are integral within fifteen digits. The shared final-balance amount helper retains only binary-exact direct fractions and exact intermediate arithmetic within that bound. Preserve all contributing source paths; do not use stale stored balances, a replay clock, or DOM checked state. Active-calendar, Normal-negative and other unproved branches use whole-record fallback.
 
 For clock-dependent grid catalogs, use only the interval sampled by the same owned capture attempt and require one source version throughout that interval. Preserve optional metadata for old captures; never use the replay machine's clock to resolve missing evidence. Final sampling must retain earlier pending-response counts and refuse late replies as COMPLETE. Native eligibility, mapping, capture/PDF completion and final publication remain separate gates.

@@ -329,6 +329,48 @@ perbaikan throughput/kelengkapan dari perbedaan run tunggal,
 terutama jika digest katalog berubah. Gunakan sebagai dasar
 penentuan stage bottleneck untuk investigasi terpisah.
 
+### Sample CPU proses anak milik worker — opt-in, khusus Windows (#161)
+
+Pada build baru, **set `SPT_DIAG_HOST_CPU=1` sebelum menjalankan EXE
+dari PowerShell bersih**, dan biarkan
+`SPT_DIAG_DOM_RPC_PROBE` *tidak disetel*. Mode ini berbeda dari
+probe JavaScript tambahan: tidak ada RPC/DOM/browser command baru.
+Flag `table_host_cpu_enabled` pada `session.started`,
+`operation.started`, `operation.finished`, dan `session.closed`
+membuktikan status opt-in; marker tidak tersedia = **UNKNOWN**.
+
+Untuk tabel besar (`max_page_size >= 250`), tepat sebelum/sesudah
+panggilan Playwright yang **sudah ada**, worker mengamati counter
+CPU melalui Toolhelp/GetProcessTimes hanya untuk proses anak di
+bawah PID worker saat itu. Sampel maksimum: lookup Previous pertama,
+tiga `cursor_advance` pertama, dan tiga `cursor_snapshot`
+pertama — maksimum **7 pasangan (14 snapshot Win32) per tabel**.
+Tidak ada PID, nama executable, path, command line, request atau
+konten pajak pada log. Jika seluruh pasangan proses cocok (PID +
+creation time + kedalaman), event `table.existing_rpc_timing`
+menambahkan `table_host_cpu_state=paired`,
+`table_rpc_direct_child_cpu_ms`, dan
+`table_rpc_nested_child_cpu_ms` (waktu **CPU kumulatif**,
+bukan durasi wall). Apabila gagal mengakses proses, terdapat
+kelahiran/keluarnya subprocess, pergantian PID, atau dukungan OS
+tidak ada, metrik CPU tidak dipaksakan; event sampling Windows
+menggunakan `table_host_cpu_state=unavailable`.
+Di luar jatah tujuh sampel, field CPU host sengaja tidak tersedia.
+
+Kedalaman proses 1 sering berisi driver Node Playwright, sedangkan
+yang lebih dalam bisa berisi proses Chromium; **itu bukan bukti
+identitas proses**. CPU proses anak rendah tidak membuktikan
+penyebab antrean IPC, event-loop driver, scheduling Chromium,
+blokir jaringan atau rendering. Snapshot Win32 itu sendiri
+mengonsumsi sedikit waktu di dalam budget asli 180 detik, meskipun
+di luar interval wall-clock RPC. Karena itu, run opt-in **tidak
+boleh dibandingkan sebagai benchmark** kelengkapan/kecepatan
+dengan run normal. Status COMPLETE/PARTIAL, urutan data, Stop,
+sumber, deadline, dan penerbitan berkas tetap sama. Hasil
+investigasi harus dibahas sebagai korelasi CPU, bukan kepastian
+akar masalah; perubahan mekanisme scraper membutuhkan desain,
+tes regresi, dan review tersendiri.
+
 **Tindak lanjut 11 November 2026 (build `df60d3d7`):** operator-run
 berakhir PARTIAL pada form 4/tabel 3, `first_idle_timeout` setelah
 60,14 detik sejak awal persiapan. `size_action` 1,49 detik dan interval
