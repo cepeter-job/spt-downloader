@@ -20,7 +20,8 @@ class FakeFirstWaitPage:
         self.callbacks[event] = callback
 
     def remove_listener(self, event, callback):
-        assert self.callbacks.pop(event) is callback
+        registered = self.callbacks.pop(event)
+        assert registered is callback
 
     def locator(self, selector):
         self.calls.append(('locator', selector))
