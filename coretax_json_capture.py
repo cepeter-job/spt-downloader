@@ -31,7 +31,8 @@ MAX_RESPONSES = 1024
 MAX_BODY_BYTES = 32 * 1024 * 1024
 # Fixed reasons reported by the L7 child-history script; enum-only diagnostics.
 _L7_JS_REASONS = frozenset({'budget', 'chain', 'enabled', 'roles', 'shape', 'document',
-                            'removed', 'depth', 'unknown', 'visibility', 'identity', 'boundary'})
+                            'removed', 'depth', 'unknown', 'visibility', 'identity',
+                            'boundary', 'initial', 'detached'})
 MAX_TOTAL_BYTES = 128 * 1024 * 1024
 DRAIN_SECONDS = 20
 MAX_REQUEST_METADATA_BYTES = 65536
@@ -59,6 +60,7 @@ _L7_HISTORY = """(d) => {
  // Fixed reason for the first refusal; value-free and never a DOM fact.
  let reason='ok';
  const note=name=>{if(reason==='ok')reason=name;};
+ reason=d!==document?'document':(state.available?'ok':'initial');
  const observer=new MutationObserver(records=>process(records));
  const unavailable=()=>{note('unknown');state.available=false;observer.disconnect();};
  const debit=()=>{if(--remaining<0){note('budget');unavailable();return false;}return true;};
@@ -91,7 +93,7 @@ _L7_HISTORY = """(d) => {
      else if(!target.isConnected){
        // A detached intermediate's historic generic-table owner is unknown.
        // Never restart from its final closest() ancestry.
-       relevant=true;if(debit())unavailable();
+       relevant=true;note('detached');if(debit())unavailable();
      }
    };
    if(node.matches(candidates))visit(node);
@@ -467,6 +469,7 @@ class DetailJsonCapture:
             self._l7_history = self._component_document.evaluate_handle(_L7_HISTORY)
             return self._l7_history
         self._l7_probe(retain_l7_history)
+        self._l7_arm_state()
         self._l8_history = self._component_probe(
             lambda: self._component_document.evaluate_handle(_L8_HISTORY))
         owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
@@ -550,6 +553,20 @@ class DetailJsonCapture:
         diagnostics.record('corporate.l7_capture_gate', corporate_l7_capture_gate=name)
         return False
 
+    def _l7_arm_state(self):
+        """Record only the fixed arming precondition of the optional L7 history."""
+        history = self._l7_history
+        if history is None:
+            diagnostics.record('corporate.l7_history_arm', corporate_l7_history_arm='unsupported')
+            return
+        try:
+            reason = history.evaluate('(h) => h.why()')
+        except Exception:  # nosec B110 - Optional instrumentation must not replace Stop.
+            diagnostics.record('corporate.l7_history_arm', corporate_l7_history_arm='unsupported')
+            return
+        name = {'ok': 'clear', 'initial': 'occupied', 'document': 'document'}.get(reason, 'unsupported')
+        diagnostics.record('corporate.l7_history_arm', corporate_l7_history_arm=name)
+
     def bind_l7_structure(self, form, grid, table, tab, panel, *, phase, check_cancel=None):
         """Bind real held nodes twice; never adopt replacements after start."""
         self._cancel(check_cancel)
@@ -583,8 +600,13 @@ class DetailJsonCapture:
             if state is None:
                 return self._l7_gate('state_malformed')
             if not state['available']:
-                reason = self._l7_probe(
-                    lambda: history.evaluate('(h) => h.why()'), check_cancel)
+                try:
+                    reason = history.evaluate('(h) => h.why()')
+                except JsonSafetyError:
+                    raise
+                except Exception:
+                    return self._l7_gate('js_no_method')
+                self._cancel(check_cancel)
                 name = 'js_' + reason if type(reason) is str and reason in _L7_JS_REASONS else 'js_unknown'
                 return self._l7_gate(name)
             component = self.observe_component_lifetime(check_cancel=check_cancel)

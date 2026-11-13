@@ -20,12 +20,24 @@ class MissingHandle(Element):
         return None
 
 
-def run(tmp_path, *, available=None, reason=None, element=None, drop_history=False):
+def run(tmp_path, *, available=None, reason=None, element=None, drop_history=False,
+        arm_reason=None, why_raises=False):
     context, page, guard = history_setup()
     if reason is not None:
         guard.reason = reason
+    if arm_reason is not None:
+        guard.reason = arm_reason
     if available is not None:
         guard.state['available'] = available
+    if why_raises:
+        original = guard.evaluate
+
+        def evaluate(script, args=None):
+            if 'why()' in script:
+                raise RuntimeError('synthetic reason unavailable')
+            return original(script, args)
+
+        guard.evaluate = evaluate
     with d.session(tmp_path, 'worker'):
         with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
             begin(capture)
@@ -42,6 +54,36 @@ def run(tmp_path, *, available=None, reason=None, element=None, drop_history=Fal
 def gates(tmp_path):
     return [row['corporate_l7_capture_gate'] for row in records(tmp_path)
             if row['event'] == EVENT]
+
+
+def arm_states(tmp_path):
+    return [row['corporate_l7_history_arm'] for row in records(tmp_path)
+            if row['event'] == 'corporate.l7_history_arm']
+
+
+def test_clear_arm_is_recorded(tmp_path):
+    assert run(tmp_path) is True
+    assert arm_states(tmp_path) == ['clear']
+
+
+def test_occupied_arm_is_recorded(tmp_path):
+    run(tmp_path, arm_reason='initial')
+    assert arm_states(tmp_path) == ['occupied']
+
+
+def test_unjournaled_reason_is_named_as_initial(tmp_path):
+    assert run(tmp_path, available=False, reason='initial') is False
+    assert gates(tmp_path) == ['js_initial']
+
+
+def test_detached_intermediary_is_named(tmp_path):
+    assert run(tmp_path, available=False, reason='detached') is False
+    assert gates(tmp_path) == ['js_detached']
+
+
+def test_missing_reason_method_is_named(tmp_path):
+    assert run(tmp_path, available=False, why_raises=True) is False
+    assert gates(tmp_path) == ['js_no_method']
 
 
 def test_available_history_records_no_gate(tmp_path):
