@@ -195,6 +195,9 @@ def test_manual_settings_notice_is_not_deferred_by_iconic_main(
         monkeypatch.setattr(root, 'state', lambda: 'iconic')
 
         app._receive_update(manual=True)
+        # On Windows a transient may need one native event-loop pass after
+        # deiconify before Tk reports it as mapped.
+        root.update()
 
         dialog = app._update_dialog
         assert dialog is not None and dialog.winfo_ismapped()
