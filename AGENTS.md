@@ -169,6 +169,32 @@ equivalence or a causal bottleneck. Run-level
 `table_rpc_probe_enabled` continues to indicate only the
 **additional, invasive opt-in** RPC probe, not passive logging.
 
+Large-table **first-page readiness split timing** (#161) is passive and
+unconditional only when a diagnostic worker session is active and
+`max_page_size >= 250`. Four original operations, each at most once per
+table, emit fixed-stage `table.first_page_timing`: the already-required
+pilot page-size label `query_selector`, its original `inner_text`,
+the existing global `.p-datatable-loading-overlay:visible,.p-blockui:visible`
+`wait_for(hidden, timeout=45000)`, and the existing
+`page.wait_for_timeout(180)` (only when the overlay wait returns).
+Python monotonic wall and calling-thread CPU clocks record returned/raised;
+no new browser calls, ownership queries, CDP, timers, polling loops,
+DOM mutation or source behavior. The existing page request-object listener
+may report a **count of requests finishing during the original global
+overlay wait** and the last such local completion time; these are unbound
+request objects, not proof of table/backend/overlay ownership. Existing
+`first_idle_timeout` is unchanged, and no settling event is fabricated
+on a timeout. The ContextVar scope is set only around the original First
+`wait_idle(page)` call and always reset, including Stop and exceptions.
+No observer scope exists for other idle calls or diagnostics OFF. This
+does **not** establish which overlay is visible or why it persists: the
+global locator is the production authority and must not be scoped or
+replaced in this diagnostic PR. Emit no URLs, selector strings, request
+contents, process metadata or taxpayer data. Maintain original 180s
+per-table budget, 45s per idle wait, 180ms settle, fail-closed Stop and
+PARTIAL behavior. Compare with earlier runs only with build provenance
+and unaltered input/source digests; no performance improvement is implied.
+
 Optional local Windows process-CPU observation (follow-up #161) is separate
 from both the always-passive RPC wall/thread CPU recorder and
 `SPT_DIAG_DOM_RPC_PROBE`. Only exact worker environment

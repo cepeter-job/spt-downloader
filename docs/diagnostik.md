@@ -176,6 +176,47 @@ Tahap ini belum memisahkan kronologi request/response maupun membuktikan
 pilihan ukuran halaman native. Live acceptance membutuhkan run yang cocok
 dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
 
+### Rincian penantian First yang sudah ada (#161)
+
+Mulai build yang memuat perubahan ini, event `table.first_page_timing`
+muncul otomatis untuk tabel besar (`max_page_size >= 250`)
+selama diagnostik worker aktif, **tanpa flag / browser call baru**.
+Masing-masing empat tahap asli hanya direkam maksimal sekali pada
+jalurnya: `pilot_label_lookup` (selector label ukuran halaman yang
+sudah dicari), `pilot_label_text` (pembacaan label yang sudah terjadi),
+`first_overlay_wait` (wait global hidden yang sudah ada, timeout
+45.000 ms), dan `first_settle_wait` (jeda Playwright 180 ms yang
+sudah ada, hanya jika wait pertama sukses). Setiap event memiliki
+`table_first_page_outcome=returned|raised`,
+`duration_ms`, `table_rpc_thread_cpu_ms` dan ordinal form/tabel.
+Waktu `first_overlay_wait` adalah waktu host Python,
+**bukan** lamanya overlay target sebenarnya atau waktu jaringan.
+
+Jumlah `table_first_page_finished_requests` menunjukkan hanya berapa
+request-object yang teramati *selesai* selama wait First yang asli.
+`table_first_page_last_finish_ms` adalah selisih waktu lokal sejak
+awal wait hingga event finish terakhir, hanya jika ada yang selesai.
+Callback request-object berasal dari observer yang **sudah ada**,
+tidak mencatat URL, header, response, isi tabel, kode sumber atau ID.
+Lifecycle itu bersifat **unbound**: request yang selesai tidak
+membuktikan overlay/tab target siap, dan tidak mengisolasi backend,
+Chromium, Node, jaringan, atau penyebab timeout. Jika callback tidak
+lengkap/drop, bukti tetap tidak lengkap, bukan 0 network activity.
+
+Pemisahan ini tidak mengganti locator global yang memang sudah dipakai
+oleh `wait_idle(page)`. Overlay lain di tab yang sama mungkin
+memengaruhi wait, tetapi identitas overlay **tetap tidak diketahui**
+tanpa pembacaan DOM tambahan (tidak diizinkan dalam PR diagnostik ini).
+Pada timeout, tahap settle **tidak boleh** muncul. Pada Stop atau error,
+exception asli tetap diteruskan; tidak ada retry, polling lain,
+perubahan deadline 180 detik, klik tambahan atau promosi PARTIAL menjadi
+COMPLETE. Scope event hanya pada penantian setelah klik First; bukan
+semua `wait_idle` di aplikasi. `table.reset_timing:first_idle` tetap
+merupakan durasi inklusif; jangan jumlahkan dengan kedua tahap anak
+yang baru. Uji penerimaan live perlu membuktikan identitas build,
+event lengkap dan jumlah Playwright call tidak berubah, bukan
+mengasumsikan root cause dari satu run.
+
 ### Pembagian waktu reset tabel DOM besar (#161)
 
 `table.reset_timing` hanya diterbitkan untuk tabel dengan batas
