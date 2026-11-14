@@ -146,10 +146,14 @@ _L7_HISTORY = """(d) => {
    // Known framework outlets may be transparent; another business component
    // cannot lend its children to the declared corporate owner chain.
    const transparent=new Set(['p-tabview','p-tabpanel','ui-grid-offline']);
+   const corporateHost=/^rsh(shr)?-(citr|corporate)-/;
    const chain=roles.slice(1).every((role,index)=>{
      if(role.closest(selectors[index])!==roles[index]){note('chain_owner_'+(index+1));return false;}
      for(let p=role.parentElement;p&&p!==roles[index];p=p.parentElement){
        if(p.localName.includes('-')&&!transparent.has(p.localName)){
+         // A host wrapper of the same corporate component family is not a
+         // foreign business component; another *-form still is.
+         if(corporateHost.test(p.localName)&&!p.localName.endsWith('-form'))continue;
          note((p.localName.endsWith('-form')?'chain_form_':'chain_foreign_')+(index+1));
          return false;
        }

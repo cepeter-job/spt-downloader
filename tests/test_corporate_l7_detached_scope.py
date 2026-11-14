@@ -76,6 +76,27 @@ def test_detached_chain_ancestor_still_refuses(page):
     assert history.evaluate('(h) => h.why()') == 'detached'
 
 
+def build_with(page, wrapper):
+    html = CHAIN.replace('<rsh-citr-l7-grid1>', '<' + wrapper + '><rsh-citr-l7-grid1>').replace(
+        '</rsh-citr-l7-grid1>', '</rsh-citr-l7-grid1></' + wrapper + '>')
+    page.evaluate("html => { document.getElementById('host').innerHTML = html; }", html)
+
+
+def test_corporate_host_wrapper_keeps_history_available(page):
+    history = arm(page)
+    build_with(page, 'rsh-citr-l7-grid-host')
+    state = history.evaluate('(h) => h.sample()')
+    assert state['available'] is True and state['changed'] is False
+    assert history.evaluate('(h) => h.why()') == 'ok'
+
+
+def test_foreign_wrapper_still_refuses(page):
+    history = arm(page)
+    build_with(page, 'synthetic-foreign-grid')
+    assert history.evaluate('(h) => h.sample()')['available'] is False
+    assert history.evaluate('(h) => h.why()') == 'chain_foreign_2'
+
+
 def test_retained_role_removal_remains_fatal(page):
     history = arm(page)
     build(page)

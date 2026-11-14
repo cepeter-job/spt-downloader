@@ -101,3 +101,18 @@ real Edge page in CI):
 Live acceptance remains operator-owned: after merge, one official main build and
 one live Corporate run must show `raw_negative_projection` present (native
 `json-first` used) or name the next precise gate.
+
+## Follow-up: corporate host wrappers in the chain (live `4d3b44a`)
+
+After the detached scope landed, the live gate moved to
+`corporate.l7_capture_gate=js_chain_foreign_2`: between
+`rsh-citr-l7-grid1` and its `rshshr-citr-l7-form` owner the real DOM renders a
+custom host wrapper that is not one of the generic transparent outlets
+(`p-tabview`, `p-tabpanel`, `ui-grid-offline`).
+
+Rule: a custom element whose tag belongs to the corporate component family
+(`rsh-citr-*`, `rshshr-citr-*`, `rshshr-corporate-*`) is a host wrapper, not a
+foreign business component, and may sit between a retained role and its owner.
+Another `*-form` element and any unknown custom tag still refuse. Ownership is
+still proven by `closest(owner)` plus the uniqueness check, so a host wrapper
+cannot lend ownership from another component.
