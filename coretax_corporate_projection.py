@@ -1674,12 +1674,20 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
             or any(not isinstance(value, dict) for value in labels.values())):
         raise _UnsupportedMetadata('unverified_corporate_l11a_current_structure')
     if (not isinstance(form, dict) or set(form) != {'Facilities', 'Recapitulation'}
-            or not isinstance(form['Recapitulation'], dict) or set(form['Recapitulation']) != set(_L11A_RECAP)
+            or not isinstance(form['Recapitulation'], dict)
+            or set(form['Recapitulation']) not in (set(_L11A_RECAP),
+                                                   set(_L11A_RECAP) - {'TotalAmountofCosts'})
             or not isinstance(pages, dict) or set(pages) != set(_L11A_ENDPOINTS.values())):
         raise _UnsupportedMetadata('unsupported_corporate_l11a_source_shape')
+    absent_total = 'TotalAmountofCosts' not in form['Recapitulation']
     facilities = [] if form['Facilities'] is None else form['Facilities']
     if not isinstance(facilities, list) or len(facilities) > 10000:
         raise _UnsupportedMetadata('unsupported_corporate_l11a_facilities')
+    if absent_total and (form['Facilities'] is not None
+                         or any(form['Recapitulation'].get(cost) is not None for cost in _L11A_COSTS)):
+        # The live build omits the recap total only for a section with no
+        # facilities and no cost amounts; any amount still demands the key.
+        raise _UnsupportedMetadata('unsupported_corporate_l11a_missing_total')
     provenance = []
 
     def evidence(value, path, destination, *, endpoint=None, page_index=None, rule='literal-source'):
@@ -1779,15 +1787,19 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         total += operand
         if abs(total) > _MAX_INTEGER:
             raise _UnsupportedMetadata('unsafe_corporate_l11a_ordered_cost_sum')
-    if _l11a_integer(recap['TotalAmountofCosts']) != max(0, total):
+    if absent_total:
+        if total != 0:
+            raise _UnsupportedMetadata('unreconciled_corporate_l11a_total_costs')
+    elif _l11a_integer(recap['TotalAmountofCosts']) != max(0, total):
         raise _UnsupportedMetadata('unreconciled_corporate_l11a_total_costs')
     fields = []
     for key, caption in zip(_L11A_RECAP, _L11A_CAPTIONS):
-        value = recap[key]
+        value = recap.get(key)
         if key in _L11A_COSTS or key == 'TotalAmountofCosts':
             display, rule = number(value), 'input-number-id/null-blank'
             if key == 'TotalAmountofCosts':
-                rule = 'reconciled-six-cost-ordered-sum/final-nonnegative-clamp'
+                rule = ('absent-inert-zero-total' if absent_total
+                        else 'reconciled-six-cost-ordered-sum/final-nonnegative-clamp')
         elif key.startswith('DateOfDecree'):
             if type(value) is not str or not value:
                 raise _UnsupportedMetadata('unsupported_corporate_l11a_decree_date')
