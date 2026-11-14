@@ -150,8 +150,8 @@ ketersediaan bukti opsional tetap tidak mengubah jalur non-negatif v1.
 `state_malformed`, `incomplete`, serta `js_*` untuk alasan skrip riwayat anak L7
 (`budget`, `chain`, `enabled`, `roles`, `shape`, `document`, `removed`, `depth`,
 `visibility`, `identity`, `boundary`, `unknown`, `initial`, `detached`, dan
-`chain_owner_1..4`, `chain_form_1..4`, `chain_foreign_1..4` untuk role rantai
-yang gagal). Alasan `js_*` berasal dari
+`chain_owner_1..4`, `chain_form_1..4`, `chain_prefix_ui|p|rsh|rshshr|other_1..4`
+untuk role rantai yang gagal). Alasan `js_*` berasal dari
 skrip halaman dan hanya dipetakan ke enum; teks bebas, node, atribut, dan nilai
 tidak pernah dicatat. Event ini tidak mengubah hasil adopsi JSON.
 
