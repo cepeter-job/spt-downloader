@@ -1808,7 +1808,14 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         elif key.startswith('DateOfDecree'):
             if type(value) is not str or not value:
                 raise _UnsupportedMetadata('unsupported_corporate_l11a_decree_date')
-            display, rule = _l3_date(value), 'validated-new-Date/jakarta-dd-MM-yyyy'
+            decree = re.fullmatch(r'([0-9]{4})-([0-9]{2})-([0-9]{2})T07:00:00\+07:00', value)
+            if decree:
+                # Live decree dates are the literal date at 07:00+07:00 (Jakarta
+                # midnight in UTC terms); the calendar date is unambiguous.
+                display, rule = (f'{decree.group(3)}-{decree.group(2)}-{decree.group(1)}',
+                                 'literal-date-jakarta-0700-offset')
+            else:
+                display, rule = _l3_date(value), 'validated-new-Date/jakarta-dd-MM-yyyy'
         else:
             display, rule = text(value), 'literal-input/null-blank'
         fields.append({'group': _L11A_GROUP, 'field': key, 'label': caption, 'value': display})
