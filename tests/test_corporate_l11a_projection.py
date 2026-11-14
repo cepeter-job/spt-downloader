@@ -345,6 +345,23 @@ def test_l11a_other_decree_date_offsets_still_refuse():
         project(form, pages)
 
 
+def test_l11a_row_dates_accept_jakarta_midnight_offset():
+    form, pages = inputs()
+    row = pages[ENDPOINTS[1]][0]['data'][0]
+    row['EntertainmentDate'] = '2025-12-01T00:00:00+07:00'
+    result = project(form, pages)
+    table = [item for item in result['tables'] if item['name'] == 'L11-A/grid2'][0]
+    assert table['rows'][0][0] == '01-12-2025'
+
+
+def test_l11a_row_dates_reject_other_offsets():
+    form, pages = inputs()
+    row = pages[ENDPOINTS[1]][0]['data'][0]
+    row['EntertainmentDate'] = '2025-12-01T07:00:00+07:00'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
 def test_l11a_non_null_action_still_refuses():
     form, pages = inputs()
     pages[ENDPOINTS[1]][0]['data'][0]['Action'] = 'edit'

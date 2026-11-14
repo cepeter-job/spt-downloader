@@ -51,3 +51,11 @@ are encoded as `YYYY-MM-DDT07:00:00+07:00` (Jakarta midnight expressed as
 Rule: for `DateOfDecree*` fields, accept exactly that literal shape and render
 the calendar date as `dd-mm-YYYY` with rule
 `literal-date-jakarta-0700-offset`. Any other time or offset still refuses.
+
+## Follow-up: L11-A row date shape (live `dc08e51`)
+
+The remaining `unsupported_corporate_l3_date` comes from L11-A grid rows, not
+L3: `EntertainmentDate` (and likely `RecipientDate`) are
+`YYYY-MM-DDT00:00:00+07:00`. The row renderer now calls the existing date
+helper with `domestic_jakarta_midnight=True`, the same explicit shape already
+admitted for L3 withholding dates. Any other offset or time still refuses.
