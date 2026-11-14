@@ -312,6 +312,20 @@ def test_l11a_unknown_row_metadata_still_refuses():
         project(form, pages)
 
 
+def test_l11a_non_dict_row_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0] = ['synthetic']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_non_integer_extra_index_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0]['Index'] = 'synthetic'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
 def test_l11a_non_null_action_still_refuses():
     form, pages = inputs()
     pages[ENDPOINTS[1]][0]['data'][0]['Action'] = 'edit'
