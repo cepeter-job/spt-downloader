@@ -51,8 +51,11 @@ Refuse ambiguity only where it can affect the L7 chain:
    ancestors) is removed or replaced — that path already sets `changed`.
 2. A detached candidate that is not attributable to the corporate root is not
    L7 evidence: ignore it (no debit, no `unavailable()`).
-3. A candidate whose removal target is still inside the retained corporate root
-   keeps the conservative refusal.
+3. A candidate whose removal target is a retained role or a remembered chain
+   ancestor keeps the conservative refusal. A disconnected target can never be
+   proven "inside" the retained root — `Node.contains` is false across a
+   detached boundary — so only retained roles and remembered ancestors may
+   refuse; everything else is unrelated teardown and is ignored.
 4. The arming precondition (`clear`), the 4096 relevant-record budget, the
    root/form/grid/`p-table`/`table` retention, the uniqueness/hidden-duplicate
    rules, `enabled()` boundaries and every projection gate are unchanged.
