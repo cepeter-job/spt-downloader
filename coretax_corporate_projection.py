@@ -1720,7 +1720,9 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         if key in _L11A_MONEY:
             return number(value), 'source-number-id/null-blank'
         if key in ('RecipientDate', 'EntertainmentDate'):
-            return _l3_date(value), 'validated-iso/jakarta-dd-MM-yyyy'
+            # Live L11-A row dates are jakarta midnight with an explicit +07:00
+            # offset, the same shape already admitted for L3 withholding dates.
+            return _l3_date(value, domestic_jakarta_midnight=True), 'validated-iso/jakarta-dd-MM-yyyy'
         if key == 'PartnerName':
             if type(value) is _CorporateNumber:
                 return number(value, 2), 'source-number-id-1.2-2'
