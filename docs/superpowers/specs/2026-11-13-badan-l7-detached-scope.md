@@ -111,8 +111,9 @@ custom host wrapper that is not one of the generic transparent outlets
 (`p-tabview`, `p-tabpanel`, `ui-grid-offline`).
 
 Rule: a custom element whose tag belongs to the corporate component family
-(`rsh-citr-*`, `rshshr-citr-*`, `rshshr-corporate-*`) is a host wrapper, not a
-foreign business component, and may sit between a retained role and its owner.
-Another `*-form` element and any unknown custom tag still refuse. Ownership is
-still proven by `closest(owner)` plus the uniqueness check, so a host wrapper
+(`rsh-citr-*`, `rshshr-citr-*`, `rshshr-corporate-*`) or a framework outlet
+(`p-*`, `ui-*`) is a host wrapper, not a foreign business component, and may sit
+between a retained role and its owner. Another `*-form` element and any unknown
+custom tag still refuse (`chain_form_N` / `chain_prefix_<family>_N`). Ownership
+is still proven by `closest(owner)` plus the uniqueness check, so a host wrapper
 cannot lend ownership from another component.

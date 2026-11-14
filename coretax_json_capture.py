@@ -34,7 +34,10 @@ _L7_JS_REASONS = frozenset({'budget', 'chain', 'enabled', 'roles', 'shape', 'doc
                             'removed', 'depth', 'unknown', 'visibility', 'identity',
                             'boundary', 'initial', 'detached'} | {
     kind + '_' + str(index)
-    for kind in ('chain_owner', 'chain_form', 'chain_foreign')
+    for kind in ('chain_owner', 'chain_form')
+    for index in range(1, 5)} | {
+    'chain_prefix_' + family + '_' + str(index)
+    for family in ('ui', 'p', 'rsh', 'rshshr', 'other')
     for index in range(1, 5)})
 MAX_TOTAL_BYTES = 128 * 1024 * 1024
 DRAIN_SECONDS = 20
@@ -147,14 +150,19 @@ _L7_HISTORY = """(d) => {
    // cannot lend its children to the declared corporate owner chain.
    const transparent=new Set(['p-tabview','p-tabpanel','ui-grid-offline']);
    const corporateHost=/^rsh(shr)?-(citr|corporate)-/;
+   // Framework outlets (PrimeNG p-*, ui-*) and the corporate component family
+   // are hosts; another *-form or an unknown business tag is not.
+   const frameworkHost=/^(p|ui)-/;
+   const family=name=>name.startsWith('rshshr-')?'rshshr':name.startsWith('rsh-')?'rsh':
+     name.startsWith('ui-')?'ui':name.startsWith('p-')?'p':'other';
    const chain=roles.slice(1).every((role,index)=>{
      if(role.closest(selectors[index])!==roles[index]){note('chain_owner_'+(index+1));return false;}
      for(let p=role.parentElement;p&&p!==roles[index];p=p.parentElement){
        if(p.localName.includes('-')&&!transparent.has(p.localName)){
-         // A host wrapper of the same corporate component family is not a
-         // foreign business component; another *-form still is.
-         if(corporateHost.test(p.localName)&&!p.localName.endsWith('-form'))continue;
-         note((p.localName.endsWith('-form')?'chain_form_':'chain_foreign_')+(index+1));
+         if(!p.localName.endsWith('-form')&&
+            (corporateHost.test(p.localName)||frameworkHost.test(p.localName)))continue;
+         note(p.localName.endsWith('-form')?'chain_form_'+(index+1)
+              :'chain_prefix_'+family(p.localName)+'_'+(index+1));
          return false;
        }
      }

@@ -94,7 +94,15 @@ def test_foreign_wrapper_still_refuses(page):
     history = arm(page)
     build_with(page, 'synthetic-foreign-grid')
     assert history.evaluate('(h) => h.sample()')['available'] is False
-    assert history.evaluate('(h) => h.why()') == 'chain_foreign_2'
+    assert history.evaluate('(h) => h.why()') == 'chain_prefix_other_2'
+
+
+def test_framework_outlet_wrapper_keeps_history_available(page):
+    history = arm(page)
+    build_with(page, 'p-accordiontab')
+    state = history.evaluate('(h) => h.sample()')
+    assert state['available'] is True and state['changed'] is False
+    assert history.evaluate('(h) => h.why()') == 'ok'
 
 
 def test_retained_role_removal_remains_fatal(page):
