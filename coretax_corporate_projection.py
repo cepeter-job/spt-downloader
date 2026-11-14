@@ -1756,7 +1756,14 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         for page_index, values in source_pages:
             for row_index, row in enumerate(values):
                 expected = set(keys) | ({'RecordId'} if endpoint is not None else set())
-                if not isinstance(row, dict) or set(row) != expected:
+                if not isinstance(row, dict):
+                    raise _UnsupportedMetadata('unsupported_corporate_l11a_row')
+                extras = set(row) - expected
+                # Live grid rows carry two non-column metadata fields: Action is
+                # always null and Index is the numeric row ordinal.
+                if (not expected <= set(row) or extras - {'Action', 'Index'}
+                        or ('Action' in extras and row['Action'] is not None)
+                        or ('Index' in extras and type(row['Index']) is not int)):
                     raise _UnsupportedMetadata('unsupported_corporate_l11a_row')
                 path = (['Data', row_index] if endpoint is not None else [_L11A_ROOT, 'Facilities', row_index])
                 if endpoint is not None:

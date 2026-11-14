@@ -294,6 +294,31 @@ def test_l11a_absent_total_with_facilities_still_refuses():
         project(form, pages)
 
 
+def test_l11a_grid_row_metadata_fields_are_accepted_and_not_rendered():
+    form, pages = inputs()
+    row = pages[ENDPOINTS[1]][0]['data'][0]
+    row['Action'] = None
+    row['Index'] = 1
+    result = project(form, pages)
+    table = [item for item in result['tables'] if item['name'] == 'L11-A/grid2'][0]
+    assert table['complete'] is True
+    assert all(len(cells) == 10 for cells in table['rows'])
+
+
+def test_l11a_unknown_row_metadata_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0]['Synthetic'] = 'x'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_non_null_action_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0]['Action'] = 'edit'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
 def test_l11a_final_saved_compact_export_keeps_five_tables_and_truthful_recap_audit(tmp_path, model):
     result = project(*inputs())
