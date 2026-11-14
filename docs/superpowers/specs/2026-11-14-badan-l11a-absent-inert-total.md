@@ -41,3 +41,13 @@ key drift still refuses (`unsupported_corporate_l11a_missing_total` /
 inert shape projects a blank total with the rule; missing total with a numeric
 cost refuses; missing total with facilities refuses. Existing L11-A contracts
 stay unchanged when the key is present.
+
+## Follow-up: Jakarta-offset decree dates (live `5ac6574`)
+
+The next live gate is `unsupported_corporate_l3_date`: both L11-A decree dates
+are encoded as `YYYY-MM-DDT07:00:00+07:00` (Jakarta midnight expressed as
+07:00 with a +07:00 offset), which the generic date helper refuses.
+
+Rule: for `DateOfDecree*` fields, accept exactly that literal shape and render
+the calendar date as `dd-mm-YYYY` with rule
+`literal-date-jakarta-0700-offset`. Any other time or offset still refuses.

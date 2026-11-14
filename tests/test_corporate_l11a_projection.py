@@ -326,6 +326,25 @@ def test_l11a_non_integer_extra_index_still_refuses():
         project(form, pages)
 
 
+def test_l11a_decree_date_with_jakarta_offset_is_rendered_literally():
+    form, pages = inputs()
+    form['Recapitulation']['DateOfDecreeOfSpecificAreasDetermination'] = '2025-03-01T07:00:00+07:00'
+    result = project(form, pages)
+    field = [item for item in result['fields']
+             if item['field'] == 'DateOfDecreeOfSpecificAreasDetermination'][0]
+    assert field['value'] == '01-03-2025'
+    entry = [item for item in result['provenance']
+             if item['destination'].get('field') == 'DateOfDecreeOfSpecificAreasDetermination'][0]
+    assert entry['rule'] == 'literal-date-jakarta-0700-offset'
+
+
+def test_l11a_other_decree_date_offsets_still_refuse():
+    form, pages = inputs()
+    form['Recapitulation']['DateOfDecreeOfSpecificAreasDetermination'] = '2025-03-01T00:00:00+07:00'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
 def test_l11a_non_null_action_still_refuses():
     form, pages = inputs()
     pages[ENDPOINTS[1]][0]['data'][0]['Action'] = 'edit'
