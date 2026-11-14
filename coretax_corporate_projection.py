@@ -1763,7 +1763,8 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
                 # always null and Index is the numeric row ordinal.
                 if (not expected <= set(row) or extras - {'Action', 'Index'}
                         or ('Action' in extras and row['Action'] is not None)
-                        or ('Index' in extras and type(row['Index']) is not int)):
+                        or ('Index' in extras
+                            and type(row['Index']) not in (int, _CorporateNumber))):
                     raise _UnsupportedMetadata('unsupported_corporate_l11a_row')
                 path = (['Data', row_index] if endpoint is not None else [_L11A_ROOT, 'Facilities', row_index])
                 if endpoint is not None:
