@@ -264,6 +264,36 @@ def test_unproved_l11a_predecessor_source_arithmetic_pages_or_metadata_remains_u
         project(form, pages, **options)
 
 
+def test_l11a_absent_inert_total_is_blank_with_explicit_rule():
+    form, pages = inputs()
+    form['Facilities'] = None
+    for cost in COSTS:
+        form['Recapitulation'][cost] = None
+    del form['Recapitulation']['TotalAmountofCosts']
+    result = project(form, pages)
+    total = [field for field in result['fields'] if field['field'] == 'TotalAmountofCosts'][0]
+    assert total['value'] == ''
+    entry = [item for item in result['provenance']
+             if item['destination'].get('field') == 'TotalAmountofCosts'][0]
+    assert entry['rule'] == 'absent-inert-zero-total'
+
+
+def test_l11a_absent_total_with_a_numeric_cost_still_refuses():
+    form, pages = inputs()
+    del form['Recapitulation']['TotalAmountofCosts']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_absent_total_with_facilities_still_refuses():
+    form, pages = inputs()
+    for cost in COSTS:
+        form['Recapitulation'][cost] = None
+    del form['Recapitulation']['TotalAmountofCosts']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
 def test_l11a_final_saved_compact_export_keeps_five_tables_and_truthful_recap_audit(tmp_path, model):
     result = project(*inputs())
