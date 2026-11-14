@@ -123,7 +123,9 @@ ENUMS = {
         'handle_form', 'handle_grid', 'handle_table', 'handle_tab', 'handle_panel',
         'state_malformed', 'incomplete', 'js_budget', 'js_chain', 'js_enabled', 'js_roles',
         'js_shape', 'js_document', 'js_removed', 'js_depth', 'js_unknown', 'js_visibility',
-        'js_identity', 'js_boundary', 'js_initial', 'js_detached', 'js_no_method'}),
+        'js_identity', 'js_boundary', 'js_initial', 'js_detached', 'js_no_method'} | {
+        'js_chain_' + kind + '_' + str(index)
+        for kind in ('owner', 'form', 'foreign') for index in range(1, 5)}),
     'corporate_l7_history_arm': frozenset({'clear', 'occupied', 'document', 'unsupported'}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',

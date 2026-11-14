@@ -32,7 +32,10 @@ MAX_BODY_BYTES = 32 * 1024 * 1024
 # Fixed reasons reported by the L7 child-history script; enum-only diagnostics.
 _L7_JS_REASONS = frozenset({'budget', 'chain', 'enabled', 'roles', 'shape', 'document',
                             'removed', 'depth', 'unknown', 'visibility', 'identity',
-                            'boundary', 'initial', 'detached'})
+                            'boundary', 'initial', 'detached'} | {
+    kind + '_' + str(index)
+    for kind in ('chain_owner', 'chain_form', 'chain_foreign')
+    for index in range(1, 5)})
 MAX_TOTAL_BYTES = 128 * 1024 * 1024
 DRAIN_SECONDS = 20
 MAX_REQUEST_METADATA_BYTES = 65536
@@ -144,9 +147,12 @@ _L7_HISTORY = """(d) => {
    // cannot lend its children to the declared corporate owner chain.
    const transparent=new Set(['p-tabview','p-tabpanel','ui-grid-offline']);
    const chain=roles.slice(1).every((role,index)=>{
-     if(role.closest(selectors[index])!==roles[index])return false;
+     if(role.closest(selectors[index])!==roles[index]){note('chain_owner_'+(index+1));return false;}
      for(let p=role.parentElement;p&&p!==roles[index];p=p.parentElement){
-       if(p.localName.includes('-')&&!transparent.has(p.localName))return false;
+       if(p.localName.includes('-')&&!transparent.has(p.localName)){
+         note((p.localName.endsWith('-form')?'chain_form_':'chain_foreign_')+(index+1));
+         return false;
+       }
      }
      return true;
    });

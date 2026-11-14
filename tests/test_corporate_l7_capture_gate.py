@@ -86,6 +86,12 @@ def test_missing_reason_method_is_named(tmp_path):
     assert gates(tmp_path) == ['js_no_method']
 
 
+@pytest.mark.parametrize('reason', ['chain_owner_1', 'chain_form_2', 'chain_foreign_4'])
+def test_chain_role_refusal_is_named(tmp_path, reason):
+    assert run(tmp_path, available=False, reason=reason) is False
+    assert gates(tmp_path) == ['js_' + reason]
+
+
 def test_available_history_records_no_gate(tmp_path):
     assert run(tmp_path) is True
     assert gates(tmp_path) == []
