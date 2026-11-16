@@ -59,3 +59,14 @@ L3: `EntertainmentDate` (and likely `RecipientDate`) are
 `YYYY-MM-DDT00:00:00+07:00`. The row renderer now calls the existing date
 helper with `domestic_jakarta_midnight=True`, the same explicit shape already
 admitted for L3 withholding dates. Any other offset or time still refuses.
+
+## Follow-up: L11-C numeric year-end rate (live `b9bfefe`)
+
+After the L11-A fixes the live gate moved to `unsupported_corporate_l11c_text_type`:
+`L11CFormData.ForeignPrivateDebtReports[0].EndOfYearRate` arrives as an integral
+JSON number (the reviewed fixture keeps the locale string `'00015000,00'`), so it
+fell into the text branch.
+
+Rule: for `EndOfYearRate`, accept the reviewed string form as before, or an
+integral number/token rendered as `#.##0,00` with rule `angular-number-1.2-2-id`.
+Non-integral or out-of-range values still refuse.

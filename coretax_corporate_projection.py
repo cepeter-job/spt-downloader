@@ -393,6 +393,14 @@ def project_l11c(form, *, headers, footer_spans, tax_type, locale, timezone_name
             elif key == 'InterestRate':
                 text = '' if value is None else _number(str(_l11c_integer(value)), 2, locale=locale)
                 entry['rule'] = 'angular-number-1.2-2-id'
+            elif key == 'EndOfYearRate' and type(value) in (int, float, _CorporateNumber):
+                # The live build sends the year-end rate as a JSON number while
+                # the reviewed fixture keeps the locale-formatted string.
+                number = _decimal(value)
+                if number != number.to_integral_value() or abs(number) > _MAX_INTEGER:
+                    raise _UnsupportedMetadata('unsupported_corporate_l11c_number_precision')
+                text = _number(str(int(number)), 2, locale=locale)
+                entry['rule'] = 'angular-number-1.2-2-id'
             elif key in ('LoanStartDate', 'LoanDueDate'):
                 text = _l11c_date(value)
                 entry['rule'] = 'validated-date/normalized-sentinel/jakarta-dd-MM-yyyy'
