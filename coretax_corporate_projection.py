@@ -393,7 +393,15 @@ def project_l11c(form, *, headers, footer_spans, tax_type, locale, timezone_name
                 text = _number(str(number), digits, locale=locale)
                 entry['rule'] = 'nullish-zero/angular-number-id' if value is None else 'angular-number-id'
             elif key == 'InterestRate':
-                text = '' if value is None else _number(str(_l11c_integer(value)), 2, locale=locale)
+                # Live rates carry up to two fraction digits; the integer helper
+                # only proved whole percentages.
+                if value is None:
+                    text = ''
+                else:
+                    number = _decimal(value)
+                    if abs(number) > _MAX_INTEGER or number.as_tuple().exponent < -2:
+                        raise _UnsupportedMetadata('unsupported_corporate_l11c_number_precision')
+                    text = _number(str(number), 2, locale=locale)
                 entry['rule'] = 'angular-number-1.2-2-id'
             elif key == 'EndOfYearRate' and type(value) in (int, float, _CorporateNumber):
                 # The live build sends the year-end rate as a JSON number while
