@@ -2709,6 +2709,13 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     # tidak dicampur dengan sebagian nilai DOM dan dianggap satu capture utuh.
     eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
+    if eligible and corporate:
+        # Capture completeness is not template completeness: a form that still
+        # carries the generic payload dump was never projected into the
+        # worksheet, so the complete DOM capture must keep the output.
+        from coretax_json import has_audit_dump_tables
+        if has_audit_dump_tables((decoded or {}).get('sections') or ()):
+            eligible = False
     source_reason = ('native_verified' if eligible else
                      'unsupported_tax' if not corporate and not masa else
                      'forms_unavailable' if forms is None else
