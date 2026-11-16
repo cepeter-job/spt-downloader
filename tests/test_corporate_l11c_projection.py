@@ -94,6 +94,13 @@ def test_l11c_explicit_empty_body_requires_all_six_reported_zero_totals(body):
     ('LoanStartDate', '2025-01-01T20:00:00.0001Z'),
     ('LoanStartDate', '2025-02-30'),
 ])
+def test_l11c_unsupported_source_type_or_date_refuses_projection(field, value):
+    form = source()
+    form[BODY][0][field] = _corporate_json(wire(value))
+    with pytest.raises(_UnsupportedMetadata):
+        project(form)
+
+
 def test_l11c_numeric_year_end_rate_is_rendered_with_two_decimals():
     form = raw_source()
     form[BODY][0]['EndOfYearRate'] = 15000.0
@@ -106,13 +113,6 @@ def test_l11c_non_integral_year_end_rate_still_refuses():
     form[BODY][0]['EndOfYearRate'] = 15000.5
     with pytest.raises(_UnsupportedMetadata):
         project(_corporate_json(wire(form)))
-
-
-def test_l11c_unsupported_source_type_or_date_refuses_projection(field, value):
-    form = source()
-    form[BODY][0][field] = _corporate_json(wire(value))
-    with pytest.raises(_UnsupportedMetadata):
-        project(form)
 
 
 def test_l11c_unsafe_ordered_partial_sum_is_not_hidden_by_later_cancellation():
