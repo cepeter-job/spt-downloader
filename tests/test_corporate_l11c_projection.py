@@ -241,9 +241,9 @@ def test_l11c_dates_reject_non_midnight_offsets():
 
 def test_l11c_interest_rate_accepts_two_fraction_digits():
     form = source()
-    form[BODY][0]['InterestRate'] = _corporate_json(wire(Number('5.25')))
+    form[BODY][0]['InterestRate'] = _corporate_json(wire(Number('4.38')))
     rows = project(form)['table']['rows']
-    assert rows[0][12] == '5,25'
+    assert rows[0][12] == '4,38'
 
 
 def test_l11c_interest_rate_rejects_three_fraction_digits():
