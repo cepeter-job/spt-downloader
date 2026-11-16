@@ -101,6 +101,20 @@ def test_l11c_unsupported_source_type_or_date_refuses_projection(field, value):
         project(form)
 
 
+def test_l11c_numeric_year_end_rate_is_rendered_with_two_decimals():
+    form = raw_source()
+    form[BODY][0]['EndOfYearRate'] = 15000.0
+    rows = project(_corporate_json(wire(form)))['table']['rows']
+    assert rows[0][5] == '15.000,00'
+
+
+def test_l11c_non_integral_year_end_rate_still_refuses():
+    form = raw_source()
+    form[BODY][0]['EndOfYearRate'] = 15000.5
+    with pytest.raises(_UnsupportedMetadata):
+        project(_corporate_json(wire(form)))
+
+
 def test_l11c_unsafe_ordered_partial_sum_is_not_hidden_by_later_cancellation():
     form = source()
     form[BODY] = [deepcopy(form[BODY][0]) for _ in range(3)]
