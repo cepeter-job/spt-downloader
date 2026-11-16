@@ -237,3 +237,17 @@ def test_l11c_dates_reject_non_midnight_offsets():
     form[BODY][0]['LoanStartDate'] = '2025-01-01T00:00:01+07:00'
     with pytest.raises(_UnsupportedMetadata):
         project(form)
+
+
+def test_l11c_interest_rate_accepts_two_fraction_digits():
+    form = source()
+    form[BODY][0]['InterestRate'] = _corporate_json(wire(Number('5.25')))
+    rows = project(form)['table']['rows']
+    assert rows[0][12] == '5,25'
+
+
+def test_l11c_interest_rate_rejects_three_fraction_digits():
+    form = source()
+    form[BODY][0]['InterestRate'] = _corporate_json(wire(Number('5.125')))
+    with pytest.raises(_UnsupportedMetadata):
+        project(form)
