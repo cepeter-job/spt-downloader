@@ -94,15 +94,25 @@ def packet(envelope, sequence=1, *, endpoint=PRIMARY_URL, request=None, status=2
 def primary(form=None, *, outer_draft=True, sequence=1):
     form = current_form() if form is None else form
     payload = {'TIN': NPWP, 'PeriodYear': 2025, 'IsDraft': outer_draft,
-               'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'Normal',
+               'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
                'PreviousFormData': None, 'LastSubmittedFormData': None,
                'CurrentFormData': wire(form)}
     return packet({'IsSuccessful': True, 'ErrorCode': 0, 'Payload': payload}, sequence)
 
 
+def induk_projection(route=None):
+    """Reviewed Induk identity projection proof (synthetic pins, no portal code)."""
+    from coretax_corporate_projection import BUILD_DIGESTS, CIT_SOURCE
+    return {'kind': 'corporate-induk-v1',
+            'builds': {CIT_SOURCE: BUILD_DIGESTS.get(CIT_SOURCE)},
+            'route': FRAME_URL if route is None else route,
+            'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+
+
 def observed(*extra_paths):
     return [{'name': 'Induk', 'paths': [['MainFormData'], *extra_paths],
              'primary': {'endpoint': PRIMARY_URL, 'request_json': None},
+             'projection': induk_projection(),
              'grids': [], 'responses': [], 'dependencies': []}]
 
 

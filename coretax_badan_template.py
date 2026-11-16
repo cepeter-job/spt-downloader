@@ -231,9 +231,16 @@ def _induk(sheet, sections):
             row += 1
         if block:
             _thin_grid(sheet, first, row - 1, 2)
+    derived = {}
+    reason = next((section.get('projection_reason') for section in sections
+                   if section.get('projection_complete') is False), None)
+    if reason is not None:
+        # A projected section that is still partial must never be reported as a
+        # complete worksheet; keep the derivation signal separate from counts.
+        derived = {'derived_complete': False, 'derived_reason': reason}
     return _clean_report([field for index, field in enumerate(fields) if index not in used],
                          [{**table, 'complete': False} for section in sections
-                          for table in section.get('tables', [])])
+                          for table in section.get('tables', [])], **derived)
 
 
 def _l8_body(table, count):

@@ -72,33 +72,36 @@ yang terbukti terisi di DOM (10 dari 27 slot deklarasi).
 
 ### 1. Bukti proyeksi dari observer
 
-`coretax_corporate.observe_corporate_forms` menambahkan `projection` pada
-binding `Induk`, dengan bentuk yang sama seperti L11-C:
+`coretax_corporate.observe_forms` menambahkan `projection` pada binding
+`Induk`:
 
 ```
 {'kind': 'corporate-induk-v1',
- 'builds': {CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest},
- 'route': page.url, 'locale': …, 'timezone': …,
- 'tables': []}
+ 'builds': {CIT_SOURCE_URL: digest},
+ 'route': page.url, 'locale': …, 'timezone': …}
 ```
 
-`digest` CIT sudah dihitung di awal; `main_digest` diambil dengan
-`_PPN_MAIN_BUILD_HASH` yang sudah dipakai L7/L11-C. Tidak ada RPC, endpoint,
-pin, preload, timer, atau properti halaman baru.
+`digest` CIT sudah dihitung dan diverifikasi sebagai 64-hex pin di awal
+fungsi, jadi proof membawa tepat digest yang sudah diadmit. Tidak ada RPC,
+endpoint, pin, preload, timer, atau properti halaman baru.
 
 ### 2. Proyeksi
 
-`coretax_corporate_projection.project_induk(root, *, proof)`:
+`coretax_corporate_projection.project_induk(main, *, tax_type, locale, timezone_name)`
+hanya memancarkan slot yang key-nya ada di `MainFormData` **dan** lolos
+pemeriksaan tipe (string atau number token; bool/list/dict/null tidak pernah
+dipaksa menjadi nilai identitas). Caption tanpa key payload tidak pernah
+ditebak. `_apply_induk` memvalidasi proof (kind, satu digest CIT 64-hex,
+`route` vs `event['frame_url']`, locale/timezone), `paths == [['MainFormData']]`,
+adanya `primary`, serta lifecycle yang sama dengan cabang lain
+(`ReturnSheetStatusCode == 'SUBMITTED'`, `ReturnSheetModel` cocok dengan
+`Model SPT`, `source_status == 'SPT Dilaporkan'`).
 
-- Memvalidasi proof (`kind`, `builds` vs `INDUK_BUILD_DIGESTS`, `route` vs
-  `event['frame_url']`, `locale`/`timezone`) dan lifecycle yang sudah
-  dipakai cabang lain: `ReturnSheetStatusCode == 'SUBMITTED'`,
-  `ReturnSheetModel` cocok dengan `Model SPT`, `source_status ==
-  'SPT Dilaporkan'`, dan `Induk` ada lebih dulu di `observed_forms`.
-- Hanya memancarkan slot yang key-nya ada di `MainFormData` **dan** lolos
-  pemeriksaan tipe (string/int, bukan bool/float). Caption tanpa key
-  payload tidak pernah ditebak.
-- Mengembalikan `fields` (10 slot) dan `tables: []`.
+**Tabel dump tetap disimpan** pada section yang sudah diproyeksikan. Ia
+adalah bukti custody mentah (`JSON path / JSON type / Source value`) yang
+diuji kontrak lain, bukan worksheet; sheet Induk tetap hanya merender
+`fields`. Gate #267 karena itu melewati section yang sudah punya `fields`:
+yang ditolak adalah section yang **belum** diproyeksikan.
 
 ### 3. Kejujuran kelengkapan
 

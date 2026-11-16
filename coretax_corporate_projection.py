@@ -31,6 +31,23 @@ L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L8_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+INDUK_ROOT = 'MainFormData'
+# The reviewed identity slots, spelled exactly as
+# coretax_badan_template._INDUK_IDENTITY declares them. A caption is never a
+# binding: every slot below also names the payload control it is read from.
+INDUK_IDENTITY_FIELDS = (
+    ('HEADER', 'TaxYear', 'Tahun Pajak/Bagian Tahun Pajak'),
+    ('HEADER', 'Status', 'Status'),
+    ('HEADER', 'AccountingPeriodStart', 'Periode Pembukuan'),
+    ('HEADER', 'AccountingPeriodEnd', 'Periode Pembukuan'),
+    ('A. IDENTITAS WAJIB PAJAK', 'Tin', '1. NPWP'),
+    ('A. IDENTITAS WAJIB PAJAK', 'Name', '2. Nama'),
+    ('B. INFORMASI LAPORAN KEUANGAN', 'TinAccountant', '2.b. NPWP Kantor Akuntan Publik'),
+    ('B. INFORMASI LAPORAN KEUANGAN', 'NameAccountant', '2.c. Nama Kantor Akuntan Publik'),
+    ('A. IDENTITAS WAJIB PAJAK', 'EmailAddress', '3. Alamat Email'),
+    ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
+)
+INDUK_UNPROJECTED_REASON = 'unprojected_induk_captions'
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -701,6 +718,77 @@ def _l7_negative_profile(binding, *, root, payload, record, event, route, table)
     return proof
 
 
+def project_induk(main, *, tax_type, locale, timezone_name):
+    """Project the reviewed Induk identity slots; caller must prove the binding.
+
+    Only slots whose payload control is present and scalar are emitted. A
+    caption without a proven payload key is never guessed: the reviewed
+    template decorations (``_INDUK_INCOME``/``_INDUK_CALCULATIONS``) stay
+    unprojected, so the caller must report the section as partial.
+    """
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or timezone_name != 'Asia/Jakarta'
+            or not isinstance(main, dict)):
+        raise _UnsupportedMetadata('unsupported_corporate_induk_structure')
+    fields, provenance = [], []
+    for group, name, caption in INDUK_IDENTITY_FIELDS:
+        if name not in main:
+            continue
+        value = main[name]
+        # Only reviewed scalar controls: a JSON string or a number token. The
+        # _CorporateNumber subclass marks number tokens; bool/list/dict/null
+        # are never coerced into an identity value.
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise _UnsupportedMetadata('unsupported_corporate_induk_identity_type')
+        entry = _evidence(value, [INDUK_ROOT, name])
+        text = entry['value']
+        if not text or not str(text).strip():
+            continue
+        fields.append({'group': group, 'field': name, 'label': caption, 'value': text})
+        entry.update(rule='literal-identity-control',
+                     destination={'form': 'Induk', 'field': name})
+        provenance.append(entry)
+    return {'fields': fields, 'provenance': provenance}
+
+
+def _apply_induk(binding, section, observed_forms, *, root, payload, record, event):
+    proof = binding['projection']
+    builds = proof.get('builds') if isinstance(proof, dict) else None
+    # The observer admits only a positively pinned 64-hex CIT digest and puts
+    # exactly that digest in the proof. Here the shape is re-verified (one
+    # known source, valid SHA), never a second hand-maintained pin copy.
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone'}
+            or proof['kind'] != 'corporate-induk-v1'
+            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
+            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
+            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+            or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
+            or proof['timezone'] != 'Asia/Jakarta' or binding.get('paths') != [[INDUK_ROOT]]
+            or 'primary' not in binding):
+        raise _UnsupportedMetadata('unverified_corporate_induk_binding')
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model):
+        raise _UnsupportedMetadata('unverified_corporate_induk_submitted_lifecycle')
+    fields = record.get('source_fields', {})
+    result = project_induk(root.get(INDUK_ROOT), tax_type=fields.get('TaxTypeCode'),
+                           locale=proof['locale'], timezone_name=proof['timezone'])
+    section['fields'] = result['fields']
+    # The reviewed Induk template renders 16 further caption slots that the
+    # frontend derives; until each derivation is proven the section stays
+    # explicitly partial instead of claiming a complete worksheet.
+    section['projection_complete'] = False
+    section['projection_reason'] = INDUK_UNPROJECTED_REASON
+    for entry in result['provenance']:
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+    return {'form': 'Induk', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -708,6 +796,12 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
     for binding, section in zip(observed_forms, sections):
         if 'projection' not in binding:
             continue  # Preserve old evidence-leaf captures and caller contracts.
+        # An Induk binding that also declares extra evidence roots is left as
+        # plain evidence: only the reviewed single-root form is projected.
+        if binding['name'] == 'Induk' and binding.get('paths') == [[INDUK_ROOT]]:
+            projected.append(_apply_induk(binding, section, observed_forms, root=root,
+                payload=payload, record=record, event=event))
+            continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event, reference_packets=reference_packets or {},

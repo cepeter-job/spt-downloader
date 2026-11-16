@@ -145,7 +145,8 @@ def test_owned_current_induk_visibility_marks_absent_outer_flag(
             assert capture.drain()['complete']
             result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
             assert result['eligible'], result['reason']
-            assert result['provenance']['projections'][0]['visibility_binding'] == 'current-induk-enabled-v1'
+            l3, = [p for p in result['provenance']['projections'] if p['form'] == 'L3']
+            assert l3['visibility_binding'] == 'current-induk-enabled-v1'
             assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
     finally:
         fixture.close()
