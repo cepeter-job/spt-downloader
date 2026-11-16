@@ -290,9 +290,11 @@ def _l11c_integer(value):
 def _l11c_date(value):
     if value is None or value == '':
         return ''
-    if type(value) is not str or not re.fullmatch(
-            r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
-            r'(?:\.[0-9]{1,3})?Z)?', value):
+    if type(value) is not str or not (
+            re.fullmatch(
+                r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
+                r'(?:\.[0-9]{1,3})?Z)?', value)
+            or re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00\+07:00', value)):
         raise _UnsupportedMetadata('unsupported_corporate_l11c_date')
     try:
         date = datetime.fromisoformat(value.replace('Z', '+00:00'))

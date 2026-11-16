@@ -223,3 +223,17 @@ def test_l11c_visible_headers_match_approved_reference_by_sheet_name():
         assert 'A4:F4' in {str(area) for area in book['L11-C'].merged_cells.ranges}
     finally:
         book.close()
+
+
+def test_l11c_dates_accept_jakarta_midnight_offset():
+    form = source()
+    form[BODY][0]['LoanStartDate'] = '2025-01-01T00:00:00+07:00'
+    rows = project(form)['table']['rows']
+    assert rows[0][10] == '01-01-2025'
+
+
+def test_l11c_dates_reject_non_midnight_offsets():
+    form = source()
+    form[BODY][0]['LoanStartDate'] = '2025-01-01T00:00:01+07:00'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form)
