@@ -938,6 +938,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
+                # ``digest`` already passed the positive 64-hex pin equality
+                # above, so the proof carries exactly that admitted digest.
+                # No environment probe: the projected slots are literal text.
+                binding['projection'] = {'kind': 'corporate-induk-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
