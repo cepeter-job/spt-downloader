@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import DecimalException
+from decimal import Decimal, DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -48,6 +48,25 @@ INDUK_IDENTITY_FIELDS = (
     ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
 )
 INDUK_UNPROJECTED_REASON = 'unprojected_induk_captions'
+L6_ROOT = 'FiscalYearIncomeTax'
+# Approved Angsuran PPh 25 captions in template order (rows 2..8, column B).
+L6_FIELDS = (
+    ('IncomeAsTheBasisOfInstallment',
+     '1. PENGHASILAN YANG MENJADI DASAR PENGHITUNGAN ANGSURAN'),
+    ('FiscalLossCompensation',
+     '2. KOMPENSASI KERUGIAN FISKAL (Diisi dari Formulir Lampiran-07 Jumlah Kompensasi '
+     'Kerugian Fiskal Tahun Pajak Berjalan)'),
+    ('TaxableIncome', '3. PENGHASILAN KENA PAJAK'),
+    ('IncomeTaxPayable', '4. PPh YANG TERUTANG'),
+    ('TaxCreditWitheld',
+     '5. KREDIT PAJAK TAHUN PAJAK YANG LALU ATAS PENGHASILAN YANG TERMASUK DALAM '
+     'ANGKA 1 YANG DIPOTONG/DIPUNGUT PIHAK LAIN'),
+    ('IncomeTaxSelfpaid', '6. PPh YANG HARUS DIBAYAR SENDIRI'),
+    ('FollowingFiscalYear', '7. ANGSURAN PPh PASAL 25'),
+)
+# Non-display edit markers the pinned L6 owner always submits next to the values.
+L6_EDIT_FLAGS = ('IncomeAsTheBasisOfInstallmentEdited', 'IncomeTaxPayableEdited',
+                 'TaxCreditWitheldEdited')
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -787,6 +806,73 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
             'route': proof['route'], 'values': result['provenance']}
 
 
+def project_l6(form, *, tax_type, locale):
+    """Project the approved Angsuran PPh 25 worksheet; caller must prove binding.
+
+    Every displayed amount is a literal payload control the pinned owner binds
+    to the sheet, and the two subtractions the owner performs are re-checked
+    exactly. Nothing is invented for an absent control.
+    """
+    if tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict):
+        raise _UnsupportedMetadata('unsupported_corporate_l6_structure')
+    expected = {name for name, _ in L6_FIELDS} | set(L6_EDIT_FLAGS)
+    if set(form) != expected:
+        raise _UnsupportedMetadata('unsupported_corporate_l6_source_shape')
+    amounts = {}
+    for name, _ in L6_FIELDS:
+        value = form[name]
+        if type(value) is not _CorporateNumber:
+            raise _UnsupportedMetadata('unsupported_corporate_l6_amount_type')
+        number = _decimal(value)
+        if number < 0:
+            raise _UnsupportedMetadata('unsupported_corporate_l6_negative_amount')
+        amounts[name] = number
+    if amounts['TaxableIncome'] != max(
+            Decimal(0), amounts['IncomeAsTheBasisOfInstallment'] - amounts['FiscalLossCompensation']):
+        raise _UnsupportedMetadata('unreconciled_corporate_l6_taxable_income')
+    if amounts['IncomeTaxSelfpaid'] != max(
+            Decimal(0), amounts['IncomeTaxPayable'] - amounts['TaxCreditWitheld']):
+        raise _UnsupportedMetadata('unreconciled_corporate_l6_self_paid_tax')
+    fields, provenance = [], []
+    for name, caption in L6_FIELDS:
+        fields.append({'group': '', 'field': name, 'label': caption,
+                       'value': _number(form[name], 2, locale=locale, trim=True)})
+        entry = _evidence(form[name], [L6_ROOT, name])
+        entry.update(rule='literal-installment-control',
+                     destination={'form': 'L6', 'field': name})
+        provenance.append(entry)
+    return {'fields': fields, 'provenance': provenance}
+
+
+def _apply_l6(binding, section, observed_forms, *, root, payload, record, event):
+    proof = binding['projection']
+    builds = proof.get('builds') if isinstance(proof, dict) else None
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+            or proof['kind'] != 'corporate-l6-v1'
+            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
+            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
+            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+            or proof['route'] != event['frame_url']
+            or binding.get('paths') != [[L6_ROOT]]
+            or binding.get('grids') or binding.get('responses') or binding.get('dependencies')):
+        raise _UnsupportedMetadata('unverified_corporate_l6_binding')
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model):
+        raise _UnsupportedMetadata('unverified_corporate_l6_submitted_lifecycle')
+    fields = record.get('source_fields', {})
+    result = project_l6(root.get(L6_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
+    section['fields'] = result['fields']
+    section['tables'] = []
+    for entry in result['provenance']:
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+    return {'form': 'L6', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -800,6 +886,10 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
             if binding.get('paths') == [[INDUK_ROOT]]:
                 projected.append(_apply_induk(binding, section, observed_forms, root=root,
                     payload=payload, record=record, event=event))
+            continue
+        if binding['name'] == 'L6':
+            projected.append(_apply_l6(binding, section, observed_forms, root=root,
+                payload=payload, record=record, event=event))
             continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,
