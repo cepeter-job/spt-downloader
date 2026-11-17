@@ -174,6 +174,25 @@ def _capture_l7_lifetime(value, *, attempt, record_id, source_url, detail_url):
     return dict(value)
 
 
+def _capture_l10c_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Closed C-owned fact; the shared final-snapshot owner must seal it."""
+    facts = {'fresh_root', 'fresh_form', 'stable_root', 'stable_form',
+             'stable_grid', 'stable_controls', 'enabled_boundaries'}
+    if (not isinstance(value, dict)
+            or set(value) != facts | {'kind', 'attempt', 'record_id', 'source_url', 'detail_url'}
+            or value.get('kind') != 'corporate-l10c-spa-v1'
+            or type(record_id) is not str or not record_id
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in facts)):
+        raise JsonSafetyError('Captured L10-C history is invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return dict(value)
+
+
 def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
     """Validate the stronger optional L8 history, never inferred during replay."""
     keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url',
