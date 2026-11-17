@@ -818,9 +818,21 @@ def _induk_submitted(binding, *, main, root, payload, record, event):
         else:
             try:
                 number = _integer(value)
-                if (number == 0 and _decimal(value).is_signed()
-                        or name == 'NetIncomeBeforeTax' and number < 0):
+                if number == 0 and _decimal(value).is_signed():
                     raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_number')
+                if name == 'NetIncomeBeforeTax' and number < 0:
+                    # The only submitted writer that could clear a negative
+                    # main is the synchronous solely==1 reset. Both original
+                    # patches exclude that trigger in this closed profile.
+                    if (type(main.get('IsIncomeUnder')) is not _CorporateNumber
+                            or main['IsIncomeUnder'] != '0' or 'IsIncomeSolely' not in main
+                            or main['IsIncomeSolely'] is not None):
+                        raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_number')
+                    for key in ('IsIncomeUnder', 'IsIncomeSolely'):
+                        predicate = _evidence(main[key], [INDUK_ROOT, key])
+                        predicate.update(rule='submitted-negative-main/no-solely-reset',
+                            destination={'form': 'Induk', 'control': 'negative-main-stability'})
+                        result['provenance'].append(predicate)
                 rendered = _number(value, 0, locale='id-ID')
             except (_UnsupportedMetadata, DecimalException):
                 raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_number') from None
