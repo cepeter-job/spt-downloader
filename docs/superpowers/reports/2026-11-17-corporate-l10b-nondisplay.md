@@ -148,8 +148,12 @@ publication and saved/reopened workbook absence. Local checks are AST/source/
 diff only; no local product imports, pytest, browser fixtures, builds or EXE runs.
 CI status is recorded on the implementation PR, bound to its exact head.
 
-The protected **AGENTS.md update is a separate outstanding parent deliverable**
-after reviewing the combined shared boundary. This document does not replace
-that update or claim approval-protected contract completion. Application-owned
-build-matched live acceptance, other forms, mapping, PDF and whole-run completion
-remain independent and unproved here. No private values or captures are uploaded.
+The parent independently reviewed the committed P1/P2 correction, read back
+its exact remote head and green run, and parsed all four matching JUnit files.
+The normal protected `AGENTS.md` edit then recorded the actual finite L10-B and
+joint-final-snapshot boundaries under the approved remaining-tasks scope. This
+follow-up changes documentation only; its new head requires fresh checks and
+does not inherit green status merely from the runtime correction head.
+Combined-form integration and application-owned build-matched live acceptance,
+other forms, mapping, PDF and whole-run completion remain independent and
+unproved here. No private values or captures are uploaded.
