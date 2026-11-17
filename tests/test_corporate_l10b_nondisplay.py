@@ -191,7 +191,7 @@ def test_report_revalidation_does_not_retype_identity_metadata_as_boolean(path):
     assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
 
 
-def test_admitted_catalog_before_primary_selects_the_exact_report_bound_event():
+def catalog_first_result():
     from test_corporate_l11c_native import COUNTRY, catalog
     primary = packet(sequence=2)
     reference = corpus.packet({'IsSuccessful': True, 'Payload': catalog()}, 1,
@@ -201,7 +201,11 @@ def test_admitted_catalog_before_primary_selects_the_exact_report_bound_event():
         corporate_l10b_lifetime=deepcopy(primary['context']['corporate_l10b_lifetime']))
     # GET/no request body is required by the real transport validator. Both
     # packets retain the same manifest-owned attempt and lifetime facts.
-    result = adapt_corporate_detail([reference, primary], selected(), corpus.SCOPE, observed())
+    return adapt_corporate_detail([reference, primary], selected(), corpus.SCOPE, observed())
+
+
+def test_admitted_catalog_before_primary_selects_the_exact_report_bound_event():
+    result = catalog_first_result()
     assert result['eligible'], result['reason']
     assert [e['sequence'] for e in result['provenance']['events']] == [1, 2]
     report = next(r for r in result['provenance']['projections'] if r['form'] == 'L10-B')
@@ -231,6 +235,15 @@ def test_report_bound_primary_selection_cannot_skip_actual_contradictions(defect
         result['provenance']['events'][0]['sequence'] = True
     else:
         result['provenance']['events'] = []
+    assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
+
+
+def test_report_cannot_rebind_original_values_to_an_admitted_catalog_event():
+    result = catalog_first_result()
+    assert result['eligible'], result['reason']
+    report = next(r for r in result['provenance']['projections'] if r['form'] == 'L10-B')
+    for entry in report['values'] + report['presence_facts']:
+        entry['response_sequence'] = 1
     assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
 
 

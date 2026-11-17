@@ -71,7 +71,16 @@ def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
                 if window != 'unchanged' and not fired and (trigger or final):
                     fired.append(window)
                     victim = 'rshshr-citr-l10b-form' if window == 'l7' else 'rshshr-citr-l7-form'
-                    mutate(page, victim, 'remove-reinsert')
+                    guard = capture._l10b_history if window == 'l7' else capture._l7_history
+                    try:
+                        mutate(page, victim, 'remove-reinsert')
+                        changed = original(guard, '(h) => h.sample()')
+                    except Exception:
+                        # Probe wrappers deliberately swallow driver errors;
+                        # a broken injection MUST fail outside that policy.
+                        pytest.fail('Real structural mutation injection failed')
+                    if changed.get('changed') is not True:
+                        pytest.fail('Real history did not witness the injected mutation')
                 result = original(handle, expression, arg)
                 if handle is capture._l7_history and sample:
                     l7_sampled.append(True)
