@@ -34,6 +34,7 @@ def source(**overrides):
     values.update(overrides)
     identity = {key: (corpus.Number(value) if type(value).__name__ == '_CorporateNumber' else value)
                 for key, value in main_form().items()}
+    identity.update(IsIncomeUnder=0, IsIncomeSolely=None)
     identity.update(values)
     current = corpus.current_form()
     current['MainFormData'] = identity
@@ -144,7 +145,7 @@ def test_unproved_profile_or_capability_refuses(defect):
     elif defect == 'timezone': observed[0]['projection']['timezone'] = 'UTC'
     elif defect == 'kind-extra': observed[0]['projection']['invented'] = True
     elif defect in ('negative-net', 'null-net'):
-        value = source(NetIncomeBeforeTax=-1 if defect == 'negative-net' else None)
+        value = source(NetIncomeBeforeTax=-1, IsIncomeSolely=1) if defect == 'negative-net' else source(NetIncomeBeforeTax=None)
     raw = packet(value)
     if defect == 'missing-component': del raw['context']['component_lifetime']
     result = adapt(raw, observed)
@@ -160,8 +161,9 @@ def test_base_form_identity_overwrite_cannot_leave_a_stale_main_identity(outer, 
     current = json.loads(value['Payload']['CurrentFormData'])
     current['MainFormData'][inner] = 'SYNTHETIC STALE' if outer not in ('TIN', 'PeriodYear') else None
     value['Payload']['CurrentFormData'] = corpus.wire(current)
-    if outer == 'TIN':
-        with pytest.raises(JsonSafetyError, match='taxpayer number contradicts'):
+    if outer in ('TIN', 'PeriodYear'):
+        message = 'taxpayer number contradicts' if outer == 'TIN' else 'nonnegative JSON integer'
+        with pytest.raises(JsonSafetyError, match=message):
             adapt(packet(value))
         return
     result = adapt(packet(value))
@@ -184,6 +186,37 @@ def test_missing_configured_and_observed_pins_cannot_agree_into_permission(monke
     observed[0]['projection']['builds'] = dict(pins)
     monkeypatch.setattr(projection, 'INDUK_SUBMITTED_BUILD_DIGESTS', pins)
     result = adapt(observed=observed)
+    assert not result['eligible'] and result['sections'] == []
+
+
+def test_negative_main_is_literal_only_when_the_original_solely_reset_branch_is_excluded():
+    result = adapt(packet(source(NetIncomeBeforeTax=corpus.Number('-1234.000'))))
+    assert result['eligible'], result['reason']
+    field, = [f for f in result['sections'][0]['fields'] if f['label'] == SLOTS[0][2]]
+    assert field['value'] == '-1.234'
+    report, = result['provenance']['projections']
+    for key, kind, value in (('IsIncomeUnder', 'number', '0'), ('IsIncomeSolely', 'null', None)):
+        entry, = [e for e in report['values'] if e['path'] == ['MainFormData', key]]
+        assert entry['type'] == kind and entry['value'] == value
+        assert entry['container'] == ['Payload', 'CurrentFormData']
+        assert entry['rule'] == 'submitted-negative-main/no-solely-reset'
+
+
+@pytest.mark.parametrize(('key', 'value'), [('IsIncomeUnder', False), ('IsIncomeUnder', '0'),
+    ('IsIncomeUnder', None), ('IsIncomeUnder', 1), ('IsIncomeSolely', 0),
+    ('IsIncomeSolely', False), ('IsIncomeSolely', '0'), ('IsIncomeSolely', 1)])
+def test_negative_main_does_not_borrow_legacy_or_coercive_selection_proof(key, value):
+    result = adapt(packet(source(NetIncomeBeforeTax=-1234, **{key: value})))
+    assert not result['eligible'] and result['sections'] == []
+
+
+@pytest.mark.parametrize('key', ['IsIncomeUnder', 'IsIncomeSolely'])
+def test_negative_main_requires_explicit_original_reset_predicates(key):
+    value = source(NetIncomeBeforeTax=-1234)
+    current = json.loads(value['Payload']['CurrentFormData'])
+    del current['MainFormData'][key]
+    value['Payload']['CurrentFormData'] = corpus.wire(current)
+    result = adapt(packet(value))
     assert not result['eligible'] and result['sections'] == []
 
 

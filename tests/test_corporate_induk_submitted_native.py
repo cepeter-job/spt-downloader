@@ -20,11 +20,11 @@ import support_json_corpus as corpus
 
 
 class IndukFixture(Fixture):
-    def __init__(self, browser, monkeypatch, *, defect=None):
+    def __init__(self, browser, monkeypatch, *, defect=None, net=1234567):
         super().__init__(browser, monkeypatch, defect=defect)
         current = json.loads(self.raw)['Payload']
         root = json.loads(current['CurrentFormData'])
-        approved = source()['Payload']
+        approved = source(NetIncomeBeforeTax=net)['Payload']
         root['MainFormData'] = json.loads(approved['CurrentFormData'])['MainFormData']
         current.update({k: v for k, v in approved.items() if k != 'CurrentFormData'})
         current['CurrentFormData'] = corpus.wire(root)
@@ -42,9 +42,10 @@ class IndukFixture(Fixture):
         return markup.replace('<label>SYNTHETIC STRUCTURAL PLACEHOLDER</label>', controls)
 
 
+@pytest.mark.parametrize('net', [1234567, -1234567])
 def test_owned_populated_induk_replays_original_bytes_and_saves_amounts_with_partial_audit(
-        browser, tmp_path, monkeypatch):
-    fixture = IndukFixture(browser, monkeypatch)
+        browser, tmp_path, monkeypatch, net):
+    fixture = IndukFixture(browser, monkeypatch, net=net)
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
@@ -82,7 +83,7 @@ def test_owned_populated_induk_replays_original_bytes_and_saves_amounts_with_par
             assert rows['1. NPWP'].value == corpus.NPWP
             assert rows['4. Nomor Telepon'].value == '0000000000'
             for label, expected in (
-                ('Penghasilan Neto Fiskal sebelum Fasilitas Pajak', 1234567),
+                ('Penghasilan Neto Fiskal sebelum Fasilitas Pajak', net),
                 ('PPh Terutang', 123456), ('Angsuran PPh Pasal 25', 3456),
                 ('PPh yang Kurang/Lebih Bayar', -5678),
                 ('PPh yang masih harus dibayar atau lebih dibayar', 7890)):
@@ -180,7 +181,7 @@ def test_populated_induk_held_reader_keeps_original_manifest_custody(browser, tm
         fixture.close()
 
 
-def test_induk_stop_and_changed_owned_lifetime_are_not_demoted_to_legacy_success(browser, tmp_path, monkeypatch):
+def test_induk_stop_and_changed_owned_route_are_not_demoted_to_legacy_success(browser, tmp_path, monkeypatch):
     fixture = IndukFixture(browser, monkeypatch)
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
@@ -190,8 +191,9 @@ def test_induk_stop_and_changed_owned_lifetime_are_not_demoted_to_legacy_success
             with pytest.raises(driver.CaptureCancelled):
                 observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
                     approved_digest=fixture.pins[ASSET], check_cancel=stop)
-            page.evaluate('''()=>{const r=document.querySelector('rshshr-corporate-income-tax-return');
-                const p=r.parentNode;r.remove();p.append(r)}''')
+            # The legacy component fact proves Document/route ownership, not
+            # continuous child/root identity. Exercise the authority it owns.
+            page.evaluate("history.pushState({}, '', location.pathname + '/changed')")
             with pytest.raises(JsonSafetyError):
                 capture.drain()
     finally:

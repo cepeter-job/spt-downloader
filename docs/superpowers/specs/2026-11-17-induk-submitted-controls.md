@@ -54,7 +54,7 @@ The remaining seventeen declarations are inventoried individually:
 | --- | --- | --- |
 | C question 2 (blank name, full radio caption) | **TotalIncomeSubject**, not IsIncomeSubject; active p-inputNumber after the radio pair, constants 2874... | unresolved: async L4 footer and callback completion |
 | C question 3 (blank name, full radio caption) | **TotalIncomeExcluded**, not IsIncomeExcluded | unresolved: L4 child overwrites; exact fixed-point/lifetime needed |
-| D4 | NetIncomeBeforeTax | emit nonnegative integral captured control; CalculateNetIncomeBeforeTax exits when submitted; prefillBy0FromIsIncomeSolely cannot change nonnegative value |
+| D4 | NetIncomeBeforeTax | emit nonnegative captured control, or negative only with explicit current numeric-zero IsIncomeUnder and literal-null IsIncomeSolely; CalculateNetIncomeBeforeTax exits when submitted and the sole negative reset trigger is excluded |
 | D7 | FiscalNetIncomeAfterTax | unresolved: CalculateFiscalNetIncomeAfterTax always patches `net-reduction-vocational`; child overwrites and emission order matter |
 | D9 | TaxableIncome | unresolved: debounced CalculateTaxableIncome, carry/child history; do not copy stored total |
 | D12 | IncomeTaxInAYear | emit captured control (null->blank); CalculateIncomeTaxInAYear computes but explicitly skips its write when submitted |
@@ -77,6 +77,34 @@ stored originals and typed evidence, including non-reconciling synthetic finals.
 Only eight additional approved **amount** slots are implemented; nine remain
 unresolved. Neither a captured radio code nor a same-named source leaf proves an
 approved blank-name amount slot.
+
+### Negative main and scope of the lifetime fact
+
+Value-free analysis of an existing saved submitted Normal/nonmigrated capture
+found all eight controls present, numeric, finite, integral and within the bound,
+with no signed zero and all eight identity owner lexemes identical. Main was
+negative, current IsIncomeUnder was literal numeric zero and IsIncomeSolely was
+explicit null. Its attempt manifest has component_lifetime but **zero** exact
+CIT_TAX_RATE GET responses. No private values/IDs/bytes are committed or replayed.
+
+The negative D4 slice is not a borrowed L7 capability: 525's synchronous
+IsIncomeUnder callback first patches IsIncomeSolely=null; setFormData then
+patches the original literal-null solely value. Neither can trigger the sole
+`1==t` call to prefillBy0FromIsIncomeSolely. getDataFromBaseForm's competing
+CalculateNetIncomeBeforeTax returns when submitted. Retain both original typed
+reset predicates for a negative main; missing, string/boolean or other flags
+refuse, even if loosely equal in JavaScript. No negative arithmetic/clamp is
+performed here. Positive main remains invariant without consuming those flags.
+
+The existing component_lifetime proves retained Document/route and owner
+boundaries, **not** continuous Induk child/root identity. This literal-control
+slice does not offer a new child-history fact or depend on a mutable child total:
+all admitted amounts are unchanged by repeated same-source submitted patches.
+The disabled structure is an observed submitted renderer boundary, not a claim
+of continuously sampled child state. Do not extend that argument to D7/D9,
+C/L4 or E16/L13C; their callbacks can write new values and still require their
+own final dependent-lifetime proof. Stop/known route/Document changes remain
+fatal under their actual existing authority.
 
 ## Capability and native wiring
 
