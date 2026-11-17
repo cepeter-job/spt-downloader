@@ -169,6 +169,15 @@ reported against the pushed exact head; leave this PR open and unmerged.
   HEAD -- AGENTS.md` confirmed it unchanged. This documentation records the
   boundary but does NOT substitute for the outstanding protected-contract edit.
 
-Runner verification status is pending the corrected pushed head. Empty-only
-GREEN will not complete populated support, live native acceptance or authorize
-consolidation. No new catalog admission was added.
+Runner verification is tracked against the corrected pushed head in PR #272.
+Historical correction run 44020711219 on `5fb70c7a7e1295fe4e2d160c4e2196b1db87c1bb`
+passed portable, dependency audit and three Windows shards; shard-2 exposed one
+test expecting fallback for a legacy-route component lifetime, which the earlier
+packet decoder correctly rejects as fatal. The regression now preserves that
+fatal gate and separately exercises the semantic route defense directly, since
+a valid legacy-route lifetime cannot pass the decoder. No production safety gate
+was changed to address that test. Exact corrected-head verification remains
+pending; its current result is recorded in the PR body.
+
+Empty-only GREEN will not complete populated support, live native acceptance or
+authorize consolidation. No new catalog admission was added.

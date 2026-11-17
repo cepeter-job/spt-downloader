@@ -220,7 +220,25 @@ def test_empty_projection_retains_submitted_rupiah_owned_lifecycle(change):
         forms.reverse()
     else:
         record['source_fields']['ReturnSheetModel'] = 'Amendment 002'
-    assert not adapt(forms, packets, record)['eligible']
+    if change == 'legacy-route':
+        # A valid component lifetime cannot bind a legacy query-free route.
+        # Preserve the packet decoder's earlier fatal refusal, not fallback.
+        with pytest.raises(JsonSafetyError, match='Captured component lifetime route is unverified'):
+            adapt(forms, packets, record)
+    else:
+        assert not adapt(forms, packets, record)['eligible']
+
+
+def test_semantic_route_guard_is_separately_closed_before_page_consumption():
+    # The packet decoder cannot produce a valid legacy-route lifetime. Exercise
+    # the semantic defense directly without weakening that upstream contract.
+    forms = observed()
+    forms[-1]['projection']['route'] = FRAME.removesuffix('?view=true')
+    event = {'frame_url': FRAME.removesuffix('?view=true'), 'component_lifetime': {}}
+    with pytest.raises(_UnsupportedMetadata, match='unverified_corporate_l10a_submitted_lifecycle'):
+        module()._apply_l10a(forms[-1], {}, forms, root={},
+            payload={'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL'},
+            record=selected(), event=event, grid_packets={})
 
 
 @pytest.mark.parametrize('change', [{'Rows': 20}, {'Rows': True}, {'SortField': 'Name'},
