@@ -592,6 +592,10 @@ def has_audit_dump_tables(sections):
     ``fields`` has been projected, so its dump stays custody evidence only.
     """
     for section in sections or ():
+        # Six recap fields do not cover twelve data-bearing grid inventories.
+        # Preserve whole-record DOM fallback, even with reviewed scalar fields.
+        if section.get('unprojected_grids'):
+            return True
         if section.get('fields'):
             continue
         for table in section.get('tables') or ():

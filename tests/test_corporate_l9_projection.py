@@ -15,6 +15,22 @@ import pytest
 from coretax_json import _CorporateNumber, _UnsupportedMetadata, adapt_corporate_detail
 import support_json_corpus as corpus
 
+ROUTE = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+    (corpus.TAXPAYER_ID, corpus.RECORD_ID, 'ICT_RCIT', corpus.AGGREGATE_ID)) + '?view=true')
+
+
+def selected():
+    record = corpus.selected_record()
+    record['source_fields'].update(ReturnSheetTypeCode='ICT_RCITR', ReturnSheetModel='Normal')
+    return record
+
+
+def lifetime():
+    # Synthetic packet evidence only; the browser test seals owned facts itself.
+    return {'attempt': corpus.ATTEMPT, 'kind': 'corporate-submitted-spa-v1',
+        'record_id': corpus.RECORD_ID, 'source_url': corpus.LIST_URL, 'detail_url': ROUTE,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True}
+
 
 def module():
     return importlib.import_module('coretax_corporate_projection')
@@ -64,14 +80,15 @@ def grid_declarations():
 
 def observed(grids=None):
     forms = corpus.observed()
+    forms[0]['projection']['route'] = ROUTE
     binding = {'name': 'L9',
                'paths': [['RecapitulationFiscalDepreciationAmortization']],
                'grids': grid_declarations() if grids is None else grids,
                'responses': [], 'dependencies': [],
-               'projection': {'kind': 'corporate-l9-v1',
+               'projection': {'kind': 'corporate-l9-v1', 'locale': 'id-ID',
                               'builds': {module_or('CIT_SOURCE'):
                                          module_or('BUILD_DIGESTS')[module_or('CIT_SOURCE')]},
-                              'route': corpus.FRAME_URL}}
+                              'route': ROUTE}}
     forms.insert(1, binding)
     return forms
 
@@ -85,17 +102,20 @@ def payload_form(l9=None):
 
 def adapted_root():
     """Decoded `CurrentFormData` shape `apply_projections` receives."""
-    return {'MainFormData': corpus.current_form()['MainFormData'],
+    return {'TaxType': 'ICT_RCIT',
+            'MainFormData': {**corpus.current_form()['MainFormData'], 'IsMigrated': False},
             'RecapitulationFiscalDepreciationAmortization': {
                 name: _CorporateNumber(str(value)) for name, value in form().items()}}
 
 
 def adapted_payload():
-    return {'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL'}
+    return {'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+            'PreviousFormData': None, 'LastSubmittedFormData': None}
 
 
 def packets(**main):
     form_value = corpus.current_form()
+    form_value['MainFormData']['IsMigrated'] = False
     form_value['MainFormData'].update(main)
     form_value['RecapitulationFiscalDepreciationAmortization'] = payload_form()
     body = [corpus.primary(form_value)]
@@ -104,12 +124,14 @@ def packets(**main):
             'Payload': {'Data': [], 'TotalRecords': 0, 'Index': None}},
             sequence, endpoint=declaration['endpoint'],
             request=declaration['pages'][0]['request_json']))
+    for item in body:
+        item['context'].update(frame_url=ROUTE, component_lifetime=lifetime())
     return body
 
 
 def adapt(forms=None, payload=None, record=None):
     return adapt_corporate_detail(iter(packets() if payload is None else payload),
-                                  corpus.selected_record() if record is None else record,
+                                  selected() if record is None else record,
                                   corpus.SCOPE, observed() if forms is None else forms)
 
 
@@ -127,7 +149,7 @@ def test_every_template_caption_comes_from_one_proven_payload_control():
     assert [field['label'] for field in result['fields']] == [caption for _, caption in fields]
     assert [field['value'] for field in result['fields']] == [
         '30.000.000', '25.000.000', '5.000.000', '5.000.000', '3.000.000', '2.000.000']
-    assert [entry['path'] for entry in result['provenance']] == [
+    assert [entry['path'] for entry in result['provenance'] if entry['path'][-1] in dict(fields)] == [
         ['RecapitulationFiscalDepreciationAmortization', name] for name, _ in fields]
     assert all(entry['type'] == 'number' for entry in result['provenance'])
 
@@ -149,14 +171,13 @@ def test_recap_totals_must_reconcile_with_the_per_group_totals():
     assert str(error.value) == 'unreconciled_corporate_l9_amortization_difference'
 
 
-def test_migrated_returns_keep_the_payload_differences_unrecomputed():
-    # `setFormData` skips both reductions for a migrated return, so the stored
-    # difference is authoritative and must not be refused as "unreconciled".
+def test_migrated_returns_cannot_copy_the_unpatched_intangible_difference():
+    # `setFormData` patches only DifferenceDepreciation for migrated returns;
+    # the intangible difference is not initialized from its stored value.
     value = form(DiferencesDepreciationTangible=_CorporateNumber('4000000'),
                  DiferencesAmortization=_CorporateNumber('1000000'))
-    result = project(value, migrated=True)
-    assert [field['value'] for field in result['fields']][2] == '4.000.000'
-    assert [field['value'] for field in result['fields']][5] == '1.000.000'
+    with pytest.raises(_UnsupportedMetadata):
+        project(value, migrated=True)
     with pytest.raises(_UnsupportedMetadata) as error:
         project(value)
     assert str(error.value) == 'unreconciled_corporate_l9_depreciation_difference'
@@ -191,11 +212,11 @@ def test_a_missing_table_total_refuses_the_source_shape():
 
 @pytest.mark.parametrize('projection', [
     {'kind': 'corporate-l9-v0'},
-    {'kind': 'corporate-l9-v1', 'builds': {}, 'route': corpus.FRAME_URL},
+    {'kind': 'corporate-l9-v1', 'builds': {}, 'route': ROUTE},
     {'kind': 'corporate-l9-v1', 'builds': {module_or('CIT_SOURCE'): 'APPROVED'},
-     'route': corpus.FRAME_URL},
+     'route': ROUTE},
     {'kind': 'corporate-l9-v1', 'builds': {module_or('CIT_SOURCE'): 'a' * 64},
-     'route': corpus.FRAME_URL, 'timezone': 'Asia/Jakarta'},
+     'route': ROUTE, 'timezone': 'Asia/Jakarta'},
 ])
 def test_projection_proof_must_match_the_reviewed_shape(projection):
     forms = observed()
@@ -217,28 +238,28 @@ def test_every_grid_request_binding_must_be_present(mutate):
         grids[0]['name'] = 'L9/l9-table-1-grid/Group 9'
     binding = {'name': 'L9', 'paths': [['RecapitulationFiscalDepreciationAmortization']],
                'grids': grids, 'responses': [], 'dependencies': [],
-               'projection': {'kind': 'corporate-l9-v1',
+               'projection': {'kind': 'corporate-l9-v1', 'locale': 'id-ID',
                               'builds': {module_or('CIT_SOURCE'):
                                          module_or('BUILD_DIGESTS')[module_or('CIT_SOURCE')]},
-                              'route': corpus.FRAME_URL}}
+                              'route': ROUTE}}
     section = {'name': 'L9', 'fields': [], 'tables': [], 'text': ''}
     with pytest.raises(_UnsupportedMetadata) as error:
         module().apply_projections([section], [binding], root=adapted_root(),
                                    payload=adapted_payload(), record=corpus.selected_record(),
-                                   event={'frame_url': corpus.FRAME_URL, 'sequence': 1})
+                                   event={'frame_url': ROUTE, 'sequence': 1})
     assert str(error.value) == 'unverified_corporate_l9_binding'
 
 
 def test_route_or_lifecycle_contradiction_refuses_the_projection():
     forms = observed()
     binding, = [item for item in forms if item['name'] == 'L9']
-    binding['projection'] = {**binding['projection'], 'route': corpus.FRAME_URL + '/changed'}
+    binding['projection'] = {**binding['projection'], 'route': ROUTE + '/changed'}
     result = adapt(forms)
     assert not result['eligible'] and result['reason'] == 'unverified_corporate_l9_binding'
     forms = observed()
     # Drop the Induk projection so this isolates the L9 lifecycle gate.
     forms[0].pop('projection')
-    record = corpus.selected_record()
+    record = selected()
     record['meta']['Model SPT'] = 'Amendment 002'
     result = adapt(forms, record=record)
     assert not result['eligible']
@@ -247,23 +268,23 @@ def test_route_or_lifecycle_contradiction_refuses_the_projection():
 
 def test_an_unreviewed_migrated_flag_refuses_the_capture():
     forms = observed()
-    result = adapt_corporate_detail(iter(packets(IsMigrated='yes')), corpus.selected_record(),
+    result = adapt_corporate_detail(iter(packets(IsMigrated='yes')), selected(),
                                     corpus.SCOPE, forms)
     assert not result['eligible']
     assert result['reason'] == 'unsupported_corporate_l9_migrated_flag'
 
 
-def test_a_migrated_return_skips_only_the_recomputed_differences():
+def test_a_migrated_return_stays_unsupported():
     forms = observed()
-    result = adapt_corporate_detail(iter(packets(IsMigrated=True)), corpus.selected_record(),
+    result = adapt_corporate_detail(iter(packets(IsMigrated=True)), selected(),
                                     corpus.SCOPE, forms)
-    assert result['eligible'], result['reason']
+    assert not result['eligible'] and result['reason'] == 'unsupported_corporate_l9_migrated_flag'
 
 
-@pytest.mark.parametrize('flag,eligible', [(corpus.Number('0'), True), (corpus.Number('1'), True)])
+@pytest.mark.parametrize('flag,eligible', [(corpus.Number('0'), True), (corpus.Number('1'), False)])
 def test_numeric_migrated_flag_encodings_are_read_as_booleans(flag, eligible):
     forms = observed()
-    result = adapt_corporate_detail(iter(packets(IsMigrated=flag)), corpus.selected_record(),
+    result = adapt_corporate_detail(iter(packets(IsMigrated=flag)), selected(),
                                     corpus.SCOPE, forms)
     assert result['eligible'] is eligible, result['reason']
 
@@ -292,20 +313,21 @@ def test_unprojected_l9_section_is_still_the_audit_dump():
     assert has_audit_dump_tables(result['sections']) is True
 
 
-def test_projected_l9_section_replaces_the_dump_and_reports_partial():
+def test_projected_l9_keeps_all_custody_tables_and_reports_partial():
     from coretax_json import has_audit_dump_tables
     result = adapt()
     assert result['eligible'] and result['coverage']['complete'], result['reason']
     section, = [item for item in result['sections'] if item['name'] == 'L9']
-    assert section['tables'] == []
+    assert len(section['tables']) == 13
+    assert [t['name'] for t in section['tables'][1:]] == [name for name, _ in module().L9_GRIDS]
     assert [field['field'] for field in section['fields']] == [
         name for name, _ in module_or('L9_FIELDS')]
     assert section['projection_complete'] is False
     assert section['projection_reason'] == 'unprojected_l9_grid_rows'
-    assert has_audit_dump_tables(result['sections']) is False
+    assert has_audit_dump_tables(result['sections']) is True
     projected, = [item for item in result['provenance']['projections'] if item['form'] == 'L9']
     assert projected['kind'] == 'corporate-l9-v1'
-    assert len(projected['values']) == len(module_or('L9_FIELDS'))
+    assert len(projected['values']) == 19
     assert {tuple(value['container']) for value in projected['values']} == {
         ('Payload', 'CurrentFormData')}
 

@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, DecimalException
+from decimal import DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -815,19 +815,15 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
 
 
 def project_l9(form, *, tax_type, locale, migrated):
-    """Project the approved L9 recap totals; caller must prove every grid binding.
+    """Six recap controls only, never permission to discard twelve detail grids.
 
-    Only the six recap controls are projected. The twelve per-group detail grids
-    keep unprojected: their ``KELOMPOK/JENIS HARTA``, ``KOMERSIAL`` and ``FISKAL``
-    columns are rendered from provider reference catalogs this capture does not
-    transport, so no proven cell value exists for them. The section is therefore
-    reported partial instead of claiming a completed worksheet.
-
-    The owner re-derives the fiscal totals from the per-table footers and the two
-    differences from the commercial totals unless the return is migrated, so both
-    identities are re-checked exactly whenever they are guaranteed.
+    Non-migrated setFormData calls all twelve patchFooterGrid callbacks. Require
+    that the captured values already equal that initialization's fixed point.
+    Migrated initialization patches only the tangible difference, not both stored
+    differences, so that unproved branch stays unsupported. Integral operands
+    avoid Math.round/fraction/IEEE-754 guesses; null is not silently zero-filled.
     """
-    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or type(migrated) is not bool
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or migrated is not False
             or not isinstance(form, dict)):
         raise _UnsupportedMetadata('unsupported_corporate_l9_structure')
     if set(form) != L9_KEYS:
@@ -837,36 +833,39 @@ def project_l9(form, *, tax_type, locale, migrated):
         value = form[name]
         if type(value) is not _CorporateNumber:
             raise _UnsupportedMetadata('unsupported_corporate_l9_amount_type')
-        number = _decimal(value)
-        if number != number.to_integral_value():
+        try:
+            number = _decimal(value)
+        except (DecimalException, _UnsupportedMetadata):
+            raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision') from None
+        if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
             raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision')
         if name not in L9_SIGNED and number < 0:
             raise _UnsupportedMetadata('unsupported_corporate_l9_negative_amount')
-        amounts[name] = number
-    if not migrated:
-        # `calculateTotalFiscalAndDifferenceDepreciation`/`calculateDifferenceAmortization`
-        # as reached by `setFormData` for a non-migrated return.
-        if amounts['TotalFiscalDepreciationTangible'] != sum(
-                (amounts[name] for name in L9_TABLE_TOTALS[:7]), Decimal(0)):
-            raise _UnsupportedMetadata('unreconciled_corporate_l9_fiscal_depreciation')
-        if amounts['TotalFiscalAmortization'] != sum(
-                (amounts[name] for name in L9_TABLE_TOTALS[7:]), Decimal(0)):
-            raise _UnsupportedMetadata('unreconciled_corporate_l9_fiscal_amortization')
-        if amounts['DiferencesDepreciationTangible'] != (
-                amounts['TotalFiscalDepreciationTangible']
-                - amounts['TotalCommercialDepreciationTangible']):
-            raise _UnsupportedMetadata('unreconciled_corporate_l9_depreciation_difference')
-        if amounts['DiferencesAmortization'] != (
-                amounts['TotalFiscalAmortization']
-                - amounts['TotalCommercialAmortization']):
-            raise _UnsupportedMetadata('unreconciled_corporate_l9_amortization_difference')
+        amounts[name] = int(number)
+    # Nonnegative summands and a reconciled <=15-digit total also bound every
+    # ordered partial sum. All JS additions/subtractions are exact in this subset.
+    if amounts['TotalFiscalDepreciationTangible'] != sum(amounts[name] for name in L9_TABLE_TOTALS[:7]):
+        raise _UnsupportedMetadata('unreconciled_corporate_l9_fiscal_depreciation')
+    if amounts['TotalFiscalAmortization'] != sum(amounts[name] for name in L9_TABLE_TOTALS[7:]):
+        raise _UnsupportedMetadata('unreconciled_corporate_l9_fiscal_amortization')
+    if amounts['DiferencesDepreciationTangible'] != (
+            amounts['TotalFiscalDepreciationTangible'] - amounts['TotalCommercialDepreciationTangible']):
+        raise _UnsupportedMetadata('unreconciled_corporate_l9_depreciation_difference')
+    if amounts['DiferencesAmortization'] != (
+            amounts['TotalFiscalAmortization'] - amounts['TotalCommercialAmortization']):
+        raise _UnsupportedMetadata('unreconciled_corporate_l9_amortization_difference')
     fields, provenance = [], []
     for name, caption in L9_FIELDS:
         fields.append({'group': '', 'field': name, 'label': caption,
                        'value': _number(form[name], 0, locale=locale)})
         entry = _evidence(form[name], [L9_ROOT, name])
-        entry.update(rule='literal-recapitulation-total',
+        entry.update(rule='nonmigrated-reconciled-recap/angular-integer-id',
                      destination={'form': 'L9', 'field': name})
+        provenance.append(entry)
+    for name in L9_TABLE_TOTALS:
+        entry = _evidence(form[name], [L9_ROOT, name])
+        entry.update(rule='retained-original-recap-reduction-operand',
+                     destination={'form': 'L9', 'control': name})
         provenance.append(entry)
     return {'fields': fields, 'provenance': provenance}
 
@@ -875,11 +874,13 @@ def _apply_l9(binding, section, observed_forms, *, root, payload, record, event)
     proof = binding['projection']
     builds = proof.get('builds') if isinstance(proof, dict) else None
     grids = binding.get('grids')
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+    approved = BUILD_DIGESTS.get(CIT_SOURCE)
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'locale'}
             or proof['kind'] != 'corporate-l9-v1'
             or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
-            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
-            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+            or type(approved) is not str or not re.fullmatch(r'[a-f0-9]{64}', approved)
+            or type(builds[CIT_SOURCE]) is not str or not re.fullmatch(r'[a-f0-9]{64}', builds[CIT_SOURCE])
+            or builds[CIT_SOURCE] != approved or proof['locale'] != 'id-ID'
             or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L9_ROOT]]
             or binding.get('responses') or binding.get('dependencies')
@@ -888,29 +889,35 @@ def _apply_l9(binding, section, observed_forms, *, root, payload, record, event)
                 for grid in grids] != list(L9_GRIDS)
             or any(not isinstance(grid.get('pages'), list) or not grid['pages'] for grid in grids)):
         raise _UnsupportedMetadata('unverified_corporate_l9_binding')
-    literal = record.get('meta', {}).get('Model SPT')
-    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
-             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
-    if (record.get('source_status') != 'SPT Dilaporkan'
-            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
-            or payload.get('ReturnSheetModel') != model):
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    if (proof['route'] != route or event.get('component_lifetime') is None
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or fields.get('ReturnSheetModel') != 'Normal'
+            or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR' or root.get('TaxType') != 'ICT_RCIT'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
+            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
         raise _UnsupportedMetadata('unverified_corporate_l9_submitted_lifecycle')
     main = root.get('MainFormData')
     flag = main.get('IsMigrated') if isinstance(main, dict) else None
-    if flag is None or flag is False or (type(flag) is _CorporateNumber and _decimal(flag) == 0):
-        migrated = False
-    elif flag is True or (type(flag) is _CorporateNumber and _decimal(flag) == 1):
-        migrated = True
-    else:
+    if not (flag is False or (type(flag) is _CorporateNumber and _decimal(flag) == 0)):
         raise _UnsupportedMetadata('unsupported_corporate_l9_migrated_flag')
-    fields = record.get('source_fields', {})
     result = project_l9(root.get(L9_ROOT), tax_type=fields.get('TaxTypeCode'),
-                        locale='id-ID', migrated=migrated)
+                        locale=proof['locale'], migrated=False)
+    result['provenance'].append({'path': ['MainFormData', 'IsMigrated'],
+        'type': 'boolean' if flag is False else 'number', 'value': False if flag is False else str(flag),
+        'rule': 'retained-original-nonmigrated-initialization',
+        'destination': {'form': 'L9', 'control': 'IsMigrated'}})
     section['fields'] = result['fields']
-    # The twelve grids are admitted as source coverage above, but their display
-    # columns need reference catalogs this transport never captures, so the
-    # section stays explicitly partial instead of claiming a complete worksheet.
-    section['tables'] = []
+    # Preserve all original root/grid leaves. Six fields cannot launder twelve
+    # unprojected inventories: the capture gate still requires whole-record DOM.
+    section['unprojected_grids'] = [name for name, _ in L9_GRIDS]
     section['projection_complete'] = False
     section['projection_reason'] = L9_UNPROJECTED_REASON
     for entry in result['provenance']:
