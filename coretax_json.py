@@ -193,6 +193,18 @@ def _capture_l10b_lifetime(value, *, attempt, record_id, source_url, detail_url)
             or value.get('source_url') != source_url or value.get('detail_url') != detail_url
             or any(value.get(key) is not True for key in facts)):
         raise JsonSafetyError('Captured L10-B history is invalid or unbound')
+def _capture_l10c_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Closed C-owned fact; the shared final-snapshot owner must seal it."""
+    facts = {'fresh_root', 'fresh_form', 'stable_root', 'stable_form',
+             'stable_grid', 'stable_controls', 'enabled_boundaries'}
+    if (not isinstance(value, dict)
+            or set(value) != facts | {'kind', 'attempt', 'record_id', 'source_url', 'detail_url'}
+            or value.get('kind') != 'corporate-l10c-spa-v1'
+            or type(record_id) is not str or not record_id
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in facts)):
+        raise JsonSafetyError('Captured L10-C history is invalid or unbound')
     _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
         'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
         'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
@@ -991,6 +1003,12 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured L7 history lacks its component lifetime')
         l7_lifetime = _capture_l7_lifetime(ctx['corporate_l7_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10c_lifetime = None
+    if 'corporate_l10c_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L10-C history lacks its component lifetime')
+        l10c_lifetime = _capture_l10c_lifetime(ctx['corporate_l10c_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     l8_lifetime = None
     if 'corporate_l8_lifetime' in ctx:
         if lifetime is None:
@@ -1034,6 +1052,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['corporate_l8_lifetime'] = l8_lifetime
     if l10b_lifetime is not None:
         event['corporate_l10b_lifetime'] = l10b_lifetime
+    if l10c_lifetime is not None:
+        event['corporate_l10c_lifetime'] = l10c_lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -1374,7 +1394,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
-    l7_lifetimes, l10b_lifetimes, reference_providers = set(), set(), set()
+    l7_lifetimes, l10b_lifetimes, l10c_lifetimes, reference_providers = set(), set(), set(), set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
@@ -1407,6 +1427,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             raise JsonSafetyError('Corporate L10-B history is missing or mixed within one attempt')
         if len(l7_lifetimes) != 1:
             raise JsonSafetyError('Corporate L7 history is missing or mixed within one attempt')
+        l10c_lifetimes.add(_corporate_request_key(event.get('corporate_l10c_lifetime')))
+        if len(l10c_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-C history is missing or mixed within one attempt')
         if len(l8_lifetimes) != 1:
             raise JsonSafetyError('Corporate L8 history is missing or mixed within one attempt')
         total_bytes += ctx['bytes']

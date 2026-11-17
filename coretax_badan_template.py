@@ -377,7 +377,7 @@ def _columns(table, sheet, header):
     return [targets[key] for key in keys]
 
 
-def _write_amount(sheet, row, column, value, *, subtract=False):
+def _write_amount(sheet, row, column, value, *, subtract=False, number_default=False):
     # Display precision never rounds or rewrites the captured numeric value.
     sheet.cell(row, column).number_format = ACCOUNTING
     text = value
@@ -388,7 +388,10 @@ def _write_amount(sheet, row, column, value, *, subtract=False):
         marker = re.fullmatch(r'Rp\.?\s*\|\s*([^|]+)', text)
         if marker:
             text = marker.group(1)
-        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', text):
+        # Only the reviewed L10-C body uses DecimalPipe's default 0..3
+        # fraction digits. Other forms and every footer keep the 2-digit parser.
+        fraction = r'(?:,[0-9]{1,3})?' if number_default is True else r'(?:,[0-9]{1,2})?'
+        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)' + fraction, text):
             _write(sheet, row, column, value)
             return False
         number = Decimal(text.replace('.', '').replace(',', '.'))
@@ -812,6 +815,8 @@ def render_template_form(sheet, form, sections, *, period=None):
                                     'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
                     writer = _write_l2_number if form == 'l2' else _write_amount
                     safe = writer(sheet, row, column, value, subtract=subtract) and safe
+                    safe = _write_amount(sheet, row, column, value, subtract=subtract,
+                                         number_default=form == 'l10-c') and safe
                     if form == 'l9' and block >= 2 and column == 8 and _present(value):
                         sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
                 elif (form, block) == ('l2', 1) and column in (9, 12):
@@ -855,6 +860,20 @@ def render_template_form(sheet, form, sections, *, period=None):
                    if section.get('projection_complete') is False), None)
     if reason is not None:
         derived = {**derived, 'derived_complete': False, 'derived_reason': reason}
+    if form == 'l10-c' and any(section.get('projection_complete') is False for section in sections):
+        # The populated row candidate has no approved destination for header
+        # controls or the unproved radio. Count identities without inventing
+        # display values, and preserve PARTIAL even if its inventory is absent.
+        derived = {'derived_complete': False, 'derived_reason': 'unprojected_l10c_controls'}
+        identities = {(field.get('group'), field.get('field'), field.get('label')) for field in fields}
+        for section in sections:
+            if section.get('projection_complete') is not False:
+                continue
+            for field in section.get('projection_unresolved_fields', []):
+                identity = (field.get('group'), field.get('field'), field.get('label'))
+                if identity not in identities:
+                    fields.append(dict(zip(('group', 'field', 'label'), identity)))
+                    identities.add(identity)
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.

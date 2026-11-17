@@ -30,6 +30,7 @@ L7_NEGATIVE_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOU
 L7_OWNER_CHAIN = ['rshshr-corporate-income-tax-return', 'rshshr-citr-l7-form',
                   'rsh-citr-l7-grid1', 'p-table', 'table']
 L11C_BUILD_DIGESTS = {**BUILD_DIGESTS, **_corporate_pins((VENDOR_SOURCE,))}
+L10C_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
@@ -463,6 +464,221 @@ def project_l8(form, *, main_form, period_year, headers, footer_spans, tax_type,
                                           'groups': [_L8_GROUP]},
                      'pages': 1, 'body_row_count': 8, 'source_total': 8, 'complete': True},
             'provenance': provenance}
+
+
+L10C_ROOT = 'L10cFormData'
+L10C_BODY = 'ListTaxHavenCountry'
+L10C_HEADERS = ['NO.', 'NAMA MITRA TRANSAKSI', 'Jenis Transaksi', 'NEGARA',
+                'NILAI TRANSAKSI (RUPIAH)']
+_L10C_COLUMNS = ('NameOfTransactionPartner', 'TypeOfTransaction', 'CountryCode', 'TransactionValue')
+L10C_UNPROJECTED_REASON = 'unprojected_l10c_controls'
+_L10C_QUESTION = ('II. PENENTUAN HARGA TRANSAKSI DI ATAS, DITENTUKAN DENGAN MENGGUNAKAN '
+                  'PRINSIP KEWAJARAN DAN KELAZIMAN USAHA')
+
+
+def _l10c_number(value, locale):
+    """Actual DecimalPipe defaults: 1.0-3 with half-up on Number.toString digits.
+
+    The fifteen-digit subset must survive the JS Number shortest decimal
+    representation unchanged before the reviewed formatter rounds it. Exact
+    provider excerpts are exercised on the hosted runner, not copied/executed
+    locally. Null interpolates blank, never the online formatter's zero.
+    """
+    if value is None:
+        return ''
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_number_type')
+    try:
+        number = _decimal(value)
+        normalized = number.normalize()
+        if (abs(number) > _MAX_INTEGER or len(normalized.as_tuple().digits) > 15
+                or number.is_zero() and number.is_signed()
+                or Decimal(str(float(number))) != number):
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_number_precision')
+        return _number(value, 3, locale=locale, trim=True)
+    except DecimalException:
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_number_precision') from None
+
+
+def project_l10c(form, *, headers, footer_spans, tax_type, locale, labels):
+    """Pure populated candidate, NOT native admission or catalog custody.
+
+    Caller-supplied labels are transformation inputs, never catalog evidence.
+    The native dispatch independently requires original same-attempt catalogs,
+    positive loaded provider pins and manifest-owned current child custody.
+    The shared producer/joint-snapshot integration remains independently required.
+    Preserve nondisplayed controls; never infer the radio selection or fabricate
+    a total/footer from getFormData's unconditional zero.
+    """
+    if (headers != L10C_HEADERS or footer_spans != [] or tax_type != 'ICT_RCIT' or locale != 'id-ID'
+            or not isinstance(labels, dict) or set(labels) != {'TRANSACTION_TYPE', 'COUNTRY_CODE'}
+            or any(not isinstance(value, dict) for value in labels.values())):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_structure')
+    if (not isinstance(form, dict) or set(form) != {L10C_BODY, 'TotalTransactionValue',
+            'DeterminationOfTransactionQuestion'}
+            or type(form['TotalTransactionValue']) is not _CorporateNumber
+            or type(form['DeterminationOfTransactionQuestion']) not in (bool, str, _CorporateNumber, type(None))):
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_source_shape')
+    original_body = form[L10C_BODY]
+    body = [] if original_body is None else original_body
+    if (not isinstance(body, list) or len(body) > 10000
+            or any(not isinstance(row, dict) or set(row) != set(_L10C_COLUMNS) for row in body)):
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_rows')
+    rows, provenance = [], []
+    for index, source in enumerate(body):
+        rendered = [str(index + 1)]
+        for column, key in enumerate(_L10C_COLUMNS, 1):
+            value = source[key]
+            entry = _evidence(value, [L10C_ROOT, L10C_BODY, index, key])
+            if key == 'TransactionValue':
+                text = _l10c_number(value, locale)
+                rule = 'angular-number-default-1.0-3-id/number-to-string-round-half-up/null-blank'
+            elif value is None or type(value) is str:
+                text = '' if value is None else value
+                rule = 'literal-string/null-blank'
+                if key in ('TypeOfTransaction', 'CountryCode') and text:
+                    kind = 'TRANSACTION_TYPE' if key == 'TypeOfTransaction' else 'COUNTRY_CODE'
+                    choices = labels[kind]
+                    if (value not in choices or type(choices[value]) is not str or not choices[value].strip()):
+                        raise _UnsupportedMetadata('unbound_corporate_l10c_description')
+                    text, rule = choices[value], 'caller-bound-reference-description/no-native-custody'
+            else:
+                raise _UnsupportedMetadata('unsupported_corporate_l10c_text_type')
+            rendered.append(text)
+            entry.update(destination={'table': 'L10-C', 'row': index, 'column': column}, rule=rule)
+            provenance.append(entry)
+        rows.append(rendered)
+    if not body:
+        provenance.append({'path': [L10C_ROOT, L10C_BODY],
+            'type': 'null' if original_body is None else 'array',
+            'value': None if original_body is None else '[]', 'rule': 'retained-original-empty-body'})
+    total = _evidence(form['TotalTransactionValue'], [L10C_ROOT, 'TotalTransactionValue'])
+    total['rule'] = 'retained-nondisplayed-total/no-footer/no-sum'
+    question_value = form['DeterminationOfTransactionQuestion']
+    # Boolean evidence is local to this candidate, never a widened Masa scalar
+    # contract or a claim that boolean true selects the string-valued radio.
+    question = ({'path': [L10C_ROOT, 'DeterminationOfTransactionQuestion'],
+                 'type': 'boolean', 'value': question_value} if type(question_value) is bool else
+                _evidence(question_value, [L10C_ROOT, 'DeterminationOfTransactionQuestion']))
+    question['rule'] = 'retained-unresolved-radio/no-selection-inference'
+    provenance.extend((total, question))
+    return {'table': {'name': 'L10-C', 'headers': list(headers), 'rows': rows,
+                     'footer': [], 'footer_spans': [], 'body_row_count': len(body),
+                     'source_total': len(body), 'complete': True},
+            'fields': [], 'projection_complete': False, 'projection_reason': L10C_UNPROJECTED_REASON,
+            'projection_unresolved_fields': [
+                {'group': 'HEADER', 'field': 'PeriodYear', 'label': 'Tahun Pajak'},
+                {'group': 'HEADER', 'field': 'CollectorTin', 'label': 'Nomor Identitas WP'},
+                {'group': '', 'field': 'Question', 'label': _L10C_QUESTION}],
+            'provenance': provenance}
+
+
+def _apply_l10c(binding, section, observed_forms, *, root, payload, record, event, reference_packets):
+    """Consume shared original catalogs; caller labels can never be permission."""
+    proof = binding['projection']
+    keys = {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references', 'visibility_binding'}
+    if (not isinstance(proof, dict) or set(proof) != keys
+            or proof['kind'] != 'corporate-l10c-v1'
+            or proof['builds'] != L10C_BUILD_DIGESTS
+            or set(L10C_BUILD_DIGESTS) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                   for value in L10C_BUILD_DIGESTS.values())
+            or proof['locale'] != 'id-ID' or proof['timezone'] != 'Asia/Jakarta'
+            or proof['visibility_binding'] != 'current-induk-enabled-v1'
+            or proof['route'] != event['frame_url'] or binding.get('paths') != [[L10C_ROOT]]
+            or any(binding.get(key) for key in ('grids', 'responses', 'dependencies'))
+            or event.get('component_lifetime') is None or event.get('corporate_l10c_lifetime') is None):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_semantic_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    main = root.get('MainFormData')
+    if (proof['route'] != route or fields.get('TaxTypeCode') != 'ICT_RCIT'
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or fields.get('ReturnSheetModel') != 'Normal'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
+            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or 'Induk' not in [form['name'] for form in observed_forms[:observed_forms.index(binding)]]
+            or not _current_induk_visibility(payload, main, 'IsTransactionWithRelated', proof)
+            or type(payload.get('PeriodYear')) is not _CorporateNumber
+            or type(payload.get('TIN')) is not str):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_submitted_lifecycle')
+    tables = proof['tables']
+    if (not isinstance(tables, list) or tables != [{'component': 'rsh-citr-l10c-grid1',
+            'headers': L10C_HEADERS, 'footer_spans': []}]):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_grid_owner')
+    references = proof['references']
+    if not isinstance(references, list) or not 1 <= len(references) <= 4:
+        raise _UnsupportedMetadata('missing_corporate_l10c_reference_bindings')
+    catalogs, sources, contributors, urls = {}, {}, [], set()
+    needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
+    for ref in references:
+        if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
+                or ref['method'] != 'GET' or ref['endpoint'] in urls):
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_reference_binding')
+        kinds = CORPORATE_REFERENCE_REQUESTS.get(ref['endpoint'])
+        if not kinds or not set(kinds) <= needed:
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_reference_binding')
+        urls.add(ref['endpoint'])
+        sequences = ref['sequences']
+        if (not isinstance(sequences, list) or not sequences
+                or any(type(number) is not int or number <= 0 for number in sequences)
+                or sequences != sorted(set(sequences))):
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_reference_sequences')
+        actual = sorted(number for number, packet in reference_packets.items()
+                        if packet['event']['url'] == ref['endpoint'])
+        if sequences != actual or any(not reference_packets[number]['successful'] for number in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_l10c_catalog')
+        for number in sequences:
+            source = reference_packets[number]
+            for kind in kinds:
+                catalog = _project_corporate_catalog(source['payload'], kind=kind,
+                    requested_types=kinds, clock_interval=source['event'].get('clock_interval'))
+                contributors.append((kind, catalog, source['event']))
+                if kind not in sources or number < sources[kind]['sequence']:
+                    catalogs[kind], sources[kind] = catalog, source['event']
+    actual_urls = {packet['event']['url'] for packet in reference_packets.values()
+                   if set(CORPORATE_REFERENCE_REQUESTS.get(packet['event']['url'], ())) & needed}
+    if urls != actual_urls or set(catalogs) != needed:
+        raise _UnsupportedMetadata('unbound_corporate_l10c_catalog')
+    result = project_l10c(root.get(L10C_ROOT), headers=tables[0]['headers'],
+        footer_spans=tables[0]['footer_spans'], tax_type=fields['TaxTypeCode'], locale=proof['locale'],
+        labels={kind: catalog['lookups'] for kind, catalog in catalogs.items()})
+    section['tables'], section['fields'] = [result['table']], result['fields']
+    for key in ('projection_complete', 'projection_reason', 'projection_unresolved_fields'):
+        section[key] = deepcopy(result[key])
+    for entry in tuple(result['provenance']):
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+        kind = {'TypeOfTransaction': 'TRANSACTION_TYPE', 'CountryCode': 'COUNTRY_CODE'}.get(entry['path'][-1])
+        if kind is not None and entry['value'] in catalogs[kind]['selected']:
+            entry['rule'] = 'bound-original-reference-description'
+            result['provenance'].append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
+                'response_sequence': sources[kind]['sequence'], 'container': ['Payload'],
+                'destination': deepcopy(entry['destination'])})
+    for kind, catalog, source in contributors:
+        result['provenance'].extend({**deepcopy(entry), 'response_sequence': source['sequence'],
+            'container': ['Payload'], 'destination': {'table': 'L10-C', 'reference': kind}}
+            for entry in catalog['provenance'])
+    for key in ('PeriodYear', 'TIN', 'ReturnSheetStatusCode', 'ReturnSheetModel',
+                'PreviousFormData', 'LastSubmittedFormData', 'IsTransactionWithRelated'):
+        if key in payload:
+            entry = _evidence(payload[key], [key])
+            entry.update(response_sequence=event['sequence'], container=['Payload'],
+                         rule='retained-original-l10c-base-header-or-lifecycle-control')
+            result['provenance'].append(entry)
+    entry = _evidence(main['IsTransactionWithRelated'], ['MainFormData', 'IsTransactionWithRelated'])
+    entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'],
+                 rule='current-induk-callback/owned-enabled-l10c')
+    result['provenance'].append(entry)
+    return {'form': 'L10-C', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+        'route': proof['route'], 'values': result['provenance'], 'presence_facts': [{
+            'response_sequence': event['sequence'], 'container': ['Payload'],
+            'path': ['IsTransactionWithRelated'], 'present': 'IsTransactionWithRelated' in payload,
+            'rule': 'outer-selection-presence/current-induk-enabled'}]}
 
 
 def _l11c_integer(value):
@@ -3243,6 +3459,9 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         if binding['name'] == 'L11-B':
             projected.append(_apply_l11b(binding, section, observed_forms, root=root,
                 payload=payload, record=record, event=event))
+        if binding['name'] == 'L10-C':
+            projected.append(_apply_l10c(binding, section, observed_forms, root=root, payload=payload,
+                record=record, event=event, reference_packets=reference_packets or {}))
             continue
         proof = binding['projection']
         if (binding['name'] != 'L7' or not isinstance(proof, dict)
