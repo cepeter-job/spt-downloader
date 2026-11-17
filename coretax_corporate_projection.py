@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import DecimalException
+from decimal import Decimal, DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -292,6 +292,113 @@ def project_l8(form, *, main_form, period_year, headers, footer_spans, tax_type,
                      'source_structure': {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1',
                                           'groups': [_L8_GROUP]},
                      'pages': 1, 'body_row_count': 8, 'source_total': 8, 'complete': True},
+            'provenance': provenance}
+
+
+L10C_ROOT = 'L10cFormData'
+L10C_BODY = 'ListTaxHavenCountry'
+L10C_HEADERS = ['NO.', 'NAMA MITRA TRANSAKSI', 'Jenis Transaksi', 'NEGARA',
+                'NILAI TRANSAKSI (RUPIAH)']
+_L10C_COLUMNS = ('NameOfTransactionPartner', 'TypeOfTransaction', 'CountryCode', 'TransactionValue')
+L10C_UNPROJECTED_REASON = 'unprojected_l10c_controls'
+_L10C_QUESTION = ('II. PENENTUAN HARGA TRANSAKSI DI ATAS, DITENTUKAN DENGAN MENGGUNAKAN '
+                  'PRINSIP KEWAJARAN DAN KELAZIMAN USAHA')
+
+
+def _l10c_number(value, locale):
+    """Number's default 0..3 digits, not NumberInteger; never round a candidate.
+
+    The bounded subset admits only exact binary-representable JSON numbers.
+    A wider DecimalPipe rounding profile needs its own framework proof. Null
+    interpolates blank; it is not the shared ui-grid null-to-zero formatter.
+    """
+    if value is None:
+        return ''
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_number_type')
+    try:
+        number = _decimal(value)
+        normalized = number.normalize()
+        if (abs(number) > _MAX_INTEGER or len(normalized.as_tuple().digits) > 15
+                or normalized.as_tuple().exponent < -3
+                or number.is_zero() and number.is_signed()
+                or Decimal.from_float(float(number)) != number):
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_number_precision')
+        return _number(value, 3, locale=locale, trim=True)
+    except DecimalException:
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_number_precision') from None
+
+
+def project_l10c(form, *, headers, footer_spans, tax_type, locale, labels):
+    """Pure populated candidate, NOT native admission or catalog custody.
+
+    Caller-supplied labels are transformation inputs, not evidence that the UI
+    consumed them. No observer or adapter dispatch offers this capability yet:
+    original same-attempt catalogs, loaded providers, current Induk choice and
+    stable submitted child/callback custody remain independent blockers.
+    Preserve nondisplayed controls; never infer the radio selection or fabricate
+    a total/footer from getFormData's unconditional zero.
+    """
+    if (headers != L10C_HEADERS or footer_spans != [] or tax_type != 'ICT_RCIT' or locale != 'id-ID'
+            or not isinstance(labels, dict) or set(labels) != {'TRANSACTION_TYPE', 'COUNTRY_CODE'}
+            or any(not isinstance(value, dict) for value in labels.values())):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_structure')
+    if (not isinstance(form, dict) or set(form) != {L10C_BODY, 'TotalTransactionValue',
+            'DeterminationOfTransactionQuestion'}
+            or type(form['TotalTransactionValue']) is not _CorporateNumber
+            or type(form['DeterminationOfTransactionQuestion']) not in (bool, str, _CorporateNumber, type(None))):
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_source_shape')
+    original_body = form[L10C_BODY]
+    body = [] if original_body is None else original_body
+    if (not isinstance(body, list) or len(body) > 10000
+            or any(not isinstance(row, dict) or set(row) != set(_L10C_COLUMNS) for row in body)):
+        raise _UnsupportedMetadata('unsupported_corporate_l10c_rows')
+    rows, provenance = [], []
+    for index, source in enumerate(body):
+        rendered = [str(index + 1)]
+        for column, key in enumerate(_L10C_COLUMNS, 1):
+            value = source[key]
+            entry = _evidence(value, [L10C_ROOT, L10C_BODY, index, key])
+            if key == 'TransactionValue':
+                text = _l10c_number(value, locale)
+                rule = 'angular-number-default-id/exact-binary-0-to-3/null-blank'
+            elif value is None or type(value) is str:
+                text = '' if value is None else value
+                rule = 'literal-string/null-blank'
+                if key in ('TypeOfTransaction', 'CountryCode') and text:
+                    kind = 'TRANSACTION_TYPE' if key == 'TypeOfTransaction' else 'COUNTRY_CODE'
+                    choices = labels[kind]
+                    if (value not in choices or type(choices[value]) is not str or not choices[value].strip()):
+                        raise _UnsupportedMetadata('unbound_corporate_l10c_description')
+                    text, rule = choices[value], 'caller-bound-reference-description/no-native-custody'
+            else:
+                raise _UnsupportedMetadata('unsupported_corporate_l10c_text_type')
+            rendered.append(text)
+            entry.update(destination={'table': 'L10-C', 'row': index, 'column': column}, rule=rule)
+            provenance.append(entry)
+        rows.append(rendered)
+    if not body:
+        provenance.append({'path': [L10C_ROOT, L10C_BODY],
+            'type': 'null' if original_body is None else 'array',
+            'value': None if original_body is None else '[]', 'rule': 'retained-original-empty-body'})
+    total = _evidence(form['TotalTransactionValue'], [L10C_ROOT, 'TotalTransactionValue'])
+    total['rule'] = 'retained-nondisplayed-total/no-footer/no-sum'
+    question_value = form['DeterminationOfTransactionQuestion']
+    # Boolean evidence is local to this candidate, never a widened Masa scalar
+    # contract or a claim that boolean true selects the string-valued radio.
+    question = ({'path': [L10C_ROOT, 'DeterminationOfTransactionQuestion'],
+                 'type': 'boolean', 'value': question_value} if type(question_value) is bool else
+                _evidence(question_value, [L10C_ROOT, 'DeterminationOfTransactionQuestion']))
+    question['rule'] = 'retained-unresolved-radio/no-selection-inference'
+    provenance.extend((total, question))
+    return {'table': {'name': 'L10-C', 'headers': list(headers), 'rows': rows,
+                     'footer': [], 'footer_spans': [], 'body_row_count': len(body),
+                     'source_total': len(body), 'complete': True},
+            'fields': [], 'projection_complete': False, 'projection_reason': L10C_UNPROJECTED_REASON,
+            'projection_unresolved_fields': [
+                {'group': 'HEADER', 'field': 'PeriodYear', 'label': 'Tahun Pajak'},
+                {'group': 'HEADER', 'field': 'CollectorTin', 'label': 'Nomor Identitas WP'},
+                {'group': '', 'field': 'Question', 'label': _L10C_QUESTION}],
             'provenance': provenance}
 
 
