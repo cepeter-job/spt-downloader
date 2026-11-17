@@ -890,8 +890,11 @@ def _apply_l4(binding, section, observed_forms, *, root, payload, record, event,
             or proof['kind'] != 'corporate-l4-v1'
             or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
             or type(approved) is not str or not re.fullmatch(r'[a-f0-9]{64}', approved)
-            or builds[CIT_SOURCE] != approved
-            or proof['tables'] != l4_tables() or proof['route'] != event['frame_url']
+            or type(builds[CIT_SOURCE]) is not str or builds[CIT_SOURCE] != approved
+            or proof['tables'] != l4_tables()
+            or any(type(span) is not int for table in proof['tables']
+                   for row in table['footer_spans'] for span in row)
+            or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L4_ROOT]] or binding.get('responses')):
         raise _UnsupportedMetadata('unverified_corporate_l4_binding')
     literal = record.get('meta', {}).get('Model SPT')

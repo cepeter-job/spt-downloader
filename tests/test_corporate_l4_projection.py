@@ -210,7 +210,7 @@ def test_pin_requires_exact_configured_digest(monkeypatch):
         apply(valid_binding)
 
 
-@pytest.mark.parametrize('case', ['missing', 'kind', 'route', 'extra', 'headers', 'spans', 'component'])
+@pytest.mark.parametrize('case', ['missing', 'kind', 'route', 'extra', 'headers', 'spans', 'component', 'bool-span'])
 def test_binding_and_both_rendered_owners_are_required(case):
     binding = bindings()[0]
     proof = binding['projection']
@@ -222,6 +222,8 @@ def test_binding_and_both_rendered_owners_are_required(case):
         proof['route'] += '/changed'
     elif case == 'extra':
         proof['unreviewed'] = True
+    elif case == 'bool-span':
+        proof['tables'][1]['footer_spans'][0][0] = True
     else:
         proof['tables'][1][{'headers': 'headers', 'spans': 'footer_spans',
                             'component': 'component'}[case]] = []
