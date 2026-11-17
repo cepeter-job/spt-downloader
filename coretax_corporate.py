@@ -943,6 +943,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+            if name == 'L11-B':
+                # Same admitted pin. All three L11-B grids travel inside the
+                # payload root the observer just bound, so the form owns no
+                # grid, paginator or reference request of its own.
+                binding['projection'] = {'kind': 'corporate-l11b-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
