@@ -270,6 +270,8 @@ _L10C_HISTORY = """(d) => {
        node.nodeType===1&&(node.matches('thead,tfoot')||node.querySelector('thead,tfoot'))))state.changed=true;
      for(const node of record.removedNodes){
        if(node.nodeType!==1)continue;
+       if(inside(record.target)&&!roles[4]?.contains(record.target)&&
+          (node.matches('input,p-radiobutton')||node.querySelector('input,p-radiobutton')))state.changed=true;
        if(roles.some(role=>role&&(node===role||node.contains(role)))||ancestors.has(node)||
           controls&&controls.some(control=>node===control||node.contains(control)))state.changed=true;
        inspect(node,record.target,true);
@@ -315,7 +317,8 @@ _L10C_HISTORY = """(d) => {
    const years=form.querySelectorAll('input[formcontrolname="PeriodYear"]');
    const tins=form.querySelectorAll('input[formcontrolname="CollectorTin"]');
    const radios=form.querySelectorAll('p-radiobutton[formcontrolname="Question"]');
-   const businessInputs=[...form.querySelectorAll('input')].filter(node=>!roles[4].contains(node));
+   const businessInputs=[...form.querySelectorAll('input')].filter(node=>!(roles[4].contains(node)&&
+     node.closest('p-paginator')&&node.closest('p-table')===roles[5]));
    if(years.length!==1||tins.length!==1||radios.length!==2||businessInputs.length!==4){stop();return false;}
    const inputs=[...radios].map(radio=>radio.querySelectorAll('input[type="radio"]'));
    if(inputs.some(nodes=>nodes.length!==1)){stop();return false;}

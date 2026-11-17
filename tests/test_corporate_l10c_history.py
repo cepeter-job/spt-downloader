@@ -125,6 +125,30 @@ def test_real_l10c_history_binds_owned_disabled_controls_without_values(browser)
         context.close()
 
 
+def test_prebinding_business_control_replacement_is_not_adopted_as_original(browser):
+    context, page, document, history = armed(browser)
+    try:
+        page.evaluate('''() => { const input=document.querySelector('input[formcontrolname="PeriodYear"]');
+            input.replaceWith(input.cloneNode(true)); }''')
+        assert bind(page, history, 'start')['changed'] is True
+    finally:
+        history.dispose()
+        document.dispose()
+        context.close()
+
+
+def test_only_grid_paginator_inputs_are_exempt_from_business_control_inventory(browser):
+    context, page, document, history = armed(browser)
+    try:
+        page.evaluate('''() => { const input=document.createElement('input');input.disabled=true;
+            document.querySelector('rsh-citr-l10c-grid1').appendChild(input); }''')
+        assert bind(page, history, 'start')['available'] is False
+    finally:
+        history.dispose()
+        document.dispose()
+        context.close()
+
+
 @pytest.mark.parametrize('defect', ['remount', 'detach-reinsert', 'disable-reenable',
     'header-control-replaced', 'radio-enabled-restored', 'duplicate-grid', 'induk-replaced',
     'header-caption', 'footer-added', 'header-replaced-restored', 'footer-added-removed',

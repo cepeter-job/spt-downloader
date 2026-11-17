@@ -170,8 +170,12 @@ root, current Induk host, C child, offline-grid/p-table/table chain and the two
 header/two radio control identities. It never reads an input value, checked
 state, Angular instance or table body/footer content. A remount, detach/reinsert,
 transient disable/re-enable, replaced header/radio or Induk host remains a sticky
-contradiction even if the final selectors look unchanged. Ordinary row churn
-and a tab's presentation-only highlight change do not assert a new child.
+contradiction even if the final selectors look unchanged. Business-control
+removal is sticky even before the first structure binding; a later clone is not
+adopted as the original. Only owned p-table/p-paginator renderer inputs are
+exempt from the four-business-input inventory, not arbitrary grid inputs.
+Ordinary row churn and a tab's presentation-only highlight change do not assert
+a new child.
 
 The closed `corporate_l10c_lifetime` schema is manifest-owned, binds the exact
 attempt/record/list/detail route and is validated by live iteration, held
