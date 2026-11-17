@@ -730,7 +730,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                 'missing_average': ' DER belum dihitung: saldo rata-rata utang atau modal belum tersedia.',
                 'unsafe_average': ' DER belum dihitung: saldo rata-rata utang atau modal bukan angka Excel yang aman.',
                 'zero_capital_average': ' DER belum dihitung: saldo rata-rata modal nol.',
-                'unprojected_induk_captions': ' Induk diproyeksikan sebagian: hanya slot identitas yang terbukti dari payload.',
+                'unprojected_induk_captions': ' Induk diproyeksikan sebagian: masih ada slot deklarasi yang belum terbukti.',
                 'l10a_header_slots_omitted': ' L10-A diproyeksikan sebagian: dua kontrol HEADER asli tetap pada checkpoint dan belum mempunyai slot template.',
                 'unprojected_l2_owner_rendering': ' L2 belum setara dengan tampilan sumber; bukti lengkap dipertahankan dan native tetap ditolak.',
                 'unmapped_l2_header_controls': ' Dua kontrol header L2 belum memiliki slot template; kedua blok rincian tetap diproyeksikan lengkap.',
