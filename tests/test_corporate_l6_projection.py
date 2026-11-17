@@ -84,8 +84,45 @@ def test_every_template_caption_comes_from_one_proven_payload_control():
     assert [field['value'] for field in result['fields']] == [
         '100.000.000', '25.000.000', '75.000.000', '16.500.000',
         '1.500.000', '15.000.000', '1.250.000']
-    assert [entry['path'] for entry in result['provenance']] == [
+    assert [entry['path'] for entry in result['provenance'] if entry['type'] == 'number'] == [
         ['FiscalYearIncomeTax', name] for name, _ in fields]
+
+
+@pytest.mark.parametrize('amount', ['1.001', '1250000.5', '1000000000000000'])
+def test_rupiah_controls_never_round_fractional_or_unsafe_amounts(amount):
+    # The pinned ICT_RCIT owner renders minFraction=maxFraction=0. Refuse
+    # unreviewed inputs instead of silently changing the submitted amount.
+    with pytest.raises(_UnsupportedMetadata) as error:
+        project(form(FollowingFiscalYear=_CorporateNumber(amount)))
+    assert str(error.value) == 'unsupported_corporate_l6_amount_precision'
+
+
+@pytest.mark.parametrize('name', [
+    'IncomeAsTheBasisOfInstallmentEdited', 'IncomeTaxPayableEdited', 'TaxCreditWitheldEdited'])
+@pytest.mark.parametrize('value', [None, 'false', _CorporateNumber('0'), {}])
+def test_edit_flags_have_the_reviewed_boolean_type(name, value):
+    with pytest.raises(_UnsupportedMetadata) as error:
+        project(form(**{name: value}))
+    assert str(error.value) == 'unsupported_corporate_l6_edit_flag'
+
+
+def test_all_edit_flags_keep_typed_source_provenance():
+    result = project(form(IncomeAsTheBasisOfInstallmentEdited=True))
+    flags = {entry['path'][-1]: entry for entry in result['provenance']
+             if entry['type'] == 'boolean'}
+    assert set(flags) == set(module().L6_EDIT_FLAGS)
+    assert flags['IncomeAsTheBasisOfInstallmentEdited']['value'] is True
+    assert flags['IncomeTaxPayableEdited']['value'] is False
+    assert all(entry['path'][0] == 'FiscalYearIncomeTax' for entry in flags.values())
+    assert all(entry['rule'] == 'retained-edit-flag' for entry in flags.values())
+
+
+def test_different_well_formed_build_digest_does_not_grant_projection():
+    forms = observed()
+    forms[1]['projection']['builds'][module().CIT_SOURCE] = 'f' * 64
+    result = adapt(forms)
+    assert not result['eligible']
+    assert result['reason'] == 'unverified_corporate_l6_binding'
 
 
 def test_taxable_income_and_self_paid_tax_must_reconcile_exactly():
@@ -178,7 +215,9 @@ def test_projected_l6_section_replaces_the_dump_and_reports_complete():
     assert [field['field'] for field in section['fields']] == [name for name, _ in module().L6_FIELDS]
     projected, = [item for item in result['provenance']['projections'] if item['form'] == 'L6']
     assert projected['kind'] == 'corporate-l6-v1'
-    assert len(projected['values']) == len(module().L6_FIELDS)
+    assert len(projected['values']) == len(module().L6_FIELDS) + len(module().L6_EDIT_FLAGS)
+    assert {tuple(entry['path']) for entry in projected['values']} == {
+        ('FiscalYearIncomeTax', key) for key in form()}
 
 
 def test_l6_projection_does_not_mutate_source_bindings_or_payload():

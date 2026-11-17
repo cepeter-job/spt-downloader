@@ -818,6 +818,8 @@ def project_l6(form, *, tax_type, locale):
     expected = {name for name, _ in L6_FIELDS} | set(L6_EDIT_FLAGS)
     if set(form) != expected:
         raise _UnsupportedMetadata('unsupported_corporate_l6_source_shape')
+    if any(type(form[name]) is not bool for name in L6_EDIT_FLAGS):
+        raise _UnsupportedMetadata('unsupported_corporate_l6_edit_flag')
     amounts = {}
     for name, _ in L6_FIELDS:
         value = form[name]
@@ -826,6 +828,10 @@ def project_l6(form, *, tax_type, locale):
         number = _decimal(value)
         if number < 0:
             raise _UnsupportedMetadata('unsupported_corporate_l6_negative_amount')
+        # The reviewed ICT_RCIT control displays whole rupiah. Do not round
+        # fractional/unsafe source values into a different captured amount.
+        if number != number.to_integral_value() or number > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsupported_corporate_l6_amount_precision')
         amounts[name] = number
     if amounts['TaxableIncome'] != max(
             Decimal(0), amounts['IncomeAsTheBasisOfInstallment'] - amounts['FiscalLossCompensation']):
@@ -836,11 +842,15 @@ def project_l6(form, *, tax_type, locale):
     fields, provenance = [], []
     for name, caption in L6_FIELDS:
         fields.append({'group': '', 'field': name, 'label': caption,
-                       'value': _number(form[name], 2, locale=locale, trim=True)})
+                       'value': _number(form[name], 0, locale=locale)})
         entry = _evidence(form[name], [L6_ROOT, name])
         entry.update(rule='literal-installment-control',
                      destination={'form': 'L6', 'field': name})
         provenance.append(entry)
+    for name in L6_EDIT_FLAGS:
+        provenance.append({'path': [L6_ROOT, name], 'type': 'boolean',
+                           'value': form[name], 'rule': 'retained-edit-flag',
+                           'destination': {'form': 'L6', 'hidden_control': name}})
     return {'fields': fields, 'provenance': provenance}
 
 
@@ -852,6 +862,7 @@ def _apply_l6(binding, section, observed_forms, *, root, payload, record, event)
             or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
             or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
             or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+            or builds[CIT_SOURCE] != BUILD_DIGESTS.get(CIT_SOURCE)
             or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L6_ROOT]]
             or binding.get('grids') or binding.get('responses') or binding.get('dependencies')):
