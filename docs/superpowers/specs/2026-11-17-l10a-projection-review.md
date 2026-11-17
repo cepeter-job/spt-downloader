@@ -6,7 +6,10 @@ The current follow-through adds `corporate-l10a-populated-v1`, while retaining
 `corporate-l10a-empty-v1`. It consumes the single shared passive-catalog producer
 from PR #285 at `84f054d998d5dca7d6d8dc1193a16b1227e8c389`; no competing
 transport registry, catalog adapter, clock/version selector or active request
-was introduced by the A consumer. The exact shared snapshot was merged into this
+was introduced by the A consumer. The two actual HEADER controls are also
+retained canonically. Mapping deliberately remains PARTIAL: the approved clean
+template has no slots for them and its reviewed omission counts stay unresolved.
+The exact shared snapshot was merged into this
 owned branch for combined hosted verification, not merged to main. Parent owns
 consolidation and the independently approved populated AGENTS contract.
 
@@ -282,6 +285,28 @@ The shared provider fact and its three configured positive digests stay on the
 manifest, not response descriptors. Final capture/held readers remain the shared
 producer's responsibility; this A consumer adds no final child sampler or
 sequential L7/B-history graft.
+
+## Header controls and truthful mapping
+
+CIT 34450..37600 declares two ordinary `input[type=text][pInputText]` controls,
+PeriodYear and CollectorTin, with the exact Tahun Pajak / Nomor Identitas WP
+captions. Its setter reads **outer** baseFormData.PeriodYear and baseFormData.TIN,
+not current MainFormData.TaxYear/Tin. Require present original year-number and
+TIN-string operands; retain both typed Payload paths plus their control
+identities and literal text values. Observer custody includes those two exact
+form-owned input structures without reading either value or checked state.
+
+The approved clean L10-A template has the nine body slots, but intentionally no
+destination slots for these two controls. Existing reviewed presentation rules
+omit them visually while retaining unresolved counts. A populated consumer must
+not drop its two fields to claim COMPLETE. The section therefore retains both
+canonical fields and `projection_complete=False`, with
+`projection_reason=l10a_header_slots_omitted`; the template reports
+`derived_complete=False`, that exact reason, two unmapped/reviewed-redundant
+fields and a visible Audit sentence. A literal unsupported Excel monetary
+string adds its own unresolved row/table count. No template/resource change or
+blank/zero placeholder is used to repair the gap. The separately approved legacy
+empty-v1 contract is not reinterpreted by this populated correction.
 
 ## Native wiring and acceptance matrix
 

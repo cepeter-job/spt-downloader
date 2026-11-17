@@ -1012,7 +1012,8 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
     main = root.get('MainFormData')
     tables = proof['tables']
     structure = {'form': 'L10-A', 'owner_chain': [
-        'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table']}
+        'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table'],
+        'header_controls': ['PeriodYear', 'CollectorTin']}
     if (not isinstance(tables, list) or len(tables) != 1 or not isinstance(tables[0], dict)
             or tables[0] != {'component': 'rshshr-citr-l10a-form-grid1',
                 'headers': L10A_HEADERS, 'footer_spans': [], 'source_structure': structure}):
@@ -1072,6 +1073,10 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
             raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding') from None
         if decoded_previous is not None and not isinstance(decoded_previous, dict):
             raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_shape')
+    if (type(payload.get('PeriodYear')) is not _CorporateNumber
+            or not re.fullmatch(r'[0-9]{4}', payload['PeriodYear'])
+            or type(payload.get('TIN')) is not str):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_header_sources')
     catalogs = bind_corporate_reference_catalogs(proof['references'], reference_packets,
         kinds=tuple(L10A_LABELS.values()), event=event, builds=proof['builds'])
     rows, values, queries, total = [], [], [], None
@@ -1121,7 +1126,19 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
     if present:
         source_root.update(type='null' if value is None else 'array' if type(value) is list else 'object',
                            value=deepcopy(value))
-    section['fields'] = []
+    section['fields'] = [
+        {'group': 'HEADER', 'field': 'PeriodYear', 'label': 'Tahun Pajak', 'value': str(payload['PeriodYear'])},
+        {'group': 'HEADER', 'field': 'CollectorTin', 'label': 'Nomor Identitas WP', 'value': payload['TIN']}]
+    for control, key in (('PeriodYear', 'PeriodYear'), ('CollectorTin', 'TIN')):
+        entry = _evidence(payload[key], [key])
+        entry.update(response_sequence=event['sequence'], container=['Payload'],
+            rule='outer-baseFormData/input-text', destination={'form': 'L10-A', 'field': control})
+        values.append(entry)
+    # The approved clean template intentionally omits these two real header
+    # controls. Preserve them and their unresolved counts; never hide them to
+    # manufacture a COMPLETE nine-column worksheet.
+    section['projection_complete'] = False
+    section['projection_reason'] = 'l10a_header_slots_omitted'
     section['tables'] = [{'name': L10A_GRID_NAME, 'headers': list(L10A_HEADERS), 'rows': rows,
         'footer': [], 'footer_spans': [], 'body_row_count': len(rows), 'source_total': total, 'complete': True}]
     return {'form': 'L10-A', 'kind': proof['kind'], 'builds': dict(proof['builds']),

@@ -830,6 +830,11 @@ _L10A_STRUCTURE = r'''form => {
  const fs='rshshr-citr-l10a-form', gs='rshshr-citr-l10a-form-grid1';
  const panel=form.closest('.p-tabview-panel');
  if(!panel || panel.querySelectorAll(fs).length!==1 || !form.isConnected)return false;
+ for(const name of ['PeriodYear','CollectorTin']){
+   const inputs=form.querySelectorAll('input[formcontrolname="'+name+'"]');
+   if(inputs.length!==1||inputs[0].getAttribute('type')!=='text'||
+      inputs[0].closest(fs)!==form||inputs[0].closest(gs)||!inputs[0].closest('form'))return false;
+ }
  const one=(root,selector)=>{const all=root.querySelectorAll(selector);return all.length===1?all[0]:null};
  const grid=one(form,gs), ui=grid&&one(grid,'ui-grid'), pt=ui&&one(ui,'p-table'), table=pt&&one(pt,'table');
  if(!grid||!ui||!pt||!table||form.querySelectorAll('table').length!==1||
@@ -851,7 +856,8 @@ def _l10a_table(form, tab):
         return None
     return {'component': 'rshshr-citr-l10a-form-grid1', 'headers': metadata['headers'],
         'footer_spans': [], 'source_structure': {'form': 'L10-A', 'owner_chain': [
-            'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table']}}
+            'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table'],
+            'header_controls': ['PeriodYear', 'CollectorTin']}}
 
 
 def _observe_l10a_populated(page, form, tab, capture, before, check_cancel):

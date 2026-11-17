@@ -814,6 +814,9 @@ def render_template_form(sheet, form, sections, *, period=None):
         offset += extra
     der_row, averages = _compact_layout(sheet, form, deleted, der_row, averages)
     derived = _l11b_der(sheet, der_row, averages) if form == 'l11-b' else {}
+    if form == 'l10-a' and any(section.get('projection_complete') is False
+            and section.get('projection_reason') == 'l10a_header_slots_omitted' for section in sections):
+        derived = {'derived_complete': False, 'derived_reason': 'l10a_header_slots_omitted'}
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.

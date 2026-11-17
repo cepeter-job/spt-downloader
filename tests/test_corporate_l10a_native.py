@@ -47,7 +47,8 @@ def marker(pins=None):
             {'endpoint': URLS[kind], 'method': 'GET', 'sequences': [index]}
             for index, kind in enumerate(KINDS, 3)],
         'tables': [{'component': OWNER, 'headers': list(projection.L10A_HEADERS),
-                    'footer_spans': [], 'source_structure': {'form': 'L10-A', 'owner_chain': CHAIN}}]}
+                    'footer_spans': [], 'source_structure': {'form': 'L10-A', 'owner_chain': CHAIN,
+                                                          'header_controls': ['PeriodYear', 'CollectorTin']}}]}
 
 
 def packets(rows=None, value=None):
@@ -84,6 +85,11 @@ def test_positive_populated_original_adapter_uses_descriptions_not_codes_or_iter
     assert raw == before
     section = next(s for s in result['sections'] if s['name'] == 'L10-A')
     body = section['tables'][0]['rows']
+    assert section['fields'] == [
+        {'group': 'HEADER', 'field': 'PeriodYear', 'label': 'Tahun Pajak', 'value': '2025'},
+        {'group': 'HEADER', 'field': 'CollectorTin', 'label': 'Nomor Identitas WP', 'value': corpus.NPWP}]
+    assert section['projection_complete'] is False
+    assert section['projection_reason'] == 'l10a_header_slots_omitted'
     assert body[0] == body[1]
     assert [body[0][c] for c in (2, 3, 5, 7)] == ['A SYNTHETIC ' + kind for kind in KINDS]
     report = next(p for p in result['provenance']['projections'] if p['form'] == 'L10-A')
@@ -94,8 +100,8 @@ def test_positive_populated_original_adapter_uses_descriptions_not_codes_or_iter
 
 
 @pytest.mark.parametrize('defect', ['catalog', 'provider', 'main-pin', 'locale', 'timezone', 'owner',
-    'headers', 'footer', 'chain', 'induk-order', 'outer-flag', 'current-flag', 'missing-previous',
-    'invalid-previous', 'missing-request', 'bool-offset', 'extra-request', 'source-root'])
+    'headers', 'footer', 'chain', 'header-structure', 'header-source', 'induk-order', 'outer-flag', 'current-flag', 'missing-previous',
+    'invalid-previous', 'extra-request', 'source-root'])
 def test_populated_missing_source_proof_retains_whole_record_fallback(defect):
     raw, forms = packets(), observed(marker())
     proof = forms[-1]['projection']
@@ -109,15 +115,15 @@ def test_populated_missing_source_proof_retains_whole_record_fallback(defect):
     elif defect == 'headers': proof['tables'][0]['headers'].reverse()
     elif defect == 'footer': proof['tables'][0]['footer_spans'] = [[9]]
     elif defect == 'chain': proof['tables'][0]['source_structure']['owner_chain'] = CHAIN[:-1]
+    elif defect == 'header-structure': proof['tables'][0]['source_structure']['header_controls'] = []
     elif defect == 'induk-order': forms.reverse()
-    elif defect == 'missing-request': forms[-1]['grids'][0]['pages'] = []
-    elif defect == 'bool-offset': forms[-1]['grids'][0]['pages'][0]['offset'] = False
     elif defect == 'extra-request':
         for query in (forms[-1]['grids'][0]['pages'][0]['request_json'], raw[1]['context']['request_json']):
             query['SYNTHETIC'] = False
     else:
         value = envelope()
         if defect == 'outer-flag': value['Payload']['IsTransactionWithRelated'] = True
+        elif defect == 'header-source': del value['Payload']['TIN']
         elif defect == 'missing-previous': del value['Payload']['PreviousFormData']
         elif defect == 'invalid-previous': value['Payload']['PreviousFormData'] = 'SYNTHETIC INVALID JSON'
         else:
@@ -130,19 +136,22 @@ def test_populated_missing_source_proof_retains_whole_record_fallback(defect):
     assert not result['eligible'] and result['sections'] == []
 
 
-@pytest.mark.parametrize('defect', ['mixed-provider', 'mixed-attempt', 'clock', 'snapshot', 'foreign-id'])
+@pytest.mark.parametrize('defect', ['mixed-provider', 'mixed-attempt', 'clock', 'snapshot',
+                                   'foreign-id', 'missing-request', 'bool-offset'])
 def test_known_packet_contradiction_remains_fatal_before_populated_semantics(defect):
-    raw = packets()
+    raw, forms = packets(), observed(marker())
     if defect == 'mixed-provider': raw[1]['context'].pop('corporate_reference_providers')
     elif defect == 'mixed-attempt': raw[1]['context']['attempt'] = 'b' * 32
     elif defect == 'clock': raw[1]['context']['clock_interval']['end_ms'] += 1
-    elif defect == 'foreign-id': raw[1]['context']['request_json']['ReturnSheetRecordId'] = corpus.FOREIGN_ID
+    elif defect == 'foreign-id': raw[1]['context']['record_id'] = corpus.FOREIGN_ID
+    elif defect == 'missing-request': forms[-1]['grids'][0]['pages'] = []
+    elif defect == 'bool-offset': forms[-1]['grids'][0]['pages'][0]['offset'] = False
     else:
         changed = packets([row(TransactionValue=corpus.Number('999'))])[1]
         changed['context']['sequence'] = 9
         changed['context']['relative_path'] = changed['context']['relative_path'].replace('0002.json', '0009.json')
         raw.append(changed)
-    with pytest.raises(adapter.JsonSafetyError): adapt(raw)
+    with pytest.raises(adapter.JsonSafetyError): adapt(raw, forms)
 
 
 class Fixture(BaseFixture):
@@ -180,12 +189,17 @@ class Fixture(BaseFixture):
     def detail(self):
         headers = ''.join('<th>' + html.escape(v) + '</th>' for v in projection.L10A_HEADERS)
         body = '<tr>' + '<td>SYNTHETIC DOM BAIT<input value="SECRET BAIT"></td>' * 9 + '</tr>'
-        form = '<rshshr-citr-l10a-form><' + OWNER + '><ui-grid><p-table><table><thead><tr>'
+        form = ('<rshshr-citr-l10a-form><form><p-panel><label aria-label="Tax Year">Tahun Pajak</label>'
+            '<input type="text" formcontrolname="PeriodYear" disabled>'
+            '<label aria-label="TIN">Nomor Identitas WP</label>'
+            '<input type="text" formcontrolname="CollectorTin" disabled></p-panel></form><'
+            + OWNER + '><ui-grid><p-table><table><thead><tr>')
         form += headers + '</tr></thead><tbody>' + body * 10 + '</tbody></table>'
         form += ('<div class="p-paginator"><button class="p-paginator-prev" disabled onclick="moveA(0)">Previous</button>'
             '<span class="p-paginator-current">1 of 2</span><button class="p-paginator-next" onclick="moveA(10)">Next</button>'
             '</div></p-table></ui-grid></' + OWNER + '></rshshr-citr-l10a-form>')
         if self.defect == 'header': form = form.replace('NPWP/TIN', 'SYNTHETIC WRONG HEADER')
+        if self.defect == 'header-control': form = form.replace('formcontrolname="CollectorTin"', 'formcontrolname="SYNTHETIC"')
         if self.defect == 'owner': form = form.replace('<ui-grid>', '<synthetic-foreign-grid>').replace('</ui-grid>', '</synthetic-foreign-grid>')
         tabs = ''.join('<li><a role="tab" aria-controls="panel-' + str(i) + '" href="#" onclick="show('
             + str(i) + ');return false">' + name + '</a></li>' for i, name in enumerate(('Induk', 'L10-A')))
@@ -256,9 +270,16 @@ def test_real_populated_observer_capture_held_replay_and_reopened_workbook(brows
         finally:
             book.close()
         mapping = next(r for r in run['template_mapping'] if r['form'] == 'L10-A')
-        assert mapping['complete'] is (not literal_string)
-        assert mapping['unmapped_fields'] == 0
+        assert mapping['complete'] is False
+        assert mapping['unmapped_fields'] == mapping['reviewed_redundant_fields'] == 2
+        assert mapping['derived_complete'] is False and mapping['derived_reason'] == 'l10a_header_slots_omitted'
         assert mapping['unmapped_tables'] == mapping['unmapped_rows'] == (1 if literal_string else 0)
+        resume = load_workbook(tmp_path / 'export' / 'resume.xlsx')
+        try:
+            assert any('L10-A diproyeksikan sebagian' in str(cell.value)
+                       for values in resume['Audit'] for cell in values)
+        finally:
+            resume.close()
         assert fixture.unexpected == []
         assert fixture.requests.count((GRID, 'POST')) == 2
         assert all(fixture.requests.count((url, 'GET')) == 1 for url in URLS.values())
@@ -266,7 +287,7 @@ def test_real_populated_observer_capture_held_replay_and_reopened_workbook(brows
         fixture.close()
 
 
-@pytest.mark.parametrize('defect', ['catalog', 'header', 'owner', 'vendor-pin'])
+@pytest.mark.parametrize('defect', ['catalog', 'header', 'header-control', 'owner', 'vendor-pin'])
 def test_real_missing_dependency_never_offers_populated_permission(browser, tmp_path, monkeypatch, defect):
     fixture = Fixture(browser, monkeypatch, defect=defect)
     try:
