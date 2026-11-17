@@ -852,6 +852,14 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
         result['provenance'].extend({**_evidence(payload[key], [key]), 'container': ['Payload'],
                                     'rule': 'submitted-hydration-predicate'} for key in
                                    ('ReturnSheetStatusCode', 'ReturnSheetModel', 'PreviousFormData'))
+        # Preserve the original typed non-migration predicate when supplied;
+        # never invent it for the older hydrated non-null profile.
+        if 'IsMigrated' in payload:
+            if payload['IsMigrated'] is not False:
+                raise _UnsupportedMetadata('unverified_corporate_l11b_hydrated_lifecycle')
+            result['provenance'].append({**_evidence(payload['IsMigrated'], ['IsMigrated']),
+                                         'container': ['Payload'],
+                                         'rule': 'submitted-hydration-predicate'})
     else:
         result = project_l11b(root.get(L11B_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
     section['fields'] = result['fields']
