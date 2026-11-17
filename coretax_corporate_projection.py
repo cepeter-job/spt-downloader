@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, DecimalException
+from decimal import DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
