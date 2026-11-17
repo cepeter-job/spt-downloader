@@ -940,12 +940,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
                 # ``digest`` already passed the positive 64-hex pin equality
                 # above, so the proof carries exactly that admitted digest.
-                environment = page.evaluate('() => ({locale:navigator.language,'
-                                            'timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
-                _check_cancel(check_cancel)
+                # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
-                    'builds': {CIT_SOURCE_URL: digest},
-                    'route': page.url, **environment}
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

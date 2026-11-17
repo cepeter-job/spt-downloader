@@ -105,8 +105,7 @@ def induk_projection(route=None):
     from coretax_corporate_projection import BUILD_DIGESTS, CIT_SOURCE
     return {'kind': 'corporate-induk-v1',
             'builds': {CIT_SOURCE: BUILD_DIGESTS.get(CIT_SOURCE)},
-            'route': FRAME_URL if route is None else route,
-            'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+            'route': FRAME_URL if route is None else route}
 
 
 def observed(*extra_paths):

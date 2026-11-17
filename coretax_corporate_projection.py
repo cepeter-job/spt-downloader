@@ -718,7 +718,7 @@ def _l7_negative_profile(binding, *, root, payload, record, event, route, table)
     return proof
 
 
-def project_induk(main, *, tax_type, locale, timezone_name):
+def project_induk(main, *, tax_type):
     """Project the reviewed Induk identity slots; caller must prove the binding.
 
     Only slots whose payload control is present and scalar are emitted. A
@@ -726,8 +726,7 @@ def project_induk(main, *, tax_type, locale, timezone_name):
     template decorations (``_INDUK_INCOME``/``_INDUK_CALCULATIONS``) stay
     unprojected, so the caller must report the section as partial.
     """
-    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or timezone_name != 'Asia/Jakarta'
-            or not isinstance(main, dict)):
+    if tax_type != 'ICT_RCIT' or not isinstance(main, dict):
         raise _UnsupportedMetadata('unsupported_corporate_induk_structure')
     fields, provenance = [], []
     for group, name, caption in INDUK_IDENTITY_FIELDS:
@@ -758,13 +757,13 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
     # The observer admits only a positively pinned 64-hex CIT digest and puts
     # exactly that digest in the proof. Here the shape is re-verified (one
     # known source, valid SHA), never a second hand-maintained pin copy.
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone'}
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
             or proof['kind'] != 'corporate-induk-v1'
             or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
             or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
             or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
-            or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
-            or proof['timezone'] != 'Asia/Jakarta' or binding.get('paths') != [[INDUK_ROOT]]
+            or proof['route'] != event['frame_url']
+            or binding.get('paths') != [[INDUK_ROOT]]
             or 'primary' not in binding):
         raise _UnsupportedMetadata('unverified_corporate_induk_binding')
     literal = record.get('meta', {}).get('Model SPT')
@@ -775,8 +774,7 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
             or payload.get('ReturnSheetModel') != model):
         raise _UnsupportedMetadata('unverified_corporate_induk_submitted_lifecycle')
     fields = record.get('source_fields', {})
-    result = project_induk(root.get(INDUK_ROOT), tax_type=fields.get('TaxTypeCode'),
-                           locale=proof['locale'], timezone_name=proof['timezone'])
+    result = project_induk(root.get(INDUK_ROOT), tax_type=fields.get('TaxTypeCode'))
     section['fields'] = result['fields']
     # The reviewed Induk template renders 16 further caption slots that the
     # frontend derives; until each derivation is proven the section stays
@@ -798,9 +796,10 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
             continue  # Preserve old evidence-leaf captures and caller contracts.
         # An Induk binding that also declares extra evidence roots is left as
         # plain evidence: only the reviewed single-root form is projected.
-        if binding['name'] == 'Induk' and binding.get('paths') == [[INDUK_ROOT]]:
-            projected.append(_apply_induk(binding, section, observed_forms, root=root,
-                payload=payload, record=record, event=event))
+        if binding['name'] == 'Induk':
+            if binding.get('paths') == [[INDUK_ROOT]]:
+                projected.append(_apply_induk(binding, section, observed_forms, root=root,
+                    payload=payload, record=record, event=event))
             continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,

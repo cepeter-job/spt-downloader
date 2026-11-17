@@ -127,10 +127,10 @@ def test_owned_l11a_keeps_matching_pair_and_singleton_provenance(browser, tmp_pa
         fixture.close()
 
 
-@pytest.mark.parametrize('fixture_class,flag', [
-    (L3Fixture, 'IsIncomeTaxOverseas'), (Fixture, 'IsDeclareEntertainmentExpense')])
+@pytest.mark.parametrize('fixture_class,flag,form', [
+    (L3Fixture, 'IsIncomeTaxOverseas', 'L3'), (Fixture, 'IsDeclareEntertainmentExpense', 'L11-A')])
 def test_owned_current_induk_visibility_marks_absent_outer_flag(
-        browser, tmp_path, monkeypatch, fixture_class, flag):
+        browser, tmp_path, monkeypatch, fixture_class, flag, form):
     fixture = fixture_class(browser, monkeypatch)
     value = json.loads(fixture.raw)
     del value['Payload'][flag]
@@ -145,8 +145,8 @@ def test_owned_current_induk_visibility_marks_absent_outer_flag(
             assert capture.drain()['complete']
             result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
             assert result['eligible'], result['reason']
-            l3, = [p for p in result['provenance']['projections'] if p['form'] == 'L3']
-            assert l3['visibility_binding'] == 'current-induk-enabled-v1'
+            owned, = [p for p in result['provenance']['projections'] if p['form'] == form]
+            assert owned['visibility_binding'] == 'current-induk-enabled-v1'
             assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
     finally:
         fixture.close()

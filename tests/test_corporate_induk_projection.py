@@ -51,7 +51,7 @@ def main_form(**overrides):
 def project(form=None, **overrides):
     helper = getattr(module(), 'project_induk', None)
     assert callable(helper), 'Missing reviewed Induk identity projection'
-    options = {'tax_type': 'ICT_RCIT', 'locale': 'id-ID', 'timezone_name': 'Asia/Jakarta'}
+    options = {'tax_type': 'ICT_RCIT'}
     options.update(overrides)
     return helper(main_form() if form is None else form, **options)
 
@@ -99,8 +99,7 @@ def test_non_scalar_identity_control_refuses(value):
     assert str(error.value) == 'unsupported_corporate_induk_identity_type'
 
 
-@pytest.mark.parametrize(('option', 'value'), [('tax_type', 'VAT_VAT'), ('locale', 'en-US'),
-                                               ('timezone_name', 'UTC')])
+@pytest.mark.parametrize(('option', 'value'), [('tax_type', 'VAT_VAT')])
 def test_unreviewed_structure_or_environment_refuses(option, value):
     with pytest.raises(_UnsupportedMetadata) as error:
         project(**{option: value})
@@ -122,7 +121,6 @@ def test_unproven_projection_binding_refuses_the_capture():
     dict(proof(), builds={'https://coretax.intranet.pajak.go.id/other.js': '0' * 64}),
     dict(proof(), builds={'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/525.32c49782948fc5ef.js': 'APPROVED'}),
     dict(proof(), route=corpus.FRAME_URL + '/changed'),
-    dict(proof(), locale='en-US'),
     dict(proof(), tables=[]),
 ])
 def test_projection_proof_must_match_the_reviewed_shape(projection):
