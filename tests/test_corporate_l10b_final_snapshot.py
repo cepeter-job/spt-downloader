@@ -2,6 +2,7 @@
 import json
 
 import pytest
+from playwright.sync_api import JSHandle
 
 import coretax_corporate as observer
 import coretax_corporate_projection as projection
@@ -55,7 +56,9 @@ def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
             assert next(f for f in forms if f['name'] == 'L10-B')['projection']['kind'] == projection.L10B_KIND
             assert capture._l7_requested and capture._l10b_requested
             requests_before = list(fixture.requests)
-            original = type(capture._component_document).evaluate
+            # Document is an ElementHandle, histories are plain JSHandles.
+            # Patch their shared base, not only the Document subclass.
+            original = JSHandle.evaluate
             fired, l7_sampled = [], []
 
             def evaluate(handle, expression, arg=None):
@@ -86,7 +89,9 @@ def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
                     l7_sampled.append(True)
                 return result
 
-            monkeypatch.setattr(type(capture._component_document), 'evaluate', evaluate)
+            monkeypatch.setattr(JSHandle, 'evaluate', evaluate)
+            assert all(handle.evaluate.__func__ is evaluate for handle in (
+                capture._component_document, capture._l7_history, capture._l10b_history))
             if window != 'unchanged':
                 with pytest.raises(JsonSafetyError, match='child history changed'):
                     capture.drain()
