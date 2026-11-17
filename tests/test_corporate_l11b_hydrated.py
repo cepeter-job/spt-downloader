@@ -156,7 +156,7 @@ def test_sum_and_ebitda_intermediates_are_checked_before_final_cancellation():
 
 
 @pytest.mark.parametrize('change', [
-    {'Ebitda25': Number('1')}, {'IncomeTaxExpense': None},
+    {'Ebitda25': Number('1')}, {'IncomeTaxExpense': Number('1.5')},
     {'IsEbitdaManuallyEdited': False}, {'TotalBorrowingCosts': None},
 ])
 def test_unproved_callback_profiles_remain_unsupported(change):
