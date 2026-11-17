@@ -2714,7 +2714,8 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         # carries the generic payload dump was never projected into the
         # worksheet, so the complete DOM capture must keep the output.
         from coretax_json import has_audit_dump_tables
-        if has_audit_dump_tables((decoded or {}).get('sections') or ()):
+        if has_audit_dump_tables((decoded or {}).get('sections') or (),
+                                 provenance=(decoded or {}).get('provenance')):
             eligible = False
     source_reason = ('native_verified' if eligible else
                      'unsupported_tax' if not corporate and not masa else

@@ -31,6 +31,11 @@ L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L8_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+L10B_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+L10B_KIND = 'corporate-l10b-nondisplay-v1'
+L10B_ROOT = 'L10bFormData'
+L10B_KEYS = tuple('Question' + suffix for suffix in
+    ('1a', '1b', '1c', '1d', '2a', '2b', '2c', '3a', '3b', '3c', '3d', '3e', '4a', '4b', '4c'))
 INDUK_ROOT = 'MainFormData'
 # The reviewed identity slots, spelled exactly as
 # coretax_badan_template._INDUK_IDENTITY declares them. A caption is never a
@@ -787,6 +792,142 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
             'route': proof['route'], 'values': result['provenance']}
 
 
+def _l10b_pins(builds):
+    urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+    configured = load_build_pins()
+    expected = {url: configured.get(url) for url in urls}
+    return (isinstance(builds, dict) and set(builds) == urls
+            and all(type(value) is str and re.fullmatch(r'[a-f0-9]{64}', value)
+                    for mapping in (expected, builds) for value in mapping.values())
+            and builds == expected)
+
+
+def _apply_l10b(binding, section, observed_forms, *, root, payload, record, event):
+    """Validate custody, not a worksheet projection; never remove the raw dump."""
+    proof = binding['projection']
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+            or proof['kind'] != L10B_KIND or not _l10b_pins(proof['builds'])
+            or proof['route'] != route or proof['route'] != event['frame_url']
+            or binding.get('paths') != [[L10B_ROOT]]
+            or any(binding.get(key) for key in ('grids', 'responses', 'dependencies', 'primary'))
+            or event.get('component_lifetime') is None or event.get('corporate_l10b_lifetime') is None):
+        raise _UnsupportedMetadata('unverified_corporate_l10b_nondisplay_custody')
+    main, form = root.get('MainFormData'), root.get(L10B_ROOT)
+    if (record.get('source_status') != 'SPT Dilaporkan'
+            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or fields.get('ReturnSheetModel') != 'Normal'
+            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or payload.get('ReturnSheetModel') != 'NORMAL'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
+            or not isinstance(main, dict)
+            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
+                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
+            or type(payload.get('TIN')) is not str or payload['TIN'] != event['scope'][0]
+            or type(payload.get('PeriodYear')) is not _CorporateNumber
+            or payload['PeriodYear'] != main.get('TaxYear')):
+        raise _UnsupportedMetadata('unverified_corporate_l10b_submitted_lifecycle')
+    if (not isinstance(form, dict) or set(form) != set(L10B_KEYS)
+            or any(type(value) is not bool for value in form.values())):
+        raise _UnsupportedMetadata('unsupported_corporate_l10b_source_shape')
+    values, presence = [], []
+    for owner, prefix, container, keys in (
+            (form, [L10B_ROOT], ['Payload', 'CurrentFormData'], tuple(form)),
+            (main, ['MainFormData'], ['Payload', 'CurrentFormData'],
+             ('Tin', 'TaxYear', 'IsTransactionWithRelated')),
+            (root, [], ['Payload', 'CurrentFormData'], ('TaxType', 'TaxPeriodCode',
+             'ReturnSheetRecordIdentifier', 'ReturnSheetAggregateIdentifier')),
+            (payload, [], ['Payload'], ('TIN', 'PeriodYear', 'ReturnSheetStatusCode',
+             'ReturnSheetModel', 'PreviousFormData', 'LastSubmittedFormData', 'IsTransactionWithRelated'))):
+        for key in keys:
+            value = owner[key]
+            entry = ({'path': prefix + [key], 'type': 'boolean', 'value': value}
+                     if type(value) is bool else _evidence(value, prefix + [key]))
+            entry.update(container=list(container), response_sequence=event['sequence'],
+                         attempt=event['attempt'], rule='retained-original-nondisplay-custody')
+            values.append(entry)
+            presence.append({'path': prefix + [key], 'container': list(container),
+                'response_sequence': event['sequence'], 'attempt': event['attempt'], 'present': True})
+    return {'form': 'L10-B', 'kind': L10B_KIND, 'builds': dict(proof['builds']),
+            'route': route, 'attempt': event['attempt'], 'values': values, 'presence_facts': presence}
+
+
+def l10b_nondisplay_covered(section, provenance):
+    """A validated source-specific report may cover only its unchanged raw table.
+
+    No display-filter lookup, empty-table permission, field placeholder or
+    name-only exemption. The adapter report and original event must both exist.
+    """
+    if (section.get('name') != 'L10-B' or section.get('fields') != [] or section.get('text') != ''
+            or not isinstance(provenance, dict)):
+        return False
+    reports = [r for r in provenance.get('projections', [])
+               if isinstance(r, dict) and r.get('form') == 'L10-B']
+    if len(reports) != 1:
+        return False
+    report = reports[0]
+    if (set(report) != {'form', 'kind', 'builds', 'route', 'attempt', 'values', 'presence_facts'}
+            or report['kind'] != L10B_KIND or not _l10b_pins(report['builds'])
+            or not isinstance(report['values'], list) or not isinstance(report['presence_facts'], list)):
+        return False
+    events = [event for event in provenance.get('events', []) if isinstance(event, dict)
+              and event.get('attempt') == report['attempt'] and event.get('frame_url') == report['route']
+              and event.get('corporate_l10b_lifetime') is not None
+              and event.get('component_lifetime') is not None]
+    for event in events:
+        # Rebuild the admission from typed retained originals; a partial report
+        # or a changed lifecycle predicate must not become a gate exemption.
+        root, payload = {}, {}
+        try:
+            from coretax_json import _capture_component_lifetime, _capture_l10b_lifetime
+            options = {'attempt': event['attempt'], 'record_id': event['record_id'],
+                       'source_url': event['component_lifetime']['source_url'], 'detail_url': event['frame_url']}
+            _capture_component_lifetime(event['component_lifetime'], **options)
+            _capture_l10b_lifetime(event['corporate_l10b_lifetime'], **options)
+            for value in report['values']:
+                if set(value) != {'path', 'type', 'value', 'container', 'response_sequence', 'attempt', 'rule'}:
+                    return False
+                if value['response_sequence'] != event['sequence'] or value['attempt'] != event['attempt']:
+                    return False
+                item = (_CorporateNumber(value['value']) if value['type'] == 'number' else value['value'])
+                if value['type'] != ('number' if type(item) is _CorporateNumber else
+                        'boolean' if type(item) is bool else 'null' if item is None else
+                        'string' if type(item) is str else 'unsupported'):
+                    return False
+                target = payload if value['container'] == ['Payload'] else root
+                if value['container'] not in (['Payload'], ['Payload', 'CurrentFormData']):
+                    return False
+                for token in value['path'][:-1]:
+                    target = target.setdefault(token, {})
+                if value['path'][-1] in target:
+                    return False
+                target[value['path'][-1]] = item
+            binding = {'name': 'L10-B', 'paths': [[L10B_ROOT]], 'projection': {
+                'kind': L10B_KIND, 'builds': report['builds'], 'route': report['route']}}
+            record = {'record_id': event['record_id'], 'source_status': 'SPT Dilaporkan',
+                'meta': {'Model SPT': 'Normal'}, 'source_fields': {
+                    'TaxpayerAggregateIdentifier': report['route'].split('/')[-4],
+                    'TaxTypeCode': 'ICT_RCIT', 'ReturnSheetTypeCode': 'ICT_RCITR',
+                    'ReturnSheetModel': 'Normal',
+                    'AggregateIdentifier': root['ReturnSheetAggregateIdentifier']}}
+            rebuilt = _apply_l10b(binding, section, [{'name': 'Induk'}, binding],
+                root=root, payload=payload, record=record, event=event)
+            rows = [[f'/{L10B_ROOT}/{key}', 'boolean', value] for key, value in root[L10B_ROOT].items()]
+            expected = {'name': '/' + L10B_ROOT, 'headers': ['JSON path', 'JSON type', 'Source value'],
+                        'rows': rows, 'complete': True}
+            if (_corporate_request_key(rebuilt) == _corporate_request_key(report)
+                    and _corporate_request_key(section.get('tables')) == _corporate_request_key([expected])):
+                return True
+        except (KeyError, TypeError, IndexError, AttributeError, _UnsupportedMetadata, JsonSafetyError):
+            return False
+    return False
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -800,6 +941,10 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
             if binding.get('paths') == [[INDUK_ROOT]]:
                 projected.append(_apply_induk(binding, section, observed_forms, root=root,
                     payload=payload, record=record, event=event))
+            continue
+        if binding['name'] == 'L10-B':
+            projected.append(_apply_l10b(binding, section, observed_forms, root=root,
+                payload=payload, record=record, event=event))
             continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,
