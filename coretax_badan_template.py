@@ -523,6 +523,11 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
     if columns != list(range(1, len(table['headers']) + 1)):
         return None
     spans = table.get('footer_spans', [])
+    # The reviewed L9 ui-grid emits a leading zero-cell tFoot row. It has no
+    # worksheet cells: retain it in original section custody, but map its sole
+    # real TOTAL to the approved one-row footer. No other form/shape is relaxed.
+    if form == 'l9' and len(footer) == 2 and footer[0] == [] and spans == [[], [7, 1, 1]]:
+        footer, spans = footer[1:], spans[1:]
     capacity = 3 if (form, block) == ('l3', 1) else 1
     if len(footer) > capacity or len(spans) != len(footer):
         return None

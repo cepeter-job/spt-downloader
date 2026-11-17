@@ -39,7 +39,8 @@ def pages(index=0, rows=None):
 def project(index=0, **changes):
     helper = getattr(projection, 'project_l9_grid', None)
     assert callable(helper), 'Missing source-proven populated L9 grid projector'
-    options = {'index': index, 'pages': pages(index), 'total': Number('51'),
+    source_index = index if type(index) is int and 0 <= index < 12 else 0
+    options = {'index': index, 'pages': pages(source_index), 'total': Number('51'),
         'headers': HEADERS, 'footer_spans': [[], [7, 1, 1]],
         'tax_type': 'ICT_RCIT', 'locale': 'id-ID', 'timezone_name': 'Asia/Jakarta',
         'labels': deepcopy(LABELS)}

@@ -113,3 +113,17 @@ def test_empty_container_type_is_retained_and_no_repeated_terminal_page(data, ki
     assert result['table']['body_row_count'] == 0
     with pytest.raises(_UnsupportedMetadata):
         project(pages=value * 2, total=Number('0'))
+
+
+@pytest.mark.parametrize('footer,spans', [([['SYNTHETIC NOT A SPACER'], ['TOTAL', '51', '']],
+    [[9], [7, 1, 1]]), ([[], ['TOTAL', '51', '']], [[9], [7, 1, 1]])])
+def test_only_exact_zero_cell_l9_spacer_may_map_to_single_total_row(tmp_path, footer, spans):
+    import coretax_exporter as exporter
+    from support_templates import section, source_run
+    detail = project()['table']
+    detail.update(footer=footer, footer_spans=spans, rows=detail['rows'][:2] + footer)
+    run = source_run('PPh Badan', [section('L9', tables=[detail])])
+    reports = []
+    exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert reports[0]['complete'] is False
+    assert reports[0]['unmapped_tables'] == 1

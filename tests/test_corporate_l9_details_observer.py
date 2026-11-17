@@ -155,6 +155,10 @@ def test_real_observer_original_custody_held_replay_and_reopened_full_l9(
             assert original_adapt(held, held_record, corpus.SCOPE, forms) == result
             assert next(p for p in held if p['context']['url'] == corpus.PRIMARY_URL)['body'] == fixture.raw
             if expected_native:
+                overridden = deepcopy(manifest)
+                overridden['responses'][0]['component_lifetime'] = dict(manifest['component_lifetime'])
+                with pytest.raises(adapter.JsonSafetyError):
+                    checkpoint_bodies(tmp_path, overridden, held_record, corpus.SCOPE)
                 section, = [s for s in native['sections'] if s['name'] == 'L9']
                 assert section['projection_complete'] and not section['unprojected_grids']
                 assert len(section['tables']) == 12 and len(section['custody_tables']) == 13

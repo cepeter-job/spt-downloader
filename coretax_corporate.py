@@ -378,6 +378,7 @@ def _observe_l9(page, form, capture, digest, check_cancel):
     from coretax_corporate_projection import L9_DETAIL_BUILD_DIGESTS, L9_REFERENCE_KINDS, MAIN_SOURCE, VENDOR_SOURCE
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    _check_cancel(check_cancel)
     # Missing shared producer support keeps the old recap-only fallback without
     # fetching a catalog, probing browser cache, or granting a new request class.
     admitted = {kinds[0] for kinds in CORPORATE_REFERENCE_REQUESTS.values() if len(kinds) == 1}

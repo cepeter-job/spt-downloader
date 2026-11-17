@@ -1219,6 +1219,8 @@ def _apply_l9_details(binding, section, evidence, *, root, record, event,
         unprojected_grid_reasons=reasons, projection_complete=not unresolved)
     if not unresolved:
         section.pop('projection_reason', None)
+    else:
+        section['projection_reason'] = 'unprojected_l9_detail_grids'
 
 
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,

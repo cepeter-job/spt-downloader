@@ -1,6 +1,7 @@
 # L9 twelve-grid projection inventory and source proof
 
-Status: implementation in progress; **not full-form or live acceptance**.
+Status: form-owned twelve-grid consumer candidate implemented; shared producer
+integration pending; **not full-form or live acceptance**.
 The existing recap-only contract/report remains the historical recovery boundary.
 No resource, protected AGENTS, transport registry or catalog adapter change is
 part of this form-owned work.
@@ -91,6 +92,13 @@ noFraction=false. Editor constraints are not renderer proof. Preserve original
 numeric lexemes; restrict to genuine finite nonnegative number tokens with
 safe precision, no signed zero and a proven whole-number rounding result.
 USD and unsafe fractional branches remain unsupported, not coerced to Rupiah.
+The independently pinned VENDOR DecimalPipe (`ut` / `fe`, ~1214700..1216440)
+parses `Math.abs(number)+""` into decimal digits and carries when the first
+discarded digit is >=5. The bounded helper accepts at most fifteen coefficient
+digits and requires the parsed floating number's shortest decimal round-trip
+to equal the original Decimal, then uses the existing half-up `_number` helper.
+It does not copy-execute the provider algorithm locally. Fractions such as
+0.1/0.5/1234.50 are presentation inputs, not permission to round source custody.
 
 ## Original custody and lifecycle
 
@@ -128,3 +136,66 @@ For each unproved grid keep its name and refusal reason; native dump gate must
 still force whole-record fallback. Full-form acceptance requires actual all-grid
 projection and mapping, original passive catalog custody and hosted observer ->
 adapter -> held -> saved/reopened workbook evidence on the integrated head.
+
+## Implemented consumer boundary and remaining dependency
+
+The new `corporate-l9-details-v1` consumer projects every one of the twelve
+populated approved blocks using the above per-family label bindings. It keeps
+all thirteen original leaf tables under `custody_tables`, separate from the
+twelve semantic worksheet tables, plus original bytes and per-value source
+sequence/hash/attempt/container/page-local coordinates. Unknown or unproved
+individual rows leave the corresponding exact `unprojected_grids` name and
+fixed refusal reason; other proved grids cannot upgrade that record to native.
+The old recap-only proof still retains all twelve unresolved markers.
+The detail subset uses its own `unprojected_l9_detail_grids` Audit sentence:
+it does not falsely say all twelve grids remain unmapped when only one refuses.
+
+The renderer consumes only the exact L9 leading zero-cell tFoot spacer pair
+`([],[])` followed by `[7,1,1]`: it maps the sole real TOTAL to the reference's
+single existing footer row. Original rows/spans remain unchanged. Nonempty or
+wrong-span spacer variants and every other form retain the existing refusal.
+
+The observer offers details only if the separately owned EXISTING shared
+registry has all five reviewed singleton classes and those original responses
+were naturally emitted in this same attempt. It uses the existing bounded
+loaded-script hashing mechanism; no new catalog request, cache read or guessed
+endpoint is added. Providers, environment, owner chains, groups, all nine
+headers and footer spans are inspected, and tables/enabled ownership are
+rechecked after the owned pagination. Final component, clock, late-response,
+Stop and held-reader fences remain authoritative.
+
+**Integration blocker:** this branch deliberately does not edit the shared
+registry, `_project_corporate_catalog` type support, cache ordering allowlist or
+transport admission. Its baseline lacks all five L9 kinds, so unintegrated
+production continues the truthful recap-only whole-record DOM fallback. The
+shared producer owner must supply those source-reviewed original classes and
+catalog support; the parent then owns combined-head verification. The approved
+protected AGENTS contract currently records only the legacy partial boundary;
+the parent must separately obtain/record the actual reviewed full boundary.
+
+Hosted consumer fixtures explicitly inject the shared producer's five
+singleton registrations into the EXISTING maps, without replacing any packet,
+catalog-order/version, renderer, observer, adapter or held-reader algorithm.
+Their populated observer -> original capture -> adapter -> held -> reopened
+workbook tests are **conditional consumer-interface evidence**, not proof of
+unmodified production transport admission. A positive integrated full-form run
+without this test-only registration injection remains required. No PDF or
+application-owned live acceptance is claimed.
+
+Tests were written before their corresponding grid-family/consumer/observer
+implementation. Local verification is AST/source/data-only; source-only RED
+is not called executed RED or a passing runtime test. Actual hosted run IDs,
+focused outcomes and exact-head status are recorded in PR273.
+
+Hosted run `44035376372` at `42f7aadcd3cc97a288e4266b2fc1f46b5db3cdab`
+provided executed RED: the real populated observer/native/held path reached
+reopened workbook assertions, but every supplied populated block was rejected
+by the corporate renderer's one-row footer capacity because its zero-cell
+spacer was still counted as a real row. The scoped footer-plan correction above
+retains source structure while binding the single actual TOTAL. An independent
+invalid-index negative also exposed a test-helper IndexError before reaching
+the projector; its fixture now supplies a valid source page while passing the
+invalid index to production unchanged. No production role guard was loosened.
+All prior recap/native safety tests, portable and dependency audit remained
+passing in that run; fresh full exact-head GREEN is still required for the
+corrected head, not inferred from those earlier results.

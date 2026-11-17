@@ -1,5 +1,11 @@
 # L9 recap-only candidate: recovery boundary
 
+Historical recovery boundary for `corporate-l9-v1`. The separately versioned
+detail-grid consumer follow-through is inventoried in
+[the twelve-grid report](2026-11-17-corporate-l9-detail-grids.md). It does not
+change this legacy capability or retroactively certify its twelve dumps. The
+shared passive producer and full-form acceptance remain independent gates.
+
 This implementation is **not full L9 native acceptance**. It fills six recap
 slots for a narrow source-proven subset; all twelve detail grids remain
 unresolved. The hybrid path must keep whole-record DOM fallback.

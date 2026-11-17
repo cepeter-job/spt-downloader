@@ -145,7 +145,10 @@ def test_all_populated_grids_use_original_packets_and_reopen_all_template_cells(
         book.close()
 
 
-def test_unproved_one_grid_keeps_exact_marker_custody_and_whole_record_gate(shared_catalog_contract):
+def test_unproved_one_grid_keeps_exact_marker_custody_and_whole_record_gate(shared_catalog_contract, tmp_path):
+    from openpyxl import load_workbook
+    import coretax_exporter as exporter
+    from support_templates import source_run
     urls = shared_catalog_contract
     raw = packets(urls)
     item = raw[8]
@@ -162,6 +165,19 @@ def test_unproved_one_grid_keeps_exact_marker_custody_and_whole_record_gate(shar
     assert section['unprojected_grids'] == [projection.L9_GRIDS[7][0]]
     assert section['projection_complete'] is False and len(section['custody_tables']) == 13
     assert adapter.has_audit_dump_tables(result['sections'])
+    assert section['projection_reason'] == 'unprojected_l9_detail_grids'
+    run = source_run('PPh Badan', [section])
+    reports = []
+    exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert not reports[0]['complete'] and reports[0]['derived_reason'] == 'unprojected_l9_detail_grids'
+    assert reports[0]['unmapped_tables'] == 1
+    run['template_mapping'] = reports
+    exporter.export_workbook(run, tmp_path / 'audit.xlsx', include_details=False)
+    book = load_workbook(tmp_path / 'audit.xlsx')
+    try:
+        assert any('masih ada grid rincian L9' in str(cell.value) for row in book['Audit'] for cell in row)
+    finally:
+        book.close()
 
 
 @pytest.mark.parametrize('defect', ['main_pin', 'vendor_pin', 'missing_configured_pin', 'timezone',
@@ -201,3 +217,70 @@ def test_details_proof_and_original_custody_refuse_closed_defects(shared_catalog
     else:
         result = adapt(urls, raw=raw, forms=forms)
         assert not result['eligible'], defect
+
+
+def replace_catalog(raw, details, *, interval=None):
+    item = raw[13]
+    payload = deepcopy(item['payload'])
+    payload['Payload'][0]['Details'] = details
+    changed = corpus.packet(payload, 14, endpoint=item['context']['url'], request=None)
+    changed['context'].update(frame_url=ROUTE, method='GET', component_lifetime=lifetime(),
+        clock_interval=clock() if interval is None else interval)
+    raw[13] = changed
+    if interval is not None:
+        for item in raw:
+            item['context']['clock_interval'] = dict(interval)
+
+
+def test_duplicate_catalog_labels_use_original_display_order_and_selected_path(shared_catalog_contract):
+    raw = packets(shared_catalog_contract)
+    base = {'Code': 'SYNTHETIC-001', 'ValidFrom': None, 'ValidTo': None}
+    replace_catalog(raw, [{**base, 'CodeDescription': 'Z SYNTHETIC LABEL', 'ParameterData': '{"DisplayIndex":2}'},
+        {**base, 'CodeDescription': 'A SYNTHETIC LABEL', 'ParameterData': '{"DisplayIndex":1}'}])
+    result = adapt(shared_catalog_contract, raw=raw)
+    assert result['eligible'], result['reason']
+    assert result['sections'][1]['tables'][0]['rows'][0][1] == 'A SYNTHETIC LABEL'
+    proof = result['provenance']['projections'][1]
+    selected = [entry for entry in proof['values'] if entry['destination'].get('column') == 1
+        and entry['path'] == [0, 'Details', 1, 'CodeDescription']]
+    assert selected and all(entry['response_sequence'] == 14 for entry in selected)
+    assert all(entry['catalog_order_rule'] == 'reviewed-cache-display-index-integer' for entry in selected)
+
+
+@pytest.mark.parametrize('defect', ['mixed-order', 'unstable-version'])
+def test_catalog_order_and_original_attempt_clock_negatives_refuse(shared_catalog_contract, defect):
+    raw = packets(shared_catalog_contract)
+    base = {'Code': 'SYNTHETIC-001', 'ValidFrom': None, 'ValidTo': None}
+    if defect == 'mixed-order':
+        replace_catalog(raw, [{**base, 'CodeDescription': 'A SYNTHETIC', 'ParameterData': '{"DisplayIndex":1}'},
+            {**base, 'CodeDescription': 'B SYNTHETIC', 'ParameterData': '{"DisplayIndex":"2"}'}])
+        reason = 'mixed_reference_display_index_types'
+    else:
+        replace_catalog(raw, [{**base, 'CodeDescription': 'A SYNTHETIC', 'ValidTo': '2025-01-01T00:00:00.000Z'},
+            {**base, 'CodeDescription': 'B SYNTHETIC', 'ValidTo': '2026-01-01T00:00:00.000Z'}],
+            interval={**clock(), 'start_ms': 1735689599999})
+        reason = 'unstable_grid_reference_version'
+    result = adapt(shared_catalog_contract, raw=raw)
+    assert not result['eligible'] and result['reason'] == reason
+
+
+def test_full_projected_l9_survives_save_output_physical_verifier_and_reopen(shared_catalog_contract, tmp_path):
+    import coretax
+    from openpyxl import load_workbook
+    result = adapt(shared_catalog_contract)
+    assert result['eligible'], result['reason']
+    record = selected()
+    record.update(capture_complete=True, sections=result['sections'])
+    run = {'npwp': corpus.NPWP, 'year': 2025, 'year_basis': 'period', 'inventory_complete': True,
+           'complete': True, 'errors': [], 'records': [record]}
+    coretax.save_output(run, tmp_path)
+    coretax.verify_outputs(run, tmp_path)
+    report, = [report for report in run['template_mapping'] if report['form'] == 'L9']
+    assert report['complete'] and report['unmapped_tables'] == report['unmapped_rows'] == 0
+    name, = [name for name in run['output_files'] if name != 'resume.xlsx']
+    book = load_workbook(tmp_path / name)
+    try:
+        rows = [row for row in book['L9'] if row[0].value == 'SYNTHETIC-001']
+        assert len(rows) == 24 and all(row[2].value == '02-2024' and row[7].value == 26 for row in rows)
+    finally:
+        book.close()
