@@ -76,6 +76,70 @@ def test_unproved_reference_number_or_literal_type_refuses_entire_owner(block, k
         owner(source)
 
 
+@pytest.mark.parametrize('count,footer', [(0, '0'), (1, ''), (2, '0')])
+def test_affiliate_null_singleton_is_not_an_initial_zero_reduce(count, footer):
+    row = affiliate(1, CountryCode=None, TIN=None, Investment=None,
+                    InvestmentPercentage=None, Debt=None, DebtInterest=None,
+                    Receivable=None, ReceivableInterest=None,
+                    DebtYear=None, ReceivableYear=None)
+    result = owner(form(InvestmentList=[deepcopy(row) for _ in range(count)]))
+    a, b = result['tables']
+    assert a['footer'] == [['', 'JUMLAH', '0', '0,0000', '0']]
+    assert b['footer'] == [['', 'JUMLAH', footer, '', footer, '']]
+    if count:
+        assert b['rows'][0][2:] == [''] * 10
+
+
+def test_shareholder_null_defaults_differ_from_affiliate_nulls_and_subposition_is_unused():
+    row = shareholder(CountryCode=None, TIN=None, Position=None,
+                      SubPosition='NOT A DISPLAY LABEL', PaidInCapital=None,
+                      PaidInCapitalPercentage=None, Dividend=None)
+    result = owner(form(ListOfShareholders=[row]), position_labels={})
+    a, _ = result['tables']
+    assert a['rows'][0] == ['1', 'SYNTHETIC OWNER', 'SYNTHETIC ADDRESS',
+                             '', '', '', '0', '0,0000', '0']
+    assert any(e['path'][-1] == 'SubPosition' and e['value'] == 'NOT A DISPLAY LABEL'
+               and e['rule'] == 'unused-subposition' for e in result['provenance'])
+
+
+def test_displayed_totals_are_ordered_model_getters_not_stale_saved_aliases():
+    value = populated()
+    for key in projection.L2_TOTALS:
+        value[key] = N('999')
+    result = owner(value)
+    a, b = result['tables']
+    assert a['footer'] == [['', 'JUMLAH', '2.000,25', '100,0000', '0']]
+    assert b['footer'] == [['', 'JUMLAH', '1.000,25', '', '501', '']]
+    assert {e['path'][-1] for e in result['provenance']
+            if e['rule'] == 'overwritten-saved-total/ordered-model-getter'} == {
+                'TotalPaidInCapital', 'TotalDividend', 'TotalDebt', 'TotalReceivable'}
+
+
+@pytest.mark.parametrize('value', [N('-0'), N('0e0'), N('1e3'), N('NaN'),
+                                    N('1e100000'), '1', 1, True, {}, []])
+def test_unreviewed_number_representations_never_coerce(value):
+    source = populated()
+    source['InvestmentList'][0]['Debt'] = value
+    with pytest.raises(_UnsupportedMetadata):
+        owner(source)
+
+
+@pytest.mark.parametrize('block', ['ListOfShareholders', 'InvestmentList'])
+@pytest.mark.parametrize('value', [True, '', 1, {}, [None], [{}]])
+def test_closed_row_and_container_inventory_refuses_drift(block, value):
+    with pytest.raises(_UnsupportedMetadata):
+        owner(form(**{block: value}))
+
+
+def test_each_ordered_partial_sum_must_stay_exact_and_within_bound():
+    row = shareholder(PaidInCapital=N('999999999999999'), PaidInCapitalPercentage=N('0'))
+    small = shareholder(PaidInCapital=N('0.125'), PaidInCapitalPercentage=N('0'))
+    # Even exact fractional operands cannot authorize an ordered partial total
+    # above the reviewed 15-digit magnitude bound.
+    with pytest.raises(_UnsupportedMetadata):
+        owner(form(ListOfShareholders=[row, small]))
+
+
 @pytest.mark.parametrize('tax_type', ['ICT_ROGCIT', 'ICT_FCIT', 'ICT_FOGCIT'])
 def test_unapproved_currency_or_oil_gas_never_fills_rupiah_template(tax_type):
     with pytest.raises(_UnsupportedMetadata):

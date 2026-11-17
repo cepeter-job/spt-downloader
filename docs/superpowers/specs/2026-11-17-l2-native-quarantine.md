@@ -116,6 +116,85 @@ Local checks are AST/source and public workbook/bundle data only. Actual
 execution, coverage, saved/reopened workbook and package evidence must be bound
 to the final GitHub head/run, not inherited from an earlier green.
 
+## Follow-through source contract (2026-11-17)
+
+The quarantine above describes `corporate-l2-v1` and remains its contract.
+A separate whole-owner slice is being built tests-first; it does not silently
+reinterpret old proofs or certify live acceptance.
+
+### Independently pinned consumer evidence
+
+Both cached source files were independently rehashed against
+`resources/build-pins.json`: CIT SHA `500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153`
+and MAIN SHA `ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44`.
+Decoded-source anchors: CIT `fa` at 2194813, `w1`/`q1` immediately after it,
+`z1` at 2234943, submitted `fillForm` at 2647k, `Um` at 2618k and
+`onCallbackForm` at 2695011; MAIN offline body at 3878k, footer at 4179k,
+reference service at 3036k and `RELATED_PERSON_TYPE` at 2929784.
+
+**Correction:** `Number` is not `NumberInteger`. Offline body `Ue` and footer
+`ga` invoke `number` with no digitsInfo. The pinned MAIN Indonesian locale
+pattern is `#,##0.###`, with comma decimal and dot grouping; the returnsheet
+provider supplies `id-ID`. Offline `Number2` explicitly uses `1.2-2/id` and
+`Number4` uses `1.4-4/id`. This is distinct from the online grid's
+`numberformat_ignoreprec` path. Both L2 interest columns and every money
+footer use ordinary Number. A no-rounding supported subset can therefore
+admit finite binary-exact JSON numbers with at most three effective decimal
+places for Number and four for Number4, refusing any conversion, ordered
+partial sum, precision or representation that cannot be proved exact.
+Foreign-currency/oil-and-gas profiles do not have approved Rp destination
+headers and remain unsupported, not relabelled as Rupiah.
+
+### Complete saved-to-render chain
+
+1. `fillForm` establishes submitted status, parses Current/PreviousFormData,
+   and maps the original ListOfOwnership object to `l2FormData`. RelatedTaxpayers
+   may tentatively prefill shareholders, but submitted status restores the
+   original shareholder list before the child binding runs. `Um` supplies the
+   outer primary as `mainFormData` and `l2FormData` as `formData`.
+2. `z1.ngOnChanges` runs `getDataFromMainForm` before `setFormData`. The separate
+   prefill branch requires the literal outer CurrentFormData string `"{}"`;
+   an admitted nonempty decoded owner cannot enter it. `setFormData` restores
+   both lists, then calls `setGridValue(0, A)` followed by `(1, B)`.
+3. `setGrid1DataMap` null-defaults TIN to null and the three A numeric controls
+   to zero, sets FullPosition to null and copies Position/SubPosition and
+   optional ValidFrom/ValidTo. `setGrid2DataMap` null-defaults only TIN, copying
+   all B amounts, rates, year strings and IsEditable literally.
+4. The valueChanges callback emits `getFormData`; the parent patches only
+   `citrForm[L2Form]`. It does not replace `l2FormData`. The child keeps the
+   original owner reference; its oldFormData comparison therefore does not
+   restore intermediate callbacks. Submitted disables editing.
+5. All five getters reduce the rendered arrays **without an initial seed**.
+   Empty/null lists yield numeric zero. A numbers are already null-defaulted;
+   B singleton null Debt/Receivable yields null (blank Number footer), whereas
+   two nulls sum to numeric zero. Subsequent null-plus-number contributes zero.
+   Preserve this distinction; an unconditional Decimal sum starting at zero
+   would be wrong. Percentage is the ordered sum plus `%`, parsed by the parent
+   and rendered by `toFixed(4).replace('.', ',')`; the saved percentage alias is
+   literal zero and cannot be used as the displayed total.
+6. Saved money totals are overwritten by `setGridValue`, never the inputs of
+   these displayed getters. Retain original typed saved totals independently;
+   rendering/reconciliation must name the ordered row operands rather than
+   pretend a stale saved alias was displayed.
+7. `w1.ngOnChanges` asynchronously assigns FullPosition using only Position's
+   first matching `RELATED_PERSON_TYPE` description. MAIN `_Xg -> di` proves the
+   exact kind. SubPosition is copied but unused. Country's offline Dropdown
+   instead uses `codeDescAsync -> getReferenceDataDescription -> active-version`
+   selection. These are different consumers: a unique-Code Position subset can
+   reuse the shared catalog producer safely, but duplicate Position versions
+   must not inherit country's active-version semantics.
+
+### Shared producer and completion boundary
+
+The shared catalog owner alone owns passive transport classification/admission.
+L2 needs original same-attempt COUNTRY_CODE and RELATED_PERSON_TYPE bytes and
+exact endpoint/method/sequence, order/version/clock custody through existing
+`reference_packets` / `_project_corporate_catalog`. It does not need
+RELATED_PERSON_SUBTYPE. No endpoint is guessed, no cache is read and no catalog
+fetch is forced here. The exact interface request is recorded separately for
+parent coordination. Native observer/adapter/held/workbook acceptance remains
+an independent next slice; a pure helper alone never enables native capture.
+
 ## Concrete blocker to completing L2
 
 Need a reviewed end-to-end L2 branch that owns actual country and Position

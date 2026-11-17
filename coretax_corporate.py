@@ -326,6 +326,84 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
             'tables': [{**expected, 'owner_chain': list(L7_OWNER_CHAIN)}]}
 
 
+def _observe_l2(page, form, tab, capture, digest, check_cancel):
+    """Only exact offline owners/providers; references stay passively produced."""
+    from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
+    from coretax_corporate_projection import (L2_BUILD_DIGESTS, L2_COMPONENTS, L2_GROUPS,
+        L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS, L2_AFFILIATE_HEADERS,
+        L2_AFFILIATE_SPANS, MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    # Legacy synthetic/held shapes keep v1 quarantine without extra source reads.
+    if not callable(getattr(capture, 'observe_component_lifetime', None)) or form.locator('table').count() != 2:
+        return None
+    if (set(L2_BUILD_DIGESTS) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
+                   for value in L2_BUILD_DIGESTS.values())
+            or digest != L2_BUILD_DIGESTS[CIT_SOURCE_URL]
+            or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
+        return None
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.isConnected && s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if main_digest != L2_BUILD_DIGESTS[MAIN_SOURCE] or vendor_digest != L2_BUILD_DIGESTS[VENDOR_SOURCE]:
+        return None
+    tables = []
+    for index, (headers, spans) in enumerate(((L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS),
+                                             (L2_AFFILIATE_HEADERS, L2_AFFILIATE_SPANS))):
+        grid = form.locator(L2_COMPONENTS[index])
+        if (grid.count() != 1 or not grid.is_visible() or grid.locator('ui-grid-offline').count() != 1
+                or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
+            return None
+        table = grid.locator('table')
+        chain = table.evaluate('''(table, selector) => {
+            const form=table.closest('rshshr-citr-l2-form'), grid=table.closest(selector);
+            const p=table.closest('p-table'), ui=table.closest('ui-grid-offline');
+            if(!form || !grid || !p || !ui || p.closest('ui-grid-offline')!==ui ||
+               ui.closest(selector)!==grid || grid.closest('rshshr-citr-l2-form')!==form ||
+               p.closest(selector)!==grid)return false;
+            for(let n=table.parentElement;n&&n!==form;n=n.parentElement)
+                if(n.localName.endsWith('-form'))return false;
+            return true;
+        }''', L2_COMPONENTS[index])
+        _check_cancel(check_cancel)
+        structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L2')
+        metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+        _check_cancel(check_cancel)
+        if (chain is not True or structure != {'form': 'L2', 'component': L2_COMPONENTS[index],
+                'groups': [L2_GROUPS[index]]} or metadata['headers'] != headers or metadata['footer_spans'] != spans):
+            return None
+        tables.append({'component': L2_COMPONENTS[index], 'source_structure': structure,
+            'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
+    references = []
+    observations = capture.request_observations()
+    for url, kinds in CORPORATE_REFERENCE_REQUESTS.items():
+        if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:
+            continue
+        sequences = [item['sequence'] for item in observations if item['url'] == url
+                     and item['method'] == 'GET' and item.get('request_json') is None]
+        if sequences:
+            references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if (environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+            or capture.observe_component_lifetime(check_cancel=check_cancel) is None
+            or not _enabled_form_binding(form, tab, 'L2')):
+        return None
+    _check_cancel(check_cancel)
+    return {'kind': 'corporate-l2-owner-v2', 'builds': {CIT_SOURCE_URL: digest,
+        MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
+        **environment, 'tables': tables, 'references': references}
+
+
 def _observe_l1d(page, form, capture, digest, check_cancel):
     """Inspect only owned structure, loaded providers and fresh lifetime."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -944,10 +1022,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L2':
-                # Empty-only candidate. Populated owners refuse in the
-                # projector; catalog/render equivalence is not established.
-                # Keep the complete dump and whole-record fallback.
-                binding['projection'] = {'kind': 'corporate-l2-v1',
+                projection = (_observe_l2(page, form, tab, capture, digest, check_cancel)
+                              if 'Induk' in names else None)
+                # A failed stronger proof never grants new permission. The old
+                # v1 whole-owner quarantine still refuses populated bodies.
+                binding['projection'] = projection or {'kind': 'corporate-l2-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
