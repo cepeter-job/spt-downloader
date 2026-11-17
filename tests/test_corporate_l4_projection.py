@@ -165,6 +165,40 @@ def test_unreviewed_block_b_shapes_refuse(excluded):
         project(root(ListOfIncomeExcludedFromIncomeTax=excluded))
 
 
+@pytest.mark.parametrize('options', [{'tax_type': 'ICT_ROGCIT'}, {'locale': 'en-US'}])
+def test_unreviewed_currency_or_locale_refuses(options):
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l4_source_shape'):
+        project(**options)
+
+
+@pytest.mark.parametrize('changes', [{'offset': 1}, {'rows': 7}, {'total': 1}, {'data': None},
+                                   {'unreviewed': 0}])
+def test_empty_grid_shape_stays_closed(changes):
+    page = {'offset': 0, 'rows': 10, 'total': 0, 'data': [], **changes}
+    with pytest.raises(_UnsupportedMetadata, match='incomplete_corporate_l4_pages'):
+        projection.project_l4(_corporate_json(json.dumps(root())),
+            footer=_corporate_json(json.dumps(footer())), pages=[page],
+            tax_type='ICT_RCIT', locale='id-ID')
+
+
+@pytest.mark.parametrize('changes', [{'Unknown': 0}, {'TotalTaxBase': None}])
+def test_unknown_or_missing_root_contract_stays_unsupported(changes):
+    with pytest.raises(_UnsupportedMetadata):
+        project(root(**changes))
+
+
+def test_zero_lexemes_are_retained_and_signed_zero_refuses():
+    form = _corporate_json(json.dumps(root()))
+    form['TotalTaxBase'] = _corporate_json('0.000e+2')
+    result = projection.project_l4(form, footer=_corporate_json(json.dumps(footer())),
+        pages=[{'offset': 0, 'rows': 10, 'total': 0, 'data': []}], tax_type='ICT_RCIT', locale='id-ID')
+    assert next(e for e in result['provenance'] if e['path'] == [ROOT, 'TotalTaxBase'])['value'] == '0.000e+2'
+    form['TotalTaxBase'] = _corporate_json('-0')
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l4_empty_total'):
+        projection.project_l4(form, footer=_corporate_json(json.dumps(footer())),
+            pages=[{'offset': 0, 'rows': 10, 'total': 0, 'data': []}], tax_type='ICT_RCIT', locale='id-ID')
+
+
 def test_pin_requires_exact_configured_digest(monkeypatch):
     binding = bindings()[0]
     valid_binding = deepcopy(binding)
@@ -278,6 +312,91 @@ def test_refused_b_keeps_source_bytes_and_binding_metadata_untouched():
     assert (raw, forms) == before
     with pytest.raises(_UnsupportedMetadata):
         apply(form=form)
+
+
+def test_populated_a_adapter_preserves_duplicate_packet_rows_on_refusal():
+    raw, forms = packets(rows=[ROW, ROW]), observed()
+    before = deepcopy((raw, forms))
+    result = adapt(forms, raw=raw)
+    assert not result['eligible'] and result['sections'] == []
+    assert result['reason'] == 'unverified_corporate_l4_tax_object_labels'
+    assert (raw, forms) == before
+
+
+def test_repeated_identical_grid_packet_retains_first_source_sequence():
+    raw = packets()
+    raw.append(corpus.packet({'IsSuccessful': True, 'Payload': {
+        'TotalRecords': 0, 'Data': [], 'Index': None}}, 4, endpoint=GRID, request=request()))
+    result = adapt(raw=raw)
+    assert result['eligible'], result['reason']
+    proof, = [p for p in result['provenance']['projections'] if p['form'] == 'L4']
+    assert {e['response_sequence'] for e in proof['values'] if e['source'] == 'grid'} == {2}
+
+
+def test_legacy_dump_keeps_all_b_leaves_and_mapping_partial(tmp_path):
+    import coretax_exporter as exporter
+    form = root(ListOfIncomeExcludedFromIncomeTax=[B_ROW, B_ROW], TotalGrossIncome=1000)
+    forms = observed()
+    forms[-1].pop('projection')
+    result = adapt(forms, raw=packets(form))
+    assert result['eligible']
+    value, = [s for s in result['sections'] if s['name'] == 'L4']
+    assert has_audit_dump_tables([value]) and value['fields'] == []
+    for index in (0, 1):
+        assert [f'/{ROOT}/ListOfIncomeExcludedFromIncomeTax/{index}/GrossIncome',
+                'number', '500'] in value['tables'][0]['rows']
+    run = source_run('PPh Badan', [value])
+    run['records'][0]['capture_complete'] = True
+    reports = []
+    exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    assert reports[0]['complete'] is False and reports[0]['unmapped_rows'] >= 8
+
+
+def test_every_declared_footer_keeps_its_own_original_paths_and_sequence():
+    binding, auxiliary = bindings()[0], packet_map()
+    request_value = {'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025'}
+    binding['dependencies'].append({'endpoint': FOOTER, 'request_json': request_value})
+    auxiliary[(FOOTER, _corporate_request_key(request_value))] = {
+        'payload': _corporate_json(json.dumps(footer())), 'event': {'sequence': 4}}
+    _, result = apply(binding, auxiliary=auxiliary)
+    assert {e['response_sequence'] for e in result['values'] if e['path'] == ['TaxBase']} == {3, 4}
+    auxiliary[(FOOTER, _corporate_request_key(request_value))]['payload']['IncomeTaxUsd'] = '0'
+    with pytest.raises(_UnsupportedMetadata):
+        apply(binding, auxiliary=auxiliary)
+
+
+def test_l4_owner_structure_refuses_foreign_headers_or_missing_hosts():
+    import coretax_corporate as observer
+
+    class Locator:
+        def __init__(self, *, count=1, metadata=None, chain=True):
+            self.total, self.metadata, self.chain = count, metadata, chain
+
+        def count(self):
+            return self.total
+
+        def locator(self, selector):
+            return self
+
+        def evaluate(self, script, *args):
+            return self.metadata if 'footer_spans' in script else self.chain
+
+    class Form:
+        def __init__(self, *, broken=False, chain=True):
+            self.broken, self.chain = broken, chain
+
+        def locator(self, selector):
+            if selector == 'table':
+                return Locator(count=2)
+            value = deepcopy(table_proofs()[0 if 'grid1' in selector else 1])
+            value.pop('component')
+            if self.broken:
+                value['headers'] = ['FOREIGN']
+            return Locator(metadata=value, chain=self.chain)
+
+    assert observer._l4_tables(Form()) == table_proofs()
+    assert observer._l4_tables(Form(broken=True)) is None
+    assert observer._l4_tables(Form(chain=False)) is None
 
 
 def test_empty_workbook_keeps_both_totals_numeric_and_mapping_truthful(tmp_path):
