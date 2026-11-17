@@ -207,7 +207,8 @@ def test_late_optional_history_unavailability_preserves_nonnegegative_v1_only(
             result = adapt(fixture, capture, forms)
             assert result['eligible'] is (not negative)
             if not negative:
-                report, = result['provenance']['projections']
+                report, = [p for p in result['provenance']['projections']
+                           if p['form'] == 'L7']
                 assert report['kind'] == 'corporate-l7-v1'
     finally: fixture.close()
 

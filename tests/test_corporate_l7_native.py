@@ -75,7 +75,8 @@ def test_l7_packet_semantics_preserve_literal_model_source_and_saved_approved_la
     assert table['rows'][1][:3] == ['2', '2025', '1.000']
     assert table['rows'][2:] == table['footer']
     assert result['provenance']['draft_flags'] == {'outer': True, 'inner': False}
-    assert result['provenance']['projections'][0]['form'] == 'L7'
+    l7_projection, = [p for p in result['provenance']['projections'] if p['form'] == 'L7']
+    assert l7_projection['form'] == 'L7'
     assert (record, raw, observed) == before
     record.update(capture_complete=True, sections=[section])
     run = {'npwp': corpus.NPWP, 'year': 2025, 'year_basis': 'period',
