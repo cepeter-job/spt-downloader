@@ -588,7 +588,7 @@ def _l11b_amount(value):
     return int(number)
 
 
-def project_l11b(form, *, tax_type, locale):
+def project_l11b(form, *, tax_type, locale, null_defaults=False):
     """Only stable literal controls and the unconditional Part III grid.
 
     Submitted disables user editing, but does not suppress every callback.
@@ -615,11 +615,21 @@ def project_l11b(form, *, tax_type, locale):
 
     fields = []
     for name, caption in L11B_FIELDS:
-        _l11b_amount(form[name])  # no null-to-zero or string/number coercion
+        value = form[name]
+        # The separately proven hydrated View defaults only an explicit null
+        # scalar to zero. Restricted v1 never gains this permission.
+        defaulted = null_defaults and value is None
+        if not defaulted:
+            _l11b_amount(value)
+        path = [L11B_ROOT, name]
+        destination = {'form': 'L11-B', 'field': name}
+        entry = _evidence(value, path)
+        entry.update(rule=('submitted-null-default-zero' if defaulted
+                           else 'stable-submitted-manual-control'),
+                     destination=destination)
+        evidence.append(entry)
         fields.append({'group': '', 'field': name, 'label': caption,
-                       'value': cell(form[name], [L11B_ROOT, name],
-                                     {'form': 'L11-B', 'field': name},
-                                     'stable-submitted-manual-control')})
+                       'value': '0' if defaulted else _number(value, 0, locale=locale)})
     manual_path = [L11B_ROOT, 'IsEbitdaManuallyEdited']
     manual_evidence = ({'path': manual_path, 'type': 'boolean', 'value': manual}
                        if manual is True else _evidence(manual, manual_path))
@@ -694,11 +704,13 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
     emits all three operands after patchValue. Manual excludes later L1 writes.
     Saved row Average is copied unchanged and summed, not recomputed from months.
     """
-    result = project_l11b(form, tax_type=tax_type, locale=locale)
-    numbers = [_l11b_exact(form[name]) for name, _ in L11B_FIELDS]
+    result = project_l11b(form, tax_type=tax_type, locale=locale, null_defaults=True)
+    numbers = [0 if form[name] is None else _l11b_exact(form[name])
+               for name, _ in L11B_FIELDS]
     ebitda = _l11b_add(_l11b_add(numbers[0], numbers[1]), numbers[2])
     quarter = ebitda // 4  # binary64 multiplication by .25 is exact in this bound
-    if _l11b_exact(form['Ebitda25']) != quarter:
+    quarter_null = form['Ebitda25'] is None
+    if (quarter != 0 if quarter_null else _l11b_exact(form['Ebitda25']) != quarter):
         raise _UnsupportedMetadata('unverified_corporate_l11b_quarter_hydration')
     if type(part_ii) is not bool or part_ii != (numbers[3] > quarter or ebitda <= 0):
         raise _UnsupportedMetadata('unverified_corporate_l11b_conditional')
@@ -712,7 +724,8 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
     for name in ('Ebitda', 'DebtToEquityRatio'):
         evidence.append({**_evidence(form[name], [L11B_ROOT, name]), 'rule': 'unused-saved-control'})
     evidence.append({**_evidence(form['Ebitda25'], [L11B_ROOT, 'Ebitda25']),
-                     'rule': 'reconciled-quarter-hydration'})
+                     'rule': ('reconciled-quarter-null-default' if quarter_null
+                              else 'reconciled-quarter-hydration')})
     evidence.append({**_evidence(form['BorrowingCostExpense'], [L11B_ROOT, 'BorrowingCostExpense']),
                      'rule': 'conditional-part-ii-operand'})
     monthly, averages = [], []
@@ -820,6 +833,15 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
         if previous is not None and not isinstance(previous, dict):
             raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle')
     if hydrated:
+        source_form = root.get(L11B_ROOT)
+        null_profile = isinstance(source_form, dict) and any(
+            source_form.get(name) is None for name in
+            (*[key for key, _ in L11B_FIELDS], 'Ebitda25'))
+        # Null hydration has its own non-migrated, original submitted parent
+        # prerequisite; absence or an encoded previous form grants nothing.
+        if null_profile and (payload.get('IsMigrated') is not False
+                             or payload.get('LastSubmittedFormData', object()) is not None):
+            raise _UnsupportedMetadata('unverified_corporate_l11b_hydrated_lifecycle')
         if (event.get('component_lifetime') is None or proof['route'] != route + '?view=true'
                 or previous is not None
                 or any(form.get('disabled') for form in observed_forms if form['name'] == 'Induk')
