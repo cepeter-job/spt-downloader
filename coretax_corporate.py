@@ -826,6 +826,54 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, 
             **environment, 'tables': tables, 'references': references}}
 
 
+_L10A_STRUCTURE = r'''form => {
+ const fs='rshshr-citr-l10a-form', gs='rshshr-citr-l10a-form-grid1';
+ const panel=form.closest('.p-tabview-panel');
+ if(!panel || panel.querySelectorAll(fs).length!==1 || !form.isConnected)return false;
+ const one=(root,selector)=>{const all=root.querySelectorAll(selector);return all.length===1?all[0]:null};
+ const grid=one(form,gs), ui=grid&&one(grid,'ui-grid'), pt=ui&&one(ui,'p-table'), table=pt&&one(pt,'table');
+ if(!grid||!ui||!pt||!table||form.querySelectorAll('table').length!==1||
+    grid.closest(fs)!==form||ui.closest(gs)!==grid||pt.closest('ui-grid')!==ui||
+    table.closest('p-table')!==pt||table.closest(fs)!==form)return false;
+ for(let n=table.parentElement;n&&n!==form;n=n.parentElement)
+   if(n.localName.endsWith('-form'))return false;
+ return true;
+}'''
+
+
+def _l10a_table(form, tab):
+    from coretax_masa_observer import TABLE
+    if not _enabled_form_binding(form, tab, 'L10-A') or form.evaluate(_L10A_STRUCTURE) is not True:
+        return None
+    metadata = form.locator('rshshr-citr-l10a-form-grid1 table').evaluate(TABLE.replace('GROUP', '()=>""'))
+    from coretax_corporate_projection import L10A_HEADERS
+    if metadata['headers'] != L10A_HEADERS or metadata['footer_spans'] != []:
+        return None
+    return {'component': 'rshshr-citr-l10a-form-grid1', 'headers': metadata['headers'],
+        'footer_spans': [], 'source_structure': {'form': 'L10-A', 'owner_chain': [
+            'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table']}}
+
+
+def _observe_l10a_populated(page, form, tab, capture, before, check_cancel):
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import L10A_LABELS, L10A_BUILD_DIGESTS
+    _check_cancel(check_cancel)
+    if before is None or not callable(getattr(capture, 'observe_corporate_reference_providers', None)):
+        return None
+    references = corporate_reference_bindings(capture, tuple(L10A_LABELS.values()), check_cancel=check_cancel)
+    if references is None or references['builds'] != L10A_BUILD_DIGESTS:
+        return None
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    after = _l10a_table(form, tab)
+    _check_cancel(check_cancel)
+    if (before != after or environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+            or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
+        return None
+    return {'kind': 'corporate-l10a-populated-v1', **references, 'route': page.url,
+            **environment, 'tables': [after]}
+
+
 def _l4_footer_requests(observations, *, record_id, period):
     """Collect distinct proven L4 footer requests (None when absent).
 
@@ -857,7 +905,7 @@ def _l4_footer_requests(observations, *, record_id, period):
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
-    from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
+    from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id, CaptureCancelled
     from coretax_json import _check_corporate_route, _corporate_selected
     from spt_desktop import diagnostics
     stage = 'build'
@@ -961,6 +1009,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if form.count() != 1 or not form.is_visible():
                 return unavailable()
             binding = {'name':name, 'paths':[[root]], 'grids':[]}
+            l10a_before = None
             if name == 'Induk':
                 binding['primary'] = {'endpoint':ORIGIN+'/returnsheet/api/prefillreturnsheet/corporate-income',
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
@@ -970,9 +1019,8 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L10-A':
-                # This capability proves only an original zero-row grid. The
-                # adapter must refuse populated rows without active catalogs;
-                # a reference code is not the ordinary grid's displayed label.
+                # Preserve empty-v1 independently. Upgrade only after exact
+                # owned table checks and original catalog/provider custody.
                 fields = record.get('source_fields', {})
                 route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
                     str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
@@ -980,6 +1028,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 if page.url == route:
                     binding['projection'] = {'kind': 'corporate-l10a-empty-v1',
                         'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                    if ('Induk' in names and fields.get('TaxTypeCode') == 'ICT_RCIT'
+                            and callable(getattr(capture, 'observe_corporate_reference_providers', None))):
+                        l10a_before = _l10a_table(form, tab)
+                        _check_cancel(check_cancel)
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
@@ -1143,6 +1195,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         binding.setdefault('dependencies', []).extend(
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
+            if name == 'L10-A' and l10a_before is not None:
+                strong = _observe_l10a_populated(page, form, tab, capture, l10a_before, check_cancel)
+                _check_cancel(check_cancel)
+                _check_corporate_route(page.url, selected)
+                if strong is not None:
+                    binding['projection'] = strong
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
@@ -1169,7 +1227,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             return forms
         stage = 'induk'
         return unavailable()
-    except JsonSafetyError:
+    except (JsonSafetyError, CaptureCancelled):
         raise
     except Exception as error:
         _check_cancel(check_cancel)
