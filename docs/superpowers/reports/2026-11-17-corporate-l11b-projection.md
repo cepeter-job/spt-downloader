@@ -80,7 +80,7 @@ Existing DOM DER availability, formulas and unmapped counts are unchanged.
 No live endpoint, capture authorization, native gate or CI configuration is
 broadened. The main asset reader is the existing loaded-script-only reader.
 
-## Hydrated-v2 extension design (source review; verification pending)
+## Hydrated-v2 source contract (hosted verification is separate)
 
 This additive profile does not replace or widen the restricted v1 proof. It
 requires all three positive loaded provider pins, the existing manifest-owned
@@ -151,7 +151,28 @@ null/default scalar lifecycle profiles, broader fractional Average/DER precision
 and any source profile outside the bounded fresh submitted branch above.
 The protected AGENTS update for v2 is deliberately left to the parent owner;
 this worker is not authorized to edit it. Hosted synthetic coverage and the
-exact-head results below do not certify application-owned live acceptance.
+exact-head results in PR #278 do not certify application-owned live acceptance.
+
+## Test-first evidence and verification custody
+
+Test-first commits `648940e` and `1a453eb` precede implementation commit
+`7a98c2f`. Build run `44033256954`, head
+`1a453eb8d8204490c8d45db4a242d49396933f89`, executed the focused reproduction
+on the Windows runners: `test_view_projects_hydrated_ebitda_and_actual_saved_row_averages`
+failed with `Missing submitted hydrated L11-B projection` (callable(None)).
+The adapter/export cases also refused the new kind before implementation.
+Local checks during the implementation were source-only RED/AST; no local
+product import, copied product algorithm, pytest, fixture or EXE was executed.
+
+New synthetic cases cover literal Average versus editor means, duplicate
+monthly rows, overwritten saved EBITDA/footer/ratio controls, floor of negative
+quarters, shown/hidden/equality condition boundaries, strict pins and original
+null/empty/encoded-null provenance, precision/ordered sums, exact DER operands,
+manifest lifecycle and held descriptor/attempt refusals, Stop, provider-only
+assets, original capture/held replay and saved/reopened workbook/resume Audit.
+The existing `_l11b_der` renderer and approved resource are unchanged. The PR
+body records final immutable head, Build/CodeQL run IDs and actual hosted
+outcomes; run-isolated downloaded JUnit/coverage evidence stays in local scratch.
 
 The initial protected `AGENTS.md` edit was denied and was not retried under
 that denial. The operator later explicitly renewed approval for the verified
