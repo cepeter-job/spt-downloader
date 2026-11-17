@@ -1,7 +1,11 @@
 # Proyeksi native Induk (Corporate)
 
-Status: usulan, menunggu persetujuan. Menyusul PR #267
-(`fix/native-dump-gate`) yang CI-nya merah.
+Status: proyeksi identitas parsial sudah diimplementasikan melalui #269;
+desain #268 dan perbaikan gate #267 juga sudah merged. Diagnosis kegagalan
+di bawah adalah bukti historis, bukan status CI saat ini. Operator kemudian
+memberi izin ulang khusus untuk mencatat kontrak Induk di `AGENTS.md`.
+Pembaruan kontrak ini hanya dokumentasi: tidak mengubah runtime, gate, scope
+native, izin merge, atau cleanup worktree. Kelengkapan Induk tetap PARTIAL.
 
 ## Masalah
 
@@ -78,7 +82,7 @@ yang terbukti terisi di DOM (10 dari 27 slot deklarasi).
 ```
 {'kind': 'corporate-induk-v1',
  'builds': {CIT_SOURCE_URL: digest},
- 'route': page.url, 'locale': …, 'timezone': …}
+ 'route': page.url}
 ```
 
 `digest` CIT sudah dihitung dan diverifikasi sebagai 64-hex pin di awal
@@ -87,12 +91,12 @@ endpoint, pin, preload, timer, atau properti halaman baru.
 
 ### 2. Proyeksi
 
-`coretax_corporate_projection.project_induk(main, *, tax_type, locale, timezone_name)`
+`coretax_corporate_projection.project_induk(main, *, tax_type)`
 hanya memancarkan slot yang key-nya ada di `MainFormData` **dan** lolos
 pemeriksaan tipe (string atau number token; bool/list/dict/null tidak pernah
 dipaksa menjadi nilai identitas). Caption tanpa key payload tidak pernah
 ditebak. `_apply_induk` memvalidasi proof (kind, satu digest CIT 64-hex,
-`route` vs `event['frame_url']`, locale/timezone), `paths == [['MainFormData']]`,
+`route` vs `event['frame_url']`), `paths == [['MainFormData']]`,
 adanya `primary`, serta lifecycle yang sama dengan cabang lain
 (`ReturnSheetStatusCode == 'SUBMITTED'`, `ReturnSheetModel` cocok dengan
 `Model SPT`, `source_status == 'SPT Dilaporkan'`).
@@ -119,9 +123,10 @@ L11-B DER):
 
 ### 4. Yang TIDAK berubah
 
-- Gate #267 tetap sama: dump table di section mana pun menolak capture.
-  Perubahan ini membuat fixture sah menghasilkan `used=json`, bukan
-  melonggarkan gate.
+- Gate #267 yang sudah merged melewati section dengan reviewed `fields`,
+  karena dump pada section itu adalah custody yang sengaja dipertahankan.
+  Dump pada section lain yang belum diproyeksikan tetap menolak capture;
+  proyeksi Induk tidak memberi izin untuk form lain yang belum terbukti.
 - `detail.source`, `coverage`, `provenance`, custody, dan identitas record
   tidak berubah.
 - Semua section lain (L2, L4, L6, L9, L10-*, L11-B) tetap dump sampai
@@ -133,13 +138,15 @@ L11-B DER):
 1. RED: `tests/test_corporate_induk_projection.py` — proof salah/`None` →
    `unverified_corporate_induk_binding`; lifecycle belum submit → refusal;
    10 field hadir dengan urutan dan label yang sama seperti deklarasi
-   template; slot tanpa key payload tidak ditebak; `tables == []`.
+   template; slot tanpa key payload tidak ditebak; tabel dump custody tetap ada.
 2. RED: test observer — `Induk` binding membawa `corporate-induk-v1` dengan
-   builds CIT+MAIN dan `tables: []`.
+   tepat proof `kind`/`builds`/`route` dengan satu digest CIT yang sudah
+   diadmit observer. Identitas literal tidak membutuhkan locale/timezone RPC.
 3. Update ripple: 18 assertion `/MainFormData/…` di
    `tests/test_json_adapter.py`, `test_json_hybrid.py`,
    `test_json_hybrid_native.py`, `test_issue187_real_dom_parity.py`
-   berpindah dari tabel dump ke `section['fields']`.
+   memeriksa proyeksi `section['fields']` tanpa menghapus bukti dump asli;
+   binding fixture harus membawa proof proyeksi yang benar-benar ditinjau.
 4. `tests/test_corporate_native_dump_gate.py` tetap: dump → tolak,
    section terproyeksi → lolos.
 5. `template_mapping` Induk `complete=False` dengan
