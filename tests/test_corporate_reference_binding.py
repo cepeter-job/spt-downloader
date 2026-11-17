@@ -91,6 +91,14 @@ def test_unproved_catalog_binding_never_supplies_a_label(defect):
         bind(event, packets, refs)
 
 
+def test_uniform_malformed_parent_lifetime_cannot_authorize_a_shared_catalog():
+    event, packets, refs = case()
+    incomplete = {'source_url': event['component_lifetime']['source_url']}
+    event['component_lifetime'] = deepcopy(incomplete)
+    for packet in packets.values(): packet['event']['component_lifetime'] = deepcopy(incomplete)
+    with pytest.raises(adapter.JsonSafetyError): bind(event, packets, refs)
+
+
 def test_observer_collects_only_original_exact_requests_without_any_catalog_fetch():
     event, packets, refs = case()
     class Capture:

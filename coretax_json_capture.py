@@ -698,14 +698,17 @@ class DetailJsonCapture:
 
         self._cancel(check_cancel)
         self._verify_binding()
+        if self._result is not None:
+            sealed = self._result.get('corporate_reference_providers')
+            return dict(sealed['builds']) if sealed is not None else None
+        if not self._corporate:
+            return None
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+            return None
         if self._reference_providers_attempted:
             return (dict(self._reference_providers['builds'])
                     if self._reference_providers is not None else None)
         self._reference_providers_attempted = True
-        if self._result is not None or not self._corporate:
-            return None
-        if self.observe_component_lifetime(check_cancel=check_cancel) is None:
-            return None
         configured = load_build_pins()
         pins = {url: configured.get(url) for url in CORPORATE_REFERENCE_SOURCES}
         if not _corporate_reference_builds(pins):
@@ -718,23 +721,24 @@ class DetailJsonCapture:
                 performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
                 list(CORPORATE_REFERENCE_SOURCES))
             self._cancel(check_cancel)
-            if loaded is not True:
-                return None
             observed = {}
-            for url in CORPORATE_REFERENCE_SOURCES:
-                reader = _PPN_MAIN_BUILD_HASH if '/main.' in url else _REFERENCE_ORDER_BUILD_HASH
-                observed[url] = self._bound.evaluate(reader, url)
-                self._cancel(check_cancel)
-                if not isinstance(observed[url], str) or observed[url] != pins[url]:
-                    return None
+            if loaded is True:
+                for url in CORPORATE_REFERENCE_SOURCES:
+                    reader = _PPN_MAIN_BUILD_HASH if '/main.' in url else _REFERENCE_ORDER_BUILD_HASH
+                    observed[url] = self._bound.evaluate(reader, url)
+                    self._cancel(check_cancel)
+                    if not isinstance(observed[url], str) or observed[url] != pins[url]:
+                        break
         except (JsonSafetyError, CaptureCancelled):
             self._cancel(check_cancel)
             raise
         except Exception:
             self._cancel(check_cancel)
-            return None
+            observed = None
         self._cancel(check_cancel)
         if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+            return None
+        if not _corporate_reference_builds(observed):
             return None
         self._reference_providers = _capture_corporate_reference_providers({
             'kind': 'corporate-reference-providers-v1', 'attempt': self.attempt,

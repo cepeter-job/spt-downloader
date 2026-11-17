@@ -129,6 +129,24 @@ def test_stop_after_provider_hash_is_not_demoted_to_unavailable(tmp_path):
     assert not list(tmp_path.rglob('manifest.json'))
 
 
+@pytest.mark.parametrize('outcome', ['mismatch', 'exception'])
+def test_unavailable_hash_cannot_mask_same_document_contradiction(tmp_path, outcome):
+    context, page = configured_page()
+    original = page.evaluate
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        def changed(script, args=None):
+            if isinstance(args, str):
+                page.generation = object()
+                if outcome == 'exception': raise RuntimeError('SYNTHETIC DRIVER')
+                return None
+            return original(script, args)
+        page.evaluate = changed
+        with pytest.raises(JsonSafetyError): observe(capture)
+
+
 def test_one_shot_stop_from_hash_rpc_is_never_swallowed(tmp_path):
     context, page = configured_page()
     original = page.evaluate

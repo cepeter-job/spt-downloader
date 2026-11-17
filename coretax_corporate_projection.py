@@ -403,7 +403,7 @@ def bind_corporate_reference_catalogs(references, reference_packets, *, kinds, e
     catalogs remain fully checked custody, not implicit form dependencies.
     """
     from coretax_json import (_corporate_reference_builds, _capture_clock_interval,
-                              _capture_corporate_reference_providers)
+                              _capture_corporate_reference_providers, _capture_component_lifetime)
 
     urls = {types[0]: url for url, types in CORPORATE_REFERENCE_REQUESTS.items() if len(types) == 1}
     if (not isinstance(kinds, (tuple, list)) or not kinds or len(set(kinds)) != len(kinds)
@@ -415,6 +415,9 @@ def bind_corporate_reference_catalogs(references, reference_packets, *, kinds, e
         ('corporate_reference_providers', 'component_lifetime', 'clock_interval'))
     if not isinstance(providers, dict) or not isinstance(lifetime, dict) or clock is None:
         raise _UnsupportedMetadata('missing_corporate_reference_custody')
+    _capture_component_lifetime(lifetime, attempt=event.get('attempt'),
+        record_id=event.get('record_id'), source_url=providers.get('source_url'),
+        detail_url=event.get('frame_url'))
     _capture_corporate_reference_providers(providers, attempt=event.get('attempt'),
         record_id=event.get('record_id'), source_url=lifetime.get('source_url'),
         detail_url=event.get('frame_url'))
