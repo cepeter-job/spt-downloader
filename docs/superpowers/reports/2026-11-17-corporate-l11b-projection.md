@@ -96,14 +96,21 @@ exactly the configured pin. Vendor hook registration near 1254655 orders initial
 ngOnChanges before ngOnInit; FormGroup patchValue near 1386500 emits per control,
 and disable near 1381593 emits every child even if already disabled. Therefore
 one must NOT assume subscriptions existed during the first OnChanges.
+The same vendor's p-inputNumber writeValue near 2147458 stores the incoming
+value without min/max clamping; formattedValue renders it. Limit validation is
+in the user blur path, not the disabled fresh submitted hydration path. This
+also preserves a proved negative floored quarter instead of silently clamping
+it to the editor's minimum.
 
 The ordinary fresh SPA parent is the additional lifecycle premise: near
 2637923 it starts showAttachment11b=true, and its template near 2727k eagerly
 instantiates this child (no lazy content template). Its ngOnInit subscribes the
 asynchronous original primary HTTP response. The initial synchronous child
 creation/OnInit completes before that response callback hydrates the parent.
-The child subscribes its three scalar controls in ngOnInit. Upon original
-formData hydration, setFormData patches the controls and ngOnChanges then
+The child merges its three scalar valueChanges streams in ngOnInit (vendor
+module 36787:T, unfiltered merge with unbounded concurrency), not a dialog-only
+calculation or a completion-waiting stream. Upon original formData hydration,
+setFormData patches the controls and ngOnChanges then
 unconditionally disables the submitted FormGroup. The last three-control
 emissions recompute Ebitda = (commercial + depreciation) + income-tax, excluding
 borrowing cost; disable also replaces the temporarily patched saved quarter.

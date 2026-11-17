@@ -157,7 +157,7 @@ def test_l11b_held_lifetime_cannot_be_overridden(browser, tmp_path, monkeypatch,
             assert forms is not None
             manifest = capture.drain()
         fixture.record['detail_url'] = route()
-        if defect == 'attempt': manifest['component_lifetime']['attempt'] = 'foreign-attempt'
+        if defect == 'attempt': manifest['component_lifetime']['attempt'] = 'b' * 32
         else: manifest['responses'][0]['component_lifetime'] = manifest['component_lifetime']
         with pytest.raises(JsonSafetyError):
             list(checkpoint_bodies(tmp_path, manifest, fixture.record, corpus.SCOPE))
