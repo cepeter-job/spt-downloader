@@ -829,8 +829,19 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
             or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
                    or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
             or type(payload.get('TIN')) is not str or payload['TIN'] != event['scope'][0]
+            or type(main.get('Tin')) is not str or main['Tin'] != payload['TIN']
             or type(payload.get('PeriodYear')) is not _CorporateNumber
-            or payload['PeriodYear'] != main.get('TaxYear')):
+            or type(main.get('TaxYear')) is not _CorporateNumber
+            or payload['PeriodYear'] != main['TaxYear']
+            or not re.fullmatch(r'(?:19|20)[0-9]{2}|2100', payload['PeriodYear'])
+            or type(root.get('TaxType')) is not str or root['TaxType'] != 'ICT_RCIT'
+            or type(root.get('TaxPeriodCode')) is not str
+            or root['TaxPeriodCode'] != '0112' + payload['PeriodYear']
+            or fields.get('TaxPeriodCode') != root['TaxPeriodCode']
+            or type(root.get('ReturnSheetRecordIdentifier')) is not str
+            or root['ReturnSheetRecordIdentifier'] != record['record_id']
+            or type(root.get('ReturnSheetAggregateIdentifier')) is not str
+            or root['ReturnSheetAggregateIdentifier'] != fields.get('AggregateIdentifier')):
         raise _UnsupportedMetadata('unverified_corporate_l10b_submitted_lifecycle')
     if (not isinstance(form, dict) or set(form) != set(L10B_KEYS)
             or any(type(value) is not bool for value in form.values())):
@@ -914,6 +925,7 @@ def l10b_nondisplay_covered(section, provenance):
                     'TaxpayerAggregateIdentifier': report['route'].split('/')[-4],
                     'TaxTypeCode': 'ICT_RCIT', 'ReturnSheetTypeCode': 'ICT_RCITR',
                     'ReturnSheetModel': 'Normal',
+                    'TaxPeriodCode': root['TaxPeriodCode'],
                     'AggregateIdentifier': root['ReturnSheetAggregateIdentifier']}}
             rebuilt = _apply_l10b(binding, section, [{'name': 'Induk'}, binding],
                 root=root, payload=payload, record=record, event=event)

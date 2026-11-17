@@ -181,6 +181,16 @@ def test_non_display_report_never_launders_other_or_changed_dump_sections(defect
     assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
 
 
+@pytest.mark.parametrize('path', [['MainFormData', 'Tin'], ['MainFormData', 'TaxYear'],
+    ['TaxType'], ['TaxPeriodCode'], ['ReturnSheetRecordIdentifier'], ['ReturnSheetAggregateIdentifier']])
+def test_report_revalidation_does_not_retype_identity_metadata_as_boolean(path):
+    result = adapt()
+    report = next(r for r in result['provenance']['projections'] if r['form'] == 'L10-B')
+    entry = next(v for v in report['values'] if v['path'] == path)
+    entry.update(type='boolean', value=False)
+    assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
+
+
 def test_export_keeps_intentional_b_d_absence_and_checkpoint_custody(tmp_path):
     result = adapt()
     assert result['eligible'], result['reason']

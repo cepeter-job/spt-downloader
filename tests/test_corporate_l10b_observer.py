@@ -65,3 +65,26 @@ def test_custody_safety_error_is_not_demoted(monkeypatch):
     capture.bind_l10b_structure = changed
     with pytest.raises(JsonSafetyError):
         observer._observe_l10b(Page(), object(), object(), object(), capture, None)
+
+
+@pytest.mark.parametrize('available', [False, True])
+def test_main_observer_dispatches_own_binding_and_refuses_missing_capability(monkeypatch, available):
+    from test_issue143_failure_stages import _observe_with_tabs
+    calls = []
+    proof = {'kind': 'corporate-l10b-nondisplay-v1', 'builds': {}, 'route': 'synthetic'}
+    def own(*args):
+        calls.append(args)
+        return deepcopy(proof) if available else None
+    # This test owns only dispatch. The real pin/lifetime helper is tested
+    # above; the shared tab harness intentionally has no source authority.
+    monkeypatch.setattr(observer, '_observe_l10b', own)
+    captions = list(observer.FORMS)
+    flags = [name not in ('Induk', 'L10-B') for name in captions]
+    forms, inspected = _observe_with_tabs(monkeypatch, flags, captions)
+    assert len(calls) == 1 and inspected == ['Induk', 'L10-B']
+    if available:
+        binding, = [f for f in forms if f['name'] == 'L10-B']
+        assert binding['projection'] == proof and binding['paths'] == [['L10bFormData']]
+        assert binding['grids'] == []
+    else:
+        assert forms is None
