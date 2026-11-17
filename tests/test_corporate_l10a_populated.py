@@ -49,13 +49,16 @@ def test_populated_consumer_preserves_duplicate_rows_and_expands_only_four_codes
 
 @pytest.mark.parametrize('token,expected', [('0', '0'), ('-0', '0'), ('1e3', '1.000'),
     ('1234.5', '1.235'), ('-1234.5', '-1.235'), ('0.5', '1'), ('-0.5', '-1'),
-    ('0.25', '0'), ('-0.25', '0'), ('999999999999999', '999.999.999.999.999')])
-def test_binary_exact_number_subset_uses_zero_digit_half_away_from_zero(token, expected):
+    ('0.25', '0'), ('-0.25', '0'), ('999999999999999', '999.999.999.999.999'),
+    ('0.1', '0'), ('1234.56', '1.235'), ('-1234.56', '-1.235'),
+    ('1234.4999999999999', '1.235'), ('0.49999999999999999', '1'),
+    ('0.49999999999999994', '0'), ('1e-9999', '0'), ('-1e-9999', '0')])
+def test_json_number_binary64_then_zero_digit_half_away_from_zero(token, expected):
     result = project([row(TransactionValue=_CorporateNumber(token))])
     assert result['rows'][0][6] == expected
     entry, = [e for e in result['provenance'] if e['path'][-1] == 'TransactionValue']
     assert entry['type'] == 'number' and entry['value'] == token
-    assert entry['rule'] == 'angular-decimal-1.0-0-id/binary-exact'
+    assert entry['rule'] == 'angular-decimal-1.0-0-id/json-number-binary64'
 
 
 @pytest.mark.parametrize('value,expected', [(None, ''), ('1234.50', '1234.50'),
@@ -67,9 +70,15 @@ def test_active_grid_caller_bypasses_the_pipe_for_null_and_non_time_strings(valu
     assert entry['rule'] == 'grid-checkIsString/literal-null-or-string'
 
 
-@pytest.mark.parametrize('token', ['0.1', '1234.4999999999999', '1000000000000000',
-    '-1000000000000000', '1e309', '1e-9999', '999999999999999.5'])
-def test_unsafe_or_non_binary_exact_numeric_inputs_are_unsupported(token):
+@pytest.mark.parametrize('token', ['1000000000000000', '-1000000000000000',
+                                 '1e309', '999999999999999.5'])
+def test_unsafe_browser_or_workbook_numeric_range_is_unsupported(token):
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l10a_number_precision'):
+        project([row(TransactionValue=_CorporateNumber(token))])
+
+
+@pytest.mark.parametrize('token', ['01', '+1', '.5', '1.', '1_000', ' 1', 'NaN', 'Infinity'])
+def test_number_marker_does_not_admit_non_json_numeric_lexemes(token):
     with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l10a_number_precision'):
         project([row(TransactionValue=_CorporateNumber(token))])
 
@@ -121,3 +130,10 @@ def test_populated_row_and_catalog_shape_remain_closed(change):
 def test_populated_structure_has_no_usd_or_foreign_locale_shortcut(options):
     with pytest.raises(_UnsupportedMetadata, match='unverified_corporate_l10a_structure'):
         project([original_row()], **options)
+
+
+def test_usd_header_is_not_a_rupiah_grid_even_with_valid_reference_labels():
+    headers = list(module().L10A_HEADERS)
+    headers[6] = 'NILAI TRANSAKSI (USD)'
+    with pytest.raises(_UnsupportedMetadata, match='unverified_corporate_l10a_structure'):
+        project([original_row()], headers=headers)

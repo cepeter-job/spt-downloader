@@ -158,8 +158,8 @@ class Fixture(BaseFixture):
     def __init__(self, browser, monkeypatch, *, defect=None, literal_string=False):
         self.reference_raw = {URLS[kind]: corpus.wire({'IsSuccessful': True, 'Payload': catalog(kind)})
                               for kind in KINDS}
-        values = [corpus.Number('1234.5'), None, corpus.Number('-0'), corpus.Number('-0.25'),
-                  corpus.Number('-1234.5'), '1234.50' if literal_string else corpus.Number('1234.5'),
+        values = [corpus.Number('1234.56'), None, corpus.Number('-0'), corpus.Number('-0.25'),
+                  corpus.Number('-1234.5'), '1234.50' if literal_string else corpus.Number('1234.56'),
                   *([corpus.Number('12')] * 4)]
         self.rows = [row(TransactionValue=value) for value in values]
         self.rows += [deepcopy(self.rows[0]), row(Country=None, RelationshipCode=None,

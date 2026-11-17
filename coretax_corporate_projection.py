@@ -52,8 +52,8 @@ L10A_ROOT = 'DeclarationTransactionRelatedParties'
 L10A_GRID_ENDPOINT = CORPORATE_L10A_GRID_URL
 L10A_GRID_NAME = 'L10-A/l10a-grid'
 # The pinned L10-A panel owns no scalar body control: it remembers the declared
-# root but only re-reads PeriodYear/CollectorTin from MainFormData. All worksheet
-# body data belongs to the independent reviewed l10a-grid response.
+# root but only re-reads PeriodYear/CollectorTin from outer baseFormData.
+# All worksheet body data belongs to the independent l10a-grid response.
 # Columns and captions are read from that owner's initColumn()/ngOnChanges.
 L10A_COLUMNS = ('Name', 'TIN', 'Country', 'RelationshipCode', 'BusinessActivity',
                 'TypeOfTransaction', 'TransactionValue', 'PricingMethod', 'ReasonPricingMethod')
@@ -894,15 +894,26 @@ def _l10a_number(value):
     if type(value) is not _CorporateNumber:
         raise _UnsupportedMetadata('unsupported_corporate_l10a_number_type')
     try:
-        number = _decimal(value)
-        # Match JSON.parse's Number without losing original source precision.
-        # Non-binary-exact decimals/underflow remain an unsupported profile.
-        if abs(number) > _MAX_INTEGER or Decimal.from_float(float(number)) != number:
+        _decimal(value)  # Preserve the original strict finite/token budget gate.
+        if not re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?', value):
             raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
-        text = _number(value, 0, locale='id-ID')
+        # JSON.parse has already converted the original decimal token to a
+        # binary64 Number before Ka/DecimalPipe sees it. Keep the wire token in
+        # provenance, but render that Number, including rounded decimal inputs
+        # and real Number underflow. Do not apply Decimal math to the raw token.
+        browser_number = float(value)
+        number = Decimal.from_float(browser_number)
+        if not number.is_finite() or abs(number) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
+        # In this bounded range every integer and half-integer is exactly
+        # representable. A round-trip decimal spelling of the same binary64
+        # cannot cross one of those thresholds. Thus Python's spelling and the
+        # pinned Angular Number.toString path have identical zero-digit rounding;
+        # the independent exact-source Edge inventory exercises those boundaries.
+        text = _number(str(browser_number), 0, locale='id-ID')
         if abs(_decimal(text.replace('.', ''))) > _MAX_INTEGER:
             raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
-        return text, 'angular-decimal-1.0-0-id/binary-exact'
+        return text, 'angular-decimal-1.0-0-id/json-number-binary64'
     except (_UnsupportedMetadata, DecimalException, ValueError, OverflowError):
         raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision') from None
 

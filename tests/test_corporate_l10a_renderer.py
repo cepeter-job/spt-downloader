@@ -59,7 +59,10 @@ def renderer():
     ('0.25', '0', 1), ('-0.25', '0', 1), ('0.5', '1', 1), ('-0.5', '-1', 1),
     ('1234.5', '1.235', 1), ('-1234.5', '-1.235', 1),
     ('999999999999999', '999.999.999.999.999', 1),
-    ('0.49999999999999999', '1', 1), ('9007199254740993', '9.007.199.254.740.992', 1)])
+    ('0.49999999999999999', '1', 1), ('0.49999999999999994', '0', 1),
+    ('0.1', '0', 1), ('1234.56', '1.235', 1), ('-1234.56', '-1.235', 1),
+    ('1234.4999999999999', '1.235', 1), ('1e-9999', '0', 1), ('-1e-9999', '0', 1),
+    ('9007199254740993', '9.007.199.254.740.992', 1)])
 def test_exact_loaded_framework_and_active_caller_numeric_representation(browser, wire, expected, calls):
     page = browser.new_page()
     try:
@@ -73,5 +76,26 @@ def test_nullish_zero_inside_pipe_is_not_nullish_zero_in_the_active_grid(browser
     try:
         assert page.evaluate(renderer(), {'wire': 'null', 'direct': True}) == '0'
         assert page.evaluate(renderer(), {'wire': 'null'}) == {'value': None, 'pipe_calls': 0}
+    finally:
+        page.close()
+
+
+def test_decimal_and_precision_threshold_inventory_matches_independent_pinned_framework(browser):
+    from coretax_corporate_projection import _l10a_number
+    from coretax_json import _CorporateNumber
+
+    wires = [sign + integer + '.' + fraction
+        for sign in ('', '-')
+        for integer in ('0', '1', '1234', '99999', '999999999', '999999999999998')
+        for fraction in ('1', '49', '4999999999999', '499999999999999999',
+                         '5', '500000000000001', '99')]
+    wires.extend(('1e-9999', '-1e-9999', '5e-324', '-5e-324', '0.49999999999999994'))
+    expected = [_l10a_number(_CorporateNumber(wire))[0] for wire in wires]
+    page = browser.new_page()
+    try:
+        source = 'wires=>{const render=(' + renderer() + ');return wires.map(wire=>render({wire}));}'
+        actual = page.evaluate(source, wires)
+        assert len(actual) == len(wires)
+        assert actual == [{'value': value, 'pipe_calls': 1} for value in expected]
     finally:
         page.close()

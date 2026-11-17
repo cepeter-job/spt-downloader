@@ -231,18 +231,30 @@ the unmodified application pipe constructor (MAIN 4031960..4032226), active
 instruction plumbing is synthetic; the numeric algorithm is not rewritten as
 an alleged framework oracle. No production code or snippets are executed locally.
 
-Supported numeric tokens must be finite, within fifteen integral digits and
-exactly representable by the Number that JSON.parse consumes; compare the
-original Decimal to Decimal.from_float without dropping its lexeme. DecimalPipe
-1.0-0 rounds a binary-exact half away from zero, suppresses a rounded negative
-zero and groups with Indonesian full stops. Assertions specify 1234.5 -> 1.235,
--1234.5 -> -1.235, -0/-0.25 -> 0. Literal non-time strings bypass formatting,
-including `1234.50` and literal `-0`; null remains blank. Non-binary-exact 0.1,
-underflow, unsafe magnitudes and time-shaped strings remain unsupported rather
-than guessing rounded source intent. Framework boundary cases explicitly show
-why 0.49999999999999999 and 9007199254740993 cannot be treated as exact source
-numbers. USD/oil-and-gas routes remain unsupported; the captured route and exact
-Rupiah header, not edit validators or a two-decimal shortcut, select this subset.
+Supported original numeric tokens must retain their exact wire lexeme and pass
+the existing strict finite/token budget. Rendering consumes the **binary64
+Number after JSON.parse**, not Decimal arithmetic over the pre-parse decimal.
+The original-only binary-exact restriction was therefore extended for ordinary
+decimal monetary inputs and genuine Number underflow. Convert the original
+token to binary64, enforce the fifteen-integral-digit output bound, and use a
+round-trip decimal spelling of that same Number for zero-digit rounding.
+Every integer and half-integer in this bounded range is exactly representable;
+a decimal spelling that round-trips to the same Number cannot cross one of
+those rounding thresholds. Thus this has the same fraction-zero result as the
+pinned Angular Number.toString/DecimalPipe path, including negative signs and
+zero suppression. A new independently measured source-Edge threshold inventory
+checks both signs, ordinary decimals, near-half precision loss, subnormals and
+underflow. Its code is an oracle, not a second Python implementation.
+
+Assertions include 1234.56 -> 1.235, -1234.56 -> -1.235,
+1234.4999999999999 -> 1.235, 0.49999999999999999 -> 1 and -0/-0.25 -> 0.
+The original numeric lexemes remain unchanged in typed provenance, even when
+Number conversion changes their representation. Literal non-time strings
+bypass formatting, including `1234.50` and literal `-0`; null remains blank.
+Unsafe magnitudes, nonfinite or malformed numeric lexemes, and time-shaped
+strings still refuse. USD/oil-and-gas routes remain unsupported: the original
+route and exact Rupiah header, not edit validators or a two-decimal shortcut,
+select this profile.
 
 ## Submitted lifecycle and original online row ownership
 
