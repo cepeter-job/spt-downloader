@@ -172,8 +172,8 @@ def test_ordered_total_does_not_exceed_excel_significant_precision():
     ('999999999999998,125', '999999999999998,125', False),
 ])
 @pytest.mark.parametrize('monetary', [False, True])
-def test_l2_excel_number_writer_preserves_three_digit_values_without_changing_other_types(text, expected, safe, monetary):
-    from openpyxl import Workbook
+def test_l2_excel_number_writer_preserves_three_digit_values_without_changing_other_types(text, expected, safe, monetary, tmp_path):
+    from openpyxl import Workbook, load_workbook
     import coretax_badan_template as template
     helper = getattr(template, '_write_l2_number', None)
     assert callable(helper), 'Missing source-scoped L2 Number writer'
@@ -182,8 +182,19 @@ def test_l2_excel_number_writer_preserves_three_digit_values_without_changing_ot
         sheet = book.active
         sheet['A1'].number_format = 'General'
         assert helper(sheet, 1, 1, text, monetary=monetary) is safe
-        assert sheet['A1'].value == expected
+        # Shared _write deliberately stores a literal blank in memory; the
+        # serialized/reopened empty Excel cell is None. Do not alter production
+        # blank normalization to satisfy an in-memory-only test expectation.
+        assert sheet['A1'].value == ('' if expected is None else expected)
         assert sheet['A1'].number_format == (template.ACCOUNTING if monetary else 'General')
+        path = tmp_path / 'l2-number.xlsx'
+        book.save(path)
+        reopened = load_workbook(path)
+        try:
+            assert reopened.active['A1'].value == expected
+            assert reopened.active['A1'].number_format == sheet['A1'].number_format
+        finally:
+            reopened.close()
     finally:
         book.close()
 

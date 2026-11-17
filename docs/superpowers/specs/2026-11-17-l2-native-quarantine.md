@@ -231,6 +231,11 @@ an independent next slice; a pure helper alone never enables native capture.
   The L2-only three-fraction writer fixes that without changing other forms.
   The provenance test now verifies the actual complete original path inventory,
   never fabricates entries to satisfy an arbitrary count.
+- Head `561afddf2980f4ddeeb2948d70c1df76fe752a98`, run `44040068066`:
+  the only four failures were the new numeric-writer unit test's in-memory
+  blank expectation. Shared `_write` stores `''` in memory and Excel reopening
+  yields None. The test now asserts both stages through a real saved/reopened
+  workbook; production blank normalization is unchanged.
 - Final changed-head full CI, exact artifact/readback/bootstrap and all CodeQL
   evidence must be read from the PR's current-head checks. Earlier run results
   do not certify a later head. The tracked source record is not live acceptance.
