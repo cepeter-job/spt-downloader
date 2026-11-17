@@ -23,6 +23,14 @@ class Fixture(BaseFixture):
         super().__init__(browser, monkeypatch, defect=defect)
         self.raw = raw[0]['body']
         monkeypatch.setattr(projection, 'L4_POPULATED_BUILD_DIGESTS', dict(self.pins))
+        # Replace only configured public provider bytes/pins in the synthetic
+        # SPA; the real shared producer/binder and capture still execute.
+        import coretax_build_pins
+        import coretax_json
+        configured = coretax_build_pins.load_build_pins()
+        pins = {**configured, **self.pins}
+        monkeypatch.setattr(coretax_build_pins, 'load_build_pins', lambda: dict(pins))
+        monkeypatch.setattr(coretax_json, 'load_build_pins', lambda: dict(pins))
 
     def route(self, route):
         req = route.request

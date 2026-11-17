@@ -183,7 +183,15 @@ def test_owned_populated_l4_capture_adapter_held_replay_and_reopened_workbook(br
             assert forms[1]['projection']['kind'] == 'corporate-l4-populated-v2'
             manifest = capture.drain()
             assert manifest['complete'] and manifest['component_lifetime']['same_document'] is True
+            assert manifest['corporate_reference_providers']['builds'] == fixture.pins
             bodies = list(capture.iter_bodies())
+            assert len(bodies) == 6
+            for original in bodies:
+                url = original['context']['url']
+                expected = (fixture.raw if url == corpus.PRIMARY_URL else
+                    fixture.grid_raw[original['context']['request_json']['First']] if url == GRID else
+                    fixture.footer_raw if url == FOOTER else fixture.reference_raw[url])
+                assert original['body'] == expected
             result = adapt_corporate_detail(iter(bodies), fixture.record, corpus.SCOPE, forms)
             assert result['eligible'] and result['coverage']['complete'], result['reason']
             fixture.record['detail_url'] = DETAIL
@@ -208,7 +216,9 @@ def test_owned_populated_l4_capture_adapter_held_replay_and_reopened_workbook(br
             assert values.count(LABELS[KINDS[1]][B_ROW['TypeOfIncome']]) == 2
             assert ROW['TaxObject'] not in values and 'SYNTHETIC BODY BAIT' not in values
             rates = [r[5] for r in sheet if r[0].value == ROW['TIN']]
-            assert len(rates) == 12 and all(c.value == .02 and '%' in c.number_format for c in rates)
+            # The approved L4 rate slot is General, not the separately approved
+            # L2 percentage-fraction contract. Keep rendered percentage points.
+            assert len(rates) == 12 and all(c.value == '2,00' and c.data_type == 's' for c in rates)
             gross = [r[4] for r in sheet if r[2].value == LABELS[KINDS[1]][B_ROW['TypeOfIncome']]]
             assert len(gross) == 2 and all(c.value == 500.25 and c.data_type == 'n' for c in gross)
             assert any(r[0].value == 'TOTAL' and r[4].value == 12000 and r[6].value == 240 for r in sheet)
@@ -279,4 +289,29 @@ def test_populated_l4_late_same_document_route_detour_is_sticky_before_seal(brow
             page.evaluate('url=>{history.pushState({},"",url+"&changed=true");history.replaceState({},"",url);}', DETAIL)
             with pytest.raises(JsonSafetyError): capture.drain()
             assert not list(tmp_path.rglob('manifest.json'))
+    finally: fixture.close()
+
+
+@pytest.mark.parametrize('owner', ['rshshr-citr-l4-grid1', 'rsh-citr-l4-grid2'])
+def test_l4_headers_changed_during_shared_provider_work_cannot_use_earlier_metadata(
+        browser, tmp_path, monkeypatch, owner):
+    from l4_observer_fixture import Fixture, ASSET
+    fixture = Fixture(browser, monkeypatch)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page, _ = driver.open_return_readonly(fixture.page, fixture.page.locator('tbody tr'),
+                corpus.TAXPAYER_ID, corpus.RECORD_ID, json_capture=capture)
+            page.wait_for_function('window.primaryDone===true')
+            observe = capture.observe_corporate_reference_providers
+            changed = []
+            def replace_header(**options):
+                builds = observe(**options)
+                assert builds == fixture.pins
+                page.locator(owner + ' th').first.evaluate('(e)=>e.textContent="SYNTHETIC CHANGED AFTER PROVIDER"')
+                changed.append(True)
+                return builds
+            monkeypatch.setattr(capture, 'observe_corporate_reference_providers', replace_header)
+            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            assert changed == [True] and forms is None
+            assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
     finally: fixture.close()

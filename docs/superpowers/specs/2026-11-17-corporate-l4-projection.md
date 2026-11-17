@@ -116,7 +116,11 @@ the delegated scope. No merge, closure or consolidation is authorized here.
 
 `corporate-l4-populated-v2` is additive; v1 remains empty-only. Test-first
 head047135d specifies populated pure rendering against the empty implementation.
-All execution is hosted-only; source/AST is not runtime acceptance.
+All execution is hosted-only; source/AST is not runtime acceptance. Run44033205877
+at047135d produced actual hosted RED: four downloaded original Windows JUnit
+artifacts contain33 distinct new L4 cases,33 failures, zero errors/skips, each
+because the old function lacks the populated labels interface. This was verified
+from the runner artifacts, not a local product runner.
 
 Independent rehash of scratch z525.js and l10a-main.js matched the configured
 CIT/MAIN digests above. CIT IE.initColumn (near char2310261) -> MAIN hbR/Oi
@@ -128,6 +132,10 @@ render blank before the numberformat_ignoreprec pipe. The bounded candidate
 accepts safe nonnegative integral monetary numeric tokens and 0..100 rate
 points with at most two decimal places, never numeric strings/booleans or the
 editor's base*rate formula. Parent self-paid zero-base/nonzero-tax stays valid.
+Read-only ZIP/XML review confirms the approved L4 F3 rate cell is General;
+it retains the rendered percentage-point text, not L2's separately approved
+Excel percentage-fraction contract. Monetary Excel cells preserve stored values
+under the existing zero-decimal accounting presentation; no resource is edited.
 
 W1.setGrid2DataMap preserves TaxObjectCode as Code, TypeOfIncome as the catalog
 code, IncomeSource and GrossIncome. pE/ui-grid-offline uses the actual E1 B

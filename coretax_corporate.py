@@ -1190,13 +1190,21 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable()
                 # No new transport/capability when shared catalogs are absent:
                 # legacy empty-only remains available, populated keeps fallback.
-                if 'Induk' in names and _enabled_form_binding(form, tab, name):
-                    populated = _l4_populated_projection(page, capture, digest, final_tables, check_cancel)
+                if 'Induk' in names:
+                    enabled = _enabled_form_binding(form, tab, name)
                     _check_cancel(check_cancel)
-                    if populated is not None:
-                        if not _enabled_form_binding(form, tab, name):
-                            return unavailable()
-                        binding['projection'] = populated
+                    if enabled:
+                        populated = _l4_populated_projection(page, capture, digest, final_tables, check_cancel)
+                        _check_cancel(check_cancel)
+                        if populated is not None:
+                            enabled_end = _enabled_form_binding(form, tab, name)
+                            _check_cancel(check_cancel)
+                            latest_tables = _l4_tables(form)
+                            _check_cancel(check_cancel)
+                            _check_corporate_route(page.url, selected)
+                            if not enabled_end or latest_tables != final_tables:
+                                return unavailable()
+                            binding['projection'] = populated
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:

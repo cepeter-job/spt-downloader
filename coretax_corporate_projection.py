@@ -937,8 +937,16 @@ def _project_l4_populated(form, *, footer, pages, tax_type, locale, labels):
                              exact_sum=key == 'TotalGrossIncome')
         if key == 'TotalGrossIncome' and number != (gross or 0):
             raise _UnsupportedMetadata('unreconciled_corporate_l4_gross_total')
-        evidence.append({**_evidence(form[key], [L4_ROOT, key]), 'source': 'current',
-                         'rule': 'original-stored-total'})
+        entry = {**_evidence(form[key], [L4_ROOT, key]), 'source': 'current',
+                 'rule': 'original-stored-total'}
+        if key == 'TotalGrossIncome':
+            entry.update(destination={'table': L4_EXCLUDED_TABLE, 'footer': 0, 'column': 4},
+                rule=('null-singleton-stored-zero/display-blank' if excluded and gross is None else
+                      'exact-ordered-reduce/angular-number-1.0-3-id'))
+        evidence.append(entry)
+    if 'TotalTaxBaseUsd' not in form:
+        evidence.append({'path': [L4_ROOT, 'TotalTaxBaseUsd'], 'type': 'missing', 'value': None,
+                         'source': 'current', 'rule': 'absent-unused-usd-root-total'})
     if not excluded:
         value = form['ListOfIncomeExcludedFromIncomeTax']
         evidence.append({'path': [L4_ROOT, 'ListOfIncomeExcludedFromIncomeTax'],
@@ -950,8 +958,12 @@ def _project_l4_populated(form, *, footer, pages, tax_type, locale, labels):
                       'TaxBaseUsd': 'TotalTaxBaseUsd', 'IncomeTaxUsd': 'TotalFinalIncomeTaxPayableUsd'}[key]
         if stored_key in form and number != _l4_numeric(form[stored_key]):
             raise _UnsupportedMetadata('unreconciled_corporate_l4_footer_total')
-        evidence.append({**_evidence(footer[key], [key]), 'source': 'footer',
-                         'rule': 'original-reconciled-grid-footer'})
+        entry = {**_evidence(footer[key], [key]), 'source': 'footer',
+                 'rule': 'original-reconciled-grid-footer'}
+        if key in ('TaxBase', 'IncomeTax'):
+            entry['destination'] = {'table': L4_FINAL_TABLE, 'footer': 0,
+                                    'column': 4 if key == 'TaxBase' else 6}
+        evidence.append(entry)
     afooter = [['TOTAL', _number(footer['TaxBase'], 0, locale=locale), '',
                 _number(footer['IncomeTax'], 0, locale=locale)]]
     bfooter = [['', 'JUMLAH', '' if excluded and gross is None else

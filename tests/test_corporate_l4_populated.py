@@ -43,6 +43,10 @@ def test_populated_both_blocks_keep_labels_original_values_duplicates_and_captur
     assert any(e['path'] == [projection.L4_ROOT, 'ListOfIncomeExcludedFromIncomeTax', 1, 'GrossIncome']
                and e['source'] == 'current' and e['value'] == '500' for e in evidence)
     assert any(e['path'] == ['TaxBase'] and e['source'] == 'footer' and e['value'] == '2000'
+               and e['destination'] == {'table': projection.L4_FINAL_TABLE, 'footer': 0, 'column': 4}
+               for e in evidence)
+    assert any(e['path'] == [projection.L4_ROOT, 'TotalGrossIncome'] and e['source'] == 'current'
+               and e['destination'] == {'table': projection.L4_EXCLUDED_TABLE, 'footer': 0, 'column': 4}
                for e in evidence)
 
 
@@ -204,3 +208,14 @@ def test_original_number_lexemes_remain_exact_and_signed_zero_is_unproved():
     with pytest.raises(_UnsupportedMetadata):
         projection.project_l4(form, footer=_corporate_json(json.dumps(footer())),
             pages=[{'offset': 0, 'rows': 10, 'total': 1, 'data': rows}], tax_type='ICT_RCIT', locale='id-ID', labels=LABELS)
+
+
+def test_optional_usd_root_absence_is_not_synthesized_as_an_original_zero():
+    result = populated()
+    assert any(e['path'] == [projection.L4_ROOT, 'TotalTaxBaseUsd'] and e['type'] == 'missing'
+               and e['value'] is None for e in result['provenance'])
+    result = populated(form_changes={'TotalTaxBaseUsd': 0})
+    assert any(e['path'] == [projection.L4_ROOT, 'TotalTaxBaseUsd'] and e['type'] == 'number'
+               and e['value'] == '0' for e in result['provenance'])
+    with pytest.raises(_UnsupportedMetadata):
+        populated(form_changes={'TotalTaxBaseUsd': None})
