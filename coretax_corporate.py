@@ -1431,6 +1431,43 @@ def _observe_l10b(page, form, tab, panel, capture, check_cancel):
         return None
     _check_cancel(check_cancel)
     return {'kind': L10B_KIND, 'builds': builds, 'route': route}
+def _observe_l10d_originals(page, form, tab, capture, digest, check_cancel, *, panel=None):
+    """Optional current-owner offer, expressly not a final-selection capability."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_l10d import PROVIDERS, KIND, approved_builds
+    from coretax_masa_observer import _REFERENCE_ORDER_BUILD_HASH
+    pins = load_build_pins()
+    expected = {url: pins.get(url) for url in PROVIDERS}
+    if (not approved_builds(expected) or digest != expected[CIT_SOURCE_URL]
+            or not callable(getattr(capture, 'observe_component_lifetime', None))):
+        return None
+    _check_cancel(check_cancel)
+    if (not _enabled_form_binding(form, tab, 'L10-D')
+            or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
+        return None
+    bind_history = getattr(capture, 'bind_l10d_structure', None)
+    history_started = panel is not None and callable(bind_history) and bind_history(
+        form, tab, panel, phase='start', check_cancel=check_cancel)
+    builds = {}
+    for url in PROVIDERS:
+        # MAIN exceeds 4 MiB. Keep its existing reviewed 5 MiB reader bound,
+        # while retaining script-provider and hash checks in the same RPC.
+        script = (_REFERENCE_ORDER_BUILD_HASH.replace('4*1024*1024', '5*1024*1024')
+                  if url == PROVIDERS[1] else _REFERENCE_ORDER_BUILD_HASH)
+        builds[url] = page.evaluate(script, url)
+        _check_cancel(check_cancel)
+    if not approved_builds(builds):
+        return None
+    enabled = _enabled_form_binding(form, tab, 'L10-D')
+    _check_cancel(check_cancel)
+    lifetime = capture.observe_component_lifetime(check_cancel=check_cancel)
+    _check_cancel(check_cancel)
+    if not enabled or lifetime is None:
+        return None
+    if history_started:
+        bind_history(form, tab, panel, phase='end', check_cancel=check_cancel)
+    return {'kind': KIND, 'builds': builds, 'route': page.url,
+            'owner_binding': 'observed-enabled-after-induk-v1'}
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
@@ -1633,6 +1670,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 if proof is None:
                     return unavailable()
                 binding['projection'] = proof
+            if name == 'L10-D' and 'Induk' in names:
+                # Preserve legacy evidence-leaf behavior when this optional
+                # offer is unavailable. The unchanged dump gate still refuses
+                # native output, whether or not originals were retained.
+                original_offer = _observe_l10d_originals(page, form, tab, capture, digest, check_cancel, panel=panel)
+                if original_offer is not None:
+                    binding['original_custody'] = original_offer
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

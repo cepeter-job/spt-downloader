@@ -805,6 +805,9 @@ def _corporate_bindings(observed_forms):
         if not isinstance(form, dict) or not _corporate_literal(form.get('name')) or form['name'] in names:
             raise JsonSafetyError('Observed form names are missing or ambiguous')
         names.add(form['name'])
+        if 'original_custody' in form:
+            from coretax_corporate_l10d import validate_binding
+            validate_binding(form)
         section = {'name': form['name'], 'fields': [], 'tables': [], 'text': ''}
         if 'disabled' in form:
             if form['disabled'] is not True:
@@ -1021,6 +1024,10 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured L10-B history lacks its component lifetime')
         l10b_lifetime = _capture_l10b_lifetime(ctx['corporate_l10b_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10d_lifetime = None
+    if 'corporate_l10d_lifetime' in ctx:
+        from coretax_corporate_l10d import validate_lifetime
+        l10d_lifetime = validate_lifetime(ctx['corporate_l10d_lifetime'], lifetime)
     status = ctx.get('status')
     if type(status) is not int or not 100 <= status <= 599 or status in (401, 403):
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
@@ -1054,6 +1061,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['corporate_l10b_lifetime'] = l10b_lifetime
     if l10c_lifetime is not None:
         event['corporate_l10c_lifetime'] = l10c_lifetime
+    if l10d_lifetime is not None:
+        event['corporate_l10d_lifetime'] = l10d_lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -1432,6 +1441,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             raise JsonSafetyError('Corporate L10-C history is missing or mixed within one attempt')
         if len(l8_lifetimes) != 1:
             raise JsonSafetyError('Corporate L8 history is missing or mixed within one attempt')
+        l10d_lifetimes.add(_corporate_request_key(event.get('corporate_l10d_lifetime')))
+        if len(l10d_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-D history is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Corporate source response budget exceeded')
@@ -1628,6 +1640,23 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             coverage['evidence_row_count'] += len(rows)
         else:
             provenance.setdefault('dependencies', []).append({'endpoint': state['endpoint'], 'rows': rows})
+    if not reasons and primary_source is not None:
+        # Original-only custody is independent of worksheet projection. An
+        # offered L10-D candidate retains every raw operand but cannot supply
+        # the unobserved final-Induk/continuous-child capability. Keep that
+        # blocker explicit; never add dummy fields or exempt its dump table.
+        from coretax_corporate_l10d import collect_original_custody, FINAL_CUSTODY_BLOCKER
+        root, payload, event = primary_source
+        for binding in observed_forms:
+            if 'original_custody' not in binding:
+                continue
+            try:
+                candidate = collect_original_custody(binding, observed_forms, root=root,
+                    payload=payload, record=record, event=event)
+                provenance.setdefault('non_display_originals', []).append(candidate)
+                reasons.append(FINAL_CUSTODY_BLOCKER)
+            except _UnsupportedMetadata as error:
+                reasons.append(str(error))
     if not reasons and primary_source is not None:
         from coretax_corporate_projection import apply_projections
         try:
