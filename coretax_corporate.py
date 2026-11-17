@@ -834,7 +834,8 @@ def _observe_induk_submitted(page, form, capture, digest, check_cancel):
     """Optional amount capability: source/provider/structure only, never values."""
     from coretax_browser import _check_cancel
     from coretax_corporate_projection import (INDUK_SUBMITTED_BUILD_DIGESTS,
-        INDUK_SUBMITTED_FIELDS, MAIN_SOURCE, VENDOR_SOURCE)
+        INDUK_SUBMITTED_FIELDS, INDUK_INACTIVE_FIELDS, INDUK_INACTIVE_SELECTORS,
+        MAIN_SOURCE, VENDOR_SOURCE)
     from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
     _check_cancel(check_cancel)
     lifetime = getattr(capture, 'observe_component_lifetime', None)
@@ -887,8 +888,37 @@ def _observe_induk_submitted(page, form, capture, digest, check_cancel):
     if (environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
             or lifetime(check_cancel=check_cancel) is None):
         return None
-    return {'kind': 'corporate-induk-submitted-v2', 'builds': dict(pins),
-            'route': page.url, **environment, 'controls': controls}
+    proof = {'kind': 'corporate-induk-submitted-v2', 'builds': dict(pins),
+             'route': page.url, **environment, 'controls': controls}
+    # Additional v3 permission is optional. Observe disabled ownership, never
+    # business input values; missing/enabled controls retain the v2 boundary.
+    extra = form.evaluate('''(form, expected) => {
+        const {selectors, amounts} = expected;
+        const bound=amounts.every(name=>{
+            const nodes=[...form.querySelectorAll('p-inputnumber')].filter(e=>
+                e.getAttribute('formcontrolname')===name);
+            if(nodes.length!==1||nodes[0].id!==name||
+               nodes[0].closest('rshshr-citr-main-form')!==form||
+               nodes[0].getAttribute('mode')!=='decimal'||!nodes[0].getClientRects().length)return false;
+            const inputs=nodes[0].querySelectorAll('input');
+            return inputs.length===1&&inputs[0].disabled===true;
+        });
+        return bound&&selectors.every(name=>{
+            const radios=[...form.querySelectorAll('p-radiobutton')].filter(e=>
+                e.getAttribute('formcontrolname')===name);
+            return radios.length===2&&radios.every(e=>{
+                const inputs=e.querySelectorAll('input[type=radio]');
+                return e.closest('rshshr-citr-main-form')===form&&
+                    inputs.length===1&&inputs[0].disabled===true;
+            });
+        });
+    }''', {'selectors': list(INDUK_INACTIVE_SELECTORS),
+           'amounts': [name for _, name, _ in INDUK_INACTIVE_FIELDS]})
+    _check_cancel(check_cancel)
+    if extra is True and lifetime(check_cancel=check_cancel) is not None:
+        proof['kind'] = 'corporate-induk-submitted-v3'
+        proof['controls'] = controls + [name for _, name, _ in INDUK_INACTIVE_FIELDS]
+    return proof
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
