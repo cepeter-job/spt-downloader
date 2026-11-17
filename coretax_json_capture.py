@@ -1496,8 +1496,21 @@ class DetailJsonCapture:
         lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, l10c_lifetime = self._final_lifetimes(
             lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, l10c_candidate,
             check_cancel=check_cancel)
-        if self._final_clock is not None:
-            clock_end = self._final_clock  # The final turn's clock, not a later RPC.
+        if self._l10c_requested:
+            # The joint snapshot owns the final clock; C's own last RPC only
+            # re-proves that same clock and must never fall back to a pre-final
+            # browser sample. Both the joint turn clock and C's final clock must
+            # be available to seal either the clock or the C fact.
+            clock_end = None
+            if lifetime is not None and self._final_clock is not None:
+                l10c_final = self.observe_l10c_lifetime(check_cancel=check_cancel, _final=True)
+                if l10c_final is not None:
+                    l10c_lifetime = l10c_final
+                    clock_end = self._final_clock
+                else:
+                    l10c_lifetime = None
+            if self._l10c_offered and l10c_lifetime is None:
+                self._reason('corporate-l10c-not-sealed')
         self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:

@@ -137,6 +137,8 @@ def _tree_number(value, locale):
 def _evidence(value, path):
     if type(value) is _CorporateNumber:
         return {'path': path, 'type': 'number', 'value': str(value)}
+    if type(value) is bool:
+        return {'path': path, 'type': 'boolean', 'value': value}
     if value is None or type(value) is str:
         return {'path': path, 'type': 'null' if value is None else 'string', 'value': value}
     raise _UnsupportedMetadata('unsupported_masa_projected_scalar')

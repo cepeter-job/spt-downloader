@@ -3289,6 +3289,7 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
             or not isinstance(main, dict)
+            or 'IsTransactionWithRelated' not in payload
             or not _current_induk_visibility(payload, main, 'IsTransactionWithRelated', proof)
             or type(payload.get('TIN')) is not str or payload['TIN'] != event['scope'][0]
             or type(main.get('Tin')) is not str or main['Tin'] != payload['TIN']
@@ -3485,6 +3486,7 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         if binding['name'] == 'L11-B':
             projected.append(_apply_l11b(binding, section, observed_forms, root=root,
                 payload=payload, record=record, event=event))
+            continue
         if binding['name'] == 'L10-C':
             projected.append(_apply_l10c(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event, reference_packets=reference_packets or {}))
