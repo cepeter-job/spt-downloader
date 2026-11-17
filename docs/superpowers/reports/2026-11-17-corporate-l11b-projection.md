@@ -129,6 +129,9 @@ bodies independently produce zero getters with their original typed provenance.
 Part II exists iff borrowingCost > hydratedQuarter OR hydratedEbitda <= 0.
 The observer must bind the exact grid1/grid2/grid3 set for that condition,
 including headers, footer spans, groups and ui-grid-offline/p-table ownership.
+The debt footer has fourteen physical cells (JUMLAH spans three columns), not
+sixteen header-width padded cells; preserve this distinction for the existing
+footer binder and its exact average-column references.
 Hidden Part II retains its original rows in custody but emits no fake tables.
 DER operands are the exact unrounded model Average sums. The bounded new ratio
 subset is nonzero operands and an exactly representable quarter-unit ratio

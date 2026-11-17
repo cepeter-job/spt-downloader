@@ -75,7 +75,9 @@ def test_view_projects_hydrated_ebitda_and_actual_saved_row_averages():
     assert debt['headers'] == DEBT_HEADERS and equity['headers'] == EQUITY_HEADERS
     assert debt['rows'][:2] == [['0007', 'SYNTHETIC CREDITOR', 'Independent',
         *map(str, range(1, 13)), '1.000']] * 2
-    assert debt['footer'] == [['JUMLAH', '', '', *map(str, range(2, 25, 2)), '2.000']]
+    assert debt['footer'] == [['JUMLAH', *map(str, range(2, 25, 2)), '2.000']]
+    assert len(debt['footer'][0]) == len(debt['footer_spans'][0]) == 14
+    assert sum(debt['footer_spans'][0]) == len(debt['headers']) == 16
     assert equity['footer'] == [['JUMLAH', *map(str, range(4, 49, 4)), '800']]
     assert result['der_operands'] == [2000, 800]
     assert Fraction(*result['der_operands']) == Fraction(5, 2)
@@ -104,7 +106,7 @@ def test_conditional_observation_must_match_source_predicate(shown, cost):
 def test_empty_monthly_getters_preserve_original_null_vs_array(value):
     result = project(populated(DebtBalanceAverage=value, EquityBalanceAverage=value))
     assert result['der_operands'] == [0, 0]
-    assert result['tables'][0]['footer'] == [['JUMLAH', '', '', *(['0'] * 13)]]
+    assert result['tables'][0]['footer'] == [['JUMLAH', *(['0'] * 13)]]
     evidence = [e for e in result['provenance'] if e['rule'] == 'empty-view-model-total']
     assert len(evidence) == 26
     assert all(e['type'] == ('null' if value is None else 'array') and e['value'] == value for e in evidence)

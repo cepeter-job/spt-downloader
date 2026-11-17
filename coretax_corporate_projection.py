@@ -750,8 +750,9 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
             evidence.extend({**empty, 'rule': 'empty-view-model-total',
                              'destination': {'table': table_name, 'footer': 0, 'column': column}}
                             for column in range(len(text_keys) + 1, len(text_keys) + 14))
-        footer = ['JUMLAH', *([''] * (len(text_keys) - 1)),
-                  *[_number(str(total), 0, locale=locale) for total in totals]]
+        # Physical footer cells, not header-width padding: JUMLAH spans the
+        # three creditor text columns in debt and one equity column.
+        footer = ['JUMLAH', *[_number(str(total), 0, locale=locale) for total in totals]]
         metadata = l11b_tables(True)[index]
         monthly.append({'name': table_name, 'headers': metadata['headers'], 'rows': body + [footer],
                         'footer': [footer], 'footer_spans': metadata['footer_spans'],
