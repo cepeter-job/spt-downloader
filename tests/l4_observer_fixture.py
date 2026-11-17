@@ -21,6 +21,8 @@ class Fixture(BaseFixture):
             key, value = ('locale', 'en-US') if defect == 'locale' else ('timezone_id', 'UTC')
             monkeypatch.setattr(browser, 'new_context', lambda **options: new_context(**{**options, key: value}))
         super().__init__(browser, monkeypatch, defect=defect)
+        assert self.record['source_fields']['TaxTypeCode'] == 'ICT_RCIT'
+        assert self.record['source_fields']['ReturnSheetTypeCode'] == 'ICT_RCITR'
         self.raw = raw[0]['body']
         monkeypatch.setattr(projection, 'L4_POPULATED_BUILD_DIGESTS', dict(self.pins))
         # Replace only configured public provider bytes/pins in the synthetic

@@ -144,7 +144,7 @@ def test_original_bound_contradictions_remain_fatal_before_projection(case):
         item = json.loads(raw[-1]['body'])
         item['Payload'][0]['language'] = 'en-US'
         raw[-1] = retain_packet_custody(packet(item, 6, REFS[KINDS[1]], None, method='GET'), raw[-1])
-    elif case == 'mixed-attempt': raw[-1]['context']['attempt'] = 'synthetic-other-attempt'
+    elif case == 'mixed-attempt': raw[-1]['context']['attempt'] = 'b' * 32
     elif case == 'mixed-lifetime': raw[-1]['context'].pop('component_lifetime')
     else:
         raw[3] = retain_packet_custody(packet({'IsSuccessful': True, 'Payload': footer(TaxBase=1, IncomeTax=240)},
@@ -178,6 +178,7 @@ def test_owned_populated_l4_capture_adapter_held_replay_and_reopened_workbook(br
                 corpus.TAXPAYER_ID, corpus.RECORD_ID, json_capture=capture)
             assert page is fixture.page and not popup
             page.wait_for_function('window.primaryDone===true')
+            assert capture.observe_component_lifetime()['same_document'] is True
             forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
             assert forms is not None
             assert forms[1]['projection']['kind'] == 'corporate-l4-populated-v2'

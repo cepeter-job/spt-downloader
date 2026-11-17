@@ -31,9 +31,11 @@ CORPORATE_L11A_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentrefer
                  'NON_PERFORMING_LOAN_CATEGORY', 'DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')}
 CORPORATE_L10_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
     for kind in ('COUNTRY_CODE', 'RELATIONSHIP_TYPE', 'TRANSACTION_TYPE', 'PRICING_METHOD')}
+CORPORATE_L4_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('TAX_OBJECT_CODE', 'INCOME_EXCLUDED_FROM_TAX_FOR_CIT')}
 CORPORATE_REFERENCE_REQUESTS = {url: (kind,) for kind, url in
     {**CORPORATE_L3_REFERENCE_URLS, **CORPORATE_L11A_REFERENCE_URLS,
-     **CORPORATE_L10_REFERENCE_URLS}.items()}
+     **CORPORATE_L10_REFERENCE_URLS, **CORPORATE_L4_REFERENCE_URLS}.items()}
 CORPORATE_REFERENCE_REQUESTS[ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'DEDUCTION_METHOD,TYPE_OF_FULFILLMENT'] = ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')
 CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-{index}-grid'
@@ -232,7 +234,8 @@ def _reference_consumer_order(details, kind):
     ordinary = {'EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS',
                 'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT',
                 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES',
-                *CORPORATE_L11A_REFERENCE_URLS, *CORPORATE_L10_REFERENCE_URLS}
+                *CORPORATE_L11A_REFERENCE_URLS, *CORPORATE_L10_REFERENCE_URLS,
+                *CORPORATE_L4_REFERENCE_URLS}
     if (kind not in ordinary or not isinstance(details, list)
             or any(not isinstance(row, dict) or type(row.get('CodeDescription')) is not str for row in details)):
         raise _UnsupportedMetadata('unsupported_reference_cache_order')
@@ -919,8 +922,9 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WTR')
     reference = reference or (allow_corporate_reference is True and endpoint in CORPORATE_REFERENCE_REQUESTS
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
-                 and (endpoint not in {url for kind, url in CORPORATE_L10_REFERENCE_URLS.items()
-                                      if kind != 'COUNTRY_CODE'} or 'request_json' in ctx)
+                 and (endpoint not in ({url for kind, url in CORPORATE_L10_REFERENCE_URLS.items()
+                                      if kind != 'COUNTRY_CODE'} | set(CORPORATE_L4_REFERENCE_URLS.values()))
+                      or 'request_json' in ctx)
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_RCIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_RCITR')
     ordinary = (urlparse(endpoint).path.startswith('/returnsheet/api/')

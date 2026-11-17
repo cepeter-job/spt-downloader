@@ -219,15 +219,16 @@ bytes and l10a-main.js4467267 bytes match the exact CIT/MAIN digests above.
 CIT IE.initColumn at character2311785 uses TaxObjectCode twice, the description
 column carrying R.hbR.ReferenceDataTypeName; MAIN exports hbR->$t.hb at2737084,
 hb->Oi at2986693 and Oi.ReferenceDataTypeName=TAX_OBJECT_CODE at3001212.
-CIT E1.L4Grid2Columns at2309760 binds TypeOfIncome to the literal
+CIT E1.L4Grid2Columns near2309500 binds TypeOfIncome to the literal
 INCOME_EXCLUDED_FROM_TAX_FOR_CIT. These are active submitted grid consumers,
 not editor validation or saved TaxObject text.
 
 The shared MAIN getReferenceDataDescription at3036628 calls
-getSingleReferenceData. Its ordinary cache-miss branch near3039500 calls
+getSingleReferenceData (method starts3038044; an earlier same-name hit is a call).
+Its ordinary cache-miss branch near3039500 calls
 internalLoadBulkReferenceData([{referenceType:P,checksum:null}]); neither L4 type
 is in the two special regional-code branches. internalLoadBulkReferenceData
-near3042557 obtains the selected language, excludes cache hits, maps a null
+at3042005 obtains the selected language, excludes cache hits, maps a null
 checksum to the literal referenceType, joins the singleton list, and invokes
 http.get on /currentreferencedata/${language}/${type}, with no body. Thus only
 the exact naturally emitted id-ID singleton GET for each of these two types is

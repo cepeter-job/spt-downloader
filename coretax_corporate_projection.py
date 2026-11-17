@@ -9,6 +9,7 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
                           CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL,
                           CORPORATE_L11A_REFERENCE_URLS, CORPORATE_L11A_GRID_URLS,
                           CORPORATE_REFERENCE_REQUESTS, CORPORATE_L10_REFERENCE_URLS,
+                          CORPORATE_L4_REFERENCE_URLS,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
@@ -336,7 +337,7 @@ def _project_corporate_catalog(payload, *, kind, clock_interval=None, requested_
     _reference_locale(payload)
     requested = (kind,) if requested_types is None else tuple(requested_types)
     if (kind not in {*CORPORATE_L3_REFERENCE_URLS, *CORPORATE_L11A_REFERENCE_URLS,
-                    *CORPORATE_L10_REFERENCE_URLS}
+                    *CORPORATE_L10_REFERENCE_URLS, *CORPORATE_L4_REFERENCE_URLS}
             or requested not in ((kind,), ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT'))
             or kind not in requested or not isinstance(payload, list) or len(payload) != len(requested)
             or any(not isinstance(item, dict) or type(item.get('ReferenceDataType')) is not str
@@ -1181,10 +1182,7 @@ def _apply_l4(binding, section, observed_forms, *, root, payload, record, event,
                 or any(key not in payload or payload[key] is not None
                        for key in ('PreviousFormData', 'LastSubmittedFormData'))):
             raise _UnsupportedMetadata('unverified_corporate_l4_populated_lifecycle')
-        bind_catalogs = globals().get('bind_corporate_reference_catalogs')
-        if not callable(bind_catalogs):
-            raise _UnsupportedMetadata('missing_corporate_l4_shared_reference_producer')
-        catalogs = bind_catalogs(proof['references'], reference_packets or {},
+        catalogs = bind_corporate_reference_catalogs(proof['references'], reference_packets or {},
             kinds=L4_CATALOG_KINDS, event=event, builds=builds)
         sources = {kind: catalog['source'] for kind, catalog in catalogs.items()}
         labels = {kind: catalog['lookups'] for kind, catalog in catalogs.items()}

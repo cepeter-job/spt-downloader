@@ -62,6 +62,16 @@ four-type `CORPORATE_L10_REFERENCE_URLS` inventory for A/C consumers. Do not add
 speculative L2/L4/L9/Induk types; those need exact source proof coordinated by
 parent. TRANSACTION_TYPE is shared A/C; there must not be parallel adapters.
 
+The paragraph above records PR285's original A/C scope, not permission for L4.
+PR275's separately reviewed CI-repair extension integrates exact PR285 source
+head27f1fab and adds only the two independently source-proven L4 singleton types
+in a separate `CORPORATE_L4_REFERENCE_URLS` inventory. The original four-type
+L10 inventory and consumers are unchanged. See
+[the L4 source chain and transport tests](2026-11-17-corporate-l4-projection.md#ci-repair-reviewed-shared-dependency-and-closed-l4-extension)
+for the extra enum-module hop, active submitted consumers, measured cache-miss
+transport and no-body/alias refusal tests. This extension reuses this same
+producer/binder/order/version/clock mechanism; it grants no other form types.
+
 The existing capture owns original request objects, main-frame/context/selected
 record, bytes/hash/sequence, privacy/budgets, failed/pending responses, full raw
 snapshots and final drain. The new producer adds an optional manifest-owned

@@ -861,37 +861,29 @@ def _l4_populated_projection(page, capture, digest, tables, check_cancel):
     from coretax_browser import _check_cancel
     from coretax_corporate_projection import (L4_CATALOG_KINDS, L4_POPULATED_BUILD_DIGESTS,
                                               MAIN_SOURCE, VENDOR_SOURCE)
-    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+    from coretax_json import CORPORATE_L4_REFERENCE_URLS
     urls = {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
     pins = L4_POPULATED_BUILD_DIGESTS
     if (set(pins) != urls or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
                               for value in pins.values()) or pins[CIT_SOURCE_URL] != digest):
         return None
-    references, kinds = [], set()
+    if not callable(getattr(capture, 'observe_corporate_reference_providers', None)):
+        return None
     observations = capture.request_observations()
-    for endpoint, requested in CORPORATE_REFERENCE_REQUESTS.items():
-        if len(requested) != 1 or requested[0] not in L4_CATALOG_KINDS:
-            continue
-        sequences = [item['sequence'] for item in observations
-            if item['url'] == endpoint and item['method'] == 'GET' and item.get('request_json') is None]
-        if sequences:
-            references.append({'endpoint': endpoint, 'method': 'GET', 'sequences': sequences})
-            kinds.add(requested[0])
-    if kinds != set(L4_CATALOG_KINDS) or len(references) != len(L4_CATALOG_KINDS):
-        return None
-    observe = getattr(capture, 'observe_corporate_reference_providers', None)
-    if not callable(observe):
-        return None
-    builds = observe(check_cancel=check_cancel)
+    if not all(any(item['url'] == url and item['method'] == 'GET'
+                   and 'request_json' in item and item['request_json'] is None for item in observations)
+               for url in CORPORATE_L4_REFERENCE_URLS.values()):
+        return None  # No optional provider RPC for a cache-only/legacy visit.
+    shared = corporate_reference_bindings(capture, L4_CATALOG_KINDS, check_cancel=check_cancel)
     _check_cancel(check_cancel)
-    if builds != pins:
+    if shared is None or shared['builds'] != pins:
         return None
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
     if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
         return None
-    return {'kind': 'corporate-l4-populated-v2', 'builds': dict(builds), 'route': page.url,
-            **environment, 'tables': tables, 'references': references}
+    return {'kind': 'corporate-l4-populated-v2', 'builds': dict(shared['builds']), 'route': page.url,
+            **environment, 'tables': tables, 'references': shared['references']}
 
 
 def _l4_footer_requests(observations, *, record_id, period):
