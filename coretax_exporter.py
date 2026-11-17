@@ -737,7 +737,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                 'unprojected_l9_grid_rows': ' L9 diproyeksikan sebagian: hanya total rekapitulasi yang terbukti dari payload; rincian dua belas grid belum dipetakan.',
                 'unprojected_l9_detail_grids': ' L9 diproyeksikan sebagian: masih ada grid rincian L9 yang belum terbukti; identitas tabel dan jumlah baris yang belum dipetakan tetap dicatat.',
                 'unprojected_l11b_lifecycle': ' L11-B diproyeksikan sebagian: EBITDA dan blok DER belum dibuktikan untuk siklus tampilan tersimpan.',
-                'unprojected_l11b_header_question': ' Pemetaan header/pertanyaan L11-B belum disetujui; blok nilai terbukti tidak menjadikan seluruh formulir COMPLETE.',                'unprojected_induk_captions': ' Induk diproyeksikan sebagian: hanya slot identitas yang terbukti dari payload.',
+                'unprojected_l11b_header_question': ' Pemetaan header/pertanyaan L11-B belum disetujui; blok nilai terbukti tidak menjadikan seluruh formulir COMPLETE.',
                 'unprojected_l10c_controls': ' L10-C diproyeksikan sebagian: kontrol header dan pertanyaan belum dipetakan; pilihan radio tidak disimpulkan.',
             }.get(report.get('derived_reason'), '') if report.get('derived_complete') is False else ''
             values = ['Pemetaan template', report.get('unmapped_fields', 0),

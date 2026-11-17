@@ -1591,6 +1591,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # proof below owns its separate source/environment requirements.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                submitted = _observe_induk_submitted(page, form, capture, digest, check_cancel)
+                if submitted is not None:
+                    binding['projection'] = submitted
             if name == 'L4':
                 # Only the reconciled empty two-block subset can project until
                 # both runtime catalogs have independent original-byte custody.
@@ -1664,9 +1667,6 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     if strong is None:
                         return unavailable()
                     binding['projection'] = strong
-                submitted = _observe_induk_submitted(page, form, capture, digest, check_cancel)
-                if submitted is not None:
-                    binding['projection'] = submitted
             if name == 'L10-B':
                 if 'Induk' not in names:
                     return unavailable()

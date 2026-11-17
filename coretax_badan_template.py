@@ -813,10 +813,11 @@ def render_template_form(sheet, form, sections, *, period=None):
                     subtract = (form == 'l1-d' and _l1d_role(table) == 1 and column == 3
                                 and _label(cells.get(2)) == _label(
                                     'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
-                    writer = _write_l2_number if form == 'l2' else _write_amount
-                    safe = writer(sheet, row, column, value, subtract=subtract) and safe
-                    safe = _write_amount(sheet, row, column, value, subtract=subtract,
-                                         number_default=form == 'l10-c') and safe
+                    if form == 'l2':
+                        safe = _write_l2_number(sheet, row, column, value, subtract=subtract) and safe
+                    else:
+                        safe = _write_amount(sheet, row, column, value, subtract=subtract,
+                                             number_default=form == 'l10-c') and safe
                     if form == 'l9' and block >= 2 and column == 8 and _present(value):
                         sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
                 elif (form, block) == ('l2', 1) and column in (9, 12):
