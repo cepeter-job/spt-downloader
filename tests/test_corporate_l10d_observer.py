@@ -78,6 +78,7 @@ def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use
     class Form:
         def count(self): return 1
         def is_visible(self): return True
+        def evaluate(self, script, *args, **kwargs): return None
     class Panel:
         def locator(self, selector): return Form()
     context = Context()
