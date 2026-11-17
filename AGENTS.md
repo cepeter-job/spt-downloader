@@ -95,6 +95,26 @@ Native observers read navigation and inspected structure, never business input v
 
 Native listing period binding accepts the exact literal source code or its already reviewed exact caption, after source custody, month bounds and scope-year checks. Preserve inventory/checkpoint metadata without normalization. Corporate annual codes must still be January-to-December. Monthly ranges remain unsupported. Primary-source period codes must also equal a selected literal code even when listing evidence is unavailable; a different code/year is a contradiction, never a caption repair or a successful DOM fallback.
 
+The L10-A correction admits only the separately versioned
+`corporate-l10a-empty-v1` capability: one completely captured original zero-row
+grid with the exact reviewed seven-field id-ID First=0/Rows=10 request. Require
+a positive loaded CIT digest equal to the reviewed configured pin, the exact
+selected submitted ordinary-Rupiah `?view=true` route, preceding observed
+Induk and capture-owned component lifetime. The declared decoded source root
+must be absent, null, an empty object or an empty array; preserve these distinct
+presence/type states. Retain original root/container/path/primary sequence and
+typed Data/count/Index with the earliest successful exact-query response
+sequence. Preserve earlier packet/count/snapshot refusals; never select custody
+by shared offset or iterator order. Every populated row, including duplicates,
+null reference codes and empty row objects, remains unsupported and retains
+whole-record DOM fallback. Country/relationship/transaction/pricing cells need
+original same-attempt catalog descriptions; raw codes are not labels, and the
+transaction amount is not a two-decimal field. Keep populated support closed
+until catalog transport/order/version/clock, rendering and held-replay proofs
+are reviewed. Empty-grid CI green is not populated or live acceptance. This
+contract adds no endpoint, request, gate exception or template permission. See
+[L10-A review](docs/superpowers/specs/2026-11-17-l10a-projection-review.md).
+
 The L7 corporate semantic branch has its own source-proven boundary. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).

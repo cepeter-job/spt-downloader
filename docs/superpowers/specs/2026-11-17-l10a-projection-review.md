@@ -2,13 +2,14 @@
 
 ## Status / decision
 
-**Implementation reauthorized; verification pending.** The user renewed explicit
+**Source correction verified; contract follow-up requires fresh checks.** The user renewed explicit
 edit authorization on 17 November 2026: “Izinkan perbaikan L10-A lengkap; tetap DOM
 selama mapping belum terbukti”. This supersedes the earlier withdrawn edit
 approval for L10-A code, tests and documentation, including commit/push to #272.
 It does not authorize merge, closure, consolidation, new portal calls or CI
-bypass. The prior head remains historical red evidence until an exact corrected
-head has completed the full runner gates. Populated proof gaps below are not
+bypass. The historical red head was superseded by corrected head `cf3fa8f`,
+verified green on run `44022810638`. The later approved `AGENTS.md` follow-up
+must receive its own exact-head checks. Populated proof gaps below are not
 complete merely because implementation is authorized.
 
 The implemented correction narrows the unsafe candidate on `feat/native-l10a`;
@@ -148,7 +149,7 @@ claimed a local adapter smoke run; that is historical worker output and is not
 verification performed or endorsed by this correction. Runner evidence will be
 reported against the pushed exact head; leave this PR open and unmerged.
 
-## Implemented correction and remaining protected-contract blocker
+## Implemented correction and approved protected contract
 
 - Tests were changed first. Source-only RED confirmed the new capability and
   exact original-packet selector were absent; no local execution is claimed.
@@ -164,10 +165,11 @@ reported against the pushed exact head; leave this PR open and unmerged.
 - Preserved early unbound-packet/count refusal; an independently aligned packet
   tests the later semantic endpoint guard. Added adapter/source-query/observer
   and saved/reopened empty-workbook regressions, for execution on runners only.
-- The normal protected `AGENTS.md` contract update was explicitly denied by the
-  user. It was not retried or applied through another tool. `git diff --exit-code
-  HEAD -- AGENTS.md` confirmed it unchanged. This documentation records the
-  boundary but does NOT substitute for the outstanding protected-contract edit.
+- The initial protected `AGENTS.md` edit was denied and was not retried under
+  that denial. The user later explicitly renewed approval for the restricted
+  #272 contract. `AGENTS.md` now records the verified empty-grid-only boundary,
+  preserved original custody and populated whole-record DOM fallback. This
+  follow-up changes documentation only, not runtime admission or merge scope.
 
 Runner verification is tracked against the corrected pushed head in PR #272.
 Historical correction run 44020711219 on `5fb70c7a7e1295fe4e2d160c4e2196b1db87c1bb`
@@ -176,8 +178,11 @@ test expecting fallback for a legacy-route component lifetime, which the earlier
 packet decoder correctly rejects as fatal. The regression now preserves that
 fatal gate and separately exercises the semantic route defense directly, since
 a valid legacy-route lifetime cannot pass the decoder. No production safety gate
-was changed to address that test. Exact corrected-head verification remains
-pending; its current result is recorded in the PR body.
+was changed to address that test. Corrected source head
+`cf3fa8f9ec3d3c9b844a3bf3f66e59b2258383f2` subsequently passed exact-head Build
+run `44022810638` and all current PR checks. That green verifies the source
+correction, not a later documentation head; the approved contract follow-up
+must receive its own fresh checks, recorded in the PR body.
 
 Empty-only GREEN will not complete populated support, live native acceptance or
 authorize consolidation. No new catalog admission was added.
