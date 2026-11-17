@@ -582,6 +582,24 @@ _CIT_METADATA_KEYS = frozenset({'ActualMonths', 'AuditOpinion', 'FinancialStatem
 CORPORATE_L4_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid'
 CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
+
+
+def has_audit_dump_tables(sections):
+    """True when a captured section is nothing but the generic payload dump.
+
+    The dump is evidence for an unmapped payload root, not a form projection:
+    no reviewed worksheet can bind it. A section that already carries reviewed
+    ``fields`` has been projected, so its dump stays custody evidence only.
+    """
+    for section in sections or ():
+        if section.get('fields'):
+            continue
+        for table in section.get('tables') or ():
+            if list(table.get('headers') or ()) == _CIT_HEADERS:
+                return True
+    return False
+
+
 _CIT_SECRET_KEYS = frozenset({'password', 'passwd', 'pwd', 'authorization', 'cookie',
                               'setcookie', 'token', 'accesstoken', 'refreshtoken',
                               'idtoken', 'apikey', 'clientsecret', 'secret', 'sessionid'})
