@@ -1334,7 +1334,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         is_primary = primary is not None and key == primary
         is_country = ctx['url'] == CORPORATE_COUNTRY_REFERENCE_URL
         reference_kinds = CORPORATE_REFERENCE_REQUESTS.get(ctx['url'])
-        is_auxiliary = ctx['url'] in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL, *CORPORATE_L11A_GRID_URLS)
+        is_auxiliary = ctx['url'] in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL,
+                                      CORPORATE_L4_FOOTER_URL, *CORPORATE_L11A_GRID_URLS)
         if is_primary or binding is not None or reference_kinds is not None or is_auxiliary:
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
@@ -1420,6 +1421,12 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                     raise _UnsupportedMetadata('failed_declared_corporate_source_response')
                 if state['kind'] == 'grids':
                     _corporate_grid_page(state, key, offset, payload, ctx['sha256'])
+                    if state['endpoint'] == CORPORATE_L4_GRID_URL:
+                        # The reviewed L4 projection consumes decoded page values,
+                        # exactly like the L3/L11-A auxiliary grids; the rendered
+                        # evidence rows stay audit-only. Keep the original payload
+                        # for this single endpoint instead of widening `is_auxiliary`.
+                        auxiliary_packets[key] = {'payload': payload, 'event': event}
                 else:
                     old = state['seen'].get(key)
                     if old is not None and old['sha256'] != ctx['sha256']:

@@ -59,9 +59,13 @@ class NativeFixture:
                     'inventory_complete': True, 'errors': [], 'records': [self.record]}
         form = corpus.current_form()
         if groups:
+            # Live-shaped empty L4: the reviewed projection reconciles the
+            # declared footer, the grid rows and these stored totals, so an
+            # empty final-income grid carries zero totals and no block B rows.
             form.update(ListOfIncomeSubjectToFinalTaxAndNonTaxableObject={
-                            'TotalTaxBase': 100, 'TotalFinalIncomeTaxPayable': 7,
-                            'TotalGrossIncome': 100, 'TotalFinalIncomeTaxPayableUsd': 0},
+                            'TotalTaxBase': 0, 'TotalFinalIncomeTaxPayable': 0,
+                            'TotalGrossIncome': 0, 'TotalFinalIncomeTaxPayableUsd': 0,
+                            'ListOfIncomeExcludedFromIncomeTax': []},
                         RecapitulationFiscalDepreciationAmortization=[], DeclarationTransactionRelatedParties=[])
         self.raw = corpus.primary(form)['body']
         self.build = BUILD + (b'/* CHANGED */' if changed_build else b'')
@@ -95,8 +99,8 @@ class NativeFixture:
                 'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025'}
             route.fulfill(content_type='application/json', body=corpus.wire({
                 'IsSuccessful': True, 'Payload': {
-                    'TaxBase': 100, 'TaxBaseUsd': 0,
-                    'IncomeTax': 7, 'IncomeTaxUsd': 0}}).encode())
+                    'TaxBase': 0, 'TaxBaseUsd': 0,
+                    'IncomeTax': 0, 'IncomeTaxUsd': 0}}).encode())
         elif url.startswith(corpus.ORIGIN + '/returnsheet/api/loadcit/'):
             post = request.post_data_json
             assert request.method == 'POST' and post['ReturnSheetRecordId'] == corpus.RECORD_ID
@@ -230,7 +234,7 @@ def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(br
     native_collector()
     # This test pins the JSON grid binding (14 roles, 60 duplicate rows). The
     # dump gate itself is covered by tests/test_corporate_native_dump_gate.py;
-    # L4/L9/L10-A are still unprojected dumps here, so isolate that predicate.
+    # L9/L10-A are still unprojected dumps here, so isolate that predicate.
     import coretax_json
     monkeypatch.setattr(coretax_json, 'has_audit_dump_tables', lambda sections: False)
     fixture = NativeFixture(browser, tmp_path, monkeypatch, groups=True)

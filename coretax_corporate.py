@@ -943,6 +943,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+            if name == 'L4':
+                # Same admitted pin. Both L4 blocks live beside the literal
+                # payload totals; the final-income grid and its footer are
+                # already declared as this binding's grids/dependencies.
+                binding['projection'] = {'kind': 'corporate-l4-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
