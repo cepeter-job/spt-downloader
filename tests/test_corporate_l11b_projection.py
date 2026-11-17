@@ -126,6 +126,8 @@ def test_empty_grid_zero_footer_retains_its_source(rows):
     evidence = [entry for entry in result['provenance'] if entry['rule'] == 'empty-grid-total']
     assert len(evidence) == 4
     assert all(entry['path'] == ['L11BFormData', 'BorrowingCosts'] for entry in evidence)
+    assert all(entry['type'] == ('null' if rows is None else 'array')
+               and entry['value'] == rows for entry in evidence)
 
 
 def test_ordered_sum_preserves_duplicate_operands():
@@ -282,7 +284,9 @@ def test_adapter_preserves_custody_and_explicit_omissions():
     projected, = [item for item in result['provenance']['projections'] if item['form'] == 'L11-B']
     assert all(entry['response_sequence'] == 1 and
                entry['container'] == ['Payload', 'CurrentFormData'] for entry in projected['values'])
-    assert any(entry['path'] == ['L11BFormData', 'IsEbitdaManuallyEdited'] for entry in projected['values'])
+    assert any(entry['path'] == ['L11BFormData', 'IsEbitdaManuallyEdited']
+               and entry['type'] == 'boolean' and entry['value'] is True
+               for entry in projected['values'])
 
 
 def test_adapter_to_saved_workbook_keeps_partial_audit(tmp_path):

@@ -598,8 +598,10 @@ def project_l11b(form, *, tax_type, locale):
                        'value': cell(form[name], [L11B_ROOT, name],
                                      {'form': 'L11-B', 'field': name},
                                      'stable-submitted-manual-control')})
-    evidence.append({**_evidence(manual, [L11B_ROOT, 'IsEbitdaManuallyEdited']),
-                     'rule': 'exclude-l1-auto-overwrite'})
+    manual_path = [L11B_ROOT, 'IsEbitdaManuallyEdited']
+    manual_evidence = ({'path': manual_path, 'type': 'boolean', 'value': manual}
+                       if manual is True else _evidence(manual, manual_path))
+    evidence.append({**manual_evidence, 'rule': 'exclude-l1-auto-overwrite'})
     source = form['BorrowingCosts']
     if source is not None and (not isinstance(source, list) or len(source) > 10000):
         raise _UnsupportedMetadata('unsupported_corporate_l11b_cost_body')
@@ -633,7 +635,10 @@ def project_l11b(form, *, tax_type, locale):
         footer.append(_number(str(sums[key]), 0, locale=locale))
         destination = {'table': 'L11-B/costs', 'footer': 0, 'column': column}
         if not rows:
-            evidence.append({**_evidence(source, [L11B_ROOT, 'BorrowingCosts']),
+            empty_path = [L11B_ROOT, 'BorrowingCosts']
+            empty_evidence = (_evidence(source, empty_path) if source is None else
+                              {'path': empty_path, 'type': 'array', 'value': []})
+            evidence.append({**empty_evidence,
                              'rule': 'empty-grid-total', 'destination': destination})
         for index, row in enumerate(rows):
             evidence.append({**_evidence(row[key], [L11B_ROOT, 'BorrowingCosts', index, key]),
