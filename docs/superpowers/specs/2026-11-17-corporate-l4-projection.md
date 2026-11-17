@@ -203,3 +203,48 @@ Shared PR285 head27f1fab has the provider/binder infrastructure but still has
 neither TAX_OBJECT_CODE nor INCOME_EXCLUDED_FROM_TAX_FOR_CIT registered. The
 exact source-reviewed needs were posted as its comment6941168126. No independent
 L4 adapter or speculative transport was added to bypass that ownership boundary.
+
+### CI repair: reviewed shared dependency and closed L4 extension
+
+The completed original run44039303105 at687e60d is executed RED, not pending:
+four original Windows JUnit artifacts independently aggregate to8793 passes,
+22 failures, zero errors/skips. All22 are populated-native L4 cases; pure62
+and legacy110 pass. All four job logs agree. The failures are the missing
+shared provider/binder and unsafe unregistered L4 singleton GETs; some negatives
+are masked by that earlier admission gate. No assertion or owner gate is relaxed.
+
+Before production registration, the CI-repair owner independently rehashed the
+cached decoded public bytes against resources/build-pins.json: z525.js3334844
+bytes and l10a-main.js4467267 bytes match the exact CIT/MAIN digests above.
+CIT IE.initColumn at character2311785 uses TaxObjectCode twice, the description
+column carrying R.hbR.ReferenceDataTypeName; MAIN exports hbR->$t.hb at2737084,
+hb->Oi at2986693 and Oi.ReferenceDataTypeName=TAX_OBJECT_CODE at3001212.
+CIT E1.L4Grid2Columns at2309760 binds TypeOfIncome to the literal
+INCOME_EXCLUDED_FROM_TAX_FOR_CIT. These are active submitted grid consumers,
+not editor validation or saved TaxObject text.
+
+The shared MAIN getReferenceDataDescription at3036628 calls
+getSingleReferenceData. Its ordinary cache-miss branch near3039500 calls
+internalLoadBulkReferenceData([{referenceType:P,checksum:null}]); neither L4 type
+is in the two special regional-code branches. internalLoadBulkReferenceData
+near3042557 obtains the selected language, excludes cache hits, maps a null
+checksum to the literal referenceType, joins the singleton list, and invokes
+http.get on /currentreferencedata/${language}/${type}, with no body. Thus only
+the exact naturally emitted id-ID singleton GET for each of these two types is
+reviewed here. Cache hits prove no original catalog. Bulk/checksum/query/slash/
+encoded/language/getdescription/maintenance variants are not permission.
+
+Test-first tests/test_corporate_l4_passive_transport.py specifies each positive
+capture->held-byte/legacy compatibility->shared-order path and negative transport
+variants, including tax/sheet/frame/tab/resource/method/body, plus explicit
+no-body descriptor custody. The existing executed native RED already exercises
+the missing exact endpoints and provider method. The implementation integrates
+reviewed PR285 source head27f1fab48e4516d935f14b7729c09e79c1c645f4, preserving its
+single manifest-owned provider/binder, ordinary order/version/clock consumer,
+original packet facts and both held readers. Only the two reviewed L4 singleton
+types extend that same closed registry/projector; no new adapter or acquisition
+is introduced. Loaded-provider acquisition remains before final drain's child
+history sampling, with no late provider RPC appended after it.
+
+Full exact-head hosted GREEN, artifact aggregation, protected contract and
+operator live acceptance remain pending until recorded separately below.
