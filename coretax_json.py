@@ -1417,7 +1417,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
-    l7_lifetimes, l10b_lifetimes, l10c_lifetimes, reference_providers = set(), set(), set(), set()
+    l7_lifetimes, l10b_lifetimes, l10c_lifetimes, l10d_lifetimes = set(), set(), set(), set()
+    reference_providers = set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
