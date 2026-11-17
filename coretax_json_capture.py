@@ -20,9 +20,10 @@ from urllib.parse import parse_qsl, unquote, urlparse
 from uuid import uuid4
 
 from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFERENCE_URL,
-                          CORPORATE_REFERENCE_REQUESTS, ORIGIN,
+                          CORPORATE_REFERENCE_REQUESTS, CORPORATE_REFERENCE_SOURCES, ORIGIN,
                           _capture_clock_interval, _capture_component_lifetime, _capture_l8_lifetime,
-                          _capture_l7_lifetime,
+                          _capture_l7_lifetime, _capture_corporate_reference_providers,
+                          _corporate_reference_builds,
                           _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop import diagnostics
 from spt_desktop.output_windows import DirectoryGuard, locked_file
@@ -358,6 +359,8 @@ class DetailJsonCapture:
         self._result = None
         self._manifest_hash = None
         self._clock_start = None
+        self._reference_providers = None
+        self._reference_providers_attempted = False
         self._corporate = corporate
         self._view_called = False
         self._component_document = None
@@ -687,6 +690,59 @@ class DetailJsonCapture:
             attempt=self.attempt, record_id=self.record_id,
             source_url=self.source_url, detail_url=self._bound_url)
 
+    def observe_corporate_reference_providers(self, *, check_cancel=None):
+        """Optional once-only loaded-source proof; never fetch a reference catalog."""
+        from coretax_browser import CaptureCancelled
+        from coretax_build_pins import load_build_pins
+        from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+
+        self._cancel(check_cancel)
+        self._verify_binding()
+        if self._reference_providers_attempted:
+            return (dict(self._reference_providers['builds'])
+                    if self._reference_providers is not None else None)
+        self._reference_providers_attempted = True
+        if self._result is not None or not self._corporate:
+            return None
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+            return None
+        configured = load_build_pins()
+        pins = {url: configured.get(url) for url in CORPORATE_REFERENCE_SOURCES}
+        if not _corporate_reference_builds(pins):
+            return None
+        try:
+            # This is the existing L11-A script-provider predicate, not cache or
+            # Angular inspection. The existing bounded readers own all hashing.
+            loaded = self._bound.evaluate('''urls => urls.every(url =>
+                [...document.scripts].some(s => s.src === url) ||
+                performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+                list(CORPORATE_REFERENCE_SOURCES))
+            self._cancel(check_cancel)
+            if loaded is not True:
+                return None
+            observed = {}
+            for url in CORPORATE_REFERENCE_SOURCES:
+                reader = _PPN_MAIN_BUILD_HASH if '/main.' in url else _REFERENCE_ORDER_BUILD_HASH
+                observed[url] = self._bound.evaluate(reader, url)
+                self._cancel(check_cancel)
+                if not isinstance(observed[url], str) or observed[url] != pins[url]:
+                    return None
+        except (JsonSafetyError, CaptureCancelled):
+            self._cancel(check_cancel)
+            raise
+        except Exception:
+            self._cancel(check_cancel)
+            return None
+        self._cancel(check_cancel)
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+            return None
+        self._reference_providers = _capture_corporate_reference_providers({
+            'kind': 'corporate-reference-providers-v1', 'attempt': self.attempt,
+            'record_id': self.record_id, 'source_url': self.source_url,
+            'detail_url': self._bound_url, 'builds': observed}, attempt=self.attempt,
+            record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
+        return dict(observed)
+
     def _candidate(self, target, frame):
         return (target.context is self.context and frame is target.main_frame
                 and frame.parent_frame is None
@@ -935,6 +991,10 @@ class DetailJsonCapture:
                     'end_ms': clock_end['epoch_ms'], 'timezone': clock_end['timezone']}, self.attempt)
             except JsonSafetyError:
                 pass  # An unavailable/reversed sample cannot authorize dated selection.
+        if (self._reference_providers is not None and lifetime is not None
+                and 'clock_interval' in result):
+            result['corporate_reference_providers'] = {
+                **self._reference_providers, 'builds': dict(self._reference_providers['builds'])}
         raw = json.dumps(result, ensure_ascii=False, sort_keys=True).encode('utf-8')
         manifest = self._write('manifest.json', raw, check_cancel)
         self._cancel(check_cancel)
@@ -969,6 +1029,12 @@ class DetailJsonCapture:
             lifetime = (_capture_component_lifetime(saved['component_lifetime'], attempt=self.attempt,
                 record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
                 if 'component_lifetime' in saved else None)
+            providers = (_capture_corporate_reference_providers(saved['corporate_reference_providers'],
+                attempt=self.attempt, record_id=self.record_id,
+                source_url=self.source_url, detail_url=self._bound_url)
+                if 'corporate_reference_providers' in saved else None)
+            if providers is not None and (lifetime is None or clock is None):
+                raise JsonSafetyError('Private reference providers lack original lifetime or clock')
             l8_lifetime = (_capture_l8_lifetime(saved['corporate_l8_lifetime'], attempt=self.attempt,
                 record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
                 if 'corporate_l8_lifetime' in saved else None)
@@ -985,7 +1051,7 @@ class DetailJsonCapture:
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
                         or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor
                         or 'component_lifetime' in descriptor or 'corporate_l8_lifetime' in descriptor
-                        or 'corporate_l7_lifetime' in descriptor):
+                        or 'corporate_l7_lifetime' in descriptor or 'corporate_reference_providers' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -1003,6 +1069,8 @@ class DetailJsonCapture:
                     context['clock_interval'] = dict(clock)
                 if lifetime is not None:
                     context['component_lifetime'] = dict(lifetime)
+                if providers is not None:
+                    context['corporate_reference_providers'] = {**providers, 'builds': dict(providers['builds'])}
                 if l8_lifetime is not None:
                     context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 if l7_lifetime is not None:
@@ -1148,6 +1216,12 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
             lifetime = (_capture_component_lifetime(saved['component_lifetime'], attempt=saved['attempt'],
                 record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
                 if 'component_lifetime' in saved else None)
+            providers = (_capture_corporate_reference_providers(saved['corporate_reference_providers'],
+                attempt=saved['attempt'], record_id=record['record_id'],
+                source_url=record['list_url'], detail_url=record.get('detail_url'))
+                if 'corporate_reference_providers' in saved else None)
+            if providers is not None and (lifetime is None or clock is None):
+                raise JsonSafetyError('Private reference providers lack original lifetime or clock')
             l8_lifetime = (_capture_l8_lifetime(saved['corporate_l8_lifetime'], attempt=saved['attempt'],
                 record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
                 if 'corporate_l8_lifetime' in saved else None)
@@ -1170,6 +1244,7 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
                         or name in seen or descriptor.get('attempt') != saved['attempt']
                         or 'clock_interval' in descriptor or 'component_lifetime' in descriptor
                         or 'corporate_l8_lifetime' in descriptor or 'corporate_l7_lifetime' in descriptor
+                        or 'corporate_reference_providers' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -1190,6 +1265,8 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
                     context['clock_interval'] = dict(clock)
                 if lifetime is not None:
                     context['component_lifetime'] = dict(lifetime)
+                if providers is not None:
+                    context['corporate_reference_providers'] = {**providers, 'builds': dict(providers['builds'])}
                 if l8_lifetime is not None:
                     context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 if l7_lifetime is not None:

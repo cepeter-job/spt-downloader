@@ -7,7 +7,7 @@ import re
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
                           CORPORATE_L3_REFERENCE_URLS, CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL,
                           CORPORATE_L11A_REFERENCE_URLS, CORPORATE_L11A_GRID_URLS,
-                          CORPORATE_REFERENCE_REQUESTS, CORPORATE_L10A_GRID_URL,
+                          CORPORATE_REFERENCE_REQUESTS, CORPORATE_L10_REFERENCE_URLS, CORPORATE_L10A_GRID_URL,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
@@ -347,7 +347,8 @@ def _project_corporate_catalog(payload, *, kind, clock_interval=None, requested_
     """Reviewed singleton or exact ordered pair; preserve original array paths."""
     _reference_locale(payload)
     requested = (kind,) if requested_types is None else tuple(requested_types)
-    if (kind not in {*CORPORATE_L3_REFERENCE_URLS, *CORPORATE_L11A_REFERENCE_URLS}
+    if (kind not in {*CORPORATE_L3_REFERENCE_URLS, *CORPORATE_L11A_REFERENCE_URLS,
+                    *CORPORATE_L10_REFERENCE_URLS}
             or requested not in ((kind,), ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT'))
             or kind not in requested or not isinstance(payload, list) or len(payload) != len(requested)
             or any(not isinstance(item, dict) or type(item.get('ReferenceDataType')) is not str
@@ -393,6 +394,66 @@ def _project_corporate_catalog(payload, *, kind, clock_interval=None, requested_
         selected[code] = deepcopy(entry)
     return {'lookups': lookups, 'provenance': evidence, 'selected': selected,
             'requires_vendor': any(len(items) > 1 for items in groups.values())}
+
+
+def bind_corporate_reference_catalogs(references, reference_packets, *, kinds, event, builds):
+    """Bind existing packet custody before reusing the one ordinary catalog consumer.
+
+    Only already reviewed singleton transports participate. Other observed
+    catalogs remain fully checked custody, not implicit form dependencies.
+    """
+    from coretax_json import (_corporate_reference_builds, _capture_clock_interval,
+                              _capture_corporate_reference_providers)
+
+    urls = {types[0]: url for url, types in CORPORATE_REFERENCE_REQUESTS.items() if len(types) == 1}
+    if (not isinstance(kinds, (tuple, list)) or not kinds or len(set(kinds)) != len(kinds)
+            or any(kind not in urls for kind in kinds)
+            or not isinstance(references, list) or len(references) != len(kinds)
+            or not _corporate_reference_builds(builds)):
+        raise _UnsupportedMetadata('unverified_corporate_reference_binding')
+    providers, lifetime, clock = (event.get(key) for key in
+        ('corporate_reference_providers', 'component_lifetime', 'clock_interval'))
+    if not isinstance(providers, dict) or not isinstance(lifetime, dict) or clock is None:
+        raise _UnsupportedMetadata('missing_corporate_reference_custody')
+    _capture_corporate_reference_providers(providers, attempt=event.get('attempt'),
+        record_id=event.get('record_id'), source_url=lifetime.get('source_url'),
+        detail_url=event.get('frame_url'))
+    _capture_clock_interval(clock, event.get('attempt'))
+    if builds != providers['builds']:
+        raise _UnsupportedMetadata('unverified_corporate_reference_builds')
+    expected = {urls[kind]: kind for kind in kinds}
+    catalogs, seen = {}, set()
+    for ref in references:
+        if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
+                or type(ref['endpoint']) is not str or ref['endpoint'] not in expected
+                or ref['endpoint'] in seen or ref['method'] != 'GET'
+                or not isinstance(ref['sequences'], list) or not ref['sequences']):
+            raise _UnsupportedMetadata('unsupported_corporate_reference_binding')
+        seen.add(ref['endpoint'])
+        sequences = ref['sequences']
+        if any(type(n) is not int or n <= 0 for n in sequences) or len(set(sequences)) != len(sequences):
+            raise JsonSafetyError('Corporate reference sequence is invalid or repeated')
+        actual = {n for n, packet in reference_packets.items() if packet['event']['url'] == ref['endpoint']}
+        if actual != set(sequences) or any(reference_packets[n]['successful'] is not True for n in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_reference_packet')
+        hashes = set()
+        for sequence in sequences:
+            source = reference_packets[sequence]['event']
+            if (source.get('sequence') != sequence or source.get('method') != 'GET'
+                    or source.get('request_json') is not None
+                    or any(source.get(key) != event.get(key) for key in
+                        ('attempt', 'record_id', 'frame_url', 'clock_interval',
+                         'component_lifetime', 'corporate_reference_providers'))):
+                raise JsonSafetyError('Corporate reference packet custody contradicts primary')
+            hashes.add(source['sha256'])
+        if len(hashes) != 1:
+            raise JsonSafetyError('Corporate reference full snapshot changed')
+        first = reference_packets[min(sequences)]
+        kind = expected[ref['endpoint']]
+        catalog = _project_corporate_catalog(first['payload'], kind=kind,
+            clock_interval=clock, requested_types=(kind,))
+        catalogs[kind] = {**catalog, 'source': deepcopy(first['event']), 'sequences': sorted(sequences)}
+    return catalogs
 
 
 def project_l11c(form, *, headers, footer_spans, tax_type, locale, timezone_name, country_labels):
@@ -1733,6 +1794,11 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
         catalogs[kind] = _project_corporate_catalog(source['payload'], kind=kind,
             clock_interval=source['event'].get('clock_interval'))
         sources[kind], labels[kind] = source['event'], catalogs[kind]['lookups']
+    if 'corporate_reference_providers' in event:
+        catalogs = bind_corporate_reference_catalogs(references, reference_packets,
+            kinds=tuple(CORPORATE_L3_REFERENCE_URLS), event=event, builds=proof['builds'])
+        sources = {kind: catalog['source'] for kind, catalog in catalogs.items()}
+        labels = {kind: catalog['lookups'] for kind, catalog in catalogs.items()}
     result = project_l3(root.get(_L3_ROOT), pages=pages, footer_payload=footer['payload'],
         headers=[t['headers'] for t in tables], footer_spans=[t['footer_spans'] for t in tables],
         tax_type=fields.get('TaxTypeCode'), locale=proof['locale'], timezone_name=proof['timezone'], labels=labels)

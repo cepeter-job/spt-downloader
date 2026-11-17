@@ -685,6 +685,32 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
               **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
 
+def corporate_reference_bindings(capture, kinds, *, check_cancel=None):
+    """Collect only original admitted singleton metadata and capture-owned pins."""
+    from coretax_browser import _check_cancel
+    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+
+    _check_cancel(check_cancel)
+    urls = {types[0]: url for url, types in CORPORATE_REFERENCE_REQUESTS.items() if len(types) == 1}
+    if (not isinstance(kinds, (tuple, list)) or not kinds or len(set(kinds)) != len(kinds)
+            or any(kind not in urls for kind in kinds)):
+        return None
+    builds = capture.observe_corporate_reference_providers(check_cancel=check_cancel)
+    if builds is None:
+        return None
+    observations = capture.request_observations()
+    _check_cancel(check_cancel)
+    references = []
+    for kind in kinds:
+        sequences = [item['sequence'] for item in observations
+            if item['url'] == urls[kind] and item['method'] == 'GET'
+            and 'request_json' in item and item['request_json'] is None]
+        if not sequences:
+            return None
+        references.append({'endpoint': urls[kind], 'method': 'GET', 'sequences': sequences})
+    return {'builds': builds, 'references': references}
+
+
 def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Five structural owners and four owned paginators; no DOM business reads."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
