@@ -55,6 +55,8 @@ def test_optional_observer_offer_carries_only_loaded_pins_and_current_owner(monk
 
 def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use_whole_dom(tmp_path, monkeypatch):
     import coretax_browser as driver
+    import coretax_json as adapter
+    import json
     from coretax_corporate import FORMS
     from coretax_json import adapt_corporate_detail
     from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
@@ -108,6 +110,9 @@ def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use
     monkeypatch.setattr(driver, 'capture_detail', dom)
     monkeypatch.setattr(driver, 'capture_financial_detail',
                         lambda *args, **kwargs: pytest.fail('Original-only proof must not select native'))
+    # Even a caller suppressing the display-oriented dump check cannot turn
+    # original custody into final semantic admission. The adapter owns refusal.
+    monkeypatch.setattr(adapter, 'has_audit_dump_tables', lambda sections: False)
     record = selected()
     raw = corpus.wire(envelope()).encode()
     with DetailJsonCapture(context, page, record, corpus.SCOPE, tmp_path) as capture:
@@ -134,6 +139,14 @@ def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use
         replay = adapt_corporate_detail(held, record, corpus.SCOPE, observed[0])
         assert not replay['eligible'] and replay['provenance']['non_display_originals'] == [candidate]
         assert (tmp_path / manifest['responses'][0]['relative_path']).read_bytes() == raw
+        saved = {**record, **result, 'detail_url': DETAIL, 'scope': list(corpus.SCOPE)}
+        checkpoint = tmp_path / 'returns' / '0001.json'
+        checkpoint.write_text(json.dumps(saved), encoding='utf-8')
+        checkpoint_bytes = checkpoint.read_bytes()
+        restored = driver.read_detail_checkpoint(checkpoint, record, corpus.SCOPE, detail_source='json-first')
+        assert restored['detail_source']['used'] == 'dom'
+        assert restored['detail_source']['json']['non_display_originals'] == [candidate]
+        assert checkpoint.read_bytes() == checkpoint_bytes
 
 
 @pytest.mark.parametrize('index', [0, 1, 2])
