@@ -9,7 +9,12 @@ from test_corporate_l9_projection import (ROUTE, module, observed, adapted_root,
 
 
 def apply(*, forms=None, root=None, payload=None, event=None):
-    bindings = observed() if forms is None else forms
+    bindings = deepcopy(observed() if forms is None else forms)
+    # Direct guard tests use the unparsed data helper, not wire-decoded Induk
+    # numbers. Isolate L9 without invoking the unrelated identity projector.
+    for binding in bindings:
+        if binding['name'] == 'Induk':
+            binding.pop('projection', None)
     return module().apply_projections(
         [{'name': f['name'], 'fields': [], 'tables': [], 'text': ''} for f in bindings], bindings,
         root=adapted_root() if root is None else root,
