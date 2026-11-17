@@ -134,3 +134,73 @@ def test_multiple_pages_retain_every_duplicate_and_page_local_original_coordinat
     assert result['tables'][0]['rows'][0] == result['tables'][0]['rows'][10]
     assert any(e['page_index'] == 1 and e['path'] == ['Data', 0, 'TIN']
                and e.get('destination', {}).get('row') == 10 for e in result['provenance'])
+
+
+@pytest.mark.parametrize('values,expected', [([None], ''), ([None, None], '0'),
+    ([None, 500.25], '500,25'), ([500.25, None], '500,25')])
+def test_b_null_body_and_no_initializer_reduce_are_not_fabricated_zero_rows(values, expected):
+    result = populated(b=[{**B_ROW, 'GrossIncome': amount} for amount in values],
+        form_changes={'TotalGrossIncome': sum(amount or 0 for amount in values)})
+    assert [row[-1] for row in result['tables'][1]['rows'][:-1]] == [
+        '' if value is None else '500,25' for value in values]
+    assert result['tables'][1]['footer'] == [['', 'JUMLAH', expected]]
+
+
+def test_literal_null_text_and_reviewed_metadata_are_preserved_not_used_as_column_aliases():
+    row = {**ROW, 'TIN': None, 'Name': None, 'TaxObject': None, 'RecordId': 'SYNTHETIC ROW',
+           'IsManually': False, 'TableSource': 'TAXPAYER_ACCOUNTING', 'Action': None}
+    result = populated(a=[row], b=[{**B_ROW, 'TaxObjectCode': None, 'IncomeSource': None}],
+                       form_changes={'TotalGrossIncome': 500})
+    assert result['tables'][0]['rows'][0][:2] == ['', '']
+    assert result['tables'][1]['rows'][0][1:4] == ['', LABELS[KINDS[1]]['1'], '']
+    assert any(e['path'] == ['Data', 0, 'IsManually'] and e['type'] == 'boolean'
+               and e['value'] is False for e in result['provenance'])
+
+
+@pytest.mark.parametrize('key,value', [('Index', None), ('Index', .5), ('IsManually', 1),
+    ('Action', ''), ('TableSource', False), ('RecordId', 0), ('TaxObject', {}),
+    ('TaxBaseUsd', '0'), ('IncomeTaxUsd', .25)])
+def test_malformed_nondisplayed_metadata_refuses_instead_of_disappearing(key, value):
+    with pytest.raises(_UnsupportedMetadata):
+        populated(a=[{**ROW, key: value}])
+
+
+@pytest.mark.parametrize('case', ['empty-pages', 'missing-data', 'gap', 'partial', 'count-change',
+                                 'unsafe-count', 'extra-root', 'extra-footer', 'b-shape'])
+def test_populated_collection_schema_and_pagination_stay_closed(case):
+    form, foot = root(), footer()
+    pages = [{'offset': 0, 'rows': 10, 'total': 1, 'data': [ROW]}]
+    if case == 'empty-pages': pages = []
+    elif case == 'missing-data': pages[0].pop('data')
+    elif case == 'gap': pages[0]['offset'] = 10
+    elif case == 'partial': pages[0]['total'] = 12
+    elif case == 'count-change': pages += [{'offset': 1, 'rows': 10, 'total': 2, 'data': [ROW]}]
+    elif case == 'unsafe-count': pages[0]['total'] = 10001
+    elif case == 'extra-root': form['Unknown'] = None
+    elif case == 'extra-footer': foot['Unknown'] = None
+    else: form['ListOfIncomeExcludedFromIncomeTax'] = {}
+    with pytest.raises(_UnsupportedMetadata):
+        projection.project_l4(_corporate_json(json.dumps(form)), footer=_corporate_json(json.dumps(foot)),
+            pages=[{**p, 'data': _corporate_json(json.dumps(p['data']))} if 'data' in p else p for p in pages],
+            tax_type='ICT_RCIT', locale='id-ID', labels=LABELS)
+
+
+@pytest.mark.parametrize('key', ['TaxBase', 'IncomeTax', 'TaxBaseUsd', 'IncomeTaxUsd'])
+def test_footer_uses_original_values_and_corresponding_captured_root_ownership(key):
+    changes = {'TotalTaxBaseUsd': 0} if key == 'TaxBaseUsd' else {}
+    with pytest.raises(_UnsupportedMetadata, match='footer_total'):
+        populated(form_changes=changes, footer_changes={key: 999})
+
+
+def test_original_number_lexemes_remain_exact_and_signed_zero_is_unproved():
+    form = _corporate_json(json.dumps(root()))
+    rows = _corporate_json(json.dumps([ROW]))
+    rows[0]['TaxRate'] = _corporate_json('4.3800e0')
+    result = projection.project_l4(form, footer=_corporate_json(json.dumps(footer())),
+        pages=[{'offset': 0, 'rows': 10, 'total': 1, 'data': rows}], tax_type='ICT_RCIT', locale='id-ID', labels=LABELS)
+    assert result['tables'][0]['rows'][0][5] == '4,38'
+    assert any(e['path'] == ['Data', 0, 'TaxRate'] and e['value'] == '4.3800e0' for e in result['provenance'])
+    rows[0]['TaxBase'] = _corporate_json('-0')
+    with pytest.raises(_UnsupportedMetadata):
+        projection.project_l4(form, footer=_corporate_json(json.dumps(footer())),
+            pages=[{'offset': 0, 'rows': 10, 'total': 1, 'data': rows}], tax_type='ICT_RCIT', locale='id-ID', labels=LABELS)

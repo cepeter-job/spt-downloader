@@ -1,4 +1,8 @@
-# Corporate L4: safe empty two-block projection and populated-block fallback
+# Corporate L4: empty legacy and source-bound populated follow-through
+
+> Sections below through the historical remaining gap describe the earlier
+> empty-only head. The populated follow-through is recorded at the end; earlier
+> green is not populated-native acceptance.
 
 ## Scope and source evidence
 
@@ -107,3 +111,68 @@ same-attempt reference catalogs, rendering and held-replay proof. No complete
 populated-L4 implementation or live tax acceptance is claimed. AGENTS.md,
 resources, the native dump gate and CI configuration remain unchanged under
 the delegated scope. No merge, closure or consolidation is authorized here.
+
+## Populated follow-through: separate source contract
+
+`corporate-l4-populated-v2` is additive; v1 remains empty-only. Test-first
+head047135d specifies populated pure rendering against the empty implementation.
+All execution is hosted-only; source/AST is not runtime acceptance.
+
+Independent rehash of scratch z525.js and l10a-main.js matched the configured
+CIT/MAIN digests above. CIT IE.initColumn (near char2310261) -> MAIN hbR/Oi
+(near char3001170) proves A's catalog type is **TAX_OBJECT_CODE**. The active
+ui-grid Bi -> ki -> Qi -> codeDescAsync -> getReferenceDataDescription path is
+not the l3bcit/raw-code fallback. Saved TaxObject remains unused typed metadata.
+MAIN Ka's **checkIsString includes null**; A null numeric body cells therefore
+render blank before the numberformat_ignoreprec pipe. The bounded candidate
+accepts safe nonnegative integral monetary numeric tokens and 0..100 rate
+points with at most two decimal places, never numeric strings/booleans or the
+editor's base*rate formula. Parent self-paid zero-base/nonzero-tax stays valid.
+
+W1.setGrid2DataMap preserves TaxObjectCode as Code, TypeOfIncome as the catalog
+code, IncomeSource and GrossIncome. pE/ui-grid-offline uses the actual E1 B
+columns and MAIN W -> U -> yt -> Re description consumer for
+**INCOME_EXCLUDED_FROM_TAX_FOR_CIT**. GrossIncome is Number2 (Et,
+`number:1.2-2:id`); null is blank. E1.Grid2TotalRow is map/reduce without an
+initializer, while getFormData stores TotalRowGrid2??0. A singleton null total
+is blank on the grid but stored zero; later null additions contribute zero.
+The Number footer uses DecimalPipe's default 0..3 fractional digits. The bounded
+candidate requires binary-exact <=2-place operands and exact ordered sums within
+15 digits, and reconciles the stored TotalGrossIncome. Other fractions retain
+fallback; Decimal arithmetic is not claimed universally JavaScript-exact.
+
+A footer is copied only from each declared original footer response and its
+actual Payload paths after stored-total reconciliation, never derived from row
+sums. Every duplicate A/B row and source metadata is preserved. A page-local
+Data coordinates, all TotalRecords/Index fields, primary-root paths, original
+catalog/detail indices and selected-label provenance keep their own original
+sequence/container. All validation precedes either table replacement.
+
+Shared producer needs are exactly naturally emitted no-body xhr/fetch singleton
+id-ID GETs for TAX_OBJECT_CODE and INCOME_EXCLUDED_FROM_TAX_FOR_CIT. MAIN
+getSingleReferenceData cache miss -> internalLoadBulkReferenceData constructs
+these no-checksum singletons. No arbitrary bulk/checksum/maintenance/description
+route or active acquisition follows. The shared owner alone changes transport
+admission/type recognition. This form reuses CORPORATE_REFERENCE_REQUESTS,
+reference_packets, _project_corporate_catalog, _reference_consumer_order and
+_select_reference_version. Exact successful sequence sets and minimum original
+sequence, cache order/version operands and original attempt clock are retained.
+No catalog bytes or labels are synthesized.
+
+The v2 native proof additionally requires exact positive loaded CIT/MAIN/VENDOR
+pins, id-ID/Asia/Jakarta, Normal ICT_RCIT/ICT_RCITR, explicit null previous/last
+submitted owners, preceding Induk, original manifest component lifetime and the
+literal selected submitted ?view=true route. The observer retains both actual
+table/host/p-table/form owners before/after A pagination, including headers and
+footer spans, plus owned enabled tab/form binding. It never reads business
+cells, controls, Angular state or caches. Missing shared producer/catalog proof
+keeps whole-record DOM fallback. Packet contradictions, history/route changes,
+Stop and final-drain/held-replay custody remain independent.
+
+Hosted acceptance must include populated A+B across two A pages, duplicate
+labels/rows, self-paid independent tax, exact number/rate/null/precision types,
+malformed metadata, missing/failed/mixed references, lifecycle and total refusals,
+then real observer -> capture -> adapter -> held replay -> saved/reopened workbook.
+No template/resource/CI/native dump-gate/AGENTS change is part of this work.
+Fresh exact-head full CI, shared-producer integration, protected contract and
+operator live acceptance remain separately reportable until actually verified.

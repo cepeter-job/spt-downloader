@@ -830,6 +830,44 @@ def _l4_tables(form):
     return result
 
 
+def _l4_populated_projection(page, capture, digest, tables, check_cancel):
+    """Optional stronger consumer; shared passive registry alone owns admission."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import (L4_CATALOG_KINDS, L4_POPULATED_BUILD_DIGESTS,
+                                              MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+    urls = {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+    pins = L4_POPULATED_BUILD_DIGESTS
+    if (set(pins) != urls or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                              for value in pins.values()) or pins[CIT_SOURCE_URL] != digest):
+        return None
+    references, kinds = [], set()
+    observations = capture.request_observations()
+    for endpoint, requested in CORPORATE_REFERENCE_REQUESTS.items():
+        if len(requested) != 1 or requested[0] not in L4_CATALOG_KINDS:
+            continue
+        sequences = [item['sequence'] for item in observations
+            if item['url'] == endpoint and item['method'] == 'GET' and item.get('request_json') is None]
+        if sequences:
+            references.append({'endpoint': endpoint, 'method': 'GET', 'sequences': sequences})
+            kinds.add(requested[0])
+    if kinds != set(L4_CATALOG_KINDS) or len(references) != len(L4_CATALOG_KINDS):
+        return None
+    observe = getattr(capture, 'observe_corporate_reference_providers', None)
+    if not callable(observe):
+        return None
+    builds = observe(check_cancel=check_cancel)
+    _check_cancel(check_cancel)
+    if builds != pins:
+        return None
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
+        return None
+    return {'kind': 'corporate-l4-populated-v2', 'builds': dict(builds), 'route': page.url,
+            **environment, 'tables': tables, 'references': references}
+
+
 def _l4_footer_requests(observations, *, record_id, period):
     """Collect distinct proven L4 footer requests (None when absent).
 
@@ -1150,6 +1188,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 _check_cancel(check_cancel)
                 if final_tables != binding['projection']['tables']:
                     return unavailable()
+                # No new transport/capability when shared catalogs are absent:
+                # legacy empty-only remains available, populated keeps fallback.
+                if 'Induk' in names and _enabled_form_binding(form, tab, name):
+                    populated = _l4_populated_projection(page, capture, digest, final_tables, check_cancel)
+                    _check_cancel(check_cancel)
+                    if populated is not None:
+                        if not _enabled_form_binding(form, tab, name):
+                            return unavailable()
+                        binding['projection'] = populated
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
