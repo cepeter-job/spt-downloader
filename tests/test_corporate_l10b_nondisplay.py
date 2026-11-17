@@ -209,7 +209,8 @@ def test_admitted_catalog_before_primary_selects_the_exact_report_bound_event():
     assert not has_audit_dump_tables(result['sections'], provenance=result['provenance'])
 
 
-@pytest.mark.parametrize('defect', ['wrong-sequence', 'mixed-sequence', 'mixed-attempt', 'missing-event'])
+@pytest.mark.parametrize('defect', ['wrong-sequence', 'mixed-sequence', 'mixed-attempt', 'missing-event',
+                                   'duplicate-event', 'conflicting-event', 'boolean-sequence'])
 def test_report_bound_primary_selection_cannot_skip_actual_contradictions(defect):
     result = adapt()
     report = next(r for r in result['provenance']['projections'] if r['form'] == 'L10-B')
@@ -220,6 +221,14 @@ def test_report_bound_primary_selection_cannot_skip_actual_contradictions(defect
         report['values'][-1]['response_sequence'] = 2
     elif defect == 'mixed-attempt':
         report['values'][-1]['attempt'] = 'b' * 32
+    elif defect in ('duplicate-event', 'conflicting-event'):
+        duplicate = deepcopy(result['provenance']['events'][0])
+        if defect == 'conflicting-event': duplicate['sha256'] = '0' * 64
+        result['provenance']['events'].append(duplicate)
+    elif defect == 'boolean-sequence':
+        for value in report['values']: value['response_sequence'] = True
+        for value in report['presence_facts']: value['response_sequence'] = True
+        result['provenance']['events'][0]['sequence'] = True
     else:
         result['provenance']['events'] = []
     assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
