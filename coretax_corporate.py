@@ -277,6 +277,58 @@ def _observe_l10c_history(form, tab, panel, capture, check_cancel):
     return capture.observe_l10c_lifetime(check_cancel=check_cancel) is not None
 
 
+def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
+    """Offer only shared passive catalogs and positively loaded exact providers."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import (L10C_BUILD_DIGESTS, L10C_HEADERS, MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+    from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
+    if not _observe_l10c_history(form, tab, panel, capture, check_cancel):
+        return None
+    needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
+    urls = {url: kinds for url, kinds in CORPORATE_REFERENCE_REQUESTS.items() if set(kinds) <= needed}
+    if set().union(*map(set, urls.values())) != needed:
+        return None  # The independent shared producer has not been integrated.
+    pins = L10C_BUILD_DIGESTS
+    if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())):
+        return None
+    route, builds = page.url, {}
+    for url in (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE):
+        _check_cancel(check_cancel)
+        script = _PPN_MAIN_BUILD_HASH if url == MAIN_SOURCE else _BUILD_HASH
+        script = script.replace('s=>s.src===url', 's=>s.isConnected&&s.src===url').replace(
+            'e=>e.name===url)', "e=>e.name===url&&e.initiatorType==='script')")
+        digest = page.evaluate(script, url)
+        _check_cancel(check_cancel)
+        if type(digest) is not str or not re.fullmatch(r'[a-f0-9]{64}', digest) or digest != pins[url]:
+            return None
+        builds[url] = digest
+    environment = page.evaluate('''() => ({locale:navigator.language,
+        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})''')
+    _check_cancel(check_cancel)
+    if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
+        return None
+    metadata = form.locator('rsh-citr-l10c-grid1').locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
+    if (not isinstance(metadata, dict) or metadata.get('headers') != L10C_HEADERS
+            or metadata.get('footer_spans') != []):
+        return None
+    references, kinds_seen = [], set()
+    observations = capture.request_observations()
+    for url, kinds in sorted(urls.items()):
+        sequences = sorted({event['sequence'] for event in observations if event['url'] == url
+                            and event['method'] == 'GET' and event['request_json'] is None})
+        if sequences:
+            references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
+            kinds_seen.update(kinds)
+    if (kinds_seen != needed or page.url != route
+            or capture.observe_l10c_lifetime(check_cancel=check_cancel) is None):
+        return None
+    return {'kind': 'corporate-l10c-v1', 'builds': builds, 'route': route, **environment,
+        'visibility_binding': 'current-induk-enabled-v1', 'references': references,
+        'tables': [{'component': 'rsh-citr-l10c-grid1', 'headers': list(L10C_HEADERS), 'footer_spans': []}]}
+
+
 def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_cancel):
     """Additive value-free capability; v1 survives unavailable optional proof."""
     from spt_desktop import diagnostics
@@ -1082,10 +1134,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
             if name == 'L10-C' and 'Induk' in names:
-                # Retain independent child custody while representation/catalog
-                # dependencies are reviewed. No C projection is offered here:
-                # its unprojected dump still refuses native capture as before.
-                _observe_l10c_history(form, tab, panel, capture, check_cancel)
+                projection = _observe_l10c_projection(page, form, tab, panel, capture, check_cancel)
+                if projection is not None:
+                    binding['projection'] = projection
             _advance('grid')
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)

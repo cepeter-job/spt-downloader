@@ -1,21 +1,23 @@
 # L10-C implementation candidate and remaining admission blocker
 
-Status: **populated pure projector implemented; native admission still BLOCKED**.
+Status: **C consumer/observer dispatch, independent lifecycle and framework-source
+proof implemented; full coordinated populated native acceptance still BLOCKED**.
 This implementation follows the full-populated scope decision after the separate
 [docs-only proposal in PR #276](https://github.com/cepeter-job/spt-downloader/pull/276).
 It does not replace that decision with empty-only support and does not complete
 native L10-C. PR #276 remains separate and unchanged.
 
-## Implemented boundary
+## Initial implemented boundary (historical candidate)
 
 `coretax_corporate_projection.project_l10c` transforms the exact four-column
 original body plus its row numbering into the five approved worksheet columns.
 It preserves literal partner names, source order and duplicate occurrences.
 Transaction/country codes require independently supplied description inputs;
 missing/blank/nonstring descriptions refuse rather than exporting a code.
-Those inputs are **not** native catalog evidence. No observer or adapter
-capability calls this pure candidate yet, so arbitrary labels or digests cannot
-turn it into native permission.
+Those inputs are **not** native catalog evidence. Initially no observer or
+adapter called this candidate. The new guarded dispatch below independently
+reconstructs labels from shared original packets; arbitrary labels/digests still
+cannot turn a helper call into native permission.
 
 `TransactionValue` follows the MAIN offline-body **Number** branch, not
 NumberInteger or the online-grid `numberformat_ignoreprec` formatter. The
@@ -26,6 +28,10 @@ For example the synthetic exact fraction 1234.125 becomes `1.234,125`, not
 `1.234`. Numeric strings, booleans, signed zero, unsafe precision and wider
 fractional/rounding profiles refuse. This bounded transformation is not a
 loaded-framework or application-owned display-parity proof.
+
+The initial exact-binary/no-rounding subset above is historical: the new
+source-excerpt proof described below replaces that restriction with the actual
+default 1.0-3 DecimalPipe rule for bounded Number-to-string-stable inputs.
 
 The source getter's `TotalTransactionValue` is retained as typed nondisplayed
 provenance. It does not create a footer or a sum, and a nonzero stored total is
@@ -82,9 +88,8 @@ The following offsets are **decoded character offsets**, not byte offsets:
   GET from a list, including optional checksum suffixes. Re-find the symbol
   before implementing a request matcher; a generic identifier does not
   authorize all batch/checksum variants.
-- MAIN 4175512: offline grid emits `rowIndex+1`. The framework's paginator
-  rowIndex semantics still need independently pinned/hosted proof; the pure
-  candidate does not claim an observed multi-page numbering contract.
+- MAIN 4175512: offline grid emits `rowIndex+1`. The independent exact-provider
+  source proof below now traces and tests the nonvirtual paginator context.
 
 The transaction reference catalog is a common L10-A/L10-C dependency. Its
 same-attempt passive packet/provider/order/version custody should have one
@@ -155,8 +160,9 @@ owned child history, callback parity, or application-owned live acceptance.
 The observer now calls `_observe_l10c_history` for an enabled L10-C with the
 source-proven header/radio/grid structure. It binds the same actual form, grid,
 table, tab and panel twice through `DetailJsonCapture.bind_l10c_structure` and
-samples the C-owned capability. This is custody-only; it does **not** replace
-that form's dump with a worksheet or dispatch `project_l10c`.
+samples the C-owned capability. This first milestone was custody-only. The
+guarded dispatch added subsequently is described below and requires independent
+catalog and provider facts in addition to this lifetime.
 
 `_L10C_HISTORY` is armed on the original Document before inspected View. Its
 independent relevant-structure budget retains the unique original corporate
@@ -189,13 +195,13 @@ was created and no sibling worktree was edited.
 
 ### Exact remaining dependencies / bounded parent request
 
-- Supply an already retained public VENDOR artifact matching configured SHA-256
-  `6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173`, or authorize
-  a narrowly scoped acquisition through the existing loaded-script mechanism.
-  Independent local discovery found the exact CIT/MAIN bytes but no matching
-  VENDOR artifact. No portal request or browser-cache read was made. Without
-  the exact provider bytes, the source-bound default Number, radio bool/string
-  comparison and paginator context cannot be truthfully called framework-proven.
+- Resolved source dependency: a broader read-only scratch inventory subsequently
+  found cached public vendor bytes (`l10a-reviewed-vendor.js` and
+  `induk-vendor-decoded.js`), both independently matching configured SHA-256
+  `6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173`.
+  No portal request or browser-cache read was needed. The provider excerpts
+  below now have hosted tests; their final exact-head execution status must
+  still be checked independently from application-owned loaded-provider custody.
 - Integrate the parent's reviewed shared passive catalog producer (exact
   TRANSACTION_TYPE/COUNTRY_CODE request classes, original sequence sets,
   provider/order/version and final clock custody). This branch does not add a
@@ -216,3 +222,116 @@ by quarantine. Existing pure saved/reopened candidate tests and the new lifetime
 protocol/browser tests must not be relabelled as that end-to-end proof. No
 protected AGENTS.md/resource/runtime/workflow changes, catalog transport changes,
 active portal traffic, merges, or design-PR changes were made.
+
+## Exact framework-source follow-through
+
+`tests/fixtures/corporate_l10c_framework.js` retains only public Angular/PrimeNG
+consumer excerpts from that exact vendor, plus clearly labelled DI/locale-lookup
+and component-construction harness stubs. It is not a replacement formatter,
+Intl approximation, application cache, business capture, or downloaded full
+portal bundle. Tests execute these actual consumers on the GitHub-hosted Edge
+fixture only. The fixture's normalized-text SHA-256 is
+`d38db3f3cef2646e87fc2cb09e1e0ddd4082ed9f68fc4cddb4ead5deee911187`.
+No provider algorithm was executed locally.
+
+Decoded-character source ranges (end exclusive) and excerpt SHA-256:
+
+| Consumer | Range | SHA-256 |
+|---|---|---|
+| Indonesian locale, including `#,##0.###`, comma decimal and dot group | 0:1549 | `5d7518b07cb4c6bc1435352efed94039125f76c658081eba257f5a351b17bd95` |
+| Number-format and symbol enums | 1183395:1184352 | `a7fe0f86238a64a1f1d8e4924fa5ef83f2727a1133bde129e773c713dfa16a0e` |
+| Locale number-symbol accessor | 1184545:1184774 | `5eb56029709f409409479ca47d9e74c26c22eb52ff417019f3b110ad312c88d0` |
+| Digit-info regexp/integer parser | 1194568:1194725 | `79656259c91274c7b33679342d177933493a605d3d1ac83fc0fecc25254b5dfa` |
+| Actual DecimalPipe constructor/transform and nested formatter | 1214520:1218199 | `5ecad55e031e526db3fc7a546106830948899c9b385f750ae2e50df3ffae4160` |
+| Actual radio `writeValue` | 2247636:2247813 | `75a3e1ee4d90563e825ffb1e37e07a8f72cfccf8b20c241a6d42976e8c8927f4` |
+| Actual pTableBody scroller option / row-index consumer | 2382002:2382220 | `cbc8dc95f0c96e29d5589ea9266d2f21d1eed6ca80fa2204f20173d034db4d98` |
+
+The actual radio uses **loose** `B == this.value`, not strict equality. Thus
+boolean true and string `"1"` select the source's string-`"1"` option; false and
+string `"0"` select `"0"`. The child's nullish patch supplies `"0"`, whereas an
+empty string selects neither string option. This proves why a generic strict
+comparison or boolean-to-label guess is not acceptable. No new worksheet radio
+slot or omission approval follows; the original control remains unresolved in
+the approved layout.
+
+The pTableBody context calls `getRowIndex(index)`, which uses `dt.first + index`
+when `dt.paginator` is enabled and only delegates to a scroller index when
+virtual scrolling is configured. The pinned MAIN offline template binds its
+reviewed Paginator/Rows options and does not bind virtual scrolling. Its body
+then emits `rowIndex + 1`; global duplicate-preserving ordinal numbering is the
+reviewed nonvirtual profile, not a guessed per-page reset.
+
+Number's default is the locale pattern's **0..3 fractional digits**, rounding
+the JS Number's shortest decimal digits half-up. The pure candidate now accepts
+at most fifteen significant digits and absolute value 999999999999999, only when
+conversion to Number and back to its shortest decimal retains the original
+numeric value. It matches `4.38 -> 4,38`, `0.1 -> 0,1`, and
+`0.0625 -> 0,063` (including negative half cases), null blank, and zero suppression
+after rounding. Strings, booleans, signed source zero, wider precision and
+unstable Number conversions remain unsupported. The online fraction-0 and
+NumberInteger consumers are not substituted. This transformation proof still
+does not provide the missing coordinated native catalog/combined-lifecycle acceptance.
+
+## Guarded consumer and observer dispatch / exact remaining integration
+
+`observe_forms` now calls `_observe_l10c_projection`; `apply_projections` now
+dispatches `_apply_l10c` for `corporate-l10c-v1`. These are real call sites, not
+another uncalled projector. They require positive exact configured loaded
+CIT/MAIN/VENDOR pins, reviewed id-ID/Jakarta environment, the original enabled
+C child, selected current submitted NORMAL Rupiah route, prior observed Induk,
+current numeric-1 IsTransactionWithRelated and noncontradictory outer selection,
+literal-null preceding form references, the exact no-footer five-column grid,
+and the independently sealed manifest C capability.
+
+The consumer obtains descriptions only through the existing shared
+`CORPORATE_REFERENCE_REQUESTS` and `_project_corporate_catalog`. It binds exact
+original sequence sets, all successful repeated packets, earliest original
+catalog source per kind, selected label paths, original order/version/clock
+provenance and all typed base Payload PeriodYear/TIN plus current Induk selection
+operands. Caller-supplied label overrides refuse. Original question and the
+nondisplayed nonzero total stay retained; no getter-zero or calculated footer
+is invented. Mapping remains explicitly PARTIAL with all three unresolved
+control identities.
+
+`tests/test_corporate_l10c_consumer.py` is explicitly a **consumer unit seam**:
+while the independent TX producer is absent from this branch, it substitutes
+that producer interface in tests only. Its adapter/saved/reopened positives do
+not establish production transport admission or the full populated real-browser
+acceptance case. Production registry/catalog code is unchanged and unavailable
+producer capability keeps whole-record fallback. Never cite this test as full
+native producer/capture acceptance.
+
+The parent supplied the reviewed committed B interface at
+`686730a3cd9116ee490d84e8a590deed27aebee1`; its actual committed capture source
+and the interface report were read. No B tree or uncommitted bytes were copied.
+Parent integration must:
+
+1. Add the actual requested `_l10c_history` handle to the existing fixed
+   `_FINAL_LIFETIMES` synchronous Document snapshot, alongside L8/L7/B. Add exact
+   reply key `l10c` and the same-turn final `clock` (no later clock RPC).
+2. Run `_l10c_state(sample.get('l10c'))` for requested C **before** any optional
+   unavailable/malformed-parent early exit, preserving every known-change
+   fatality. Extend the exact reply key set rather than accepting arbitrary keys.
+3. Extend the candidate argument/return tuple with C and narrow a previously
+   offered C fact only when final state is available/complete and not sticky
+   unavailable. An absent earlier candidate must stay absent.
+4. Seal `corporate_l10c_lifetime` from that joint result, and bind end clock to
+   the same final synchronous turn. Both live/held validators and mixed/absent
+   event fingerprints are already implemented in this branch.
+5. Remove the standalone C final sampler only as part of that reviewed joint
+   integration. The current branch explicitly refuses C whenever a shared
+   `_final_lifetimes` seam is present, or L7/L8 is requested; it cannot append a
+   sequential probe behind B and accidentally seal stale siblings.
+6. Exercise real dual-history mutations in both directions, final-parent
+   changes, optional unavailability, Stop and late responses through the common
+   JSHandle base (Document is ElementHandle, histories are ordinary JSHandles).
+
+This report does not implement or approve the parent's combined merge or
+protected contract. The full production-positive observer/capture/shared-catalog
+adapter/held/saved/reopened test remains the coordinated acceptance blocker.
+
+Milestone verification: `a2b6a03b849a0f8b742ddb9b9847b9ac180be25b`, run
+`44036100797`, completed/success across portable, dependency audit, four Windows
+shards, coverage/package/readback/bootstrap. Main-only provenance/cleanup were
+intentionally skipped. That green verifies the independent lifetime milestone,
+not subsequent framework/consumer changes; a fresh final-head run is required.

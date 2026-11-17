@@ -148,7 +148,7 @@ def test_candidate_labels_and_well_formed_digest_cannot_manufacture_native_admis
                        'labels': {'SYN_TRANSACTION': 'INVENTED NATIVE PERMISSION'}}}]
     result = adapt_corporate_detail([packet(envelope())], selected(), corpus.SCOPE, observed)
     assert not result['eligible'] and result['sections'] == []
-    assert 'unsupported_corporate_semantic_binding' in result['reason']
+    assert 'unverified_corporate_l10c_semantic_binding' in result['reason']
 
 
 def test_legacy_l10c_retains_original_dump_and_question_until_owned_producer_exists():

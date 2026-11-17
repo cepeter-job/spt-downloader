@@ -27,6 +27,7 @@ L7_NEGATIVE_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOU
 L7_OWNER_CHAIN = ['rshshr-corporate-income-tax-return', 'rshshr-citr-l7-form',
                   'rsh-citr-l7-grid1', 'p-table', 'table']
 L11C_BUILD_DIGESTS = {**BUILD_DIGESTS, **_corporate_pins((VENDOR_SOURCE,))}
+L10C_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
@@ -306,11 +307,12 @@ _L10C_QUESTION = ('II. PENENTUAN HARGA TRANSAKSI DI ATAS, DITENTUKAN DENGAN MENG
 
 
 def _l10c_number(value, locale):
-    """Number's default 0..3 digits, not NumberInteger; never round a candidate.
+    """Actual DecimalPipe defaults: 1.0-3 with half-up on Number.toString digits.
 
-    The bounded subset admits only exact binary-representable JSON numbers.
-    A wider DecimalPipe rounding profile needs its own framework proof. Null
-    interpolates blank; it is not the shared ui-grid null-to-zero formatter.
+    The fifteen-digit subset must survive the JS Number shortest decimal
+    representation unchanged before the reviewed formatter rounds it. Exact
+    provider excerpts are exercised on the hosted runner, not copied/executed
+    locally. Null interpolates blank, never the online formatter's zero.
     """
     if value is None:
         return ''
@@ -320,9 +322,8 @@ def _l10c_number(value, locale):
         number = _decimal(value)
         normalized = number.normalize()
         if (abs(number) > _MAX_INTEGER or len(normalized.as_tuple().digits) > 15
-                or normalized.as_tuple().exponent < -3
                 or number.is_zero() and number.is_signed()
-                or Decimal.from_float(float(number)) != number):
+                or Decimal(str(float(number))) != number):
             raise _UnsupportedMetadata('unsupported_corporate_l10c_number_precision')
         return _number(value, 3, locale=locale, trim=True)
     except DecimalException:
@@ -332,10 +333,10 @@ def _l10c_number(value, locale):
 def project_l10c(form, *, headers, footer_spans, tax_type, locale, labels):
     """Pure populated candidate, NOT native admission or catalog custody.
 
-    Caller-supplied labels are transformation inputs, not evidence that the UI
-    consumed them. No observer or adapter dispatch offers this capability yet:
-    original same-attempt catalogs, loaded providers, current Induk choice and
-    stable submitted child/callback custody remain independent blockers.
+    Caller-supplied labels are transformation inputs, never catalog evidence.
+    The native dispatch independently requires original same-attempt catalogs,
+    positive loaded provider pins and manifest-owned current child custody.
+    The shared producer/joint-snapshot integration remains independently required.
     Preserve nondisplayed controls; never infer the radio selection or fabricate
     a total/footer from getFormData's unconditional zero.
     """
@@ -361,7 +362,7 @@ def project_l10c(form, *, headers, footer_spans, tax_type, locale, labels):
             entry = _evidence(value, [L10C_ROOT, L10C_BODY, index, key])
             if key == 'TransactionValue':
                 text = _l10c_number(value, locale)
-                rule = 'angular-number-default-id/exact-binary-0-to-3/null-blank'
+                rule = 'angular-number-default-1.0-3-id/number-to-string-round-half-up/null-blank'
             elif value is None or type(value) is str:
                 text = '' if value is None else value
                 rule = 'literal-string/null-blank'
@@ -400,6 +401,114 @@ def project_l10c(form, *, headers, footer_spans, tax_type, locale, labels):
                 {'group': 'HEADER', 'field': 'CollectorTin', 'label': 'Nomor Identitas WP'},
                 {'group': '', 'field': 'Question', 'label': _L10C_QUESTION}],
             'provenance': provenance}
+
+
+def _apply_l10c(binding, section, observed_forms, *, root, payload, record, event, reference_packets):
+    """Consume shared original catalogs; caller labels can never be permission."""
+    proof = binding['projection']
+    keys = {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references', 'visibility_binding'}
+    if (not isinstance(proof, dict) or set(proof) != keys
+            or proof['kind'] != 'corporate-l10c-v1'
+            or proof['builds'] != L10C_BUILD_DIGESTS
+            or set(L10C_BUILD_DIGESTS) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                   for value in L10C_BUILD_DIGESTS.values())
+            or proof['locale'] != 'id-ID' or proof['timezone'] != 'Asia/Jakarta'
+            or proof['visibility_binding'] != 'current-induk-enabled-v1'
+            or proof['route'] != event['frame_url'] or binding.get('paths') != [[L10C_ROOT]]
+            or any(binding.get(key) for key in ('grids', 'responses', 'dependencies'))
+            or event.get('component_lifetime') is None or event.get('corporate_l10c_lifetime') is None):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_semantic_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    main = root.get('MainFormData')
+    if (proof['route'] != route or fields.get('TaxTypeCode') != 'ICT_RCIT'
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or fields.get('ReturnSheetModel') != 'Normal'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
+            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or 'Induk' not in [form['name'] for form in observed_forms[:observed_forms.index(binding)]]
+            or not _current_induk_visibility(payload, main, 'IsTransactionWithRelated', proof)
+            or type(payload.get('PeriodYear')) is not _CorporateNumber
+            or type(payload.get('TIN')) is not str):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_submitted_lifecycle')
+    tables = proof['tables']
+    if (not isinstance(tables, list) or tables != [{'component': 'rsh-citr-l10c-grid1',
+            'headers': L10C_HEADERS, 'footer_spans': []}]):
+        raise _UnsupportedMetadata('unverified_corporate_l10c_grid_owner')
+    references = proof['references']
+    if not isinstance(references, list) or not 1 <= len(references) <= 4:
+        raise _UnsupportedMetadata('missing_corporate_l10c_reference_bindings')
+    catalogs, sources, contributors, urls = {}, {}, [], set()
+    needed = {'COUNTRY_CODE', 'TRANSACTION_TYPE'}
+    for ref in references:
+        if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
+                or ref['method'] != 'GET' or ref['endpoint'] in urls):
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_reference_binding')
+        kinds = CORPORATE_REFERENCE_REQUESTS.get(ref['endpoint'])
+        if not kinds or not set(kinds) <= needed:
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_reference_binding')
+        urls.add(ref['endpoint'])
+        sequences = ref['sequences']
+        if (not isinstance(sequences, list) or not sequences
+                or any(type(number) is not int or number <= 0 for number in sequences)
+                or sequences != sorted(set(sequences))):
+            raise _UnsupportedMetadata('unsupported_corporate_l10c_reference_sequences')
+        actual = sorted(number for number, packet in reference_packets.items()
+                        if packet['event']['url'] == ref['endpoint'])
+        if sequences != actual or any(not reference_packets[number]['successful'] for number in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_l10c_catalog')
+        for number in sequences:
+            source = reference_packets[number]
+            for kind in kinds:
+                catalog = _project_corporate_catalog(source['payload'], kind=kind,
+                    requested_types=kinds, clock_interval=source['event'].get('clock_interval'))
+                contributors.append((kind, catalog, source['event']))
+                if kind not in sources or number < sources[kind]['sequence']:
+                    catalogs[kind], sources[kind] = catalog, source['event']
+    actual_urls = {packet['event']['url'] for packet in reference_packets.values()
+                   if set(CORPORATE_REFERENCE_REQUESTS.get(packet['event']['url'], ())) & needed}
+    if urls != actual_urls or set(catalogs) != needed:
+        raise _UnsupportedMetadata('unbound_corporate_l10c_catalog')
+    result = project_l10c(root.get(L10C_ROOT), headers=tables[0]['headers'],
+        footer_spans=tables[0]['footer_spans'], tax_type=fields['TaxTypeCode'], locale=proof['locale'],
+        labels={kind: catalog['lookups'] for kind, catalog in catalogs.items()})
+    section['tables'], section['fields'] = [result['table']], result['fields']
+    for key in ('projection_complete', 'projection_reason', 'projection_unresolved_fields'):
+        section[key] = deepcopy(result[key])
+    for entry in tuple(result['provenance']):
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+        kind = {'TypeOfTransaction': 'TRANSACTION_TYPE', 'CountryCode': 'COUNTRY_CODE'}.get(entry['path'][-1])
+        if kind is not None and entry['value'] in catalogs[kind]['selected']:
+            entry['rule'] = 'bound-original-reference-description'
+            result['provenance'].append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
+                'response_sequence': sources[kind]['sequence'], 'container': ['Payload'],
+                'destination': deepcopy(entry['destination'])})
+    for kind, catalog, source in contributors:
+        result['provenance'].extend({**deepcopy(entry), 'response_sequence': source['sequence'],
+            'container': ['Payload'], 'destination': {'table': 'L10-C', 'reference': kind}}
+            for entry in catalog['provenance'])
+    for key in ('PeriodYear', 'TIN', 'ReturnSheetStatusCode', 'ReturnSheetModel',
+                'PreviousFormData', 'LastSubmittedFormData', 'IsTransactionWithRelated'):
+        if key in payload:
+            entry = _evidence(payload[key], [key])
+            entry.update(response_sequence=event['sequence'], container=['Payload'],
+                         rule='retained-original-l10c-base-header-or-lifecycle-control')
+            result['provenance'].append(entry)
+    entry = _evidence(main['IsTransactionWithRelated'], ['MainFormData', 'IsTransactionWithRelated'])
+    entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'],
+                 rule='current-induk-callback/owned-enabled-l10c')
+    result['provenance'].append(entry)
+    return {'form': 'L10-C', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+        'route': proof['route'], 'values': result['provenance'], 'presence_facts': [{
+            'response_sequence': event['sequence'], 'container': ['Payload'],
+            'path': ['IsTransactionWithRelated'], 'present': 'IsTransactionWithRelated' in payload,
+            'rule': 'outer-selection-presence/current-induk-enabled'}]}
 
 
 def _l11c_integer(value):
@@ -929,6 +1038,10 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         if binding['name'] == 'L11-C':
             projected.append(_apply_l11c(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event, country_packets=country_packets or {}))
+            continue
+        if binding['name'] == 'L10-C':
+            projected.append(_apply_l10c(binding, section, observed_forms, root=root, payload=payload,
+                record=record, event=event, reference_packets=reference_packets or {}))
             continue
         proof = binding['projection']
         if (binding['name'] != 'L7' or not isinstance(proof, dict)

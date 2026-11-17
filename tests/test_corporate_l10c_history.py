@@ -12,7 +12,8 @@ rshshr-citr-l10c-form,rsh-citr-l10c-grid1,ui-grid-offline,p-table{display:block}
 <p-radiobutton formcontrolname="Question"><input type="radio" disabled></p-radiobutton>
 <p-radiobutton formcontrolname="Question"><input type="radio" disabled></p-radiobutton>
 <rsh-citr-l10c-grid1><ui-grid-offline><p-table><table><thead><tr><th>NO.</th></tr></thead>
-<tbody><tr><td>DO NOT READ</td></tr></tbody></table></p-table></ui-grid-offline></rsh-citr-l10c-grid1>
+<tbody><tr><td>DO NOT READ</td></tr></tbody></table><p-paginator><div class="p-paginator">
+<p-dropdown><input type="text"></p-dropdown></div></p-paginator></p-table></ui-grid-offline></rsh-citr-l10c-grid1>
 </form></rshshr-citr-l10c-form></div></div></rshshr-corporate-income-tax-return>'''
 
 
@@ -125,7 +126,8 @@ def test_real_l10c_history_binds_owned_disabled_controls_without_values(browser)
 
 
 @pytest.mark.parametrize('defect', ['remount', 'detach-reinsert', 'disable-reenable',
-    'header-control-replaced', 'radio-enabled-restored', 'duplicate-grid', 'induk-replaced'])
+    'header-control-replaced', 'radio-enabled-restored', 'duplicate-grid', 'induk-replaced',
+    'header-caption', 'footer-added'])
 def test_real_l10c_history_retains_same_turn_changes_after_final_shape_is_restored(browser, defect):
     context, page, document, history = armed(browser)
     changes = {
@@ -136,6 +138,8 @@ def test_real_l10c_history_retains_same_turn_changes_after_final_shape_is_restor
         'radio-enabled-restored': "const n=document.querySelector('[type=radio]');n.removeAttribute('disabled');n.setAttribute('disabled','');",
         'duplicate-grid': "const n=document.querySelector('rsh-citr-l10c-grid1'),x=n.cloneNode(true);n.after(x);x.remove();",
         'induk-replaced': "const n=document.querySelector('rshshr-citr-main-form');n.replaceWith(n.cloneNode(true));",
+        'header-caption': "document.querySelector('th').firstChild.data='UNREVIEWED HEADER';",
+        'footer-added': "document.querySelector('table').createTFoot().insertRow().insertCell().textContent='UNREVIEWED FOOTER';",
     }
     try:
         assert bind(page, history, 'start')['available'] is True

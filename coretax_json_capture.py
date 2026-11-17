@@ -254,12 +254,18 @@ _L10C_HISTORY = """(d) => {
          if(record.target!==li||
             (record.oldValue||'').split(/\\s+/).includes('p-disabled')===li.classList.contains('p-disabled'))continue;
        }
-       if(started&&(roles.includes(record.target)||controls&&controls.includes(record.target)||
+       if(started&&(inside(record.target)&&record.target.closest('thead,tfoot')||
+          roles.includes(record.target)||controls&&controls.includes(record.target)||
           record.target===tab||tab&&record.target===tab.closest('li'))){
          state.changed=true;if(!debit())break;
        }
        continue;
      }
+     if(record.type==='characterData'){
+       if(started&&inside(record.target)&&record.target.parentElement?.closest('thead,tfoot'))state.changed=true;
+       continue;
+     }
+     if(started&&inside(record.target)&&record.target.closest('thead,tfoot'))state.changed=true;
      for(const node of record.removedNodes){
        if(node.nodeType!==1)continue;
        if(roles.some(role=>role&&(node===role||node.contains(role)))||ancestors.has(node)||
@@ -277,9 +283,9 @@ _L10C_HISTORY = """(d) => {
    }
  };
  const observer=new MutationObserver(process);
- observer.observe(d,{childList:true,subtree:true,attributes:true,attributeOldValue:true,
+ observer.observe(d,{childList:true,subtree:true,attributes:true,attributeOldValue:true,characterData:true,
    attributeFilter:['disabled','aria-disabled','aria-controls','href','id','class',
-                    'formcontrolname','type','name']});
+                    'formcontrolname','type','name','colspan','rowspan']});
  const snapshot=()=>{
    if(d!==document){state.changed=true;return false;}
    if(!state.available||roles.some(role=>!role))return false;
@@ -288,6 +294,7 @@ _L10C_HISTORY = """(d) => {
      const nodes=d.querySelectorAll(selector);return nodes.length===1&&nodes[0]===roles[index];});
    if(!unique||roles[1].closest(selectors[0])!==roles[0]||
       roles[2].closest(selectors[0])!==roles[0]){state.changed=true;return false;}
+   if(!roles[6].tHead||roles[6].tFoot&&roles[6].tFoot.rows.length){state.changed=true;return false;}
    for(let index=3;index<roles.length;index++){
      const owner=index===3?2:index-1;
      const nodes=roles[owner].querySelectorAll(selectors[index]);
@@ -302,8 +309,8 @@ _L10C_HISTORY = """(d) => {
    const years=form.querySelectorAll('input[formcontrolname="PeriodYear"]');
    const tins=form.querySelectorAll('input[formcontrolname="CollectorTin"]');
    const radios=form.querySelectorAll('p-radiobutton[formcontrolname="Question"]');
-   if(years.length!==1||tins.length!==1||radios.length!==2||
-      form.querySelectorAll('input').length!==4){stop();return false;}
+   const businessInputs=[...form.querySelectorAll('input')].filter(node=>!roles[4].contains(node));
+   if(years.length!==1||tins.length!==1||radios.length!==2||businessInputs.length!==4){stop();return false;}
    const inputs=[...radios].map(radio=>radio.querySelectorAll('input[type="radio"]'));
    if(inputs.some(nodes=>nodes.length!==1)){stop();return false;}
    const current=[years[0],tins[0],...radios,...inputs.map(nodes=>nodes[0])];
@@ -1151,7 +1158,8 @@ class DetailJsonCapture:
         if self._l10c_offered:
             # The B-owned joint sampler is a separate integration dependency.
             # Never move a sequential stale-child window from one child to C.
-            if self._l7_requested or self._l8_requested:
+            if (self._l7_requested or self._l8_requested
+                    or callable(getattr(self, '_final_lifetimes', None))):
                 self._reason('unsupported-child-history-combination')
             elif lifetime is not None:
                 l10c_lifetime = self.observe_l10c_lifetime(check_cancel=check_cancel, _final=True)

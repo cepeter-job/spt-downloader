@@ -177,6 +177,19 @@ def test_l10c_cannot_seal_sequential_sibling_history_until_joint_owner_is_integr
         assert not saved['complete'] and 'unsupported-child-history-combination' in saved['reasons']
 
 
+def test_c_cannot_append_a_sequential_final_probe_after_reviewed_joint_seam_is_integrated(tmp_path):
+    context, page, _ = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+        capture._final_lifetimes = lambda *args, **kwargs: None
+        saved = capture.drain()
+        assert not saved['complete'] and 'corporate_l10c_lifetime' not in saved
+        assert 'unsupported-child-history-combination' in saved['reasons']
+
+
 def test_unoffered_unavailable_c_history_does_not_disable_a_legacy_sibling(tmp_path):
     context, page, guard = fixture()
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:

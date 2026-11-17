@@ -70,7 +70,7 @@ def test_populated_candidate_keeps_duplicates_labels_and_number_not_integer_repr
 
 @pytest.mark.parametrize('field,value', [
     ('TransactionValue', '1234.125'), ('TransactionValue', True),
-    ('TransactionValue', Number('0.1')), ('TransactionValue', Number('0.0625')),
+    ('TransactionValue', Number('0.1234567890123456')),
     ('TransactionValue', Number('1000000000000000')), ('TransactionValue', Number('-0')),
     ('NameOfTransactionPartner', Number('12')), ('NameOfTransactionPartner', False),
     ('TypeOfTransaction', 'MISSING_SYNTHETIC_CODE'), ('CountryCode', 'MISSING_SYNTHETIC_CODE'),
