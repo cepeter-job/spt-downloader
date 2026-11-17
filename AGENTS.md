@@ -130,6 +130,22 @@ Keep `projection_complete=False` and `unprojected_l9_grid_rows` in the mapping
 report and visible Audit note. This candidate is not full native L9 or live
 acceptance. See [L9 recap boundary](docs/superpowers/reports/2026-11-17-corporate-l9-recap-partial.md).
 
+The L11-B candidate projects only four stable literal scalar controls and the
+unconditional Part III borrowing-cost table. Require the positively configured
+loaded CIT/MAIN pins, exact selected submitted route, matching literal model
+and payload status, preceding observed Induk and valid explicit predecessor
+encoding. The manual marker must be literal true or JSON number token 1;
+auto/manual-false, malformed and scalar-null/default profiles remain
+unsupported. Preserve strict original number/string types, the 15-digit
+integral operand and ordered-sum limits, and typed boolean/null/empty-array
+provenance. Retain all original root leaves and metadata alongside the reviewed
+table; never round a month mean into an invented DER denominator. EBITDA/25%,
+conditional Part II, averages and DER remain unprojected pending lifecycle and
+representation proof. Keep `projection_complete=False` with
+`unprojected_l11b_lifecycle`, truthful unresolved counts and a visible Audit
+note; neither emitted-slot mapping nor green synthetic tests certifies a
+complete L11-B worksheet or live acceptance. See [L11-B restricted boundary](docs/superpowers/reports/2026-11-17-corporate-l11b-projection.md).
+
 The L7 corporate semantic branch has its own source-proven boundary. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).

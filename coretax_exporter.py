@@ -736,6 +736,8 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                 'unmapped_l2_header_controls': ' Dua kontrol header L2 belum memiliki slot template; kedua blok rincian tetap diproyeksikan lengkap.',
                 'unprojected_l9_grid_rows': ' L9 diproyeksikan sebagian: hanya total rekapitulasi yang terbukti dari payload; rincian dua belas grid belum dipetakan.',
                 'unprojected_l9_detail_grids': ' L9 diproyeksikan sebagian: masih ada grid rincian L9 yang belum terbukti; identitas tabel dan jumlah baris yang belum dipetakan tetap dicatat.',
+                'unprojected_l11b_lifecycle': ' L11-B diproyeksikan sebagian: EBITDA dan blok DER belum dibuktikan untuk siklus tampilan tersimpan.',
+                'unprojected_l11b_header_question': ' Pemetaan header/pertanyaan L11-B belum disetujui; blok nilai terbukti tidak menjadikan seluruh formulir COMPLETE.',
             }.get(report.get('derived_reason'), '') if report.get('derived_complete') is False else ''
             values = ['Pemetaan template', report.get('unmapped_fields', 0),
                       report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),
