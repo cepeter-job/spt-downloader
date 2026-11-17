@@ -191,6 +191,40 @@ def test_report_revalidation_does_not_retype_identity_metadata_as_boolean(path):
     assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
 
 
+def test_admitted_catalog_before_primary_selects_the_exact_report_bound_event():
+    from test_corporate_l11c_native import COUNTRY, catalog
+    primary = packet(sequence=2)
+    reference = corpus.packet({'IsSuccessful': True, 'Payload': catalog()}, 1,
+                             endpoint=COUNTRY)
+    reference['context'].update(method='GET', frame_url=ROUTE,
+        component_lifetime=deepcopy(primary['context']['component_lifetime']),
+        corporate_l10b_lifetime=deepcopy(primary['context']['corporate_l10b_lifetime']))
+    # GET/no request body is required by the real transport validator. Both
+    # packets retain the same manifest-owned attempt and lifetime facts.
+    result = adapt_corporate_detail([reference, primary], selected(), corpus.SCOPE, observed())
+    assert result['eligible'], result['reason']
+    assert [e['sequence'] for e in result['provenance']['events']] == [1, 2]
+    report = next(r for r in result['provenance']['projections'] if r['form'] == 'L10-B')
+    assert {v['response_sequence'] for v in report['values']} == {2}
+    assert not has_audit_dump_tables(result['sections'], provenance=result['provenance'])
+
+
+@pytest.mark.parametrize('defect', ['wrong-sequence', 'mixed-sequence', 'mixed-attempt', 'missing-event'])
+def test_report_bound_primary_selection_cannot_skip_actual_contradictions(defect):
+    result = adapt()
+    report = next(r for r in result['provenance']['projections'] if r['form'] == 'L10-B')
+    if defect == 'wrong-sequence':
+        for value in report['values']:
+            value['response_sequence'] = 2
+    elif defect == 'mixed-sequence':
+        report['values'][-1]['response_sequence'] = 2
+    elif defect == 'mixed-attempt':
+        report['values'][-1]['attempt'] = 'b' * 32
+    else:
+        result['provenance']['events'] = []
+    assert has_audit_dump_tables(result['sections'], provenance=result['provenance'])
+
+
 def test_export_keeps_intentional_b_d_absence_and_checkpoint_custody(tmp_path):
     result = adapt()
     assert result['eligible'], result['reason']
