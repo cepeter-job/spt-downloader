@@ -5,6 +5,7 @@ from fractions import Fraction
 import pytest
 
 from coretax_json import _CorporateNumber as Number, _UnsupportedMetadata
+import support_json_corpus as corpus
 from test_corporate_l11b_projection import (module, form, primary, observed, adapt, route)
 
 
@@ -34,7 +35,7 @@ def tables(part_ii=True):
     labels = ([('rsh-citr-l11b-form-grid1', DEBT_HEADERS, [[3] + [1] * 13]),
                ('rsh-citr-l11b-form-grid2', EQUITY_HEADERS, [[1] * 14])] if part_ii else [])
     labels.append(('rsh-citr-l11b-form-grid3', module().L11B_COST_HEADERS, [[1] * 5]))
-    return [{'component': component, 'headers': headers, 'footer_spans': spans}
+    return [{'component': component, 'headers': list(headers), 'footer_spans': spans}
             for component, headers, spans in labels]
 
 
@@ -47,9 +48,11 @@ def bindings(part_ii=True):
 
 
 def packet(value=None):
-    from test_corporate_l1d_native import component_lifetime
     result = primary(populated() if value is None else value)
-    result['component_lifetime'] = component_lifetime()
+    result['context']['component_lifetime'] = {
+        'attempt': corpus.ATTEMPT, 'kind': 'corporate-submitted-spa-v1',
+        'record_id': corpus.RECORD_ID, 'source_url': corpus.LIST_URL, 'detail_url': route(),
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True}
     return result
 
 
@@ -168,7 +171,7 @@ def test_hydrated_adapter_retains_original_overwritten_controls_and_custody():
 def test_hydrated_binding_rejects_missing_or_contradictory_proof(defect):
     forms, source = bindings(), packet()
     proof = forms[-1]['projection']
-    if defect == 'lifetime': source.pop('component_lifetime')
+    if defect == 'lifetime': source['context'].pop('component_lifetime')
     elif defect == 'wrong-pin': proof['builds'][module().VENDOR_SOURCE] = 'a' * 64
     elif defect == 'missing-pin': proof['builds'].pop(module().VENDOR_SOURCE)
     elif defect == 'header': proof['tables'][0]['headers'][0] += ' FOREIGN'
