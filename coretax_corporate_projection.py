@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, DecimalException
+from fractions import Fraction
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -105,6 +106,25 @@ L11C_SPANS = [[1, 5, *([1] * 10)]]
 L7_ROOT = 'CalculationOfFiscalLossCompensation'
 L7_BODY = 'FiscalNetProfitAndLossCompensation'
 L7_SUFFIXES = ('YearMinus4', 'YearMinus3', 'YearMinus2', 'YearMinus1', 'YearCurrent', 'YearNext')
+L2_ROOT, L2_AFFILIATES = 'ListOfOwnership', 'InvestmentList'
+L2_SHAREHOLDERS = 'ListOfShareholders'
+L2_TOTALS = ('TotalPaidInCapital', 'TotalPaidInCapitalPercentage', 'TotalDividend',
+             'TotalDebt', 'TotalReceivable')
+L2_UNPROJECTED_REASON = 'unprojected_l2_owner_rendering'
+L2_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
+L2_SHAREHOLDER_HEADERS = ['NO.', 'NAMA', 'ALAMAT', 'NEGARA', 'NPWP/NIK', 'Jabatan',
+    'Modal Disetor / NILAI (Rp)', 'Modal Disetor / %', 'DIVIDEN/PEMBAGIAN LABA(Rp)']
+L2_SHAREHOLDER_SPANS = [[1, 5, 1, 1, 1]]
+L2_COMPONENTS = ('rsh-citr-l2-form-grid1', 'rsh-citr-l2-form-grid2')
+L2_GROUPS = (
+    'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',
+    'B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI')
+# Block B's approved Rupiah template headers.
+L2_AFFILIATE_HEADERS = ['NO.', 'NAMA', 'NEGARA', 'NPWP/NIK',
+    'PENYERTAAN MODAL / NILAI (Rp)', 'PENYERTAAN MODAL / %',
+    'UTANG / NILAI (Rp)', 'UTANG / TAHUN', 'UTANG / BUNGA UTANG/TAHUN',
+    'PIUTANG / NILAI (Rp)', 'PIUTANG / TAHUN', 'PIUTANG / BUNGA UTANG/TAHUN']
+L2_AFFILIATE_SPANS = [[1, 5, 1, 2, 1, 2]]
 _MAX_INTEGER = 999999999999999
 
 
@@ -1739,6 +1759,336 @@ def _apply_l6(binding, section, observed_forms, *, root, payload, record, event)
             'route': proof['route'], 'values': result['provenance']}
 
 
+def _l2_exact(value, digits):
+    """No coercion/rounding subset of JSON.parse Number and DecimalPipe."""
+    if value is None:
+        return None
+    if (type(value) is not _CorporateNumber or len(value) > 64
+            or not re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?', value)
+            or len(value.partition('.')[2].rstrip('0')) > digits
+            or len(value.lstrip('-').replace('.', '').lstrip('0').rstrip('0')) > 15):
+        raise _UnsupportedMetadata('unsupported_corporate_l2_number')
+    exact = Fraction(str(value))
+    if abs(exact) > _MAX_INTEGER or exact == 0 and value.startswith('-'):
+        raise _UnsupportedMetadata('unsafe_corporate_l2_number')
+    number = float(value)
+    if Fraction.from_float(number) != exact:
+        raise _UnsupportedMetadata('inexact_corporate_l2_browser_number')
+    return number
+
+
+def _l2_format(number, *, percentage=False):
+    if number is None:
+        return ''
+    return _number(str(number), 4 if percentage else 3, locale='id-ID', trim=not percentage)
+
+
+def _l2_reduce(values):
+    # fa uses reduce WITHOUT an initial value. A singleton null stays null;
+    # null participates as numeric zero only when a '+' operation occurs.
+    if not values:
+        return 0.0
+    total = values[0]
+    for value in values[1:]:
+        left, right = 0.0 if total is None else total, 0.0 if value is None else value
+        exact = Fraction.from_float(left) + Fraction.from_float(right)
+        total = left + right
+        if abs(exact) > _MAX_INTEGER or Fraction.from_float(total) != exact:
+            raise _UnsupportedMetadata('unsafe_corporate_l2_ordered_total')
+        _l2_exact(_CorporateNumber(format(total, '.4f')), 4)
+    return total
+
+
+def project_l2_owner(form, *, tax_type, locale, country_labels, position_labels):
+    """Whole approved A/B bodies, not a native/callback/catalog authority.
+
+    Caller independently owns the submitted restoration, loaded providers,
+    exact offline structure and same-attempt original reference descriptions.
+    Position's unique-Code labels implement w1's first find, not a second
+    SubPosition lookup. Keep old v1 quarantine separate and unchanged.
+    """
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict)
+            or not isinstance(country_labels, dict) or not isinstance(position_labels, dict)):
+        raise _UnsupportedMetadata('unsupported_corporate_l2_owner_structure')
+    if set(form) != {L2_SHAREHOLDERS, L2_AFFILIATES, *L2_TOTALS}:
+        raise _UnsupportedMetadata('unsupported_corporate_l2_owner_shape')
+    columns = (
+        ('Name', 'Address', 'CountryCode', 'TIN', 'Position', 'PaidInCapital',
+         'PaidInCapitalPercentage', 'Dividend'),
+        ('Name', 'CountryCode', 'TIN', 'Investment', 'InvestmentPercentage', 'Debt',
+         'DebtYear', 'DebtInterest', 'Receivable', 'ReceivableYear', 'ReceivableInterest'))
+    sums, tables, provenance = {}, [], []
+    for block, (body_key, headers, spans) in enumerate((
+            (L2_SHAREHOLDERS, L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS),
+            (L2_AFFILIATES, L2_AFFILIATE_HEADERS, L2_AFFILIATE_SPANS))):
+        body = [] if form[body_key] is None else form[body_key]
+        if not isinstance(body, list) or len(body) > 10000:
+            raise _UnsupportedMetadata('unsupported_corporate_l2_owner_body')
+        rows, operands = [], {}
+        required = {*columns[block], *(['SubPosition'] if block == 0 else [])}
+        optional = {'ValidFrom', 'ValidTo'} if block == 0 else {'IsEditable'}
+        money = ({'PaidInCapital', 'Dividend'} if block == 0 else
+                 {'Investment', 'Debt', 'DebtInterest', 'Receivable', 'ReceivableInterest'})
+        percentages = {'PaidInCapitalPercentage', 'InvestmentPercentage'}
+        for index, source in enumerate(body):
+            if (not isinstance(source, dict) or not required <= set(source)
+                    or set(source) - required - optional):
+                raise _UnsupportedMetadata('unsupported_corporate_l2_owner_row')
+            row = [str(index + 1)]
+            for column, key in enumerate(columns[block], 1):
+                value = source[key]
+                entry = _evidence(value, [L2_ROOT, body_key, index, key])
+                entry['destination'] = {'table': 'L2/' + ('shareholder' if block == 0 else 'affiliate'),
+                                        'row': index, 'column': column}
+                if key in money or key in percentages:
+                    number = _l2_exact(value, 4 if key in percentages else 3)
+                    if block == 0 and number is None:
+                        number = 0.0
+                    operands.setdefault(key, []).append(number)
+                    text = _l2_format(number, percentage=key in percentages)
+                    entry['rule'] = ('nullish-zero/' if block == 0 and value is None else '') + (
+                        'offline-Number4-1.4-4-id' if key in percentages else 'offline-Number-1.0-3-id')
+                elif key in ('CountryCode', 'Position'):
+                    labels = country_labels if key == 'CountryCode' else position_labels
+                    if value is None or value == '':
+                        text = ''
+                    elif type(value) is str and value in labels and type(labels[value]) is str:
+                        text = labels[value]
+                    else:
+                        raise _UnsupportedMetadata('unbound_corporate_l2_reference_description')
+                    entry['rule'] = 'country-active-description' if key == 'CountryCode' else 'position-first-description'
+                elif key in ('DebtYear', 'ReceivableYear') and type(value) is _CorporateNumber:
+                    text = str(int(_l2_exact(value, 0)))
+                    entry['rule'] = 'integral-year/JS-String'
+                elif value is None or type(value) is str:
+                    text = '' if value is None else value
+                    entry['rule'] = 'literal-string/nullish-blank'
+                else:
+                    raise _UnsupportedMetadata('unsupported_corporate_l2_literal_type')
+                row.append(text)
+                provenance.append(entry)
+            for key in source:
+                if key in columns[block]:
+                    continue
+                value = source[key]
+                if key == 'IsEditable' and type(value) is bool:
+                    entry = {'path': [L2_ROOT, body_key, index, key], 'type': 'boolean', 'value': value}
+                else:
+                    if value is not None and type(value) is not str:
+                        raise _UnsupportedMetadata('unsupported_corporate_l2_row_metadata')
+                    entry = _evidence(value, [L2_ROOT, body_key, index, key])
+                entry['rule'] = 'unused-subposition' if key == 'SubPosition' else 'unused-row-metadata'
+                provenance.append(entry)
+            rows.append(row)
+        for key in (('PaidInCapital', 'PaidInCapitalPercentage', 'Dividend') if block == 0 else ('Debt', 'Receivable')):
+            sums[key] = _l2_reduce(operands.get(key, []))
+        if block == 0:
+            # The getter string -> parseFloat -> toFixed(4) path has no grouping.
+            percentage = format(sums['PaidInCapitalPercentage'], '.4f').replace('.', ',')
+            footer = ['', 'JUMLAH', _l2_format(sums['PaidInCapital']), percentage, _l2_format(sums['Dividend'])]
+        else:
+            footer = ['', 'JUMLAH', _l2_format(sums['Debt']), '', _l2_format(sums['Receivable']), '']
+        tables.append({'name': 'L2/' + ('shareholder' if block == 0 else 'affiliate'),
+            'headers': list(headers), 'rows': rows + [footer], 'footer': [footer],
+            'footer_spans': deepcopy(spans), 'body_row_count': len(body),
+            'source_total': len(body), 'complete': True})
+    for key in L2_TOTALS:
+        _l2_exact(form[key], 4 if key == 'TotalPaidInCapitalPercentage' else 3)
+        provenance.append({**_evidence(form[key], [L2_ROOT, key]),
+            'rule': ('saved-percentage-alias-not-rendered' if key == 'TotalPaidInCapitalPercentage'
+                     else 'overwritten-saved-total/ordered-model-getter')})
+    return {'tables': tables, 'provenance': provenance}
+
+
+def project_l2(form, *, tax_type, locale):
+    """Bounded empty-owner projection, not permission for native L2 capture.
+
+    Populated A needs owned FullPosition/country descriptions. Populated B
+    needs owned country descriptions and the Number/Number4 renderer contract.
+    Never replace either body with a partial affiliate-only worksheet. Even the
+    empty subset retains the entire audit dump and whole-record DOM fallback.
+    """
+    if tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict):
+        raise _UnsupportedMetadata('unsupported_corporate_l2_structure')
+    if set(form) != {L2_SHAREHOLDERS, L2_AFFILIATES, *L2_TOTALS}:
+        raise _UnsupportedMetadata('unsupported_corporate_l2_source_shape')
+    for key in (L2_SHAREHOLDERS, L2_AFFILIATES):
+        value = form[key]
+        if value is not None and not isinstance(value, list):
+            raise _UnsupportedMetadata('unsupported_corporate_l2_body')
+    if form[L2_SHAREHOLDERS]:
+        raise _UnsupportedMetadata('unprojected_corporate_l2_shareholder_body')
+    if form[L2_AFFILIATES]:
+        raise _UnsupportedMetadata('unverified_corporate_l2_affiliate_rendering')
+    provenance = []
+    for field in L2_TOTALS:
+        value = form[field]
+        # A closed zero grammar avoids JS fractional sums, signed zero, decimal
+        # exceptions, null coercion and unsafe precision. Preserve source lexemes.
+        if type(value) is not _CorporateNumber or not re.fullmatch(r'0(?:\.0+)?', value):
+            raise _UnsupportedMetadata('unsupported_corporate_l2_empty_total')
+        provenance.append({**_evidence(value, [L2_ROOT, field]),
+            'rule': 'validated-empty-owner-zero'})
+    # These two empty reductions are numeric zero in fa/setGridValue. Number,
+    # not Number2, renders the Rupiah footer: no fabricated two-decimal format.
+    footer = [['', 'JUMLAH', '0', '', '0', '']]
+    tables = [{'name': 'L2/affiliate', 'headers': list(L2_AFFILIATE_HEADERS),
+               'rows': deepcopy(footer), 'footer': footer,
+               'footer_spans': deepcopy(L2_AFFILIATE_SPANS),
+               'body_row_count': 0, 'source_total': 0, 'complete': True}]
+    return {'tables': tables, 'provenance': provenance}
+
+
+def _apply_l2_owner(binding, section, observed_forms, *, root, payload, record, event, reference_packets):
+    proof = binding['projection']
+    if (set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or not isinstance(proof['builds'], dict)
+            or set(proof['builds']) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+            or proof['builds'] != L2_BUILD_DIGESTS
+            or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
+                   for value in (*proof['builds'].values(), *L2_BUILD_DIGESTS.values()))
+            or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
+            or proof['timezone'] != 'Asia/Jakarta' or event.get('component_lifetime') is None
+            or binding.get('paths') != [[L2_ROOT]] or binding.get('grids')
+            or binding.get('responses') or binding.get('dependencies')):
+        raise _UnsupportedMetadata('unverified_corporate_l2_owner_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if type(literal) is str and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (proof['route'] != route or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
+            or 'PreviousFormData' not in payload):
+        raise _UnsupportedMetadata('unverified_corporate_l2_owner_lifecycle')
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unverified_corporate_l2_owner_previous')
+        previous = _corporate_json(previous)
+        if previous is not None and not isinstance(previous, dict):
+            raise _UnsupportedMetadata('unverified_corporate_l2_owner_previous')
+    tables = proof['tables']
+    if not isinstance(tables, list) or len(tables) != 2:
+        raise _UnsupportedMetadata('unverified_corporate_l2_owner_tables')
+    for index, (headers, spans) in enumerate(((L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS),
+                                             (L2_AFFILIATE_HEADERS, L2_AFFILIATE_SPANS))):
+        expected = {'component': L2_COMPONENTS[index], 'source_structure': {
+            'form': 'L2', 'component': L2_COMPONENTS[index], 'groups': [L2_GROUPS[index]]},
+            'headers': headers, 'footer_spans': spans}
+        if (tables[index] != expected
+                or any(type(span) is not int for line in tables[index]['footer_spans'] for span in line)):
+            raise _UnsupportedMetadata('unverified_corporate_l2_owner_tables')
+    references = proof['references']
+    if not isinstance(references, list):
+        raise _UnsupportedMetadata('unverified_corporate_l2_owner_references')
+    catalogs, sources, seen = {}, {}, set()
+    for ref in references:
+        if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
+                or type(ref['endpoint']) is not str or ref['method'] != 'GET' or ref['endpoint'] in seen):
+            raise _UnsupportedMetadata('unverified_corporate_l2_owner_references')
+        kinds = CORPORATE_REFERENCE_REQUESTS.get(ref['endpoint'])
+        if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:
+            raise _UnsupportedMetadata('unverified_corporate_l2_owner_references')
+        seen.add(ref['endpoint'])
+        sequences = ref['sequences']
+        if (not isinstance(sequences, list) or not sequences
+                or any(type(n) is not int or n <= 0 for n in sequences)
+                or len(set(sequences)) != len(sequences)):
+            raise JsonSafetyError('Corporate L2 reference sequence is invalid or repeated')
+        actual = {n for n, packet in reference_packets.items() if packet['event']['url'] == ref['endpoint']}
+        if set(sequences) != actual or any(not reference_packets[n]['successful'] for n in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_l2_catalog')
+        source = reference_packets[min(sequences)]
+        for kind in kinds:
+            catalog = _project_corporate_catalog(source['payload'], kind=kind, requested_types=kinds,
+                clock_interval=source['event'].get('clock_interval'))
+            if kind == 'RELATED_PERSON_TYPE' and catalog['requires_vendor']:
+                # w1 uses first Code==Position, NOT getActiveReferenceDataValue.
+                raise _UnsupportedMetadata('unsupported_corporate_l2_position_versions')
+            if kind in catalogs and catalog['provenance'] != catalogs[kind]['provenance']:
+                raise JsonSafetyError('Corporate L2 catalog snapshots changed')
+            if kind not in sources or source['event']['sequence'] < sources[kind]['sequence']:
+                catalogs[kind], sources[kind] = catalog, source['event']
+    result = project_l2_owner(root.get(L2_ROOT), tax_type=fields.get('TaxTypeCode'), locale=proof['locale'],
+        country_labels=catalogs.get('COUNTRY_CODE', {}).get('lookups', {}),
+        position_labels=catalogs.get('RELATED_PERSON_TYPE', {}).get('lookups', {}))
+    for index, table in enumerate(result['tables']):
+        table['source_structure'] = deepcopy(tables[index]['source_structure'])
+    for entry in tuple(result['provenance']):
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+        kind = {'country-active-description': 'COUNTRY_CODE',
+                'position-first-description': 'RELATED_PERSON_TYPE'}.get(entry['rule'])
+        if kind in catalogs and entry['value'] in catalogs[kind]['selected']:
+            result['provenance'].append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
+                'response_sequence': sources[kind]['sequence'], 'container': ['Payload'],
+                'destination': deepcopy(entry['destination'])})
+    for kind, catalog in catalogs.items():
+        result['provenance'].extend({**entry, 'response_sequence': sources[kind]['sequence'],
+            'container': ['Payload'], 'destination': {'form': 'L2', 'reference': kind}}
+            for entry in catalog['provenance'])
+    # Real header controls, not a dummy nonempty-fields dump exemption. The
+    # approved workbook has no slots for them: preserve their mapping shortfall.
+    if (type(payload.get('TIN')) is not str or type(payload.get('PeriodYear')) is not _CorporateNumber
+            or not re.fullmatch(r'[0-9]{4}', payload['PeriodYear'])):
+        raise _UnsupportedMetadata('unsupported_corporate_l2_header_controls')
+    section['fields'] = []
+    for key, field, caption in (('PeriodYear', 'TaxPeriodYear', 'Tahun Pajak/Bagian Tahun Pajak'),
+                                ('TIN', 'CollectorTin', 'Nomor Identitas WP')):
+        section['fields'].append({'group': 'HEADER', 'field': field, 'label': caption, 'value': str(payload[key])})
+        result['provenance'].append({**_evidence(payload[key], [key]), 'container': ['Payload'],
+            'response_sequence': event['sequence'], 'destination': {'form': 'L2', 'field': field},
+            'rule': 'outer-primary-header-control'})
+    section['tables'] = result['tables']
+    section['projection_complete'] = False
+    section['projection_reason'] = 'unmapped_l2_header_controls'
+    return {'form': 'L2', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
+def _apply_l2(binding, section, observed_forms, *, root, payload, record, event, reference_packets=None):
+    proof = binding['projection']
+    if isinstance(proof, dict) and proof.get('kind') == 'corporate-l2-owner-v2':
+        return _apply_l2_owner(binding, section, observed_forms, root=root, payload=payload,
+            record=record, event=event, reference_packets=reference_packets or {})
+    builds = proof.get('builds') if isinstance(proof, dict) else None
+    approved = BUILD_DIGESTS.get(CIT_SOURCE)
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+            or proof['kind'] != 'corporate-l2-v1'
+            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
+            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
+            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+            or type(approved) is not str or not re.fullmatch(r'[0-9a-f]{64}', approved)
+            or builds[CIT_SOURCE] != approved
+            or proof['route'] != event['frame_url']
+            or binding.get('paths') != [[L2_ROOT]]
+            or binding.get('grids') or binding.get('responses') or binding.get('dependencies')):
+        raise _UnsupportedMetadata('unverified_corporate_l2_binding')
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model):
+        raise _UnsupportedMetadata('unverified_corporate_l2_submitted_lifecycle')
+    fields = record.get('source_fields', {})
+    result = project_l2(root.get(L2_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
+    # Keep every original leaf, including empty/null bodies and all totals.
+    # No fields marker may let this partial projection bypass the dump gate.
+    section['tables'] = [*result['tables'], *section.get('tables', [])]
+    section['fields'] = []
+    section['projection_complete'] = False
+    section['projection_reason'] = L2_UNPROJECTED_REASON
+    for entry in result['provenance']:
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+    return {'form': 'L2', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None, grid_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -1761,6 +2111,10 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
         if binding['name'] == 'L6':
             projected.append(_apply_l6(binding, section, observed_forms, root=root,
                 payload=payload, record=record, event=event))
+            continue
+        if binding['name'] == 'L2':
+            projected.append(_apply_l2(binding, section, observed_forms, root=root,
+                payload=payload, record=record, event=event, reference_packets=reference_packets or {}))
             continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,

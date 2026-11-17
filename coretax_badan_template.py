@@ -411,6 +411,31 @@ def _write_amount(sheet, row, column, value, *, subtract=False):
     return True
 
 
+def _write_l2_number(sheet, row, column, value, *, monetary=True, subtract=False):
+    """L2's reviewed offline Number has 0..3, not the generic money's 0..2.
+
+    Called only after binding the approved L2 block headers. Preserve legacy
+    currency-marker handling and all other forms' original two-digit grammar.
+    Non-money interest cells retain the approved General style, not Rp or %.
+    """
+    style = sheet.cell(row, column).number_format
+    parsed = value
+    if isinstance(value, str) and re.fullmatch(
+            r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,3})?', value):
+        number = Decimal(value.replace('.', '').replace(',', '.'))
+        converted = float(number)
+        if (not number.is_finite() or Decimal(format(number, '.15g')) != number
+                or not math.isfinite(converted) or Decimal(str(converted)) != number):
+            _write(sheet, row, column, value)
+            sheet.cell(row, column).number_format = ACCOUNTING if monetary else style
+            return False
+        parsed = converted
+    safe = _write_amount(sheet, row, column, parsed, subtract=subtract)
+    if not monetary:
+        sheet.cell(row, column).number_format = style
+    return safe
+
+
 def _write_percentage(sheet, row, column, value):
     # Captured L2 values are percentage points, including four decimal places.
     # Currency markers and malformed locale syntax are not percentage aliases.
@@ -780,9 +805,12 @@ def render_template_form(sheet, form, sections, *, period=None):
                     subtract = (form == 'l1-d' and _l1d_role(table) == 1 and column == 3
                                 and _label(cells.get(2)) == _label(
                                     'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
-                    safe = _write_amount(sheet, row, column, value, subtract=subtract) and safe
+                    writer = _write_l2_number if form == 'l2' else _write_amount
+                    safe = writer(sheet, row, column, value, subtract=subtract) and safe
                     if form == 'l9' and block >= 2 and column == 8 and _present(value):
                         sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
+                elif (form, block) == ('l2', 1) and column in (9, 12):
+                    safe = _write_l2_number(sheet, row, column, value, monetary=False) and safe
                 else:
                     _write(sheet, row, column, value)
             if not safe:
@@ -791,7 +819,8 @@ def render_template_form(sheet, form, sections, *, period=None):
         for row_offset, column, value, numeric in foot:
             row = last + extra + 1 + row_offset
             if numeric:
-                writer = _write_percentage if column in percentages else _write_amount
+                writer = (_write_percentage if column in percentages else
+                          _write_l2_number if form == 'l2' else _write_amount)
                 footer_safe = writer(sheet, row, column, value) and footer_safe
                 if form == 'l9' and block >= 2 and column == 8 and _present(value):
                     sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
@@ -817,6 +846,11 @@ def render_template_form(sheet, form, sections, *, period=None):
     if form == 'l10-a' and any(section.get('projection_complete') is False
             and section.get('projection_reason') == 'l10a_header_slots_omitted' for section in sections):
         derived = {'derived_complete': False, 'derived_reason': 'l10a_header_slots_omitted'}
+    if form == 'l2':
+        reason = next((section.get('projection_reason') for section in sections
+                       if section.get('projection_complete') is False), None)
+        if reason is not None:
+            derived = {'derived_complete': False, 'derived_reason': reason}
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
