@@ -162,6 +162,165 @@ def test_l10c_cannot_seal_sequential_sibling_history_until_joint_owner_is_integr
         assert not saved['complete'] and 'unsupported-child-history-combination' in saved['reasons']
 
 
+def test_unoffered_unavailable_c_history_does_not_disable_a_legacy_sibling(tmp_path):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        guard.state['available'] = False
+        assert not capture.bind_l10c_structure(*[Element() for _ in range(5)], phase='start')
+        capture._l7_requested = True
+        saved = capture.drain()
+        assert saved['complete'] and 'corporate_l10c_lifetime' not in saved
+
+
+def adapter_packets():
+    from test_corporate_component_lifetime import corporate_packets
+    packets, record, scope, observed, _ = corporate_packets()
+    fact = proof()
+    fact.update(attempt=packets[0]['context']['attempt'], record_id=record['record_id'],
+                source_url=record['list_url'], detail_url=packets[0]['context']['frame_url'])
+    for packet in packets:
+        packet['context']['corporate_l10c_lifetime'] = deepcopy(fact)
+    return packets, record, scope, observed, fact
+
+
+def test_adapter_preserves_c_history_without_granting_c_semantics_to_another_form():
+    packets, record, scope, observed, fact = adapter_packets()
+    result = adapter.adapt_corporate_detail(packets, record, scope, observed)
+    assert result['eligible'], result['reason']
+    assert all(event.get('corporate_l10c_lifetime') == fact for event in result['provenance']['events'])
+    assert not any(item['form'] == 'L10-C' for item in result['provenance']['projections'])
+
+
+@pytest.mark.parametrize('defect', ['missing-component', 'null', 'cross-attempt', 'missing-on-reference'])
+def test_adapter_c_history_is_checked_before_any_semantic_fallback(defect):
+    packets, record, scope, observed, _ = adapter_packets()
+    if defect == 'missing-component':
+        del packets[0]['context']['component_lifetime']
+    elif defect == 'null':
+        packets[0]['context']['corporate_l10c_lifetime'] = None
+    elif defect == 'cross-attempt':
+        packets[0]['context']['corporate_l10c_lifetime']['attempt'] = 'b' * 32
+    else:
+        del packets[1]['context']['corporate_l10c_lifetime']
+    with pytest.raises(JsonSafetyError):
+        adapter.adapt_corporate_detail(packets, record, scope, observed)
+
+
+@pytest.mark.parametrize('defect', ['malformed', 'unavailable', 'missing-history', 'missing-component', 'missing-element'])
+def test_l10c_unavailable_structure_never_becomes_a_fact(tmp_path, defect):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        nodes = [Element() for _ in range(5)]
+        if defect == 'malformed':
+            guard.state = {'available': True}
+        elif defect == 'unavailable':
+            guard.state['available'] = False
+        elif defect == 'missing-history':
+            capture._l10c_history = None
+        elif defect == 'missing-component':
+            capture._component_started = False
+        else:
+            nodes[0].element_handle = lambda: None
+        assert not capture.bind_l10c_structure(*nodes, phase='start')
+        assert capture.observe_l10c_lifetime() is None
+        if defect == 'missing-history':
+            capture._l10c_history = guard  # Return test-disowned handle to its cleanup owner.
+
+
+@pytest.mark.parametrize('error', [RuntimeError, JsonSafetyError])
+def test_l10c_probe_preserves_safety_but_not_driver_exception_text(tmp_path, error):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+        original = guard.evaluate
+
+        def fail(*args):
+            raise error('SYNTHETIC PRIVATE DRIVER SENTINEL')
+
+        guard.evaluate = fail
+        if error is JsonSafetyError:
+            with pytest.raises(JsonSafetyError):
+                capture.observe_l10c_lifetime()
+        else:
+            assert capture.observe_l10c_lifetime() is None
+        guard.evaluate = original
+    assert all(b'SYNTHETIC PRIVATE DRIVER SENTINEL' not in path.read_bytes()
+               for path in tmp_path.rglob('*.json'))
+
+
+def test_l10c_rejects_unknown_boundary_without_sampling_browser(tmp_path):
+    context, page, _ = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        with pytest.raises(ValueError):
+            capture.bind_l10c_structure(*[Element() for _ in range(5)], phase='invented')
+
+
+def test_l10c_stop_at_history_installation_keeps_cleanup_owner(tmp_path):
+    context, page = setup()
+    make_document = page.evaluate_handle
+    guard = History()
+    stopped = False
+
+    def cancel():
+        if stopped:
+            raise CaptureCancelled()
+
+    def document(script):
+        handle = make_document(script)
+
+        def install(source):
+            nonlocal stopped
+            if 'corporate-l10c-history' in source:
+                stopped = True
+                return guard
+            return None
+
+        handle.evaluate_handle = install
+        return handle
+
+    page.evaluate_handle = document
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path, check_cancel=cancel) as capture:
+        with pytest.raises(CaptureCancelled):
+            begin(capture)
+    assert guard.disconnected and guard.disposed
+
+
+def test_l10c_stop_after_final_sample_cannot_seal_manifest(tmp_path):
+    context, page, guard = fixture()
+    stopped = False
+
+    def cancel():
+        if stopped:
+            raise CaptureCancelled()
+
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path, check_cancel=cancel) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+
+        def stop():
+            nonlocal stopped
+            stopped = True
+
+        guard.on_sample = stop
+        with pytest.raises(CaptureCancelled):
+            capture.drain()
+    assert not list(tmp_path.rglob('manifest.json'))
+    assert guard.disconnected and guard.disposed
+
+
 def test_l10c_stop_at_handle_acquisition_disposes_returned_handle(tmp_path):
     context, page, guard = fixture()
     stopped = False

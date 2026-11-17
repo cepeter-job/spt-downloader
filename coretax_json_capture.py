@@ -244,6 +244,11 @@ _L10C_HISTORY = """(d) => {
      if(record.type==='attributes'){
        // Keep transient disabled/re-enabled and original identity changes. No
        // input value, checked state, Angular instance or business text is read.
+       if(record.attributeName==='class'){
+         const li=tab&&tab.closest('li');
+         if(record.target!==li||
+            (record.oldValue||'').split(/\\s+/).includes('p-disabled')===li.classList.contains('p-disabled'))continue;
+       }
        if(started&&(roles.includes(record.target)||controls&&controls.includes(record.target)||
           record.target===tab||tab&&record.target===tab.closest('li'))){
          state.changed=true;if(!debit())break;
@@ -503,6 +508,7 @@ class DetailJsonCapture:
         self._l7_unavailable = False
         self._l10c_history = None
         self._l10c_requested = False
+        self._l10c_offered = False
         self._l10c_unavailable = False
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
@@ -866,6 +872,7 @@ class DetailJsonCapture:
             lambda: self._l10c_history.evaluate('(h) => h.sample()'), check_cancel))
         if (state is None or self._l10c_unavailable or not state['complete']):
             return None
+        self._l10c_offered = True
         return _capture_l10c_lifetime({'kind': 'corporate-l10c-spa-v1', 'attempt': self.attempt,
             'record_id': self.record_id, 'source_url': self.source_url, 'detail_url': self._bound_url,
             **dict.fromkeys(('fresh_root', 'fresh_form', 'stable_root', 'stable_form',
@@ -1117,7 +1124,7 @@ class DetailJsonCapture:
         l8_lifetime = self.observe_l8_lifetime(check_cancel=check_cancel) if self._l8_requested else None
         l7_lifetime = self.observe_l7_lifetime(check_cancel=check_cancel) if self._l7_requested else None
         l10c_lifetime = None
-        if self._l10c_requested:
+        if self._l10c_offered:
             # The B-owned joint sampler is a separate integration dependency.
             # Never move a sequential stale-child window from one child to C.
             if self._l7_requested or self._l8_requested:

@@ -149,3 +149,67 @@ numbers, nondisplayed total/question evidence, saved/reopened approved workbooks
 and resume PARTIAL notes, and actual hybrid DOM fallback without invented
 catalog requests. They do **not** establish an admitted populated native packet,
 owned child history, callback parity, or application-owned live acceptance.
+
+## Follow-through: independent C-owned lifetime transport (not full completion)
+
+The observer now calls `_observe_l10c_history` for an enabled L10-C with the
+source-proven header/radio/grid structure. It binds the same actual form, grid,
+table, tab and panel twice through `DetailJsonCapture.bind_l10c_structure` and
+samples the C-owned capability. This is custody-only; it does **not** replace
+that form's dump with a worksheet or dispatch `project_l10c`.
+
+`_L10C_HISTORY` is armed on the original Document before inspected View. Its
+independent relevant-structure budget retains the unique original corporate
+root, current Induk host, C child, offline-grid/p-table/table chain and the two
+header/two radio control identities. It never reads an input value, checked
+state, Angular instance or table body/footer content. A remount, detach/reinsert,
+transient disable/re-enable, replaced header/radio or Induk host remains a sticky
+contradiction even if the final selectors look unchanged. Ordinary row churn
+and a tab's presentation-only highlight change do not assert a new child.
+
+The closed `corporate_l10c_lifetime` schema is manifest-owned, binds the exact
+attempt/record/list/detail route and is validated by live iteration, held
+`checkpoint_bodies`, and the adapter's absence-inclusive event fingerprints.
+Descriptor overrides (even equal ones), malformed/null facts, missing parent
+custody and mixed attempts remain fatal. Cleanup retains newly acquired handles
+before the post-RPC Stop check. The C-only final sample is the last browser RPC
+inside the existing late-response fence; Stop cannot seal a manifest.
+
+**Combined history is deliberately not claimed.** If a C fact was already
+offered and L7 or L8 history is requested, drain marks the attempt incomplete
+with `unsupported-child-history-combination` rather than moving the stale-child
+window to another sequential sampler or dropping a required fact. An unavailable
+C capability that was never offered does not disable a valid legacy sibling.
+The B owner's reviewed joint final-snapshot interface must be integrated by the
+parent before that combination can be admitted. No competing shared registry
+was created and no sibling worktree was edited.
+
+### Exact remaining dependencies / bounded parent request
+
+- Supply an already retained public VENDOR artifact matching configured SHA-256
+  `6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173`, or authorize
+  a narrowly scoped acquisition through the existing loaded-script mechanism.
+  Independent local discovery found the exact CIT/MAIN bytes but no matching
+  VENDOR artifact. No portal request or browser-cache read was made. Without
+  the exact provider bytes, the source-bound default Number, radio bool/string
+  comparison and paginator context cannot be truthfully called framework-proven.
+- Integrate the parent's reviewed shared passive catalog producer (exact
+  TRANSACTION_TYPE/COUNTRY_CODE request classes, original sequence sets,
+  provider/order/version and final clock custody). This branch does not add a
+  TRANSACTION_TYPE registry entry, force a GET or fabricate label evidence.
+- Integrate the parent's reviewed B-owned final joint snapshot. C offers
+  `bind_l10c_structure(...)`, `observe_l10c_lifetime(...)`, `_L10C_HISTORY` and
+  `_capture_l10c_lifetime`; the shared owner must retain C and every already
+  requested sibling through the same final browser RPC and end-clock boundary.
+- Bounded layout question: may PeriodYear, CollectorTin and Question remain
+  explicitly unresolved original controls with mapping PARTIAL and the existing
+  Audit note, while only approved A:E body rows are projected? Or is a separately
+  approved resource/layout change required? Nothing here approves omission or
+  creates a row/sheet. The default remains honest PARTIAL.
+
+The full populated observer -> capture -> semantic adapter -> held replay ->
+saved/reopened native workbook acceptance case is **still missing**, not green
+by quarantine. Existing pure saved/reopened candidate tests and the new lifetime
+protocol/browser tests must not be relabelled as that end-to-end proof. No
+protected AGENTS.md/resource/runtime/workflow changes, catalog transport changes,
+active portal traffic, merges, or design-PR changes were made.

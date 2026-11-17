@@ -249,6 +249,34 @@ _L1D_OMISSION_SHAPE = '''table => {
 }'''
 
 
+def _observe_l10c_history(form, tab, panel, capture, check_cancel):
+    """Observe C-owned custody only; this does not authorize a body projection."""
+    from coretax_browser import _check_cancel
+    if any(not callable(getattr(capture, name, None)) for name in
+           ('bind_l10c_structure', 'observe_l10c_lifetime')):
+        return False
+    _check_cancel(check_cancel)
+    # Source controls are inspected by identity and disabled structure, never
+    # by values/checked state. Legacy/safely unsupported shapes keep fallback.
+    if (form.locator('input[formcontrolname="PeriodYear"]').count() != 1
+            or form.locator('input[formcontrolname="CollectorTin"]').count() != 1
+            or form.locator('p-radiobutton[formcontrolname="Question"]').count() != 2):
+        return False
+    grid = form.locator('rsh-citr-l10c-grid1')
+    table = grid.locator('table')
+    if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
+            or grid.locator('p-table').count() != 1 or table.count() != 1
+            or form.locator('table').count() != 1):
+        return False
+    if not capture.bind_l10c_structure(form, grid, table, tab, panel,
+                                       phase='start', check_cancel=check_cancel):
+        return False
+    if not capture.bind_l10c_structure(form, grid, table, tab, panel,
+                                       phase='end', check_cancel=check_cancel):
+        return False
+    return capture.observe_l10c_lifetime(check_cancel=check_cancel) is not None
+
+
 def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_cancel):
     """Additive value-free capability; v1 survives unavailable optional proof."""
     from spt_desktop import diagnostics
@@ -1053,6 +1081,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'route': page.url, **environment, 'references': references,
                     'tables': [{'component': 'rshshr-citr-l11c-form-grid1', 'headers': metadata['headers'],
                                 'footer_spans': metadata['footer_spans']}]}
+            if name == 'L10-C' and 'Induk' in names:
+                # Retain independent child custody while representation/catalog
+                # dependencies are reviewed. No C projection is offered here:
+                # its unprojected dump still refuses native capture as before.
+                _observe_l10c_history(form, tab, panel, capture, check_cancel)
             _advance('grid')
             for grid_selector, suffix, groups in GRID_ROLES.get(name, ()):
                 grids = form.locator(grid_selector)

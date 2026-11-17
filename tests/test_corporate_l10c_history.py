@@ -43,11 +43,70 @@ def bind(page, history, phase):
         args.dispose()
 
 
+def test_corporate_observer_calls_the_real_c_owned_binding_protocol(browser):
+    import coretax_corporate as observer
+    from coretax_json_capture import DetailJsonCapture
+    inspect = getattr(observer, '_observe_l10c_history', None)
+    assert callable(inspect), 'Source-only RED: C child producer has no observer caller'
+    context = browser.new_context()
+    page = context.new_page()
+    page.set_content(HTML)
+    calls = []
+
+    class Capture:
+        def bind_l10c_structure(self, form, grid, table, tab, panel, *, phase, check_cancel=None):
+            calls.append(phase)
+            assert form.locator('rsh-citr-l10c-grid1').count() == 1
+            assert grid.locator('table').count() == table.count() == tab.count() == panel.count() == 1
+            return True
+
+        def observe_l10c_lifetime(self, *, check_cancel=None):
+            calls.append('sample')
+            return {'kind': 'corporate-l10c-spa-v1'}
+
+    try:
+        assert callable(DetailJsonCapture.bind_l10c_structure)
+        assert inspect(page.locator('rshshr-citr-l10c-form'), page.locator('[role=tab]'),
+                       page.locator('.p-tabview-panel'), Capture(), None) is True
+        assert calls == ['start', 'end', 'sample']
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize('defect', ['protocol', 'controls', 'grid', 'start', 'end', 'sample'])
+def test_c_observer_never_upgrades_an_unavailable_child_protocol(browser, defect):
+    import coretax_corporate as observer
+    context = browser.new_context()
+    page = context.new_page()
+    page.set_content(HTML)
+
+    class Capture:
+        def bind_l10c_structure(self, *args, phase, **kwargs):
+            return defect != phase
+
+        def observe_l10c_lifetime(self, **kwargs):
+            return None if defect == 'sample' else {'kind': 'corporate-l10c-spa-v1'}
+
+    try:
+        if defect == 'controls':
+            page.locator('[formcontrolname=PeriodYear]').evaluate('(e) => e.remove()')
+        elif defect == 'grid':
+            page.locator('table').evaluate('(e) => e.after(e.cloneNode(true))')
+        assert observer._observe_l10c_history(page.locator('rshshr-citr-l10c-form'),
+            page.locator('[role=tab]'), page.locator('.p-tabview-panel'),
+            object() if defect == 'protocol' else Capture(), None) is False
+    finally:
+        context.close()
+
+
 def test_real_l10c_history_binds_owned_disabled_controls_without_values(browser):
     context, page, document, history = armed(browser)
     try:
         assert bind(page, history, 'start') == {'available': True, 'changed': False, 'complete': False}
         assert bind(page, history, 'end') == {'available': True, 'changed': False, 'complete': True}
+        assert history.evaluate('(h) => h.sample()')['complete'] is True
+        page.evaluate('''() => {const li=document.querySelector('li');
+            li.classList.add('p-highlight');li.classList.remove('p-highlight');}''')
         assert history.evaluate('(h) => h.sample()')['complete'] is True
         # Renderer row churn is not a new child or a shared history budget.
         page.evaluate('''() => {const body=document.querySelector('tbody');

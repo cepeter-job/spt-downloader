@@ -939,6 +939,12 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured L7 history lacks its component lifetime')
         l7_lifetime = _capture_l7_lifetime(ctx['corporate_l7_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10c_lifetime = None
+    if 'corporate_l10c_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L10-C history lacks its component lifetime')
+        l10c_lifetime = _capture_l10c_lifetime(ctx['corporate_l10c_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     l8_lifetime = None
     if 'corporate_l8_lifetime' in ctx:
         if lifetime is None:
@@ -972,6 +978,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['corporate_l7_lifetime'] = l7_lifetime
     if l8_lifetime is not None:
         event['corporate_l8_lifetime'] = l8_lifetime
+    if l10c_lifetime is not None:
+        event['corporate_l10c_lifetime'] = l10c_lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -1312,7 +1320,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
-    l7_lifetimes = set()
+    l7_lifetimes, l10c_lifetimes = set(), set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
@@ -1338,6 +1346,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         l7_lifetimes.add(_corporate_request_key(event.get('corporate_l7_lifetime')))
         if len(l7_lifetimes) != 1:
             raise JsonSafetyError('Corporate L7 history is missing or mixed within one attempt')
+        l10c_lifetimes.add(_corporate_request_key(event.get('corporate_l10c_lifetime')))
+        if len(l10c_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-C history is missing or mixed within one attempt')
         if len(l8_lifetimes) != 1:
             raise JsonSafetyError('Corporate L8 history is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
