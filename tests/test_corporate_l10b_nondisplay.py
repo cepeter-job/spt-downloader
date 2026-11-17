@@ -34,7 +34,8 @@ def observed():
              'primary': {'endpoint': corpus.PRIMARY_URL, 'request_json': dict(REQUEST)},
              'projection': corpus.induk_projection(ROUTE)},
             {'name': 'L10-B', 'paths': [[ROOT]], 'grids': [], 'projection': {
-                'kind': KIND, 'builds': dict(projection.L10B_BUILD_DIGESTS), 'route': ROUTE}}]
+                'kind': KIND, 'builds': dict(projection.L10B_BUILD_DIGESTS), 'route': ROUTE,
+                'visibility_binding': 'current-induk-enabled-v1'}}]
 
 
 def packet(value=None, sequence=1):

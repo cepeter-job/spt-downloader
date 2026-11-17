@@ -62,7 +62,8 @@ def populated_bindings():
             'builds': dict(projection.L4_POPULATED_BUILD_DIGESTS), 'route': DETAIL,
             'locale': 'id-ID', 'timezone': 'Asia/Jakarta', 'tables': table_proofs(),
             'references': [{'endpoint': url, 'method': 'GET', 'sequences': [index + 5]}
-                           for index, url in enumerate(REFS.values())]}}]
+                           for index, url in enumerate(REFS.values())],
+            'visibility_binding': 'current-induk-enabled-v1'}}]
 
 
 def retain_packet_custody(item, original):

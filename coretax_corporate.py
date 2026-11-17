@@ -1127,8 +1127,11 @@ def _l4_populated_projection(page, capture, digest, tables, check_cancel):
     _check_cancel(check_cancel)
     if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
         return None
+    # The enabled Induk-owned form is the authoritative selector owner; an
+    # absent outer flag is proven by that binding, never by an outer copy.
     return {'kind': 'corporate-l4-populated-v2', 'builds': dict(shared['builds']), 'route': page.url,
-            **environment, 'tables': tables, 'references': shared['references']}
+            **environment, 'tables': tables, 'references': shared['references'],
+            'visibility_binding': 'current-induk-enabled-v1'}
 
 _L10A_STRUCTURE = r'''form => {
  const fs='rshshr-citr-l10a-form', gs='rshshr-citr-l10a-form-grid1';
@@ -1430,7 +1433,10 @@ def _observe_l10b(page, form, tab, panel, capture, check_cancel):
             or capture.observe_l10b_lifetime(check_cancel=check_cancel) is None):
         return None
     _check_cancel(check_cancel)
-    return {'kind': L10B_KIND, 'builds': builds, 'route': route}
+    # The independently rechecked enabled L10-B owner is the selector authority;
+    # an absent outer flag is proven by that binding, never by an outer copy.
+    return {'kind': L10B_KIND, 'builds': builds, 'route': route,
+            'visibility_binding': 'current-induk-enabled-v1'}
 def _observe_l10d_originals(page, form, tab, capture, digest, check_cancel, *, panel=None):
     """Optional current-owner offer, expressly not a final-selection capability."""
     from coretax_browser import _check_cancel

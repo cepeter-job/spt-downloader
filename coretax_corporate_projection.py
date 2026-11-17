@@ -1965,7 +1965,8 @@ def _apply_l4(binding, section, observed_forms, *, root, payload, record, event,
     builds = proof.get('builds') if isinstance(proof, dict) else None
     urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE} if strong else {CIT_SOURCE}
     approved = L4_POPULATED_BUILD_DIGESTS if strong else {CIT_SOURCE: BUILD_DIGESTS.get(CIT_SOURCE)}
-    keys = {'kind', 'builds', 'route', 'tables'} | ({'locale', 'timezone', 'references'} if strong else set())
+    keys = {'kind', 'builds', 'route', 'tables'} | ({'locale', 'timezone', 'references',
+        'visibility_binding'} if strong else set())
     if (not isinstance(proof, dict) or set(proof) != keys
             or proof['kind'] not in ('corporate-l4-v1', 'corporate-l4-populated-v2')
             or not isinstance(builds, dict) or set(builds) != urls or set(approved) != urls
@@ -2296,8 +2297,7 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
             or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
             or not isinstance(main, dict)
-            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
-                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
+            or not _current_induk_visibility(payload, main, 'IsTransactionWithRelated', proof)
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
         raise _UnsupportedMetadata('unverified_corporate_l10a_submitted_lifecycle')
     if 'PreviousFormData' not in payload:
@@ -3270,8 +3270,8 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
     literal = record.get('meta', {}).get('Model SPT')
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
              if type(literal) is str and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
-            or proof['kind'] != L10B_KIND or not _l10b_pins(proof['builds'])
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'visibility_binding'}
+        or proof['kind'] != L10B_KIND or not _l10b_pins(proof['builds'])
             or proof['route'] != route or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L10B_ROOT]]
             or any(binding.get(key) for key in ('grids', 'responses', 'dependencies', 'primary'))
@@ -3287,8 +3287,7 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
             or not isinstance(main, dict)
-            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
-                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
+            or not _current_induk_visibility(payload, main, 'IsTransactionWithRelated', proof)
             or type(payload.get('TIN')) is not str or payload['TIN'] != event['scope'][0]
             or type(main.get('Tin')) is not str or main['Tin'] != payload['TIN']
             or type(payload.get('PeriodYear')) is not _CorporateNumber
@@ -3326,7 +3325,8 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
             presence.append({'path': prefix + [key], 'container': list(container),
                 'response_sequence': event['sequence'], 'attempt': event['attempt'], 'present': True})
     return {'form': 'L10-B', 'kind': L10B_KIND, 'builds': dict(proof['builds']),
-            'route': route, 'attempt': event['attempt'], 'values': values, 'presence_facts': presence}
+            'route': route, 'attempt': event['attempt'], 'values': values,
+            'presence_facts': presence, 'visibility_binding': proof['visibility_binding']}
 
 
 def l10b_nondisplay_covered(section, provenance):
@@ -3343,7 +3343,8 @@ def l10b_nondisplay_covered(section, provenance):
     if len(reports) != 1:
         return False
     report = reports[0]
-    if (set(report) != {'form', 'kind', 'builds', 'route', 'attempt', 'values', 'presence_facts'}
+    if (set(report) != {'form', 'kind', 'builds', 'route', 'attempt', 'values', 'presence_facts',
+                        'visibility_binding'}
             or report['kind'] != L10B_KIND or not _l10b_pins(report['builds'])
             or not isinstance(report['values'], list) or not isinstance(report['presence_facts'], list)):
         return False
@@ -3392,7 +3393,8 @@ def l10b_nondisplay_covered(section, provenance):
                     return False
                 target[value['path'][-1]] = item
             binding = {'name': 'L10-B', 'paths': [[L10B_ROOT]], 'projection': {
-                'kind': L10B_KIND, 'builds': report['builds'], 'route': report['route']}}
+                'kind': L10B_KIND, 'builds': report['builds'], 'route': report['route'],
+                'visibility_binding': report['visibility_binding']}}
             record = {'record_id': event['record_id'], 'source_status': 'SPT Dilaporkan',
                 'meta': {'Model SPT': 'Normal'}, 'source_fields': {
                     'TaxpayerAggregateIdentifier': report['route'].split('/')[-4],

@@ -38,7 +38,8 @@ def test_observer_supplies_only_own_source_proven_nondisplay_binding(monkeypatch
     page, capture = Page(), Capture()
     result = observer._observe_l10b(page, object(), object(), object(), capture, None)
     assert result == {'kind': 'corporate-l10b-nondisplay-v1',
-                      'builds': dict(projection.L10B_BUILD_DIGESTS), 'route': ROUTE}
+                      'builds': dict(projection.L10B_BUILD_DIGESTS), 'route': ROUTE,
+                      'visibility_binding': 'current-induk-enabled-v1'}
     assert capture.calls == ['start', 'end']
 
 
