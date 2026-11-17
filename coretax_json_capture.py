@@ -372,6 +372,8 @@ class DetailJsonCapture:
         self._l7_history = None
         self._l7_requested = False
         self._l7_unavailable = False
+        from coretax_corporate_l10d import L10DHistory
+        self._l10d_history = L10DHistory()
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -482,6 +484,7 @@ class DetailJsonCapture:
         self._component_probe(retain_document)
         if self._component_document is None:
             return None
+        self._l10d_history.arm(self._component_document, self._cancel)
         def retain_l7_history():
             # Retain before the post-RPC Stop check so close owns the handle
             # even when cancellation arrives with the installation reply.
@@ -642,6 +645,20 @@ class DetailJsonCapture:
                     handle.dispose()
                 except Exception:  # nosec B110 - Cleanup cannot replace Stop or safety refusal.
                     pass
+
+    def bind_l10d_structure(self, form, tab, panel, *, phase, check_cancel=None):
+        """D-specific boundaries only, never a final sequential end sampler."""
+        def cancel():
+            self._cancel(check_cancel)
+        cancel()
+        if phase not in ('start', 'end'):
+            raise ValueError('Unknown L10-D structural boundary')
+        self._l10d_history.requested = True
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+            return False
+        bound = self._l10d_history.bind(form, tab, panel, phase=phase, cancel=cancel)
+        self._verify_binding()
+        return bound and self.observe_component_lifetime(check_cancel=check_cancel) is not None
 
     def observe_l7_lifetime(self, *, check_cancel=None):
         """Candidate only: drain resamples independently inside its final fence."""
@@ -979,13 +996,16 @@ class DetailJsonCapture:
                 raise JsonSafetyError('Private L7 history lacks its component lifetime')
             if l8_lifetime is not None and lifetime is None:
                 raise JsonSafetyError('Private L8 history lacks its component lifetime')
+            from coretax_corporate_l10d import validate_lifetime
+            l10d_lifetime = (validate_lifetime(saved['corporate_l10d_lifetime'], lifetime)
+                if 'corporate_l10d_lifetime' in saved else None)
             for descriptor in saved['responses']:
                 self._cancel(check_cancel)
                 relative = Path(descriptor['relative_path'])
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
                         or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor
                         or 'component_lifetime' in descriptor or 'corporate_l8_lifetime' in descriptor
-                        or 'corporate_l7_lifetime' in descriptor):
+                        or 'corporate_l7_lifetime' in descriptor or 'corporate_l10d_lifetime' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -1007,6 +1027,8 @@ class DetailJsonCapture:
                     context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 if l7_lifetime is not None:
                     context['corporate_l7_lifetime'] = dict(l7_lifetime)
+                if l10d_lifetime is not None:
+                    context['corporate_l10d_lifetime'] = dict(l10d_lifetime)
                 yield {'body': raw, 'payload': payload, 'context': context}
                 del raw, payload
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -1016,6 +1038,7 @@ class DetailJsonCapture:
         self._active = False
         self._requests.clear()
         self._observations.clear()
+        self._l10d_history.close()
         if self._l7_history is not None:
             try:
                 self._l7_history.evaluate('(h) => h.disconnect()')
@@ -1159,6 +1182,9 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
             if l8_lifetime is not None and lifetime is None:
                 raise JsonSafetyError('Private L8 history lacks its component lifetime')
             descriptors = saved.get('responses')
+            from coretax_corporate_l10d import validate_lifetime
+            l10d_lifetime = (validate_lifetime(saved['corporate_l10d_lifetime'], lifetime)
+                if 'corporate_l10d_lifetime' in saved else None)
             if not isinstance(descriptors, list) or len(descriptors) > MAX_RESPONSES:
                 raise JsonSafetyError('Private checkpoint response budget changed')
             packets, total, seen = [], 0, set()
@@ -1170,6 +1196,7 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
                         or name in seen or descriptor.get('attempt') != saved['attempt']
                         or 'clock_interval' in descriptor or 'component_lifetime' in descriptor
                         or 'corporate_l8_lifetime' in descriptor or 'corporate_l7_lifetime' in descriptor
+                        or 'corporate_l10d_lifetime' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -1194,6 +1221,8 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
                     context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 if l7_lifetime is not None:
                     context['corporate_l7_lifetime'] = dict(l7_lifetime)
+                if l10d_lifetime is not None:
+                    context['corporate_l10d_lifetime'] = dict(l10d_lifetime)
                 packets.append({'body': body, 'payload': payload, 'context': context})
             return packets
     except (OSError, ValueError, TypeError, KeyError, IndexError):

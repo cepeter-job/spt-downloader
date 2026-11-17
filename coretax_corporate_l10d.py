@@ -16,6 +16,234 @@ KIND = 'corporate-l10d-originals-v1'
 FLAG = 'IsObligationTransferPricing'
 FINAL_CUSTODY_BLOCKER = 'unverified_corporate_l10d_final_selection_custody'
 
+# This synchronous sample is intended for the shared JOINT final browser RPC,
+# never for a sequential extra end sampler. It reads no input/checked values,
+# Angular state, row text, cache, source bodies or business dates.
+HISTORY_JS = r"""(d) => {
+ // corporate-l10d-history: independent finite structural ownership.
+ const selectors=['rshshr-corporate-income-tax-return','rshshr-citr-main-form','rshshr-citr-l10d-form'];
+ const candidates=selectors.join(',');
+ const state={available:d===document&&!d.querySelector(candidates),changed:false,complete:false};
+ let roles=[null,null,null],ancestors=new Set(),remaining=4096;
+ let tab=null,panel=null,li=null,view=null,started=false,ended=false;
+ const observer=new MutationObserver(records=>process(records));
+ const unavailable=()=>{state.available=false;state.complete=false;};
+ const debit=()=>{if(--remaining<0){unavailable();return false;}return true;};
+ const changed=()=>{state.changed=true;state.complete=false;};
+ const remember=node=>{
+   let depth=0;
+   for(let p=node;p;p=p.parentElement){
+     ancestors.add(p);
+     if(++depth>64||ancestors.size>128){unavailable();return;}
+   }
+ };
+ const visit=(node,removed)=>{
+   if(!debit())return;
+   const index=selectors.findIndex(selector=>node.matches(selector));
+   if(removed||roles[index]&&roles[index]!==node){changed();return;}
+   if(!roles[index]){roles[index]=node;remember(node);}
+   if(!node.isConnected||node.ownerDocument!==d)changed();
+ };
+ const inspect=(node,removed)=>{
+   if(node.nodeType!==1)return false;
+   let relevant=false;
+   if(node.matches(candidates)){relevant=true;visit(node,removed);}
+   for(const child of node.querySelectorAll(candidates)){
+     relevant=true;visit(child,removed);if(remaining<0)break;
+   }
+   return relevant;
+ };
+ const local=target=>roles.slice(1).some(role=>role&&(role===target||role.contains(target)));
+ const process=records=>{
+   for(const record of records){
+     if(record.type==='attributes'){
+       // Ignore normal tab highlighting/visibility. A transient disabled or
+       // controlled-panel mutation remains a contradiction after restoration.
+       if(!started)continue;
+       const target=record.target,name=record.attributeName,old=record.oldValue;
+       const fixed=target===tab||target===panel||target===li||target===view||roles.includes(target);
+       if(!fixed)continue;
+       const now=target.getAttribute(name);
+       if((name==='class'&&(String(old).split(/\s+/).includes('p-disabled')||target.classList.contains('p-disabled')))||
+          (name==='aria-disabled'&&(old==='true'||now==='true'))||
+          (['aria-controls','href','id'].includes(name)&&old!==now))changed();
+       continue;
+     }
+     let relevant=false;
+     for(const node of record.removedNodes){
+       if(node.nodeType!==1)continue;
+       if(roles.some(role=>role&&(node===role||node.contains(role)))||ancestors.has(node)||
+          [tab,panel,li,view].some(role=>role&&(node===role||node.contains(role))))changed();
+       if(inspect(node,true))relevant=true;
+       // An emptied detached wrapper cannot reconstruct its former children.
+       if(local(record.target)&&!relevant)unavailable();
+     }
+     for(const node of record.addedNodes){if(inspect(node,false))relevant=true;}
+     if(relevant&&!debit())break;
+   }
+ };
+ const owned=()=>{
+   if(d!==document){changed();return false;}
+   if(roles.some(role=>!role))return false;
+   if(roles.some(role=>!role.isConnected||role.ownerDocument!==d)){changed();return false;}
+   if(!selectors.every((selector,index)=>{
+     const nodes=d.querySelectorAll(selector);return nodes.length===1&&nodes[0]===roles[index];
+   })){changed();return false;}
+   for(const role of roles.slice(1)){
+     if(role.closest(selectors[0])!==roles[0]){changed();return false;}
+     for(let p=role.parentElement;p&&p!==roles[0];p=p.parentElement){
+       const name=p.localName;
+       if(name.includes('-')&&(name.endsWith('-form')||!(/^(p|ui)-/.test(name)||/^rsh(shr)?-(citr|corporate)-/.test(name)))){
+         if(started)changed();else unavailable();return false;
+       }
+     }
+   }
+   return true;
+ };
+ const enabled=visible=>{
+   if(!tab||!panel||!li||!view||[tab,panel,li,view].some(node=>!node.isConnected||node.ownerDocument!==d))return false;
+   const id=tab.getAttribute('aria-controls'),href=tab.getAttribute('href');
+   if(tab.closest('li')!==li||tab.closest('.p-tabview')!==view||
+      roles[2].closest('.p-tabview-panel')!==panel||roles[2].closest('.p-tabview')!==view||
+      !roles[0].contains(view)||panel.closest('.p-tabview')!==view||!id||panel.id!==id||
+      !panel.matches('.p-tabview-panel')||tab.textContent.trim()!=='L10-D'||
+      [...view.querySelectorAll('[id]')].filter(node=>node.id===id).length!==1||
+      li.classList.contains('p-disabled')||tab.getAttribute('aria-disabled')==='true'||
+      !(href===null||href===''||href==='#'||href==='#'+id))return false;
+   if(!visible)return true;
+   for(let p=roles[2];p;p=p.parentElement){const style=getComputedStyle(p);
+     if(p.hidden||style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse')return false;}
+   return !!roles[2].getClientRects().length&&!!tab.getClientRects().length;
+ };
+ const sample=()=>{
+   process(observer.takeRecords());
+   const valid=owned();
+   if(started&&valid&&!enabled(false))changed();
+   state.complete=!!(state.available&&!state.changed&&valid&&started&&ended);
+   return {...state};
+ };
+ observer.observe(d,{childList:true,subtree:true,attributes:true,attributeOldValue:true,
+   attributeFilter:['class','aria-disabled','aria-controls','href','id']});
+ return {sample,bind:args=>{
+   process(observer.takeRecords());
+   if(!owned())return sample();
+   if(args.form!==roles[2])changed();
+   if(args.phase==='start'&&!started&&!ended){
+     tab=args.tab;panel=args.panel;li=tab&&tab.closest('li');view=roles[2].closest('.p-tabview');
+     for(const node of [tab,panel,li,view])if(node)remember(node);
+   }else if(args.phase!=='end'||!started||ended||args.tab!==tab||args.panel!==panel)changed();
+   if(!enabled(true)){if(started)changed();else unavailable();}
+   if(state.available&&!state.changed){if(args.phase==='start')started=true;else ended=true;}
+   return sample();
+ },disconnect:()=>{observer.disconnect();roles=[];ancestors.clear();tab=panel=li=view=null;}};
+}"""
+
+
+class L10DHistory:
+    """D-owned history transport; final joint snapshot/sealing belongs to capture.
+
+    Boundary state is only a candidate. No method manufactures native admission
+    or a final manifest capability from sequential RPCs.
+    """
+
+    def __init__(self):
+        self.handle = None
+        self.unavailable = False
+        self.requested = False
+        self.armed = False
+
+    def probe(self, operation, cancel):
+        cancel()
+        try:
+            value = operation()
+        except JsonSafetyError:
+            cancel()
+            raise
+        except Exception:
+            value = None
+        cancel()
+        return value
+
+    def arm(self, document, cancel):
+        if self.armed:
+            raise JsonSafetyError('Corporate L10-D history cannot be rearmed')
+        self.armed = True
+        def acquire():
+            self.handle = document.evaluate_handle(HISTORY_JS)
+            return self.handle
+        self.probe(acquire, cancel)
+
+    def accept_sample(self, state, *, boundary=False):
+        if (not isinstance(state, dict) or set(state) != {'available', 'changed', 'complete'}
+                or any(type(value) is not bool for value in state.values())):
+            self.unavailable = True
+            return None
+        if state['changed']:
+            raise JsonSafetyError('Observed corporate L10-D child history changed')
+        if not state['available'] or not boundary and not state['complete']:
+            self.unavailable = True
+        return dict(state) if not self.unavailable else None
+
+    def bind(self, form, tab, panel, *, phase, cancel):
+        cancel()
+        if phase not in ('start', 'end'):
+            raise ValueError('Unknown L10-D structural boundary')
+        self.requested = True
+        if self.handle is None:
+            return False
+        handles = {}
+        try:
+            for key, locator in (('form', form), ('tab', tab), ('panel', panel)):
+                def acquire():
+                    handles[key] = locator.element_handle()
+                    return handles[key]
+                if self.probe(acquire, cancel) is None:
+                    self.unavailable = True
+                    return False
+            state = self.probe(lambda: self.handle.evaluate(
+                '(h,args) => h.bind(args)', {**handles, 'phase': phase}), cancel)
+            state = self.accept_sample(state, boundary=phase == 'start')
+            return state is not None
+        finally:
+            for handle in reversed(list(handles.values())):
+                if handle is not None:
+                    try:
+                        handle.dispose()
+                    except Exception:  # nosec B110 - Cleanup must preserve Stop/safety.
+                        pass
+
+    def close(self):
+        handle, self.handle = self.handle, None
+        if handle is None:
+            return
+        for release in (lambda: handle.evaluate('(h) => h.disconnect()'), handle.dispose):
+            try:
+                release()
+            except Exception:  # nosec B110 - Release both resources without masking Stop.
+                pass
+
+
+def validate_lifetime(value, component):
+    """Validate a manifest-owned final fact; never produce one during replay.
+
+    The capture owner may call this only after a jointly consistent final
+    sample. A matching schema or observer hint is not a producer capability.
+    """
+    identity = ('attempt', 'record_id', 'source_url', 'detail_url')
+    facts = {'fresh_root', 'fresh_main', 'fresh_child', 'stable_root', 'stable_main',
+             'stable_child', 'enabled_boundaries', 'final_joint_snapshot'}
+    if not isinstance(component, dict):
+        raise JsonSafetyError('Captured L10-D history lacks its component lifetime')
+    _capture_component_lifetime(component, **{key: component.get(key) for key in identity})
+    if (not isinstance(value, dict)
+            or set(value) != {*identity, *facts, 'kind', 'selection_rule'}
+            or value.get('kind') != 'corporate-l10d-spa-v1'
+            or value.get('selection_rule') != 'submitted-immutable-induk-selection-v1'
+            or any(value.get(key) != component[key] for key in identity)
+            or any(value.get(key) is not True for key in facts)):
+        raise JsonSafetyError('Captured L10-D history is invalid or unbound')
+    return dict(value)
+
 
 def validate_binding(binding):
     """An original-only offer must not smuggle display or capture authority."""

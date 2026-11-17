@@ -152,3 +152,61 @@ def test_unavailable_or_invalid_boundaries_do_not_rearm_capture(tmp_path):
         assert not capture.bind_l10d_structure(Element(), Element(), Element(), phase='start')
         with pytest.raises(ValueError):
             capture.bind_l10d_structure(Element(), Element(), Element(), phase='unknown')
+
+
+@pytest.mark.parametrize('failure', ['ordinary', 'safety'])
+def test_d_transport_failure_never_discloses_exception_text(failure):
+    custody = owner.L10DHistory()
+    error = RuntimeError if failure == 'ordinary' else JsonSafetyError
+    def fail(): raise error('SYNTHETIC private transport text')
+    if failure == 'ordinary':
+        assert custody.probe(fail, lambda: None) is None
+    else:
+        with pytest.raises(JsonSafetyError): custody.probe(fail, lambda: None)
+
+
+@pytest.mark.parametrize('missing', ['form', 'tab', 'panel'])
+def test_missing_d_element_is_unavailable_and_retained_elements_are_disposed(missing):
+    custody = owner.L10DHistory()
+    custody.handle = History()
+    class Missing(Element):
+        def element_handle(self): return None
+    elements = {key: Missing() if key == missing else Element() for key in ('form', 'tab', 'panel')}
+    assert not custody.bind(**elements, phase='start', cancel=lambda: None)
+    assert custody.unavailable
+    keys = list(elements)
+    assert all(elements[key].disposed for key in keys[:keys.index(missing)])
+
+
+def test_d_cleanup_attempts_dispose_even_if_disconnect_and_element_release_fail():
+    custody = owner.L10DHistory()
+    class Broken(History):
+        def evaluate(self, *args): raise RuntimeError('SYNTHETIC release failure')
+    handle = Broken()
+    custody.handle = handle
+    custody.close()
+    assert handle.disposed and custody.handle is None
+    custody.close()
+    class BrokenDispose(Element):
+        def dispose(self): raise RuntimeError('SYNTHETIC release failure')
+    custody.handle = History()
+    assert custody.bind(BrokenDispose(), Element(), Element(), phase='start', cancel=lambda: None)
+
+
+def test_capture_without_component_cannot_lend_d_ownership(tmp_path):
+    context, page, history = history_setup()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        assert not capture.bind_l10d_structure(Element(), Element(), Element(), phase='start')
+    assert not history.phases
+
+
+def test_history_is_never_rearmed_even_after_unavailable_installation():
+    custody = owner.L10DHistory()
+    class Document:
+        def evaluate_handle(self, script): return None
+    custody.arm(Document(), lambda: None)
+    with pytest.raises(JsonSafetyError): custody.arm(Document(), lambda: None)
+    with pytest.raises(ValueError):
+        custody.bind(Element(), Element(), Element(), phase='unknown', cancel=lambda: None)

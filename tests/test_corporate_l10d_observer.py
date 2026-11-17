@@ -199,3 +199,20 @@ def test_observer_stop_and_explicit_safety_failure_remain_fatal(monkeypatch):
             raise JsonSafetyError('SYNTHETIC custody failure')
     with pytest.raises(JsonSafetyError):
         observe(Page(), UnsafeCapture())
+
+
+@pytest.mark.parametrize('available', [False, True])
+def test_observer_binds_actual_panel_twice_but_does_not_offer_finality(monkeypatch, available):
+    monkeypatch.setattr(observer, '_enabled_form_binding', lambda *args: True)
+    capture, page = Capture(), Page()
+    form, tab, panel = object(), object(), object()
+    calls = []
+    def bind(*args, **kwargs):
+        calls.append((args, kwargs['phase']))
+        return available
+    capture.bind_l10d_structure = bind
+    result = observer._observe_l10d_originals(page, form, tab, capture,
+        load_build_pins()[PROVIDERS[0]], None, panel=panel)
+    assert calls == [((form, tab, panel), 'start')] + (
+        [((form, tab, panel), 'end')] if available else [])
+    assert result['kind'] == l10d.KIND and 'native_admission' not in result
