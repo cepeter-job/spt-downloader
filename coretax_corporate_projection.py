@@ -3270,8 +3270,10 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
     literal = record.get('meta', {}).get('Model SPT')
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
              if type(literal) is str and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'visibility_binding'}
-        or proof['kind'] != L10B_KIND or not _l10b_pins(proof['builds'])
+    if (not isinstance(proof, dict)
+        or set(proof) - {'kind', 'builds', 'route', 'visibility_binding'}
+        or 'visibility_binding' in proof and proof['visibility_binding'] != 'current-induk-enabled-v1'
+        or proof.get('kind') != L10B_KIND or not _l10b_pins(proof['builds'])
             or proof['route'] != route or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L10B_ROOT]]
             or any(binding.get(key) for key in ('grids', 'responses', 'dependencies', 'primary'))
@@ -3326,7 +3328,8 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
                 'response_sequence': event['sequence'], 'attempt': event['attempt'], 'present': True})
     return {'form': 'L10-B', 'kind': L10B_KIND, 'builds': dict(proof['builds']),
             'route': route, 'attempt': event['attempt'], 'values': values,
-            'presence_facts': presence, 'visibility_binding': proof['visibility_binding']}
+            'presence_facts': presence,
+            **({'visibility_binding': proof['visibility_binding']} if 'visibility_binding' in proof else {})}
 
 
 def l10b_nondisplay_covered(section, provenance):
@@ -3343,8 +3346,9 @@ def l10b_nondisplay_covered(section, provenance):
     if len(reports) != 1:
         return False
     report = reports[0]
-    if (set(report) != {'form', 'kind', 'builds', 'route', 'attempt', 'values', 'presence_facts',
-                        'visibility_binding'}
+    if (set(report) - {'visibility_binding'} != {'form', 'kind', 'builds', 'route', 'attempt', 'values',
+                        'presence_facts'}
+            or 'visibility_binding' in report and report['visibility_binding'] != 'current-induk-enabled-v1'
             or report['kind'] != L10B_KIND or not _l10b_pins(report['builds'])
             or not isinstance(report['values'], list) or not isinstance(report['presence_facts'], list)):
         return False
@@ -3394,7 +3398,7 @@ def l10b_nondisplay_covered(section, provenance):
                 target[value['path'][-1]] = item
             binding = {'name': 'L10-B', 'paths': [[L10B_ROOT]], 'projection': {
                 'kind': L10B_KIND, 'builds': report['builds'], 'route': report['route'],
-                'visibility_binding': report['visibility_binding']}}
+                **({'visibility_binding': report['visibility_binding']} if 'visibility_binding' in report else {})}}
             record = {'record_id': event['record_id'], 'source_status': 'SPT Dilaporkan',
                 'meta': {'Model SPT': 'Normal'}, 'source_fields': {
                     'TaxpayerAggregateIdentifier': report['route'].split('/')[-4],
