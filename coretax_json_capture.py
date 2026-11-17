@@ -47,6 +47,11 @@ _SECRET_KEYS = frozenset({'password', 'passwd', 'pwd', 'authorization', 'cookie'
                           'idtoken', 'apikey', 'clientsecret', 'secret', 'sessionid'})
 _SECRET_TEXT = re.compile(r'\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', re.I)
 _BROWSER_CLOCK = '() => ({epoch_ms:Date.now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})'
+_L10C_FINAL_SAMPLE = '''(h) => {
+ // corporate-l10c-final-clock: the same last RPC owns child and end clock.
+ const state=h.sample();
+ return {state,clock:{epoch_ms:Date.now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}};
+}'''
 _COMPONENT_OWNERS = """() => {
  const visible=e=>{for(let p=e;p;p=p.parentElement){const s=getComputedStyle(p);
    if(p.hidden||s.display==='none'||s.visibility==='hidden'||s.visibility==='collapse')return false;}
@@ -510,6 +515,7 @@ class DetailJsonCapture:
         self._l10c_requested = False
         self._l10c_offered = False
         self._l10c_unavailable = False
+        self._l10c_clock_end = None
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -818,6 +824,8 @@ class DetailJsonCapture:
         self._cancel(check_cancel)
         if self._bound is not None:
             self._verify_binding()
+        if self._component_invalid:
+            raise JsonSafetyError('Observed submitted component lifetime changed')
         return value
 
     def _l10c_state(self, state):
@@ -868,8 +876,24 @@ class DetailJsonCapture:
             return None
         if self._l10c_history is None:
             return None
-        state = self._l10c_state(self._l10c_probe(
-            lambda: self._l10c_history.evaluate('(h) => h.sample()'), check_cancel))
+        sample = self._l10c_probe(lambda: self._l10c_history.evaluate(
+            _L10C_FINAL_SAMPLE if _final else '(h) => h.sample()'), check_cancel)
+        if _final:
+            self._l10c_clock_end = None
+            state = None
+            if isinstance(sample, dict) and set(sample) == {'state', 'clock'}:
+                state, clock = sample['state'], sample['clock']
+                if isinstance(clock, dict) and set(clock) == {'epoch_ms', 'timezone'}:
+                    try:
+                        _capture_clock_interval({'attempt': self.attempt,
+                            'start_ms': self._clock_start['epoch_ms'] if self._clock_start else clock['epoch_ms'],
+                            'end_ms': clock['epoch_ms'], 'timezone': clock['timezone']}, self.attempt)
+                        self._l10c_clock_end = dict(clock)
+                    except JsonSafetyError:
+                        pass  # An unavailable/reversed final clock grants no dated catalog selection.
+        else:
+            state = sample
+        state = self._l10c_state(state)
         if (state is None or self._l10c_unavailable or not state['complete']):
             return None
         self._l10c_offered = True
@@ -1131,6 +1155,7 @@ class DetailJsonCapture:
                 self._reason('unsupported-child-history-combination')
             elif lifetime is not None:
                 l10c_lifetime = self.observe_l10c_lifetime(check_cancel=check_cancel, _final=True)
+                clock_end = self._l10c_clock_end  # Never reuse a pre-final browser clock.
         self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:

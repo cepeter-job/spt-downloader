@@ -105,6 +105,10 @@ def test_real_l10c_history_binds_owned_disabled_controls_without_values(browser)
         assert bind(page, history, 'start') == {'available': True, 'changed': False, 'complete': False}
         assert bind(page, history, 'end') == {'available': True, 'changed': False, 'complete': True}
         assert history.evaluate('(h) => h.sample()')['complete'] is True
+        from coretax_json_capture import _L10C_FINAL_SAMPLE
+        final = history.evaluate(_L10C_FINAL_SAMPLE)
+        assert final['state']['complete'] is True and type(final['clock']['epoch_ms']) is int
+        assert isinstance(final['clock']['timezone'], str)
         page.evaluate('''() => {const li=document.querySelector('li');
             li.classList.add('p-highlight');li.classList.remove('p-highlight');}''')
         assert history.evaluate('(h) => h.sample()')['complete'] is True

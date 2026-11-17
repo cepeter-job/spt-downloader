@@ -173,7 +173,10 @@ attempt/record/list/detail route and is validated by live iteration, held
 Descriptor overrides (even equal ones), malformed/null facts, missing parent
 custody and mixed attempts remain fatal. Cleanup retains newly acquired handles
 before the post-RPC Stop check. The C-only final sample is the last browser RPC
-inside the existing late-response fence; Stop cannot seal a manifest.
+inside the existing late-response fence. That same RPC now returns the end
+clock; an unavailable/reversed clock never reuses the earlier pre-child sample.
+Only local sticky parent-route, binding, late-response and Stop checks run after
+it; Stop cannot seal a manifest.
 
 **Combined history is deliberately not claimed.** If a C fact was already
 offered and L7 or L8 history is requested, drain marks the attempt incomplete

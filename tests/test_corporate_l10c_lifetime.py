@@ -21,10 +21,24 @@ def proof(capture=None):
                          'stable_grid', 'stable_controls', 'enabled_boundaries'), True)}
 
 
+class ChildHistory(History):
+    def __init__(self):
+        super().__init__()
+        self.clock = {'epoch_ms': 2000, 'timezone': 'Asia/Jakarta'}
+
+    def evaluate(self, script, args=None):
+        if 'corporate-l10c-final-clock' in script:
+            return {'state': super().evaluate('(h) => h.sample()'), 'clock': deepcopy(self.clock)}
+        return super().evaluate(script, args)
+
+
 def fixture():
     context, page = setup()
     make_document = page.evaluate_handle
-    guard = History()
+    guard = ChildHistory()
+    evaluate = page.evaluate
+    page.evaluate = lambda source: ({'epoch_ms': 1000, 'timezone': 'Asia/Jakarta'}
+                                    if 'epoch_ms' in source else evaluate(source))
 
     def document(script):
         handle = make_document(script)
@@ -70,6 +84,7 @@ def test_l10c_capture_manifest_live_and_held_readers_retain_same_original_fact(t
         assert boundaries(capture) == proof(capture)
         saved = capture.drain()
         assert saved['corporate_l10c_lifetime'] == proof(capture)
+        assert saved['clock_interval']['end_ms'] == 2000
         assert 'corporate_l10c_lifetime' not in saved['responses'][0]
         packets = list(capture.iter_bodies())
         assert response.reads == 1 and packets[0]['body'] == response.raw
@@ -174,6 +189,53 @@ def test_unoffered_unavailable_c_history_does_not_disable_a_legacy_sibling(tmp_p
         capture._l7_requested = True
         saved = capture.drain()
         assert saved['complete'] and 'corporate_l10c_lifetime' not in saved
+
+
+@pytest.mark.parametrize('clock', [None, {'epoch_ms': 500, 'timezone': 'Asia/Jakarta'},
+    {'epoch_ms': 2000, 'timezone': 'UTC'}, {'epoch_ms': True, 'timezone': 'Asia/Jakarta'}])
+def test_c_final_rpc_cannot_reuse_an_earlier_clock_when_its_own_clock_is_unavailable(tmp_path, clock):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+        guard.clock = clock
+        saved = capture.drain()
+        assert 'clock_interval' not in saved
+
+
+def test_c_final_rpc_rechecks_sticky_parent_route_change_without_another_browser_rpc(tmp_path):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+
+        def detour():
+            guard.on_sample = None
+            navigate(page, DETAIL.replace('fixture-record', 'foreign-record'))
+            navigate(page, DETAIL)
+
+        guard.on_sample = detour
+        with pytest.raises(JsonSafetyError):
+            capture.drain()
+
+
+def test_malformed_c_final_reply_cannot_seal_earlier_child_or_clock(tmp_path):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+        evaluate = guard.evaluate
+        guard.evaluate = lambda source, args=None: (None if 'corporate-l10c-final-clock' in source
+                                                   else evaluate(source, args))
+        saved = capture.drain()
+        assert 'clock_interval' not in saved and 'corporate_l10c_lifetime' not in saved
 
 
 def adapter_packets():
