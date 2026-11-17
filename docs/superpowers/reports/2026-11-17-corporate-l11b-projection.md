@@ -85,6 +85,7 @@ This is not a complete native L11-B implementation or taxpayer acceptance.
 Synthetic Actions tests cover projection/refusals, exact proof production,
 adapter custody and saved workbook/resume PARTIAL readback.
 
-The requested protected AGENTS.md update was denied by the approval boundary;
-it remains unchanged. This report records the actual implementation boundary
-but is not a substitute for that outstanding protected-contract deliverable.
+The initial protected `AGENTS.md` edit was denied and was not retried under
+that denial. The operator later explicitly renewed approval for the verified
+L9/L11-B boundaries. This branch now records the restricted L11-B contract in
+`AGENTS.md`; no runtime code, admission gate or live-acceptance scope changed.
