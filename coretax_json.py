@@ -732,6 +732,9 @@ def _corporate_bindings(observed_forms):
         if not isinstance(form, dict) or not _corporate_literal(form.get('name')) or form['name'] in names:
             raise JsonSafetyError('Observed form names are missing or ambiguous')
         names.add(form['name'])
+        if 'original_custody' in form:
+            from coretax_corporate_l10d import validate_binding
+            validate_binding(form)
         section = {'name': form['name'], 'fields': [], 'tables': [], 'text': ''}
         if 'disabled' in form:
             if form['disabled'] is not True:
@@ -1497,6 +1500,23 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             coverage['evidence_row_count'] += len(rows)
         else:
             provenance.setdefault('dependencies', []).append({'endpoint': state['endpoint'], 'rows': rows})
+    if not reasons and primary_source is not None:
+        # Original-only custody is independent of worksheet projection. An
+        # offered L10-D candidate retains every raw operand but cannot supply
+        # the unobserved final-Induk/continuous-child capability. Keep that
+        # blocker explicit; never add dummy fields or exempt its dump table.
+        from coretax_corporate_l10d import collect_original_custody, FINAL_CUSTODY_BLOCKER
+        root, payload, event = primary_source
+        for binding in observed_forms:
+            if 'original_custody' not in binding:
+                continue
+            try:
+                candidate = collect_original_custody(binding, observed_forms, root=root,
+                    payload=payload, record=record, event=event)
+                provenance.setdefault('non_display_originals', []).append(candidate)
+                reasons.append(FINAL_CUSTODY_BLOCKER)
+            except _UnsupportedMetadata as error:
+                reasons.append(str(error))
     if not reasons and primary_source is not None:
         from coretax_corporate_projection import apply_projections
         try:

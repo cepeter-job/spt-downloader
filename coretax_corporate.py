@@ -830,6 +830,40 @@ def _l4_footer_requests(observations, *, record_id, period):
     return found or None
 
 
+def _observe_l10d_originals(page, form, tab, capture, digest, check_cancel):
+    """Optional current-owner offer, expressly not a final-selection capability."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_l10d import PROVIDERS, KIND, approved_builds
+    from coretax_masa_observer import _REFERENCE_ORDER_BUILD_HASH
+    pins = load_build_pins()
+    expected = {url: pins.get(url) for url in PROVIDERS}
+    if (not approved_builds(expected) or digest != expected[CIT_SOURCE_URL]
+            or not callable(getattr(capture, 'observe_component_lifetime', None))):
+        return None
+    _check_cancel(check_cancel)
+    if (not _enabled_form_binding(form, tab, 'L10-D')
+            or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
+        return None
+    builds = {}
+    for url in PROVIDERS:
+        # MAIN exceeds 4 MiB. Keep its existing reviewed 5 MiB reader bound,
+        # while retaining script-provider and hash checks in the same RPC.
+        script = (_REFERENCE_ORDER_BUILD_HASH.replace('4*1024*1024', '5*1024*1024')
+                  if url == PROVIDERS[1] else _REFERENCE_ORDER_BUILD_HASH)
+        builds[url] = page.evaluate(script, url)
+        _check_cancel(check_cancel)
+    if not approved_builds(builds):
+        return None
+    enabled = _enabled_form_binding(form, tab, 'L10-D')
+    _check_cancel(check_cancel)
+    lifetime = capture.observe_component_lifetime(check_cancel=check_cancel)
+    _check_cancel(check_cancel)
+    if not enabled or lifetime is None:
+        return None
+    return {'kind': KIND, 'builds': builds, 'route': page.url,
+            'owner_binding': 'observed-enabled-after-induk-v1'}
+
+
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
@@ -943,6 +977,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+            if name == 'L10-D' and 'Induk' in names:
+                # Preserve legacy evidence-leaf behavior when this optional
+                # offer is unavailable. The unchanged dump gate still refuses
+                # native output, whether or not originals were retained.
+                original_offer = _observe_l10d_originals(page, form, tab, capture, digest, check_cancel)
+                if original_offer is not None:
+                    binding['original_custody'] = original_offer
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
