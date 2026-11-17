@@ -803,7 +803,7 @@ def _l4_numeric(value, digits=0, *, nullable=False, exact_sum=False):
         if type(value) is not _CorporateNumber:
             raise _UnsupportedMetadata('unsupported_corporate_l4_number')
         number = _decimal(value)
-        if (number < 0 or (number == 0 and number.is_signed())
+        if (number < 0 or number > _MAX_INTEGER or (number == 0 and number.is_signed())
                 or number != number.quantize(Decimal(1).scaleb(-digits))
                 or (exact_sum and number != Decimal.from_float(float(number)))):
             raise _UnsupportedMetadata('unsupported_corporate_l4_number_precision')

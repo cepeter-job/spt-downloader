@@ -184,3 +184,22 @@ then real observer -> capture -> adapter -> held replay -> saved/reopened workbo
 No template/resource/CI/native dump-gate/AGENTS change is part of this work.
 Fresh exact-head full CI, shared-producer integration, protected contract and
 operator live acceptance remain separately reportable until actually verified.
+
+### Follow-through execution evidence (not completion)
+
+Superseded candidate db42226 ran as44036114279. Downloaded original Windows
+JUnit reports contain110 legacy L4 cases with no failures,61 populated-pure
+cases with59 passes and two failures, and43 native cases with20 failures.
+The two pure failures correctly exposed a missing explicit15-digit bound:
+the shared Decimal parser's wider exact-integer bound did not enforce L4's
+promised limit. `_l4_numeric` now independently rejects values above
+999999999999999; the already failing A/B regression cases precede that fix.
+The native failures are the unintegrated shared dependency: unsafe unregistered
+L4 singleton endpoints and the observer retaining v1 instead of offering v2.
+Some other jobs were superseded/cancelled; these reports are not full-run or
+current-head GREEN and do not establish coverage/package acceptance.
+
+Shared PR285 head27f1fab has the provider/binder infrastructure but still has
+neither TAX_OBJECT_CODE nor INCOME_EXCLUDED_FROM_TAX_FOR_CIT registered. The
+exact source-reviewed needs were posted as its comment6941168126. No independent
+L4 adapter or speculative transport was added to bypass that ownership boundary.
