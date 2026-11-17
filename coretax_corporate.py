@@ -1107,6 +1107,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                             and callable(getattr(capture, 'observe_corporate_reference_providers', None))):
                         l10a_before = _l10a_table(form, tab)
                         _check_cancel(check_cancel)
+
+
+            if name == 'L6':
+                # Same admitted pin; the sheet is a literal scalar form with no
+                # grid, paginator or reference request of its own.
+                binding['projection'] = {'kind': 'corporate-l6-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
