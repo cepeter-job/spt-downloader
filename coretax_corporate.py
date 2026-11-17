@@ -943,6 +943,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+            if name == 'L9':
+                # Literal recap totals from this form's own payload control; the
+                # twelve grid requests stay declared coverage below.
+                binding['projection'] = {'kind': 'corporate-l9-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
