@@ -944,9 +944,9 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L2':
-                # Same admitted pin; L2 owns no grid endpoint, paginator or
-                # reference request of its own, so the payload root is the
-                # whole proof surface.
+                # Empty-only candidate. Populated owners refuse in the
+                # projector; catalog/render equivalence is not established.
+                # Keep the complete dump and whole-record fallback.
                 binding['projection'] = {'kind': 'corporate-l2-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':

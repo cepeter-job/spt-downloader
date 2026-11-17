@@ -814,6 +814,11 @@ def render_template_form(sheet, form, sections, *, period=None):
         offset += extra
     der_row, averages = _compact_layout(sheet, form, deleted, der_row, averages)
     derived = _l11b_der(sheet, der_row, averages) if form == 'l11-b' else {}
+    if form == 'l2':
+        reason = next((section.get('projection_reason') for section in sections
+                       if section.get('projection_complete') is False), None)
+        if reason is not None:
+            derived = {'derived_complete': False, 'derived_reason': reason}
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
