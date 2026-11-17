@@ -67,6 +67,22 @@ def test_candidate_saved_layout_grows_rows_without_question_footer_or_false_comp
         resume.close()
 
 
+def test_three_fraction_body_parser_does_not_widen_other_form_or_footer_consumers():
+    from openpyxl import Workbook
+    from coretax_badan_template import _write_amount
+    book = Workbook()
+    try:
+        sheet = book.active
+        assert not _write_amount(sheet, 1, 1, '1.234,125')
+        assert sheet['A1'].value == '1.234,125' and sheet['A1'].data_type == 's'
+        assert _write_amount(sheet, 2, 1, '1.234,125', number_default=True)
+        assert sheet['A2'].value == 1234.125 and sheet['A2'].data_type == 'n'
+        assert not _write_amount(sheet, 3, 1, '1.234,1250', number_default=True)
+        assert sheet['A3'].value == '1.234,1250' and sheet['A3'].data_type == 's'
+    finally:
+        book.close()
+
+
 def test_candidate_unresolved_inventory_cannot_be_hidden_by_zero_body(tmp_path):
     value = candidate_section()
     value['tables'][0].update(rows=[], body_row_count=0, source_total=0)
@@ -121,7 +137,7 @@ def envelope():
     form = corpus.current_form()
     form[ROOT] = raw_source()
     return {'IsSuccessful': True, 'Payload': {'TIN': corpus.NPWP, 'PeriodYear': 2025,
-        'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+        'IsDraft': True, 'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
         'PreviousFormData': None, 'LastSubmittedFormData': None,
         'CurrentFormData': corpus.wire(form)}}
 
@@ -140,7 +156,7 @@ def test_legacy_l10c_retains_original_dump_and_question_until_owned_producer_exi
     raw = packet(envelope())
     before = deepcopy((raw, observed))
     result = adapt_corporate_detail([raw], selected(), corpus.SCOPE, observed)
-    assert result['eligible'] and has_audit_dump_tables(result['sections'])
+    assert result['eligible'] and has_audit_dump_tables(result['sections']), result['reason']
     l10c, = [value for value in result['sections'] if value['name'] == 'L10-C']
     assert any(row[0].endswith('/DeterminationOfTransactionQuestion') and row[1:] == ['boolean', True]
                for table in l10c['tables'] for row in table['rows'])
@@ -182,6 +198,9 @@ def test_real_hybrid_populated_l10c_stays_dom_without_reference_and_child_custod
         result = fixture.collect()
         record, = result['records']
         assert record['detail_source']['used'] == 'dom' and dom_calls
+        assert record['detail_source']['capture']['complete'] is True
+        assert record['detail_source']['coverage']['complete'] is True
+        assert record['detail_source']['reason'] == 'unsupported_observed_forms_or_capture'
         captured, = [value for value in record['sections'] if value['name'] == 'L10-C']
         table, = captured['tables']
         assert table['headers'] == HEADERS and len(table['rows']) == 2

@@ -39,6 +39,10 @@ control identities (PeriodYear, CollectorTin, Question). L10-C's existing
 renderer now counts those identities once and carries the fixed
 `unprojected_l10c_controls` reason into mapping and the resume Audit. The approved
 A:E layout, reserved empty accounting slot and resource bytes are unchanged.
+The L10-C body parser alone accepts the reviewed default Number consumer's
+three fractional digits; every other form and all footer parsers retain their
+existing two-digit grammar. The stored safe value is never rounded to the
+zero-decimal accounting display.
 No new worksheet/question row or omission approval is implied.
 
 ## Source observations for shared infrastructure coordination

@@ -377,7 +377,7 @@ def _columns(table, sheet, header):
     return [targets[key] for key in keys]
 
 
-def _write_amount(sheet, row, column, value, *, subtract=False):
+def _write_amount(sheet, row, column, value, *, subtract=False, number_default=False):
     # Display precision never rounds or rewrites the captured numeric value.
     sheet.cell(row, column).number_format = ACCOUNTING
     text = value
@@ -388,7 +388,10 @@ def _write_amount(sheet, row, column, value, *, subtract=False):
         marker = re.fullmatch(r'Rp\.?\s*\|\s*([^|]+)', text)
         if marker:
             text = marker.group(1)
-        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', text):
+        # Only the reviewed L10-C body uses DecimalPipe's default 0..3
+        # fraction digits. Other forms and every footer keep the 2-digit parser.
+        fraction = r'(?:,[0-9]{1,3})?' if number_default is True else r'(?:,[0-9]{1,2})?'
+        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)' + fraction, text):
             _write(sheet, row, column, value)
             return False
         number = Decimal(text.replace('.', '').replace(',', '.'))
@@ -780,7 +783,8 @@ def render_template_form(sheet, form, sections, *, period=None):
                     subtract = (form == 'l1-d' and _l1d_role(table) == 1 and column == 3
                                 and _label(cells.get(2)) == _label(
                                     'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
-                    safe = _write_amount(sheet, row, column, value, subtract=subtract) and safe
+                    safe = _write_amount(sheet, row, column, value, subtract=subtract,
+                                         number_default=form == 'l10-c') and safe
                     if form == 'l9' and block >= 2 and column == 8 and _present(value):
                         sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
                 else:
