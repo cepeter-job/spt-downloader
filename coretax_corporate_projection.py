@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import DecimalException
+from fractions import Fraction
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -31,6 +32,7 @@ L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L8_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+L11B_HYDRATED_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
 INDUK_ROOT = 'MainFormData'
 # The reviewed identity slots, spelled exactly as
 # coretax_badan_template._INDUK_IDENTITY declares them. A caption is never a
@@ -79,6 +81,26 @@ L11B_COST_ROW = ('Name', 'AverageDebtBalances', 'BorrowingCostAmount',
                  'BorrowingCostThatCanBeDeducted', 'BorrowingCostThatAreNotDeductible')
 L11B_COST_HEADERS = ['PEMBERI PINJAMAN', 'Saldo Rata-Rata Utang', 'Biaya Pinjaman (Bunga)',
     'Biaya Pinjaman Yang Dapat Diperhitungkan', 'Biaya Pinjaman Yang Tidak Dapat Diperhitungkan']
+L11B_PART_II_GROUP = 'II. PERBANDINGAN ANTARA UTANG DAN MODAL (DEBT TO EQUITY RATIO)'
+L11B_GROUPS = ('A. PENGHITUNGAN RATA-RATA SALDO UTANG',
+              'B. PENGHITUNGAN SALDO RATA-RATA MODAL', 'III. PENGHITUNGAN BIAYA PINJAMAN')
+L11B_MONTH_HEADERS = (
+    ['PEMBERI PINJAMAN / ' + label for label in ('Nomor Identitas', 'Nama', 'Hubungan')]
+    + ['SALDO UTANG TIAP AKHIR BULAN (Rp) / ' + label for label in
+       [*[f'Bulan - {month}' for month in range(1, 13)], 'RATA-RATA']],
+    ['RINCIAN MODAL'] + ['SALDO MODAL TIAP AKHIR BULAN (Rp) / ' + label for label in
+       [*[f'Bulan - {month}' for month in range(1, 13)], 'RATA-RATA']],
+)
+
+
+def l11b_tables(part_ii):
+    indices = (0, 1, 2) if part_ii else (2,)
+    return [{'component': f'rsh-citr-l11b-form-grid{index + 1}',
+             'headers': list((*L11B_MONTH_HEADERS, L11B_COST_HEADERS)[index]),
+             'source_structure': {'form': 'L11-B', 'component': f'rsh-citr-l11b-form-grid{index + 1}',
+                                  'groups': ([L11B_PART_II_GROUP] if index < 2 else []) + [L11B_GROUPS[index]]},
+             'footer_spans': [[3, *([1] * 13)]] if index == 0 else [[1] * (14 if index == 1 else 5)]}
+            for index in indices]
 # getFormData reads n.TotalBorrowingCosts, which is not a FormGroup control:
 # undefined is omitted by JSON. A present alias (even null) is unreviewed.
 L11B_KEYS = frozenset({
@@ -650,16 +672,120 @@ def project_l11b(form, *, tax_type, locale):
     return {'fields': fields, 'tables': [table], 'provenance': evidence}
 
 
+def _l11b_exact(value):
+    amount = _l11b_amount(value)
+    if amount == 0 and value.startswith('-'):
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_signed_zero')
+    return amount
+
+
+def _l11b_add(total, amount):
+    total += amount
+    if abs(total) > _MAX_INTEGER:
+        raise _UnsupportedMetadata('unsafe_corporate_l11b_ordered_total')
+    return total
+
+
+def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
+    """Fresh submitted eager-child hydration, never an edit-dialog mean.
+
+    The caller proves the three loaded providers and fresh parent lifetime.
+    Subscriptions precede the asynchronous primary hydration; submitted disable
+    emits all three operands after patchValue. Manual excludes later L1 writes.
+    Saved row Average is copied unchanged and summed, not recomputed from months.
+    """
+    result = project_l11b(form, tax_type=tax_type, locale=locale)
+    numbers = [_l11b_exact(form[name]) for name, _ in L11B_FIELDS]
+    ebitda = _l11b_add(_l11b_add(numbers[0], numbers[1]), numbers[2])
+    quarter = ebitda // 4  # binary64 multiplication by .25 is exact in this bound
+    if _l11b_exact(form['Ebitda25']) != quarter:
+        raise _UnsupportedMetadata('unverified_corporate_l11b_quarter_hydration')
+    if type(part_ii) is not bool or part_ii != (numbers[3] > quarter or ebitda <= 0):
+        raise _UnsupportedMetadata('unverified_corporate_l11b_conditional')
+    evidence = result['provenance']
+    for name, value, caption in (('Ebitda', ebitda, '5. EBITDA'),
+                                 ('Ebitda25', quarter, '6. EBITDA (25%)')):
+        result['fields'].append({'group': '', 'field': name, 'label': caption,
+                                 'value': _number(str(value), 0, locale=locale)})
+    evidence.extend({**_evidence(form[name], [L11B_ROOT, name]),
+                     'rule': 'submitted-disable-ebitda-operand'} for name, _ in L11B_FIELDS[:3])
+    for name in ('Ebitda', 'DebtToEquityRatio'):
+        evidence.append({**_evidence(form[name], [L11B_ROOT, name]), 'rule': 'unused-saved-control'})
+    evidence.append({**_evidence(form['Ebitda25'], [L11B_ROOT, 'Ebitda25']),
+                     'rule': 'reconciled-quarter-hydration'})
+    evidence.append({**_evidence(form['BorrowingCostExpense'], [L11B_ROOT, 'BorrowingCostExpense']),
+                     'rule': 'conditional-part-ii-operand'})
+    monthly, averages = [], []
+    for index, (key, prefix, text_keys) in enumerate((
+            ('DebtBalanceAverage', 'Debt', ('IdentityNumber', 'Name', 'Relationship')),
+            ('EquityBalanceAverage', 'Equity', ('TypeOfEquity',)))):
+        source = form[key]
+        if source is not None and (not isinstance(source, list) or len(source) > 10000):
+            raise _UnsupportedMetadata('unsupported_corporate_l11b_month_body')
+        rows = [] if source is None else source
+        amount_keys = [*[f'{prefix}Month{month}' for month in range(1, 13)], 'Average']
+        totals, body = [0] * 13, []
+        table_name = 'L11-B/' + ('debt' if index == 0 else 'equity')
+        for row_index, row in enumerate(rows):
+            if not isinstance(row, dict) or set(row) != {*text_keys, *amount_keys}:
+                raise _UnsupportedMetadata('unsupported_corporate_l11b_month_row')
+            if any(type(row[name]) is not str for name in text_keys):
+                raise _UnsupportedMetadata('unsupported_corporate_l11b_text')
+            rendered = [row[name] for name in text_keys]
+            for name in text_keys:
+                evidence.append({**_evidence(row[name], [L11B_ROOT, key, row_index, name]),
+                                 'rule': 'literal-view-model-text'})
+            for column, name in enumerate(amount_keys):
+                amount = _l11b_exact(row[name])
+                totals[column] = _l11b_add(totals[column], amount)
+                rendered.append(_number(row[name], 0, locale=locale))
+                evidence.append({**_evidence(row[name], [L11B_ROOT, key, row_index, name]),
+                    'rule': 'view-model-ordered-sum-operand',
+                    'destination': {'table': table_name, 'row': row_index,
+                                    'column': column + len(text_keys) + 1}})
+            body.append(rendered)
+        if not rows:
+            empty = (_evidence(source, [L11B_ROOT, key]) if source is None else
+                     {'path': [L11B_ROOT, key], 'type': 'array', 'value': []})
+            evidence.extend({**empty, 'rule': 'empty-view-model-total',
+                             'destination': {'table': table_name, 'footer': 0, 'column': column}}
+                            for column in range(len(text_keys) + 1, len(text_keys) + 14))
+        footer = ['JUMLAH', *([''] * (len(text_keys) - 1)),
+                  *[_number(str(total), 0, locale=locale) for total in totals]]
+        metadata = l11b_tables(True)[index]
+        monthly.append({'name': table_name, 'headers': metadata['headers'], 'rows': body + [footer],
+                        'footer': [footer], 'footer_spans': metadata['footer_spans'],
+                        'body_row_count': len(body), 'source_total': len(body), 'complete': True})
+        averages.append(totals[-1])
+    if part_ii:
+        debt, equity = averages
+        if equity == 0:
+            if debt != 0:
+                raise _UnsupportedMetadata('unsupported_corporate_l11b_der_precision')
+        else:
+            ratio = Fraction(debt, equity)
+            if (debt == 0 or ratio.denominator not in (1, 2, 4)
+                    or abs(ratio * 100) > _MAX_INTEGER):
+                raise _UnsupportedMetadata('unsupported_corporate_l11b_der_precision')
+        result['tables'] = monthly + result['tables']
+    result['der_operands'] = averages if part_ii else None
+    return result
+
+
 def _apply_l11b(binding, section, observed_forms, *, root, payload, record, event):
     proof = binding['projection']
     builds = proof.get('builds') if isinstance(proof, dict) else None
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
-            or proof['kind'] != 'corporate-l11b-v1'
-            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE, MAIN_SOURCE}
-            or set(BUILD_DIGESTS) != {CIT_SOURCE, MAIN_SOURCE}
+    hydrated = isinstance(proof, dict) and proof.get('kind') == 'corporate-l11b-hydrated-v2'
+    pins = L11B_HYDRATED_BUILD_DIGESTS if hydrated else BUILD_DIGESTS
+    providers = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE} if hydrated else {CIT_SOURCE, MAIN_SOURCE}
+    if (not isinstance(proof, dict) or set(proof) != ({'kind', 'builds', 'route', 'tables', 'part_ii'}
+                                                                  if hydrated else {'kind', 'builds', 'route'})
+            or proof['kind'] not in ('corporate-l11b-v1', 'corporate-l11b-hydrated-v2')
+            or not isinstance(builds, dict) or set(builds) != providers
+            or set(pins) != providers
             or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
-                   for value in [*builds.values(), *BUILD_DIGESTS.values()])
-            or builds != BUILD_DIGESTS or proof['route'] != event['frame_url']
+                   for value in [*builds.values(), *pins.values()])
+            or builds != pins or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L11B_ROOT]]
             or binding.get('grids') or binding.get('responses') or binding.get('dependencies')):
         raise _UnsupportedMetadata('unverified_corporate_l11b_binding')
@@ -687,14 +813,28 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
             raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle') from None
         if previous is not None and not isinstance(previous, dict):
             raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle')
-    result = project_l11b(root.get(L11B_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
+    if hydrated:
+        if (event.get('component_lifetime') is None or proof['route'] != route + '?view=true'
+                or previous is not None
+                or any(form.get('disabled') for form in observed_forms if form['name'] == 'Induk')
+                or type(proof['part_ii']) is not bool or proof['tables'] != l11b_tables(proof['part_ii'])):
+            raise _UnsupportedMetadata('unverified_corporate_l11b_hydrated_lifecycle')
+        result = project_l11b_hydrated(root.get(L11B_ROOT), tax_type=fields.get('TaxTypeCode'),
+                                        locale='id-ID', part_ii=proof['part_ii'])
+        result['provenance'].extend({**_evidence(payload[key], [key]), 'container': ['Payload'],
+                                    'rule': 'submitted-hydration-predicate'} for key in
+                                   ('ReturnSheetStatusCode', 'ReturnSheetModel', 'PreviousFormData'))
+    else:
+        result = project_l11b(root.get(L11B_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
     section['fields'] = result['fields']
     # Retain ALL original raw leaves, including omitted averages and metadata.
     section['tables'].extend(result['tables'])
     section['projection_complete'] = False
-    section['projection_reason'] = 'unprojected_l11b_lifecycle'
+    section['projection_reason'] = ('unprojected_l11b_header_question' if hydrated
+                                    else 'unprojected_l11b_lifecycle')
     for entry in result['provenance']:
-        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+        entry['response_sequence'] = event['sequence']
+        entry.setdefault('container', ['Payload', 'CurrentFormData'])
     return {'form': 'L11-B', 'kind': proof['kind'], 'builds': dict(proof['builds']),
             'route': proof['route'], 'values': result['provenance']}
 

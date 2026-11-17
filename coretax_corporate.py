@@ -326,6 +326,85 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
             'tables': [{**expected, 'owner_chain': list(L7_OWNER_CHAIN)}]}
 
 
+def _observe_l11b_hydrated(page, form, tab, capture, digest, main_digest, check_cancel):
+    """Optional eager-child submitted profile; structure only, no business reads."""
+    from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
+    from coretax_corporate_projection import (L11B_HYDRATED_BUILD_DIGESTS, MAIN_SOURCE,
+                                              VENDOR_SOURCE, l11b_tables)
+    from coretax_masa_observer import TABLE, _REFERENCE_ORDER_BUILD_HASH
+    pins = L11B_HYDRATED_BUILD_DIGESTS
+    if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value) for value in pins.values())
+            or digest != pins[CIT_SOURCE_URL] or main_digest != pins[MAIN_SOURCE]):
+        return None
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if type(vendor_digest) is not str or vendor_digest != pins[VENDOR_SOURCE]:
+        return None
+    # All required grid sets, not merely whichever conditional grid was last
+    # sampled. Both passes also retain original form identity and enabled owner.
+    samples = []
+    identity = form.element_handle()
+    if identity is None:
+        return None
+    try:
+        for _ in range(2):
+            _check_cancel(check_cancel)
+            if (identity.evaluate('(e) => e.isConnected') is not True
+                    or not _enabled_form_binding(form, tab, 'L11-B')):
+                return None
+            present = [form.locator(f'rsh-citr-l11b-form-grid{index}').count() for index in (1, 2, 3)]
+            if present not in ([1, 1, 1], [0, 0, 1]):
+                return None
+            expected = l11b_tables(present == [1, 1, 1])
+            if form.locator('table').count() != len(expected):
+                return None
+            inspected = []
+            for metadata in expected:
+                selector = metadata['component']
+                grid = form.locator(selector)
+                if (not grid.is_visible() or grid.locator('table').count() != 1
+                        or grid.locator('ui-grid-offline').count() != 1 or grid.locator('p-table').count() != 1):
+                    return None
+                table = grid.locator('table')
+                owned = table.evaluate('''(table, selector) => {
+                    const form=table.closest('rshshr-citr-l11b-form'), grid=table.closest(selector);
+                    const ui=table.closest('ui-grid-offline'), owner=table.closest('p-table');
+                    return !!form && !!grid && !!ui && !!owner &&
+                        grid.closest('rshshr-citr-l11b-form')===form && ui.closest(selector)===grid &&
+                        owner.closest('ui-grid-offline')===ui && owner.closest(selector)===grid &&
+                        table.closest('rshshr-citr-l11b-form')===form;
+                }''', selector)
+                _check_cancel(check_cancel)
+                if owned is not True:
+                    return None
+                structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L11-B')
+                data = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+                _check_cancel(check_cancel)
+                actual = {'component': selector, 'source_structure': structure,
+                          'headers': data['headers'], 'footer_spans': data['footer_spans']}
+                if actual != metadata:
+                    return None
+                inspected.append(actual)
+            samples.append(inspected)
+        if (samples[0] != samples[1] or identity.evaluate('(e) => e.isConnected') is not True
+                or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
+            return None
+        _check_cancel(check_cancel)
+        return {'kind': 'corporate-l11b-hydrated-v2', 'builds': {
+            CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
+            'route': page.url, 'part_ii': len(samples[0]) == 3, 'tables': samples[0]}
+    finally:
+        identity.dispose()
+
+
 def _observe_l1d(page, form, capture, digest, check_cancel):
     """Inspect only owned structure, loaded providers and fresh lifetime."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -957,6 +1036,14 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     return unavailable()
                 binding['projection'] = {'kind': 'corporate-l11b-v1',
                     'builds': {CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url}
+                lifetime = getattr(capture, 'observe_component_lifetime', None)
+                if callable(lifetime) and lifetime(check_cancel=check_cancel) is not None:
+                    if 'Induk' not in names:
+                        return unavailable()
+                    strong = _observe_l11b_hydrated(page, form, tab, capture, digest, main_digest, check_cancel)
+                    if strong is None:
+                        return unavailable()
+                    binding['projection'] = strong
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

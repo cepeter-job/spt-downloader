@@ -35,8 +35,12 @@ def tables(part_ii=True):
     labels = ([('rsh-citr-l11b-form-grid1', DEBT_HEADERS, [[3] + [1] * 13]),
                ('rsh-citr-l11b-form-grid2', EQUITY_HEADERS, [[1] * 14])] if part_ii else [])
     labels.append(('rsh-citr-l11b-form-grid3', module().L11B_COST_HEADERS, [[1] * 5]))
-    return [{'component': component, 'headers': list(headers), 'footer_spans': spans}
-            for component, headers, spans in labels]
+    groups = ([['II. PERBANDINGAN ANTARA UTANG DAN MODAL (DEBT TO EQUITY RATIO)', group]
+        for group in ('A. PENGHITUNGAN RATA-RATA SALDO UTANG', 'B. PENGHITUNGAN SALDO RATA-RATA MODAL')]
+        if part_ii else []) + [['III. PENGHITUNGAN BIAYA PINJAMAN']]
+    return [{'component': component, 'headers': list(headers), 'footer_spans': spans,
+             'source_structure': {'form': 'L11-B', 'component': component, 'groups': group}}
+            for (component, headers, spans), group in zip(labels, groups)]
 
 
 def bindings(part_ii=True):
@@ -160,14 +164,17 @@ def test_hydrated_adapter_retains_original_overwritten_controls_and_custody():
     assert section['projection_complete'] is False
     assert section['projection_reason'] == 'unprojected_l11b_header_question'
     projected = next(p for p in result['provenance']['projections'] if p['form'] == 'L11-B')
-    assert all(e['response_sequence'] == 1 and e['container'] == ['Payload', 'CurrentFormData']
+    assert all(e['response_sequence'] == 1 and e['container'] == (
+        ['Payload'] if e['rule'] == 'submitted-hydration-predicate' else ['Payload', 'CurrentFormData'])
+        for e in projected['values'])
+    assert any(e['path'] == ['PreviousFormData'] and e['type'] == 'null' and e['value'] is None
                for e in projected['values'])
     assert any(e['path'] == ['L11BFormData', 'Ebitda'] and e['value'] == '7'
                and e['rule'] == 'unused-saved-control' for e in projected['values'])
 
 
 @pytest.mark.parametrize('defect', ['lifetime', 'wrong-pin', 'missing-pin', 'header', 'footer', 'component',
-                                   'part-ii', 'previous', 'disabled-induk'])
+                                   'part-ii', 'previous', 'induk-order'])
 def test_hydrated_binding_rejects_missing_or_contradictory_proof(defect):
     forms, source = bindings(), packet()
     proof = forms[-1]['projection']
@@ -178,8 +185,10 @@ def test_hydrated_binding_rejects_missing_or_contradictory_proof(defect):
     elif defect == 'footer': proof['tables'][1]['footer_spans'] = [[14]]
     elif defect == 'component': proof['tables'][0]['component'] = 'foreign-grid'
     elif defect == 'part-ii': proof['part_ii'] = None
-    elif defect == 'previous': source = primary(populated(), previous='{}')
-    else: forms[0]['disabled'] = True
+    elif defect == 'previous':
+        source = primary(populated(), previous='{}')
+        source['context']['component_lifetime'] = packet()['context']['component_lifetime']
+    else: forms.reverse()
     result = adapt(forms=forms, packet=source)
     assert not result['eligible']
 
@@ -218,3 +227,85 @@ def test_hydrated_saved_workbook_keeps_unrounded_der_references_and_partial_resu
                    for sheet in resume for row in sheet for cell in row)
     finally:
         resume.close()
+
+
+@pytest.mark.parametrize('commercial,quarter', [('-200004', '-1'), ('-200001', '-1'), ('-200000', '0')])
+def test_nonpositive_ebitda_uses_floor_not_truncation(commercial, quarter):
+    source = populated(CommercialNettIncome=Number(commercial), IncomeTaxExpense=Number('0'),
+                       BorrowingCostExpense=Number('0'), Ebitda25=Number(quarter))
+    result = project(source)
+    assert result['tables'][0]['name'] == 'L11-B/debt'
+    assert result['fields'][-1]['value'] == quarter
+
+
+def test_exact_quarter_boundary_hides_part_ii():
+    result = project(populated(BorrowingCostExpense=Number('312500')), part_ii=False)
+    assert len(result['tables']) == 1
+
+
+@pytest.mark.parametrize('key,value', [('DebtBalanceAverage', {}), ('EquityBalanceAverage', [None]),
+                                     ('DebtBalanceAverage', [{'Average': Number('1')}])])
+def test_monthly_container_and_closed_row_contract(key, value):
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_month_'):
+        project(populated(**{key: value}))
+
+
+def test_numeric_token_is_not_literal_identity_text():
+    source = populated()
+    source['DebtBalanceAverage'][0]['IdentityNumber'] = Number('7')
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_text'):
+        project(source)
+
+
+@pytest.mark.parametrize('debt,equity', [('0', '1'), ('1', '0'), ('999999999999999', '1')])
+def test_unrepresentable_der_does_not_emit_a_formula(debt, equity):
+    source = populated()
+    source['DebtBalanceAverage'] = [source['DebtBalanceAverage'][0]]
+    source['EquityBalanceAverage'] = [source['EquityBalanceAverage'][0]]
+    source['DebtBalanceAverage'][0]['Average'] = Number(debt)
+    source['EquityBalanceAverage'][0]['Average'] = Number(equity)
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_der_precision'):
+        project(source)
+
+
+def test_saved_totals_are_unused_metadata_not_captured_view_footer_aliases():
+    source = populated(TotalDebtBalanceAverage={'Average': Number('999')},
+                       TotalEquityBalanceAverage={'Average': Number('999')}, DebtToEquityRatio=Number('999'))
+    before = deepcopy(source)
+    result = project(source)
+    assert result['der_operands'] == [2000, 800] and source == before
+    raw = packet(source)
+    result = adapt(forms=bindings(), packet=raw)
+    assert result['eligible'], result['reason']
+    section = next(s for s in result['sections'] if s['name'] == 'L11-B')
+    assert any('TotalDebtBalanceAverage' in str(row[0]) for row in section['tables'][0]['rows'])
+
+
+def test_hydrated_missing_configured_pin_never_matches_missing_provider(monkeypatch):
+    forms = bindings()
+    pins = dict(module().L11B_HYDRATED_BUILD_DIGESTS)
+    pins[module().VENDOR_SOURCE] = None
+    forms[-1]['projection']['builds'][module().VENDOR_SOURCE] = None
+    monkeypatch.setattr(module(), 'L11B_HYDRATED_BUILD_DIGESTS', pins)
+    result = adapt(forms=forms, packet=packet())
+    assert not result['eligible'] and result['reason'] == 'unverified_corporate_l11b_binding'
+
+
+def test_hydrated_headers_are_the_approved_existing_slots():
+    from openpyxl import load_workbook
+    from test_corporate_l11b_projection import RESOURCE
+    book = load_workbook(RESOURCE, read_only=True)
+    try:
+        assert [cell.value for cell in book['L11-B'][11]][:16] == DEBT_HEADERS
+        assert [cell.value for cell in book['L11-B'][17]][:14] == EQUITY_HEADERS
+    finally: book.close()
+
+
+def test_encoded_null_predecessor_retains_the_original_string_provenance():
+    source = primary(populated(), previous='null')
+    source['context']['component_lifetime'] = packet()['context']['component_lifetime']
+    result = adapt(forms=bindings(), packet=source)
+    assert result['eligible'], result['reason']
+    values = next(p['values'] for p in result['provenance']['projections'] if p['form'] == 'L11-B')
+    assert any(e['path'] == ['PreviousFormData'] and e['type'] == 'string' and e['value'] == 'null'
+               and e['container'] == ['Payload'] for e in values)
