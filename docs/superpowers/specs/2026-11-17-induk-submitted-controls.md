@@ -21,17 +21,21 @@ No private source bytes or taxpayer values are committed.
 
 ## Submitted execution and representation proof
 
-525 `fillForm` assigns `isMigrated=t.IsMigrated`, sets `isStatusSubmitted=true`
+525 `fillForm` (2647688) assigns `isMigrated=t.IsMigrated`, sets `isStatusSubmitted=true`
 for SUBMITTED, parses CurrentFormData, and maps MainFormData into the main-form
 input. Main renderer supplies parent's status/model/IsRupiah to that child.
-Main `ngOnChanges` calls `setFormData` (2791500 vicinity), then
-`getDataFromBaseForm` (2799800), `setAmendmentData` and disabled-form handling.
-`setFormData` patches each exact named control; this is not an editor callback.
+Main component Ec starts at 2778983. Main `ngOnChanges` calls `setFormData`
+(2791437), then `getDataFromBaseForm`, `setAmendmentData` and disabled-form
+handling (2842137). `setFormData` patches each exact named control; this is not
+an editor callback. The v2 branch additionally requires all eight base-overwritten
+identity controls to equal the original outer owner with the same literal type;
+it retains both owners instead of exporting a stale main-header copy.
 
 PrimeNG InputNumber in VENDOR: `writeValue` (2147458) stores the control;
-`formattedValue` (2147260 vicinity) calls `formatValue`; `formatValue` (2136668)
-uses Intl.NumberFormat(locale,getOptions). Null renders blank when allowEmpty;
-Rupiah main initializes minFraction=maxFraction=0 (277... constructor), and its
+`formattedValue` (2147283) calls `formatValue`; `formatValue` (2136668)
+uses Intl.NumberFormat(locale,getOptions). Constructor at 2133494 proves
+allowEmpty=true, format=true and grouping=true. Null renders blank with allowEmpty;
+Rupiah main initializes minFraction=maxFraction=0 (Ec constructor), and its
 active renderer (2924000..2937000) passes locale Indonesia and those bounds.
 This slice accepts only original numeric tokens, finite integral absolute value
 <=999999999999999, excluding signed zero; it does not emulate coercion, floating
@@ -78,7 +82,13 @@ approved blank-name amount slot.
 
 Additive `corporate-induk-submitted-v2` replaces v1 proof only when the existing
 owned component protocol is available, all three **positive exact configured**
-loaded-script pins match, and id-ID/Asia/Jakarta are observed. Reuse the existing
+loaded-script pins match, id-ID/Asia/Jakarta are observed, and the eight unique
+visible p-inputNumber hosts have their exact formControlName/id/mode/input
+structure inside the owned Induk. Require disabled actual input nodes, the
+read-only approval amount, and the two disabled IsApprovalInstallment radio
+inputs: static submitted renderer bindings, not an assumption that an editor
+click callback ran. Carry their ordered binding names as `controls`.
+This is a structural selector read, not a value or checked-state read. Reuse the existing
 bounded script readers, no new network route, storage read or business value read.
 No optional proof means unchanged identity-only v1. Supplied malformed v2 refuses.
 Adapter separately requires the exact selected submitted ?view=true route,
@@ -96,9 +106,18 @@ or transport allowlist is introduced. The existing unrelated-unprojected gate st
 ## Shared catalog dependency (parent coordination)
 
 Shared owner only: Induk TaxRate uses MAIN enum CIT_TAX_RATE (2988860) and 525
-createTaxRatType (2786...): getSingleReferenceData(CIT_TAX_RATE), stable numeric
+createTaxRatType (2787631): getSingleReferenceData(CIT_TAX_RATE), stable numeric
 sort by parseInt(Code.substring(3,4)), then displayed CodeDescription is prefixed
 with `${Code.substring(3,4)}.`. Approved template later removes that numeric prefix.
+MAIN getSingleReferenceData at 3038044 can return a cache hit with **no request**;
+its missing-cache path calls internalLoadBulkReferenceData at 3042005 with
+`[{referenceType:'CIT_TAX_RATE', checksum:null}]`. The reviewed generic builder
+then yields the no-body id-ID singleton GET ending
+`/referencedata/api/currentreferencedata/id-ID/CIT_TAX_RATE` (no checksum, no pair
+or bulk inference). This is source review, not proof that the request naturally
+occurred in an owned attempt. Do not force it. Check the exact cache-copy/label
+mutation lifecycle too: createTaxRatType mutates CodeDescription in the returned
+objects; original bytes alone must not be assumed to prove a single-prefix render.
 Require same-attempt original reference bytes, original typed rows/indices,
 consumer ordering/version/clock and exact successful bound sequence before using
 labels. Use _project_corporate_catalog/_reference_consumer_order/

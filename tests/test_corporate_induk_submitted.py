@@ -83,6 +83,11 @@ def test_populated_submitted_slots_preserve_original_finals_and_typed_provenance
     assert section['tables'][0]['headers'] == ['JSON path', 'JSON type', 'Source value']
     report, = result['provenance']['projections']
     assert report['kind'] == 'corporate-induk-submitted-v2'
+    assert report['locale'] == 'id-ID' and report['timezone'] == 'Asia/Jakarta'
+    assert report['controls'] == [s[1] for s in SLOTS]
+    predicate, = [v for v in report['values'] if v['path'] == ['TaxType']]
+    assert predicate['value'] == 'ICT_RCIT' and predicate['type'] == 'string'
+    assert predicate['container'] == ['Payload', 'CurrentFormData']
     for _, control, caption in SLOTS:
         entry, = [v for v in report['values'] if v['path'] == ['MainFormData', control]]
         assert entry['type'] == 'number' and entry['response_sequence'] == 1
@@ -161,6 +166,32 @@ def test_base_form_identity_overwrite_cannot_leave_a_stale_main_identity(outer, 
         return
     result = adapt(packet(value))
     assert not result['eligible'] and result['sections'] == []
+
+
+@pytest.mark.parametrize('value', [corpus.Number('0'), corpus.Number('1000.000'),
+    corpus.Number('1.2345e6'), corpus.Number('999999999999999')])
+def test_safe_integral_lexemes_render_but_are_never_rewritten_in_evidence(value):
+    result = adapt(packet(source(NoticeOfCollection=value)))
+    assert result['eligible'], result['reason']
+    report, = result['provenance']['projections']
+    entry, = [v for v in report['values'] if v['path'] == ['MainFormData', 'NoticeOfCollection']]
+    assert entry['type'] == 'number' and entry['value'] == value
+
+
+def test_missing_configured_and_observed_pins_cannot_agree_into_permission(monkeypatch):
+    observed = bindings()
+    pins = dict.fromkeys(projection.INDUK_SUBMITTED_BUILD_DIGESTS)
+    observed[0]['projection']['builds'] = dict(pins)
+    monkeypatch.setattr(projection, 'INDUK_SUBMITTED_BUILD_DIGESTS', pins)
+    result = adapt(observed=observed)
+    assert not result['eligible'] and result['sections'] == []
+
+
+def test_mixed_component_attempt_remains_fatal_before_projection():
+    raw = packet()
+    raw['context']['component_lifetime']['attempt'] = 'b' * 32
+    with pytest.raises(JsonSafetyError, match='lifetime'):
+        adapt(raw)
 
 
 def test_submitted_inventory_does_not_emit_unproved_questions_or_tariff_aliases():

@@ -1,5 +1,6 @@
 """Actual synthetic SPA -> owned capture -> populated Induk -> held/workbook, CI only."""
 from copy import deepcopy
+import hashlib
 import json
 
 import pytest
@@ -33,7 +34,11 @@ class IndukFixture(Fixture):
     def detail(self):
         markup = super().detail()
         controls = ''.join('<p-inputnumber id="' + key + '" formcontrolname="' + key
-            + '" mode="decimal"><input value="SYNTHETIC DOM BAIT"></p-inputnumber>' for _, key, _ in SLOTS)
+            + '" mode="decimal"><input disabled '
+            + ('readonly ' if key == 'TotalApprovalInstallment' else '')
+            + 'value="SYNTHETIC DOM BAIT"></p-inputnumber>' for _, key, _ in SLOTS)
+        controls += ('<p-radiobutton formcontrolname="IsApprovalInstallment"><input type="radio" disabled>'
+                     '</p-radiobutton>') * 2
         return markup.replace('<label>SYNTHETIC STRUCTURAL PLACEHOLDER</label>', controls)
 
 
@@ -118,6 +123,59 @@ def test_optional_induk_capability_never_accepts_unverified_script_providers(bro
                            fixture.pins[ASSET], None)
             assert proof is None
             assert page.evaluate('window.businessReads') == 0
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('defect', ['enabled-amount', 'missing-radio', 'enabled-radio', 'editable-approval'])
+def test_unsubmitted_or_editor_structure_cannot_grant_amount_capability(browser, tmp_path, monkeypatch, defect):
+    fixture = IndukFixture(browser, monkeypatch)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            page.evaluate('''defect=>{
+                const form=document.querySelector('rshshr-citr-main-form');
+                if(defect==='enabled-amount')form.querySelector('#NoticeOfCollection input').disabled=false;
+                if(defect==='missing-radio')form.querySelector('p-radiobutton').remove();
+                if(defect==='enabled-radio')form.querySelector('p-radiobutton input').disabled=false;
+                if(defect==='editable-approval')form.querySelector('#TotalApprovalInstallment input').readOnly=false;
+            }''', defect)
+            assert observer._observe_induk_submitted(page, page.locator('rshshr-citr-main-form'), capture,
+                fixture.pins[ASSET], None) is None
+            assert page.evaluate('window.businessReads') == 0
+    finally:
+        fixture.close()
+
+
+@pytest.mark.parametrize('defect', ['descriptor-override', 'mixed-attempt', 'changed-bytes'])
+def test_populated_induk_held_reader_keeps_original_manifest_custody(browser, tmp_path, monkeypatch, defect):
+    fixture = IndukFixture(browser, monkeypatch)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            open_selected(fixture, capture)
+            forms = observer.observe_forms(fixture.page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[ASSET])
+            assert forms[0]['projection']['kind'] == 'corporate-induk-submitted-v2'
+            manifest = capture.drain()
+            fixture.record['detail_url'] = DETAIL
+            assert adapt_corporate_detail(checkpoint_bodies(tmp_path, manifest, fixture.record, corpus.SCOPE),
+                fixture.record, corpus.SCOPE, forms)['eligible']
+            if defect == 'changed-bytes':
+                path = tmp_path / manifest['responses'][0]['relative_path']
+                path.write_bytes(path.read_bytes() + b' ')
+            else:
+                path = tmp_path / manifest['manifest']
+                saved = json.loads(path.read_bytes())
+                if defect == 'descriptor-override':
+                    saved['responses'][0]['component_lifetime'] = deepcopy(saved['component_lifetime'])
+                else:
+                    saved['component_lifetime']['attempt'] = 'b' * 32
+                raw = corpus.wire(saved).encode()
+                path.write_bytes(raw)
+                manifest = {**saved, 'manifest': manifest['manifest'],
+                            'manifest_sha256': hashlib.sha256(raw).hexdigest()}
+            with pytest.raises(JsonSafetyError):
+                checkpoint_bodies(tmp_path, manifest, fixture.record, corpus.SCOPE)
     finally:
         fixture.close()
 
