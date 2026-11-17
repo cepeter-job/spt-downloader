@@ -26,8 +26,8 @@ def histories_setup():
     return context, page, histories
 
 
-@pytest.mark.parametrize('defect', ['healthy', 'rpc-error', 'malformed', 'document', 'owners',
-    'l7-unavailable', 'l7-malformed', 'l7-incomplete', 'l10b-unavailable', 'l10b-malformed',
+@pytest.mark.parametrize('defect', ['healthy', 'rpc-error', 'malformed', 'document', 'owners', 'local-parent',
+    'document-unavailable', 'l7-unavailable', 'l7-malformed', 'l7-incomplete', 'l10b-unavailable', 'l10b-malformed',
     'l10b-incomplete', 'l7-changed-l10b-unavailable', 'l10b-changed-l7-unavailable',
     'l8-changed', 'l8-malformed', 'l8-unavailable', 'late-json', 'late-html', 'stop'])
 def test_final_snapshot_preserves_all_requested_facts_and_local_fences(tmp_path, defect):
@@ -56,11 +56,13 @@ def test_final_snapshot_preserves_all_requested_facts_and_local_fences(tmp_path,
             if defect == 'rpc-error':
                 raise RuntimeError('SYNTHETIC driver unavailable')
             if defect == 'stop': stopped.append(True)
+            if defect == 'local-parent': capture._component_invalid = True
             if defect.startswith('late-'):
                 exchange(context, page, content_type='text/html' if defect == 'late-html' else 'application/json')
             result = evaluate(script, args)
             if defect == 'malformed': return {}
             if defect == 'document': result['same_document'] = False
+            if defect == 'document-unavailable': result['same_document'] = None
             if defect == 'owners': result['owners']['detail_owner'] = False
             for child in ('l7', 'l10b'):
                 if defect == child + '-unavailable': result[child]['available'] = False
@@ -77,7 +79,7 @@ def test_final_snapshot_preserves_all_requested_facts_and_local_fences(tmp_path,
             if defect == 'l8-unavailable': result['l8']['initial_clear'] = False
             return result
         document.evaluate = final
-        if defect in ('document', 'owners', 'l7-changed-l10b-unavailable',
+        if defect in ('document', 'owners', 'local-parent', 'l7-changed-l10b-unavailable',
                       'l10b-changed-l7-unavailable', 'l8-changed', 'stop'):
             with pytest.raises(CaptureCancelled if defect == 'stop' else JsonSafetyError):
                 capture.drain()
@@ -85,7 +87,7 @@ def test_final_snapshot_preserves_all_requested_facts_and_local_fences(tmp_path,
         else:
             saved = capture.drain()
             for name in ('component', 'corporate_l7', 'corporate_l8', 'corporate_l10b'):
-                absent = (defect in ('rpc-error', 'malformed') or
+                absent = (defect in ('rpc-error', 'malformed', 'document-unavailable') or
                           defect.startswith(name.removeprefix('corporate_') + '-'))
                 assert (name + '_lifetime' not in saved) == absent
             if defect.startswith('late-'):

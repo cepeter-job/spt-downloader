@@ -43,7 +43,7 @@ class Fixture(L7Fixture):
             '</rshshr-citr-l10b-form></div>'))
 
 
-@pytest.mark.parametrize('window', ['unchanged', 'l10b', 'l7', 'parent-after-l7'])
+@pytest.mark.parametrize('window', ['unchanged', 'l10b', 'l7', 'parent-after-l7', 'l7-unavailable'])
 def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
         browser, tmp_path, monkeypatch, window):
     fixture = Fixture(browser, monkeypatch)
@@ -68,7 +68,7 @@ def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
                 # synchronous history samples cannot pump another browser turn.
                 final = 'corporate-final-lifetimes' in expression
                 sample = 'h.sample()' in expression
-                trigger = (window == 'l10b' and handle is capture._l10b_history and sample
+                trigger = (window in ('l10b', 'l7-unavailable') and handle is capture._l10b_history and sample
                     or window == 'l7' and handle is capture._l7_history and sample
                     or window == 'parent-after-l7' and l7_sampled and handle is capture._component_document)
                 if window != 'unchanged' and not fired and (trigger or final):
@@ -76,13 +76,22 @@ def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
                     victim = 'rshshr-citr-l10b-form' if window == 'l7' else 'rshshr-citr-l7-form'
                     guard = capture._l10b_history if window == 'l7' else capture._l7_history
                     try:
-                        mutate(page, victim, 'remove-reinsert')
+                        if window == 'l7-unavailable':
+                            # Ordinary wrapper churn makes continuity unknown,
+                            # not a fabricated changed flag or negative permit.
+                            original(guard, '''() => {const form=document.querySelector('rshshr-citr-l7-form');
+                                const wrapper=document.createElement('div');form.append(wrapper);wrapper.remove();}''')
+                        else:
+                            mutate(page, victim, 'remove-reinsert')
                         changed = original(guard, '(h) => h.sample()')
                     except Exception:
                         # Probe wrappers deliberately swallow driver errors;
                         # a broken injection MUST fail outside that policy.
                         pytest.fail('Real structural mutation injection failed')
-                    if changed.get('changed') is not True:
+                    if window == 'l7-unavailable':
+                        if changed.get('available') is not False or changed.get('changed') is not False:
+                            pytest.fail('Real history did not retain optional unavailability')
+                    elif changed.get('changed') is not True:
                         pytest.fail('Real history did not witness the injected mutation')
                 result = original(handle, expression, arg)
                 if handle is capture._l7_history and sample:
@@ -92,7 +101,14 @@ def test_final_dual_profile_snapshot_never_seals_a_stale_sibling(
             monkeypatch.setattr(JSHandle, 'evaluate', evaluate)
             assert all(handle.evaluate.__func__ is evaluate for handle in (
                 capture._component_document, capture._l7_history, capture._l10b_history))
-            if window != 'unchanged':
+            if window == 'l7-unavailable':
+                saved = capture.drain()
+                assert fired == [window] and saved['complete']
+                assert 'corporate_l7_lifetime' not in saved
+                assert saved['corporate_l10b_lifetime']['stable_form'] is True
+                result = adapt_corporate_detail(list(capture.iter_bodies()), fixture.record, corpus.SCOPE, forms)
+                assert not result['eligible'] and 'l7' in result['reason']
+            elif window != 'unchanged':
                 with pytest.raises(JsonSafetyError, match='child history changed'):
                     capture.drain()
                 assert fired == [window]
