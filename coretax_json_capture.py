@@ -286,6 +286,11 @@ _L10B_HISTORY = """(d) => {
      }
    }
    return true;
+ };
+ const process=records=>{
+   if(!state.available)return;
+   for(const record of records){
+     if(record.type==='attributes'){
        if(!started)continue;
        const e=record.target,name=record.attributeName,li=tab&&tab.closest('li');
        if(e===li&&name==='class'&&((record.oldValue||'').split(/\\s+/).includes('p-disabled')||li.classList.contains('p-disabled')))
@@ -312,6 +317,11 @@ _L10B_HISTORY = """(d) => {
                     attributeFilter:['class','aria-controls','aria-disabled','href','id']});
  const sample=()=>{
    process(observer.takeRecords());const valid=snapshot();
+   if(started&&valid&&!enabled(false))state.changed=true;
+   state.complete=!!(state.available&&!state.changed&&valid&&started&&ended);
+   return {...state};
+ };
+ return {sample,bind:args=>{
    process(observer.takeRecords());if(!snapshot())return {...state};
    if(args.form!==form)state.changed=true;
    if(args.phase==='start'&&!started){tab=args.tab;panel=args.panel;view=form.closest('.p-tabview');}
@@ -351,6 +361,11 @@ _L10C_HISTORY = """(d) => {
    };
    if(node.matches(candidates))visit(node);
    for(const element of node.querySelectorAll(candidates)){if(remaining<0)break;visit(element);}
+ };
+ const process=records=>{
+   if(!state.available)return;
+   for(const record of records){
+     if(record.type==='attributes'){
        // Keep transient disabled/re-enabled and original identity changes. No
        // input value, checked state, Angular instance or business text is read.
        if(record.attributeName==='class'){
@@ -451,6 +466,11 @@ _L10C_HISTORY = """(d) => {
  const sample=()=>{
    process(observer.takeRecords());
    const valid=snapshot();
+   if(started&&valid&&!enabled(false))state.changed=true;
+   state.complete=!!(state.available&&!state.changed&&valid&&started&&ended);
+   return {...state};
+ };
+ return {sample,bind:args=>{
    process(observer.takeRecords());
    if(!snapshot())return {...state};
    if(args.form!==roles[2]||args.grid!==roles[3]||args.table!==roles[6])state.changed=true;
