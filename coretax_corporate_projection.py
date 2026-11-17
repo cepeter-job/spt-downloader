@@ -48,6 +48,19 @@ INDUK_IDENTITY_FIELDS = (
     ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
 )
 INDUK_UNPROJECTED_REASON = 'unprojected_induk_captions'
+INDUK_SUBMITTED_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
+# Caption-only template slots bind the actual amount input, NOT the radio
+# control whose question shares its label. See the pinned submitted proof.
+INDUK_SUBMITTED_FIELDS = (
+    ('D. PENGHITUNGAN PPh', 'NetIncomeBeforeTax', '4. Penghasilan Neto Fiskal sebelum Fasilitas Pajak'),
+    ('D. PENGHITUNGAN PPh', 'IncomeTaxInAYear', '12. PPh Terutang'),
+    ('E. PENGURANG PPh TERUTANG', 'TotalIncomeTaxOverseas', '13. Apakah terdapat kredit pajak yang dibayarkan di luar negeri dan/atau dipotong/pungut oleh pihak lain? / Tidak / Ya'),
+    ('E. PENGURANG PPh TERUTANG', 'InstallmentOfIncome', '14. Angsuran PPh Pasal 25'),
+    ('E. PENGURANG PPh TERUTANG', 'NoticeOfCollection', '15. Surat Tagihan Pajak PPh Pasal 25 (hanya pokok pajak)'),
+    ('F. PPh KURANG/LEBIH BAYAR', 'UnderpaymentIncomeTax', '17.a. PPh yang Kurang/Lebih Bayar'),
+    ('F. PPh KURANG/LEBIH BAYAR', 'TotalApprovalInstallment', '17.b. Apakah terdapat Surat Keputusan Persetujuan Pengangsuran atau Penundaan Pembayaran Pajak? / Tidak / Ya'),
+    ('F. PPh KURANG/LEBIH BAYAR', 'IncomeTaxMustPaid', '17.c. PPh yang masih harus dibayar atau lebih dibayar'),
+)
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -751,40 +764,121 @@ def project_induk(main, *, tax_type):
     return {'fields': fields, 'provenance': provenance}
 
 
+def _induk_submitted(binding, *, main, root, payload, record, event):
+    """Only stable submitted controls; editing arithmetic is NOT executed here."""
+    proof = binding['projection']
+    pins = INDUK_SUBMITTED_BUILD_DIGESTS
+    urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    if (set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'controls'}
+            or not isinstance(proof.get('builds'), dict) or set(pins) != urls
+            or set(proof['builds']) != urls
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                   for mapping in (pins, proof['builds']) for value in mapping.values())
+            or proof['builds'] != pins or proof['route'] != route
+            or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
+            or proof['timezone'] != 'Asia/Jakarta'
+            or proof['controls'] != [name for _, name, _ in INDUK_SUBMITTED_FIELDS]
+            or binding.get('paths') != [[INDUK_ROOT]] or 'primary' not in binding
+            or any(binding.get(key) for key in ('grids', 'responses', 'dependencies'))):
+        raise _UnsupportedMetadata('unverified_corporate_induk_submitted_binding')
+    if (event.get('component_lifetime') is None or fields.get('TaxTypeCode') != 'ICT_RCIT'
+            or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+            or fields.get('ReturnSheetModel') != 'Normal'
+            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
+            or payload.get('IsMigrated') is not False or root.get('TaxType') != 'ICT_RCIT'
+            or any(key not in payload or payload[key] is not None
+                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
+            or not isinstance(main, dict)):
+        raise _UnsupportedMetadata('unverified_corporate_induk_submitted_lifecycle')
+    # getDataFromBaseForm overwrites these eight identities after setFormData.
+    # Admit only identical original typed values, preserving both owners.
+    identity = (('PeriodYear', 'TaxYear'), ('PeriodMonthStart', 'AccountingPeriodStart'),
+        ('PeriodMonthEnd', 'AccountingPeriodEnd'), ('ReturnSheetModel', 'Status'),
+        ('TIN', 'Tin'), ('Name', 'Name'), ('Email', 'EmailAddress'), ('PhoneNumber', 'PhoneNumber'))
+    if any(outer not in payload or inner not in main or payload[outer] is None
+           or type(payload[outer]) is not type(main[inner]) or payload[outer] != main[inner]
+           for outer, inner in identity):
+        raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_identity')
+    result = project_induk(main, tax_type=fields['TaxTypeCode'])
+    for group, name, caption in INDUK_SUBMITTED_FIELDS:
+        if name not in main:
+            raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_presence')
+        value = main[name]
+        defaulted = value is None and name in (
+            'InstallmentOfIncome', 'NoticeOfCollection', 'TotalApprovalInstallment')
+        if value is None and name != 'NetIncomeBeforeTax':
+            rendered = '0' if defaulted else ''
+        else:
+            try:
+                number = _integer(value)
+                if (number == 0 and _decimal(value).is_signed()
+                        or name == 'NetIncomeBeforeTax' and number < 0):
+                    raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_number')
+                rendered = _number(value, 0, locale='id-ID')
+            except (_UnsupportedMetadata, DecimalException):
+                raise _UnsupportedMetadata('unsupported_corporate_induk_submitted_number') from None
+        result['fields'].append({'group': group, 'field': '', 'label': caption, 'value': rendered})
+        entry = _evidence(value, [INDUK_ROOT, name])
+        entry.update(rule=('submitted-nullish-zero/input-number-id-0' if defaulted
+                           else 'submitted-control/input-number-id-0'),
+                     destination={'form': 'Induk', 'field': '', 'label': caption})
+        result['provenance'].append(entry)
+    for name in dict.fromkeys([outer for outer, _ in identity] +
+            ['IsMigrated', 'ReturnSheetStatusCode', 'PreviousFormData', 'LastSubmittedFormData']):
+        entry = ({'path': [name], 'type': 'boolean', 'value': False} if name == 'IsMigrated'
+                 else _evidence(payload[name], [name]))
+        entry.update(rule='retained-original-submitted-predicate', source='primary',
+                     destination={'form': 'Induk', 'control': 'submitted-profile'})
+        result['provenance'].append(entry)
+    entry = _evidence(root['TaxType'], ['TaxType'])
+    entry.update(rule='retained-original-submitted-predicate',
+                 destination={'form': 'Induk', 'control': 'submitted-profile'})
+    result['provenance'].append(entry)
+    return result
+
+
 def _apply_induk(binding, section, observed_forms, *, root, payload, record, event):
     proof = binding['projection']
-    builds = proof.get('builds') if isinstance(proof, dict) else None
-    # The observer admits only a positively pinned 64-hex CIT digest and puts
-    # exactly that digest in the proof. Here the shape is re-verified (one
-    # known source, valid SHA), never a second hand-maintained pin copy.
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
-            or proof['kind'] != 'corporate-induk-v1'
-            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
-            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
-            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
-            or proof['route'] != event['frame_url']
-            or binding.get('paths') != [[INDUK_ROOT]]
-            or 'primary' not in binding):
-        raise _UnsupportedMetadata('unverified_corporate_induk_binding')
-    literal = record.get('meta', {}).get('Model SPT')
-    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
-             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
-    if (record.get('source_status') != 'SPT Dilaporkan'
-            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
-            or payload.get('ReturnSheetModel') != model):
-        raise _UnsupportedMetadata('unverified_corporate_induk_submitted_lifecycle')
-    fields = record.get('source_fields', {})
-    result = project_induk(root.get(INDUK_ROOT), tax_type=fields.get('TaxTypeCode'))
+    if isinstance(proof, dict) and proof.get('kind') == 'corporate-induk-submitted-v2':
+        result = _induk_submitted(binding, main=root.get(INDUK_ROOT), root=root,
+            payload=payload, record=record, event=event)
+    else:
+        builds = proof.get('builds') if isinstance(proof, dict) else None
+        # Legacy identity-only proof; no new numeric/environment requirement.
+        if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+                or proof['kind'] != 'corporate-induk-v1'
+                or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
+                or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
+                or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+                or proof['route'] != event['frame_url']
+                or binding.get('paths') != [[INDUK_ROOT]] or 'primary' not in binding):
+            raise _UnsupportedMetadata('unverified_corporate_induk_binding')
+        literal = record.get('meta', {}).get('Model SPT')
+        model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+                 if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+        if (record.get('source_status') != 'SPT Dilaporkan'
+                or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+                or payload.get('ReturnSheetModel') != model):
+            raise _UnsupportedMetadata('unverified_corporate_induk_submitted_lifecycle')
+        result = project_induk(root.get(INDUK_ROOT), tax_type=record.get('source_fields', {}).get('TaxTypeCode'))
     section['fields'] = result['fields']
-    # The reviewed Induk template renders 16 further caption slots that the
-    # frontend derives; until each derivation is proven the section stays
-    # explicitly partial instead of claiming a complete worksheet.
+    # Eight more amounts are proven; nine declarations are still unresolved.
     section['projection_complete'] = False
     section['projection_reason'] = INDUK_UNPROJECTED_REASON
     for entry in result['provenance']:
-        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+        entry.update(response_sequence=event['sequence'], container=(['Payload']
+            if entry.get('source') == 'primary' else ['Payload', 'CurrentFormData']))
     return {'form': 'Induk', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-            'route': proof['route'], 'values': result['provenance']}
+            'route': proof['route'], 'values': result['provenance'],
+            **({key: deepcopy(proof[key]) for key in ('locale', 'timezone', 'controls')}
+               if proof['kind'] == 'corporate-induk-submitted-v2' else {})}
 
 
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,

@@ -830,6 +830,67 @@ def _l4_footer_requests(observations, *, record_id, period):
     return found or None
 
 
+def _observe_induk_submitted(page, form, capture, digest, check_cancel):
+    """Optional amount capability: source/provider/structure only, never values."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import (INDUK_SUBMITTED_BUILD_DIGESTS,
+        INDUK_SUBMITTED_FIELDS, MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    _check_cancel(check_cancel)
+    lifetime = getattr(capture, 'observe_component_lifetime', None)
+    pins = INDUK_SUBMITTED_BUILD_DIGESTS
+    urls = (CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE)
+    if (not callable(lifetime) or set(pins) != set(urls)
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                   for value in pins.values()) or digest != pins[CIT_SOURCE_URL]):
+        return None
+    controls = [name for _, name, _ in INDUK_SUBMITTED_FIELDS]
+    structure = form.evaluate('''(form, controls) => {
+        // induk-submitted-controls: read bindings/visibility only, never input values.
+        if(form.localName!=='rshshr-citr-main-form'||!form.isConnected)return false;
+        const bound=controls.every(name=>{
+            const nodes=[...form.querySelectorAll('p-inputnumber')].filter(e=>
+                e.getAttribute('formcontrolname')===name);
+            if(nodes.length!==1||nodes[0].id!==name||
+                nodes[0].closest('rshshr-citr-main-form')!==form||
+                nodes[0].getAttribute('mode')!=='decimal'||!nodes[0].getClientRects().length)return false;
+            const inputs=nodes[0].querySelectorAll('input');
+            return inputs.length===1&&inputs[0].disabled===true&&
+                (name!=='TotalApprovalInstallment'||inputs[0].readOnly===true);
+        });
+        const radios=[...form.querySelectorAll('p-radiobutton')].filter(e=>
+            e.getAttribute('formcontrolname')==='IsApprovalInstallment');
+        return bound&&radios.length===2&&radios.every(e=>{
+            const inputs=e.querySelectorAll('input[type=radio]');
+            return e.closest('rshshr-citr-main-form')===form&&inputs.length===1&&inputs[0].disabled===true;
+        });
+    }''', controls)
+    _check_cancel(check_cancel)
+    if structure is not True or lifetime(check_cancel=check_cancel) is None:
+        return None
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src === url) ||
+        performance.getEntriesByType('resource').some(e => e.name === url && e.initiatorType === 'script'))''',
+        list(urls))
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if main_digest != pins[MAIN_SOURCE] or vendor_digest != pins[VENDOR_SOURCE]:
+        return None
+    environment = page.evaluate('''() => ({locale:navigator.language,
+        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})''')
+    _check_cancel(check_cancel)
+    if (environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+            or lifetime(check_cancel=check_cancel) is None):
+        return None
+    return {'kind': 'corporate-induk-submitted-v2', 'builds': dict(pins),
+            'route': page.url, **environment, 'controls': controls}
+
+
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
     from coretax_browser import _check_cancel, verify_detail_url, list_taxpayer_id
     from coretax_json import _check_corporate_route, _corporate_selected
@@ -940,9 +1001,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     'request_json':{'RecordId':record['record_id'], 'OnManualClick':False}}
                 # ``digest`` already passed the positive 64-hex pin equality
                 # above, so the proof carries exactly that admitted digest.
-                # No environment probe: the projected slots are literal text.
+                # The legacy proof needs only literal text; the optional amount
+                # proof below owns its separate source/environment requirements.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                submitted = _observe_induk_submitted(page, form, capture, digest, check_cancel)
+                if submitted is not None:
+                    binding['projection'] = submitted
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
