@@ -228,6 +228,11 @@ def test_real_native_bridge_uses_trusted_view_click_and_json_not_dom_values(brow
 
 def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(browser, tmp_path, monkeypatch):
     native_collector()
+    # This test pins the JSON grid binding (14 roles, 60 duplicate rows). The
+    # dump gate itself is covered by tests/test_corporate_native_dump_gate.py;
+    # L4/L9/L10-A are still unprojected dumps here, so isolate that predicate.
+    import coretax_json
+    monkeypatch.setattr(coretax_json, 'has_audit_dump_tables', lambda sections: False)
     fixture = NativeFixture(browser, tmp_path, monkeypatch, groups=True)
     try:
         result = fixture.collect()
