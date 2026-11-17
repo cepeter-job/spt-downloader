@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import DecimalException
+from decimal import Decimal, DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -813,6 +813,83 @@ def project_l10a(rows, *, headers, tax_type, locale):
     if rows:
         raise _UnsupportedMetadata('unsupported_corporate_l10a_populated')
     return {'rows': [], 'provenance': []}
+
+
+L10A_LABELS = {'Country': 'COUNTRY_CODE', 'RelationshipCode': 'RELATIONSHIP_TYPE',
+               'TypeOfTransaction': 'TRANSACTION_TYPE', 'PricingMethod': 'PRICING_METHOD'}
+L10A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+
+
+def _l10a_number(value):
+    # The active checkIsString predicate includes null; null never reaches the
+    # number pipe even though that pipe internally coalesces null to zero.
+    if value is None or type(value) is str:
+        if type(value) is str and re.match(r'^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]', value):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_time_string')
+        return '' if value is None else value, 'grid-checkIsString/literal-null-or-string'
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_number_type')
+    try:
+        number = _decimal(value)
+        # Match JSON.parse's Number without losing original source precision.
+        # Non-binary-exact decimals/underflow remain an unsupported profile.
+        if abs(number) > _MAX_INTEGER or Decimal.from_float(float(number)) != number:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
+        text = _number(value, 0, locale='id-ID')
+        if abs(_decimal(text.replace('.', ''))) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
+        return text, 'angular-decimal-1.0-0-id/binary-exact'
+    except (_UnsupportedMetadata, DecimalException, ValueError, OverflowError):
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision') from None
+
+
+def project_l10a_populated(rows, *, headers, tax_type, locale, labels):
+    """Pure active-grid consumer; caller proves original catalog and SPA custody.
+
+    This is additive to empty-v1, never a raw-code fallback. Complete catalog
+    inventories prove even null/missing-code blank descriptions. Preserve every
+    original page-local leaf, duplicate occurrence and numeric lexeme.
+    """
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or headers != L10A_HEADERS
+            or not isinstance(rows, list) or not 1 <= len(rows) <= 10000):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_structure')
+    if (not isinstance(labels, dict) or set(labels) != set(L10A_LABELS.values())
+            or any(not isinstance(catalog, dict) or any(type(code) is not str or not code
+                or type(label) is not str or not label.strip() for code, label in catalog.items())
+                for catalog in labels.values())):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_catalogs')
+    rendered, evidence = [], []
+    for index, source in enumerate(rows):
+        if (not isinstance(source, dict) or not set(L10A_COLUMNS) <= set(source)
+                or set(source) - set(L10A_COLUMNS) - {'RecordId'}
+                or 'RecordId' in source and (type(source['RecordId']) is not str
+                    or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', source['RecordId']))):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_row')
+        output = []
+        for column, key in enumerate(L10A_COLUMNS):
+            value = source[key]
+            entry = _evidence(value, ['Data', index, key])
+            entry['destination'] = {'table': L10A_GRID_NAME, 'row': index, 'column': column}
+            if key in L10A_LABELS:
+                if value is not None and type(value) is not str:
+                    raise _UnsupportedMetadata('unsupported_corporate_l10a_reference_type')
+                text = labels[L10A_LABELS[key]].get(value, '')
+                entry['rule'] = 'bound-reference-description'
+            elif key == 'TransactionValue':
+                text, entry['rule'] = _l10a_number(value)
+            elif value is None or type(value) is str:
+                text, entry['rule'] = '' if value is None else value, 'literal-string'
+            else:
+                raise _UnsupportedMetadata('unsupported_corporate_l10a_text_type')
+            output.append(text)
+            evidence.append(entry)
+        if 'RecordId' in source:
+            entry = _evidence(source['RecordId'], ['Data', index, 'RecordId'])
+            entry.update(rule='retained-original-unused-row-id',
+                         destination={'table': L10A_GRID_NAME, 'row': index, 'control': 'RecordId'})
+            evidence.append(entry)
+        rendered.append(output)
+    return {'rows': rendered, 'provenance': evidence}
 
 
 def _l10a_grid_binding(binding, record_id):
