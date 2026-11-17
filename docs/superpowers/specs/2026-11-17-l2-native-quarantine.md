@@ -2,15 +2,25 @@
 
 ## Decision and status
 
-PR #274 is **not a completed L2 projector**. Its original affiliate-only
-implementation cannot establish equivalent output for the complete
-`CurrentFormData.ListOfOwnership` owner. Reject every populated shareholder or
-affiliate body. Retain the existing whole-record DOM fallback; do not remove
-evidence, invent a `fields` marker, or weaken the dump gate to admit this draft.
-The bounded empty-body helper is a partial candidate only, not native capture
-permission. No merge, live acceptance, or template-resource change is authorized.
+PR #274 contains the historical `corporate-l2-v1` quarantine **and a separate
+`corporate-l2-owner-v2` whole-body candidate**. It is not full L2 completion.
+The new candidate emits both approved blocks only with the stronger closed
+source/structure/reference proof below. The original affiliate-only candidate
+still cannot establish equivalent output for the complete owner: v1 rejects
+every populated shareholder or affiliate body and retains whole-record DOM
+fallback, the complete dump and empty fields. Old proofs are not upgraded.
 
-## Reviewed evidence
+The shared RELATED_PERSON_TYPE producer is separately owned and is not yet in
+this branch. Therefore the hosted native positive currently uses literal-null
+Position plus real original COUNTRY_CODE bytes; non-null job descriptions are
+implemented in the pure whole-owner renderer but remain unproved end-to-end
+until shared producer integration. Both real header controls remain canonical,
+visibly unmapped and `projection_complete=False`, because the approved resource
+has no slots for them. Inexact/unsafe fractions and unapproved currency profiles
+still use whole-record fallback. No merge, live acceptance, protected-contract
+edit or template-resource change is authorized.
+
+## Reviewed evidence and historical v1 decision
 
 Read-only source review used `525.32c49782948fc5ef.js`, SHA-256
 `500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153`,
@@ -76,7 +86,7 @@ Its name/address/country/TIN/job-title/capital/percentage/dividend rows must not
 be removed merely to pass the native dump gate. No supported populated profile
 is claimed, including rows with null/empty country codes or integral amounts.
 
-## Implemented conservative boundary
+## Implemented conservative boundary (unchanged v1)
 
 1. Validate the exact owner root key set and each body container independently.
 2. Nonempty `ListOfShareholders` refuses with
@@ -143,7 +153,19 @@ admit finite binary-exact JSON numbers with at most three effective decimal
 places for Number and four for Number4, refusing any conversion, ordered
 partial sum, precision or representation that cannot be proved exact.
 Foreign-currency/oil-and-gas profiles do not have approved Rp destination
-headers and remain unsupported, not relabelled as Rupiah.
+headers and remain unsupported, not relabelled as Rupiah. Significant precision
+is bounded to fifteen digits for every original operand and ordered partial
+sum. Integral numeric year controls use JS String semantics (no grouping),
+while original year strings, identifiers and numeric lexemes remain unchanged
+in their typed source provenance.
+
+The approved L2 workbook writer is separately scoped to these two exact header
+bindings: ordinary Number money may retain three fractional digits as an Excel
+number without rounding the stored value. Affiliate interest uses the same
+three-digit numeric grammar but retains General style, not Rp or percentage
+scaling. Other forms keep their existing two-digit monetary parser. Four-digit
+investment percentages retain the existing percentage-point-to-Excel-fraction
+contract. Unsafe inputs stay literal/unresolved; no resource bytes change.
 
 ### Complete saved-to-render chain
 
@@ -194,6 +216,24 @@ RELATED_PERSON_SUBTYPE. No endpoint is guessed, no cache is read and no catalog
 fetch is forced here. The exact interface request is recorded separately for
 parent coordination. Native observer/adapter/held/workbook acceptance remains
 an independent next slice; a pure helper alone never enables native capture.
+
+## Hosted follow-through evidence
+
+- Tests-first head `c12c9b3bbbe4333ee660f79607e6e24e56778901`, run
+  `44033133076`: actual hosted RED, fourteen distinct new cases failed at
+  `Missing whole-owner L2 renderer`, including the positive populated case.
+- First whole-body head `8213689b25ba1cf457dd7183e30896b910b37b43`, run
+  `44035885432`: portable/audit and Windows shards 0/2 passed; shards 1/3
+  failed exactly the new saved-workbook numeric assertion and the test's
+  arbitrary provenance-count threshold. The native observer, capture, adapter
+  and held replay reached the workbook assertion. The workbook exposed a real
+  scoped gap: the generic two-fraction money writer left `1.000,125` as text.
+  The L2-only three-fraction writer fixes that without changing other forms.
+  The provenance test now verifies the actual complete original path inventory,
+  never fabricates entries to satisfy an arbitrary count.
+- Final changed-head full CI, exact artifact/readback/bootstrap and all CodeQL
+  evidence must be read from the PR's current-head checks. Earlier run results
+  do not certify a later head. The tracked source record is not live acceptance.
 
 ## Concrete blocker to completing L2
 

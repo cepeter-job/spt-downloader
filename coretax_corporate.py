@@ -334,9 +334,17 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
         L2_AFFILIATE_SPANS, MAIN_SOURCE, VENDOR_SOURCE)
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    _check_cancel(check_cancel)
     # Legacy synthetic/held shapes keep v1 quarantine without extra source reads.
     if not callable(getattr(capture, 'observe_component_lifetime', None)) or form.locator('table').count() != 2:
+        _check_cancel(check_cancel)
         return None
+    if (any(form.locator('input[formcontrolname="' + name + '"]').count() != 1
+            for name in ('TaxPeriodYear', 'CollectorTin'))
+            or form.locator('ui-grid-offline-body .loading-container').count()):
+        _check_cancel(check_cancel)
+        return None
+    _check_cancel(check_cancel)
     if (set(L2_BUILD_DIGESTS) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
             or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
                    for value in L2_BUILD_DIGESTS.values())

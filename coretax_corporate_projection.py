@@ -813,7 +813,8 @@ def _l2_exact(value, digits):
         return None
     if (type(value) is not _CorporateNumber or len(value) > 64
             or not re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?', value)
-            or len(value.partition('.')[2].rstrip('0')) > digits):
+            or len(value.partition('.')[2].rstrip('0')) > digits
+            or len(value.lstrip('-').replace('.', '').lstrip('0').rstrip('0')) > 15):
         raise _UnsupportedMetadata('unsupported_corporate_l2_number')
     exact = Fraction(str(value))
     if abs(exact) > _MAX_INTEGER or exact == 0 and value.startswith('-'):
@@ -836,6 +837,7 @@ def _l2_reduce(values):
         total = left + right
         if abs(exact) > _MAX_INTEGER or Fraction.from_float(total) != exact:
             raise _UnsupportedMetadata('unsafe_corporate_l2_ordered_total')
+        _l2_exact(_CorporateNumber(format(total, '.4f')), 4)
     return total
 
 
@@ -903,6 +905,9 @@ def project_l2_owner(form, *, tax_type, locale, country_labels, position_labels)
                     else:
                         raise _UnsupportedMetadata('unbound_corporate_l2_reference_description')
                     entry['rule'] = 'country-active-description' if key == 'CountryCode' else 'position-first-description'
+                elif key in ('DebtYear', 'ReceivableYear') and type(value) is _CorporateNumber:
+                    text = str(int(_l2_exact(value, 0)))
+                    entry['rule'] = 'integral-year/JS-String'
                 elif value is None or type(value) is str:
                     text = '' if value is None else value
                     entry['rule'] = 'literal-string/nullish-blank'
@@ -1023,7 +1028,8 @@ def _apply_l2_owner(binding, section, observed_forms, *, root, payload, record, 
         expected = {'component': L2_COMPONENTS[index], 'source_structure': {
             'form': 'L2', 'component': L2_COMPONENTS[index], 'groups': [L2_GROUPS[index]]},
             'headers': headers, 'footer_spans': spans}
-        if tables[index] != expected:
+        if (tables[index] != expected
+                or any(type(span) is not int for line in tables[index]['footer_spans'] for span in line)):
             raise _UnsupportedMetadata('unverified_corporate_l2_owner_tables')
     references = proof['references']
     if not isinstance(references, list):
@@ -1031,7 +1037,7 @@ def _apply_l2_owner(binding, section, observed_forms, *, root, payload, record, 
     catalogs, sources, seen = {}, {}, set()
     for ref in references:
         if (not isinstance(ref, dict) or set(ref) != {'endpoint', 'method', 'sequences'}
-                or ref['method'] != 'GET' or ref['endpoint'] in seen):
+                or type(ref['endpoint']) is not str or ref['method'] != 'GET' or ref['endpoint'] in seen):
             raise _UnsupportedMetadata('unverified_corporate_l2_owner_references')
         kinds = CORPORATE_REFERENCE_REQUESTS.get(ref['endpoint'])
         if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:

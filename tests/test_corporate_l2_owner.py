@@ -51,7 +51,12 @@ def test_populated_whole_owner_keeps_both_blocks_labels_duplicates_and_number_ty
     assert b['rows'][1][1:] == b['rows'][0][1:]
     assert b['footer'] == [['', 'JUMLAH', '1.000,25', '', '501', '']]
     assert a['complete'] is b['complete'] is True
-    assert len(result['provenance']) >= 50
+    expected_paths = {('ListOfOwnership', body, index, key)
+        for body in ('ListOfShareholders', 'InvestmentList')
+        for index, row in enumerate(value[body]) for key in row}
+    expected_paths.update(('ListOfOwnership', key) for key in projection.L2_TOTALS)
+    assert {tuple(e['path']) for e in result['provenance']} == expected_paths
+    assert len(result['provenance']) == len(expected_paths)
     assert any(e['path'][-1] == 'TotalPaidInCapitalPercentage'
                and e['value'] == '0' and e['rule'] == 'saved-percentage-alias-not-rendered'
                for e in result['provenance'])
@@ -65,6 +70,7 @@ def test_populated_whole_owner_keeps_both_blocks_labels_duplicates_and_number_ty
     ('InvestmentList', 'DebtInterest', N('4.38')),
     ('InvestmentList', 'DebtInterest', N('0.0625')),
     ('InvestmentList', 'Debt', N('1000000000000000')),
+    ('InvestmentList', 'Investment', N('999999999999998.125')),
     ('InvestmentList', 'InvestmentPercentage', N('1.00001')),
     ('ListOfShareholders', 'PaidInCapital', True),
     ('ListOfShareholders', 'Name', N('123')),
@@ -74,6 +80,18 @@ def test_unproved_reference_number_or_literal_type_refuses_entire_owner(block, k
     source[block][0][key] = value
     with pytest.raises(_UnsupportedMetadata):
         owner(source)
+
+
+def test_affiliate_numeric_year_uses_js_string_without_grouping_and_keeps_original_token():
+    value = populated()
+    value['InvestmentList'][0]['DebtYear'] = N('2025.0')
+    value['InvestmentList'][0]['ReceivableYear'] = N('2024')
+    result = owner(value)
+    assert result['tables'][1]['rows'][0][7:11:3] == ['2025', '2024']
+    entry, = [e for e in result['provenance'] if e['path'] ==
+              ['ListOfOwnership', 'InvestmentList', 0, 'DebtYear']]
+    assert entry['type'] == 'number' and entry['value'] == '2025.0'
+    assert entry['rule'] == 'integral-year/JS-String'
 
 
 @pytest.mark.parametrize('count,footer', [(0, '0'), (1, ''), (2, '0')])
@@ -138,6 +156,36 @@ def test_each_ordered_partial_sum_must_stay_exact_and_within_bound():
     # above the reviewed 15-digit magnitude bound.
     with pytest.raises(_UnsupportedMetadata):
         owner(form(ListOfShareholders=[row, small]))
+
+
+def test_ordered_total_does_not_exceed_excel_significant_precision():
+    row = shareholder(PaidInCapital=N('999999999999.875'), PaidInCapitalPercentage=N('0'))
+    small = shareholder(PaidInCapital=N('0.25'), PaidInCapitalPercentage=N('0'))
+    with pytest.raises(_UnsupportedMetadata):
+        owner(form(ListOfShareholders=[row, small]))
+
+
+@pytest.mark.parametrize('text,expected,safe', [
+    ('1.000,125', 1000.125, True), ('4,125', 4.125, True), ('0', 0, True),
+    ('', None, True), (None, None, True), ('1,0001', '1,0001', False),
+    ('1.00,125', '1.00,125', False), ('1e3', '1e3', False),
+    ('999999999999998,125', '999999999999998,125', False),
+])
+@pytest.mark.parametrize('monetary', [False, True])
+def test_l2_excel_number_writer_preserves_three_digit_values_without_changing_other_types(text, expected, safe, monetary):
+    from openpyxl import Workbook
+    import coretax_badan_template as template
+    helper = getattr(template, '_write_l2_number', None)
+    assert callable(helper), 'Missing source-scoped L2 Number writer'
+    book = Workbook()
+    try:
+        sheet = book.active
+        sheet['A1'].number_format = 'General'
+        assert helper(sheet, 1, 1, text, monetary=monetary) is safe
+        assert sheet['A1'].value == expected
+        assert sheet['A1'].number_format == (template.ACCOUNTING if monetary else 'General')
+    finally:
+        book.close()
 
 
 @pytest.mark.parametrize('tax_type', ['ICT_ROGCIT', 'ICT_FCIT', 'ICT_FOGCIT'])
