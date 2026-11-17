@@ -4,7 +4,7 @@
 
 The current follow-through adds `corporate-l10a-populated-v1`, while retaining
 `corporate-l10a-empty-v1`. It consumes the single shared passive-catalog producer
-from PR #285 at `84f054d998d5dca7d6d8dc1193a16b1227e8c389`; no competing
+from PR #285 at `27f1fab48e4516d935f14b7729c09e79c1c645f4`; no competing
 transport registry, catalog adapter, clock/version selector or active request
 was introduced by the A consumer. The two actual HEADER controls are also
 retained canonically. Mapping deliberately remains PARTIAL: the approved clean
