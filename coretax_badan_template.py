@@ -548,6 +548,11 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
     if columns != list(range(1, len(table['headers']) + 1)):
         return None
     spans = table.get('footer_spans', [])
+    # The reviewed L9 ui-grid emits a leading zero-cell tFoot row. It has no
+    # worksheet cells: retain it in original section custody, but map its sole
+    # real TOTAL to the approved one-row footer. No other form/shape is relaxed.
+    if form == 'l9' and len(footer) == 2 and footer[0] == [] and spans == [[], [7, 1, 1]]:
+        footer, spans = footer[1:], spans[1:]
     capacity = 3 if (form, block) == ('l3', 1) else 1
     if len(footer) > capacity or len(spans) != len(footer):
         return None
@@ -843,14 +848,13 @@ def render_template_form(sheet, form, sections, *, period=None):
         offset += extra
     der_row, averages = _compact_layout(sheet, form, deleted, der_row, averages)
     derived = _l11b_der(sheet, der_row, averages) if form == 'l11-b' else {}
-    if form == 'l10-a' and any(section.get('projection_complete') is False
-            and section.get('projection_reason') == 'l10a_header_slots_omitted' for section in sections):
-        derived = {'derived_complete': False, 'derived_reason': 'l10a_header_slots_omitted'}
-    if form == 'l2':
-        reason = next((section.get('projection_reason') for section in sections
-                       if section.get('projection_complete') is False), None)
-        if reason is not None:
-            derived = {'derived_complete': False, 'derived_reason': reason}
+    # A projected section that is still partial (for example a form whose detail
+    # grids have no provable cell value) must never be reported as a complete
+    # worksheet; keep the reason separate from the unresolved audit counts.
+    reason = next((section.get('projection_reason') for section in sections
+                   if section.get('projection_complete') is False), None)
+    if reason is not None:
+        derived = {**derived, 'derived_complete': False, 'derived_reason': reason}
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.

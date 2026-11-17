@@ -734,6 +734,8 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                 'l10a_header_slots_omitted': ' L10-A diproyeksikan sebagian: dua kontrol HEADER asli tetap pada checkpoint dan belum mempunyai slot template.',
                 'unprojected_l2_owner_rendering': ' L2 belum setara dengan tampilan sumber; bukti lengkap dipertahankan dan native tetap ditolak.',
                 'unmapped_l2_header_controls': ' Dua kontrol header L2 belum memiliki slot template; kedua blok rincian tetap diproyeksikan lengkap.',
+                'unprojected_l9_grid_rows': ' L9 diproyeksikan sebagian: hanya total rekapitulasi yang terbukti dari payload; rincian dua belas grid belum dipetakan.',
+                'unprojected_l9_detail_grids': ' L9 diproyeksikan sebagian: masih ada grid rincian L9 yang belum terbukti; identitas tabel dan jumlah baris yang belum dipetakan tetap dicatat.',
             }.get(report.get('derived_reason'), '') if report.get('derived_complete') is False else ''
             values = ['Pemetaan template', report.get('unmapped_fields', 0),
                       report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),

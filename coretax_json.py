@@ -627,6 +627,10 @@ def has_audit_dump_tables(sections):
     ``fields`` has been projected, so its dump stays custody evidence only.
     """
     for section in sections or ():
+        # Six recap fields do not cover twelve data-bearing grid inventories.
+        # Preserve whole-record DOM fallback, even with reviewed scalar fields.
+        if section.get('unprojected_grids'):
+            return True
         if section.get('fields'):
             continue
         for table in section.get('tables') or ():
@@ -1485,6 +1489,12 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                         # successful exact-query sequence after all safety gates.
                         grid_packets[event['sequence']] = {
                             'payload': payload, 'event': event, 'successful': success}
+                    if state['section']['name'] == 'L9':
+                        # Semantic consumers use the decoded ORIGINAL Data and
+                        # page event, never reconstructed flattened audit rows.
+                        # First successful original sequence wins; repeats must
+                        # already have passed the exact snapshot/hash guard.
+                        auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
                 else:
                     old = state['seen'].get(key)
                     if old is not None and old['sha256'] != ctx['sha256']:
