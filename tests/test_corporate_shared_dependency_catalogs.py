@@ -54,6 +54,9 @@ def test_original_singleton_bytes_survive_capture_both_readers_and_native_adapte
     assert projected['lookups'] == {'SYN_CODE': 'A SYNTHETIC FIRST'}
     assert projected['selected']['SYN_CODE']['path'] == [0, 'Details', 1, 'CodeDescription']
     assert projected['requires_vendor'] and original == before
+    assert projected['raw_catalog'] == original[0] and projected['catalog_index'] == 0
+    projected['raw_catalog']['Details'][0]['UnusedMetadata']['Original'].append('SYNTHETIC MUTATION')
+    assert original == before
 
 
 @pytest.mark.parametrize('kind', ADDITIONAL_KINDS)

@@ -73,22 +73,22 @@ cache/storage read, or product execution was used for source review.
 
 ### Active consumer -> export/module -> exact type
 
-CIT module38525 imports `R=ye(90521)` at character277. MAIN module90521
+CIT module38525 imports `R=ye(90521)` at character260. MAIN module90521
 re-exports the directly defined related-person class and imports `$t=T(66267)`
-at2790264 for the enum barrel; module66267 starts2985520. These hops matter:
+at2790264 for the enum barrel; module66267 starts2985543. These hops matter:
 a similarly named exported symbol or enum string alone is not transport proof.
 
 | Consumer | CIT decoded character positions | MAIN resolved export chain and type |
 | --- | --- | --- |
-| L4 A OBJEK PAJAK | IE.initColumn near2311785, `TaxObjectCode` description at2312267 | module90521 `hbR->$t.hb`2737084 -> module66267 `hb->Oi` -> Oi at3001212: TAX_OBJECT_CODE |
+| L4 A OBJEK PAJAK | IE.initColumn near2311785, `TaxObjectCode` description at2312267 | module90521 `hbR->$t.hb`2737084 -> module66267 `hb->Oi`2986693 -> Oi at3001212: TAX_OBJECT_CODE |
 | L4 B JENIS PENGHASILAN | E1.L4Grid2Columns near2309730, literal reference key2310017 | literal INCOME_EXCLUDED_FROM_TAX_FOR_CIT, not a guessed enum |
 | L2 Jabatan | w1 constructor2198300+, ngOnChanges2199342, getFullPosition2199986 | module90521 `_Xg->di`2735305 -> di.ReferenceDataTypeName2929809: RELATED_PERSON_TYPE |
-| L9 tangible asset group | pI.initColumn near2480150, reference2480700+ | module90521 `GOc->$t.GO`2736964 -> module66267 `GO->Me` -> Me2992466: TANGIBLE_ASSET |
-| L9 buildings group | SI.initColumn near2484144 | `B7E->$t.B7`2736086 -> `B7->Mt` -> Mt2991655: GROUP_OF_BUILDINGS |
-| L9 intangible group | MI.initColumn near2488138 | `dBq->$t.dB`2736184 -> `dB->At` -> At2992553: INTANGIBLE_ASSET |
-| L9 commercial method | each grid, first reference2481618 | `ONl->$t.ON`2735755 -> `ON->P` -> P2989033: COMMERCIAL_METHOD |
-| L9 fiscal method | each grid, first reference2481729 | `Da4->$t.D`2735950 -> `D->nt` -> nt2990905: FISCAL_METHOD |
-| Induk TaxRate | Ec constructor2778983+, createTaxRatType2787631, options2929409 | `U37->$t.U3`2735741 -> `U3->we` -> we2988860: CIT_TAX_RATE |
+| L9 tangible asset group | pI.initColumn near2480150, reference2480750 | module90521 `GOc->$t.GO`2736964 -> module66267 `GO->Me`2986623 -> Me2992466: TANGIBLE_ASSET |
+| L9 buildings group | SI.initColumn near2484144 | `B7E->$t.B7`2736086 -> `B7->Mt`2986034 -> Mt2991655: GROUP_OF_BUILDINGS |
+| L9 intangible group | MI.initColumn near2488138 | `dBq->$t.dB`2736184 -> `dB->At`2986104 -> At2992553: INTANGIBLE_ASSET |
+| L9 commercial method | each grid, first reference2481618 | `ONl->$t.ON`2735755 -> `ON->P`2985809 -> P2989033: COMMERCIAL_METHOD |
+| L9 fiscal method | each grid, first reference2481729 | `Da4->$t.D`2735950 -> `D->nt`2985945 -> nt2990905: FISCAL_METHOD |
+| Induk TaxRate | Ec constructor2778983+, createTaxRatType2787626, options2929409 | `U37->$t.U3`2735741 -> `U3->we`2985799 -> we2988860: CIT_TAX_RATE |
 
 L4 and L9 use MAIN's ordinary grid Bi/ki/Qi (4223302+) -> module66805
 codeDescAsync (4318500+) -> getReferenceDataDescription3036628. L4 B uses the
@@ -129,7 +129,7 @@ and calls no-body http.get. MAIN environment module91137 `referencedata` at
 literal reviewed type is admitted. No batch/checksum/alias/getdescription route,
 POST, body, alternate language or forced cache miss follows from this proof.
 
-MAIN cache.add3028350+ invokes applyReferenceDataOrderBy3026747+ unless the type
+MAIN cache.add3028350+ invokes applyReferenceDataOrderBy3026413 unless the type
 is BUSINESS_CLASSIFICATION (`D.VW`), AUDIT_OPINION (`D.lA`) or MONTH (local te).
 None of the nine added types is exceptional, PERIOD or ECONOMIC_CODE. Reuse
 `_reference_consumer_order` description/first-raw-ParameterData DisplayIndex
@@ -138,6 +138,10 @@ ordering before grouping. Ordinary L4/L9 version selection remains the existing
 RELATED_PERSON_TYPE instead uses its distinct first-find rule above. The full
 original snapshots, metadata, numeric lexemes, duplicates/order and both held
 readers stay unchanged; neither labels nor original bytes are mutated here.
+The projector additionally returns `raw_catalog` (a deep copy of the complete
+typed original catalog, including unused metadata) and its original
+`catalog_index`. These are source inputs, not a claim of rendered options or
+new native permission. Raw response bytes remain separately authoritative.
 
 ### Reconcile PR275 without importing its form
 
@@ -170,6 +174,19 @@ synthetic application, without registry injection or product API acquisition.
 Existing provider tests preserve positive pins, absence-inclusive facts,
 descriptor overrides, Stop, unavailable hash/Document contradictions and final
 late-response fences. Runtime RED/GREEN must come from GitHub, not local AST.
+
+Executed RED: source/test head `f6fdd5ce757ca7b21a5d8a836148dc78c91c4ed6`, Build
+`44060475696` attempt1, PR merge build `8c4f8d5789731c4f353bf8374d9814775197311b`.
+All four original Windows JUnit reports and all five collection inventories were
+matched programmatically: 8,850 passed, 29 failures, zero errors/skips; portable
+789 passed. Exactly 28 failures are the new missing registry/type/order/binder
+positives and one is the expanded real-SPA producer vertical. Existing shared
+transport/binder/provider negatives pass. The missing dependencies, not a
+weakened safety gate or a fixture error, explain the RED. Complete raw-catalog
+copy isolation assertions and exact offset corrections were committed before
+production edits. Final exact-head hosted results are independently recorded in
+PR285's read-back body and the run-isolated integration handoff; this historical
+RED is never reused as GREEN or as application-owned live acceptance.
 
 The existing capture owns original request objects, main-frame/context/selected
 record, bytes/hash/sequence, privacy/budgets, failed/pending responses, full raw
