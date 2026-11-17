@@ -219,9 +219,18 @@ bytes and l10a-main.js4467267 bytes match the exact CIT/MAIN digests above.
 CIT IE.initColumn at character2311785 uses TaxObjectCode twice, the description
 column carrying R.hbR.ReferenceDataTypeName; MAIN exports hbR->$t.hb at2737084,
 hb->Oi at2986693 and Oi.ReferenceDataTypeName=TAX_OBJECT_CODE at3001212.
-CIT E1.L4Grid2Columns near2309500 binds TypeOfIncome to the literal
+CIT E1.L4Grid2Columns at2309730 binds TypeOfIncome to the literal
 INCOME_EXCLUDED_FROM_TAX_FOR_CIT. These are active submitted grid consumers,
 not editor validation or saved TaxObject text.
+
+MAIN's ordinary grid Bi/ki/Qi near4223302 consumes the ReferenceDataType through
+codeDescAsync; the offline body's W/U/yt/Re near3882118 consumes its ReferenceKey
+through that same pipe. Pipe module66805 near4318500 calls the same description
+service. Cache.add near3028350 uses the existing default description/DisplayIndex
+order: its exceptional list resolves to BUSINESS_CLASSIFICATION (D.VW),
+AUDIT_OPINION (D.lA), MONTH (local te), not either L4 type; neither is PERIOD or
+ECONOMIC_CODE. L4 therefore reuses ordinary order/version/clock semantics rather
+than inventing an L4 ordering algorithm.
 
 The shared MAIN getReferenceDataDescription at3036628 calls
 getSingleReferenceData (method starts3038044; an earlier same-name hit is a call).
@@ -247,5 +256,45 @@ types extend that same closed registry/projector; no new adapter or acquisition
 is introduced. Loaded-provider acquisition remains before final drain's child
 history sampling, with no late provider RPC appended after it.
 
-Full exact-head hosted GREEN, artifact aggregation, protected contract and
-operator live acceptance remain pending until recorded separately below.
+At repair preparation, hosted GREEN and artifact aggregation were still pending;
+the executed result is recorded below. Protected contract renewal and operator
+live acceptance remain separate outstanding parent-owned acceptance gates.
+
+### Executed CI-repair result
+
+Repair head1e5a5b1dd4014f75eb6c417adf9ab7363211ae8a passed full Build
+run44050277563 (attempt1), with fresh current-head CodeQL/quality checks also
+successful. All four original Windows JUnit artifacts and all four job logs
+were downloaded and independently parsed:8911 distinct Windows cases passed,
+zero failures/errors/skips. Focused outcomes are110 legacy L4,62 populated pure,
+45 populated-native and32 closed L4 transport cases, all passed. Shared producer
+regressions also pass (25 transport,7 observer,18 binder,21 provider cases).
+The portable artifact contains789 passes, zero failures/errors/skips.
+
+The real synthetic browser vertical now executes owned View -> provider ->
+two A pages plus both original catalogs -> adapter -> both held readers ->
+saved/reopened workbook, without injected test-only registration. Original
+bytes and every duplicate survive; B is not dropped. Both grids' late provider/
+pagination header negatives, sticky route contradiction and Stop cases pass.
+The fixture declares ICT_RCIT/ICT_RCITR before capture and positively asserts
+the actual capture-owned same-Document lifetime, rather than weakening its gate.
+
+The unchanged coverage gate reports90.0983% total line,83.6441% branch and
+97.8022% changed-line coverage (445/455). Package/readback and frozen cold
+bootstrap/reuse/owned-cancellation steps pass. The PR artifact build commit is
+the temporary merge tree e2af5657d7ebef35454b49954970c76007eb9eca, not the branch
+head; package artifact ID14314027965 has runner-verified exact readback.
+Main-only artifact provenance and branch cleanup are intentionally skipped.
+
+Run-isolated local evidence is under
+`C:/Users/kpp096/AppData/Local/hermes/cache/scratch/l4-ci-fix-44050277563/`,
+including parsed-results.json, all four original JUnit reports/job logs,
+coverage-gate.json and packaged-bootstrap.json. These are synthetic runner
+artifacts only. Documentation readback creates a subsequent branch head; it
+requires its own full exact-head hosted verification, reported in PR275's body
+and the final handoff rather than reusing this predecessor's GREEN.
+
+The source repair is implemented and hosted-populated-native verified for the
+bounded profile above. This does not complete the protected AGENTS contract,
+prove naturally emitted catalogs in an operator's live attempt, establish
+other form/PDF/full-job acceptance, or authorize merge/closure/consolidation.
