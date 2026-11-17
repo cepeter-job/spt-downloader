@@ -1,7 +1,7 @@
 """Source-bound corporate presentation with separately proved form branches."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, DecimalException, ROUND_FLOOR
+from decimal import DecimalException
 import re
 
 from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyError,
@@ -67,42 +67,25 @@ L11C_HEADERS = ['NO.', 'PEMBERI PINJAMAN / NAMA', 'PEMBERI PINJAMAN / ALAMAT',
     'BIAYA TERKAIT PEROLEHAN PINJAMAN SELAIN BUNGA (Rp)', 'PERUNTUKAN PINJAMAN']
 L11C_SPANS = [[1, 5, *([1] * 10)]]
 L11B_ROOT = 'L11BFormData'
-# Approved L11-B captions in template order (rows 2..7, column B) paired with
-# the literal control the pinned component submits for each. `Ebitda` is
-# recomputed by the owner on every input change but stays an editable control,
-# so it is copied as submitted and only its pinned quarter relation is checked.
+# Only the first four literal controls have a stable submitted/manual branch.
+# EBITDA, its quarter and conditional Part II remain explicit omissions.
 L11B_FIELDS = (
     ('CommercialNettIncome', '1. PENGHASILAN NETO KOMERSIAL'),
     ('DepreciationAndAmortizationExpenses', '2. BEBAN PENYUSUTAN DAN AMORTISASI'),
     ('IncomeTaxExpense', '3. BEBAN PAJAK PENGHASILAN'),
     ('BorrowingCostExpense', '4. BEBAN BIAYA PINJAMAN'),
-    ('Ebitda', '5. EBITDA'),
-    ('Ebitda25', '6. EBITDA (25%)'),
 )
-L11B_DEBT_MONTHS = tuple(f'DebtMonth{month}' for month in range(1, 13))
-L11B_EQUITY_MONTHS = tuple(f'EquityMonth{month}' for month in range(1, 13))
-L11B_DEBT_ROW = ('IdentityNumber', 'Name', 'Relationship', *L11B_DEBT_MONTHS, 'Average')
-L11B_EQUITY_ROW = ('TypeOfEquity', *L11B_EQUITY_MONTHS, 'Average')
 L11B_COST_ROW = ('Name', 'AverageDebtBalances', 'BorrowingCostAmount',
                  'BorrowingCostThatCanBeDeducted', 'BorrowingCostThatAreNotDeductible')
-L11B_DEBT_HEADERS = ['PEMBERI PINJAMAN / Nomor Identitas', 'PEMBERI PINJAMAN / Nama',
-    'PEMBERI PINJAMAN / Hubungan',
-    *[f'SALDO UTANG TIAP AKHIR BULAN (Rp) / Bulan - {month}' for month in range(1, 13)],
-    'SALDO UTANG TIAP AKHIR BULAN (Rp) / RATA-RATA']
-L11B_EQUITY_HEADERS = ['RINCIAN MODAL',
-    *[f'SALDO MODAL TIAP AKHIR BULAN (Rp) / Bulan - {month}' for month in range(1, 13)],
-    'SALDO MODAL TIAP AKHIR BULAN (Rp) / RATA-RATA']
 L11B_COST_HEADERS = ['PEMBERI PINJAMAN', 'Saldo Rata-Rata Utang', 'Biaya Pinjaman (Bunga)',
     'Biaya Pinjaman Yang Dapat Diperhitungkan', 'Biaya Pinjaman Yang Tidak Dapat Diperhitungkan']
-L11B_DEBT_SPANS = [[3] + [1] * 13]
-L11B_EQUITY_SPANS = [[1] * 14]
-L11B_COST_SPANS = [[1] * 5]
-# Exactly the controls getFormData() returns; the component never submits the
-# per-grid totals as scalars, so `TotalBorrowingCosts` may be absent.
+# getFormData reads n.TotalBorrowingCosts, which is not a FormGroup control:
+# undefined is omitted by JSON. A present alias (even null) is unreviewed.
 L11B_KEYS = frozenset({
-    *(name for name, _ in L11B_FIELDS), 'DebtBalanceAverage', 'TotalDebtBalanceAverage',
-    'EquityBalanceAverage', 'TotalEquityBalanceAverage', 'DebtToEquityRatio',
-    'BorrowingCosts', 'IsDocumentListForm', 'IsEbitdaManuallyEdited'})
+    *(name for name, _ in L11B_FIELDS), 'Ebitda', 'Ebitda25',
+    'DebtBalanceAverage', 'TotalDebtBalanceAverage', 'EquityBalanceAverage',
+    'TotalEquityBalanceAverage', 'DebtToEquityRatio', 'BorrowingCosts',
+    'IsDocumentListForm', 'IsEbitdaManuallyEdited'})
 L7_ROOT = 'CalculationOfFiscalLossCompensation'
 L7_BODY = 'FiscalNetProfitAndLossCompensation'
 L7_SUFFIXES = ('YearMinus4', 'YearMinus3', 'YearMinus2', 'YearMinus1', 'YearCurrent', 'YearNext')
@@ -571,245 +554,95 @@ def _apply_l11c(binding, section, observed_forms, *, root, payload, record, even
             'route': proof['route'], 'values': result['provenance']}
 
 
-def _l11b_number(value, *, reason='unsupported_corporate_l11b_amount_type'):
+def _l11b_amount(value):
     if type(value) is not _CorporateNumber:
-        raise _UnsupportedMetadata(reason)
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_type')
     try:
-        return _decimal(value)
+        number = _decimal(value)
     except _UnsupportedMetadata:
-        raise _UnsupportedMetadata(reason) from None
-
-
-def _l11b_amount(value, *, reason='unsupported_corporate_l11b_amount_type', nullish=True):
-    """One submitted rupiah control; rupiah amounts are whole numbers only."""
-    if value is None and nullish:
-        return Decimal(0)
-    number = _l11b_number(value, reason=reason)
-    if number != number.to_integral_value():
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_type') from None
+    if number != number.to_integral_value() or abs(number) > _MAX_INTEGER:
         raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_precision')
-    return number
-
-
-def _l11b_text(value, *, reason='unsupported_corporate_l11b_text'):
-    if type(value) not in (str, _CorporateNumber):
-        raise _UnsupportedMetadata(reason)
-    return str(value)
+    return int(number)
 
 
 def project_l11b(form, *, tax_type, locale):
-    """Project the approved L11-B worksheet; caller must prove the binding.
+    """Only stable literal controls and the unconditional Part III grid.
 
-    Every displayed cell is a control the pinned component submits, so nothing
-    is recomputed for display. Two owner identities are re-checked instead of
-    trusted: ``Ebitda25`` is ``Math.floor(0.25 * Ebitda)``, and each capital
-    average is the mean of the populated month controls. Part III is the one
-    place the component renders a row it never submits: its JUMLAH row is the
-    ordered grid reduction the model performs, so it is derived here and every
-    operand keeps its own payload path. Averages keep the sheet's two decimal
-    places because the DER formula divides the written cells.
+    Submitted disables user editing, but does not suppress every callback.
+    Manual=true/number-one excludes the L1-derived first-two-control overwrite;
+    the IncomeTaxExpense overwrite separately requires not-submitted. Null
+    scalar defaults, EBITDA hydration and conditional Part II remain unproved.
+    Editor-only month means are NOT View lifecycle evidence. Preserve them in
+    custody, never round an average into a different Excel DER denominator.
     """
     if tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict):
         raise _UnsupportedMetadata('unsupported_corporate_l11b_structure')
-    if set(form) not in (L11B_KEYS, L11B_KEYS | {'TotalBorrowingCosts'}):
+    if set(form) != L11B_KEYS or type(form['IsDocumentListForm']) is not bool:
         raise _UnsupportedMetadata('unsupported_corporate_l11b_source_shape')
     manual = form['IsEbitdaManuallyEdited']
-    if (type(form['IsDocumentListForm']) is not bool
-            or not (type(manual) is bool or type(manual) is _CorporateNumber and manual in ('0', '1'))):
-        raise _UnsupportedMetadata('unsupported_corporate_l11b_source_shape')
+    if not (manual is True or type(manual) is _CorporateNumber and manual == '1'):
+        raise _UnsupportedMetadata('unverified_corporate_l11b_manual_lifecycle')
     evidence = []
 
-    def render(value, fraction=0):
-        return '' if value is None else _number(str(value), fraction, locale=locale, trim=fraction > 0)
-
-    def cell(value, path, destination, rule, fraction=0):
+    def cell(value, path, destination, rule):
         entry = _evidence(value, path)
         entry.update(rule=rule, destination=destination)
         evidence.append(entry)
-        return render(value, fraction)
+        return _number(value, 0, locale=locale)
 
-    def text_cell(value, path, destination):
-        entry = _evidence(value, path)
-        entry.update(rule='literal-grid-value', destination=destination)
-        evidence.append(entry)
-        return _l11b_text(value)
-
-    def rows(name, reason):
-        value = form[name]
-        if value is None:
-            return []
-        if not isinstance(value, list) or len(value) > 10000:
-            raise _UnsupportedMetadata(reason)
-        return value
-
-    # Part I: the six literal scalar controls the owner binds to rows 2..7.
-    amounts = {name: _l11b_amount(form[name]) for name, _ in L11B_FIELDS}
-    quarter = (amounts['Ebitda'] * Decimal('0.25')).to_integral_value(rounding=ROUND_FLOOR)
-    if amounts['Ebitda25'] != quarter:
-        raise _UnsupportedMetadata('unreconciled_corporate_l11b_ebitda_quarter')
     fields = []
     for name, caption in L11B_FIELDS:
+        _l11b_amount(form[name])  # no null-to-zero or string/number coercion
         fields.append({'group': '', 'field': name, 'label': caption,
                        'value': cell(form[name], [L11B_ROOT, name],
                                      {'form': 'L11-B', 'field': name},
-                                     'checked-floor-quarter-ebitda' if name == 'Ebitda25'
-                                     else 'literal-ebitda-control')})
-    # Part II.A: debt balances. The row average is an operator-entered control,
-    # only the reported totals are model reductions and must agree exactly.
-    debt_rows = rows('DebtBalanceAverage', 'unsupported_corporate_l11b_debt_body')
-    debt_sums = dict.fromkeys(L11B_DEBT_MONTHS, Decimal(0))
-    debt_average = Decimal(0)
-    debt_body = []
-    for index, row in enumerate(debt_rows):
-        if not isinstance(row, dict) or set(row) != set(L11B_DEBT_ROW):
-            raise _UnsupportedMetadata('unsupported_corporate_l11b_debt_row')
-        rendered = [text_cell(row[key], [L11B_ROOT, 'DebtBalanceAverage', index, key],
-                              {'table': 'L11-B/debt', 'row': index, 'column': column})
-                    for column, key in enumerate(L11B_DEBT_ROW[:3], 1)]
-        for column, key in enumerate(L11B_DEBT_ROW[3:], 4):
-            amount = _l11b_amount(row[key], nullish=False)
-            if amount < 0:
-                raise _UnsupportedMetadata('unsupported_corporate_l11b_negative_amount')
-            if key in debt_sums:
-                debt_sums[key] += amount
-            else:
-                debt_average += amount
-            rendered.append(cell(row[key], [L11B_ROOT, 'DebtBalanceAverage', index, key],
-                                 {'table': 'L11-B/debt', 'row': index, 'column': column},
-                                 'literal-grid-value'))
-        debt_body.append(rendered)
-    reported = form['TotalDebtBalanceAverage']
-    if not isinstance(reported, dict) or set(reported) != {*L11B_DEBT_MONTHS, 'Average'}:
-        raise _UnsupportedMetadata('unsupported_corporate_l11b_debt_total')
-    footer = ['JUMLAH']
-    for column, key in enumerate((*L11B_DEBT_MONTHS, 'Average'), 4):
-        amount = _l11b_amount(reported[key], nullish=False)
-        if amount != (debt_average if key == 'Average' else debt_sums[key]):
-            raise _UnsupportedMetadata('unreconciled_corporate_l11b_debt_total')
-        footer.append(cell(reported[key], [L11B_ROOT, 'TotalDebtBalanceAverage', key],
-                           {'table': 'L11-B/debt', 'footer': 0, 'column': column},
-                           'reconciled-model-ordered-total'))
-    debt_footer = footer
-    # Part II.B: capital averages are derived by the grid dialog from the
-    # populated month controls, so each mean is re-checked in source order.
-    equity_rows = rows('EquityBalanceAverage', 'unsupported_corporate_l11b_equity_body')
-    equity_sums = dict.fromkeys(L11B_EQUITY_MONTHS, Decimal(0))
-    equity_average = 0.0
-    equity_body = []
-    for index, row in enumerate(equity_rows):
-        if not isinstance(row, dict) or set(row) != set(L11B_EQUITY_ROW):
-            raise _UnsupportedMetadata('unsupported_corporate_l11b_equity_row')
-        rendered = [text_cell(row['TypeOfEquity'], [L11B_ROOT, 'EquityBalanceAverage', index,
-                                                    'TypeOfEquity'],
-                              {'table': 'L11-B/equity', 'row': index, 'column': 1})]
-        mean, populated = 0.0, 0
-        for column, key in enumerate(L11B_EQUITY_MONTHS, 2):
-            value = row[key]
-            if value is not None:
-                amount = _l11b_amount(value, nullish=False)
-                equity_sums[key] += amount
-                mean += float(amount)
-                populated += 1
-            rendered.append(cell(value, [L11B_ROOT, 'EquityBalanceAverage', index, key],
-                                 {'table': 'L11-B/equity', 'row': index, 'column': column},
-                                 'literal-grid-value'))
-        average = row['Average']
-        if populated:
-            expected = mean / populated
-            if average is None or float(_l11b_number(average)) != expected:
-                raise _UnsupportedMetadata('unreconciled_corporate_l11b_equity_average')
-            equity_average += float(_l11b_number(average))
-        elif average is not None:
-            raise _UnsupportedMetadata('unreconciled_corporate_l11b_equity_average')
-        rendered.append(cell(average, [L11B_ROOT, 'EquityBalanceAverage', index, 'Average'],
-                             {'table': 'L11-B/equity', 'row': index, 'column': 14},
-                             'checked-populated-month-mean', 2))
-        equity_body.append(rendered)
-    reported = form['TotalEquityBalanceAverage']
-    if not isinstance(reported, dict) or set(reported) != {*L11B_EQUITY_MONTHS, 'Average'}:
-        raise _UnsupportedMetadata('unsupported_corporate_l11b_equity_total')
-    footer = ['JUMLAH']
-    for column, key in enumerate(L11B_EQUITY_MONTHS, 2):
-        amount = _l11b_amount(reported[key], nullish=False)
-        if amount != equity_sums[key]:
-            raise _UnsupportedMetadata('unreconciled_corporate_l11b_equity_total')
-        footer.append(cell(reported[key], [L11B_ROOT, 'TotalEquityBalanceAverage', key],
-                           {'table': 'L11-B/equity', 'footer': 0, 'column': column},
-                           'reconciled-model-ordered-total'))
-    reported_average = reported['Average']
-    if reported_average is None or float(_l11b_number(reported_average)) != equity_average:
-        raise _UnsupportedMetadata('unreconciled_corporate_l11b_equity_total')
-    footer.append(cell(reported_average, [L11B_ROOT, 'TotalEquityBalanceAverage', 'Average'],
-                       {'table': 'L11-B/equity', 'footer': 0, 'column': 14},
-                       'reconciled-model-ordered-total', 2))
-    equity_footer = footer
-    # The submitted DER control is the same division the owner displays; a zero
-    # capital average yields 0 for 0/0 and a JSON null for a non-zero debt side.
-    ratio = form['DebtToEquityRatio']
-    if ratio is not None and type(ratio) is not _CorporateNumber:
-        raise _UnsupportedMetadata('unsupported_corporate_l11b_ratio_type')
-    debt_value = float(_l11b_amount(form['TotalDebtBalanceAverage']['Average'], nullish=False))
-    if equity_average == 0:
-        expected = 0.0 if debt_value == 0 else None
-    else:
-        expected = debt_value / equity_average
-    if expected is None:
-        if ratio is not None:
-            raise _UnsupportedMetadata('unreconciled_corporate_l11b_ratio')
-    elif ratio is None or float(_l11b_number(ratio)) != expected:
-        raise _UnsupportedMetadata('unreconciled_corporate_l11b_ratio')
-    # Part III: the only unreported row. The grid renders JUMLAH from the same
-    # ordered reduction of the submitted rows and submits no total control.
-    cost_rows = rows('BorrowingCosts', 'unsupported_corporate_l11b_cost_body')
-    cost_sums = dict.fromkeys(L11B_COST_ROW[1:], Decimal(0))
-    cost_body = []
-    for index, row in enumerate(cost_rows):
+                                     'stable-submitted-manual-control')})
+    evidence.append({**_evidence(manual, [L11B_ROOT, 'IsEbitdaManuallyEdited']),
+                     'rule': 'exclude-l1-auto-overwrite'})
+    source = form['BorrowingCosts']
+    if source is not None and (not isinstance(source, list) or len(source) > 10000):
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_cost_body')
+    rows = [] if source is None else source
+    sums = dict.fromkeys(L11B_COST_ROW[1:], 0)
+    body = []
+    for index, row in enumerate(rows):
         if not isinstance(row, dict) or set(row) != set(L11B_COST_ROW):
             raise _UnsupportedMetadata('unsupported_corporate_l11b_cost_row')
-        rendered = [text_cell(row['Name'], [L11B_ROOT, 'BorrowingCosts', index, 'Name'],
-                              {'table': 'L11-B/costs', 'row': index, 'column': 1})]
+        if type(row['Name']) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l11b_text')
+        entry = _evidence(row['Name'], [L11B_ROOT, 'BorrowingCosts', index, 'Name'])
+        entry.update(rule='literal-grid-value',
+                     destination={'table': 'L11-B/costs', 'row': index, 'column': 1})
+        evidence.append(entry)
+        rendered = [row['Name']]
         for column, key in enumerate(L11B_COST_ROW[1:], 2):
-            amount = _l11b_amount(row[key], nullish=False)
+            amount = _l11b_amount(row[key])
             if amount < 0:
                 raise _UnsupportedMetadata('unsupported_corporate_l11b_negative_amount')
-            cost_sums[key] += amount
+            sums[key] += amount
+            if sums[key] > _MAX_INTEGER:
+                raise _UnsupportedMetadata('unsafe_corporate_l11b_ordered_total')
             rendered.append(cell(row[key], [L11B_ROOT, 'BorrowingCosts', index, key],
                                  {'table': 'L11-B/costs', 'row': index, 'column': column},
                                  'literal-grid-value'))
-        cost_body.append(rendered)
-    reported = form.get('TotalBorrowingCosts')
-    if reported is not None:
-        if not isinstance(reported, dict) or set(reported) != set(L11B_COST_ROW[1:]):
-            raise _UnsupportedMetadata('unsupported_corporate_l11b_cost_total')
-        for key in L11B_COST_ROW[1:]:
-            if _l11b_amount(reported[key], nullish=False) != cost_sums[key]:
-                raise _UnsupportedMetadata('unreconciled_corporate_l11b_cost_total')
+        body.append(rendered)
+    # The owner computes this footer from Grid3Data, not a submitted DTO total.
     footer = ['JUMLAH']
     for column, key in enumerate(L11B_COST_ROW[1:], 2):
-        if reported is not None:
-            footer.append(cell(reported[key], [L11B_ROOT, 'TotalBorrowingCosts', key],
-                               {'table': 'L11-B/costs', 'footer': 0, 'column': column},
-                               'reconciled-model-ordered-total'))
-            continue
-        footer.append(render(cost_sums[key]))
-        for index, row in enumerate(cost_rows):
-            entry = _evidence(row[key], [L11B_ROOT, 'BorrowingCosts', index, key])
-            entry.update(rule='checked-model-ordered-sum-operand',
-                         destination={'table': 'L11-B/costs', 'footer': 0, 'column': column})
-            evidence.append(entry)
-    tables = [
-        {'name': 'L11-B/debt', 'headers': list(L11B_DEBT_HEADERS), 'rows': debt_body + [debt_footer],
-         'footer': [debt_footer], 'footer_spans': deepcopy(L11B_DEBT_SPANS),
-         'body_row_count': len(debt_body), 'source_total': len(debt_body), 'complete': True},
-        {'name': 'L11-B/equity', 'headers': list(L11B_EQUITY_HEADERS),
-         'rows': equity_body + [equity_footer], 'footer': [equity_footer],
-         'footer_spans': deepcopy(L11B_EQUITY_SPANS), 'body_row_count': len(equity_body),
-         'source_total': len(equity_body), 'complete': True},
-        {'name': 'L11-B/costs', 'headers': list(L11B_COST_HEADERS),
-         'rows': cost_body + [footer], 'footer': [footer],
-         'footer_spans': deepcopy(L11B_COST_SPANS), 'body_row_count': len(cost_body),
-         'source_total': len(cost_body), 'complete': True},
-    ]
-    return {'fields': fields, 'tables': tables, 'provenance': evidence}
+        footer.append(_number(str(sums[key]), 0, locale=locale))
+        destination = {'table': 'L11-B/costs', 'footer': 0, 'column': column}
+        if not rows:
+            evidence.append({**_evidence(source, [L11B_ROOT, 'BorrowingCosts']),
+                             'rule': 'empty-grid-total', 'destination': destination})
+        for index, row in enumerate(rows):
+            evidence.append({**_evidence(row[key], [L11B_ROOT, 'BorrowingCosts', index, key]),
+                             'rule': 'checked-model-ordered-sum-operand',
+                             'destination': destination})
+    table = {'name': 'L11-B/costs', 'headers': list(L11B_COST_HEADERS),
+             'rows': body + [footer], 'footer': [footer], 'footer_spans': [[1] * 5],
+             'body_row_count': len(body), 'source_total': len(body), 'complete': True}
+    return {'fields': fields, 'tables': [table], 'provenance': evidence}
 
 
 def _apply_l11b(binding, section, observed_forms, *, root, payload, record, event):
@@ -817,24 +650,44 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
     builds = proof.get('builds') if isinstance(proof, dict) else None
     if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
             or proof['kind'] != 'corporate-l11b-v1'
-            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
-            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
-            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
-            or proof['route'] != event['frame_url']
+            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE, MAIN_SOURCE}
+            or set(BUILD_DIGESTS) != {CIT_SOURCE, MAIN_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
+                   for value in [*builds.values(), *BUILD_DIGESTS.values()])
+            or builds != BUILD_DIGESTS or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L11B_ROOT]]
             or binding.get('grids') or binding.get('responses') or binding.get('dependencies')):
         raise _UnsupportedMetadata('unverified_corporate_l11b_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier')))
     literal = record.get('meta', {}).get('Model SPT')
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
-             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
-    if (record.get('source_status') != 'SPT Dilaporkan'
+             if type(literal) is str and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (proof['route'] not in (route, route + '?view=true')
+            or record.get('source_status') != 'SPT Dilaporkan'
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
-            or payload.get('ReturnSheetModel') != model):
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or 'Induk' not in [form['name'] for form in observed_forms[:observed_forms.index(binding)]]
+            or 'PreviousFormData' not in payload):
         raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle')
-    fields = record.get('source_fields', {})
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle')
+        try:
+            previous = _corporate_json(previous)
+        except JsonSafetyError:
+            raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle') from None
+        if previous is not None and not isinstance(previous, dict):
+            raise _UnsupportedMetadata('unverified_corporate_l11b_submitted_lifecycle')
     result = project_l11b(root.get(L11B_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
     section['fields'] = result['fields']
-    section['tables'] = result['tables']
+    # Retain ALL original raw leaves, including omitted averages and metadata.
+    section['tables'].extend(result['tables'])
+    section['projection_complete'] = False
+    section['projection_reason'] = 'unprojected_l11b_lifecycle'
     for entry in result['provenance']:
         entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
     return {'form': 'L11-B', 'kind': proof['kind'], 'builds': dict(proof['builds']),

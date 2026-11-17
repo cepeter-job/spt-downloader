@@ -944,11 +944,19 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L11-B':
-                # Same admitted pin. All three L11-B grids travel inside the
-                # payload root the observer just bound, so the form owns no
-                # grid, paginator or reference request of its own.
+                from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
+                from coretax_masa_observer import _PPN_MAIN_BUILD_HASH
+                # The unconditional offline grid uses the reviewed main-bundle
+                # Number renderer. No business values or new endpoint reads.
+                main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+                _check_cancel(check_cancel)
+                if (set(BUILD_DIGESTS) != {CIT_SOURCE_URL, MAIN_SOURCE}
+                        or any(type(value) is not str or not re.fullmatch(r'[0-9a-f]{64}', value)
+                               for value in (digest, main_digest, *BUILD_DIGESTS.values()))
+                        or {CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest} != BUILD_DIGESTS):
+                    return unavailable()
                 binding['projection'] = {'kind': 'corporate-l11b-v1',
-                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                    'builds': {CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

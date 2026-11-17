@@ -1,9 +1,5 @@
-"""Reviewed L11-B (Debt to Equity Ratio) projection contracts; GitHub-runner execution only.
-
-Every displayed cell maps to one literal control of the pinned L11-B owner. The
-submitted EBITDA and DER controls are copied, not recomputed; the two identities
-the owner maintains are re-checked exactly.
-"""
+"""Conservative L11-B projection. GitHub-runner execution only."""
+from copy import deepcopy
 import importlib
 from pathlib import Path
 
@@ -13,340 +9,290 @@ from coretax_json import _CorporateNumber, _UnsupportedMetadata, adapt_corporate
 import support_json_corpus as corpus
 
 RESOURCE = Path(__file__).resolve().parents[1] / 'resources/corporate_format.xlsx'
-# The approved workbook's header rows for the three L11-B blocks.
-HEADER_ROWS = ((11, 'L11B_DEBT_HEADERS'), (17, 'L11B_EQUITY_HEADERS'), (30, 'L11B_COST_HEADERS'))
 
 
 def module():
     return importlib.import_module('coretax_corporate_projection')
 
 
-def months(prefix, value):
-    return {f'{prefix}Month{month}': _CorporateNumber(value) for month in range(1, 13)}
-
-
 def form(**overrides):
-    debt = {'IdentityNumber': '0000000000000002', 'Name': 'SYNTHETIC LENDER',
-            'Relationship': 'SYNTHETIC RELATION', **months('Debt', '1000'),
-            'Average': _CorporateNumber('1000')}
-    equity = {'TypeOfEquity': 'SYNTHETIC CAPITAL', **months('Equity', '500'),
-              'Average': _CorporateNumber('500')}
-    cost = {'Name': 'SYNTHETIC LENDER', 'AverageDebtBalances': _CorporateNumber('1000'),
-            'BorrowingCostAmount': _CorporateNumber('80'),
-            'BorrowingCostThatCanBeDeducted': _CorporateNumber('50'),
-            'BorrowingCostThatAreNotDeductible': _CorporateNumber('30')}
-    value = {
-        'CommercialNettIncome': _CorporateNumber('1000000'),
-        'DepreciationAndAmortizationExpenses': _CorporateNumber('200000'),
-        'IncomeTaxExpense': _CorporateNumber('50000'),
-        'BorrowingCostExpense': _CorporateNumber('80000'),
-        'Ebitda': _CorporateNumber('1250000'),
-        'Ebitda25': _CorporateNumber('312500'),
-        'DebtBalanceAverage': [debt],
-        'TotalDebtBalanceAverage': {**months('Debt', '1000'), 'Average': _CorporateNumber('1000')},
-        'EquityBalanceAverage': [equity],
-        'TotalEquityBalanceAverage': {**months('Equity', '500'), 'Average': _CorporateNumber('500')},
-        'DebtToEquityRatio': _CorporateNumber('2'),
-        'BorrowingCosts': [cost],
-        'IsDocumentListForm': True,
-        'IsEbitdaManuallyEdited': False,
-    }
+    value = {'CommercialNettIncome': _CorporateNumber('1000000'),
+             'DepreciationAndAmortizationExpenses': _CorporateNumber('200000'),
+             'IncomeTaxExpense': _CorporateNumber('50000'),
+             'BorrowingCostExpense': _CorporateNumber('80000'),
+             # Inconsistent omitted controls: an editor identity is not View proof.
+             'Ebitda': _CorporateNumber('7'), 'Ebitda25': _CorporateNumber('9'),
+             'DebtBalanceAverage': None, 'TotalDebtBalanceAverage': None,
+             'EquityBalanceAverage': None, 'TotalEquityBalanceAverage': None,
+             'DebtToEquityRatio': None, 'BorrowingCosts': [
+                 {'Name': 'SYNTHETIC LENDER', 'AverageDebtBalances': _CorporateNumber('1000'),
+                  'BorrowingCostAmount': _CorporateNumber('80'),
+                  'BorrowingCostThatCanBeDeducted': _CorporateNumber('50'),
+                  'BorrowingCostThatAreNotDeductible': _CorporateNumber('30')}],
+             'IsDocumentListForm': True, 'IsEbitdaManuallyEdited': True}
     value.update(overrides)
     return value
 
 
-def project(payload=None, **overrides):
-    helper = getattr(module(), 'project_l11b', None)
-    assert callable(helper), 'Missing reviewed L11-B projection'
-    options = {'tax_type': 'ICT_RCIT', 'locale': 'id-ID'}
-    options.update(overrides)
-    return helper(form() if payload is None else payload, **options)
+def project(value=None, **overrides):
+    return module().project_l11b(form() if value is None else value,
+                                **{'tax_type': 'ICT_RCIT', 'locale': 'id-ID', **overrides})
 
 
-def module_or(name):
-    return getattr(module(), name)
+def selected():
+    record = corpus.selected_record()
+    record['source_fields']['ReturnSheetModel'] = 'Normal'
+    return record
+
+
+def route():
+    fields = selected()['source_fields']
+    return (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/'
+            + '/'.join((fields['TaxpayerAggregateIdentifier'], corpus.RECORD_ID,
+                        fields['TaxTypeCode'], fields['AggregateIdentifier'])) + '?view=true')
 
 
 def observed():
     forms = corpus.observed()
-    binding = {'name': 'L11-B', 'paths': [['L11BFormData']], 'grids': [], 'responses': [],
-               'dependencies': [],
-               'projection': {'kind': 'corporate-l11b-v1',
-                              'builds': {module_or('CIT_SOURCE'):
-                                         module_or('BUILD_DIGESTS')[module_or('CIT_SOURCE')]},
-                              'route': corpus.FRAME_URL}}
-    forms.insert(1, binding)
+    forms[0]['projection']['route'] = route()
+    forms.append({'name': 'L11-B', 'paths': [['L11BFormData']], 'grids': [],
+                  'responses': [], 'dependencies': [],
+                  'projection': {'kind': 'corporate-l11b-v1',
+                                 'builds': dict(module().BUILD_DIGESTS), 'route': route()}})
     return forms
 
 
-def payload_form(l11b=None):
-    """Same controls, but as raw JSON number tokens for the adapter."""
-    value = dict(form() if l11b is None else l11b)
-    for name, _ in module().L11B_FIELDS:
-        value[name] = corpus.Number(str(value[name]))
-    for row in value['DebtBalanceAverage'] or []:
-        for key in ('Average', *(f'DebtMonth{month}' for month in range(1, 13))):
-            row[key] = corpus.Number(str(row[key]))
-    for row in value['EquityBalanceAverage'] or []:
-        for key in ('Average', *(f'EquityMonth{month}' for month in range(1, 13))):
-            row[key] = corpus.Number(str(row[key]))
-    for row in value['BorrowingCosts'] or []:
-        for key in ('AverageDebtBalances', 'BorrowingCostAmount',
-                    'BorrowingCostThatCanBeDeducted', 'BorrowingCostThatAreNotDeductible'):
-            row[key] = corpus.Number(str(row[key]))
-    if value['DebtToEquityRatio'] is not None:
-        value['DebtToEquityRatio'] = corpus.Number(str(value['DebtToEquityRatio']))
-    for key in ('TotalDebtBalanceAverage', 'TotalEquityBalanceAverage'):
-        if isinstance(value.get(key), dict):
-            value[key] = {name: corpus.Number(str(token)) for name, token in value[key].items()}
-    return value
+def primary(value=None, *, previous=None):
+    def numbers(item):
+        if type(item) is _CorporateNumber:
+            return corpus.Number(item)
+        if isinstance(item, dict):
+            return {key: numbers(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [numbers(child) for child in item]
+        return item
+    current = corpus.current_form()
+    current['L11BFormData'] = numbers(form() if value is None else value)
+    packet = corpus.packet({'IsSuccessful': True, 'ErrorCode': 0, 'Payload': {
+        'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
+        'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+        'PreviousFormData': previous, 'LastSubmittedFormData': None,
+        'CurrentFormData': corpus.wire(current)}})
+    packet['context']['frame_url'] = route()
+    return packet
 
 
-def primary(l11b=None):
-    form_value = corpus.current_form()
-    form_value['L11BFormData'] = payload_form(l11b)
-    return corpus.primary(form_value)
+def adapt(forms=None, packet=None, record=None):
+    return adapt_corporate_detail(iter([primary() if packet is None else packet]),
+                                  selected() if record is None else record, corpus.SCOPE,
+                                  observed() if forms is None else forms)
 
 
-def adapt(forms=None, payload=None, record=None):
-    return adapt_corporate_detail(iter([primary() if payload is None else payload]),
-                                  corpus.selected_record() if record is None else record,
-                                  corpus.SCOPE, observed() if forms is None else forms)
+def test_only_four_stable_scalar_controls_are_projected():
+    result = project()
+    assert [field['field'] for field in result['fields']] == [
+        'CommercialNettIncome', 'DepreciationAndAmortizationExpenses',
+        'IncomeTaxExpense', 'BorrowingCostExpense']
+    assert [field['value'] for field in result['fields']] == [
+        '1.000.000', '200.000', '50.000', '80.000']
+    assert [entry['path'] for entry in result['provenance'][:4]] == [
+        ['L11BFormData', field['field']] for field in result['fields']]
 
 
-def template_headers(form_name, row):
+def test_only_unconditional_grid_uses_the_exact_template_header():
     from openpyxl import load_workbook
+    table, = project()['tables']
     book = load_workbook(RESOURCE, read_only=True)
     try:
-        values = [cell.value for cell in book[form_name][row]]
+        headers = [cell.value for cell in book['L11-B'][30]]
     finally:
         book.close()
-    while values and values[-1] is None:
-        values.pop()
-    return values
+    while headers and headers[-1] is None:
+        headers.pop()
+    assert table['headers'] == headers == module().L11B_COST_HEADERS
+    assert table['rows'] == [['SYNTHETIC LENDER', '1.000', '80', '50', '30'],
+                             ['JUMLAH', '1.000', '80', '50', '30']]
+    assert table['footer'] == [table['rows'][-1]]
+    assert table['footer_spans'] == [[1] * 5]
+    assert table['body_row_count'] == table['source_total'] == 1
 
 
-def test_every_template_caption_comes_from_one_proven_payload_control():
-    fields = getattr(module(), 'L11B_FIELDS', None)
-    assert fields is not None, 'Missing reviewed L11-B caption map'
-    result = project()
-    assert [field['field'] for field in result['fields']] == [name for name, _ in fields]
-    assert [field['label'] for field in result['fields']] == [caption for _, caption in fields]
-    assert [field['value'] for field in result['fields']] == [
-        '1.000.000', '200.000', '50.000', '80.000', '1.250.000', '312.500']
-    assert [entry['path'] for entry in result['provenance'][:6]] == [
-        ['L11BFormData', name] for name, _ in fields]
+@pytest.mark.parametrize('rows', [None, []])
+def test_empty_grid_zero_footer_retains_its_source(rows):
+    result = project(form(BorrowingCosts=rows))
+    table, = result['tables']
+    assert table['rows'] == [['JUMLAH', '0', '0', '0', '0']]
+    assert table['body_row_count'] == 0
+    evidence = [entry for entry in result['provenance'] if entry['rule'] == 'empty-grid-total']
+    assert len(evidence) == 4
+    assert all(entry['path'] == ['L11BFormData', 'BorrowingCosts'] for entry in evidence)
 
 
-@pytest.mark.parametrize('header,attribute', HEADER_ROWS)
-def test_every_projected_table_copies_one_template_header_row(header, attribute):
-    headers = getattr(module(), attribute)
-    assert template_headers('L11-B', header) == headers
-    table = project()['tables'][HEADER_ROWS.index((header, attribute))]
-    assert table['headers'] == headers
-    spans, = table['footer_spans']
-    assert sum(spans) == len(headers)
-    assert len(table['footer'][0]) == len(spans)
-    assert len(table['rows']) == table['body_row_count'] + 1
-    assert table['source_total'] == table['body_row_count']
-
-
-def test_projected_blocks_keep_the_template_reading_order():
-    labels = [table['name'] for table in project()['tables']]
-    assert labels == ['L11-B/debt', 'L11-B/equity', 'L11-B/costs']
-    debt, equity, costs = project()['tables']
-    assert debt['rows'][0][0] == '0000000000000002'
-    assert debt['rows'][-1][0] == 'JUMLAH'
-    assert equity['rows'][-1][0] == 'JUMLAH'
-    assert costs['rows'][-1] == ['JUMLAH', '1.000', '80', '50', '30']
-
-
-def test_the_submitted_der_average_controls_reach_both_footer_cells():
-    debt, equity, _ = project()['tables']
-    assert debt['rows'][-1][-1] == '1.000'
-    assert equity['rows'][-1][-1] == '500'
-    paths = {tuple(entry['path']) for entry in project()['provenance']}
-    assert ('L11BFormData', 'TotalDebtBalanceAverage', 'Average') in paths
-    assert ('L11BFormData', 'TotalEquityBalanceAverage', 'Average') in paths
-
-
-def test_ebitda_quarter_and_capital_mean_must_reconcile_exactly():
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(form(Ebitda25=_CorporateNumber('312499')))
-    assert str(error.value) == 'unreconciled_corporate_l11b_ebitda_quarter'
-    equity = dict(form()['EquityBalanceAverage'][0], Average=_CorporateNumber('501'))
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(form(EquityBalanceAverage=[equity]))
-    assert str(error.value) == 'unreconciled_corporate_l11b_equity_average'
-    total = dict(form()['TotalEquityBalanceAverage'], Average=_CorporateNumber('501'))
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(form(TotalEquityBalanceAverage=total))
-    assert str(error.value) == 'unreconciled_corporate_l11b_equity_total'
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(form(DebtToEquityRatio=_CorporateNumber('3')))
-    assert str(error.value) == 'unreconciled_corporate_l11b_ratio'
-
-
-def test_a_populated_month_mean_is_recomputed_from_the_source_values():
-    filled = {1: '1000', 2: '1000', 3: '1001'}
-    equity = {'TypeOfEquity': 'SYNTHETIC CAPITAL',
-              **{f'EquityMonth{month}': (_CorporateNumber(filled[month]) if month in filled else None)
-                 for month in range(1, 13)},
-              'Average': _CorporateNumber('1000.3333333333334')}
-    total = {f'EquityMonth{month}': _CorporateNumber(filled.get(month, '0'))
-             for month in range(1, 13)}
-    total['Average'] = _CorporateNumber('1000.3333333333334')
-    ratio = _CorporateNumber(repr(1000 / 1000.3333333333334))
-    result = project(form(EquityBalanceAverage=[equity], TotalEquityBalanceAverage=total,
-                          DebtToEquityRatio=ratio))
-    assert result['tables'][1]['rows'][0][-1] == '1.000,33'
-
-
-def test_a_zero_capital_average_keeps_the_owner_null_ratio():
-    total = {**months('Equity', '0'), 'Average': _CorporateNumber('0')}
-    empty = {**months('Debt', '0'), 'Average': _CorporateNumber('0')}
-    result = project(form(EquityBalanceAverage=None, TotalEquityBalanceAverage=total,
-                          DebtBalanceAverage=None, TotalDebtBalanceAverage=empty,
-                          DebtToEquityRatio=_CorporateNumber('0')))
-    assert result['tables'][1]['body_row_count'] == 0
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(form(EquityBalanceAverage=None, TotalEquityBalanceAverage=total,
-                     DebtToEquityRatio=_CorporateNumber('0')))
-    assert str(error.value) == 'unreconciled_corporate_l11b_ratio'
-    # x/0 is not representable in JSON, so the owner submits an explicit null.
-    assert project(form(EquityBalanceAverage=None, TotalEquityBalanceAverage=total,
-                        DebtToEquityRatio=None))['tables'][1]['body_row_count'] == 0
-
-
-def test_part_three_total_is_the_ordered_sum_the_component_never_submits():
-    result = project()
-    assert 'TotalBorrowingCosts' not in form()
-    rules = {entry['rule'] for entry in result['provenance']
-             if entry['destination'].get('table') == 'L11-B/costs'
-             and 'footer' in entry['destination']}
-    assert rules == {'checked-model-ordered-sum-operand'}
-    reported = {'AverageDebtBalances': _CorporateNumber('1000'),
-                'BorrowingCostAmount': _CorporateNumber('80'),
-                'BorrowingCostThatCanBeDeducted': _CorporateNumber('50'),
-                'BorrowingCostThatAreNotDeductible': _CorporateNumber('30')}
-    asserted = project(form(TotalBorrowingCosts=reported))
-    assert asserted['tables'][2]['footer'] == result['tables'][2]['footer']
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(form(TotalBorrowingCosts={**reported, 'BorrowingCostAmount': _CorporateNumber('81')}))
-    assert str(error.value) == 'unreconciled_corporate_l11b_cost_total'
+def test_ordered_sum_preserves_duplicate_operands():
+    value = form()
+    value['BorrowingCosts'] *= 2
+    result = project(value)
+    assert result['tables'][0]['footer'] == [['JUMLAH', '2.000', '160', '100', '60']]
+    operands = [entry for entry in result['provenance']
+                if entry['rule'] == 'checked-model-ordered-sum-operand']
+    assert len(operands) == 8
+    assert {entry['path'][2] for entry in operands} == {0, 1}
 
 
 @pytest.mark.parametrize('mutation,reason', [
-    ({'TaxableIncome': _CorporateNumber('0')}, 'unsupported_corporate_l11b_source_shape'),
-    ({'CommercialNettIncome': '1000000'}, 'unsupported_corporate_l11b_amount_type'),
-    ({'Ebitda': True}, 'unsupported_corporate_l11b_amount_type'),
-    ({'Ebitda25': _CorporateNumber('312500.5')}, 'unsupported_corporate_l11b_amount_precision'),
-    ({'BorrowingCosts': [{'Name': 'X'}]}, 'unsupported_corporate_l11b_cost_row'),
-    ({'BorrowingCosts': [{**form()['BorrowingCosts'][0],
-                          'BorrowingCostAmount': _CorporateNumber('-1')}]},
-     'unsupported_corporate_l11b_negative_amount'),
-    ({'DebtBalanceAverage': [{'IdentityNumber': '1'}]}, 'unsupported_corporate_l11b_debt_row'),
-    ({'IsDocumentListForm': 'true'}, 'unsupported_corporate_l11b_source_shape'),
-    ({'DebtToEquityRatio': '2'}, 'unsupported_corporate_l11b_ratio_type'),
+    ({'Extra': None}, 'source_shape'),
+    ({'TotalBorrowingCosts': None}, 'source_shape'),
+    ({'IsDocumentListForm': 'true'}, 'source_shape'),
+    ({'CommercialNettIncome': None}, 'amount_type'),
+    ({'CommercialNettIncome': '1000000'}, 'amount_type'),
+    ({'CommercialNettIncome': True}, 'amount_type'),
+    ({'CommercialNettIncome': _CorporateNumber('NaN')}, 'amount_type'),
+    ({'BorrowingCostExpense': _CorporateNumber('1.1')}, 'amount_precision'),
+    ({'BorrowingCostExpense': _CorporateNumber('1000000000000000')}, 'amount_precision'),
+    ({'BorrowingCosts': {}}, 'cost_body'),
+    ({'BorrowingCosts': [None]}, 'cost_row'),
+    ({'BorrowingCosts': [{'Name': 'X'}]}, 'cost_row'),
+    ({'BorrowingCosts': [{**form()['BorrowingCosts'][0], 'Name': None}]}, 'text'),
+    ({'BorrowingCosts': [{**form()['BorrowingCosts'][0], 'Name': _CorporateNumber('1')}]}, 'text'),
+    ({'BorrowingCosts': [{**form()['BorrowingCosts'][0], 'BorrowingCostAmount': None}]}, 'amount_type'),
+    ({'BorrowingCosts': [{**form()['BorrowingCosts'][0], 'BorrowingCostAmount': _CorporateNumber('-1')}]}, 'negative_amount'),
 ])
-def test_unreviewed_l11b_shapes_refuse(mutation, reason):
-    with pytest.raises(_UnsupportedMetadata) as error:
+def test_unreviewed_source_refuses(mutation, reason):
+    with pytest.raises(_UnsupportedMetadata, match='^unsupported_corporate_l11b_' + reason + '$'):
         project(form(**mutation))
-    assert str(error.value) == reason
 
 
-def test_absent_der_average_tuple_refuses_the_capture():
+@pytest.mark.parametrize('manual', [False, _CorporateNumber('0'), '1', None])
+def test_auto_or_untyped_manual_lifecycle_refuses(manual):
+    with pytest.raises(_UnsupportedMetadata, match='^unverified_corporate_l11b_manual_lifecycle$'):
+        project(form(IsEbitdaManuallyEdited=manual))
+
+
+@pytest.mark.parametrize('options', [{'tax_type': 'ICT_ROGCIT'}, {'locale': 'en-US'}])
+def test_unreviewed_environment_refuses(options):
+    with pytest.raises(_UnsupportedMetadata, match='^unsupported_corporate_l11b_structure$'):
+        project(**options)
+
+
+def test_numeric_one_manual_marker_is_reviewed():
+    assert project(form(IsEbitdaManuallyEdited=_CorporateNumber('1')))['fields']
+
+
+def test_every_ordered_sum_is_bounded():
     value = form()
-    value.pop('TotalEquityBalanceAverage')
+    value['BorrowingCosts'] = [{**value['BorrowingCosts'][0],
+                               'BorrowingCostAmount': _CorporateNumber('999999999999999')}] * 2
+    with pytest.raises(_UnsupportedMetadata, match='^unsafe_corporate_l11b_ordered_total$'):
+        project(value)
+
+
+@pytest.mark.parametrize('defect', ['wrong-pin', 'missing-pin', 'bad-pin', 'extra-pin',
+                                    'route', 'kind', 'extra', 'path', 'grids'])
+def test_proof_requires_exact_pins_route_and_shape(defect):
     forms = observed()
-    form_value = corpus.current_form()
-    form_value['L11BFormData'] = payload_form(value)
-    result = adapt_corporate_detail(iter([corpus.primary(form_value)]), corpus.selected_record(),
-                                    corpus.SCOPE, forms)
-    assert not result['eligible']
-    assert result['reason'] == 'unsupported_corporate_l11b_source_shape'
+    binding = forms[-1]
+    proof = binding['projection']
+    if defect == 'wrong-pin':
+        proof['builds'][module().CIT_SOURCE] = 'a' * 64
+    elif defect == 'missing-pin':
+        proof['builds'].pop(module().MAIN_SOURCE)
+    elif defect == 'bad-pin':
+        proof['builds'][module().CIT_SOURCE] = None
+    elif defect == 'extra-pin':
+        proof['builds']['https://example.invalid/other.js'] = 'a' * 64
+    elif defect == 'route':
+        proof['route'] += '&other=true'
+    elif defect == 'kind':
+        proof['kind'] = 'corporate-l11b-v0'
+    elif defect == 'extra':
+        proof['timezone'] = 'Asia/Jakarta'
+    elif defect == 'path':
+        binding['paths'].append(['OTHER'])
+    else:
+        binding['grids'] = [1]
+    with pytest.raises(_UnsupportedMetadata, match='^unverified_corporate_l11b_binding$'):
+        module()._apply_l11b(binding, {}, forms, root={}, payload={}, record=selected(),
+                            event={'frame_url': route(), 'sequence': 1})
 
 
-def test_absent_l11b_root_refuses_the_capture():
+@pytest.mark.parametrize('missing', ['CIT_SOURCE', 'MAIN_SOURCE'])
+def test_missing_pin_never_matches_missing_asset(monkeypatch, missing):
     forms = observed()
-    result = adapt_corporate_detail(iter([corpus.primary(corpus.current_form())]),
-                                    corpus.selected_record(), corpus.SCOPE, forms)
-    assert not result['eligible']
-    assert result['reason'] == 'missing_observed_corporate_source_path'
-
-
-@pytest.mark.parametrize('projection', [
-    {'kind': 'corporate-l11b-v0'},
-    {'kind': 'corporate-l11b-v1', 'builds': {}, 'route': corpus.FRAME_URL},
-    {'kind': 'corporate-l11b-v1', 'builds': {module_or('CIT_SOURCE'): 'APPROVED'},
-     'route': corpus.FRAME_URL},
-    {'kind': 'corporate-l11b-v1', 'builds': {module_or('CIT_SOURCE'): 'a' * 64},
-     'route': corpus.FRAME_URL, 'timezone': 'Asia/Jakarta'},
-])
-def test_projection_proof_must_match_the_reviewed_shape(projection):
-    forms = observed()
-    binding, = [item for item in forms if item['name'] == 'L11-B']
-    binding['projection'] = projection
-    result = adapt(forms)
-    assert not result['eligible']
-    assert result['reason'] == 'unverified_corporate_l11b_binding'
-
-
-def test_route_or_lifecycle_contradiction_refuses_the_projection():
-    forms = observed()
-    binding, = [item for item in forms if item['name'] == 'L11-B']
-    binding['projection'] = {**binding['projection'], 'route': corpus.FRAME_URL + '/changed'}
+    url = getattr(module(), missing)
+    forms[-1]['projection']['builds'][url] = None
+    monkeypatch.setattr(module(), 'BUILD_DIGESTS', {key: value for key, value in
+                       module().BUILD_DIGESTS.items() if key != url})
     result = adapt(forms)
     assert not result['eligible'] and result['reason'] == 'unverified_corporate_l11b_binding'
-    forms = observed()
-    # Drop the Induk projection so this isolates the L11-B lifecycle gate.
+
+
+@pytest.mark.parametrize('defect', ['model', 'status', 'native-model', 'induk-order', 'legacy-route', 'previous'])
+def test_selected_submitted_lifecycle_is_required(defect):
+    forms, record, packet = observed(), selected(), primary()
     forms[0].pop('projection')
-    record = corpus.selected_record()
-    record['meta']['Model SPT'] = 'Amendment 002'
-    result = adapt(forms, record=record)
+    if defect == 'model':
+        record['meta']['Model SPT'] = 'Amendment 002'
+    elif defect == 'status':
+        record['source_status'] = 'SPT Draft'
+    elif defect == 'native-model':
+        record['source_fields']['ReturnSheetModel'] = 'Amendment 002'
+    elif defect == 'induk-order':
+        forms.reverse()
+    elif defect == 'legacy-route':
+        packet['context']['frame_url'] = corpus.FRAME_URL
+        forms[-1]['projection']['route'] = corpus.FRAME_URL
+    else:
+        packet = primary(previous='not-json')
+    result = adapt(forms, packet, record)
     assert not result['eligible']
     assert result['reason'] == 'unverified_corporate_l11b_submitted_lifecycle'
 
 
-def test_projected_l11b_section_replaces_the_dump_and_keeps_three_blocks():
-    forms = observed()
-    result = adapt(forms)
+@pytest.mark.parametrize('previous', [None, 'null', '{}'])
+def test_explicit_previous_encoding_preserves_current_only_form(previous):
+    result = adapt(packet=primary(previous=previous))
+    assert result['eligible'], result['reason']
+
+
+@pytest.mark.parametrize('previous', [False, '[]', 'not-json'])
+def test_bad_previous_encoding_refuses(previous):
+    result = adapt(packet=primary(previous=previous))
+    assert not result['eligible']
+    assert result['reason'] == 'unverified_corporate_l11b_submitted_lifecycle'
+
+
+def test_missing_required_source_key_is_not_an_empty_control():
+    value = form()
+    value.pop('BorrowingCosts')
+    with pytest.raises(_UnsupportedMetadata, match='^unsupported_corporate_l11b_source_shape$'):
+        project(value)
+
+
+def test_adapter_preserves_custody_and_explicit_omissions():
+    forms, packet = observed(), primary()
+    before, raw = deepcopy(forms), packet['body']
+    result = adapt(forms, packet)
     assert result['eligible'] and result['coverage']['complete'], result['reason']
+    assert forms == before and packet['body'] == raw
     section, = [item for item in result['sections'] if item['name'] == 'L11-B']
-    assert [table['name'] for table in section['tables']] == ['L11-B/debt', 'L11-B/equity',
-                                                              'L11-B/costs']
-    assert all(table['headers'] and table['rows'] for table in section['tables'])
-    assert [field['field'] for field in section['fields']] == [
-        name for name, _ in module().L11B_FIELDS]
+    assert section['projection_complete'] is False
+    assert section['projection_reason'] == 'unprojected_l11b_lifecycle'
+    assert len(section['fields']) == 4 and section['tables'][-1]['name'] == 'L11-B/costs'
+    assert section['tables'][0]['headers'] == ['JSON path', 'JSON type', 'Source value']
     projected, = [item for item in result['provenance']['projections'] if item['form'] == 'L11-B']
-    assert projected['kind'] == 'corporate-l11b-v1'
-    assert all(entry['path'][0] == 'L11BFormData' and entry['rule'] for entry in projected['values'])
-    paths = {tuple(entry['path']) for entry in projected['values']}
-    for table, block in zip(section['tables'], ('DebtBalanceAverage', 'EquityBalanceAverage',
-                                                'BorrowingCosts')):
-        for index in range(table['body_row_count']):
-            keys = {path[3] for path in paths if path[:2] == ('L11BFormData', block)
-                    and len(path) == 4 and path[2] == index}
-            assert len(keys) == len(table['headers'])
+    assert all(entry['response_sequence'] == 1 and
+               entry['container'] == ['Payload', 'CurrentFormData'] for entry in projected['values'])
+    assert any(entry['path'] == ['L11BFormData', 'IsEbitdaManuallyEdited'] for entry in projected['values'])
 
 
-def test_l11b_projection_does_not_mutate_source_bindings_or_payload():
-    from copy import deepcopy
-    forms = observed()
-    before = deepcopy(forms)
-    payload = primary()
-    raw = payload['body']
-    adapt(forms, payload=payload)
-    assert forms == before and payload['body'] == raw
-
-
-def test_projected_l11b_binds_every_template_amount_cell(tmp_path):
+def test_adapter_to_saved_workbook_keeps_partial_audit(tmp_path):
     from openpyxl import load_workbook
     import coretax_exporter as exporter
-    from support_templates import section, source_run
-    result = project()
-    run = source_run('PPh Badan', [section('L11-B', fields=result['fields'],
-                                           tables=result['tables'])])
+    from support_templates import source_run
+    result = adapt()
+    assert result['eligible'], result['reason']
+    section, = [item for item in result['sections'] if item['name'] == 'L11-B']
+    run = source_run('PPh Badan', [section])
     run['year'] = 2025
     run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
     run['records'][0]['capture_complete'] = True
@@ -356,19 +302,20 @@ def test_projected_l11b_binds_every_template_amount_cell(tmp_path):
     book = load_workbook(tmp_path / name)
     try:
         sheet = book['L11-B']
-        assert [sheet.cell(row, 2).value for row in range(2, 8)] == [
-            1_000_000, 200_000, 50_000, 80_000, 1_250_000, 312_500]
-        assert all(sheet.cell(row, 2).data_type == 'n' for row in range(2, 8))
-        assert sheet['A12'].value == '0000000000000002'
-        assert sheet['P13'].value == 1000
-        assert sheet['A18'].value == 'SYNTHETIC CAPITAL'
-        assert sheet['N19'].value == 500
-        # The reviewed DER block divides the two written average cells.
-        assert sheet['A22'].value == 'PERHITUNGAN DER'
-        assert sheet['C22'].value == '=P13' and sheet['C23'].value == '=N19'
-        assert sheet['D22'].value == '=C22/C23'
-        assert sheet['B27'].value == 1000 and sheet['E28'].value == 30
-        assert reports[0]['complete'] is True
-        assert reports[0]['unmapped_fields'] == reports[0]['unmapped_tables'] == 0
+        assert [sheet.cell(row, 2).value for row in range(2, 6)] == [1000000, 200000, 50000, 80000]
+        assert sheet['B6'].value is None and sheet['B7'].value is None
+        assert not any(cell.data_type == 'f' for row in sheet for cell in row)
+        assert any(row[0].value == 'SYNTHETIC LENDER' and row[1].value == 1000
+                   and row[4].value == 30 for row in sheet)
+        report, = reports
+        assert report['complete'] is False and report['derived_complete'] is False
+        assert report['derived_reason'] == 'unprojected_l11b_lifecycle'
+        assert report['unmapped_rows'] > 0
     finally:
         book.close()
+    resume = load_workbook(tmp_path / 'resume.xlsx')
+    try:
+        assert any('L11-B diproyeksikan sebagian' in str(cell.value)
+                   for sheet in resume for row in sheet for cell in row)
+    finally:
+        resume.close()
