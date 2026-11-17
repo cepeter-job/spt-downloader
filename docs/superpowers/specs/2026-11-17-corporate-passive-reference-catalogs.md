@@ -53,7 +53,7 @@ Offsets below are decoded Unicode character positions, not byte positions.
   `_select_reference_version`, preserving original indices, duplicates,
   ParameterData, active selection and same-attempt capture-clock bounds.
 
-## Exact extension
+## Original A/C extension (historical scope)
 
 Keep COUNTRY_CODE and all existing L3/L11-A transports unchanged. Add only
 singleton GET/no-body id-ID RELATIONSHIP_TYPE, TRANSACTION_TYPE, PRICING_METHOD
@@ -61,6 +61,115 @@ to `CORPORATE_REFERENCE_REQUESTS`, only for ICT_RCIT/ICT_RCITR. Expose a
 four-type `CORPORATE_L10_REFERENCE_URLS` inventory for A/C consumers. Do not add
 speculative L2/L4/L9/Induk types; those need exact source proof coordinated by
 parent. TRANSACTION_TYPE is shared A/C; there must not be parallel adapters.
+
+## Coordinated L4/L2/L9/Induk extension (current source contract)
+
+The A/C-only exclusion above is historical, not a prohibition on this separately
+source-reviewed parent-authorized extension. On November 17, 2026 the owner
+independently rehashed both decoded cached files again: the byte sizes and SHA-256
+values above exactly match the owned `resources/build-pins.json` and main
+`d23e3edad19a11e810dfa39460957d7d2fa6bf46`. No asset/API fetch, live navigation,
+cache/storage read, or product execution was used for source review.
+
+### Active consumer -> export/module -> exact type
+
+CIT module38525 imports `R=ye(90521)` at character277. MAIN module90521
+re-exports the directly defined related-person class and imports `$t=T(66267)`
+at2790264 for the enum barrel; module66267 starts2985520. These hops matter:
+a similarly named exported symbol or enum string alone is not transport proof.
+
+| Consumer | CIT decoded character positions | MAIN resolved export chain and type |
+| --- | --- | --- |
+| L4 A OBJEK PAJAK | IE.initColumn near2311785, `TaxObjectCode` description at2312267 | module90521 `hbR->$t.hb`2737084 -> module66267 `hb->Oi` -> Oi at3001212: TAX_OBJECT_CODE |
+| L4 B JENIS PENGHASILAN | E1.L4Grid2Columns near2309730, literal reference key2310017 | literal INCOME_EXCLUDED_FROM_TAX_FOR_CIT, not a guessed enum |
+| L2 Jabatan | w1 constructor2198300+, ngOnChanges2199342, getFullPosition2199986 | module90521 `_Xg->di`2735305 -> di.ReferenceDataTypeName2929809: RELATED_PERSON_TYPE |
+| L9 tangible asset group | pI.initColumn near2480150, reference2480700+ | module90521 `GOc->$t.GO`2736964 -> module66267 `GO->Me` -> Me2992466: TANGIBLE_ASSET |
+| L9 buildings group | SI.initColumn near2484144 | `B7E->$t.B7`2736086 -> `B7->Mt` -> Mt2991655: GROUP_OF_BUILDINGS |
+| L9 intangible group | MI.initColumn near2488138 | `dBq->$t.dB`2736184 -> `dB->At` -> At2992553: INTANGIBLE_ASSET |
+| L9 commercial method | each grid, first reference2481618 | `ONl->$t.ON`2735755 -> `ON->P` -> P2989033: COMMERCIAL_METHOD |
+| L9 fiscal method | each grid, first reference2481729 | `Da4->$t.D`2735950 -> `D->nt` -> nt2990905: FISCAL_METHOD |
+| Induk TaxRate | Ec constructor2778983+, createTaxRatType2787631, options2929409 | `U37->$t.U3`2735741 -> `U3->we` -> we2988860: CIT_TAX_RATE |
+
+L4 and L9 use MAIN's ordinary grid Bi/ki/Qi (4223302+) -> module66805
+codeDescAsync (4318500+) -> getReferenceDataDescription3036628. L4 B uses the
+offline W/U/yt/Re chain3882118+. Neither is the l3bcit raw-code fallback.
+L9 setShowAttachment9 near2705882 calls five SEPARATE getSingleReferenceData
+operations (asset, commercial, fiscal, buildings, intangible) in Promise.all;
+this does not prove a five-type batch. Its grids skip automatic preloading.
+
+L2 getFullPosition's second argument is UNUSED. It reads getSingleReferenceData
+and uses the FIRST ORDERED `.find(row=>row.Code==Position)`, not
+getActiveReferenceDataValue and not RELATED_PERSON_SUBTYPE. The supported string
+code subset has no loose-coercion ambiguity. The single projector must label
+this selection `reviewed-related-person-first-ordered-code-match`, preserve raw
+indices and duplicate evidence, and retain `requires_vendor=True` for duplicates.
+The current L2 consumer separately refuses duplicates; do not turn a provider
+extension into permission for a wider L2 duplicate/version profile. Country
+continues to use its existing active-version consumer and captured clock.
+
+Induk createTaxRatType sorts the returned rows by parseInt(Code.substring(3,4))
+then MUTATES CodeDescription with a numeric prefix. This producer exposes only
+original catalog labels/paths via the existing ordinary projector; it does not
+claim to reproduce that mutable options/prefix lifecycle or readonly selection.
+The Induk owner must prove it separately; CIT_TAX_RATE registration is not D11
+rendering/native permission and may not route a mutable label through a false
+country-equivalent rule.
+
+### Same reviewed transport and ordinary cache-order proof
+
+For every row above, the active call reaches MAIN getSingleReferenceData3038044.
+Its two regional special cases are not any of these types. Its ordinary cache
+miss passes exactly `[{referenceType:P,checksum:null}]` to
+internalLoadBulkReferenceData3042005, then retrieves the newly cached Details.
+The builder selects the user's language (fallback is en-US, NOT assumed id-ID),
+removes cache hits, maps null checksums to literal type strings, joins the list,
+and calls no-body http.get. MAIN environment module91137 `referencedata` at
+2729356 is `reference-data`; baseGatewayWebApiUrl2731578 strips hyphens to
+`/referencedata/api`. Only an observed exact id-ID singleton URL ending in ONE
+literal reviewed type is admitted. No batch/checksum/alias/getdescription route,
+POST, body, alternate language or forced cache miss follows from this proof.
+
+MAIN cache.add3028350+ invokes applyReferenceDataOrderBy3026747+ unless the type
+is BUSINESS_CLASSIFICATION (`D.VW`), AUDIT_OPINION (`D.lA`) or MONTH (local te).
+None of the nine added types is exceptional, PERIOD or ECONOMIC_CODE. Reuse
+`_reference_consumer_order` description/first-raw-ParameterData DisplayIndex
+ordering before grouping. Ordinary L4/L9 version selection remains the existing
+`_select_reference_version` over the same captured interval; no replay clock.
+RELATED_PERSON_TYPE instead uses its distinct first-find rule above. The full
+original snapshots, metadata, numeric lexemes, duplicates/order and both held
+readers stay unchanged; neither labels nor original bytes are mutated here.
+
+### Reconcile PR275 without importing its form
+
+PR275/aac8fa88d5936b3d805e9028859198b19e5c5a61 already contains PR285/27f1fab and
+adds exactly `CORPORATE_L4_REFERENCE_URLS` with TAX_OBJECT_CODE and
+INCOME_EXCLUDED_FROM_TAX_FOR_CIT. This branch reproduces those precise shared
+registry/order/projector/no-body facts, independently reviewed above. It does
+NOT merge unrelated L4 form/grid/footer code merely for constants. Parent later
+retains one L4 map/one registry/one projector/one producer during integration.
+
+Keep closed inventories separate: existing L10 A/C four types UNCHANGED; L4 the
+two types above; L2 COUNTRY_CODE+RELATED_PERSON_TYPE; L9 exactly its five types;
+Induk CIT_TAX_RATE only. All singleton entries share CORPORATE_REFERENCE_REQUESTS.
+Generic observer/binder APIs accept caller-supplied closed reviewed kinds; form
+consumers must continue enforcing their own inventory rather than inheriting the
+whole registry. Existing L3 and L11-A inventories and the one ordered L11-A pair
+are unchanged. RELATED_PERSON_SUBTYPE remains unregistered.
+
+### Tests first / hosted-only verification
+
+`test_corporate_shared_dependency_catalogs.py` specifies all nine natural
+singletons, full original-byte/native custody, both held readers, negative
+aliases/bulk/checksum/query/lang/method/body/tax/sheet/frame/tab/resource, explicit
+no-body descriptor facts, full-snapshot/attempt/clock/language contradictions,
+ordinary DisplayIndex/version/clock behavior and distinct Position first-find.
+Shared binder tests check complete sequences and earliest original selection.
+The existing actual SPA -> provider -> capture -> adapter -> both held readers
+-> saved/reopened workbook vertical now emits all nine additional types from its
+synthetic application, without registry injection or product API acquisition.
+Existing provider tests preserve positive pins, absence-inclusive facts,
+descriptor overrides, Stop, unavailable hash/Document contradictions and final
+late-response fences. Runtime RED/GREEN must come from GitHub, not local AST.
 
 The existing capture owns original request objects, main-frame/context/selected
 record, bytes/hash/sequence, privacy/budgets, failed/pending responses, full raw

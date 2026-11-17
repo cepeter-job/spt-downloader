@@ -14,9 +14,14 @@ from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l3_observer_fixture import Fixture as L3Fixture, ASSET
 from test_corporate_l3_observer import open_selected
 from test_corporate_l3_native import REFERENCES, DETAIL
-from test_corporate_passive_catalogs import BASE, KINDS, NEW_KINDS, catalog
+from test_corporate_passive_catalogs import BASE, KINDS as L10_KINDS, NEW_KINDS as L10_NEW_KINDS, catalog
+from test_corporate_shared_dependency_catalogs import ADDITIONAL_KINDS
 from test_json_hybrid_native import browser as browser
 import support_json_corpus as corpus
+
+
+KINDS = (*L10_KINDS, *ADDITIONAL_KINDS)
+NEW_KINDS = (*L10_NEW_KINDS, *ADDITIONAL_KINDS)
 
 
 class Fixture(L3Fixture):
