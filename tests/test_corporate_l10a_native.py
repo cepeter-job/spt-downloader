@@ -146,11 +146,12 @@ def test_known_packet_contradiction_remains_fatal_before_populated_semantics(def
 
 
 class Fixture(BaseFixture):
-    def __init__(self, browser, monkeypatch, *, defect=None):
+    def __init__(self, browser, monkeypatch, *, defect=None, literal_string=False):
         self.reference_raw = {URLS[kind]: corpus.wire({'IsSuccessful': True, 'Payload': catalog(kind)})
                               for kind in KINDS}
         values = [corpus.Number('1234.5'), None, corpus.Number('-0'), corpus.Number('-0.25'),
-                  corpus.Number('-1234.5'), '1234.50', *([corpus.Number('12')] * 4)]
+                  corpus.Number('-1234.5'), '1234.50' if literal_string else corpus.Number('1234.5'),
+                  *([corpus.Number('12')] * 4)]
         self.rows = [row(TransactionValue=value) for value in values]
         self.rows += [deepcopy(self.rows[0]), row(Country=None, RelationshipCode=None,
             TypeOfTransaction=None, PricingMethod=None, TransactionValue=None)]
@@ -211,8 +212,9 @@ class Fixture(BaseFixture):
         return base.replace('</body>', script + '</body>')
 
 
-def test_real_populated_observer_capture_held_replay_and_reopened_workbook(browser, tmp_path, monkeypatch):
-    fixture = Fixture(browser, monkeypatch)
+@pytest.mark.parametrize('literal_string', [False, True])
+def test_real_populated_observer_capture_held_replay_and_reopened_workbook(browser, tmp_path, monkeypatch, literal_string):
+    fixture = Fixture(browser, monkeypatch, literal_string=literal_string)
     try:
         with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(fixture, capture)
@@ -248,13 +250,15 @@ def test_real_populated_observer_capture_held_replay_and_reopened_workbook(brows
             assert [sheet.cell(3, c).value for c in (3, 4, 6, 8)] == ['A SYNTHETIC ' + kind for kind in KINDS]
             assert sheet['G3'].value == 1235 and sheet['G4'].value is None
             assert sheet['G5'].value == sheet['G6'].value == 0 and sheet['G7'].value == -1235
-            assert sheet['G8'].value == '1234.50'
+            assert sheet['G8'].value == ('1234.50' if literal_string else 1235)
             assert 'Rp' in sheet['G3'].number_format and '0.00' not in sheet['G3'].number_format
             assert all(sheet.cell(14, c).value is None for c in (3, 4, 6, 7, 8))
         finally:
             book.close()
         mapping = next(r for r in run['template_mapping'] if r['form'] == 'L10-A')
-        assert mapping['complete'] and mapping['unmapped_fields'] == mapping['unmapped_tables'] == 0
+        assert mapping['complete'] is (not literal_string)
+        assert mapping['unmapped_fields'] == 0
+        assert mapping['unmapped_tables'] == mapping['unmapped_rows'] == (1 if literal_string else 0)
         assert fixture.unexpected == []
         assert fixture.requests.count((GRID, 'POST')) == 2
         assert all(fixture.requests.count((url, 'GET')) == 1 for url in URLS.values())
@@ -281,11 +285,43 @@ def test_real_missing_dependency_never_offers_populated_permission(browser, tmp_
         fixture.close()
 
 
-def test_empty_original_grid_remains_valid_when_stronger_catalogs_are_available():
-    result = adapt(packets(rows=[]))
+@pytest.mark.parametrize('missing_populated_predicates', [False, True])
+def test_empty_original_grid_remains_valid_when_stronger_catalogs_are_available(missing_populated_predicates):
+    value = envelope()
+    if missing_populated_predicates:
+        value['Payload'].pop('IsTransactionWithRelated')
+        value['Payload'].pop('PreviousFormData')
+        form = json.loads(value['Payload']['CurrentFormData'])
+        form['MainFormData'].pop('IsTransactionWithRelated')
+        value['Payload']['CurrentFormData'] = corpus.wire(form)
+    result = adapt(packets(rows=[], value=value))
     assert result['eligible'], result['reason']
     section = next(s for s in result['sections'] if s['name'] == 'L10-A')
     assert section['tables'][0]['rows'] == []
+    report = next(p for p in result['provenance']['projections'] if p['form'] == 'L10-A')
+    assert report['kind'] == 'corporate-l10a-empty-v1'
+    assert report['offered_kind'] == 'corporate-l10a-populated-v1'
+
+
+def test_submitted_predecessor_and_last_submitted_data_cannot_overwrite_original_grid_rows():
+    value = envelope()
+    value['Payload']['PreviousFormData'] = corpus.wire({ROOT: {'Name': 'SYNTHETIC PREVIOUS BAIT'}})
+    value['Payload']['LastSubmittedFormData'] = corpus.wire({ROOT: {'Name': 'SYNTHETIC LAST BAIT'}})
+    result = adapt(packets(value=value))
+    assert result['eligible'], result['reason']
+    section = next(s for s in result['sections'] if s['name'] == 'L10-A')
+    assert [r[0] for r in section['tables'][0]['rows']] == ['SYNTHETIC RELATED PARTY'] * 2
+
+
+def test_populated_grid_minimum_successful_sequence_does_not_follow_iterator_order():
+    raw = packets()
+    repeated = deepcopy(raw[1])
+    repeated['context']['sequence'] = 9
+    repeated['context']['relative_path'] = repeated['context']['relative_path'].replace('0002.json', '0009.json')
+    result = adapt([repeated, *reversed(raw)])
+    assert result['eligible'], result['reason']
+    report = next(p for p in result['provenance']['projections'] if p['form'] == 'L10-A')
+    assert {e['response_sequence'] for e in report['values'] if e['path'][0] == 'Data'} == {2}
 
 
 def test_one_shot_stop_from_populated_provider_is_not_demoted(browser, tmp_path, monkeypatch):

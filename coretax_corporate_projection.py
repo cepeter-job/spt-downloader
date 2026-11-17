@@ -51,9 +51,9 @@ INDUK_UNPROJECTED_REASON = 'unprojected_induk_captions'
 L10A_ROOT = 'DeclarationTransactionRelatedParties'
 L10A_GRID_ENDPOINT = CORPORATE_L10A_GRID_URL
 L10A_GRID_NAME = 'L10-A/l10a-grid'
-# The pinned L10-A panel owns no scalar control: its declared root is patched
-# straight into the form group, which only re-reads PeriodYear/CollectorTin
-# from MainFormData. All worksheet data is the reviewed l10a-grid row model.
+# The pinned L10-A panel owns no scalar body control: it remembers the declared
+# root but only re-reads PeriodYear/CollectorTin from MainFormData. All worksheet
+# body data belongs to the independent reviewed l10a-grid response.
 # Columns and captions are read from that owner's initColumn()/ngOnChanges.
 L10A_COLUMNS = ('Name', 'TIN', 'Country', 'RelationshipCode', 'BusinessActivity',
                 'TypeOfTransaction', 'TransactionValue', 'PricingMethod', 'ReasonPricingMethod')
@@ -1010,29 +1010,6 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
              if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
     main = root.get('MainFormData')
-    if (proof['route'] != route or event.get('component_lifetime') is None
-            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
-            or fields.get('ReturnSheetStatusCode') != 'SUBMITTED'
-            or record.get('source_status') != 'SPT Dilaporkan'
-            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
-            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
-            or not isinstance(main, dict)
-            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
-                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
-            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
-        raise _UnsupportedMetadata('unverified_corporate_l10a_submitted_lifecycle')
-    if 'PreviousFormData' not in payload:
-        raise _UnsupportedMetadata('missing_corporate_l10a_previous_encoding')
-    previous = payload['PreviousFormData']
-    if previous is not None:
-        if type(previous) is not str:
-            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding')
-        try:
-            decoded_previous = _corporate_json(previous)
-        except JsonSafetyError:
-            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding') from None
-        if decoded_previous is not None and not isinstance(decoded_previous, dict):
-            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_shape')
     tables = proof['tables']
     structure = {'form': 'L10-A', 'owner_chain': [
         'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table']}
@@ -1061,22 +1038,54 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
             raise _UnsupportedMetadata('unverified_corporate_l10a_grid_page')
         offsets.add(page['offset'])
         pages.append((_l10a_page_source(grid_packets, query), query))
+    if (len(grids[0]['pages']) == 1 and
+            _corporate_integer(pages[0][0]['payload']['TotalRecords']) == 0):
+        # A valid stronger offer cannot disable the independently valid legacy
+        # empty path. No catalog label or populated-only flag is consumed here.
+        empty = {**binding, 'projection': {'kind': 'corporate-l10a-empty-v1',
+            'builds': {CIT_SOURCE: proof['builds'][CIT_SOURCE]}, 'route': proof['route']}}
+        empty_forms = [empty if form is binding else form for form in observed_forms]
+        report = _apply_l10a(empty, section, empty_forms, root=root, payload=payload,
+            record=record, event=event, grid_packets=grid_packets)
+        report['offered_kind'] = proof['kind']
+        return report
+    if (proof['route'] != route or event.get('component_lifetime') is None
+            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+            or fields.get('ReturnSheetStatusCode') != 'SUBMITTED'
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or not isinstance(main, dict)
+            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
+                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_submitted_lifecycle')
+    if 'PreviousFormData' not in payload:
+        raise _UnsupportedMetadata('missing_corporate_l10a_previous_encoding')
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding')
+        try:
+            decoded_previous = _corporate_json(previous)
+        except JsonSafetyError:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding') from None
+        if decoded_previous is not None and not isinstance(decoded_previous, dict):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_shape')
     catalogs = bind_corporate_reference_catalogs(proof['references'], reference_packets,
         kinds=tuple(L10A_LABELS.values()), event=event, builds=proof['builds'])
     rows, values, queries, total = [], [], [], None
     for source, query in sorted(pages, key=lambda item: item[1]['First']):
         page, source_event = source['payload'], source['event']
         count = _corporate_integer(page['TotalRecords'])
-        data = [] if page['Data'] is None and count == 0 else page['Data']
-        if (query['First'] != len(rows) or not isinstance(data, list)
-                or not data and (count != 0 or len(pages) != 1)
+        data = page['Data']
+        if (query['First'] != len(rows) or not isinstance(data, list) or not data
                 or len(data) > 10 or total is not None and total != count):
             raise _UnsupportedMetadata('unverified_corporate_l10a_complete_pages')
         total = count
-        result = (project_l10a_populated(data, headers=proof['tables'][0]['headers'],
+        result = project_l10a_populated(data, headers=proof['tables'][0]['headers'],
             tax_type=fields['TaxTypeCode'], locale=proof['locale'],
-            labels={kind: catalog['lookups'] for kind, catalog in catalogs.items()}) if data else
-            project_l10a([], headers=L10A_HEADERS, tax_type=fields['TaxTypeCode'], locale=proof['locale']))
+            labels={kind: catalog['lookups'] for kind, catalog in catalogs.items()})
         for entry in result['provenance']:
             entry['destination']['row'] += len(rows)
             entry.update(response_sequence=source_event['sequence'], container=['Payload'])

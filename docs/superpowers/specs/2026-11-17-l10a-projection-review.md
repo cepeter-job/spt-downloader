@@ -1,6 +1,21 @@
-# L10-A PR #272 — representation review and closed scope
+# L10-A PR #272 — populated consumer and representation review
 
-## Status / decision
+## Current populated implementation candidate (17 November 2026)
+
+The current follow-through adds `corporate-l10a-populated-v1`, while retaining
+`corporate-l10a-empty-v1`. It consumes the single shared passive-catalog producer
+from PR #285 at `84f054d998d5dca7d6d8dc1193a16b1227e8c389`; no competing
+transport registry, catalog adapter, clock/version selector or active request
+was introduced by the A consumer. The exact shared snapshot was merged into this
+owned branch for combined hosted verification, not merged to main. Parent owns
+consolidation and the independently approved populated AGENTS contract.
+
+**Verification pending:** the new candidate must pass exact-head hosted checks.
+No locally executed product tests, imports, browser fixtures or builds are
+claimed. Cached source review is not a live provider proof. The old correction
+and its green empty-only results below are historical, not populated acceptance.
+
+## Historical empty-only correction / decision
 
 **Source correction verified; contract follow-up requires fresh checks.** The user renewed explicit
 edit authorization on 17 November 2026: “Izinkan perbaikan L10-A lengkap; tetap DOM
@@ -185,4 +200,116 @@ correction, not a later documentation head; the approved contract follow-up
 must receive its own fresh checks, recorded in the PR body.
 
 Empty-only GREEN will not complete populated support, live native acceptance or
-authorize consolidation. No new catalog admission was added.
+authorize consolidation. No new catalog admission was added by that correction.
+
+## Populated numeric proof: caller precedes pipe
+
+Independently decoded the already cached Brotli vendor asset (no portal fetch).
+Its 2,525,901 decoded bytes hash to the configured VENDOR pin
+`6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173`.
+CIT and MAIN were independently rehashed again and match the configured pins
+above. VENDOR contains Angular version literal 14.1.0 at character 1273538.
+
+The earlier sentence that inferred a displayed zero from the pipe's nullish
+coalescing was incomplete. MAIN's actual `checkIsString` at 4279802 returns true
+for **null as well as non-time strings**. `Ka` at 4224197 therefore passes null
+straight to interpolation; the rendered cell is blank and the pipe is not
+called. Direct invocation of `numberformat_ignoreprec(null,0)` does yield zero,
+but that is not this active grid call. Preserve this distinction in tests and
+provenance. MAIN's time regex at 4258633 recognizes an initial HH:mm; those
+strings do not receive ordinary string bypass and remain unsupported here.
+
+The precise public source excerpts and their individual hashes/character ranges
+are retained in `tests/fixtures/corporate_l10a_renderer.json`. Hosted Edge tests
+execute the measured DecimalPipe class (VENDOR 1214520..1218199), digit grammar,
+number-style/symbol selectors and original Indonesian locale data, together with
+the unmodified application pipe constructor (MAIN 4031960..4032226), active
+`Ka` and `checkIsString`. Only Angular registration/locale-lookup/template-
+instruction plumbing is synthetic; the numeric algorithm is not rewritten as
+an alleged framework oracle. No production code or snippets are executed locally.
+
+Supported numeric tokens must be finite, within fifteen integral digits and
+exactly representable by the Number that JSON.parse consumes; compare the
+original Decimal to Decimal.from_float without dropping its lexeme. DecimalPipe
+1.0-0 rounds a binary-exact half away from zero, suppresses a rounded negative
+zero and groups with Indonesian full stops. Assertions specify 1234.5 -> 1.235,
+-1234.5 -> -1.235, -0/-0.25 -> 0. Literal non-time strings bypass formatting,
+including `1234.50` and literal `-0`; null remains blank. Non-binary-exact 0.1,
+underflow, unsafe magnitudes and time-shaped strings remain unsupported rather
+than guessing rounded source intent. Framework boundary cases explicitly show
+why 0.49999999999999999 and 9007199254740993 cannot be treated as exact source
+numbers. USD/oil-and-gas routes remain unsupported; the captured route and exact
+Rupiah header, not edit validators or a two-decimal shortcut, select this subset.
+
+## Submitted lifecycle and original online row ownership
+
+CIT 2646500..2649900: `mapPrefillData` assigns original outer baseFormData,
+then `fillForm` sets submitted state, parses CurrentFormData/PreviousFormData and
+calls `mapFormData`. An amendment's LastSubmittedFormData is applied only when
+not submitted or on the history route. The literal submitted selected View
+route excludes both branches. The new consumer requires SUBMITTED, the selected
+literal model/type, preceding Induk, valid explicit PreviousFormData encoding,
+and both outer/current numeric-one IsTransactionWithRelated. It retains those
+original predicates separately under Payload and CurrentFormData paths.
+`setShowAttachment10abc` at 2705414 and the Induk callback at 2695879 both use
+that flag; contradictory/missing/boolean/string flags remain unsupported.
+
+CIT 2622578 passes recordId, outer baseFormData, saved child formData, submitted
+state and route-derived IsRupiah to L10-A. Child `ngOnChanges` at 27800..29350
+only remembers old formData and fills the two header controls from main data;
+it does **not** replace the online grid's rows with a saved child-body alias.
+The grid's `initGrid` near 9590 binds ReturnSheetRecordId; its original online
+Data/TotalRecords/Index packet, not the inert saved root, owns every body row.
+The declared root still must be absent/null/[]/{} so no unrelated source subtree
+is discarded; presence/type/container/primary sequence remain explicit.
+
+MAIN 4270400..4274000: the ordinary HTTP callback selects Payload.Data (the
+separate Result-only schema stays unsupported), calls `initializeGrid` and
+assigns that original row array to gridModel.Data. The reviewed nine columns
+have no RowNumber, ParameterData or localizationLookup mutation. Closed row
+schema excludes those keys and every unsupported extra. Submitted initColumn
+omits checkbox/actions; edit/upload/delete refresh callbacks are not part of
+this branch. Reference cells resolve through the already reviewed ordinary
+asynchronous consumer, never raw-code fallback. No later value-changing callback
+for an admitted row is inferred or polled. Changed original snapshots, mixed
+attempts/clock/provider facts, new late responses, privacy/identity contradictions
+and Stop retain their existing stronger gate precedence.
+
+The observer checks enabled tab/panel/form and the exact form/grid/ui-grid/
+p-table/table ownership, all nine captions and no footer before/after the owned
+pagination. It reads no input, checked state, tbody or footer business value.
+The shared provider fact and its three configured positive digests stay on the
+manifest, not response descriptors. Final capture/held readers remain the shared
+producer's responsibility; this A consumer adds no final child sampler or
+sequential L7/B-history graft.
+
+## Native wiring and acceptance matrix
+
+- Reuse `corporate_reference_bindings` and
+  `bind_corporate_reference_catalogs` from the single shared owner. Require all
+  four original singleton catalogs, exact complete successful sequence sets,
+  attempt/route/lifetime/clock/provider equality, full typed snapshots,
+  consumer ordering and active version selection. Duplicate catalog codes select
+  the original Details index, not source iterator order. Null/absent codes can
+  render blank only after those complete original catalogs prove the lookup.
+- Retain the `grid_packets` keyword on `apply_projections`. Select each original
+  page by its exact seven-field id-ID First/Rows10 query and minimum successful
+  sequence, preserving page-local Data coordinates and global destination rows.
+  Complete ordered multi-page inventories retain duplicate occurrences, typed
+  count/Index controls and raw row identifiers. Other form dispatch is unchanged.
+- Hosted tests cover positive populated original adapter, reversed event order,
+  12-row owned SPA observer -> capture -> adapter -> both held representations
+  -> saved/reopened approved L10-A workbook, descriptions different from codes,
+  duplicate catalog codes and body rows, null/numeric/string boundaries, strict
+  malformed source/proof inputs, original predicate custody and one-shot Stop.
+  Existing empty/query/minimum-sequence/fatal-decoder tests remain unchanged.
+- No resources, protected AGENTS or CI files were changed. The current protected
+  contract still records EMPTY-ONLY. Parent must separately review/approve the
+  actual populated contract before merge/consolidation; this report does not
+  substitute for it. All full exact-head CI results are pending until recorded
+  against the new combined head in the PR body.
+- Original live same-attempt catalogs and application-owned build-matched native
+  acceptance remain operator-owned. Request one bounded ordinary submitted
+  populated capture only after producer readiness; cache-only or unsupported
+  natural transports remain whole-record DOM fallback. Synthetic tests never
+  establish live acceptance, other-form mapping, financial PDFs or job COMPLETE.
