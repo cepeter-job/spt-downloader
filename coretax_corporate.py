@@ -943,6 +943,12 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+            if name == 'L10-A':
+                # The panel itself is header-only; its single data surface is
+                # the l10a-grid binding captured below, so the review pin is
+                # still the only proof this branch carries.
+                binding['projection'] = {'kind': 'corporate-l10a-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

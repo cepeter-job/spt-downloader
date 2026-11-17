@@ -1503,7 +1503,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             root, payload, event = primary_source
             projected = apply_projections(sections, observed_forms, root=root, payload=payload,
                 record=record, event=event, country_packets=country_packets,
-                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets)
+                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets,
+                grid_events=provenance['events'])
             if projected:
                 provenance['projections'] = projected
         except _UnsupportedMetadata as error:
