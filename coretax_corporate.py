@@ -944,11 +944,16 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L10-A':
-                # The panel itself is header-only; its single data surface is
-                # the l10a-grid binding captured below, so the review pin is
-                # still the only proof this branch carries.
-                binding['projection'] = {'kind': 'corporate-l10a-v1',
-                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                # This capability proves only an original zero-row grid. The
+                # adapter must refuse populated rows without active catalogs;
+                # a reference code is not the ordinary grid's displayed label.
+                fields = record.get('source_fields', {})
+                route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+                    str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                        fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+                if page.url == route:
+                    binding['projection'] = {'kind': 'corporate-l10a-empty-v1',
+                        'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

@@ -1,20 +1,17 @@
-"""Reviewed L10-A (hubungan istimewa) projection contracts; GitHub-runner only.
-
-The pinned L10-A panel owns no scalar control. Its declared root is patched
-straight into a form group that only re-reads the two header values from
-MainFormData, so the approved worksheet is exactly the reviewed l10a-grid row
-model: nine literal columns whose captions are row 2 of the template sheet.
-"""
+"""L10-A empty-only custody; populated descriptions remain unproved (CI-only)."""
+from copy import deepcopy
 import importlib
 
 import pytest
 
-from coretax_json import _CorporateNumber, adapt_corporate_detail
+from coretax_json import JsonSafetyError, _CorporateNumber, _UnsupportedMetadata, adapt_corporate_detail
 import support_json_corpus as corpus
-
 
 GRID = corpus.ORIGIN + '/returnsheet/api/loadcit/l10a-grid'
 ROOT = 'DeclarationTransactionRelatedParties'
+FRAME = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' +
+         '/'.join((corpus.TAXPAYER_ID, corpus.RECORD_ID, 'ICT_RCIT', corpus.AGGREGATE_ID)) + '?view=true')
+ABSENT = object()
 
 
 def module():
@@ -24,26 +21,18 @@ def module():
 def row(**overrides):
     value = {'RecordId': '00000000-0000-4000-8000-000000000010',
              'Name': 'SYNTHETIC RELATED PARTY', 'TIN': '0000000000000002',
-             'Country': 'ID', 'RelationshipCode': '01',
+             'Country': 'IDN', 'RelationshipCode': '01',
              'BusinessActivity': 'SYNTHETIC ACTIVITY', 'TypeOfTransaction': '01',
-             'TransactionValue': _CorporateNumber('1234.5'),
+             'TransactionValue': corpus.Number('1234'),
              'PricingMethod': '01', 'ReasonPricingMethod': 'SYNTHETIC REASON'}
     value.update(overrides)
     return value
 
 
-def wire_row(**overrides):
-    value = row(**overrides)
-    value['TransactionValue'] = corpus.Number(str(value['TransactionValue']))
-    return value
-
-
-def project(rows=None, **overrides):
-    helper = getattr(module(), 'project_l10a', None)
-    assert callable(helper), 'Missing reviewed L10-A projection'
+def project(rows, **overrides):
     options = {'headers': list(module().L10A_HEADERS), 'tax_type': 'ICT_RCIT', 'locale': 'id-ID'}
     options.update(overrides)
-    return helper([row()] if rows is None else rows, **options)
+    return module().project_l10a(rows, **options)
 
 
 def request(first=0):
@@ -51,41 +40,55 @@ def request(first=0):
             'SortField': '', 'SortOrder': 1, 'Filters': [], 'LanguageId': 'id-ID'}
 
 
-def grid_packet(rows, sequence=2, *, total=None, first=0):
-    return corpus.packet({'IsSuccessful': True, 'Payload': {
-        'TotalRecords': len(rows) if total is None else total, 'Data': rows, 'Index': None}},
-        sequence, endpoint=GRID, request=request(first))
+def owned(packet, route=FRAME):
+    packet['context'].update(frame_url=route, component_lifetime={
+        'kind': 'corporate-submitted-spa-v1', 'attempt': corpus.ATTEMPT,
+        'record_id': corpus.RECORD_ID, 'source_url': corpus.LIST_URL, 'detail_url': route,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True})
+    return packet
 
 
-def proof(route=None):
-    return {'kind': 'corporate-l10a-v1',
-            'builds': {module().CIT_SOURCE: module().BUILD_DIGESTS[module().CIT_SOURCE]},
-            'route': corpus.FRAME_URL if route is None else route}
+def grid_packet(rows=(), sequence=2, *, total=None, query=None, endpoint=GRID,
+                successful=True, status=200):
+    rows = list(rows) if isinstance(rows, tuple) else rows
+    return owned(corpus.packet({'IsSuccessful': successful, 'Payload': {
+        'TotalRecords': (len(rows) if rows is not None else 0) if total is None else total,
+        'Data': rows, 'Index': None}}, sequence, endpoint=endpoint,
+        request=request() if query is None else query, status=status))
 
 
-def observed(projection=None, *, pages=None):
+def proof():
+    return {'kind': 'corporate-l10a-empty-v1',
+            'builds': {module().CIT_SOURCE: module().BUILD_DIGESTS[module().CIT_SOURCE]}, 'route': FRAME}
+
+
+def observed(projection=None, *, query=None, endpoint=GRID):
     forms = corpus.observed()
+    forms[0]['projection']['route'] = FRAME
     forms.append({'name': 'L10-A', 'paths': [[ROOT]],
-                  'grids': [{'name': 'L10-A/l10a-grid', 'endpoint': GRID,
-                             'pages': pages if pages is not None
-                             else [{'request_json': request(), 'offset': 0}]}],
-                  'responses': [], 'dependencies': [],
-                  'projection': proof() if projection is None else projection})
+        'grids': [{'name': 'L10-A/l10a-grid', 'endpoint': endpoint,
+                  'pages': [{'request_json': request() if query is None else query, 'offset': 0}]}],
+        'responses': [], 'dependencies': [], 'projection': proof() if projection is None else projection})
     return forms
 
 
-def primary(value=(), *, included=True):
+def primary(value=ABSENT):
     form = corpus.current_form()
-    if included:
-        form[ROOT] = list(value)
-    return corpus.primary(form)
+    if value is not ABSENT:
+        form[ROOT] = value
+    return owned(corpus.primary(form))
+
+
+def selected():
+    record = corpus.selected_record()
+    record['source_fields'].update(ReturnSheetTypeCode='ICT_RCITR', ReturnSheetStatusCode='SUBMITTED',
+                                  ReturnSheetModel='Normal')
+    return record
 
 
 def adapt(forms=None, packets=None, record=None):
-    return adapt_corporate_detail(iter(packets if packets is not None
-                                       else [primary(), grid_packet([wire_row()])]),
-                                  corpus.selected_record() if record is None else record,
-                                  corpus.SCOPE, observed() if forms is None else forms)
+    return adapt_corporate_detail(iter([primary(), grid_packet()] if packets is None else packets),
+        selected() if record is None else record, corpus.SCOPE, observed() if forms is None else forms)
 
 
 def test_caption_row_is_the_reviewed_grid_column_order():
@@ -94,175 +97,189 @@ def test_caption_row_is_the_reviewed_grid_column_order():
         'NILAI TRANSAKSI (Rupiah)', 'METODE PENENTUAN HARGA TRANSFER YANG DIGUNAKAN',
         'ALASAN PENGGUNAAN METODE']
     assert module().L10A_COLUMNS == ('Name', 'TIN', 'Country', 'RelationshipCode',
-        'BusinessActivity', 'TypeOfTransaction', 'TransactionValue', 'PricingMethod',
-        'ReasonPricingMethod')
+        'BusinessActivity', 'TypeOfTransaction', 'TransactionValue', 'PricingMethod', 'ReasonPricingMethod')
 
 
-def test_every_template_cell_comes_from_one_proven_grid_column():
-    result = project()
-    assert result['rows'] == [['SYNTHETIC RELATED PARTY', '0000000000000002', 'ID', '01',
-                               'SYNTHETIC ACTIVITY', '01', '1.234,5', '01', 'SYNTHETIC REASON']]
-    assert [entry['path'] for entry in result['provenance']] == [
-        ['Payload', 'Data', 0, field] for field in module().L10A_COLUMNS]
-    assert [entry['destination']['column'] for entry in result['provenance']] == list(range(1, 10))
-    assert all(entry['rule'] in ('literal-source', 'number-id-fraction-2')
-               for entry in result['provenance'])
+def test_empty_projector_emits_no_invented_rows_or_values():
+    assert project([]) == {'rows': [], 'provenance': []}
 
 
-def test_reference_typed_columns_keep_their_literal_source_codes():
-    # No catalog is captured for this panel: a resolved label would be invented.
-    result = project([row(Country='SGP', RelationshipCode='02', TypeOfTransaction='03',
-                          PricingMethod='04')])
-    assert result['rows'][0][2:4] == ['SGP', '02']
-    assert result['rows'][0][5] == '03'
-    assert result['rows'][0][7] == '04'
+@pytest.mark.parametrize('value', [None, 0, {}, [row()], [row(), row()],
+    [row(Country=None, RelationshipCode=None, TypeOfTransaction=None, PricingMethod=None)],
+    [row(TransactionValue=None)], [row(TransactionValue=corpus.Number('1234.5'))],
+    [row(TransactionValue=corpus.Number('-0'))],
+    [row(TransactionValue=corpus.Number('1000000000000000'))]])
+def test_populated_or_unknown_projector_input_cannot_certify_display(value):
+    with pytest.raises(_UnsupportedMetadata):
+        project(value)
 
 
-def test_a_row_without_its_identifier_is_still_the_reviewed_shape():
-    value = row()
-    value.pop('RecordId')
-    assert project([value])['rows'][0][0] == 'SYNTHETIC RELATED PARTY'
+@pytest.mark.parametrize('options', [{'headers': []}, {'locale': 'en-US'}, {'tax_type': 'ICT_ROGCIT'}])
+def test_empty_projector_still_requires_its_reviewed_structure(options):
+    with pytest.raises(_UnsupportedMetadata, match='unverified_corporate_l10a_structure'):
+        project([], **options)
 
 
-def test_an_absent_transaction_value_stays_blank():
-    assert project([row(TransactionValue=None)])['rows'][0][6] == ''
-
-
-@pytest.mark.parametrize('mutation,reason', [
-    ({'TransactionValue': '1234.5'}, 'unsupported_corporate_l10a_amount_type'),
-    ({'TransactionValue': True}, 'unsupported_corporate_l10a_amount_type'),
-    ({'TransactionValue': _CorporateNumber('-1')}, 'unsupported_corporate_l10a_negative_amount'),
-    ({'Name': 7}, 'unsupported_corporate_l10a_text_type'),
-    ({'Synthetic': 'EXTRA'}, 'unsupported_corporate_l10a_row'),
-])
-def test_unreviewed_row_shapes_refuse(mutation, reason):
-    from coretax_json import _UnsupportedMetadata
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project([row(**mutation)])
-    assert str(error.value) == reason
-
-
-def test_a_missing_column_refuses_the_row():
-    from coretax_json import _UnsupportedMetadata
-    value = row()
-    value.pop('ReasonPricingMethod')
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project([value])
-    assert str(error.value) == 'unsupported_corporate_l10a_row'
-
-
-def test_headers_must_be_the_template_header_row():
-    from coretax_json import _UnsupportedMetadata
-    with pytest.raises(_UnsupportedMetadata) as error:
-        project(headers=list(module().L10A_HEADERS)[:-1])
-    assert str(error.value) == 'unverified_corporate_l10a_structure'
-
-
-def test_absent_declared_root_still_projects_the_grid_table():
-    result = adapt(packets=[primary(included=False), grid_packet([wire_row()])])
-    assert result['eligible'], result['reason']
-    section, = [item for item in result['sections'] if item['name'] == 'L10-A']
+@pytest.mark.parametrize('value', [ABSENT, None, [], {}])
+@pytest.mark.parametrize('data', [[], None])
+def test_only_original_inert_root_and_captured_zero_grid_are_admitted(value, data):
+    packets = [primary(value), grid_packet(data)]
+    before = deepcopy(packets)
+    result = adapt(packets=packets)
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    assert packets == before
+    section, = [s for s in result['sections'] if s['name'] == 'L10-A']
     table, = section['tables']
-    assert table['headers'] == module().L10A_HEADERS
-    assert table['body_row_count'] == 1 and table['complete'] is True
+    assert table == {'name': 'L10-A/l10a-grid', 'headers': module().L10A_HEADERS, 'rows': [],
+        'footer': [], 'footer_spans': [], 'body_row_count': 0, 'source_total': 0, 'complete': True}
+    projection, = [p for p in result['provenance']['projections'] if p['form'] == 'L10-A']
+    root = projection['source_root']
+    assert root['present'] is (value is not ABSENT)
+    assert root['path'] == [ROOT] and root['response_sequence'] == 1
+    assert root['container'] == ['Payload', 'CurrentFormData']
+    if value is ABSENT:
+        assert 'value' not in root and 'type' not in root
+    else:
+        assert root['value'] == value
+        assert root['type'] == ('null' if value is None else 'array' if isinstance(value, list) else 'object')
+    values = {tuple(v['path']): v for v in projection['values']}
+    assert values[('Data',)]['value'] == data
+    assert values[('Data',)]['type'] == ('null' if data is None else 'array')
+    assert values[('TotalRecords',)]['type'] == 'number' and values[('TotalRecords',)]['value'] == '0'
+    assert values[('Index',)]['type'] == 'null' and values[('Index',)]['value'] is None
+    assert all(v['response_sequence'] == 2 and v['container'] == ['Payload'] for v in values.values())
 
 
-def test_the_empty_declared_root_dump_is_replaced_by_the_approved_table():
-    result = adapt()
-    assert result['eligible'], result['reason']
-    section, = [item for item in result['sections'] if item['name'] == 'L10-A']
-    assert section['fields'] == []
-    table, = section['tables']
-    assert table['name'] == 'L10-A/l10a-grid'
-    assert table['headers'] == module().L10A_HEADERS
-    assert table['rows'] == [['SYNTHETIC RELATED PARTY', '0000000000000002', 'ID', '01',
-                              'SYNTHETIC ACTIVITY', '01', '1.234,5', '01', 'SYNTHETIC REASON']]
-    assert table['footer'] == [] and table['footer_spans'] == []
-    assert table['body_row_count'] == table['source_total'] == 1
-    assert not any(item.get('headers') == ['JSON path', 'JSON type', 'Source value']
-                   for item in section['tables'])
-
-
-def test_each_page_keeps_the_sequence_that_carried_its_rows():
-    pages = [{'request_json': request(0), 'offset': 0},
-             {'request_json': request(10), 'offset': 10}]
-    packets = [primary(),
-               grid_packet([wire_row(Name='PARTY %d' % index, TransactionValue=str(100 + index))
-                            for index in range(10)], 2, total=12),
-               grid_packet([wire_row(Name='PARTY %d' % index, TransactionValue=str(100 + index))
-                            for index in range(10, 12)], 3, total=12, first=10)]
-    result = adapt(observed(pages=pages), packets)
-    assert result['eligible'], result['reason']
-    projected, = [item for item in result['provenance']['projections'] if item['form'] == 'L10-A']
-    sequences = {}
-    for entry in projected['values']:
-        sequences.setdefault(entry['path'][2], entry['response_sequence'])
-    assert {index: sequences[index] for index in (0, 9, 10, 11)} == {0: 2, 9: 2, 10: 3, 11: 3}
-
-
-def test_a_root_that_carries_its_own_body_is_not_silently_dropped():
-    result = adapt(packets=[primary([{'Name': 'SYNTHETIC UNREVIEWED PARTY'}]),
-                            grid_packet([wire_row()])])
-    assert result['eligible'] is False
+@pytest.mark.parametrize('value', [[{}], {'Body': []}, {'Body': {}}, [None], {'Amount': 0},
+                                 '', '[]', corpus.Number('0'), False])
+def test_nonempty_decoded_root_cannot_hide_in_one_flattened_leaf(value):
+    result = adapt(packets=[primary(value), grid_packet()])
+    assert not result['eligible'] and result['sections'] == []
     assert 'unsupported_corporate_l10a_source_root' in result['reason']
 
 
-@pytest.mark.parametrize('projection', [
-    {'kind': 'corporate-l10a-v0'},
-    {'kind': 'corporate-l10a-v1', 'builds': {}, 'route': corpus.FRAME_URL},
-    {'kind': 'corporate-l10a-v1',
-     'builds': {module().CIT_SOURCE: 'APPROVED'}, 'route': corpus.FRAME_URL},
-    {'kind': 'corporate-l10a-v1', 'builds': {module().CIT_SOURCE: 'a' * 64},
-     'route': corpus.FRAME_URL, 'locale': 'id-ID'},
-])
-def test_projection_proof_must_match_the_reviewed_shape(projection):
-    result = adapt(observed(projection))
-    assert result['eligible'] is False
-    assert 'unverified_corporate_l10a_binding' in result['reason']
+@pytest.mark.parametrize('rows', [[row()], [row(), row()], [{}]])
+def test_populated_grid_retains_whole_record_fallback_even_when_codes_look_displayable(rows):
+    result = adapt(packets=[primary(), grid_packet(rows)])
+    assert not result['eligible'] and result['sections'] == []
+    assert 'unsupported_corporate_l10a_populated' in result['reason']
 
 
-def test_route_or_lifecycle_contradiction_refuses_the_projection():
-    result = adapt(observed(proof(corpus.FRAME_URL + '/changed')))
-    assert result['eligible'] is False
-    assert 'unverified_corporate_l10a_binding' in result['reason']
-    forms = observed()
-    forms[0].pop('projection')
-    record = corpus.selected_record()
-    record['meta']['Model SPT'] = 'Amendment 002'
-    result = adapt(forms, record=record)
-    assert result['eligible'] is False
-    assert 'unverified_corporate_l10a_submitted_lifecycle' in result['reason']
+@pytest.mark.parametrize('digest', ['a' * 64, None, '', 'APPROVED', 'F' * 64])
+def test_proof_digest_must_equal_the_configured_reviewed_pin(digest):
+    marker = proof()
+    marker['builds'][module().CIT_SOURCE] = digest
+    result = adapt(observed(marker))
+    assert not result['eligible'] and 'unverified_corporate_l10a_binding' in result['reason']
 
 
-def test_the_grid_binding_must_be_the_single_reviewed_page_set():
-    forms = observed()
-    binding = [item for item in forms if item['name'] == 'L10-A'][0]
-    binding['grids'][0]['endpoint'] = corpus.ORIGIN + '/returnsheet/api/loadcit/synthetic'
+def test_missing_configured_pin_and_missing_observed_digest_do_not_equal_permission(monkeypatch):
+    marker = proof()
+    marker['builds'][module().CIT_SOURCE] = None
+    forms = observed(marker)
+    forms[0].pop('projection')  # Isolate L10-A from Induk's separate missing-pin gate.
+    monkeypatch.setattr(module(), 'BUILD_DIGESTS', {})
     result = adapt(forms)
-    assert result['eligible'] is False
-    assert 'unverified_corporate_l10a_grid_binding' in result['reason']
+    assert not result['eligible'] and 'unverified_corporate_l10a_binding' in result['reason']
 
 
-def test_grid_rows_must_come_from_the_reviewed_payload_paths():
-    from coretax_json import _UnsupportedMetadata
-    table = {'headers': ['JSON path', 'JSON type', 'Source value'],
-             'rows': [['/Payload/Data/0/UnreviewedField', 'string', 'X']], 'complete': True}
-    with pytest.raises(_UnsupportedMetadata) as error:
-        module()._l10a_grid_rows(table)
-    assert str(error.value) == 'unsupported_corporate_l10a_grid_path'
+@pytest.mark.parametrize('kind', ['corporate-l10a-v1', 'corporate-l10a-v0', None])
+def test_old_unsafe_capability_is_not_reinterpreted_as_empty_proof(kind):
+    marker = proof()
+    marker['kind'] = kind
+    assert not adapt(observed(marker))['eligible']
 
 
-def test_projected_l10a_binds_every_template_cell(tmp_path):
+@pytest.mark.parametrize('change', ['route', 'extra', 'build-extra', 'path'])
+def test_proof_shape_and_declared_root_are_closed(change):
+    forms = observed()
+    marker = forms[-1]['projection']
+    if change == 'route':
+        marker['route'] += '/changed'
+    elif change == 'extra':
+        marker['locale'] = 'id-ID'
+    elif change == 'build-extra':
+        marker['builds'][module().MAIN_SOURCE] = 'a' * 64
+    else:
+        forms[-1]['paths'] = [[ROOT, 'Body']]
+    assert not adapt(forms)['eligible']
+
+
+@pytest.mark.parametrize('change', ['missing-lifetime', 'legacy-route', 'no-induk-order', 'model'])
+def test_empty_projection_retains_submitted_rupiah_owned_lifecycle(change):
+    forms, packets, record = observed(), [primary(), grid_packet()], selected()
+    if change == 'missing-lifetime':
+        for packet in packets:
+            packet['context'].pop('component_lifetime')
+    elif change == 'legacy-route':
+        for packet in packets:
+            owned(packet, FRAME.removesuffix('?view=true'))
+        for form in forms:
+            form['projection']['route'] = FRAME.removesuffix('?view=true')
+    elif change == 'no-induk-order':
+        forms.reverse()
+    else:
+        record['source_fields']['ReturnSheetModel'] = 'Amendment 002'
+    assert not adapt(forms, packets, record)['eligible']
+
+
+@pytest.mark.parametrize('change', [{'Rows': 20}, {'Rows': True}, {'SortField': 'Name'},
+    {'SortOrder': -1}, {'Filters': [{'Field': 'Name'}]}, {'LanguageId': 'en-US'},
+    {'Language': 'id-ID'}, {'First': 10}])
+def test_only_exact_reviewed_first_ten_row_query_can_be_projected(change):
+    query = {**request(), **change}
+    assert not adapt(observed(query=query), [primary(), grid_packet(query=query)])['eligible']
+
+
+def test_early_packet_binding_refusal_precedes_semantic_endpoint_guard():
+    forms = observed(endpoint=corpus.ORIGIN + '/returnsheet/api/loadcit/synthetic')
+    assert adapt(forms)['reason'] == 'unbound_corporate_source_response,incomplete_corporate_grid_source'
+
+
+def test_aligned_packet_reaches_separate_reviewed_endpoint_guard():
+    endpoint = corpus.ORIGIN + '/returnsheet/api/loadcit/synthetic'
+    result = adapt(observed(endpoint=endpoint), [primary(), grid_packet(endpoint=endpoint)])
+    assert not result['eligible'] and 'unverified_corporate_l10a_grid_binding' in result['reason']
+
+
+@pytest.mark.parametrize('defect', ['missing', 'failed', 'http', 'incomplete'])
+def test_empty_without_successful_complete_original_page_is_not_evidence(defect):
+    packet = grid_packet(successful=defect != 'failed', status=500 if defect == 'http' else 200,
+                         total=1 if defect == 'incomplete' else 0)
+    assert not adapt(packets=[primary()] if defect == 'missing' else [primary(), packet])['eligible']
+
+
+def test_page_provenance_uses_earliest_successful_sequence_not_iterator_order():
+    result = adapt(packets=[primary(), grid_packet(sequence=7), grid_packet(sequence=2)])
+    assert result['eligible'], result['reason']
+    projection, = [p for p in result['provenance']['projections'] if p['form'] == 'L10-A']
+    assert {v['response_sequence'] for v in projection['values']} == {2}
+
+
+def test_page_source_requires_exact_query_and_success_not_just_same_offset():
+    def source(sequence, *, query=None, successful=True, status=200):
+        return {'payload': {'Data': [], 'TotalRecords': _CorporateNumber('0'), 'Index': None},
+            'successful': successful, 'event': {'url': GRID, 'method': 'POST', 'sequence': sequence,
+                'status': status, 'request_json': request() if query is None else query}}
+    packets = {1: source(1, query={**request(), 'Rows': 20}), 2: source(2, successful=False),
+               3: source(3, status=500), 9: source(9), 4: source(4)}
+    assert module()._l10a_page_source(packets, request())['event']['sequence'] == 4
+    with pytest.raises(_UnsupportedMetadata, match='missing_corporate_l10a_grid_response'):
+        module()._l10a_page_source({k: v for k, v in packets.items() if k < 4}, request())
+
+
+def test_changed_page_snapshot_remains_fatal_before_projection():
+    with pytest.raises(JsonSafetyError):
+        adapt(packets=[primary(), grid_packet(sequence=2), grid_packet([row()], sequence=3)])
+
+
+def test_empty_l10a_saved_workbook_has_no_fabricated_body_value(tmp_path):
     from openpyxl import load_workbook
     import coretax_exporter as exporter
-    from support_templates import section, source_run
-    result = project([row(), row(Name='SYNTHETIC SECOND PARTY',
-                                 TransactionValue=_CorporateNumber('0'))])
-    table = {'name': 'L10-A/l10a-grid', 'headers': list(module().L10A_HEADERS),
-             'rows': result['rows'], 'footer': [], 'footer_spans': [],
-             'body_row_count': len(result['rows']), 'source_total': len(result['rows']),
-             'complete': True}
-    run = source_run('PPh Badan', [section('L10-A', tables=[table])])
+    from support_templates import source_run
+    result = adapt(packets=[primary([]), grid_packet()])
+    assert result['eligible'], result['reason']
+    run = source_run('PPh Badan', [s for s in result['sections'] if s['name'] == 'L10-A'])
     run['year'] = 2025
     run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
     run['records'][0]['capture_complete'] = True
@@ -273,11 +290,70 @@ def test_projected_l10a_binds_every_template_cell(tmp_path):
     try:
         sheet = book['L10-A']
         assert [sheet.cell(2, column).value for column in range(1, 10)] == module().L10A_HEADERS
-        assert sheet['A3'].value == 'SYNTHETIC RELATED PARTY'
-        assert sheet['B3'].value == '0000000000000002'
-        assert sheet['G3'].value == 1234.5 and sheet['G3'].data_type == 'n'
-        assert sheet['G4'].value == 0 and sheet['G4'].data_type == 'n'
+        assert all(sheet.cell(3, column).value is None for column in range(1, 10))
         assert reports[0]['complete'] is True
         assert reports[0]['unmapped_fields'] == reports[0]['unmapped_tables'] == 0
     finally:
         book.close()
+
+
+@pytest.mark.parametrize('route', [FRAME, FRAME.removesuffix('?view=true')])
+def test_observer_emits_empty_only_capability_on_the_literal_selected_route(monkeypatch, route):
+    from types import SimpleNamespace
+    import coretax_corporate as observer
+
+    class Element:
+        def count(self):
+            return 1
+
+        def is_visible(self):
+            return True
+
+        def locator(self, selector):
+            return self
+
+        def nth(self, index):
+            return self
+
+    class Tab:
+        def __init__(self, name):
+            self.name = name
+
+        def evaluate(self, script):
+            return self.name not in ('Induk', 'L10-A')
+
+        def inner_text(self):
+            return self.name
+
+    class Tabs:
+        def __init__(self):
+            self.tabs = [Tab(name) for name in observer.FORMS]
+
+        def count(self):
+            return len(self.tabs)
+
+        def nth(self, index):
+            return self.tabs[index]
+
+    evaluations = []
+
+    def evaluate(script, arg):
+        # Exactly the original CIT asset read; no environment/cache/catalog probe.
+        evaluations.append(arg)
+        return observer.CIT_SOURCE_SHA256
+
+    monkeypatch.setattr(observer, '_tabs', lambda page: (Element(), Tabs()))
+    monkeypatch.setattr(observer, '_native_panel', lambda *args: Element())
+    monkeypatch.setattr(observer, '_turn_grid', lambda *args: True)
+    capture = SimpleNamespace(request_observations=lambda: [
+        {'url': GRID, 'method': 'POST', 'sequence': 2, 'request_json': request()}])
+    forms = observer.observe_forms(SimpleNamespace(url=route, evaluate=evaluate), selected(), corpus.SCOPE,
+                                   capture, approved_digest=observer.CIT_SOURCE_SHA256)
+    assert forms is not None
+    binding, = [f for f in forms if f['name'] == 'L10-A']
+    assert binding['grids'][0]['pages'] == [{'request_json': request(), 'offset': 0}]
+    if route == FRAME:
+        assert binding['projection'] == proof()
+    else:
+        assert 'projection' not in binding  # Legacy leaves grant no semantic mapping.
+    assert evaluations == [observer.CIT_SOURCE_URL]
