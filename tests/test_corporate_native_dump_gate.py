@@ -12,13 +12,22 @@ DUMP = {'name': '/MainFormData', 'complete': True,
         'rows': [['/MainFormData/NPWP', 'string', 'placeholder']]}
 
 
-def section(name, tables):
-    return {'name': name, 'fields': [], 'tables': tables, 'text': ''}
+def section(name, tables, fields=()):
+    return {'name': name, 'fields': list(fields), 'tables': tables, 'text': ''}
 
 
 def test_payload_dump_table_refuses_the_capture():
     assert has_audit_dump_tables([section('Induk', [DUMP])]) is True
     assert has_audit_dump_tables([section('L3', [{'headers': ['A', 'B'], 'rows': [[1, 2]]}]),
+                                  section('L9', [DUMP])]) is True
+
+
+def test_projected_section_keeps_its_dump_as_custody_only():
+    identity = {'group': 'A. IDENTITAS WAJIB PAJAK', 'field': 'Tin', 'label': '1. NPWP',
+                'value': '0000000000000001'}
+    assert has_audit_dump_tables([section('Induk', [DUMP], [identity])]) is False
+    # A projected form does not launder an unprojected one.
+    assert has_audit_dump_tables([section('Induk', [DUMP], [identity]),
                                   section('L9', [DUMP])]) is True
 
 
