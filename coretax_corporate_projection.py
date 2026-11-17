@@ -837,7 +837,9 @@ def project_l9(form, *, tax_type, locale, migrated):
             number = _decimal(value)
         except (DecimalException, _UnsupportedMetadata):
             raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision') from None
-        if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
+        # Signed-zero display has not been proved; never canonicalize it to 0.
+        if (abs(number) > _MAX_INTEGER or number != number.to_integral_value()
+                or number.is_zero() and number.is_signed()):
             raise _UnsupportedMetadata('unsupported_corporate_l9_amount_precision')
         if name not in L9_SIGNED and number < 0:
             raise _UnsupportedMetadata('unsupported_corporate_l9_negative_amount')

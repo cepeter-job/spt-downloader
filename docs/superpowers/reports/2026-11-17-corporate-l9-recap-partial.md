@@ -37,7 +37,8 @@ fifteen digits. Non-difference operands are nonnegative. Reconciled bounded
 nonnegative sums prove each ordered addition exact in JavaScript; subtraction
 of bounded safe integers is exact. Null/missing leaves, strings, bools,
 fractions and unsafe magnitudes refuse instead of applying a guessed zero or
-rounding rule. Typed original operands and the migration selector retain their
+rounding rule. Signed-zero rendering is unproved and refuses as well, rather
+than silently canonicalizing the original sign. Typed original operands and the migration selector retain their
 real response sequence, container and source path.
 
 ## Admission and custody

@@ -26,6 +26,7 @@ def apply(*, forms=None, root=None, payload=None, event=None):
     (None, 'unsupported_corporate_l9_amount_type'),
     (10000000, 'unsupported_corporate_l9_amount_type'),
     (10000000.0, 'unsupported_corporate_l9_amount_type'),
+    (_CorporateNumber('-0'), 'unsupported_corporate_l9_amount_precision'),
     (_CorporateNumber('1000000000000000'), 'unsupported_corporate_l9_amount_precision'),
     (_CorporateNumber('1e999999999999999999'), 'unsupported_corporate_l9_amount_precision')])
 def test_null_numbers_and_unsafe_precision_never_get_coerced(value, reason):

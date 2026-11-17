@@ -18,7 +18,7 @@ import support_json_corpus as corpus
 
 
 class Fixture(BaseFixture):
-    def __init__(self, browser, monkeypatch, *, locale='id-ID', migrated=False):
+    def __init__(self, browser, monkeypatch, *, migrated=False):
         super().__init__(browser, monkeypatch)
         monkeypatch.setattr(projection, 'BUILD_DIGESTS', {ASSET: self.pins[ASSET]})
         monkeypatch.setattr(driver, 'CIT_SOURCE_SHA256', self.pins[ASSET])
@@ -26,7 +26,6 @@ class Fixture(BaseFixture):
         current['MainFormData']['IsMigrated'] = migrated
         current[projection.L9_ROOT] = payload_form()
         self.raw = corpus.primary(current)['body']
-        self.locale = locale
 
     def route(self, route):
         if route.request.url in {url for _, url in projection.L9_GRIDS}:
