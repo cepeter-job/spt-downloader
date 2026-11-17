@@ -29,14 +29,20 @@ CORPORATE_L3_FOOTER_URL = CORPORATE_L3_GRID_URL + '/footer'
 CORPORATE_L11A_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
     for kind in ('TYPE_OF_PROMOTION_COST', 'TANGIBLE_ASSET_INCLUDING_BUILDINGS',
                  'NON_PERFORMING_LOAN_CATEGORY', 'DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')}
+CORPORATE_L10_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('COUNTRY_CODE', 'RELATIONSHIP_TYPE', 'TRANSACTION_TYPE', 'PRICING_METHOD')}
 CORPORATE_REFERENCE_REQUESTS = {url: (kind,) for kind, url in
-    {**CORPORATE_L3_REFERENCE_URLS, **CORPORATE_L11A_REFERENCE_URLS}.items()}
+    {**CORPORATE_L3_REFERENCE_URLS, **CORPORATE_L11A_REFERENCE_URLS,
+     **CORPORATE_L10_REFERENCE_URLS}.items()}
 CORPORATE_REFERENCE_REQUESTS[ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'DEDUCTION_METHOD,TYPE_OF_FULFILLMENT'] = ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')
 CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-{index}-grid'
                                   for index in (1, 2, 3, 5))
 REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 REFERENCE_ORDER_SHA256 = load_build_pins().get(REFERENCE_ORDER_SOURCE)
+CORPORATE_REFERENCE_SOURCES = (
+    ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js',
+    ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js', REFERENCE_ORDER_SOURCE)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -192,6 +198,31 @@ def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
     return dict(value)
 
 
+def _corporate_reference_builds(value):
+    """Positive configured loaded pins, never missing==missing or SHA shape alone."""
+    pins = load_build_pins()
+    return (isinstance(value, dict) and set(value) == set(CORPORATE_REFERENCE_SOURCES)
+            and all(type(value[url]) is str and re.fullmatch(r'[0-9a-f]{64}', value[url])
+                    and type(pins.get(url)) is str and re.fullmatch(r'[0-9a-f]{64}', pins[url])
+                    and value[url] == pins[url] for url in CORPORATE_REFERENCE_SOURCES))
+
+
+def _capture_corporate_reference_providers(value, *, attempt, record_id, source_url, detail_url):
+    """Optional manifest-owned provider fact bound to the original owned Document."""
+    keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url', 'builds'}
+    if (not isinstance(value, dict) or set(value) != keys
+            or value.get('kind') != 'corporate-reference-providers-v1'
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or not _corporate_reference_builds(value.get('builds'))):
+        raise JsonSafetyError('Captured corporate reference providers are invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return {**value, 'builds': dict(value['builds'])}
+
+
 def _reference_consumer_order(details, kind):
     """Pinned ordinary cache.add order, retaining original response ordinals.
 
@@ -201,7 +232,7 @@ def _reference_consumer_order(details, kind):
     ordinary = {'EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS',
                 'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT',
                 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES',
-                *CORPORATE_L11A_REFERENCE_URLS}
+                *CORPORATE_L11A_REFERENCE_URLS, *CORPORATE_L10_REFERENCE_URLS}
     if (kind not in ordinary or not isinstance(details, list)
             or any(not isinstance(row, dict) or type(row.get('CodeDescription')) is not str for row in details)):
         raise _UnsupportedMetadata('unsupported_reference_cache_order')
@@ -914,6 +945,13 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured component lifetime has an unsupported owner')
         lifetime = _capture_component_lifetime(ctx['component_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    providers = None
+    if 'corporate_reference_providers' in ctx:
+        if lifetime is None or clock is None:
+            raise JsonSafetyError('Corporate reference providers lack original lifetime or clock')
+        providers = _capture_corporate_reference_providers(ctx['corporate_reference_providers'],
+            attempt=current, record_id=selected['record_id'],
+            source_url=selected['source_url'], detail_url=frame)
     l7_lifetime = None
     if 'corporate_l7_lifetime' in ctx:
         if lifetime is None:
@@ -949,6 +987,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['clock_interval'] = clock
     if lifetime is not None:
         event['component_lifetime'] = lifetime
+    if providers is not None:
+        event['corporate_reference_providers'] = providers
     if l7_lifetime is not None:
         event['corporate_l7_lifetime'] = l7_lifetime
     if l8_lifetime is not None:
@@ -1293,7 +1333,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
-    l7_lifetimes = set()
+    l7_lifetimes, reference_providers = set(), set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
@@ -1315,6 +1355,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         lifetimes.add(_corporate_request_key(event.get('component_lifetime')))
         if len(lifetimes) != 1:
             raise JsonSafetyError('Corporate component lifetime is missing or mixed within one attempt')
+        reference_providers.add(_corporate_request_key(event.get('corporate_reference_providers')))
+        if len(reference_providers) != 1:
+            raise JsonSafetyError('Corporate reference providers are missing or mixed within one attempt')
         l8_lifetimes.add(_corporate_request_key(event.get('corporate_l8_lifetime')))
         l7_lifetimes.add(_corporate_request_key(event.get('corporate_l7_lifetime')))
         if len(l7_lifetimes) != 1:
