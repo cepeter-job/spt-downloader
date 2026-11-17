@@ -1426,7 +1426,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                         # exactly like the L3/L11-A auxiliary grids; the rendered
                         # evidence rows stay audit-only. Keep the original payload
                         # for this single endpoint instead of widening `is_auxiliary`.
-                        auxiliary_packets[key] = {'payload': payload, 'event': event}
+                        auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
                 else:
                     old = state['seen'].get(key)
                     if old is not None and old['sha256'] != ctx['sha256']:

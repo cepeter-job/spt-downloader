@@ -800,6 +800,36 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, 
             **environment, 'tables': tables, 'references': references}}
 
 
+def _l4_tables(form):
+    """Bind both rendered L4 owners without reading body/footer values."""
+    from coretax_corporate_projection import l4_tables
+    from coretax_masa_observer import TABLE
+    expected = l4_tables()
+    if form.locator('table').count() != 2:
+        return None
+    result = []
+    for item, host in zip(expected, ('ui-grid', 'ui-grid-offline')):
+        grid = form.locator(item['component'])
+        if (grid.count() != 1 or grid.locator(host).count() != 1
+                or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
+            return None
+        table = grid.locator('table')
+        if not table.evaluate('''(e, {component, host}) => {
+            const grid=e.closest(component), wrapper=e.closest(host), p=e.closest('p-table');
+            return e.isConnected && !!grid && !!wrapper && !!p &&
+                p.closest(host)===wrapper && wrapper.closest(component)===grid &&
+                e.closest('rshshr-citr-l4-form')===grid.closest('rshshr-citr-l4-form');
+        }''', {'component': item['component'], 'host': host}):
+            return None
+        metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+        if (not isinstance(metadata, dict) or metadata.get('headers') != item['headers']
+                or metadata.get('footer_spans') != item['footer_spans']):
+            return None
+        result.append({'component': item['component'], 'headers': metadata['headers'],
+                       'footer_spans': metadata['footer_spans']})
+    return result
+
+
 def _l4_footer_requests(observations, *, record_id, period):
     """Collect distinct proven L4 footer requests (None when absent).
 
@@ -944,11 +974,14 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
             if name == 'L4':
-                # Same admitted pin. Both L4 blocks live beside the literal
-                # payload totals; the final-income grid and its footer are
-                # already declared as this binding's grids/dependencies.
+                # Only the reconciled empty two-block subset can project until
+                # both runtime catalogs have independent original-byte custody.
+                tables = _l4_tables(form)
+                _check_cancel(check_cancel)
+                if tables is None:
+                    return unavailable()
                 binding['projection'] = {'kind': 'corporate-l4-v1',
-                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url, 'tables': tables}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
@@ -1112,6 +1145,11 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         binding.setdefault('dependencies', []).extend(
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
+            if name == 'L4':
+                final_tables = _l4_tables(form)
+                _check_cancel(check_cancel)
+                if final_tables != binding['projection']['tables']:
+                    return unavailable()
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:

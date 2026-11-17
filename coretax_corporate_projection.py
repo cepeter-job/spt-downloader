@@ -702,178 +702,88 @@ L4_A_HEADERS = ['NPWP PEMOTONG/PEMUNGUT', 'NAMA PEMOTONG/PEMUNGUT', 'KODE OBJEK 
     'PPH FINAL TERUTANG (Rupiah)']
 L4_B_HEADERS = ['NO.', 'KODE', 'JENIS PENGHASILAN', 'SUMBER PENGHASILAN',
     'PENGHASILAN BRUTO(Rp)']
-# The single TOTAL row keeps the template's own label in the merged A:D cell.
-L4_A_SPANS = [[1, 1, 1, 1, 1, 1, 1]]
-# Root controls the pinned L4 owner submits: four totals plus the block B list.
+# Physical source footer cells, not template-expanded seven/five-cell rows.
+# The pinned ui-grid has spacing disabled; the offline B row has a blank No.
+# cell followed by the three-column JUMLAH label and its amount.
+L4_A_SPANS = [[4, 1, 1, 1]]
+L4_B_SPANS = [[1, 3, 1]]
 L4_ROOT_FIELDS = frozenset(('TotalTaxBase', 'TotalFinalIncomeTaxPayable',
     'TotalFinalIncomeTaxPayableUsd', 'TotalGrossIncome', 'ListOfIncomeExcludedFromIncomeTax'))
 L4_FOOTER_FIELDS = frozenset(('TaxBase', 'IncomeTax', 'TaxBaseUsd', 'IncomeTaxUsd'))
-L4_ROW_FIELDS = ('TIN', 'Name', 'TaxObjectCode', 'TaxObject', 'TaxBase', 'TaxRate', 'IncomeTax')
-L4_ROW_KEYS = frozenset(L4_ROW_FIELDS)
-# Non-displayed row metadata proved on the live l4-table-a-grid payload.
-L4_ROW_METADATA = frozenset(('RecordId', 'IsManually', 'TableSource', 'Action', 'Index',
-    'TaxBaseUsd', 'IncomeTaxUsd', 'WithholdingDate', 'WithholdingSlipsAggregateIdentifier'))
-L4_B_ROW_FIELDS = frozenset(('TaxObjectCode', 'TypeOfIncome', 'IncomeSource', 'GrossIncome'))
-L4_UNPROJECTED_REASON = 'unprojected_l4_income_type_labels'
 
 
-def _l4_integer(value):
-    if type(value) is not _CorporateNumber:
-        raise _UnsupportedMetadata('unsupported_corporate_l4_number_type')
-    number = _decimal(value)
-    if abs(number) > _MAX_INTEGER or number != number.to_integral_value():
-        raise _UnsupportedMetadata('unsupported_corporate_l4_number_precision')
-    return int(number)
+def l4_tables():
+    return [{'component': 'rshshr-citr-l4-grid1', 'headers': list(L4_A_HEADERS),
+             'footer_spans': deepcopy(L4_A_SPANS)},
+            {'component': 'rsh-citr-l4-grid2', 'headers': list(L4_B_HEADERS),
+             'footer_spans': deepcopy(L4_B_SPANS)}]
 
 
-def _l4_amount(value):
-    """Finite, bounded Decimal for block B gross amounts (no display rule)."""
-    if type(value) is not _CorporateNumber:
-        raise _UnsupportedMetadata('unsupported_corporate_l4_amount_type')
-    number = _decimal(value)
-    if not number.is_finite() or abs(number) > _MAX_INTEGER:
-        raise _UnsupportedMetadata('unsupported_corporate_l4_amount_precision')
-    return number
-
-
-def _l4_rate(value):
-    """TINGKAT (%) is the stored percentage the owner's own rounding consumes."""
-    if type(value) is not _CorporateNumber:
-        raise _UnsupportedMetadata('unsupported_corporate_l4_rate_type')
-    number = _decimal(value)
-    if (not number.is_finite() or number < 0 or number > 100
-            or number != number.quantize(Decimal('0.01'))):
-        raise _UnsupportedMetadata('unsupported_corporate_l4_rate_precision')
-    return number
-
-
-def _l4_text(value):
-    if type(value) is not str:
-        raise _UnsupportedMetadata('unsupported_corporate_l4_text')
-    return value
+def _l4_zero(value):
+    # No rounding, coercion, null->zero or binary-float calculations. This
+    # subset emits only original numeric zero, so it needs no locale RPC.
+    try:
+        if type(value) is not _CorporateNumber:
+            raise _UnsupportedMetadata('unsupported_corporate_l4_empty_total')
+        number = _decimal(value)
+        if number != 0 or number.is_signed():
+            raise _UnsupportedMetadata('unsupported_corporate_l4_empty_total')
+    except (DecimalException, _UnsupportedMetadata):
+        raise _UnsupportedMetadata('unsupported_corporate_l4_empty_total') from None
+    return '0'
 
 
 def project_l4(form, *, footer, pages, tax_type, locale):
-    """Pure L4 projection; the caller proves binding, packets and lifecycle.
+    """Only the proven empty/zero two-block subset; never native admission.
 
-    Block A is rendered from the approved final-income grid plus its proven
-    footer totals. Block B stays unprojected: its JENIS PENGHASILAN cell is
-    rendered by the pinned owner from the runtime INCOME_EXCLUDED_FROM_TAX_FOR_CIT
-    catalog that this capture never binds, so the stored numeric code is never
-    exported as prose. An unprojected block B keeps the section honestly partial.
+    The actual submitted grid renders OBJEK PAJAK from TaxObjectCode plus a
+    reference catalog, NOT the stored TaxObject text. B needs its independent
+    INCOME_EXCLUDED_FROM_TAX_FOR_CIT catalog. Neither is bound here. Refuse
+    either populated block before replacing any custody dump; do not generate
+    blank stand-ins, fake fields or synthetic incomplete capture flags.
     """
-    if (tax_type != 'ICT_RCIT' or locale != 'id-ID'
-            or not isinstance(form, dict) or set(form) != L4_ROOT_FIELDS
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict)
+            or set(form) not in (L4_ROOT_FIELDS, L4_ROOT_FIELDS | {'TotalTaxBaseUsd'})
             or not isinstance(footer, dict) or set(footer) != L4_FOOTER_FIELDS
-            or not isinstance(pages, list) or not 1 <= len(pages) <= 1000):
+            or not isinstance(pages, list) or len(pages) != 1):
         raise _UnsupportedMetadata('unsupported_corporate_l4_source_shape')
-    excluded = [] if form['ListOfIncomeExcludedFromIncomeTax'] is None \
-        else form['ListOfIncomeExcludedFromIncomeTax']
-    if not isinstance(excluded, list) or len(excluded) > 10000:
+    excluded = form['ListOfIncomeExcludedFromIncomeTax']
+    if excluded is not None and not isinstance(excluded, list):
         raise _UnsupportedMetadata('unsupported_corporate_l4_excluded_body')
-    if any(not isinstance(row, dict) or set(row) != L4_B_ROW_FIELDS for row in excluded):
-        raise _UnsupportedMetadata('unsupported_corporate_l4_excluded_row')
-    gross_total = Decimal(0)
-    for row in excluded:
-        gross_total += _l4_amount(row['GrossIncome'])
-    if gross_total != _l4_amount(form['TotalGrossIncome']):
-        raise _UnsupportedMetadata('unreconciled_corporate_l4_gross_income')
-    provenance, rows, base_sum, tax_sum, total = [], [], 0, 0, None
-    for page_index, page in enumerate(pages):
-        if (not isinstance(page, dict) or set(page) != {'offset', 'rows', 'total', 'data'}
-                or any(type(page[key]) is not int for key in ('offset', 'rows', 'total'))
-                or page['offset'] != len(rows) or page['offset'] > page['total']
-                or page['rows'] not in (10, 25, 50, 100, 250, 500)
-                or not 0 <= page['total'] <= 100000 or not isinstance(page['data'], list)
-                or len(page['data']) != min(page['rows'], page['total'] - page['offset'])
-                or total is not None and total != page['total']
-                or page_index and page['offset'] == page['total']):
-            raise _UnsupportedMetadata('incomplete_corporate_l4_pages')
-        total = page['total']
-        for local_index, row in enumerate(page['data']):
-            if not isinstance(row, dict) or not L4_ROW_KEYS <= set(row):
-                raise _UnsupportedMetadata('unsupported_corporate_l4_grid_row')
-            extras = set(row) - L4_ROW_KEYS
-            if (extras - L4_ROW_METADATA
-                    or 'Action' in extras and row['Action'] is not None
-                    or 'Index' in extras and type(row['Index']) not in (int, _CorporateNumber)
-                    or 'RecordId' in extras and (type(row['RecordId']) is not str or not row['RecordId'])
-                    or 'IsManually' in extras and type(row['IsManually']) is not bool
-                    or 'TableSource' in extras
-                    and row['TableSource'] is not None and type(row['TableSource']) is not str
-                    or 'WithholdingDate' in extras
-                    and row['WithholdingDate'] is not None and type(row['WithholdingDate']) is not str
-                    or 'WithholdingSlipsAggregateIdentifier' in extras
-                    and row['WithholdingSlipsAggregateIdentifier'] is not None
-                    and type(row['WithholdingSlipsAggregateIdentifier']) is not str
-                    or any(key in extras and type(row[key]) is not _CorporateNumber
-                           for key in ('TaxBaseUsd', 'IncomeTaxUsd'))):
-                raise _UnsupportedMetadata('unsupported_corporate_l4_grid_metadata')
-            base, tax = _l4_integer(row['TaxBase']), _l4_integer(row['IncomeTax'])
-            rate = _l4_rate(row['TaxRate'])
-            if base < 0 or tax < 0:
-                raise _UnsupportedMetadata('unsupported_corporate_l4_negative_amount')
-            # The pinned row validator computes IncomeTax = Math.round(base*rate/100);
-            # because the operands are exactly representable this is an identity.
-            if tax != int(Decimal(base) * rate / 100 + Decimal('0.5')):
-                raise _UnsupportedMetadata('unreconciled_corporate_l4_income_tax')
-            base_sum, tax_sum = base_sum + base, tax_sum + tax
-            if abs(base_sum) > _MAX_INTEGER or abs(tax_sum) > _MAX_INTEGER:
-                raise _UnsupportedMetadata('unsafe_corporate_l4_ordered_sum')
-            path = ['Data', local_index]
-            destination = {'table': L4_FINAL_TABLE, 'row': len(rows)}
-            rows.append([_l4_text(row['TIN']), _l4_text(row['Name']),
-                _l4_text(row['TaxObjectCode']), _l4_text(row['TaxObject']),
-                _number(row['TaxBase'], 0, locale=locale), _number(row['TaxRate'], 2, locale=locale),
-                _number(row['IncomeTax'], 0, locale=locale)])
-            for column, key in enumerate(L4_ROW_FIELDS, 1):
-                provenance.append({**_evidence(row[key], [*path, key]), 'source': 'grid',
-                    'page_index': page_index, 'destination': {**destination, 'column': column},
-                    'rule': 'number-id-fraction-0' if key in ('TaxBase', 'IncomeTax')
-                    else 'number-id-fraction-2' if key == 'TaxRate' else 'literal-source'})
-            for key in sorted(extras):
-                if key in ('TaxBaseUsd', 'IncomeTaxUsd', 'Index'):
-                    continue
-                # Bool metadata has no shared scalar evidence writer; keep its
-                # literal type instead of widening the Masa helper.
-                entry = ({'path': [*path, key], 'type': 'boolean', 'value': row[key]}
-                         if type(row[key]) is bool else _evidence(row[key], [*path, key]))
-                entry.update(source='grid', page_index=page_index,
-                             destination={**destination, 'metadata': key},
-                             rule='non-displayed-row-metadata')
-                provenance.append(entry)
-    if len(rows) != total:
+    if excluded:
+        raise _UnsupportedMetadata('unverified_corporate_l4_income_type_labels')
+    page = pages[0]
+    if (not isinstance(page, dict) or set(page) != {'offset', 'rows', 'total', 'data'}
+            or any(type(page[key]) is not int for key in ('offset', 'rows', 'total'))
+            or page['offset'] != 0 or page['rows'] not in (10, 25, 50, 100, 250, 500)
+            or not isinstance(page['data'], list)):
         raise _UnsupportedMetadata('incomplete_corporate_l4_pages')
-    footer_base, footer_tax = _l4_integer(footer['TaxBase']), _l4_integer(footer['IncomeTax'])
-    for value in (footer['TaxBaseUsd'], footer['IncomeTaxUsd'], form['TotalFinalIncomeTaxPayableUsd']):
-        if type(value) is not _CorporateNumber:
-            raise _UnsupportedMetadata('unsupported_corporate_l4_usd_type')
-    if (footer_base != base_sum or footer_tax != tax_sum
-            or _l4_integer(form['TotalTaxBase']) != footer_base
-            or _l4_integer(form['TotalFinalIncomeTaxPayable']) != footer_tax):
-        raise _UnsupportedMetadata('unreconciled_corporate_l4_final_totals')
-    # The template already carries the TOTAL caption in the merged A:D footer cell.
-    afooter = [['', '', '', '', _number(footer['TaxBase'], 0, locale=locale), '',
-                _number(footer['IncomeTax'], 0, locale=locale)]]
-    for column, path, value in ((5, [L4_ROOT, 'TotalTaxBase'], footer['TaxBase']),
-                                (7, [L4_ROOT, 'TotalFinalIncomeTaxPayable'], footer['IncomeTax'])):
-        provenance.append({**_evidence(value, path), 'source': 'footer', 'page_index': None,
-            'destination': {'table': L4_FINAL_TABLE, 'footer': 0, 'column': column},
-            'rule': 'reconciled-grid-sum-and-footer-total'})
-    tables = [{'name': L4_FINAL_TABLE, 'headers': list(L4_A_HEADERS),
-        'rows': rows + afooter, 'footer': afooter, 'footer_spans': deepcopy(L4_A_SPANS),
-        'body_row_count': len(rows), 'source_total': len(rows), 'complete': True},
-        {'name': L4_EXCLUDED_TABLE, 'headers': list(L4_B_HEADERS),
-         'rows': [[''] * len(L4_B_HEADERS) for _ in excluded], 'footer': [], 'footer_spans': [],
-         'body_row_count': len(excluded), 'source_total': len(excluded),
-         'complete': not excluded}]
-    for index, row in enumerate(excluded):
-        provenance.append({**_evidence(row['TypeOfIncome'],
-            [L4_ROOT, 'ListOfIncomeExcludedFromIncomeTax', index, 'TypeOfIncome']),
-            'source': 'current', 'destination': {'table': L4_EXCLUDED_TABLE, 'row': index},
-            'rule': 'unprojected-dynamic-reference-label'})
-    return {'tables': tables, 'fields': [], 'provenance': provenance,
-            'unprojected_reason': L4_UNPROJECTED_REASON if excluded else None}
+    if page['data']:
+        raise _UnsupportedMetadata('unverified_corporate_l4_tax_object_labels')
+    if page['total'] != 0:
+        raise _UnsupportedMetadata('incomplete_corporate_l4_pages')
+    provenance = []
+    for key in sorted(set(form) - {'ListOfIncomeExcludedFromIncomeTax'}):
+        _l4_zero(form[key])
+        provenance.append({**_evidence(form[key], [L4_ROOT, key]), 'source': 'current',
+                           'rule': 'original-empty-block-zero-total'})
+    provenance.append({'path': [L4_ROOT, 'ListOfIncomeExcludedFromIncomeTax'],
+        'type': 'null' if excluded is None else 'array', 'value': deepcopy(excluded),
+        'source': 'current', 'rule': 'original-inert-empty-block-b'})
+    for key in sorted(footer):
+        _l4_zero(footer[key])
+        provenance.append({**_evidence(footer[key], [key]), 'source': 'footer',
+                           'rule': 'original-reconciled-empty-grid-footer'})
+    afooter = [['TOTAL', _l4_zero(footer['TaxBase']), '', _l4_zero(footer['IncomeTax'])]]
+    bfooter = [['', 'JUMLAH', _l4_zero(form['TotalGrossIncome'])]]
+    return {'tables': [
+        {'name': L4_FINAL_TABLE, 'headers': list(L4_A_HEADERS), 'rows': afooter,
+         'footer': afooter, 'footer_spans': deepcopy(L4_A_SPANS),
+         'body_row_count': 0, 'source_total': 0, 'complete': True},
+        {'name': L4_EXCLUDED_TABLE, 'headers': list(L4_B_HEADERS), 'rows': bfooter,
+         'footer': bfooter, 'footer_spans': deepcopy(L4_B_SPANS),
+         'body_row_count': 0, 'source_total': 0, 'complete': True}],
+        'fields': [], 'provenance': provenance}
 
 
 def _l7_negative_profile(binding, *, root, payload, record, event, route, table):
@@ -975,89 +885,93 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
 def _apply_l4(binding, section, observed_forms, *, root, payload, record, event, auxiliary_packets):
     proof = binding['projection']
     builds = proof.get('builds') if isinstance(proof, dict) else None
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+    approved = BUILD_DIGESTS.get(CIT_SOURCE)
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'tables'}
             or proof['kind'] != 'corporate-l4-v1'
             or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
-            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
-            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
-            or proof['route'] != event['frame_url']
-            or binding.get('paths') != [[L4_ROOT]]
-            or binding.get('responses')):
+            or type(approved) is not str or not re.fullmatch(r'[a-f0-9]{64}', approved)
+            or builds[CIT_SOURCE] != approved
+            or proof['tables'] != l4_tables() or proof['route'] != event['frame_url']
+            or binding.get('paths') != [[L4_ROOT]] or binding.get('responses')):
         raise _UnsupportedMetadata('unverified_corporate_l4_binding')
     literal = record.get('meta', {}).get('Model SPT')
     model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
              if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    fields = record.get('source_fields', {})
+    period = fields.get('TaxPeriodCode')
     if (record.get('source_status') != 'SPT Dilaporkan'
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
-            or payload.get('ReturnSheetModel') != model):
+            or payload.get('ReturnSheetModel') != model
+            or fields.get('TaxTypeCode') != 'ICT_RCIT'
+            or type(period) is not str or not re.fullmatch(r'0112[0-9]{4}', period)):
         raise _UnsupportedMetadata('unverified_corporate_l4_submitted_lifecycle')
     grids = binding.get('grids')
     if (not isinstance(grids, list) or len(grids) != 1 or not isinstance(grids[0], dict)
             or set(grids[0]) != {'name', 'endpoint', 'pages'}
             or grids[0]['name'] != L4_GRID_NAME or grids[0]['endpoint'] != CORPORATE_L4_GRID_URL
-            or not isinstance(grids[0]['pages'], list)):
+            or not isinstance(grids[0]['pages'], list) or len(grids[0]['pages']) != 1):
         raise _UnsupportedMetadata('unverified_corporate_l4_grid_binding')
+    declaration = grids[0]['pages'][0]
+    if not isinstance(declaration, dict) or set(declaration) != {'request_json', 'offset'}:
+        raise _UnsupportedMetadata('unverified_corporate_l4_grid_binding')
+    request = declaration['request_json']
+    if (not isinstance(request, dict)
+            or set(request) != {'ReturnSheetRecordId', 'LanguageId', 'First', 'Rows',
+                                'SortField', 'SortOrder', 'Filters', 'PeriodYear'}
+            or request['ReturnSheetRecordId'] != record['record_id']
+            or request['LanguageId'] != 'id-ID' or type(request['First']) is not int
+            or request['First'] != 0 or type(declaration['offset']) is not int or declaration['offset'] != 0
+            or type(request['Rows']) is not int or request['Rows'] not in (10, 25, 50, 100, 250, 500)
+            or request['SortField'] != '' or type(request['SortOrder']) is not int
+            or request['SortOrder'] != 1 or request['Filters'] != [] or request['PeriodYear'] != period[-4:]):
+        raise _UnsupportedMetadata('unsupported_corporate_l4_page_request')
     dependencies = binding.get('dependencies')
-    if (not isinstance(dependencies, list) or not 1 <= len(dependencies) <= 4
+    if (not isinstance(dependencies, list) or not 1 <= len(dependencies) <= 2
             or any(not isinstance(item, dict) or set(item) != {'endpoint', 'request_json'}
                    or item['endpoint'] != CORPORATE_L4_FOOTER_URL
-                   or not isinstance(item['request_json'], dict)
-                   or not set(item['request_json']) <= {'ReturnSheetRecordId', 'PeriodYear'}
-                   or item['request_json'].get('ReturnSheetRecordId') != record['record_id']
+                   or item['request_json'] not in ({'ReturnSheetRecordId': record['record_id']},
+                       {'ReturnSheetRecordId': record['record_id'], 'PeriodYear': period[-4:]})
                    for item in dependencies)):
         raise _UnsupportedMetadata('unverified_corporate_l4_footer_binding')
-    declarations, expected = grids[0]['pages'], set()
-    if not 1 <= len(declarations) <= 1000:
-        raise _UnsupportedMetadata('missing_corporate_l4_page_requests')
-    for declaration in declarations:
-        if not isinstance(declaration, dict) or set(declaration) != {'request_json', 'offset'}:
-            raise _UnsupportedMetadata('unverified_corporate_l4_grid_binding')
-        request, offset = declaration['request_json'], declaration['offset']
-        if (not isinstance(request, dict)
-                or set(request) != {'ReturnSheetRecordId', 'LanguageId', 'First', 'Rows',
-                                    'SortField', 'SortOrder', 'Filters', 'PeriodYear'}
-                or request['ReturnSheetRecordId'] != record['record_id']
-                or request['LanguageId'] != 'id-ID' or type(request['First']) is not int
-                or request['First'] != offset or type(request['Rows']) is not int
-                or request['Rows'] not in (10, 25, 50, 100, 250, 500)
-                or request['SortField'] != '' or type(request['SortOrder']) is not int
-                or request['SortOrder'] != 1 or request['Filters'] != []
-                or type(request['PeriodYear']) is not str
-                or not re.fullmatch(r'[0-9]{4}', request['PeriodYear'])):
-            raise _UnsupportedMetadata('unsupported_corporate_l4_page_request')
-        expected.add((CORPORATE_L4_GRID_URL, _corporate_request_key(request)))
-    footer_requests = [item['request_json'] for item in dependencies]
-    footer_keys = {(CORPORATE_L4_FOOTER_URL, _corporate_request_key(request))
-                   for request in footer_requests}
-    expected |= footer_keys
-    if expected != {key for key in auxiliary_packets
-                    if key[0] in (CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL)}:
+    grid_key = (CORPORATE_L4_GRID_URL, _corporate_request_key(request))
+    footer_keys = [(CORPORATE_L4_FOOTER_URL, _corporate_request_key(item['request_json']))
+                   for item in dependencies]
+    if (len(set(footer_keys)) != len(footer_keys)
+            or {grid_key, *footer_keys} != {key for key in auxiliary_packets
+                if key[0] in (CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL)}):
         raise _UnsupportedMetadata('incomplete_corporate_l4_auxiliary_packets')
-    pages, page_sources, index_provenance = [], [], []
-    for declaration in sorted(declarations, key=lambda item: item['request_json']['First']):
-        request = declaration['request_json']
-        packet = auxiliary_packets[(CORPORATE_L4_GRID_URL, _corporate_request_key(request))]
-        source = packet['payload']
-        if not _active_grid_payload(source):
-            raise _UnsupportedMetadata('unsupported_corporate_l4_page_payload')
-        pages.append({'offset': request['First'], 'rows': request['Rows'],
-                      'total': _corporate_integer(source['TotalRecords']), 'data': source['Data']})
-        page_sources.append(packet['event'])
-        index_provenance.extend(_unused_grid_index(source, packet['event'], 'L4'))
-    footer = auxiliary_packets[(CORPORATE_L4_FOOTER_URL, _corporate_request_key(footer_requests[0]))]
-    result = project_l4(root.get(L4_ROOT), footer=footer['payload'], pages=pages,
-        tax_type=record.get('source_fields', {}).get('TaxTypeCode'), locale='id-ID')
+    grid = auxiliary_packets[grid_key]
+    source = grid['payload']
+    if (not isinstance(source, dict) or set(source) != {'TotalRecords', 'Data', 'Index'}
+            or source['Index'] is not None or not isinstance(source['Data'], list)):
+        raise _UnsupportedMetadata('unsupported_corporate_l4_page_payload')
+    pages = [{'offset': 0, 'rows': request['Rows'],
+              'total': _corporate_integer(source['TotalRecords']), 'data': source['Data']}]
+    values = []
+    for key in footer_keys:
+        footer = auxiliary_packets[key]
+        result = project_l4(root.get(L4_ROOT), footer=footer['payload'], pages=pages,
+                            tax_type=fields['TaxTypeCode'], locale='id-ID')
+        for entry in result['provenance']:
+            current = entry['source'] == 'current'
+            entry.update(response_sequence=event['sequence'] if current else footer['event']['sequence'],
+                         container=['Payload', 'CurrentFormData'] if current else ['Payload'])
+            # Preserve each declared footer's real origin, but original root
+            # evidence only once. Never attribute a root path to a footer packet.
+            if key == footer_keys[0] or not current:
+                values.append(entry)
+    for key in ('TotalRecords', 'Index'):
+        values.append({**_evidence(source[key], [key]), 'source': 'grid',
+            'response_sequence': grid['event']['sequence'], 'container': ['Payload'],
+            'rule': 'original-empty-grid-envelope'})
+    values.append({'path': ['Data'], 'type': 'array', 'value': [], 'source': 'grid',
+        'response_sequence': grid['event']['sequence'], 'container': ['Payload'],
+        'rule': 'original-empty-grid-body'})
+    # All checks precede replacement. Unsupported A/B leaves custody untouched
+    # and the caller takes the existing whole-record DOM fallback.
     section['tables'], section['fields'] = result['tables'], result['fields']
-    for entry in tuple(result['provenance']):
-        source = (page_sources[entry['page_index']] if entry['source'] == 'grid'
-                  else footer['event'] if entry['source'] == 'footer' else event)
-        entry.update(response_sequence=source['sequence'],
-                     container=['Payload', 'CurrentFormData'] if source is event else ['Payload'])
-    result['provenance'].extend(index_provenance)
-    return {'form': 'L4', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-            'route': proof['route'], 'values': result['provenance'],
-            **({'unprojected_reason': result['unprojected_reason']}
-               if result['unprojected_reason'] else {})}
+    return {'form': 'L4', 'kind': proof['kind'], 'builds': dict(builds),
+            'route': proof['route'], 'scope': 'empty-both-blocks-only', 'values': values}
 
 
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,

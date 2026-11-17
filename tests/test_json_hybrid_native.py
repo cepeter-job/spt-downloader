@@ -70,6 +70,9 @@ class NativeFixture:
         self.raw = corpus.primary(form)['body']
         self.build = BUILD + (b'/* CHANGED */' if changed_build else b'')
         monkeypatch.setattr(driver, 'CIT_SOURCE_SHA256', hashlib.sha256(BUILD).hexdigest(), raising=False)
+        if groups:
+            import coretax_corporate_projection as projection
+            monkeypatch.setitem(projection.BUILD_DIGESTS, ASSET, hashlib.sha256(BUILD).hexdigest())
         self.context.route('**/*', self.route)
 
     def close(self):
@@ -157,6 +160,16 @@ class NativeFixture:
         if self.groups:
             l4 = self.grid_html('rshshr-citr-l4-grid1', '/loadcit/l4-table-a-grid',
                  {'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025'}, 'SYNTHETIC L4')
+            from coretax_corporate_projection import L4_A_HEADERS, L4_B_HEADERS
+            l4 = l4.replace('<p-table', '<ui-grid><p-table').replace(
+                '</p-table>', '</p-table></ui-grid>')
+            l4 = l4.replace('<th>Value</th>', ''.join('<th>' + h + '</th>' for h in L4_A_HEADERS))
+            l4 = l4.replace('</tbody></table>', '</tbody><tfoot><tr><td colspan="4">TOTAL</td>'
+                '<td>0</td><td></td><td>0</td></tr></tfoot></table>')
+            l4 += ('<rsh-citr-l4-grid2><ui-grid-offline><p-table><table><thead><tr>' +
+                ''.join('<th>' + h + '</th>' for h in L4_B_HEADERS) +
+                '</tr></thead><tbody></tbody><tfoot><tr><td></td><td colspan="3">JUMLAH</td>'
+                '<td>0</td></tr></tfoot></table></p-table></ui-grid-offline></rsh-citr-l4-grid2>')
             l9 = ''.join(self.grid_html('rshshr-citr-l9-form-grid' + str(family),
                          '/loadcit/l9-table-' + str(family) + '-grid',
                          {'ReturnSheetRecordId': corpus.RECORD_ID, 'GroupType': group},
@@ -196,7 +209,7 @@ class NativeFixture:
             'function turn(b,d){let g=b.closest("p-table"),c=JSON.parse(g.dataset.fixtureConfig);'
             'c.first+=d;g.dataset.fixtureConfig=JSON.stringify(c);load(g)}'
             'function show(i){document.querySelectorAll(".p-tabview-panel").forEach((p,j)=>{'
-            'p.style.display=i===j?"block":"none";if(i===j)p.querySelectorAll("p-table").forEach(g=>{'
+            'p.style.display=i===j?"block":"none";if(i===j)p.querySelectorAll("p-table[data-fixture-config]").forEach(g=>{'
             'if(!g.dataset.started){g.dataset.started="yes";load(g)}})})}'
             'fetch(' + json.dumps(corpus.PRIMARY_URL) + ',{method:"POST",headers:{"Content-Type":"application/json"},'
             'body:JSON.stringify({RecordId:' + json.dumps(corpus.RECORD_ID) + ',OnManualClick:false})});'
