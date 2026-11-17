@@ -685,6 +685,32 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
               **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
 
+def corporate_reference_bindings(capture, kinds, *, check_cancel=None):
+    """Collect only original admitted singleton metadata and capture-owned pins."""
+    from coretax_browser import _check_cancel
+    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+
+    _check_cancel(check_cancel)
+    urls = {types[0]: url for url, types in CORPORATE_REFERENCE_REQUESTS.items() if len(types) == 1}
+    if (not isinstance(kinds, (tuple, list)) or not kinds or len(set(kinds)) != len(kinds)
+            or any(kind not in urls for kind in kinds)):
+        return None
+    builds = capture.observe_corporate_reference_providers(check_cancel=check_cancel)
+    if builds is None:
+        return None
+    observations = capture.request_observations()
+    _check_cancel(check_cancel)
+    references = []
+    for kind in kinds:
+        sequences = [item['sequence'] for item in observations
+            if item['url'] == urls[kind] and item['method'] == 'GET'
+            and 'request_json' in item and item['request_json'] is None]
+        if not sequences:
+            return None
+        references.append({'endpoint': urls[kind], 'method': 'GET', 'sequences': sequences})
+    return {'builds': builds, 'references': references}
+
+
 def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Five structural owners and four owned paginators; no DOM business reads."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -798,6 +824,66 @@ def _observe_l11a(page, form, capture, digest, record, max_pages, check_cancel, 
         'projection': {'kind': 'corporate-l11a-v1', 'builds': {CIT_SOURCE_URL: digest,
             MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest}, 'route': page.url,
             **environment, 'tables': tables, 'references': references}}
+
+
+def _l4_tables(form):
+    """Bind both rendered L4 owners without reading body/footer values."""
+    from coretax_corporate_projection import l4_tables
+    from coretax_masa_observer import TABLE
+    expected = l4_tables()
+    if form.locator('table').count() != 2:
+        return None
+    result = []
+    for item, host in zip(expected, ('ui-grid', 'ui-grid-offline')):
+        grid = form.locator(item['component'])
+        if (grid.count() != 1 or grid.locator(host).count() != 1
+                or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
+            return None
+        table = grid.locator('table')
+        if not table.evaluate('''(e, {component, host}) => {
+            const grid=e.closest(component), wrapper=e.closest(host), p=e.closest('p-table');
+            return e.isConnected && !!grid && !!wrapper && !!p &&
+                p.closest(host)===wrapper && wrapper.closest(component)===grid &&
+                e.closest('rshshr-citr-l4-form')===grid.closest('rshshr-citr-l4-form');
+        }''', {'component': item['component'], 'host': host}):
+            return None
+        metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+        if (not isinstance(metadata, dict) or metadata.get('headers') != item['headers']
+                or metadata.get('footer_spans') != item['footer_spans']):
+            return None
+        result.append({'component': item['component'], 'headers': metadata['headers'],
+                       'footer_spans': metadata['footer_spans']})
+    return result
+
+
+def _l4_populated_projection(page, capture, digest, tables, check_cancel):
+    """Optional stronger consumer; shared passive registry alone owns admission."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import (L4_CATALOG_KINDS, L4_POPULATED_BUILD_DIGESTS,
+                                              MAIN_SOURCE, VENDOR_SOURCE)
+    from coretax_json import CORPORATE_L4_REFERENCE_URLS
+    urls = {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+    pins = L4_POPULATED_BUILD_DIGESTS
+    if (set(pins) != urls or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                              for value in pins.values()) or pins[CIT_SOURCE_URL] != digest):
+        return None
+    if not callable(getattr(capture, 'observe_corporate_reference_providers', None)):
+        return None
+    observations = capture.request_observations()
+    if not all(any(item['url'] == url and item['method'] == 'GET'
+                   and 'request_json' in item and item['request_json'] is None for item in observations)
+               for url in CORPORATE_L4_REFERENCE_URLS.values()):
+        return None  # No optional provider RPC for a cache-only/legacy visit.
+    shared = corporate_reference_bindings(capture, L4_CATALOG_KINDS, check_cancel=check_cancel)
+    _check_cancel(check_cancel)
+    if shared is None or shared['builds'] != pins:
+        return None
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
+        return None
+    return {'kind': 'corporate-l4-populated-v2', 'builds': dict(shared['builds']), 'route': page.url,
+            **environment, 'tables': tables, 'references': shared['references']}
 
 
 def _l4_footer_requests(observations, *, record_id, period):
@@ -943,6 +1029,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 # No environment probe: the projected slots are literal text.
                 binding['projection'] = {'kind': 'corporate-induk-v1',
                     'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+            if name == 'L4':
+                # Only the reconciled empty two-block subset can project until
+                # both runtime catalogs have independent original-byte custody.
+                tables = _l4_tables(form)
+                _check_cancel(check_cancel)
+                if tables is None:
+                    return unavailable()
+                binding['projection'] = {'kind': 'corporate-l4-v1',
+                    'builds': {CIT_SOURCE_URL: digest}, 'route': page.url, 'tables': tables}
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
@@ -1106,6 +1201,28 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         binding.setdefault('dependencies', []).extend(
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
+            if name == 'L4':
+                final_tables = _l4_tables(form)
+                _check_cancel(check_cancel)
+                if final_tables != binding['projection']['tables']:
+                    return unavailable()
+                # No new transport/capability when shared catalogs are absent:
+                # legacy empty-only remains available, populated keeps fallback.
+                if 'Induk' in names:
+                    enabled = _enabled_form_binding(form, tab, name)
+                    _check_cancel(check_cancel)
+                    if enabled:
+                        populated = _l4_populated_projection(page, capture, digest, final_tables, check_cancel)
+                        _check_cancel(check_cancel)
+                        if populated is not None:
+                            enabled_end = _enabled_form_binding(form, tab, name)
+                            _check_cancel(check_cancel)
+                            latest_tables = _l4_tables(form)
+                            _check_cancel(check_cancel)
+                            _check_corporate_route(page.url, selected)
+                            if not enabled_end or latest_tables != final_tables:
+                                return unavailable()
+                            binding['projection'] = populated
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
