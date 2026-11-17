@@ -1,0 +1,85 @@
+{
+  "kind": "pinned-public-renderer-excerpts-v1",
+  "parts": {
+    "decimal_class": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js",
+      "sha256": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173",
+      "start": 1214520,
+      "end": 1218199,
+      "text": "class be{constructor(I){this._locale=I}transform(I,Me,ct){if(!function mr(be){return!(null==be||\"\"===be||be!=be)}(I))return null;ct=ct||this._locale;try{return function je(be,x,I){return function te(be,x,I,Me,ct,dn,vn=!1){let Xn=\"\",Pi=!1;if(isFinite(be)){let $i=function ut(be){let Me,ct,dn,vn,Xn,x=Math.abs(be)+\"\",I=0;for((ct=x.indexOf(\".\"))>-1&&(x=x.replace(\".\",\"\")),(dn=x.search(/e/i))>0?(ct<0&&(ct=dn),ct+=+x.slice(dn+1),x=x.substring(0,dn)):ct<0&&(ct=x.length),dn=0;\"0\"===x.charAt(dn);dn++);if(dn===(Xn=x.length))Me=[0],ct=1;else{for(Xn--;\"0\"===x.charAt(Xn);)Xn--;for(ct-=dn,Me=[],vn=0;dn<=Xn;dn++,vn++)Me[vn]=Number(x.charAt(dn))}return ct>22&&(Me=Me.splice(0,21),I=ct-1,ct=1),{digits:Me,exponent:I,integerLen:ct}}(be);vn&&($i=function Ve(be){if(0===be.digits[0])return be;const x=be.digits.length-be.integerLen;return be.exponent?be.exponent+=2:(0===x?be.digits.push(0,0):1===x&&be.digits.push(0),be.integerLen+=2),be}($i));let Ti=x.minInt,Gi=x.minFrac,Fr=x.maxFrac;if(dn){const lo=dn.match(Hn);if(null===lo)throw new Error(`${dn} is not a valid digit info`);const kr=lo[1],Mo=lo[3],mt=lo[5];null!=kr&&(Ti=We(kr)),null!=Mo&&(Gi=We(Mo)),null!=mt?Fr=We(mt):null!=Mo&&Gi>Fr&&(Fr=Gi)}!function fe(be,x,I){if(x>I)throw new Error(`The minimum number of digits after fraction (${x}) is higher than the maximum (${I}).`);let Me=be.digits,ct=Me.length-be.integerLen;const dn=Math.min(Math.max(x,ct),I);let vn=dn+be.integerLen,Xn=Me[vn];if(vn>0){Me.splice(Math.max(be.integerLen,vn));for(let Gi=vn;Gi<Me.length;Gi++)Me[Gi]=0}else{ct=Math.max(0,ct),be.integerLen=1,Me.length=Math.max(1,vn=dn+1),Me[0]=0;for(let Gi=1;Gi<vn;Gi++)Me[Gi]=0}if(Xn>=5)if(vn-1<0){for(let Gi=0;Gi>vn;Gi--)Me.unshift(0),be.integerLen++;Me.unshift(1),be.integerLen++}else Me[vn-1]++;for(;ct<Math.max(0,dn);ct++)Me.push(0);let Pi=0!==dn;const $i=x+be.integerLen,Ti=Me.reduceRight(function(Gi,Fr,Kr,Er){return Er[Kr]=(Fr+=Gi)<10?Fr:Fr-10,Pi&&(0===Er[Kr]&&Kr>=$i?Er.pop():Pi=!1),Fr>=10?1:0},0);Ti&&(Me.unshift(Ti),be.integerLen++)}($i,Gi,Fr);let Kr=$i.digits,Er=$i.integerLen;const ai=$i.exponent;let Ji=[];for(Pi=Kr.every(lo=>!lo);Er<Ti;Er++)Kr.unshift(0);for(;Er<0;Er++)Kr.unshift(0);Er>0?Ji=Kr.splice(Er,Kr.length):(Ji=Kr,Kr=[0]);const Co=[];for(Kr.length>=x.lgSize&&Co.unshift(Kr.splice(-x.lgSize,Kr.length).join(\"\"));Kr.length>x.gSize;)Co.unshift(Kr.splice(-x.gSize,Kr.length).join(\"\"));Kr.length&&Co.unshift(Kr.join(\"\")),Xn=Co.join(Kt(I,Me)),Ji.length&&(Xn+=Kt(I,ct)+Ji.join(\"\")),ai&&(Xn+=Kt(I,He.Exponential)+\"+\"+ai)}else Xn=Kt(I,He.Infinity);return Xn=be<0&&!Pi?x.negPre+Xn+x.negSuf:x.posPre+Xn+x.posSuf,Xn}(be,function Xe(be,x=\"-\"){const I={minInt:1,minFrac:0,maxFrac:0,posPre:\"\",posSuf:\"\",negPre:\"\",negSuf:\"\",gSize:0,lgSize:0},Me=be.split(\";\"),ct=Me[0],dn=Me[1],vn=-1!==ct.indexOf(\".\")?ct.split(\".\"):[ct.substring(0,ct.lastIndexOf(\"0\")+1),ct.substring(ct.lastIndexOf(\"0\")+1)],Xn=vn[0],Pi=vn[1]||\"\";I.posPre=Xn.substring(0,Xn.indexOf(\"#\"));for(let Ti=0;Ti<Pi.length;Ti++){const Gi=Pi.charAt(Ti);\"0\"===Gi?I.minFrac=I.maxFrac=Ti+1:\"#\"===Gi?I.maxFrac=Ti+1:I.posSuf+=Gi}const $i=Xn.split(\",\");if(I.gSize=$i[1]?$i[1].length:0,I.lgSize=$i[2]||$i[1]?($i[2]||$i[1]).length:0,dn){const Ti=ct.length-I.posPre.length-I.posSuf.length,Gi=dn.indexOf(\"#\");I.negPre=dn.substring(0,Gi).replace(/'/g,\"\"),I.negSuf=dn.slice(Gi+Ti).replace(/'/g,\"\")}else I.negPre=x+I.posPre,I.negSuf=I.posSuf;return I}(function _n(be,x){return(0,e.cg1)(be)[e.wAp.NumberFormats][x]}(x,Oe.Decimal),Kt(x,He.MinusSign)),x,He.Group,He.Decimal,I)}(function Sr(be){if(\"string\"==typeof be&&!isNaN(Number(be)-parseFloat(be)))return Number(be);if(\"number\"!=typeof be)throw new Error(`${be} is not a number`);return be}(I),ct,Me)}catch(dn){throw Zr()}}}",
+      "excerpt_sha256": "5ecad55e031e526db3fc7a546106830948899c9b385f750ae2e50df3ffae4160"
+    },
+    "number_symbols": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js",
+      "sha256": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173",
+      "start": 1183867,
+      "end": 1184351,
+      "text": "He=(()=>((He=He||{})[He.Decimal=0]=\"Decimal\",He[He.Group=1]=\"Group\",He[He.List=2]=\"List\",He[He.PercentSign=3]=\"PercentSign\",He[He.PlusSign=4]=\"PlusSign\",He[He.MinusSign=5]=\"MinusSign\",He[He.Exponential=6]=\"Exponential\",He[He.SuperscriptingExponent=7]=\"SuperscriptingExponent\",He[He.PerMille=8]=\"PerMille\",He[He.Infinity=9]=\"Infinity\",He[He.NaN=10]=\"NaN\",He[He.TimeSeparator=11]=\"TimeSeparator\",He[He.CurrencyDecimal=12]=\"CurrencyDecimal\",He[He.CurrencyGroup=13]=\"CurrencyGroup\",He))()",
+      "excerpt_sha256": "16c37a7679a652db14cdf468c084e361e0fefebfcc3552b23a34f183e3e18859"
+    },
+    "number_styles": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js",
+      "sha256": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173",
+      "start": 1183399,
+      "end": 1183539,
+      "text": "Oe=(()=>((Oe=Oe||{})[Oe.Decimal=0]=\"Decimal\",Oe[Oe.Percent=1]=\"Percent\",Oe[Oe.Currency=2]=\"Currency\",Oe[Oe.Scientific=3]=\"Scientific\",Oe))()",
+      "excerpt_sha256": "2f63826505b6888c4bd6beed6e93c350775754c6bbc4c0775b458bd8b5811ee5"
+    },
+    "digit_helpers": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js",
+      "sha256": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173",
+      "start": 1194568,
+      "end": 1194725,
+      "text": "const Hn=/^(\\d+)?\\.((\\d+)(-(\\d+))?)?$/;function We(be){const x=parseInt(be);if(isNaN(x))throw new Error(\"Invalid integer literal when parsing \"+be);return x}",
+      "excerpt_sha256": "79656259c91274c7b33679342d177933493a605d3d1ac83fc0fecc25254b5dfa"
+    },
+    "symbol_helper": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js",
+      "sha256": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173",
+      "start": 1184545,
+      "end": 1184774,
+      "text": "function Kt(be,x){const I=(0,e.cg1)(be),Me=I[e.wAp.NumberSymbols][x];if(typeof Me>\"u\"){if(x===He.CurrencyDecimal)return I[e.wAp.NumberSymbols][He.Decimal];if(x===He.CurrencyGroup)return I[e.wAp.NumberSymbols][He.Group]}return Me}",
+      "excerpt_sha256": "5eb56029709f409409479ca47d9e74c26c22eb52ff417019f3b110ad312c88d0"
+    },
+    "caller": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/main.bed1449c3647a8ca.js",
+      "sha256": "ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44",
+      "start": 4224197,
+      "end": 4224491,
+      "text": "function Ka(Ce,Ct){if(1&Ce&&(c._uU(0),c.ALo(1,\"numberformat_ignoreprec\")),2&Ce){const O=c.oxw(2).col,pe=c.oxw(2).$implicit,Fe=c.oxw(2);c.hij(\" \",Fe.checkIsString(pe[O.field])||\"number\"!=O.type?pe[O.field]:c.Dn7(1,1,pe[O.field],O.fraction?O.fraction:Fe._env.noFractionNumber,O.ignorePrec),\" \")}}",
+      "excerpt_sha256": "85e53c61b8973bdbac02a7f516f8fdaef8f78679154db053e15e5561c2753801"
+    },
+    "pipe_constructor": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/main.bed1449c3647a8ca.js",
+      "sha256": "ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44",
+      "start": 4031960,
+      "end": 4032226,
+      "text": "constructor(m,G){this.authService=m,this.decimalPipe=G,this.transform=(ne,Se,tt=!1,Bt=\",\",ba=\".\")=>this.decimalPipe.transform(ne??0,Ze.NZz.noFraction?\"1.0-0\":Se&&!tt?`1.${Se}-${Se}`:\"1.0-0\",Ze.NZz.indonesianNumberFormat?Ze.uFC.Indonesia.code:Ze.uFC.EnglishUS.code)}}",
+      "excerpt_sha256": "d144ba57a88bde3fff1c2439c1b5524b15c9e0db617dddd22d8e897ba51d7fb6"
+    },
+    "string_predicate": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/main.bed1449c3647a8ca.js",
+      "sha256": "ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44",
+      "start": 4279802,
+      "end": 4279883,
+      "text": "checkIsString(O){return\"string\"==typeof O&&!O.match(this.timeRegex)||null==O||!1}",
+      "excerpt_sha256": "04b80fac9f8f741bce7d800faaa128a85837aeddb02cfe5d688062ce65de5661"
+    },
+    "time_regex": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/main.bed1449c3647a8ca.js",
+      "sha256": "ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44",
+      "start": 4258633,
+      "end": 4258685,
+      "text": "this.timeRegex=/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]/g",
+      "excerpt_sha256": "e1f19745405b49b21fbd8e10a3321801a61fcaf922a313db39b36623e765deab"
+    },
+    "locale_data": {
+      "source": "https://coretax.intranet.pajak.go.id/returnsheets/id-ID/vendor.c32c4ee39d966e30.js",
+      "sha256": "6458fddb0ca985860e262293ea1251518f44df497dec987f58ae79eae110d173",
+      "start": 1237075,
+      "end": 1238019,
+      "text": "[\"id\",[[\"AM\",\"PM\"],e,e],e,[[\"M\",\"S\",\"S\",\"R\",\"K\",\"J\",\"S\"],[\"Min\",\"Sen\",\"Sel\",\"Rab\",\"Kam\",\"Jum\",\"Sab\"],[\"Minggu\",\"Senin\",\"Selasa\",\"Rabu\",\"Kamis\",\"Jumat\",\"Sabtu\"],[\"Min\",\"Sen\",\"Sel\",\"Rab\",\"Kam\",\"Jum\",\"Sab\"]],e,[[\"J\",\"F\",\"M\",\"A\",\"M\",\"J\",\"J\",\"A\",\"S\",\"O\",\"N\",\"D\"],[\"Jan\",\"Feb\",\"Mar\",\"Apr\",\"Mei\",\"Jun\",\"Jul\",\"Agu\",\"Sep\",\"Okt\",\"Nov\",\"Des\"],[\"Januari\",\"Februari\",\"Maret\",\"April\",\"Mei\",\"Juni\",\"Juli\",\"Agustus\",\"September\",\"Oktober\",\"November\",\"Desember\"]],e,[[\"SM\",\"M\"],e,[\"Sebelum Masehi\",\"Masehi\"]],0,[6,0],[\"dd/MM/yy\",\"d MMM y\",\"d MMMM y\",\"EEEE, dd MMMM y\"],[\"HH.mm\",\"HH.mm.ss\",\"HH.mm.ss z\",\"HH.mm.ss zzzz\"],[\"{1} {0}\",e,e,e],[\",\",\".\",\";\",\"%\",\"+\",\"-\",\"E\",\"\\xd7\",\"\\u2030\",\"\\u221e\",\"NaN\",\".\"],[\"#,##0.###\",\"#,##0%\",\"\\xa4#,##0.00\",\"#E0\"],\"IDR\",\"Rp\",\"Rupiah Indonesia\",{AUD:[\"AU$\",\"$\"],BYN:[e,\"\\u0440.\"],IDR:[\"Rp\"],INR:[\"Rs\",\"\\u20b9\"],JPY:[\"JP\\xa5\",\"\\xa5\"],PHP:[e,\"\\u20b1\"],THB:[\"\\u0e3f\"],TWD:[\"NT$\"],USD:[\"US$\",\"$\"],XXX:[]},\"ltr\",function t(f){return 5}]",
+      "excerpt_sha256": "8c8e22a26323a2295231b15f5034497a0352a6caf43e613e69823b18ea0b896e"
+    }
+  }
+}

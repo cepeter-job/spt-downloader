@@ -9,7 +9,7 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
                           CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL,
                           CORPORATE_L11A_REFERENCE_URLS, CORPORATE_L11A_GRID_URLS,
                           CORPORATE_REFERENCE_REQUESTS, CORPORATE_L10_REFERENCE_URLS,
-                          CORPORATE_L4_REFERENCE_URLS,
+                          CORPORATE_L4_REFERENCE_URLS, CORPORATE_L10A_GRID_URL,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
@@ -50,6 +50,19 @@ INDUK_IDENTITY_FIELDS = (
     ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
 )
 INDUK_UNPROJECTED_REASON = 'unprojected_induk_captions'
+L10A_ROOT = 'DeclarationTransactionRelatedParties'
+L10A_GRID_ENDPOINT = CORPORATE_L10A_GRID_URL
+L10A_GRID_NAME = 'L10-A/l10a-grid'
+# The pinned L10-A panel owns no scalar body control: it remembers the declared
+# root but only re-reads PeriodYear/CollectorTin from outer baseFormData.
+# All worksheet body data belongs to the independent l10a-grid response.
+# Columns and captions are read from that owner's initColumn()/ngOnChanges.
+L10A_COLUMNS = ('Name', 'TIN', 'Country', 'RelationshipCode', 'BusinessActivity',
+                'TypeOfTransaction', 'TransactionValue', 'PricingMethod', 'ReasonPricingMethod')
+# Row 2 of the approved L10-A sheet, in the reviewed grid order.
+L10A_HEADERS = ['Nama', 'NPWP/TIN', 'Negara', 'BENTUK HUBUNGAN', 'Kegiatan Usaha',
+                'Jenis Transaksi', 'NILAI TRANSAKSI (Rupiah)',
+                'METODE PENENTUAN HARGA TRANSFER YANG DIGUNAKAN', 'ALASAN PENGGUNAAN METODE']
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -1270,9 +1283,365 @@ def _apply_l4(binding, section, observed_forms, *, root, payload, record, event,
             'route': proof['route'], 'scope': ('source-bound-populated-both-blocks' if strong else
                                               'empty-both-blocks-only'), 'values': values}
 
+def project_l10a(rows, *, headers, tax_type, locale):
+    """Only empty rows are proved without original active catalog descriptions.
+
+    The ordinary grid reference branch does NOT display raw codes. Its number
+    branch uses DecimalPipe 1.0-0, not two-decimal trimming. No populated,
+    including null-code/null-amount, branch is admitted by this capability.
+    """
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or headers != L10A_HEADERS
+            or not isinstance(rows, list)):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_structure')
+    if rows:
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_populated')
+    return {'rows': [], 'provenance': []}
+
+
+L10A_LABELS = {'Country': 'COUNTRY_CODE', 'RelationshipCode': 'RELATIONSHIP_TYPE',
+               'TypeOfTransaction': 'TRANSACTION_TYPE', 'PricingMethod': 'PRICING_METHOD'}
+L10A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+
+
+def _l10a_number(value):
+    # The active checkIsString predicate includes null; null never reaches the
+    # number pipe even though that pipe internally coalesces null to zero.
+    if value is None or type(value) is str:
+        if type(value) is str and re.match(r'^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]', value):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_time_string')
+        return '' if value is None else value, 'grid-checkIsString/literal-null-or-string'
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_number_type')
+    try:
+        _decimal(value)  # Preserve the original strict finite/token budget gate.
+        if not re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?', value):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
+        # JSON.parse has already converted the original decimal token to a
+        # binary64 Number before Ka/DecimalPipe sees it. Keep the wire token in
+        # provenance, but render that Number, including rounded decimal inputs
+        # and real Number underflow. Do not apply Decimal math to the raw token.
+        browser_number = float(value)
+        number = Decimal.from_float(browser_number)
+        if not number.is_finite() or abs(number) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
+        # In this bounded range every integer and half-integer is exactly
+        # representable. A round-trip decimal spelling of the same binary64
+        # cannot cross one of those thresholds. Thus Python's spelling and the
+        # pinned Angular Number.toString path have identical zero-digit rounding;
+        # the independent exact-source Edge inventory exercises those boundaries.
+        text = _number(str(browser_number), 0, locale='id-ID')
+        if abs(_decimal(text.replace('.', ''))) > _MAX_INTEGER:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision')
+        return text, 'angular-decimal-1.0-0-id/json-number-binary64'
+    except (_UnsupportedMetadata, DecimalException, ValueError, OverflowError):
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_number_precision') from None
+
+
+def project_l10a_populated(rows, *, headers, tax_type, locale, labels):
+    """Pure active-grid consumer; caller proves original catalog and SPA custody.
+
+    This is additive to empty-v1, never a raw-code fallback. Complete catalog
+    inventories prove even null/missing-code blank descriptions. Preserve every
+    original page-local leaf, duplicate occurrence and numeric lexeme.
+    """
+    if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or headers != L10A_HEADERS
+            or not isinstance(rows, list) or not 1 <= len(rows) <= 10000):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_structure')
+    if (not isinstance(labels, dict) or set(labels) != set(L10A_LABELS.values())
+            or any(not isinstance(catalog, dict) or any(type(code) is not str or not code
+                or type(label) is not str or not label.strip() for code, label in catalog.items())
+                for catalog in labels.values())):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_catalogs')
+    rendered, evidence = [], []
+    for index, source in enumerate(rows):
+        if (not isinstance(source, dict) or not set(L10A_COLUMNS) <= set(source)
+                or set(source) - set(L10A_COLUMNS) - {'RecordId'}
+                or 'RecordId' in source and (type(source['RecordId']) is not str
+                    or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', source['RecordId']))):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_row')
+        output = []
+        for column, key in enumerate(L10A_COLUMNS):
+            value = source[key]
+            entry = _evidence(value, ['Data', index, key])
+            entry['destination'] = {'table': L10A_GRID_NAME, 'row': index, 'column': column}
+            if key in L10A_LABELS:
+                if value is not None and type(value) is not str:
+                    raise _UnsupportedMetadata('unsupported_corporate_l10a_reference_type')
+                text = labels[L10A_LABELS[key]].get(value, '')
+                entry['rule'] = 'bound-reference-description'
+            elif key == 'TransactionValue':
+                text, entry['rule'] = _l10a_number(value)
+            elif value is None or type(value) is str:
+                text, entry['rule'] = '' if value is None else value, 'literal-string'
+            else:
+                raise _UnsupportedMetadata('unsupported_corporate_l10a_text_type')
+            output.append(text)
+            evidence.append(entry)
+        if 'RecordId' in source:
+            entry = _evidence(source['RecordId'], ['Data', index, 'RecordId'])
+            entry.update(rule='retained-original-unused-row-id',
+                         destination={'table': L10A_GRID_NAME, 'row': index, 'control': 'RecordId'})
+            evidence.append(entry)
+        rendered.append(output)
+    return {'rows': rendered, 'provenance': evidence}
+
+
+def _l10a_grid_binding(binding, record_id):
+    """The empty branch needs exactly the reviewed first ten-row request."""
+    grids = binding.get('grids')
+    if (not isinstance(grids, list) or len(grids) != 1 or not isinstance(grids[0], dict)
+            or set(grids[0]) != {'name', 'endpoint', 'pages'}
+            or grids[0]['name'] != L10A_GRID_NAME or grids[0]['endpoint'] != L10A_GRID_ENDPOINT
+            or not isinstance(grids[0]['pages'], list) or len(grids[0]['pages']) != 1
+            or binding.get('responses') or binding.get('dependencies')):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_grid_binding')
+    page = grids[0]['pages'][0]
+    expected = {'ReturnSheetRecordId': record_id, 'First': 0, 'Rows': 10,
+                'SortField': '', 'SortOrder': 1, 'Filters': [], 'LanguageId': 'id-ID'}
+    if (not isinstance(page, dict) or set(page) != {'request_json', 'offset'}
+            or type(page['offset']) is not int or page['offset'] != 0
+            or _corporate_request_key(page['request_json']) != _corporate_request_key(expected)):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_grid_page')
+    return expected
+
+
+def _l10a_page_source(packets, request):
+    """Choose earliest successful original exact-query packet, not iterator-first."""
+    matches = []
+    for packet in packets.values():
+        event = packet['event']
+        if (packet['successful'] is True and event.get('url') == L10A_GRID_ENDPOINT
+                and event.get('method') == 'POST'
+                and type(event.get('status')) is int and 200 <= event['status'] < 300
+                and type(event.get('sequence')) is int and event['sequence'] > 0
+                and _corporate_request_key(event.get('request_json')) == _corporate_request_key(request)):
+            matches.append(packet)
+    if not matches:
+        raise _UnsupportedMetadata('missing_corporate_l10a_grid_response')
+    return min(matches, key=lambda packet: packet['event']['sequence'])
+
+
+def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, record, event,
+                          grid_packets, reference_packets):
+    proof = binding['projection']
+    pins = L10A_BUILD_DIGESTS
+    if (not isinstance(proof, dict)
+            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or proof['kind'] != 'corporate-l10a-populated-v1'
+            or set(pins) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(digest) is not str or not re.fullmatch(r'[0-9a-f]{64}', digest)
+                   for digest in pins.values())
+            or proof['builds'] != pins or proof['route'] != event['frame_url']
+            or proof['locale'] != 'id-ID' or proof['timezone'] != 'Asia/Jakarta'
+            or binding.get('paths') != [[L10A_ROOT]]):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    main = root.get('MainFormData')
+    tables = proof['tables']
+    structure = {'form': 'L10-A', 'owner_chain': [
+        'rshshr-citr-l10a-form', 'rshshr-citr-l10a-form-grid1', 'ui-grid', 'p-table', 'table'],
+        'header_controls': ['PeriodYear', 'CollectorTin']}
+    if (not isinstance(tables, list) or len(tables) != 1 or not isinstance(tables[0], dict)
+            or tables[0] != {'component': 'rshshr-citr-l10a-form-grid1',
+                'headers': L10A_HEADERS, 'footer_spans': [], 'source_structure': structure}):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_grid_owner')
+    present, value = L10A_ROOT in root, root.get(L10A_ROOT)
+    if present and value is not None and not (type(value) in (list, dict) and not value):
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_source_root')
+    grids = binding.get('grids')
+    if (not isinstance(grids, list) or len(grids) != 1 or not isinstance(grids[0], dict)
+            or set(grids[0]) != {'name', 'endpoint', 'pages'}
+            or grids[0]['name'] != L10A_GRID_NAME or grids[0]['endpoint'] != L10A_GRID_ENDPOINT
+            or not isinstance(grids[0]['pages'], list) or not 1 <= len(grids[0]['pages']) <= 1000
+            or binding.get('responses') or binding.get('dependencies')):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_grid_binding')
+    pages, offsets = [], set()
+    for page in grids[0]['pages']:
+        if (not isinstance(page, dict) or set(page) != {'request_json', 'offset'}
+                or type(page['offset']) is not int or page['offset'] < 0 or page['offset'] in offsets):
+            raise _UnsupportedMetadata('unverified_corporate_l10a_grid_page')
+        query = {'ReturnSheetRecordId': record['record_id'], 'First': page['offset'], 'Rows': 10,
+                 'SortField': '', 'SortOrder': 1, 'Filters': [], 'LanguageId': 'id-ID'}
+        if _corporate_request_key(page['request_json']) != _corporate_request_key(query):
+            raise _UnsupportedMetadata('unverified_corporate_l10a_grid_page')
+        offsets.add(page['offset'])
+        pages.append((_l10a_page_source(grid_packets, query), query))
+    if (len(grids[0]['pages']) == 1 and
+            _corporate_integer(pages[0][0]['payload']['TotalRecords']) == 0):
+        # A valid stronger offer cannot disable the independently valid legacy
+        # empty path. No catalog label or populated-only flag is consumed here.
+        empty = {**binding, 'projection': {'kind': 'corporate-l10a-empty-v1',
+            'builds': {CIT_SOURCE: proof['builds'][CIT_SOURCE]}, 'route': proof['route']}}
+        empty_forms = [empty if form is binding else form for form in observed_forms]
+        report = _apply_l10a(empty, section, empty_forms, root=root, payload=payload,
+            record=record, event=event, grid_packets=grid_packets)
+        report['offered_kind'] = proof['kind']
+        return report
+    if (proof['route'] != route or event.get('component_lifetime') is None
+            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+            or fields.get('ReturnSheetStatusCode') != 'SUBMITTED'
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or not isinstance(main, dict)
+            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
+                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_submitted_lifecycle')
+    if 'PreviousFormData' not in payload:
+        raise _UnsupportedMetadata('missing_corporate_l10a_previous_encoding')
+    previous = payload['PreviousFormData']
+    if previous is not None:
+        if type(previous) is not str:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding')
+        try:
+            decoded_previous = _corporate_json(previous)
+        except JsonSafetyError:
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_encoding') from None
+        if decoded_previous is not None and not isinstance(decoded_previous, dict):
+            raise _UnsupportedMetadata('unsupported_corporate_l10a_previous_shape')
+    if (type(payload.get('PeriodYear')) is not _CorporateNumber
+            or not re.fullmatch(r'[0-9]{4}', payload['PeriodYear'])
+            or type(payload.get('TIN')) is not str):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_header_sources')
+    catalogs = bind_corporate_reference_catalogs(proof['references'], reference_packets,
+        kinds=tuple(L10A_LABELS.values()), event=event, builds=proof['builds'])
+    rows, values, queries, total = [], [], [], None
+    for source, query in sorted(pages, key=lambda item: item[1]['First']):
+        page, source_event = source['payload'], source['event']
+        count = _corporate_integer(page['TotalRecords'])
+        data = page['Data']
+        if (query['First'] != len(rows) or not isinstance(data, list) or not data
+                or len(data) > 10 or total is not None and total != count):
+            raise _UnsupportedMetadata('unverified_corporate_l10a_complete_pages')
+        total = count
+        result = project_l10a_populated(data, headers=proof['tables'][0]['headers'],
+            tax_type=fields['TaxTypeCode'], locale=proof['locale'],
+            labels={kind: catalog['lookups'] for kind, catalog in catalogs.items()})
+        for entry in result['provenance']:
+            entry['destination']['row'] += len(rows)
+            entry.update(response_sequence=source_event['sequence'], container=['Payload'])
+            values.append(entry)
+            kind = L10A_LABELS.get(entry['path'][-1])
+            if kind is not None and entry['value'] in catalogs[kind]['selected']:
+                values.append({**deepcopy(catalogs[kind]['selected'][entry['value']]),
+                    'response_sequence': catalogs[kind]['source']['sequence'], 'container': ['Payload'],
+                    'destination': deepcopy(entry['destination'])})
+        for key in ('TotalRecords', 'Index'):
+            entry = _evidence(page[key], [key])
+            entry.update(response_sequence=source_event['sequence'], container=['Payload'],
+                         rule='captured-original-grid-control')
+            values.append(entry)
+        rows.extend(result['rows'])
+        queries.append(deepcopy(query))
+    if len(rows) != total:
+        raise _UnsupportedMetadata('unverified_corporate_l10a_complete_pages')
+    for kind, catalog in catalogs.items():
+        values.extend({**entry, 'response_sequence': catalog['source']['sequence'], 'container': ['Payload'],
+            'destination': {'table': L10A_GRID_NAME, 'reference': kind}} for entry in catalog['provenance'])
+    for owner, source, prefix, keys in ((payload, 'primary', [], ('ReturnSheetStatusCode',
+            'ReturnSheetModel', 'PreviousFormData', 'IsTransactionWithRelated')),
+            (main, 'current', ['MainFormData'], ('IsTransactionWithRelated',))):
+        for key in keys:
+            entry = _evidence(owner[key], prefix + [key])
+            entry.update(response_sequence=event['sequence'],
+                container=['Payload'] if source == 'primary' else ['Payload', 'CurrentFormData'],
+                rule='retained-original-submitted-grid-predicate')
+            values.append(entry)
+    source_root = {'present': present, 'path': [L10A_ROOT], 'response_sequence': event['sequence'],
+                   'container': ['Payload', 'CurrentFormData']}
+    if present:
+        source_root.update(type='null' if value is None else 'array' if type(value) is list else 'object',
+                           value=deepcopy(value))
+    section['fields'] = [
+        {'group': 'HEADER', 'field': 'PeriodYear', 'label': 'Tahun Pajak', 'value': str(payload['PeriodYear'])},
+        {'group': 'HEADER', 'field': 'CollectorTin', 'label': 'Nomor Identitas WP', 'value': payload['TIN']}]
+    for control, key in (('PeriodYear', 'PeriodYear'), ('CollectorTin', 'TIN')):
+        entry = _evidence(payload[key], [key])
+        entry.update(response_sequence=event['sequence'], container=['Payload'],
+            rule='outer-baseFormData/input-text', destination={'form': 'L10-A', 'field': control})
+        values.append(entry)
+    # The approved clean template intentionally omits these two real header
+    # controls. Preserve them and their unresolved counts; never hide them to
+    # manufacture a COMPLETE nine-column worksheet.
+    section['projection_complete'] = False
+    section['projection_reason'] = 'l10a_header_slots_omitted'
+    section['tables'] = [{'name': L10A_GRID_NAME, 'headers': list(L10A_HEADERS), 'rows': rows,
+        'footer': [], 'footer_spans': [], 'body_row_count': len(rows), 'source_total': total, 'complete': True}]
+    return {'form': 'L10-A', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'source_root': source_root, 'grid_requests': queries, 'values': values}
+
+
+def _apply_l10a(binding, section, observed_forms, *, root, payload, record, event, grid_packets,
+                 reference_packets=None):
+    proof = binding['projection']
+    if isinstance(proof, dict) and proof.get('kind') == 'corporate-l10a-populated-v1':
+        return _apply_l10a_populated(binding, section, observed_forms, root=root, payload=payload,
+            record=record, event=event, grid_packets=grid_packets, reference_packets=reference_packets or {})
+    approved = BUILD_DIGESTS.get(CIT_SOURCE)
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+            or proof['kind'] != 'corporate-l10a-empty-v1'
+            or type(approved) is not str or not re.fullmatch(r'[0-9a-f]{64}', approved)
+            or proof['builds'] != {CIT_SOURCE: approved}
+            or proof['route'] != event['frame_url'] or binding.get('paths') != [[L10A_ROOT]]):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_binding')
+    fields = record.get('source_fields', {})
+    route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
+        str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
+                                fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (proof['route'] != route or event.get('component_lifetime') is None
+            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
+            or record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
+            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
+        raise _UnsupportedMetadata('unverified_corporate_l10a_submitted_lifecycle')
+    request = _l10a_grid_binding(binding, record['record_id'])
+    present, value = L10A_ROOT in root, root.get(L10A_ROOT)
+    if present and value is not None and not (type(value) in (list, dict) and not value):
+        # Flattened [{}] / {'Body': []} each has one empty leaf but is NOT an
+        # inert root. Inspect the decoded original before replacing any table.
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_source_root')
+    source = _l10a_page_source(grid_packets, request)
+    page, source_event = source['payload'], source['event']
+    # Packet shape, exact totals, contiguity and snapshots already passed in
+    # the adapter. Preserve their original typed controls rather than rebuild
+    # them from the generic presentation leaves or synthesize zero/null.
+    if _corporate_integer(page['TotalRecords']) != 0 or page['Data']:
+        raise _UnsupportedMetadata('unsupported_corporate_l10a_populated')
+    result = project_l10a([] if page['Data'] is None else page['Data'],
+                          headers=list(L10A_HEADERS), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
+    source_root = {'present': present, 'path': [L10A_ROOT],
+                   'response_sequence': event['sequence'], 'container': ['Payload', 'CurrentFormData']}
+    if present:
+        source_root.update(type='null' if value is None else 'array' if type(value) is list else 'object',
+                           value=deepcopy(value))
+    values = [{'path': ['Data'], 'type': 'null' if page['Data'] is None else 'array',
+               'value': deepcopy(page['Data'])},
+              _evidence(page['TotalRecords'], ['TotalRecords']), _evidence(page['Index'], ['Index'])]
+    for entry in values:
+        entry.update(response_sequence=source_event['sequence'], container=['Payload'],
+                     rule='captured-empty-grid-control')
+    section['fields'] = []
+    section['tables'] = [{'name': L10A_GRID_NAME, 'headers': list(L10A_HEADERS),
+                          'rows': result['rows'], 'footer': [], 'footer_spans': [],
+                          'body_row_count': 0, 'source_total': 0, 'complete': True}]
+    return {'form': 'L10-A', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'source_root': source_root,
+            'grid_request': deepcopy(request), 'values': values}
+
 
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
-                      reference_packets=None, auxiliary_packets=None):
+                      reference_packets=None, auxiliary_packets=None, grid_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
     projected = []
     for binding, section in zip(observed_forms, sections):
@@ -1284,6 +1653,11 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
             if binding.get('paths') == [[INDUK_ROOT]]:
                 projected.append(_apply_induk(binding, section, observed_forms, root=root,
                     payload=payload, record=record, event=event))
+            continue
+        if binding['name'] == 'L10-A':
+            projected.append(_apply_l10a(binding, section, observed_forms, root=root,
+                payload=payload, record=record, event=event, grid_packets=grid_packets or {},
+                reference_packets=reference_packets or {}))
             continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,

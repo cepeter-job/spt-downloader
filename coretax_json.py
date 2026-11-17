@@ -24,6 +24,7 @@ UNIFIKASI_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-
 CORPORATE_COUNTRY_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/COUNTRY_CODE'
 CORPORATE_L3_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
     for kind in ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')}
+CORPORATE_L10A_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l10a-grid'
 CORPORATE_L3_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l3-table-b-grid'
 CORPORATE_L3_FOOTER_URL = CORPORATE_L3_GRID_URL + '/footer'
 CORPORATE_L11A_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
@@ -1343,6 +1344,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
+    grid_packets = {}
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
     if not supported_tax:
         reasons.append('unsupported_corporate_tax_kind')
@@ -1476,6 +1478,13 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                         # evidence rows stay audit-only. Keep the original payload
                         # for this single endpoint instead of widening `is_auxiliary`.
                         auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
+
+                    if ctx['url'] == CORPORATE_L10A_GRID_URL:
+                        # Keep the decoded original, including empty/null Data
+                        # and typed count/Index. Projection chooses the earliest
+                        # successful exact-query sequence after all safety gates.
+                        grid_packets[event['sequence']] = {
+                            'payload': payload, 'event': event, 'successful': success}
                 else:
                     old = state['seen'].get(key)
                     if old is not None and old['sha256'] != ctx['sha256']:
@@ -1559,7 +1568,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             root, payload, event = primary_source
             projected = apply_projections(sections, observed_forms, root=root, payload=payload,
                 record=record, event=event, country_packets=country_packets,
-                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets)
+                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets,
+                grid_packets=grid_packets)
             if projected:
                 provenance['projections'] = projected
         except _UnsupportedMetadata as error:

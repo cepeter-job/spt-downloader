@@ -731,6 +731,7 @@ def export_workbook(run, path, *, include_details=True, detail_targets=None, res
                 'unsafe_average': ' DER belum dihitung: saldo rata-rata utang atau modal bukan angka Excel yang aman.',
                 'zero_capital_average': ' DER belum dihitung: saldo rata-rata modal nol.',
                 'unprojected_induk_captions': ' Induk diproyeksikan sebagian: hanya slot identitas yang terbukti dari payload.',
+                'l10a_header_slots_omitted': ' L10-A diproyeksikan sebagian: dua kontrol HEADER asli tetap pada checkpoint dan belum mempunyai slot template.',
             }.get(report.get('derived_reason'), '') if report.get('derived_complete') is False else ''
             values = ['Pemetaan template', report.get('unmapped_fields', 0),
                       report.get('unmapped_tables', 0), report.get('unmapped_rows', 0),
