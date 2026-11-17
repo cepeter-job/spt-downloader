@@ -179,6 +179,26 @@ source-specific custody and join that same final consistency boundary before
 admission; B's proof grants no C/D permission. Synthetic exact-head green does
 not establish combined-form or application-owned live acceptance.
 
+The Induk identity branch is deliberately partial. `corporate-induk-v1`
+projects only the ten reviewed identity controls from primary `MainFormData`:
+`TaxYear`, `Status`, `AccountingPeriodStart`, `AccountingPeriodEnd`, `Tin`,
+`Name`, `TinAccountant`, `NameAccountant`, `EmailAddress` and `PhoneNumber`.
+Emit only present, non-null, nonblank string/number-token controls; never
+synthesize an omitted identity or coerce a boolean/container into its value.
+Require the admitted loaded CIT proof, exact source route, single reviewed root,
+primary binding and matching submitted/model lifecycle. These are literal
+identity slots; do not add locale/timezone rendering probes for them. `TaxRate`
+is still a tariff code, not the displayed tariff text; frontend-derived captions
+remain unprojected until their own rendering is proved. Preserve every original
+root leaf and the raw `JSON path / JSON type / Source value` custody table.
+The native dump gate exempts reviewed `fields` only within their own projected
+section; Induk must not admit a different unprojected section or suppress any
+independent unresolved-grid refusal. Keep `projection_complete=False` and
+`unprojected_induk_captions`, propagate `derived_complete=False` with its reason,
+and retain a visible Audit note and PARTIAL template mapping. Ten identity
+slots do not certify a complete Induk/Corporate worksheet or live acceptance.
+See [Induk projection design](docs/superpowers/specs/2026-11-16-badan-induk-native-projection.md).
+
 The L7 corporate semantic branch has its own source-proven boundary. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
