@@ -769,6 +769,11 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
                     or abs(ratio * 100) > _MAX_INTEGER):
                 raise _UnsupportedMetadata('unsupported_corporate_l11b_der_precision')
         result['tables'] = monthly + result['tables']
+    else:
+        for entry in evidence:
+            if entry['path'][:2] in ([L11B_ROOT, 'DebtBalanceAverage'], [L11B_ROOT, 'EquityBalanceAverage']):
+                entry['rule'] = 'unused-hidden-view-model'
+                entry.pop('destination', None)
     result['der_operands'] = averages if part_ii else None
     return result
 

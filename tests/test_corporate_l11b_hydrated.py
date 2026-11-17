@@ -107,6 +107,8 @@ def test_conditional_hidden_profile_never_fabricates_empty_monthly_tables():
     assert [t['name'] for t in result['tables']] == ['L11-B/costs']
     assert result['der_operands'] is None
     assert [f['value'] for f in result['fields']][-2:] == ['1.250.000', '312.500']
+    hidden = [e for e in result['provenance'] if e['path'][1] in ('DebtBalanceAverage', 'EquityBalanceAverage')]
+    assert hidden and all(e['rule'] == 'unused-hidden-view-model' and 'destination' not in e for e in hidden)
 
 
 @pytest.mark.parametrize('shown,cost', [(True, '1'), (False, '400000')])
