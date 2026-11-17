@@ -3250,65 +3250,6 @@ def _apply_l9_details(binding, section, evidence, *, root, record, event,
         section.pop('projection_reason', None)
     else:
         section['projection_reason'] = 'unprojected_l9_detail_grids'
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
-            or proof['kind'] != L10B_KIND or not _l10b_pins(proof['builds'])
-            or proof['route'] != route or proof['route'] != event['frame_url']
-            or binding.get('paths') != [[L10B_ROOT]]
-            or any(binding.get(key) for key in ('grids', 'responses', 'dependencies', 'primary'))
-            or event.get('component_lifetime') is None or event.get('corporate_l10b_lifetime') is None):
-        raise _UnsupportedMetadata('unverified_corporate_l10b_nondisplay_custody')
-    main, form = root.get('MainFormData'), root.get(L10B_ROOT)
-    if (record.get('source_status') != 'SPT Dilaporkan'
-            or record.get('meta', {}).get('Model SPT') != 'Normal'
-            or fields.get('ReturnSheetModel') != 'Normal'
-            or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
-            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or payload.get('ReturnSheetModel') != 'NORMAL'
-            or any(key not in payload or payload[key] is not None
-                   for key in ('PreviousFormData', 'LastSubmittedFormData'))
-            or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
-            or not isinstance(main, dict)
-            or any(type(owner.get('IsTransactionWithRelated')) is not _CorporateNumber
-                   or owner['IsTransactionWithRelated'] != '1' for owner in (payload, main))
-            or type(payload.get('TIN')) is not str or payload['TIN'] != event['scope'][0]
-            or type(main.get('Tin')) is not str or main['Tin'] != payload['TIN']
-            or type(payload.get('PeriodYear')) is not _CorporateNumber
-            or type(main.get('TaxYear')) is not _CorporateNumber
-            or payload['PeriodYear'] != main['TaxYear']
-            or not re.fullmatch(r'(?:19|20)[0-9]{2}|2100', payload['PeriodYear'])
-            or type(root.get('TaxType')) is not str or root['TaxType'] != 'ICT_RCIT'
-            or type(root.get('TaxPeriodCode')) is not str
-            or root['TaxPeriodCode'] != '0112' + payload['PeriodYear']
-            or fields.get('TaxPeriodCode') != root['TaxPeriodCode']
-            or type(root.get('ReturnSheetRecordIdentifier')) is not str
-            or root['ReturnSheetRecordIdentifier'] != record['record_id']
-            or type(root.get('ReturnSheetAggregateIdentifier')) is not str
-            or root['ReturnSheetAggregateIdentifier'] != fields.get('AggregateIdentifier')):
-        raise _UnsupportedMetadata('unverified_corporate_l10b_submitted_lifecycle')
-    if (not isinstance(form, dict) or set(form) != set(L10B_KEYS)
-            or any(type(value) is not bool for value in form.values())):
-        raise _UnsupportedMetadata('unsupported_corporate_l10b_source_shape')
-    values, presence = [], []
-    for owner, prefix, container, keys in (
-            (form, [L10B_ROOT], ['Payload', 'CurrentFormData'], tuple(form)),
-            (main, ['MainFormData'], ['Payload', 'CurrentFormData'],
-             ('Tin', 'TaxYear', 'IsTransactionWithRelated')),
-            (root, [], ['Payload', 'CurrentFormData'], ('TaxType', 'TaxPeriodCode',
-             'ReturnSheetRecordIdentifier', 'ReturnSheetAggregateIdentifier')),
-            (payload, [], ['Payload'], ('TIN', 'PeriodYear', 'ReturnSheetStatusCode',
-             'ReturnSheetModel', 'PreviousFormData', 'LastSubmittedFormData', 'IsTransactionWithRelated'))):
-        for key in keys:
-            value = owner[key]
-            entry = ({'path': prefix + [key], 'type': 'boolean', 'value': value}
-                     if type(value) is bool else _evidence(value, prefix + [key]))
-            entry.update(container=list(container), response_sequence=event['sequence'],
-                         attempt=event['attempt'], rule='retained-original-nondisplay-custody')
-            values.append(entry)
-            presence.append({'path': prefix + [key], 'container': list(container),
-                'response_sequence': event['sequence'], 'attempt': event['attempt'], 'present': True})
-    return {'form': 'L10-B', 'kind': L10B_KIND, 'builds': dict(proof['builds']),
-            'route': route, 'attempt': event['attempt'], 'values': values, 'presence_facts': presence}
-
-
 def _l10b_pins(builds):
     urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
     configured = load_build_pins()
