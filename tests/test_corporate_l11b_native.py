@@ -1,5 +1,7 @@
 """Synthetic L11-B observer -> original capture -> held -> workbook (Actions)."""
 import html
+import json
+from copy import deepcopy
 
 import pytest
 from openpyxl import load_workbook
@@ -145,6 +147,92 @@ def test_stop_in_l11b_provider_probe_is_not_fallback(browser, tmp_path, monkeypa
             with pytest.raises(KeyboardInterrupt):
                 observe_forms(page, fixture.record, corpus.SCOPE, capture,
                               approved_digest=fixture.pins[ASSET], check_cancel=cancel)
+    finally: fixture.close()
+
+
+@pytest.mark.parametrize('profile,part_ii', [('manual', True), ('manual', False), ('null-defaults', True)])
+def test_l11b_actual_hybrid_json_complete_source_both_held_readers_and_partial_audit(
+        browser, tmp_path, monkeypatch, profile, part_ii):
+    from coretax_json_capture import json_custody
+    from test_corporate_l11b_defaults import default_packet
+    fixture = Fixture(browser, monkeypatch, part_ii=part_ii)
+    if profile == 'null-defaults':
+        fixture.raw = default_packet()['body']
+    observed, decoded, events = [], [], []
+    monkeypatch.setattr(driver, 'CIT_SOURCE_SHA256', fixture.pins[ASSET])
+    original_observe = driver.observe_corporate_forms
+    original_adapter = adapt_corporate_detail
+    original_record = driver.diagnostics.record
+
+    def observe(*args, **kwargs):
+        forms = original_observe(*args, **kwargs)
+        observed.append(deepcopy(forms))
+        return forms
+
+    def adapter(*args, **kwargs):
+        result = original_adapter(*args, **kwargs)
+        # Assert before fallback: DOM business bait must never hide adapter RED.
+        assert result['eligible'] and result['coverage']['complete'], result['reason']
+        decoded.append(deepcopy(result))
+        return result
+
+    def record(event, **fields):
+        if event == 'detail.source': events.append(fields)
+        return original_record(event, **fields)
+
+    monkeypatch.setattr(driver, 'observe_corporate_forms', observe)
+    monkeypatch.setattr('coretax_json.adapt_corporate_detail', adapter)
+    monkeypatch.setattr(driver.diagnostics, 'record', record)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = opened(fixture, capture)
+            native = driver._hybrid_detail(page, fixture.record, corpus.SCOPE, tmp_path, capture, 1000, None)
+            manifest = capture.drain()
+            assert manifest['complete'] is True
+            forms, = observed
+            result, = decoded
+            assert events == [{'source_requested': 'json-first', 'source_used': 'json', 'source_reason': 'native_verified'}]
+            assert native['detail_source']['used'] == 'json'
+            assert native['detail_source']['coverage']['complete'] is True
+            # Missing financial attachment is a separate real PARTIAL, not mocked success.
+            assert native['capture_complete'] is False and native['errors']
+            fixture.record['detail_url'] = route()
+            live = list(capture.iter_bodies())
+            assert len(live) == 1 and live[0]['body'] == fixture.raw
+            held = checkpoint_bodies(tmp_path, manifest, fixture.record, corpus.SCOPE)
+            assert held == live
+            assert original_adapter(iter(held), fixture.record, corpus.SCOPE, forms) == result
+            assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
+        fixture.record.update(native)
+        run = {'npwp': corpus.NPWP, 'year': 2025, 'year_basis': 'period', 'inventory_complete': True,
+               'complete': False, 'errors': deepcopy(native['errors']), 'records': [fixture.record]}
+        with json_custody(run, tmp_path, published=False) as (items, streams):
+            body, = [item for item in items if item['source_path'].endswith('response-0001.json')]
+            assert streams[body['relative_path']].read() == fixture.raw
+        export = tmp_path / 'export'
+        coretax.save_output(run, export, json_source=tmp_path)
+        coretax.verify_outputs(run, export)
+        published = checkpoint_bodies(export, manifest, fixture.record, corpus.SCOPE,
+            published=True, output_layout=run['json_output_layout'])
+        assert original_adapter(iter(published), fixture.record, corpus.SCOPE, forms) == result
+        name, = [n for n in run['output_files'] if n != 'resume.xlsx']
+        book = load_workbook(export / name)
+        try:
+            sheet = book['L11-B']
+            assert [sheet.cell(row, 2).value for row in range(2, 8)] == (
+                [0] * 6 if profile == 'null-defaults' else
+                [1000000, 200000, 50000, 400000 if part_ii else 1, 1250000, 312500])
+            assert sum(cell.value == '0007' for row in sheet for cell in row) == (2 if part_ii else 0)
+        finally: book.close()
+        saved = json.loads((export / 'run.json').read_text(encoding='utf-8'))
+        assert saved['complete'] is False and saved['records'][0]['detail_source']['used'] == 'json'
+        mapping, = [m for m in saved['template_mapping'] if m['form'] == 'L11-B']
+        assert mapping['complete'] is False and mapping['derived_reason'] == 'unprojected_l11b_header_question'
+        resume = load_workbook(export / 'resume.xlsx')
+        try:
+            assert any('header/pertanyaan L11-B' in str(cell.value) for sheet in resume for row in sheet for cell in row)
+        finally: resume.close()
+        assert fixture.unexpected == []
     finally: fixture.close()
 
 
