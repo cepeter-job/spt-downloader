@@ -251,6 +251,22 @@ def test_malformed_c_final_reply_cannot_seal_earlier_child_or_clock(tmp_path):
         assert 'clock_interval' not in saved and 'corporate_l10c_lifetime' not in saved
 
 
+def test_known_changed_c_state_is_fatal_even_when_final_wrapper_is_malformed(tmp_path):
+    context, page, guard = fixture()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        capture.bind_detail_page(page)
+        assert boundaries(capture)
+        evaluate = guard.evaluate
+        guard.evaluate = lambda source, args=None: ({
+            'state': {'available': True, 'changed': True, 'complete': True},
+            'clock': {'epoch_ms': 2000, 'timezone': 'Asia/Jakarta'}, 'unexpected': None}
+            if 'corporate-l10c-final-clock' in source else evaluate(source, args))
+        with pytest.raises(JsonSafetyError, match='L10-C child history changed'):
+            capture.drain()
+
+
 def adapter_packets():
     from test_corporate_component_lifetime import corporate_packets
     packets, record, scope, observed, _ = corporate_packets()

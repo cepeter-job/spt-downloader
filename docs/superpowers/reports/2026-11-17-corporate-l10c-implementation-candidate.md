@@ -112,10 +112,10 @@ shared capture registry, response parser or manifest protocol.
    an uninterrupted child. The descriptor and any stronger manifest lifetime
    must be checked independently during live and held replay; no descriptor
    overrides, mixed attempts, child remount or late overwrite are admitted.
-4. Prove setFormData/getFormData/submitted-disable/common-parent callback and
-   no-late-overwrite behavior against the same lifecycle, not a different
-   synthetic source shape. The radio bool/string checked/value consumer and
-   actual paginator numbering still require framework proof.
+4. The source writer/no-late invariant and exact Number/radio/paginator
+   consumers are now proved below. Full acceptance must still exercise that
+   same current profile through the production shared catalog and joint
+   final-custody path; isolated unit seams do not substitute for it.
 5. The approved sheet has no question/header slots. Keep those identities and
    their typed raw controls unresolved and mapping PARTIAL unless a separate
    layout/omission decision is approved. Native/source coverage alone is not
@@ -140,7 +140,7 @@ original packet appears, record that bounded attempt as unresolved and stop.
 A separately authorized same-record populated DOM capture is also needed for
 row/description/number/radio comparison; never print taxpayer values.
 
-## Verification status
+## Initial candidate verification status (historical)
 
 Tests were written before their production changes. Local RED was established
 by source/AST: `project_l10c` did not exist, and the L10-C renderer did not
@@ -272,6 +272,48 @@ unstable Number conversions remain unsupported. The online fraction-0 and
 NumberInteger consumers are not substituted. This transformation proof still
 does not provide the missing coordinated native catalog/combined-lifecycle acceptance.
 
+## Current-Induk and no-late input invariant (source proof, not observed quiet time)
+
+The decoded pinned CIT source SHA remains
+`500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153`.
+A fresh bounded source inventory retained these decoded-character offsets:
+
+- 2648011/2648203: the sole parent `this.formData=` is the original
+  `JSON.parse(t.CurrentFormData)` in `fillForm`; the sole `mapFormData()` caller
+  is that same initial fill. `mapFormData` assigns current Main and C inputs;
+  the parent C-input assignment is at 2651206.
+- 2623687: the C template passes `baseFormData` to the child's `mainFormData`
+  and the immutable mapped `l10cFormData` to `formData`. Thus the C headers
+  originate from outer Payload.TIN/PeriodYear, not MainFormData.Tin/TaxYear.
+- 2648621 and 2695879: the only calls to `setShowAttachment10abc` consume the
+  initial outer flag and Main callback's IsTransactionWithRelated respectively.
+  Its only writers are constructor false and the numeric loose-1/loose-0
+  setter at 2705414. The zero branch clears the parent C FormGroup slot, not
+  the original `l10cFormData` input; explicit outer contradictions still refuse.
+- 2795046: the selector's sole nonconstructor Main-form assignment copies
+  original `this.formData.IsTransactionWithRelated`. All other Main patchValue
+  sites were inventoried; none writes that selector. There are no Main-form
+  reset/setValue/setControl/removeControl call sites. Generic ternary patch
+  arguments only target the enumerated amount controls, not this selector.
+- 2812396/2844201: Main valueChanges emits getFormData, which reads getRawValue
+  and changes only IncomeTaxInAYear/SignBy in the returned object. Even a delayed
+  submitted disable/other-control callback therefore preserves the copied
+  numeric-1 selector; it is not necessary to assert that no callback occurs.
+- C 699xx-716xx: ngOnChanges re-runs setFormData only for a changed input
+  reference; original grid mapping copies the four literal row operands.
+  Header writes, Question patch and submitted disable may emit C callbacks.
+  `onCallbackForm` patches its separate parent FormGroup accumulator; it does
+  not assign/map a new original C input. C's getter-zero total and normalized
+  question consequently do not overwrite the original child input/body.
+
+The admitted consumer deliberately requires current submitted NORMAL Rupiah,
+preceding inspected Induk, numeric-1 current selection, noncontradictory outer
+selection and literal-null prior/last-submitted inputs. Independent continuous
+original root/Main/C/control history is still required. The pending shared
+final snapshot must preserve that history through the final seal. This static
+invariant does not claim that a synthetic fixture observed application-owned
+callbacks, nor does B's proof itself provide C permission.
+
 ## Guarded consumer and observer dispatch / exact remaining integration
 
 `observe_forms` now calls `_observe_l10c_projection`; `apply_projections` now
@@ -335,3 +377,13 @@ Milestone verification: `a2b6a03b849a0f8b742ddb9b9847b9ac180be25b`, run
 shards, coverage/package/readback/bootstrap. Main-only provenance/cleanup were
 intentionally skipped. That green verifies the independent lifetime milestone,
 not subsequent framework/consumer changes; a fresh final-head run is required.
+
+The guarded consumer/framework milestone `f7a10680ccd064093433a465f6a879cc4f7b6cd0`
+then completed full workflow `44040700522` successfully: portable, dependency
+audit, all four Windows shards, coverage/package and final aggregate gate.
+Main-only provenance/cleanup were intentionally skipped. This executes the
+actual provider excerpt/radio/paginator tests and the clearly labelled consumer
+unit seam; it still does not supply the missing production shared producer or
+joint C history. Subsequent hardening retains transient THEAD/TFOOT changes and
+known changed child state even under malformed final wrappers; its new exact
+head requires its own fresh full run, recorded in the PR body/readback.

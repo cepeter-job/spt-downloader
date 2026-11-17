@@ -127,7 +127,7 @@ def test_real_l10c_history_binds_owned_disabled_controls_without_values(browser)
 
 @pytest.mark.parametrize('defect', ['remount', 'detach-reinsert', 'disable-reenable',
     'header-control-replaced', 'radio-enabled-restored', 'duplicate-grid', 'induk-replaced',
-    'header-caption', 'footer-added'])
+    'header-caption', 'footer-added', 'header-replaced-restored', 'footer-added-removed'])
 def test_real_l10c_history_retains_same_turn_changes_after_final_shape_is_restored(browser, defect):
     context, page, document, history = armed(browser)
     changes = {
@@ -140,6 +140,8 @@ def test_real_l10c_history_retains_same_turn_changes_after_final_shape_is_restor
         'induk-replaced': "const n=document.querySelector('rshshr-citr-main-form');n.replaceWith(n.cloneNode(true));",
         'header-caption': "document.querySelector('th').firstChild.data='UNREVIEWED HEADER';",
         'footer-added': "document.querySelector('table').createTFoot().insertRow().insertCell().textContent='UNREVIEWED FOOTER';",
+        'header-replaced-restored': "const h=document.querySelector('thead');const t=h.parentElement;h.remove();t.prepend(h);",
+        'footer-added-removed': "const f=document.querySelector('table').createTFoot();f.insertRow().insertCell().textContent='TRANSIENT FOOTER';f.remove();",
     }
     try:
         assert bind(page, history, 'start')['available'] is True

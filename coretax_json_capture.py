@@ -266,6 +266,8 @@ _L10C_HISTORY = """(d) => {
        continue;
      }
      if(started&&inside(record.target)&&record.target.closest('thead,tfoot'))state.changed=true;
+     if(started&&inside(record.target)&&[...record.removedNodes,...record.addedNodes].some(node=>
+       node.nodeType===1&&(node.matches('thead,tfoot')||node.querySelector('thead,tfoot'))))state.changed=true;
      for(const node of record.removedNodes){
        if(node.nodeType!==1)continue;
        if(roles.some(role=>role&&(node===role||node.contains(role)))||ancestors.has(node)||
@@ -888,6 +890,8 @@ class DetailJsonCapture:
         if _final:
             self._l10c_clock_end = None
             state = None
+            if isinstance(sample, dict):
+                self._l10c_state(sample.get('state'))  # Known changes dominate malformed-wrapper fallback.
             if isinstance(sample, dict) and set(sample) == {'state', 'clock'}:
                 state, clock = sample['state'], sample['clock']
                 if isinstance(clock, dict) and set(clock) == {'epoch_ms', 'timezone'}:
