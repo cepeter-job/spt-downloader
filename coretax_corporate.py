@@ -1639,12 +1639,16 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 if BUILD_DIGESTS.get(CIT_SOURCE_URL) == digest:
                     locale = page.evaluate('() => navigator.language')
                     _check_cancel(check_cancel)
-                    binding['projection'] = {'kind': 'corporate-l9-v1', 'locale': locale,
-                        'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
-                    if 'Induk' in names:
-                        detailed = _observe_l9(page, form, capture, digest, check_cancel)
-                        if detailed is not None and _enabled_form_binding(form, tab, name):
-                            binding['projection'] = detailed
+                    # The reviewed projector only admits the id-ID corporate
+                    # locale. Any other locale keeps L9 an unprojected dump
+                    # instead of claiming a projection it cannot verify.
+                    if locale == 'id-ID':
+                        binding['projection'] = {'kind': 'corporate-l9-v1', 'locale': locale,
+                            'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                        if 'Induk' in names:
+                            detailed = _observe_l9(page, form, capture, digest, check_cancel)
+                            if detailed is not None and _enabled_form_binding(form, tab, name):
+                                binding['projection'] = detailed
             if name == 'L11-B':
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import _PPN_MAIN_BUILD_HASH
