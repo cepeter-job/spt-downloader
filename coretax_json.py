@@ -919,6 +919,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WTR')
     reference = reference or (allow_corporate_reference is True and endpoint in CORPORATE_REFERENCE_REQUESTS
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
+                 and (endpoint not in {url for kind, url in CORPORATE_L10_REFERENCE_URLS.items()
+                                      if kind != 'COUNTRY_CODE'} or 'request_json' in ctx)
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_RCIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_RCITR')
     ordinary = (urlparse(endpoint).path.startswith('/returnsheet/api/')

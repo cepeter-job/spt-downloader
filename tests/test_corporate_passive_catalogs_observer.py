@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 
+import pytest
 from openpyxl import load_workbook
 
 import coretax
@@ -32,6 +33,24 @@ class Fixture(L3Fixture):
         before = 'const refs=' + json.dumps(list(REFERENCES.values()))
         after = 'const refs=' + json.dumps([*REFERENCES.values(), *(BASE + kind for kind in NEW_KINDS)])
         return super().document().replace(before, after)
+
+
+@pytest.mark.parametrize('defect', ['corporate-fetch-only', 'corporate-preload-only',
+    'main-fetch-only', 'main-preload-only', 'vendor-fetch-only', 'vendor-preload-only'])
+def test_fetch_or_preload_only_cannot_supply_the_new_loaded_provider_fact(
+        browser, tmp_path, monkeypatch, defect):
+    fixture = L3Fixture(browser, monkeypatch, defect=defect)
+    monkeypatch.setattr(adapter, 'load_build_pins', lambda: dict(fixture.pins))
+    monkeypatch.setattr(coretax_build_pins, 'load_build_pins', lambda: dict(fixture.pins))
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            open_selected(fixture, capture)
+            assert capture.observe_corporate_reference_providers() is None
+            saved = capture.drain()
+            assert saved['complete'] and 'corporate_reference_providers' not in saved
+            assert fixture.page.evaluate('window.businessReads') == 0
+    finally:
+        fixture.close()
 
 
 def test_owned_passive_populated_catalogs_keep_native_held_replay_and_saved_descriptions(

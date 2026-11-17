@@ -78,6 +78,54 @@ def test_unproved_reference_variants_are_not_observed_or_read(tmp_path, defect):
         assert response.reads == 0 and capture.request_observations() == []
 
 
+@pytest.mark.parametrize('defect', ['method', 'missing-body-fact', 'body', 'attempt', 'clock', 'locale', 'snapshot'])
+def test_new_transport_safety_is_fatal_before_any_semantic_binding(defect):
+    raw = [legacy_packet(), packet({'IsSuccessful': True, 'Payload': catalog('TRANSACTION_TYPE')},
+                                  2, BASE + 'TRANSACTION_TYPE', None, method='GET')]
+    raw[1]['context'].pop('component_lifetime')
+    if defect == 'method': raw[1]['context']['method'] = 'POST'
+    elif defect == 'missing-body-fact': del raw[1]['context']['request_json']
+    elif defect == 'body': raw[1]['context']['request_json'] = {}
+    elif defect == 'attempt': raw[1]['context']['attempt'] = 'b' * 32
+    elif defect == 'clock': raw[1]['context']['clock_interval'] = {
+        'attempt': corpus.ATTEMPT, 'start_ms': 0, 'end_ms': 1, 'timezone': 'Asia/Jakarta'}
+    elif defect == 'locale':
+        value = catalog('TRANSACTION_TYPE')
+        value[0]['Details'][0]['language'] = 'en-US'
+        raw[1] = packet({'IsSuccessful': True, 'Payload': value}, 2, BASE + 'TRANSACTION_TYPE', None, method='GET')
+        raw[1]['context'].pop('component_lifetime')
+    else:
+        value = catalog('TRANSACTION_TYPE')
+        value[0]['SYNTHETIC_METADATA'] = 1
+        changed = packet({'IsSuccessful': True, 'Payload': value}, 3, BASE + 'TRANSACTION_TYPE', None, method='GET')
+        changed['context'].pop('component_lifetime')
+        raw.append(changed)
+    with pytest.raises(adapter.JsonSafetyError):
+        adapter.adapt_corporate_detail(raw, corpus_record(), corpus.SCOPE, [])
+
+
+@pytest.mark.parametrize('kind', NEW_KINDS)
+def test_new_ordinary_catalogs_reuse_display_index_and_original_attempt_clock(kind):
+    value = catalog(kind)
+    details = value[0]['Details']
+    details[0]['ParameterData'] = '{"DisplayIndex":1}'
+    details[1]['ParameterData'] = '{"DisplayIndex":2}'
+    assert projection._project_corporate_catalog(value, kind=kind)['lookups']['SYN_CODE'] == 'Z SYNTHETIC LATER'
+    for row, until in zip(details, ('2027-01-01', '2028-01-01')):
+        row['ValidTo'] = until
+        row['ValidFrom'] = '2025-01-01'
+    clock = {'attempt': 'a' * 32, 'start_ms': 1794873600000,
+             'end_ms': 1794873601000, 'timezone': 'Asia/Jakarta'}
+    bound = projection._project_corporate_catalog(value, kind=kind, clock_interval=clock)
+    assert bound['lookups']['SYN_CODE'] == 'Z SYNTHETIC LATER'
+    assert bound['selected']['SYN_CODE']['clock_interval'] == clock
+    with pytest.raises(adapter._UnsupportedMetadata):
+        projection._project_corporate_catalog(value, kind=kind)
+    clock['end_ms'] = 1830000000000
+    with pytest.raises(adapter._UnsupportedMetadata, match='unstable'):
+        projection._project_corporate_catalog(value, kind=kind, clock_interval=clock)
+
+
 def test_only_reviewed_singleton_types_extend_the_existing_catalog_registry():
     urls = getattr(adapter, 'CORPORATE_L10_REFERENCE_URLS', None)
     assert urls == {kind: BASE + kind for kind in KINDS}
