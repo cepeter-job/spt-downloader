@@ -85,6 +85,7 @@ closed proof/refusal cases, original duplicate leaves, real owned observer and
 manifest-held replay, whole-record fallback and reopened workbook/Audit notes.
 Exact-head CI results are recorded in the PR, not inferred from local checks.
 
-An attempted protected `AGENTS.md` contract update was denied. That file remains
-unchanged; this report records the supported boundary but is **not** completion
-of the separately blocked protected-contract update.
+The initial protected `AGENTS.md` edit was denied and was not retried under
+that denial. The operator later explicitly renewed approval for the verified
+L9/L11-B boundaries. This branch now records the actual partial L9 contract in
+`AGENTS.md`; no runtime code, admission gate or live-acceptance scope changed.
