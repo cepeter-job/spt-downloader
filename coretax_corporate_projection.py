@@ -61,6 +61,21 @@ INDUK_SUBMITTED_FIELDS = (
     ('F. PPh KURANG/LEBIH BAYAR', 'TotalApprovalInstallment', '17.b. Apakah terdapat Surat Keputusan Persetujuan Pengangsuran atau Penundaan Pembayaran Pajak? / Tidak / Ya'),
     ('F. PPh KURANG/LEBIH BAYAR', 'IncomeTaxMustPaid', '17.c. PPh yang masih harus dibayar atau lebih dibayar'),
 )
+# Original fixed-point no-activity submitted profile. These three inputs
+# are predicates, never aliases for the blank-name amount caption controls.
+INDUK_INACTIVE_SELECTORS = ('IsIncomeSubject', 'IsIncomeExcluded', 'IsIncomeTaxDeduction')
+INDUK_INACTIVE_FIELDS = (
+    ('C. PENGHASILAN YANG DIKENAKAN PPh YANG BERSIFAT FINAL DAN YANG TIDAK TERMASUK OBJEK PAJAK',
+     'TotalIncomeSubject',
+     '2. Apakah Wajib Pajak menerima atau memperoleh penghasilan yang dikenakan PPh yang bersifat final? * / Tidak / Ya'),
+    ('C. PENGHASILAN YANG DIKENAKAN PPh YANG BERSIFAT FINAL DAN YANG TIDAK TERMASUK OBJEK PAJAK',
+     'TotalIncomeExcluded',
+     '3. Apakah Wajib Pajak menerima atau memperoleh penghasilan yang tidak termasuk objek pajak? * / Tidak / Ya'),
+    ('E. PENGURANG PPh TERUTANG', 'TotalIncomeTaxDeduction',
+     '16. Apakah Wajib Pajak memperoleh Fasilitas Pengurangan PPh Badan? * / Tidak / Ya'),
+    ('F. PPh KURANG/LEBIH BAYAR', 'UnderpaymentIncomeDueAmended',
+     '18.b. PPh yang kurang atau lebih bayar karena pembetulan'),
+)
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -773,7 +788,13 @@ def _induk_submitted(binding, *, main, root, payload, record, event):
     route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
         str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
                                 fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    inactive = proof.get('kind') == 'corporate-induk-submitted-v3'
+    expected_controls = [name for _, name, _ in INDUK_SUBMITTED_FIELDS]
+    if inactive:
+        expected_controls.extend(name for _, name, _ in INDUK_INACTIVE_FIELDS)
     if (set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'controls'}
+            or proof.get('kind') not in ('corporate-induk-submitted-v2',
+                                         'corporate-induk-submitted-v3')
             or not isinstance(proof.get('builds'), dict) or set(pins) != urls
             or set(proof['builds']) != urls
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
@@ -781,7 +802,7 @@ def _induk_submitted(binding, *, main, root, payload, record, event):
             or proof['builds'] != pins or proof['route'] != route
             or proof['route'] != event['frame_url'] or proof['locale'] != 'id-ID'
             or proof['timezone'] != 'Asia/Jakarta'
-            or proof['controls'] != [name for _, name, _ in INDUK_SUBMITTED_FIELDS]
+            or proof['controls'] != expected_controls
             or binding.get('paths') != [[INDUK_ROOT]] or 'primary' not in binding
             or any(binding.get(key) for key in ('grids', 'responses', 'dependencies'))):
         raise _UnsupportedMetadata('unverified_corporate_induk_submitted_binding')
@@ -842,6 +863,30 @@ def _induk_submitted(binding, *, main, root, payload, record, event):
                            else 'submitted-control/input-number-id-0'),
                      destination={'form': 'Induk', 'field': '', 'label': caption})
         result['provenance'].append(entry)
+    if inactive:
+        # Fixed-point zeroes must exist as original exact JSON number tokens,
+        # not numeric strings, nulls, signed zeroes or synthesized defaults.
+        for key in (*INDUK_INACTIVE_SELECTORS,
+                    *(name for _, name, _ in INDUK_INACTIVE_FIELDS[:3])):
+            if key not in main or type(main[key]) is not _CorporateNumber or main[key] != '0':
+                raise _UnsupportedMetadata('unsupported_corporate_induk_inactive_profile')
+            if key in INDUK_INACTIVE_SELECTORS:
+                entry = _evidence(main[key], [INDUK_ROOT, key])
+                entry.update(rule='submitted-original-inactive-selector',
+                             destination={'form': 'Induk', 'control': 'inactive-profile'})
+                result['provenance'].append(entry)
+        last = INDUK_INACTIVE_FIELDS[-1][1]
+        if last not in main or main[last] is not None:
+            raise _UnsupportedMetadata('unsupported_corporate_induk_inactive_profile')
+        for group, name, caption in INDUK_INACTIVE_FIELDS:
+            value = main[name]
+            result['fields'].append({'group': group, 'field': '', 'label': caption,
+                                     'value': '' if name == last else '0'})
+            entry = _evidence(value, [INDUK_ROOT, name])
+            entry.update(rule=('submitted-original-normal-null' if name == last
+                               else 'submitted-original-inactive-zero'),
+                         destination={'form': 'Induk', 'field': '', 'label': caption})
+            result['provenance'].append(entry)
     for name in dict.fromkeys([outer for outer, _ in identity] +
             ['IsMigrated', 'ReturnSheetStatusCode', 'PreviousFormData', 'LastSubmittedFormData']):
         entry = ({'path': [name], 'type': 'boolean', 'value': False} if name == 'IsMigrated'
@@ -858,7 +903,7 @@ def _induk_submitted(binding, *, main, root, payload, record, event):
 
 def _apply_induk(binding, section, observed_forms, *, root, payload, record, event):
     proof = binding['projection']
-    if isinstance(proof, dict) and proof.get('kind') == 'corporate-induk-submitted-v2':
+    if isinstance(proof, dict) and proof.get('kind') in ('corporate-induk-submitted-v2', 'corporate-induk-submitted-v3'):
         result = _induk_submitted(binding, main=root.get(INDUK_ROOT), root=root,
             payload=payload, record=record, event=event)
     else:
@@ -890,7 +935,7 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
     return {'form': 'Induk', 'kind': proof['kind'], 'builds': dict(proof['builds']),
             'route': proof['route'], 'values': result['provenance'],
             **({key: deepcopy(proof[key]) for key in ('locale', 'timezone', 'controls')}
-               if proof['kind'] == 'corporate-induk-submitted-v2' else {})}
+               if proof['kind'] in ('corporate-induk-submitted-v2', 'corporate-induk-submitted-v3') else {})}
 
 
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
