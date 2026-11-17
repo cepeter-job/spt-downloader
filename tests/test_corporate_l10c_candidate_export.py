@@ -102,6 +102,21 @@ def test_unmarked_legacy_table_keeps_existing_complete_contract(tmp_path):
         book.close()
 
 
+def test_candidate_unresolved_identities_are_counted_once_with_existing_fields(tmp_path):
+    value = candidate_section()
+    question = deepcopy(value['projection_unresolved_fields'][-1])
+    value['fields'] = [{**question, 'value': 'SYNTHETIC UNRESOLVED RADIO'}]
+    value['projection_unresolved_fields'].append(question)
+    unrelated = section('L10-C')
+    unrelated['projection_unresolved_fields'] = [{'field': 'SYNTHETIC NOT A PARTIAL CAPABILITY'}]
+    book, reports = export(tmp_path, [value, unrelated])
+    try:
+        assert reports[0]['unmapped_fields'] == 3 and not reports[0]['complete']
+        assert len(reports[0]['unmapped_field_identities']) == 3
+    finally:
+        book.close()
+
+
 def envelope():
     form = corpus.current_form()
     form[ROOT] = raw_source()
@@ -132,10 +147,27 @@ def test_legacy_l10c_retains_original_dump_and_question_until_owned_producer_exi
     assert (raw, observed) == before
 
 
+class L10CCandidateFixture(L7Fixture):
+    def detail_html(self):
+        source = super().detail_html()
+        # This is a populated DOM oracle, not a simulation of Angular/cache
+        # custody. Both modes must retain DOM until the producer is reviewed.
+        row = ('<tr><td>1</td><td>00012 SYNTHETIC PARTNER</td>'
+               '<td>SYNTHETIC TRANSACTION DESCRIPTION</td>'
+               '<td>SYNTHETIC COUNTRY DESCRIPTION</td><td>1.234,125</td></tr>')
+        markup = ('<rshshr-citr-l10c-form><rsh-citr-l10c-grid1><ui-grid-offline><p-table>'
+                  '<table><thead><tr>' + ''.join('<th>' + caption + '</th>' for caption in HEADERS)
+                  + '</tr></thead><tbody>' + row + row.replace('<td>1</td>', '<td>2</td>')
+                  + '</tbody></table></p-table></ui-grid-offline></rsh-citr-l10c-grid1>'
+                  '</rshshr-citr-l10c-form>')
+        return source.replace('<rshshr-citr-l10c-form><label>UNSUPPORTED FIXTURE FORM</label>'
+                              '</rshshr-citr-l10c-form>', markup)
+
+
 @pytest.mark.parametrize('popup', [False, True])
 def test_real_hybrid_populated_l10c_stays_dom_without_reference_and_child_custody(
         browser, tmp_path, monkeypatch, popup):
-    fixture = L7Fixture(browser, tmp_path, monkeypatch, trap=False, popup=popup)
+    fixture = L10CCandidateFixture(browser, tmp_path, monkeypatch, trap=False, popup=popup)
     fixture.extra_form = ('L10-C', 'rshshr-citr-l10c-form')
     fixture.raw = corpus.wire(envelope()).encode()
     dom_calls = []
@@ -150,6 +182,10 @@ def test_real_hybrid_populated_l10c_stays_dom_without_reference_and_child_custod
         result = fixture.collect()
         record, = result['records']
         assert record['detail_source']['used'] == 'dom' and dom_calls
+        captured, = [value for value in record['sections'] if value['name'] == 'L10-C']
+        table, = captured['tables']
+        assert table['headers'] == HEADERS and len(table['rows']) == 2
+        assert table['rows'][0][-1] == table['rows'][1][-1] == '1.234,125'
         assert not any('/currentreferencedata/' in item['url'] for item in fixture.requests)
         assert fixture.unexpected == []
     finally:
