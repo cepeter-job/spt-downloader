@@ -249,7 +249,7 @@ def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(br
     # dump gate itself is covered by tests/test_corporate_native_dump_gate.py;
     # L9/L10-A are still unprojected dumps here, so isolate that predicate.
     import coretax_json
-    monkeypatch.setattr(coretax_json, 'has_audit_dump_tables', lambda sections: False)
+    monkeypatch.setattr(coretax_json, 'has_audit_dump_tables', lambda sections, **kwargs: False)
     fixture = NativeFixture(browser, tmp_path, monkeypatch, groups=True)
     try:
         result = fixture.collect()

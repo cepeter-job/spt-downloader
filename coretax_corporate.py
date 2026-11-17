@@ -1325,6 +1325,32 @@ def _observe_induk_submitted(page, form, capture, digest, check_cancel):
         proof['kind'] = 'corporate-induk-submitted-v3'
         proof['controls'] = controls + [name for _, name, _ in INDUK_INACTIVE_FIELDS]
     return proof
+def _observe_l10b(page, form, tab, panel, capture, check_cancel):
+    """No display controls: prove the original enabled source owner instead."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import (CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE,
+                                              L10B_KIND, _l10b_pins)
+    from coretax_masa_observer import _REFERENCE_ORDER_BUILD_HASH
+    if any(not callable(getattr(capture, name, None)) for name in
+           ('observe_component_lifetime', 'bind_l10b_structure', 'observe_l10b_lifetime')):
+        return None
+    _check_cancel(check_cancel)
+    if (capture.observe_component_lifetime(check_cancel=check_cancel) is None
+            or not _enabled_form_binding(form, tab, 'L10-B')
+            or not capture.bind_l10b_structure(form, tab, panel, phase='start', check_cancel=check_cancel)):
+        return None
+    route, builds = page.url, {}
+    for url in (CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE):
+        builds[url] = page.evaluate(_REFERENCE_ORDER_BUILD_HASH.replace('4*1024*1024', '5*1024*1024'), url)
+        _check_cancel(check_cancel)
+    if not _l10b_pins(builds):
+        return None
+    if (page.url != route or not _enabled_form_binding(form, tab, 'L10-B')
+            or not capture.bind_l10b_structure(form, tab, panel, phase='end', check_cancel=check_cancel)
+            or capture.observe_l10b_lifetime(check_cancel=check_cancel) is None):
+        return None
+    _check_cancel(check_cancel)
+    return {'kind': L10B_KIND, 'builds': builds, 'route': route}
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):
@@ -1518,6 +1544,15 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 submitted = _observe_induk_submitted(page, form, capture, digest, check_cancel)
                 if submitted is not None:
                     binding['projection'] = submitted
+            if name == 'L10-B':
+                if 'Induk' not in names:
+                    return unavailable()
+                proof = _observe_l10b(page, form, tab, panel, capture, check_cancel)
+                _check_cancel(check_cancel)
+                _check_corporate_route(page.url, selected)
+                if proof is None:
+                    return unavailable()
+                binding['projection'] = proof
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:

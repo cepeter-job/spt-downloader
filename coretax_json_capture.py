@@ -23,7 +23,7 @@ from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFER
                           CORPORATE_REFERENCE_REQUESTS, CORPORATE_REFERENCE_SOURCES, ORIGIN,
                           _capture_clock_interval, _capture_component_lifetime, _capture_l8_lifetime,
                           _capture_l7_lifetime, _capture_corporate_reference_providers,
-                          _corporate_reference_builds,
+                          _corporate_reference_builds,                          _capture_l7_lifetime, _capture_l10b_lifetime,
                           _object_pairs, _reject_constant, _trusted_origin)
 from spt_desktop import diagnostics
 from spt_desktop.output_windows import DirectoryGuard, locked_file
@@ -55,6 +55,17 @@ _COMPONENT_OWNERS = """() => {
  const count=s=>Array.from(document.querySelectorAll(s)).filter(visible).length;
  return {source_owner:count('rshshr-submitted-returnsheets')===1,
          detail_owner:count('rshshr-corporate-income-tax-return')===1};
+}"""
+_FINAL_LIFETIMES = """(d, histories) => {
+ // corporate-final-lifetimes: one synchronous turn, not successive RPCs.
+ // Only these already-owned history handles can supply child facts. Each
+ // sample drains its MutationObserver; an unavailable sibling cannot hide a
+ // changed one. No async work, DOM writes or business-value reads occur here.
+ const read=h=>{if(!h)return null;try{return h.sample();}catch{return null;}};
+ const l8=read(histories.l8),l7=read(histories.l7),l10b=read(histories.l10b);
+ let owners=null;
+ try{owners=(""" + _COMPONENT_OWNERS + """)();}catch{}
+ return {same_document:d===document,owners,l8,l7,l10b};
 }"""
 _L7_HISTORY = """(d) => {
  // corporate-l7-history: independent of the L8 all-DOM budget.
@@ -207,6 +218,110 @@ _L7_HISTORY = """(d) => {
  },disconnect:()=>{
    observer.disconnect();roles=[];ancestors.clear();tab=null;panel=null;
  }};
+}"""
+
+
+_L10B_HISTORY = """(d) => {
+ // corporate-l10b-history: source custody only, no business input/checked reads.
+ const rootSelector='rshshr-corporate-income-tax-return',formSelector='rshshr-citr-l10b-form';
+ const selectors=[rootSelector,formSelector],query=selectors.join(',');
+ const state={available:d===document&&!d.querySelector(query),changed:false,complete:false};
+ let root=null,form=null,tab=null,panel=null,view=null,started=false,ended=false,remaining=4096;
+ const ancestors=new Set();
+ const observer=new MutationObserver(records=>process(records));
+ const unavailable=()=>{state.available=false;observer.disconnect();};
+ const debit=()=>{if(--remaining<0){unavailable();return false;}return true;};
+ const adopt=(node,removed)=>{
+   if(!debit())return;
+   const isRoot=node.matches(rootSelector),previous=isRoot?root:form;
+   if(removed||(previous&&previous!==node)){state.changed=true;return;}
+   if(isRoot)root=node;else form=node;
+   let depth=0;
+   for(let p=node.parentElement;p;p=p.parentElement){
+     ancestors.add(p);if(++depth>64||ancestors.size>128){unavailable();break;}
+   }
+ };
+ const inspect=(node,removed)=>{
+   if(node.nodeType!==1)return false;
+   let relevant=false;
+   if(node.matches(query)){adopt(node,removed);relevant=true;}
+   for(const child of node.querySelectorAll(query)){
+     if(!state.available)break;adopt(child,removed);relevant=true;
+   }
+   return relevant;
+ };
+ const enabled=visible=>{
+   if(!root||!form||!tab||!panel||!view||![root,form,tab,panel,view].every(e=>e.isConnected&&e.ownerDocument===d))return false;
+   const li=tab.closest('li'),id=tab.getAttribute('aria-controls'),href=tab.getAttribute('href');
+   if(!li||form.closest('.p-tabview')!==view||form.closest('.p-tabview-panel')!==panel||
+      tab.closest('.p-tabview')!==view||!root.contains(view)||!id||panel.id!==id||
+      [...view.querySelectorAll('[id]')].filter(e=>e.id===id).length!==1||
+      tab.textContent.trim()!=='L10-B'||li.classList.contains('p-disabled')||
+      tab.getAttribute('aria-disabled')==='true'||!(href===null||href===''||href==='#'||href==='#'+id))return false;
+   if(!visible)return true;
+   for(let p=form;p;p=p.parentElement){const s=getComputedStyle(p);
+     if(p.hidden||s.display==='none'||s.visibility==='hidden'||s.visibility==='collapse')return false;}
+   return !!form.getClientRects().length&&!!tab.getClientRects().length;
+ };
+ const snapshot=()=>{
+   if(d!==document){state.changed=true;return false;}
+   if(!state.available||!root||!form)return false;
+   if(![root,form].every(e=>e.isConnected&&e.ownerDocument===d)||
+      selectors.some((s,i)=>{const nodes=d.querySelectorAll(s);return nodes.length!==1||nodes[0]!==[root,form][i];})){
+     state.changed=true;return false;
+   }
+   if(form.closest(rootSelector)!==root){unavailable();return false;}
+   for(let p=form.parentElement;p&&p!==root;p=p.parentElement){
+     if(p.localName.includes('-')&&(p.localName.endsWith('-form')||
+        !/^(p-|ui-|rsh(shr)?-(citr|corporate)-)/.test(p.localName))){
+       if(started)state.changed=true;else unavailable();return false;
+     }
+   }
+   return true;
+ };
+ const process=records=>{
+   if(!state.available)return;
+   for(const record of records){
+     if(record.type==='attributes'){
+       if(!started)continue;
+       const e=record.target,name=record.attributeName,li=tab&&tab.closest('li');
+       if(e===li&&name==='class'&&((record.oldValue||'').split(/\\s+/).includes('p-disabled')||li.classList.contains('p-disabled')))
+         state.changed=true;
+       if(e===tab&&['aria-controls','aria-disabled','href'].includes(name)&&record.oldValue!==e.getAttribute(name))
+         state.changed=true;
+       if(e===panel&&name==='id'&&record.oldValue!==e.id)state.changed=true;
+       if((e===tab||e===panel||e===li)&&!debit())break;
+       continue;
+     }
+     let relevant=!!form&&(record.target===form||form.contains(record.target));
+     for(const node of record.removedNodes){
+       if(node.nodeType!==1)continue;
+       if([root,form,tab,panel,view].some(e=>e&&(node===e||node.contains(e)))||ancestors.has(node)){
+         state.changed=true;relevant=true;
+       }
+       if(inspect(node,true))relevant=true;
+     }
+     for(const node of record.addedNodes){if(!state.available)break;if(inspect(node,false))relevant=true;}
+     if(relevant&&!debit())break;
+   }
+ };
+ observer.observe(d,{subtree:true,childList:true,attributes:true,attributeOldValue:true,
+                    attributeFilter:['class','aria-controls','aria-disabled','href','id']});
+ const sample=()=>{
+   process(observer.takeRecords());const valid=snapshot();
+   if(started&&valid&&!enabled(false))state.changed=true;
+   state.complete=!!(state.available&&!state.changed&&valid&&started&&ended);
+   return {...state};
+ };
+ return {sample,bind:args=>{
+   process(observer.takeRecords());if(!snapshot())return {...state};
+   if(args.form!==form)state.changed=true;
+   if(args.phase==='start'&&!started){tab=args.tab;panel=args.panel;view=form.closest('.p-tabview');}
+   else if(args.phase!=='end'||!started||ended||tab!==args.tab||panel!==args.panel)state.changed=true;
+   if(!enabled(true)){if(started)state.changed=true;else unavailable();}
+   if(state.available&&!state.changed){if(args.phase==='start')started=true;else ended=true;}
+   return sample();
+ },disconnect:()=>{observer.disconnect();root=form=tab=panel=view=null;ancestors.clear();}};
 }"""
 
 
@@ -375,6 +490,9 @@ class DetailJsonCapture:
         self._l7_history = None
         self._l7_requested = False
         self._l7_unavailable = False
+        self._l10b_history = None
+        self._l10b_requested = False
+        self._l10b_unavailable = False
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
         self._limits = {'responses': MAX_RESPONSES, 'body_bytes': MAX_BODY_BYTES,
                         'attempt_bytes': MAX_TOTAL_BYTES, 'drain_seconds': DRAIN_SECONDS}
@@ -492,8 +610,14 @@ class DetailJsonCapture:
             return self._l7_history
         self._l7_probe(retain_l7_history)
         self._l7_arm_state()
-        self._l8_history = self._component_probe(
-            lambda: self._component_document.evaluate_handle(_L8_HISTORY))
+        def retain_l10b_history():
+            self._l10b_history = self._component_document.evaluate_handle(_L10B_HISTORY)
+            return self._l10b_history
+        self._l7_probe(retain_l10b_history)
+        def retain_l8_history():
+            self._l8_history = self._component_document.evaluate_handle(_L8_HISTORY)
+            return self._l8_history
+        self._component_probe(retain_l8_history)
         owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
         same = self._component_probe(lambda: self._component_document.evaluate('(d) => d === document'))
         if owners != {'source_owner': True, 'detail_owner': False} or same is not True:
@@ -569,6 +693,67 @@ class DetailJsonCapture:
         if not state['available']:
             self._l7_unavailable = True
         return state
+
+    def _l10b_state(self, state):
+        if (not isinstance(state, dict) or set(state) != {'available', 'changed', 'complete'}
+                or any(type(value) is not bool for value in state.values())):
+            self._l10b_unavailable = True
+            return None
+        if state['changed']:
+            raise JsonSafetyError('Observed corporate L10-B child history changed')
+        if not state['available']:
+            self._l10b_unavailable = True
+        return state
+
+    def bind_l10b_structure(self, form, tab, panel, *, phase, check_cancel=None):
+        """Retain real original owners at both enabled observation boundaries."""
+        if phase not in ('start', 'end'):
+            raise ValueError('Unknown L10-B structural boundary')
+        self._l10b_requested = True
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None or self._l10b_history is None:
+            return False
+        handles = {}
+        try:
+            for name, locator in (('form', form), ('tab', tab), ('panel', panel)):
+                def retain():
+                    handles[name] = locator.element_handle()
+                    return handles[name]
+                if self._l7_probe(retain, check_cancel) is None:
+                    self._l10b_unavailable = True
+                    return False
+            state = self._l10b_state(self._l7_probe(lambda: self._l10b_history.evaluate(
+                '(h,args) => h.bind(args)', {**handles, 'phase': phase}), check_cancel))
+            self._verify_binding()
+            if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+                return False
+            return bool(not self._l10b_unavailable and state and state['available']
+                        and (phase == 'start' or state['complete']))
+        finally:
+            for handle in reversed(list(handles.values())):
+                if handle is not None:
+                    try:
+                        handle.dispose()
+                    except Exception:  # nosec B110 - Owned cleanup preserves Stop and original failure.
+                        pass
+
+    def observe_l10b_lifetime(self, *, check_cancel=None):
+        self._l10b_requested = True
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None or self._l10b_history is None:
+            return None
+        state = self._l10b_state(self._l7_probe(
+            lambda: self._l10b_history.evaluate('(h) => h.sample()'), check_cancel))
+        self._verify_binding()
+        if self._component_invalid:
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        # Candidate only. Drain later samples ALL requested children and the
+        # parent together, in its final synchronous browser RPC.
+        if self._l10b_unavailable or not state or not state['complete']:
+            return None
+        return _capture_l10b_lifetime({'kind': 'corporate-l10b-spa-v1', 'attempt': self.attempt,
+            'record_id': self.record_id, 'source_url': self.source_url, 'detail_url': self._bound_url,
+            'fresh_root': True, 'fresh_form': True, 'stable_root': True,
+            'stable_form': True, 'enabled_boundaries': True}, attempt=self.attempt,
+            record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
 
     def _l7_gate(self, name):
         # Fixed enum only; the optional L7 proof must name its own refusal.
@@ -746,6 +931,52 @@ class DetailJsonCapture:
             'detail_url': self._bound_url, 'builds': observed}, attempt=self.attempt,
             record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
         return dict(observed)
+    def _final_lifetimes(self, lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, *, check_cancel=None):
+        """Only narrow candidates, with every requested history in one last RPC.
+
+        Separate child/parent probes can pump a change to an already sampled
+        sibling. This fixed snapshot also closes L7's pre-existing post-sample
+        parent-probe window. After it, sealing performs only local checks/I/O.
+        """
+        self._cancel(check_cancel)
+        if not self._component_started or self._component_document is None:
+            return None, None, None, None
+        sample = self._l7_probe(lambda: self._component_document.evaluate(_FINAL_LIFETIMES, {
+            'l8': self._l8_history if self._l8_requested else None,
+            'l7': self._l7_history if self._l7_requested else None,
+            'l10b': self._l10b_history if self._l10b_requested else None}), check_cancel)
+        self._verify_binding()
+        if self._component_invalid:
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        sample = sample if isinstance(sample, dict) else {}
+        # Check known child changes even when another proof is unavailable or
+        # the surrounding reply is malformed; never discard a negative offer
+        # just to accept its sibling.
+        l7 = self._l7_state(sample.get('l7')) if self._l7_requested else None
+        l10b = self._l10b_state(sample.get('l10b')) if self._l10b_requested else None
+        l8 = sample.get('l8')
+        l8_valid = (isinstance(l8, dict) and set(l8) == {
+            'initial_clear', 'root_seen', 'root_changed', 'dependent_seen'}
+            and all(type(value) is bool for value in l8.values()))
+        if self._l8_requested and l8_valid and l8['root_changed']:
+            raise JsonSafetyError('Observed corporate L8 root history changed')
+        if set(sample) != {'same_document', 'owners', 'l8', 'l7', 'l10b'}:
+            return None, None, None, None
+        owners = {'source_owner': False, 'detail_owner': True}
+        if (sample['same_document'] is False
+                or self._component_observed and sample['owners'] != owners):
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        if lifetime is None or sample['same_document'] is not True or sample['owners'] != owners:
+            return None, None, None, None
+        if not l7 or self._l7_unavailable or not l7['available'] or not l7['complete']:
+            l7_lifetime = None
+        if not l10b or self._l10b_unavailable or not l10b['available'] or not l10b['complete']:
+            l10b_lifetime = None
+        if not l8_valid or not l8['initial_clear'] or not l8['root_seen'] or l8['dependent_seen']:
+            l8_lifetime = None
+        # A final snapshot cannot create a capability that was not offered by
+        # its own observer, or repair an unavailable parent/child candidate.
+        return lifetime, l8_lifetime, l7_lifetime, l10b_lifetime
 
     def _candidate(self, target, frame):
         return (target.context is self.context and frame is target.main_frame
@@ -967,6 +1198,9 @@ class DetailJsonCapture:
         lifetime = self.observe_component_lifetime(check_cancel=check_cancel)
         l8_lifetime = self.observe_l8_lifetime(check_cancel=check_cancel) if self._l8_requested else None
         l7_lifetime = self.observe_l7_lifetime(check_cancel=check_cancel) if self._l7_requested else None
+        l10b_lifetime = self.observe_l10b_lifetime(check_cancel=check_cancel) if self._l10b_requested else None
+        lifetime, l8_lifetime, l7_lifetime, l10b_lifetime = self._final_lifetimes(
+            lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, check_cancel=check_cancel)
         self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:
@@ -988,6 +1222,8 @@ class DetailJsonCapture:
             result['corporate_l8_lifetime'] = l8_lifetime
         if l7_lifetime is not None and lifetime is not None:
             result['corporate_l7_lifetime'] = l7_lifetime
+        if l10b_lifetime is not None and lifetime is not None:
+            result['corporate_l10b_lifetime'] = l10b_lifetime
         if self._clock_start is not None and clock_end is not None:
             try:
                 result['clock_interval'] = _capture_clock_interval({
@@ -1045,6 +1281,11 @@ class DetailJsonCapture:
             l7_lifetime = (_capture_l7_lifetime(saved['corporate_l7_lifetime'], attempt=self.attempt,
                 record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
                 if 'corporate_l7_lifetime' in saved else None)
+            l10b_lifetime = (_capture_l10b_lifetime(saved['corporate_l10b_lifetime'], attempt=self.attempt,
+                record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
+                if 'corporate_l10b_lifetime' in saved else None)
+            if l10b_lifetime is not None and lifetime is None:
+                raise JsonSafetyError('Private L10-B history lacks its component lifetime')
             if l7_lifetime is not None and lifetime is None:
                 raise JsonSafetyError('Private L7 history lacks its component lifetime')
             if l8_lifetime is not None and lifetime is None:
@@ -1055,7 +1296,7 @@ class DetailJsonCapture:
                 if (relative.is_absolute() or '..' in relative.parts or relative.parent != self._relative
                         or descriptor['attempt'] != self.attempt or 'clock_interval' in descriptor
                         or 'component_lifetime' in descriptor or 'corporate_l8_lifetime' in descriptor
-                        or 'corporate_l7_lifetime' in descriptor or 'corporate_reference_providers' in descriptor):
+                        or 'corporate_l7_lifetime' in descriptor or 'corporate_reference_providers' in descriptor or 'corporate_l10b_lifetime' in descriptor):
                     raise JsonSafetyError('Unsafe private response reference')
                 self._hold(self.folder / self._relative)
                 with locked_file(self.folder / relative) as stream:
@@ -1079,6 +1320,8 @@ class DetailJsonCapture:
                     context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 if l7_lifetime is not None:
                     context['corporate_l7_lifetime'] = dict(l7_lifetime)
+                if l10b_lifetime is not None:
+                    context['corporate_l10b_lifetime'] = dict(l10b_lifetime)
                 yield {'body': raw, 'payload': payload, 'context': context}
                 del raw, payload
         except (OSError, ValueError, KeyError, TypeError) as error:
@@ -1088,6 +1331,16 @@ class DetailJsonCapture:
         self._active = False
         self._requests.clear()
         self._observations.clear()
+        if self._l10b_history is not None:
+            try:
+                self._l10b_history.evaluate('(h) => h.disconnect()')
+            except Exception:  # nosec B110 - Owned cleanup preserves Stop and original failure.
+                pass
+            try:
+                self._l10b_history.dispose()
+            except Exception:  # nosec B110 - Owned cleanup preserves Stop and original failure.
+                pass
+            self._l10b_history = None
         if self._l7_history is not None:
             try:
                 self._l7_history.evaluate('(h) => h.disconnect()')
@@ -1232,6 +1485,11 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
             l7_lifetime = (_capture_l7_lifetime(saved['corporate_l7_lifetime'], attempt=saved['attempt'],
                 record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
                 if 'corporate_l7_lifetime' in saved else None)
+            l10b_lifetime = (_capture_l10b_lifetime(saved['corporate_l10b_lifetime'], attempt=saved['attempt'],
+                record_id=record['record_id'], source_url=record['list_url'], detail_url=record.get('detail_url'))
+                if 'corporate_l10b_lifetime' in saved else None)
+            if l10b_lifetime is not None and lifetime is None:
+                raise JsonSafetyError('Private L10-B history lacks its component lifetime')
             if l7_lifetime is not None and lifetime is None:
                 raise JsonSafetyError('Private L7 history lacks its component lifetime')
             if l8_lifetime is not None and lifetime is None:
@@ -1248,7 +1506,7 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
                         or name in seen or descriptor.get('attempt') != saved['attempt']
                         or 'clock_interval' in descriptor or 'component_lifetime' in descriptor
                         or 'corporate_l8_lifetime' in descriptor or 'corporate_l7_lifetime' in descriptor
-                        or 'corporate_reference_providers' in descriptor
+                        or 'corporate_reference_providers' in descriptor                        or 'corporate_l10b_lifetime' in descriptor
                         or descriptor.get('record_id') != record['record_id']
                         or descriptor.get('scope') != list(scope) or type(descriptor['scope'][1]) is not int
                         or type(descriptor.get('bytes')) is not int or descriptor['bytes'] < 0
@@ -1275,6 +1533,8 @@ def checkpoint_bodies(folder, capture, record, scope, *, published=False,
                     context['corporate_l8_lifetime'] = dict(l8_lifetime)
                 if l7_lifetime is not None:
                     context['corporate_l7_lifetime'] = dict(l7_lifetime)
+                if l10b_lifetime is not None:
+                    context['corporate_l10b_lifetime'] = dict(l10b_lifetime)
                 packets.append({'body': body, 'payload': payload, 'context': context})
             return packets
     except (OSError, ValueError, TypeError, KeyError, IndexError):

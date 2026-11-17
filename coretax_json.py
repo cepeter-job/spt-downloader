@@ -183,6 +183,23 @@ def _capture_l7_lifetime(value, *, attempt, record_id, source_url, detail_url):
     return dict(value)
 
 
+def _capture_l10b_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Own continuous non-display form history, not a borrowed sibling proof."""
+    facts = {'fresh_root', 'fresh_form', 'stable_root', 'stable_form', 'enabled_boundaries'}
+    if (not isinstance(value, dict)
+            or set(value) != facts | {'kind', 'attempt', 'record_id', 'source_url', 'detail_url'}
+            or value.get('kind') != 'corporate-l10b-spa-v1'
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in facts)):
+        raise JsonSafetyError('Captured L10-B history is invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return dict(value)
+
+
 def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
     """Validate the stronger optional L8 history, never inferred during replay."""
     keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url',
@@ -619,7 +636,7 @@ CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
 
 
-def has_audit_dump_tables(sections):
+def has_audit_dump_tables(sections, *, provenance=None):
     """True when a captured section is nothing but the generic payload dump.
 
     The dump is evidence for an unmapped payload root, not a form projection:
@@ -631,6 +648,11 @@ def has_audit_dump_tables(sections):
         # Preserve whole-record DOM fallback, even with reviewed scalar fields.
         if section.get('unprojected_grids'):
             return True
+        if section.get('name') == 'L10-B':
+            from coretax_corporate_projection import l10b_nondisplay_covered
+            if not l10b_nondisplay_covered(section, provenance):
+                return True
+            continue
         if section.get('fields'):
             continue
         for table in section.get('tables') or ():
@@ -975,6 +997,12 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured L8 history lacks its component lifetime')
         l8_lifetime = _capture_l8_lifetime(ctx['corporate_l8_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10b_lifetime = None
+    if 'corporate_l10b_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L10-B history lacks its component lifetime')
+        l10b_lifetime = _capture_l10b_lifetime(ctx['corporate_l10b_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     status = ctx.get('status')
     if type(status) is not int or not 100 <= status <= 599 or status in (401, 403):
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
@@ -1004,6 +1032,8 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['corporate_l7_lifetime'] = l7_lifetime
     if l8_lifetime is not None:
         event['corporate_l8_lifetime'] = l8_lifetime
+    if l10b_lifetime is not None:
+        event['corporate_l10b_lifetime'] = l10b_lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -1344,7 +1374,7 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
-    l7_lifetimes, reference_providers = set(), set()
+    l7_lifetimes, l10b_lifetimes, reference_providers = set(), set(), set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
@@ -1372,6 +1402,9 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             raise JsonSafetyError('Corporate reference providers are missing or mixed within one attempt')
         l8_lifetimes.add(_corporate_request_key(event.get('corporate_l8_lifetime')))
         l7_lifetimes.add(_corporate_request_key(event.get('corporate_l7_lifetime')))
+        l10b_lifetimes.add(_corporate_request_key(event.get('corporate_l10b_lifetime')))
+        if len(l10b_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-B history is missing or mixed within one attempt')
         if len(l7_lifetimes) != 1:
             raise JsonSafetyError('Corporate L7 history is missing or mixed within one attempt')
         if len(l8_lifetimes) != 1:

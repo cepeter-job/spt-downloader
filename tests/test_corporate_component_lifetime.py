@@ -28,7 +28,18 @@ class Document:
         self.disposed = False
         self.on_read = None
 
-    def evaluate(self, script):
+    def evaluate(self, script, args=None):
+        if 'corporate-final-lifetimes' in script:
+            if self.on_read:
+                self.on_read()
+            result = {'same_document': self.generation is self.page.generation,
+                      'owners': self.page.evaluate('source_owner')}
+            for name, history in args.items():
+                try:
+                    result[name] = history.evaluate('(h) => h.sample()') if history is not None else None
+                except Exception:
+                    result[name] = None
+            return result
         assert script.replace(' ', '') in ('(d)=>d===document', '(d)=>document===d')
         if self.on_read:
             self.on_read()
