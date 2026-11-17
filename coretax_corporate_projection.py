@@ -75,6 +75,18 @@ L9_GRIDS = tuple(
         ('l9-table-2-grid', ('Permanent', 'Non-permanent')),
         ('l9-table-3-grid', ('Group 1', 'Group 2', 'Group 3', 'Group 4', 'Other Group')))
     for group in groups)
+L9_GRID_HEADERS = ['KODE HARTA', 'KELOMPOK/JENIS HARTA', 'BULAN/TAHUN PEROLEHAN',
+    'BIAYA PEROLEHAN (Rp)', 'NILAI SISA BUKU FISKAL PADA AWAL TAHUN (Rp)',
+    'METODE PENYUSUTAN/AMORTISASI / KOMERSIAL', 'METODE PENYUSUTAN/AMORTISASI / FISKAL',
+    'PENYUSUTAN/AMORTISASI FISKAL TAHUN INI (Rp)', 'KETERANGAN']
+L9_GRID_SPANS = [[], [7, 1, 1]]
+L9_GRID_COLUMNS = ('GroupAssetType', 'GroupAssetType', 'MonthYearAcquisition',
+    'AcquisitionPrice', 'RemainingBeginningValue', 'MethodCommercial', 'MethodFiscal',
+    'FiscalYearValue', 'Notes')
+L9_ROW_METADATA = frozenset(('GroupType', 'CodeOfAsset', 'RecordId', 'Index', 'Action'))
+L9_REFERENCE_KINDS = ('TANGIBLE_ASSET', 'COMMERCIAL_METHOD', 'FISCAL_METHOD',
+                      'GROUP_OF_BUILDINGS', 'INTANGIBLE_ASSET')
+L9_DETAIL_BUILD_DIGESTS = _corporate_pins((CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE))
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -814,6 +826,160 @@ def _apply_induk(binding, section, observed_forms, *, root, payload, record, eve
             'route': proof['route'], 'values': result['provenance']}
 
 
+def l9_grid_structure(index):
+    """Reviewed owner/group coordinates, not a source-order inference."""
+    if type(index) is not int or not 0 <= index < 12:
+        raise _UnsupportedMetadata('unsupported_corporate_l9_grid_role')
+    if 5 <= index < 7:
+        return {'form': 'L9', 'component': 'rshshr-citr-l9-form-grid2',
+                'groups': ['BANGUNAN', 'PERMANEN' if index == 5 else 'TIDAK PERMANEN']}
+    position = index if index < 5 else index - 7
+    inner = 'KELOMPOK ' + str(position + 1) if position < 4 else 'KELOMPOK LAINNYA'
+    return {'form': 'L9', 'component': 'rshshr-citr-l9-form-grid' + ('1' if index < 5 else '3'),
+            'groups': ['HARTA BERWUJUD' if index < 5 else 'HARTA TIDAK BERWUJUD', inner]}
+
+
+def _l9_grid_number(value):
+    # The pinned numeric body uses DecimalPipe 1.0-0, not edit validators.
+    # Bound decimal coefficients and require the parsed browser number's short
+    # decimal to be identical before applying the reviewed half-up renderer.
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l9_grid_number_type')
+    try:
+        number = _decimal(value)
+        if (number < 0 or abs(number) > _MAX_INTEGER or len(number.as_tuple().digits) > 15
+                or number.is_signed() and number.is_zero()
+                or number != _decimal(str(float(number)))):
+            raise _UnsupportedMetadata('unsupported_corporate_l9_grid_number_precision')
+        text = _number(value, 0, locale='id-ID')
+        if len(text.replace('.', '')) > 15:
+            raise _UnsupportedMetadata('unsupported_corporate_l9_grid_number_precision')
+        return text
+    except (DecimalException, ValueError, OverflowError, _UnsupportedMetadata):
+        raise _UnsupportedMetadata('unsupported_corporate_l9_grid_number_precision') from None
+
+
+def _l9_month(value):
+    if value is None:
+        return ''
+    if type(value) is not str:
+        raise _UnsupportedMetadata('unsupported_corporate_l9_month')
+    if not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T00:00:00(?:[.]000)?(?:Z|[+]07:00)?)?', value):
+        raise _UnsupportedMetadata('unsupported_corporate_l9_month')
+    try:
+        date = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if date.year == 1 and date.month == date.day == 1:
+            return ''  # Exact normalized sentinel, not an arbitrary substring.
+        if not 1970 <= date.year <= 2100:
+            raise ValueError
+        return f'{date.month:02d}-{date.year:04d}'
+    except ValueError:
+        raise _UnsupportedMetadata('unsupported_corporate_l9_month') from None
+
+
+def project_l9_grid(*, index, pages, total, headers, footer_spans, tax_type,
+                    locale, timezone_name, labels):
+    """Project one original, complete grid; callers own catalogs and lifecycle."""
+    structure = l9_grid_structure(index)
+    if (headers != L9_GRID_HEADERS or footer_spans != L9_GRID_SPANS or tax_type != 'ICT_RCIT'
+            or locale != 'id-ID' or timezone_name != 'Asia/Jakarta' or not isinstance(labels, dict)):
+        raise _UnsupportedMetadata('unverified_corporate_l9_grid_structure')
+    if not isinstance(pages, list) or not 1 <= len(pages) <= 1000:
+        raise _UnsupportedMetadata('unsupported_corporate_l9_grid_pages')
+    rows, provenance, cursor, source_total = [], [], 0, None
+    group = L9_GRIDS[index][0].rsplit('/', 1)[1]
+    label_columns = {1: 'TANGIBLE_ASSET' if index < 5 else
+                        'GROUP_OF_BUILDINGS' if index < 7 else 'INTANGIBLE_ASSET',
+                     5: 'COMMERCIAL_METHOD', 6: 'FISCAL_METHOD'}
+    required = set(L9_GRID_COLUMNS)
+    for page_index, page in enumerate(pages):
+        if page_index and cursor == source_total:
+            raise _UnsupportedMetadata('unsupported_corporate_l9_repeated_terminal_page')
+        if (not isinstance(page, dict) or set(page) != {'offset', 'rows', 'payload'}
+                or type(page['offset']) is not int or page['offset'] != cursor
+                or type(page['rows']) is not int or page['rows'] != 10):
+            raise _UnsupportedMetadata('unsupported_corporate_l9_grid_pages')
+        payload = page['payload']
+        if (not isinstance(payload, dict) or set(payload) != {'Data', 'TotalRecords', 'Index'}
+                or payload['Index'] is not None):
+            raise _UnsupportedMetadata('unsupported_corporate_l9_grid_payload')
+        count = _corporate_integer(payload['TotalRecords'])
+        if source_total is not None and source_total != count:
+            raise JsonSafetyError('Corporate L9 page totals changed')
+        source_total = count
+        data = [] if payload['Data'] is None and count == 0 else payload['Data']
+        if (not isinstance(data, list) or len(data) > page['rows'] or count > 10000
+                or cursor + len(data) > count or (not data and count != 0)):
+            raise _UnsupportedMetadata('unsupported_corporate_l9_grid_rows')
+        for name in ('TotalRecords', 'Index'):
+            provenance.append({**_evidence(payload[name], [name]), 'source': 'grid',
+                'page_index': page_index, 'rule': 'retained-original-grid-envelope',
+                'destination': {'table': L9_GRIDS[index][0], 'control': name}})
+        if not data:
+            provenance.append({'path': ['Data'], 'type': 'null' if payload['Data'] is None else 'array',
+                'value': None if payload['Data'] is None else '[]', 'source': 'grid',
+                'page_index': page_index, 'rule': 'retained-original-empty-grid-container',
+                'destination': {'table': L9_GRIDS[index][0], 'control': 'Data'}})
+        for local_index, row in enumerate(data):
+            if not isinstance(row, dict) or set(row) not in (required, required | L9_ROW_METADATA):
+                raise _UnsupportedMetadata('unsupported_corporate_l9_grid_row_shape')
+            if set(row) != required:
+                if (row['GroupType'] != group or type(row['GroupType']) is not str
+                        or row['CodeOfAsset'] is not None or row['Action'] is not None
+                        or type(row['RecordId']) is not str or not row['RecordId']
+                        or type(row['Index']) is not _CorporateNumber
+                        or not re.fullmatch(r'0|[1-9][0-9]*', row['Index'])
+                        or len(row['Index']) > 15):
+                    raise _UnsupportedMetadata('unsupported_corporate_l9_grid_metadata')
+                for key in row:
+                    if key in L9_ROW_METADATA:
+                        provenance.append({**_evidence(row[key], ['Data', local_index, key]),
+                            'source': 'grid', 'page_index': page_index, 'source_row': cursor + local_index,
+                            'rule': 'retained-original-grid-metadata',
+                            'destination': {'table': L9_GRIDS[index][0], 'control': key}})
+            rendered = []
+            for column, key in enumerate(L9_GRID_COLUMNS):
+                value = row[key]
+                entry = {**_evidence(value, ['Data', local_index, key]), 'source': 'grid',
+                    'page_index': page_index, 'source_row': cursor + local_index,
+                    'destination': {'table': L9_GRIDS[index][0], 'row': cursor + local_index, 'column': column}}
+                if column in label_columns:
+                    kind = label_columns[column]
+                    if (type(value) is not str or not value or not isinstance(labels.get(kind), dict)
+                            or type(labels[kind].get(value)) is not str or not labels[kind][value].strip()):
+                        raise _UnsupportedMetadata('missing_corporate_l9_grid_reference_label')
+                    text, entry['rule'], entry['reference'] = labels[kind][value], 'bound-reference-label', kind
+                elif column in (3, 4, 7):
+                    text, entry['rule'] = _l9_grid_number(value), 'angular-decimal-1.0-0-id'
+                elif column == 2:
+                    text, entry['rule'] = _l9_month(value), 'dayjs-MM-YYYY-jakarta'
+                else:
+                    if value is not None and type(value) is not str:
+                        raise _UnsupportedMetadata('unsupported_corporate_l9_grid_text')
+                    text, entry['rule'] = '' if value is None else value, 'literal-grid-text'
+                rendered.append(text)
+                provenance.append(entry)
+            rows.append(rendered)
+        cursor += len(data)
+        if cursor < count and len(data) != page['rows']:
+            raise _UnsupportedMetadata('incomplete_corporate_l9_grid_pages')
+    if cursor != source_total:
+        raise _UnsupportedMetadata('incomplete_corporate_l9_grid_pages')
+    footer_text = _l9_grid_number(total)
+    if _decimal(total) != _decimal(total).to_integral_value():
+        raise _UnsupportedMetadata('unsupported_corporate_l9_stored_footer')
+    # Initial submitted read renders the stored customFooter. Do not sum body
+    # display cells, and never acquire edit/refresh footer endpoints here.
+    footer = [[], ['TOTAL', footer_text, '']]
+    provenance.append({**_evidence(total, [L9_ROOT, L9_TABLE_TOTALS[index]]), 'source': 'current',
+        'rule': 'initial-nonmigrated-stored-custom-footer/angular-decimal-1.0-0-id',
+        'destination': {'table': L9_GRIDS[index][0], 'footer': 1, 'column': 1}})
+    return {'table': {'name': L9_GRIDS[index][0], 'headers': list(headers), 'rows': rows + footer,
+        'footer': footer, 'footer_spans': deepcopy(footer_spans), 'body_row_count': cursor,
+        'source_total': source_total, 'complete': True, 'source_structure': structure},
+        'provenance': provenance}
+
+
 def project_l9(form, *, tax_type, locale, migrated):
     """Six recap controls only, never permission to discard twelve detail grids.
 
@@ -872,17 +1038,21 @@ def project_l9(form, *, tax_type, locale, migrated):
     return {'fields': fields, 'provenance': provenance}
 
 
-def _apply_l9(binding, section, observed_forms, *, root, payload, record, event):
+def _apply_l9(binding, section, observed_forms, *, root, payload, record, event,
+              reference_packets, auxiliary_packets):
     proof = binding['projection']
     builds = proof.get('builds') if isinstance(proof, dict) else None
     grids = binding.get('grids')
-    approved = BUILD_DIGESTS.get(CIT_SOURCE)
-    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route', 'locale'}
-            or proof['kind'] != 'corporate-l9-v1'
-            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
-            or type(approved) is not str or not re.fullmatch(r'[a-f0-9]{64}', approved)
-            or type(builds[CIT_SOURCE]) is not str or not re.fullmatch(r'[a-f0-9]{64}', builds[CIT_SOURCE])
-            or builds[CIT_SOURCE] != approved or proof['locale'] != 'id-ID'
+    details = isinstance(proof, dict) and proof.get('kind') == 'corporate-l9-details-v1'
+    approved = L9_DETAIL_BUILD_DIGESTS if details else {CIT_SOURCE: BUILD_DIGESTS.get(CIT_SOURCE)}
+    urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE} if details else {CIT_SOURCE}
+    keys = {'kind', 'builds', 'route', 'locale'} | ({'timezone', 'tables', 'references'} if details else set())
+    if (not isinstance(proof, dict) or set(proof) != keys
+            or proof['kind'] not in ('corporate-l9-v1', 'corporate-l9-details-v1')
+            or not isinstance(builds, dict) or set(builds) != urls or set(approved) != urls
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
+                   for mapping in (approved, builds) for value in mapping.values())
+            or builds != approved or proof['locale'] != 'id-ID'
             or proof['route'] != event['frame_url']
             or binding.get('paths') != [[L9_ROOT]]
             or binding.get('responses') or binding.get('dependencies')
@@ -924,8 +1094,131 @@ def _apply_l9(binding, section, observed_forms, *, root, payload, record, event)
     section['projection_reason'] = L9_UNPROJECTED_REASON
     for entry in result['provenance']:
         entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+    if details:
+        _apply_l9_details(binding, section, result['provenance'], root=root, record=record, event=event,
+            reference_packets=reference_packets, auxiliary_packets=auxiliary_packets)
     return {'form': 'L9', 'kind': proof['kind'], 'builds': dict(proof['builds']),
             'route': proof['route'], 'values': result['provenance']}
+
+
+def _apply_l9_details(binding, section, evidence, *, root, record, event,
+                       reference_packets, auxiliary_packets):
+    """Consume only shared-admitted original catalogs and exact original grids."""
+    proof, tables, references = binding['projection'], binding['projection']['tables'], binding['projection']['references']
+    if (proof['timezone'] != 'Asia/Jakarta' or event.get('clock_interval') is None
+            or not isinstance(tables, list) or len(tables) != 12
+            or not isinstance(references, list) or len(references) != len(L9_REFERENCE_KINDS)):
+        raise _UnsupportedMetadata('unverified_corporate_l9_details_binding')
+    for index, table in enumerate(tables):
+        expected = l9_grid_structure(index)
+        alternatives = [expected]
+        if index in (4, 11):
+            alternatives.append({**expected, 'groups': [expected['groups'][0], 'LAINNYA']})
+        if (not isinstance(table, dict)
+                or set(table) != {'component', 'source_structure', 'headers', 'footer_spans'}
+                or table['component'] != expected['component'] or table['source_structure'] not in alternatives
+                or table['headers'] != L9_GRID_HEADERS or table['footer_spans'] != L9_GRID_SPANS):
+            raise _UnsupportedMetadata('unverified_corporate_l9_details_table')
+    catalogs, sources, labels = {}, {}, {}
+    for reference in references:
+        if (not isinstance(reference, dict) or set(reference) != {'endpoint', 'method', 'sequences'}
+                or reference['method'] != 'GET' or not isinstance(reference['sequences'], list)
+                or not reference['sequences']):
+            raise _UnsupportedMetadata('unverified_corporate_l9_reference_binding')
+        # The separately owned passive registry is the only transport authority.
+        # This consumer neither synthesizes an endpoint nor adds registrations.
+        requested = CORPORATE_REFERENCE_REQUESTS.get(reference['endpoint'])
+        if (not isinstance(requested, tuple) or len(requested) != 1
+                or requested[0] not in L9_REFERENCE_KINDS or requested[0] in catalogs):
+            raise _UnsupportedMetadata('unverified_corporate_l9_reference_binding')
+        kind, sequences = requested[0], reference['sequences']
+        if (any(type(number) is not int or number <= 0 for number in sequences)
+                or len(set(sequences)) != len(sequences)):
+            raise JsonSafetyError('Corporate L9 reference sequences are invalid or repeated')
+        actual = {number for number, packet in reference_packets.items()
+                  if packet['event']['url'] == reference['endpoint']}
+        if set(sequences) != actual or any(not reference_packets[number]['successful'] for number in actual):
+            raise _UnsupportedMetadata('missing_or_failed_corporate_l9_catalog')
+        source = reference_packets[min(sequences)]
+        if source['event'].get('clock_interval') != event['clock_interval']:
+            raise _UnsupportedMetadata('unverified_corporate_l9_reference_clock')
+        catalogs[kind] = _project_corporate_catalog(source['payload'], kind=kind,
+            requested_types=requested, clock_interval=source['event']['clock_interval'])
+        sources[kind], labels[kind] = source['event'], catalogs[kind]['lookups']
+    if set(catalogs) != set(L9_REFERENCE_KINDS):
+        raise _UnsupportedMetadata('missing_corporate_l9_catalog_types')
+    requests, pages, page_sources, expected_keys = [], [], [], set()
+    for declaration in binding['grids']:
+        group = declaration['name'].rsplit('/', 1)[1]
+        grid_pages, grid_sources = [], []
+        for page in declaration['pages']:
+            request = page.get('request_json') if isinstance(page, dict) else None
+            if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId', 'GroupType',
+                    'First', 'Rows', 'SortField', 'SortOrder', 'Filters', 'LanguageId'}
+                    or request['ReturnSheetRecordId'] != record['record_id'] or request['GroupType'] != group
+                    or type(request['First']) is not int or request['First'] < 0
+                    or type(request['Rows']) is not int or request['Rows'] != 10
+                    or request['SortField'] != '' or type(request['SortOrder']) is not int or request['SortOrder'] != 1
+                    or request['Filters'] != [] or request['LanguageId'] != 'id-ID'
+                    or page.get('offset') != request['First']):
+                raise _UnsupportedMetadata('unsupported_corporate_l9_details_request')
+            key = (declaration['endpoint'], _corporate_request_key(request))
+            if key in expected_keys:
+                raise _UnsupportedMetadata('repeated_corporate_l9_details_request')
+            expected_keys.add(key)
+            packet = auxiliary_packets.get(key)
+            if packet is None:
+                raise _UnsupportedMetadata('missing_corporate_l9_original_grid')
+            grid_pages.append({'offset': request['First'], 'rows': request['Rows'], 'payload': packet['payload']})
+            grid_sources.append(packet['event'])
+        requests.append(declaration['name'])
+        pages.append(grid_pages)
+        page_sources.append(grid_sources)
+    if expected_keys != {key for key in auxiliary_packets if key[0] in {url for _, url in L9_GRIDS}}:
+        raise _UnsupportedMetadata('unbound_corporate_l9_original_grid')
+    original = deepcopy(section['tables'])
+    if len(original) != 13 or [t['name'] for t in original[1:]] != requests:
+        raise _UnsupportedMetadata('unverified_corporate_l9_original_inventory')
+    semantic, unresolved, reasons = [], [], {}
+    for index, (name, _) in enumerate(L9_GRIDS):
+        try:
+            result = project_l9_grid(index=index, pages=pages[index], total=root[L9_ROOT][L9_TABLE_TOTALS[index]],
+                headers=tables[index]['headers'], footer_spans=tables[index]['footer_spans'],
+                tax_type=record['source_fields'].get('TaxTypeCode'), locale=proof['locale'],
+                timezone_name=proof['timezone'], labels=labels)
+        except _UnsupportedMetadata as error:
+            # Each refused grid remains visible to the whole-record native gate;
+            # the other eleven may be projected but cannot launder its source.
+            unresolved.append(name)
+            reasons[name] = str(error)
+            semantic.append(deepcopy(original[index + 1]))
+            continue
+        result['table']['source_structure'] = deepcopy(tables[index]['source_structure'])
+        semantic.append(result['table'])
+        for entry in result['provenance']:
+            source = page_sources[index][entry['page_index']] if entry['source'] == 'grid' else event
+            entry.update(response_sequence=source['sequence'], response_sha256=source['sha256'],
+                attempt=source['attempt'], container=['Payload'] if entry['source'] == 'grid'
+                else ['Payload', 'CurrentFormData'])
+            evidence.append(entry)
+            kind = entry.get('reference')
+            if kind is not None:
+                selected = deepcopy(catalogs[kind]['selected'][entry['value']])
+                selected.update(response_sequence=sources[kind]['sequence'],
+                    response_sha256=sources[kind]['sha256'], attempt=sources[kind]['attempt'],
+                    container=['Payload'], destination=deepcopy(entry['destination']))
+                evidence.append(selected)
+    for kind, catalog in catalogs.items():
+        evidence.extend({**deepcopy(entry), 'response_sequence': sources[kind]['sequence'],
+            'response_sha256': sources[kind]['sha256'], 'attempt': sources[kind]['attempt'],
+            'container': ['Payload'], 'destination': {'form': 'L9', 'reference': kind}}
+            for entry in catalog['provenance'])
+    # Custody is an explicit independent section member, not a fake semantic
+    # table or a dropped raw source. Generic template matching sees only grids.
+    section.update(tables=semantic, custody_tables=original, unprojected_grids=unresolved,
+        unprojected_grid_reasons=reasons, projection_complete=not unresolved)
+    if not unresolved:
+        section.pop('projection_reason', None)
 
 
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
@@ -962,7 +1255,8 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
             continue
         if binding['name'] == 'L9':
             projected.append(_apply_l9(binding, section, observed_forms, root=root, payload=payload,
-                record=record, event=event))
+                record=record, event=event, reference_packets=reference_packets or {},
+                auxiliary_packets=auxiliary_packets or {}))
             continue
         if binding['name'] == 'L11-C':
             projected.append(_apply_l11c(binding, section, observed_forms, root=root, payload=payload,

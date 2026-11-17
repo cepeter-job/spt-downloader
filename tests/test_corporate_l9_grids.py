@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 
 import coretax_corporate_projection as projection
-from coretax_json import _CorporateNumber as Number, _UnsupportedMetadata
+from coretax_json import _CorporateNumber as Number
 
 HEADERS = ['KODE HARTA', 'KELOMPOK/JENIS HARTA', 'BULAN/TAHUN PEROLEHAN',
     'BIAYA PEROLEHAN (Rp)', 'NILAI SISA BUKU FISKAL PADA AWAL TAHUN (Rp)',
@@ -47,10 +47,11 @@ def project(index=0, **changes):
     return helper(**options)
 
 
-def test_tangible_group1_populated_rows_keep_duplicates_and_original_coordinates():
-    original = pages()
+@pytest.mark.parametrize('index', range(5))
+def test_tangible_group1_populated_rows_keep_duplicates_and_original_coordinates(index):
+    original = pages(index)
     before = deepcopy(original)
-    result = project(pages=original)
+    result = project(index, pages=original)
     table = result['table']
     expected = ['SYNTHETIC-001', 'Synthetic tangible label', '02-2024', '1.235', '987',
         'Synthetic commercial label', 'Synthetic fiscal label', '26', 'SYNTHETIC literal note']
@@ -60,7 +61,7 @@ def test_tangible_group1_populated_rows_keep_duplicates_and_original_coordinates
     assert table['footer_spans'] == [[], [7, 1, 1]]
     assert table['body_row_count'] == table['source_total'] == 2
     assert table['source_structure'] == {'form': 'L9', 'component': 'rshshr-citr-l9-form-grid1',
-        'groups': ['HARTA BERWUJUD', 'KELOMPOK 1']}
+        'groups': ['HARTA BERWUJUD', 'KELOMPOK ' + str(index + 1) if index < 4 else 'KELOMPOK LAINNYA']}
     # GroupAssetType drives two different representations, not CodeOfAsset.
     entries = [v for v in result['provenance'] if v['path'] == ['Data', 0, 'GroupAssetType']]
     assert {v['destination']['column'] for v in entries} == {0, 1}
@@ -71,3 +72,23 @@ def test_tangible_group1_populated_rows_keep_duplicates_and_original_coordinates
                     and v['path'][:2] == ['Data', row_index]]
         assert {v['path'][-1] for v in retained} == set(asset())
     assert original == before
+
+
+@pytest.mark.parametrize('index', [5, 6])
+def test_both_building_groups_use_building_catalog_and_approved_owner(index):
+    result = project(index)
+    assert result['table']['rows'][0][1] == 'Synthetic building label'
+    assert result['table']['source_structure'] == {'form': 'L9',
+        'component': 'rshshr-citr-l9-form-grid2',
+        'groups': ['BANGUNAN', 'PERMANEN' if index == 5 else 'TIDAK PERMANEN']}
+    assert result['provenance'][-1]['path'] == [projection.L9_ROOT, 'TotalTable' + str(index + 1)]
+
+
+@pytest.mark.parametrize('index', range(7, 12))
+def test_all_intangible_groups_use_intangible_catalog_not_tangible_alias(index):
+    result = project(index)
+    assert result['table']['rows'][0][1] == 'Synthetic intangible label'
+    assert result['table']['source_structure'] == {'form': 'L9',
+        'component': 'rshshr-citr-l9-form-grid3', 'groups': ['HARTA TIDAK BERWUJUD',
+            'KELOMPOK ' + str(index - 6) if index < 11 else 'KELOMPOK LAINNYA']}
+    assert result['provenance'][-1]['path'] == [projection.L9_ROOT, 'TotalTable' + str(index + 1)]

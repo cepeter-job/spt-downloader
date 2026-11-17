@@ -326,6 +326,107 @@ def _observe_l7_negative(page, form, grid, tab, panel, capture, legacy, check_ca
             'tables': [{**expected, 'owner_chain': list(L7_OWNER_CHAIN)}]}
 
 
+def _l9_tables(form, check_cancel):
+    """Read only the exact twelve owners, captions, headers and footer spans."""
+    from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
+    from coretax_corporate_projection import l9_grid_structure, L9_GRID_HEADERS, L9_GRID_SPANS
+    from coretax_masa_observer import TABLE
+    if form.locator('table').count() != 12:
+        return None
+    tables = []
+    for selector, _, groups in GRID_ROLES['L9']:
+        grids = form.locator(selector)
+        if grids.count() != len(groups):
+            return None
+        for index in range(len(groups)):
+            _check_cancel(check_cancel)
+            grid = grids.nth(index)
+            if (not grid.is_visible() or grid.locator('ui-grid').count() != 1
+                    or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
+                return None
+            table = grid.locator('table')
+            chain = table.evaluate('''(table, selector) => {
+                const form=table.closest('rshshr-citr-l9-form'), grid=table.closest(selector);
+                const ui=table.closest('ui-grid'), owner=table.closest('p-table');
+                return !!form && !!grid && !!ui && !!owner &&
+                    grid.closest('rshshr-citr-l9-form')===form &&
+                    ui.closest(selector)===grid && ui.closest('rshshr-citr-l9-form')===form &&
+                    owner.closest('ui-grid')===ui && ui.contains(owner) && grid.contains(owner);
+            }''', selector)
+            _check_cancel(check_cancel)
+            if chain is not True:
+                return None
+            structure = table.evaluate(CORPORATE_STRUCTURE_JS, 'L9')
+            expected = l9_grid_structure(len(tables))
+            alternatives = [expected]
+            if len(tables) in (4, 11):
+                alternatives.append({**expected, 'groups': [expected['groups'][0], 'LAINNYA']})
+            if structure not in alternatives:
+                return None
+            metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
+            _check_cancel(check_cancel)
+            if metadata['headers'] != L9_GRID_HEADERS or metadata['footer_spans'] != L9_GRID_SPANS:
+                return None
+            tables.append({'component': selector, 'source_structure': structure,
+                'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
+    return tables
+
+
+def _observe_l9(page, form, capture, digest, check_cancel):
+    """Additive details proof; no transport registration or active catalog call."""
+    from coretax_browser import _check_cancel
+    from coretax_corporate_projection import L9_DETAIL_BUILD_DIGESTS, L9_REFERENCE_KINDS, MAIN_SOURCE, VENDOR_SOURCE
+    from coretax_json import CORPORATE_REFERENCE_REQUESTS
+    from coretax_masa_observer import _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
+    # Missing shared producer support keeps the old recap-only fallback without
+    # fetching a catalog, probing browser cache, or granting a new request class.
+    admitted = {kinds[0] for kinds in CORPORATE_REFERENCE_REQUESTS.values() if len(kinds) == 1}
+    if not set(L9_REFERENCE_KINDS) <= admitted:
+        return None
+    pins = L9_DETAIL_BUILD_DIGESTS
+    if (set(pins) != {CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE}
+            or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value) for value in pins.values())
+            or pins[CIT_SOURCE_URL] != digest):
+        return None
+    references, observed_kinds = [], set()
+    for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items():
+        if len(kinds) != 1 or kinds[0] not in L9_REFERENCE_KINDS:
+            continue
+        sequences = [event['sequence'] for event in capture.request_observations()
+            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None]
+        if not sequences:
+            continue
+        if kinds[0] in observed_kinds:
+            return None
+        observed_kinds.add(kinds[0])
+        references.append({'endpoint': endpoint, 'method': 'GET', 'sequences': sequences})
+    if observed_kinds != set(L9_REFERENCE_KINDS):
+        return None
+    if capture.observe_component_lifetime(check_cancel=check_cancel) is None:
+        return None
+    providers = page.evaluate('''urls => urls.every(url =>
+        [...document.scripts].some(s => s.src===url) ||
+        performance.getEntriesByType('resource').some(e => e.name===url && e.initiatorType==='script'))''', list(pins))
+    _check_cancel(check_cancel)
+    if providers is not True:
+        return None
+    main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
+    _check_cancel(check_cancel)
+    vendor_digest = page.evaluate(_REFERENCE_ORDER_BUILD_HASH, VENDOR_SOURCE)
+    _check_cancel(check_cancel)
+    if main_digest != pins[MAIN_SOURCE] or vendor_digest != pins[VENDOR_SOURCE]:
+        return None
+    environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
+    _check_cancel(check_cancel)
+    if environment != {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}:
+        return None
+    tables = _l9_tables(form, check_cancel)
+    if tables is None:
+        return None
+    return {'kind': 'corporate-l9-details-v1', 'builds': dict(pins), 'route': page.url,
+            **environment, 'tables': tables, 'references': references}
+
+
 def _observe_l1d(page, form, capture, digest, check_cancel):
     """Inspect only owned structure, loaded providers and fresh lifetime."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -952,6 +1053,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                     _check_cancel(check_cancel)
                     binding['projection'] = {'kind': 'corporate-l9-v1', 'locale': locale,
                         'builds': {CIT_SOURCE_URL: digest}, 'route': page.url}
+                    if 'Induk' in names:
+                        detailed = _observe_l9(page, form, capture, digest, check_cancel)
+                        if detailed is not None and _enabled_form_binding(form, tab, name):
+                            binding['projection'] = detailed
             if name == 'L3':
                 _advance('l3')
                 if 'Induk' not in names:
@@ -1115,6 +1220,14 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                         binding.setdefault('dependencies', []).extend(
                             {'endpoint': endpoint + '/footer', 'request_json': request}
                             for request in footer_requests)
+            if name == 'L9' and binding.get('projection', {}).get('kind') == 'corporate-l9-details-v1':
+                _check_cancel(check_cancel)
+                if (not _enabled_form_binding(form, tab, name)
+                        or _l9_tables(form, check_cancel) != binding['projection']['tables']
+                        or capture.observe_component_lifetime(check_cancel=check_cancel) is None):
+                    return unavailable()
+                _check_cancel(check_cancel)
+                _check_corporate_route(page.url, selected)
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:

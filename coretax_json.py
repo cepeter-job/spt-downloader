@@ -1424,6 +1424,12 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                     raise _UnsupportedMetadata('failed_declared_corporate_source_response')
                 if state['kind'] == 'grids':
                     _corporate_grid_page(state, key, offset, payload, ctx['sha256'])
+                    if state['section']['name'] == 'L9':
+                        # Semantic consumers use the decoded ORIGINAL Data and
+                        # page event, never reconstructed flattened audit rows.
+                        # First successful original sequence wins; repeats must
+                        # already have passed the exact snapshot/hash guard.
+                        auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
                 else:
                     old = state['seen'].get(key)
                     if old is not None and old['sha256'] != ctx['sha256']:
