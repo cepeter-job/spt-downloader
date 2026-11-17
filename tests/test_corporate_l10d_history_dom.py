@@ -111,6 +111,22 @@ def test_initial_unproved_profile_never_becomes_complete(page, defect):
     assert not bind(page, history, 'end')['complete']
 
 
+def test_initial_occupied_history_never_adopts_a_later_replacement_as_known_original(page):
+    page.set_content(CHAIN)
+    history = page.evaluate_handle('() => document').evaluate_handle(owner.HISTORY_JS)
+    page.evaluate('html => {document.body.innerHTML=html;}', CHAIN)
+    state = history.evaluate('(h) => h.sample()')
+    assert state == {'available': False, 'changed': False, 'complete': False}
+
+
+def test_disable_before_first_bind_is_not_repaired_by_current_enabled_snapshot(page):
+    history = arm(page)
+    build(page)
+    page.evaluate("() => {const li=document.querySelector('[role=tab]').closest('li');li.classList.add('p-disabled');li.classList.remove('p-disabled');}")
+    assert not bind(page, history, 'start')['complete']
+    assert not bind(page, history, 'end')['complete']
+
+
 def test_two_boundaries_are_required_and_rebinding_is_not_permission(page):
     history = arm(page)
     build(page)

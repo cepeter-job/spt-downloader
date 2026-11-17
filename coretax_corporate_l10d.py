@@ -23,7 +23,9 @@ HISTORY_JS = r"""(d) => {
  // corporate-l10d-history: independent finite structural ownership.
  const selectors=['rshshr-corporate-income-tax-return','rshshr-citr-main-form','rshshr-citr-l10d-form'];
  const candidates=selectors.join(',');
- const state={available:d===document&&!d.querySelector(candidates),changed:false,complete:false};
+ const initialClear=d===document&&!d.querySelector(candidates);
+ const state={available:initialClear,changed:false,complete:false};
+ const disabledNodes=new WeakSet();
  let roles=[null,null,null],ancestors=new Set(),remaining=4096;
  let tab=null,panel=null,li=null,view=null,started=false,ended=false;
  const observer=new MutationObserver(records=>process(records));
@@ -55,17 +57,23 @@ HISTORY_JS = r"""(d) => {
  };
  const local=target=>roles.slice(1).some(role=>role&&(role===target||role.contains(target)));
  const process=records=>{
+   if(!initialClear)return;
    for(const record of records){
      if(record.type==='attributes'){
        // Ignore normal tab highlighting/visibility. A transient disabled or
        // controlled-panel mutation remains a contradiction after restoration.
-       if(!started)continue;
        const target=record.target,name=record.attributeName,old=record.oldValue;
+       const now=target.getAttribute(name);
+       const disabled=(name==='class'&&(String(old).split(/\s+/).includes('p-disabled')||target.classList.contains('p-disabled')))||
+          (name==='aria-disabled'&&(old==='true'||now==='true'));
+       if(disabled&&roles[0]&&roles[0].contains(target)&&target.closest('.p-tabview-nav')&&
+          (target.localName==='li'||target.getAttribute('role')==='tab')){
+         disabledNodes.add(target);debit();
+       }
+       if(!started)continue;
        const fixed=target===tab||target===panel||target===li||target===view||roles.includes(target);
        if(!fixed)continue;
-       const now=target.getAttribute(name);
-       if((name==='class'&&(String(old).split(/\s+/).includes('p-disabled')||target.classList.contains('p-disabled')))||
-          (name==='aria-disabled'&&(old==='true'||now==='true'))||
+       if(disabled||
           (['aria-controls','href','id'].includes(name)&&old!==now))changed();
        continue;
      }
@@ -83,6 +91,7 @@ HISTORY_JS = r"""(d) => {
    }
  };
  const owned=()=>{
+   if(!initialClear)return false;
    if(d!==document){changed();return false;}
    if(roles.some(role=>!role))return false;
    if(roles.some(role=>!role.isConnected||role.ownerDocument!==d)){changed();return false;}
@@ -130,6 +139,7 @@ HISTORY_JS = r"""(d) => {
    if(args.form!==roles[2])changed();
    if(args.phase==='start'&&!started&&!ended){
      tab=args.tab;panel=args.panel;li=tab&&tab.closest('li');view=roles[2].closest('.p-tabview');
+     if(disabledNodes.has(tab)||disabledNodes.has(li))unavailable();
      for(const node of [tab,panel,li,view])if(node)remember(node);
    }else if(args.phase!=='end'||!started||ended||args.tab!==tab||args.panel!==panel)changed();
    if(!enabled(true)){if(started)changed();else unavailable();}
