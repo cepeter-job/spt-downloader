@@ -857,8 +857,11 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
         if 'IsMigrated' in payload:
             if payload['IsMigrated'] is not False:
                 raise _UnsupportedMetadata('unverified_corporate_l11b_hydrated_lifecycle')
-            result['provenance'].append({**_evidence(payload['IsMigrated'], ['IsMigrated']),
-                                         'container': ['Payload'],
+            # _evidence accepts number/string/null, not JSON booleans. The
+            # source predicate above requires a literal False, so retain its
+            # original boolean type without coercing it to an amount.
+            result['provenance'].append({'path': ['IsMigrated'], 'type': 'boolean',
+                                         'value': False, 'container': ['Payload'],
                                          'rule': 'submitted-hydration-predicate'})
     else:
         result = project_l11b(root.get(L11B_ROOT), tax_type=fields.get('TaxTypeCode'), locale='id-ID')
