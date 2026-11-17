@@ -39,6 +39,9 @@ class Document:
                     result[name] = history.evaluate('(h) => h.sample()') if history is not None else None
                 except Exception:
                     result[name] = None
+            # The reviewed joint turn also owns the final clock; a later clock
+            # RPC could pump a sibling replacement after its sample.
+            result['clock'] = {'epoch_ms': 1000, 'timezone': 'Asia/Jakarta'}
             return result
         assert script.replace(' ', '') in ('(d)=>d===document', '(d)=>document===d')
         if self.on_read:

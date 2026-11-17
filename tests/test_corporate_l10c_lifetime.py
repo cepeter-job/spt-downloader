@@ -84,7 +84,8 @@ def test_l10c_capture_manifest_live_and_held_readers_retain_same_original_fact(t
         assert boundaries(capture) == proof(capture)
         saved = capture.drain()
         assert saved['corporate_l10c_lifetime'] == proof(capture)
-        assert saved['clock_interval']['end_ms'] == 2000
+        # The joint final turn owns the clock; C no longer appends its own RPC.
+        assert saved['clock_interval']['end_ms'] == 1000
         assert 'corporate_l10c_lifetime' not in saved['responses'][0]
         packets = list(capture.iter_bodies())
         assert response.reads == 1 and packets[0]['body'] == response.raw
@@ -163,7 +164,7 @@ def test_l10c_last_browser_rpc_stays_inside_late_response_fence(tmp_path, mime):
 
 
 @pytest.mark.parametrize('sibling', ['_l7_requested', '_l8_requested'])
-def test_l10c_cannot_seal_sequential_sibling_history_until_joint_owner_is_integrated(tmp_path, sibling):
+def test_l10c_joins_the_single_joint_snapshot_alongside_a_sibling(tmp_path, sibling):
     context, page, _ = fixture()
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
         begin(capture)
@@ -173,21 +174,30 @@ def test_l10c_cannot_seal_sequential_sibling_history_until_joint_owner_is_integr
         assert boundaries(capture)
         setattr(capture, sibling, True)
         saved = capture.drain()
-        assert 'corporate_l10c_lifetime' not in saved
-        assert not saved['complete'] and 'unsupported-child-history-combination' in saved['reasons']
+        # One synchronous turn samples every requested child; C is admitted
+        # from that same snapshot instead of a sequential post-sibling probe.
+        assert saved['corporate_l10c_lifetime'] == proof(capture)
+        assert saved['complete'] and 'unsupported-child-history-combination' not in saved['reasons']
 
 
-def test_c_cannot_append_a_sequential_final_probe_after_reviewed_joint_seam_is_integrated(tmp_path):
+def test_c_is_narrowed_not_repaired_when_the_joint_snapshot_is_unavailable(tmp_path):
     context, page, _ = fixture()
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
         begin(capture)
         navigate(page, DETAIL)
         capture.bind_detail_page(page)
         assert boundaries(capture)
-        capture._final_lifetimes = lambda *args, **kwargs: None
+        probes = []
+        original = capture.observe_l10c_lifetime
+        def counted(*args, **kwargs):
+            probes.append(kwargs.get('_final'))
+            return original(*args, **kwargs)
+        capture.observe_l10c_lifetime = counted
+        capture._final_lifetimes = lambda *args, **kwargs: (None, None, None, None, None)
         saved = capture.drain()
         assert not saved['complete'] and 'corporate_l10c_lifetime' not in saved
-        assert 'unsupported-child-history-combination' in saved['reasons']
+        # Only the pre-final candidate probe runs; no sequential final sampler.
+        assert probes == [None]
 
 
 def test_unoffered_unavailable_c_history_does_not_disable_a_legacy_sibling(tmp_path):
@@ -206,15 +216,22 @@ def test_unoffered_unavailable_c_history_does_not_disable_a_legacy_sibling(tmp_p
 
 @pytest.mark.parametrize('clock', [None, {'epoch_ms': 500, 'timezone': 'Asia/Jakarta'},
     {'epoch_ms': 2000, 'timezone': 'UTC'}, {'epoch_ms': True, 'timezone': 'Asia/Jakarta'}])
-def test_c_final_rpc_cannot_reuse_an_earlier_clock_when_its_own_clock_is_unavailable(tmp_path, clock):
-    context, page, guard = fixture()
+def test_joint_snapshot_cannot_reuse_an_earlier_clock_when_its_own_clock_is_unavailable(tmp_path, clock):
+    context, page, _ = fixture()
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
         begin(capture)
         navigate(page, DETAIL)
         exchange(context, page)
         capture.bind_detail_page(page)
         assert boundaries(capture)
-        guard.clock = clock
+        document = page.documents[0]
+        evaluate = document.evaluate
+        def joint(script, args=None):
+            result = evaluate(script, args)
+            if 'corporate-final-lifetimes' in script:
+                result['clock'] = clock
+            return result
+        document.evaluate = joint
         saved = capture.drain()
         assert 'clock_interval' not in saved
 

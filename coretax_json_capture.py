@@ -67,10 +67,13 @@ _FINAL_LIFETIMES = """(d, histories) => {
  // sample drains its MutationObserver; an unavailable sibling cannot hide a
  // changed one. No async work, DOM writes or business-value reads occur here.
  const read=h=>{if(!h)return null;try{return h.sample();}catch{return null;}};
- const l8=read(histories.l8),l7=read(histories.l7),l10b=read(histories.l10b);
+ const l8=read(histories.l8),l7=read(histories.l7),l10b=read(histories.l10b),l10c=read(histories.l10c);
  let owners=null;
  try{owners=(""" + _COMPONENT_OWNERS + """)();}catch{}
- return {same_document:d===document,owners,l8,l7,l10b};
+ // The final clock belongs to this same turn: a later clock RPC could pump a
+ // sibling replacement after its sample.
+ return {same_document:d===document,owners,l8,l7,l10b,l10c,
+   clock:{epoch_ms:Date.now(),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone}};
 }"""
 _L7_HISTORY = """(d) => {
  // corporate-l7-history: independent of the L8 all-DOM budget.
@@ -633,6 +636,7 @@ class DetailJsonCapture:
         self._l10c_offered = False
         self._l10c_unavailable = False
         self._l10c_clock_end = None
+        self._final_clock = None
         from coretax_corporate_l10d import L10DHistory
         self._l10d_history = L10DHistory()
         self._counts = {'accepted': 0, 'pending': 0, 'excluded': 0, 'failed': 0}
@@ -1188,7 +1192,8 @@ class DetailJsonCapture:
             'detail_url': self._bound_url, 'builds': observed}, attempt=self.attempt,
             record_id=self.record_id, source_url=self.source_url, detail_url=self._bound_url)
         return dict(observed)
-    def _final_lifetimes(self, lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, *, check_cancel=None):
+    def _final_lifetimes(self, lifetime, l8_lifetime, l7_lifetime, l10b_lifetime,
+                         l10c_lifetime=None, *, check_cancel=None):
         """Only narrow candidates, with every requested history in one last RPC.
 
         Separate child/parent probes can pump a change to an already sampled
@@ -1197,11 +1202,12 @@ class DetailJsonCapture:
         """
         self._cancel(check_cancel)
         if not self._component_started or self._component_document is None:
-            return None, None, None, None
+            return None, None, None, None, None
         sample = self._l7_probe(lambda: self._component_document.evaluate(_FINAL_LIFETIMES, {
             'l8': self._l8_history if self._l8_requested else None,
             'l7': self._l7_history if self._l7_requested else None,
-            'l10b': self._l10b_history if self._l10b_requested else None}), check_cancel)
+            'l10b': self._l10b_history if self._l10b_requested else None,
+            'l10c': self._l10c_history if self._l10c_requested else None}), check_cancel)
         self._verify_binding()
         if self._component_invalid:
             raise JsonSafetyError('Observed submitted component lifetime changed')
@@ -1211,29 +1217,36 @@ class DetailJsonCapture:
         # just to accept its sibling.
         l7 = self._l7_state(sample.get('l7')) if self._l7_requested else None
         l10b = self._l10b_state(sample.get('l10b')) if self._l10b_requested else None
+        l10c = self._l10c_state(sample.get('l10c')) if self._l10c_requested else None
         l8 = sample.get('l8')
         l8_valid = (isinstance(l8, dict) and set(l8) == {
             'initial_clear', 'root_seen', 'root_changed', 'dependent_seen'}
             and all(type(value) is bool for value in l8.values()))
         if self._l8_requested and l8_valid and l8['root_changed']:
             raise JsonSafetyError('Observed corporate L8 root history changed')
-        if set(sample) != {'same_document', 'owners', 'l8', 'l7', 'l10b'}:
-            return None, None, None, None
+        if set(sample) != {'same_document', 'owners', 'l8', 'l7', 'l10b', 'l10c', 'clock'}:
+            return None, None, None, None, None
         owners = {'source_owner': False, 'detail_owner': True}
         if (sample['same_document'] is False
                 or self._component_observed and sample['owners'] != owners):
             raise JsonSafetyError('Observed submitted component lifetime changed')
         if lifetime is None or sample['same_document'] is not True or sample['owners'] != owners:
-            return None, None, None, None
+            return None, None, None, None, None
         if not l7 or self._l7_unavailable or not l7['available'] or not l7['complete']:
             l7_lifetime = None
         if not l10b or self._l10b_unavailable or not l10b['available'] or not l10b['complete']:
             l10b_lifetime = None
+        if not l10c or self._l10c_unavailable or not l10c['available'] or not l10c['complete']:
+            l10c_lifetime = None
         if not l8_valid or not l8['initial_clear'] or not l8['root_seen'] or l8['dependent_seen']:
             l8_lifetime = None
+        clock = sample['clock']
+        if (isinstance(clock, dict) and set(clock) == {'epoch_ms', 'timezone'}
+                and type(clock['epoch_ms']) is int and isinstance(clock['timezone'], str)):
+            self._final_clock = dict(clock)
         # A final snapshot cannot create a capability that was not offered by
         # its own observer, or repair an unavailable parent/child candidate.
-        return lifetime, l8_lifetime, l7_lifetime, l10b_lifetime
+        return lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, l10c_lifetime
 
     def _candidate(self, target, frame):
         return (target.context is self.context and frame is target.main_frame
@@ -1456,18 +1469,15 @@ class DetailJsonCapture:
         l8_lifetime = self.observe_l8_lifetime(check_cancel=check_cancel) if self._l8_requested else None
         l7_lifetime = self.observe_l7_lifetime(check_cancel=check_cancel) if self._l7_requested else None
         l10b_lifetime = self.observe_l10b_lifetime(check_cancel=check_cancel) if self._l10b_requested else None
-        lifetime, l8_lifetime, l7_lifetime, l10b_lifetime = self._final_lifetimes(
-            lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, check_cancel=check_cancel)
-        l10c_lifetime = None
-        if self._l10c_offered:
-            # The B-owned joint sampler is a separate integration dependency.
-            # Never move a sequential stale-child window from one child to C.
-            if (self._l7_requested or self._l8_requested
-                    or callable(getattr(self, '_final_lifetimes', None))):
-                self._reason('unsupported-child-history-combination')
-            elif lifetime is not None:
-                l10c_lifetime = self.observe_l10c_lifetime(check_cancel=check_cancel, _final=True)
-                clock_end = self._l10c_clock_end  # Never reuse a pre-final browser clock.
+        # Produce every requested child candidate first; the joint snapshot may
+        # only narrow it, never create or repair it, and owns the final clock.
+        l10c_candidate = (self.observe_l10c_lifetime(check_cancel=check_cancel)
+                         if self._l10c_requested else None)
+        lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, l10c_lifetime = self._final_lifetimes(
+            lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, l10c_candidate,
+            check_cancel=check_cancel)
+        if self._final_clock is not None:
+            clock_end = self._final_clock  # The final turn's clock, not a later RPC.
         self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:
