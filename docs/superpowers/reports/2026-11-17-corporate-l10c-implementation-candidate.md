@@ -181,8 +181,11 @@ custody and mixed attempts remain fatal. Cleanup retains newly acquired handles
 before the post-RPC Stop check. The C-only final sample is the last browser RPC
 inside the existing late-response fence. That same RPC now returns the end
 clock; an unavailable/reversed clock never reuses the earlier pre-child sample.
-Only local sticky parent-route, binding, late-response and Stop checks run after
-it; Stop cannot seal a manifest.
+The C snapshot also reuses the existing `_COMPONENT_OWNERS` structural reader
+in that same synchronous turn, so a newly visible submitted-list owner cannot
+survive a stale earlier parent probe. A real browser regression resurrects
+that owner without changing C identities. Only local sticky parent-route,
+binding, late-response and Stop checks run afterwards; Stop cannot seal a manifest.
 
 **Combined history is deliberately not claimed.** If a C fact was already
 offered and L7 or L8 history is requested, drain marks the attempt incomplete

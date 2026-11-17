@@ -291,6 +291,10 @@ _L10C_HISTORY = """(d) => {
  const snapshot=()=>{
    if(d!==document){state.changed=true;return false;}
    if(!state.available||roles.some(role=>!role))return false;
+   // Reuse the existing parent structural reader in this same synchronous
+   // sample, including the final C+clock RPC. Never trust an earlier parent.
+   const owners=(""" + _COMPONENT_OWNERS + """)();
+   if(owners.source_owner!==false||owners.detail_owner!==true){state.changed=true;return false;}
    if(roles.some(role=>!role.isConnected||role.ownerDocument!==d)){state.changed=true;return false;}
    const unique=selectors.slice(0,4).every((selector,index)=>{
      const nodes=d.querySelectorAll(selector);return nodes.length===1&&nodes[0]===roles[index];});
