@@ -11,8 +11,8 @@ from coretax_corporate import observe_forms
 from coretax_json import adapt_corporate_detail, JsonSafetyError
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from l1d_observer_fixture import Fixture as BaseFixture, ASSET
-from test_corporate_l11b_hydrated import populated, primary, tables
-from test_corporate_l11b_projection import selected, route
+from test_corporate_l11b_hydrated import populated, primary, tables, selected_hydrated
+from test_corporate_l11b_projection import route
 from test_json_hybrid_native import browser as browser
 import support_json_corpus as corpus
 
@@ -21,7 +21,7 @@ class Fixture(BaseFixture):
     def __init__(self, browser, monkeypatch, *, part_ii=True, defect=None):
         self.part_ii = part_ii
         super().__init__(browser, monkeypatch, defect=defect)
-        self.record = selected()
+        self.record = selected_hydrated()
         self.raw = primary(populated(**({} if part_ii else {'BorrowingCostExpense': corpus.Number('1')})))['body']
         monkeypatch.setattr(projection, 'BUILD_DIGESTS', {url: digest for url, digest in self.pins.items()
                                                        if url != projection.VENDOR_SOURCE})
@@ -68,6 +68,7 @@ def opened(fixture, capture):
         corpus.TAXPAYER_ID, corpus.RECORD_ID, json_capture=capture)
     assert page is fixture.page and popup is False
     page.wait_for_function('window.primaryDone===true')
+    assert capture.observe_component_lifetime() is not None, 'Fixture must own a fresh ICT_RCIT/ICT_RCITR SPA'
     return page
 
 

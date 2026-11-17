@@ -6,7 +6,8 @@ import pytest
 
 from coretax_json import _CorporateNumber as Number, _UnsupportedMetadata
 import support_json_corpus as corpus
-from test_corporate_l11b_projection import (module, form, primary, observed, adapt, route)
+from test_corporate_l11b_projection import (module, form, primary, observed, adapt as legacy_adapt,
+                                           route, selected)
 
 
 DEBT_HEADERS = ['PEMBERI PINJAMAN / ' + label for label in ('Nomor Identitas', 'Nama', 'Hubungan')] + [
@@ -14,6 +15,18 @@ DEBT_HEADERS = ['PEMBERI PINJAMAN / ' + label for label in ('Nomor Identitas', '
     [*[f'Bulan - {month}' for month in range(1, 13)], 'RATA-RATA']]
 EQUITY_HEADERS = ['RINCIAN MODAL'] + ['SALDO MODAL TIAP AKHIR BULAN (Rp) / ' + label for label in
     [*[f'Bulan - {month}' for month in range(1, 13)], 'RATA-RATA']]
+
+
+def selected_hydrated():
+    record = selected()
+    # This source owner is mandatory for the manifest's existing SPA lifetime.
+    # The restricted-v1 fixtures intentionally do not require that capability.
+    record['source_fields']['ReturnSheetTypeCode'] = 'ICT_RCITR'
+    return record
+
+
+def adapt(forms=None, packet=None):
+    return legacy_adapt(forms=forms, packet=packet, record=selected_hydrated())
 
 
 def populated(**overrides):
@@ -118,7 +131,8 @@ def test_empty_monthly_getters_preserve_original_null_vs_array(value):
     ('Average', None, 'amount_type'), ('DebtMonth1', None, 'amount_type'),
     ('DebtMonth1', '', 'amount_type'), ('Average', True, 'amount_type'),
     ('Average', '1000', 'amount_type'), ('DebtMonth1', Number('-0'), 'signed_zero'),
-    ('DebtMonth1', Number('9007199254740992'), 'amount_precision'),
+    # The shared decimal validator refuses >binary64-safe before L11-B's bound.
+    ('DebtMonth1', Number('9007199254740992'), 'amount_type'),
 ])
 def test_monthly_precision_and_null_are_not_editor_mean_permission(key, value, reason):
     source = populated()

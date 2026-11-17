@@ -173,6 +173,12 @@ failed with `Missing submitted hydrated L11-B projection` (callable(None)).
 The adapter/export cases also refused the new kind before implementation.
 Local checks during the implementation were source-only RED/AST; no local
 product import, copied product algorithm, pytest, fixture or EXE was executed.
+The retained JUnit from superseded run `44037723963` exposed a fixture missing
+`ReturnSheetTypeCode=ICT_RCITR`, which correctly prevented the existing SPA
+lifetime capability, plus an unsafe-number expectation masked by the earlier
+shared decimal guard. Correct the synthetic owner and exact refusal expectation;
+do not relax either production gate. A valid foreign 32-hex attempt, rather than
+an invalid-format stand-in, exercises the held mixed-attempt refusal.
 
 New synthetic cases cover literal Average versus editor means, duplicate
 monthly rows, overwritten saved EBITDA/footer/ratio controls, floor of negative
