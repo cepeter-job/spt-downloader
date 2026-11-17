@@ -14,7 +14,7 @@ from test_corporate_l7_native import selected
 from test_corporate_passive_catalogs import BASE, KINDS, catalog
 
 
-def case():
+def case(*, kinds=KINDS):
     record = selected()
     lifetime = primary()['context']['component_lifetime']
     provider = {'kind': 'corporate-reference-providers-v1', 'attempt': corpus.ATTEMPT,
@@ -23,7 +23,7 @@ def case():
     clock = {'attempt': corpus.ATTEMPT, 'start_ms': 1800000000000,
              'end_ms': 1800000001000, 'timezone': 'Asia/Jakarta'}
     raw = [primary()]
-    for index, kind in enumerate(KINDS, 2):
+    for index, kind in enumerate(kinds, 2):
         raw.append(packet({'IsSuccessful': True, 'Payload': catalog(kind)}, index,
                           BASE + kind, None, method='GET'))
     for value in raw:
@@ -36,7 +36,7 @@ def case():
             corpus.ATTEMPT, sequences, allow_corporate_reference=True)
         decoded[event['sequence']] = {'payload': envelope['Payload'], 'event': event, 'successful': True}
     refs = [{'endpoint': BASE + kind, 'method': 'GET', 'sequences': [index]}
-            for index, kind in enumerate(KINDS, 2)]
+            for index, kind in enumerate(kinds, 2)]
     return decoded.pop(1)['event'], decoded, refs
 
 

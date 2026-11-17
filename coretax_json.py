@@ -34,9 +34,18 @@ CORPORATE_L10_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentrefere
     for kind in ('COUNTRY_CODE', 'RELATIONSHIP_TYPE', 'TRANSACTION_TYPE', 'PRICING_METHOD')}
 CORPORATE_L4_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
     for kind in ('TAX_OBJECT_CODE', 'INCOME_EXCLUDED_FROM_TAX_FOR_CIT')}
+CORPORATE_L2_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('COUNTRY_CODE', 'RELATED_PERSON_TYPE')}
+CORPORATE_L9_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('TANGIBLE_ASSET', 'GROUP_OF_BUILDINGS', 'INTANGIBLE_ASSET',
+                 'COMMERCIAL_METHOD', 'FISCAL_METHOD')}
+CORPORATE_INDUK_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('CIT_TAX_RATE',)}
 CORPORATE_REFERENCE_REQUESTS = {url: (kind,) for kind, url in
     {**CORPORATE_L3_REFERENCE_URLS, **CORPORATE_L11A_REFERENCE_URLS,
-     **CORPORATE_L10_REFERENCE_URLS, **CORPORATE_L4_REFERENCE_URLS}.items()}
+     **CORPORATE_L10_REFERENCE_URLS, **CORPORATE_L4_REFERENCE_URLS,
+     **CORPORATE_L2_REFERENCE_URLS, **CORPORATE_L9_REFERENCE_URLS,
+     **CORPORATE_INDUK_REFERENCE_URLS}.items()}
 CORPORATE_REFERENCE_REQUESTS[ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'DEDUCTION_METHOD,TYPE_OF_FULFILLMENT'] = ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')
 CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-{index}-grid'
@@ -265,7 +274,8 @@ def _reference_consumer_order(details, kind):
                 'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT',
                 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES',
                 *CORPORATE_L11A_REFERENCE_URLS, *CORPORATE_L10_REFERENCE_URLS,
-                *CORPORATE_L4_REFERENCE_URLS}
+                *CORPORATE_L4_REFERENCE_URLS, *CORPORATE_L2_REFERENCE_URLS,
+                *CORPORATE_L9_REFERENCE_URLS, *CORPORATE_INDUK_REFERENCE_URLS}
     if (kind not in ordinary or not isinstance(details, list)
             or any(not isinstance(row, dict) or type(row.get('CodeDescription')) is not str for row in details)):
         raise _UnsupportedMetadata('unsupported_reference_cache_order')
@@ -965,7 +975,11 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
     reference = reference or (allow_corporate_reference is True and endpoint in CORPORATE_REFERENCE_REQUESTS
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
                  and (endpoint not in ({url for kind, url in CORPORATE_L10_REFERENCE_URLS.items()
-                                      if kind != 'COUNTRY_CODE'} | set(CORPORATE_L4_REFERENCE_URLS.values()))
+                                      if kind != 'COUNTRY_CODE'} | set(CORPORATE_L4_REFERENCE_URLS.values())
+                                      | {url for kind, url in CORPORATE_L2_REFERENCE_URLS.items()
+                                         if kind != 'COUNTRY_CODE'}
+                                      | set(CORPORATE_L9_REFERENCE_URLS.values())
+                                      | set(CORPORATE_INDUK_REFERENCE_URLS.values()))
                       or 'request_json' in ctx)
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_RCIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_RCITR')

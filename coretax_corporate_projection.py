@@ -10,7 +10,8 @@ from coretax_json import (ORIGIN, CORPORATE_COUNTRY_REFERENCE_URL, JsonSafetyErr
                           CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL,
                           CORPORATE_L11A_REFERENCE_URLS, CORPORATE_L11A_GRID_URLS,
                           CORPORATE_REFERENCE_REQUESTS, CORPORATE_L10_REFERENCE_URLS,
-                          CORPORATE_L4_REFERENCE_URLS, CORPORATE_L10A_GRID_URL,
+                          CORPORATE_L4_REFERENCE_URLS, CORPORATE_L2_REFERENCE_URLS,
+                          CORPORATE_L9_REFERENCE_URLS, CORPORATE_INDUK_REFERENCE_URLS,
                           _CorporateNumber, _UnsupportedMetadata, _corporate_json,
                           _corporate_request_key, _corporate_integer,
                           _select_reference_version, _reference_consumer_order, _reference_locale)
@@ -721,7 +722,9 @@ def _project_corporate_catalog(payload, *, kind, clock_interval=None, requested_
     _reference_locale(payload)
     requested = (kind,) if requested_types is None else tuple(requested_types)
     if (kind not in {*CORPORATE_L3_REFERENCE_URLS, *CORPORATE_L11A_REFERENCE_URLS,
-                    *CORPORATE_L10_REFERENCE_URLS, *CORPORATE_L4_REFERENCE_URLS}
+                    *CORPORATE_L10_REFERENCE_URLS, *CORPORATE_L4_REFERENCE_URLS,
+                    *CORPORATE_L2_REFERENCE_URLS, *CORPORATE_L9_REFERENCE_URLS,
+                    *CORPORATE_INDUK_REFERENCE_URLS}
             or requested not in ((kind,), ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT'))
             or kind not in requested or not isinstance(payload, list) or len(payload) != len(requested)
             or any(not isinstance(item, dict) or type(item.get('ReferenceDataType')) is not str
@@ -756,16 +759,25 @@ def _project_corporate_catalog(payload, *, kind, clock_interval=None, requested_
         groups.setdefault(row['Code'], []).append((index, row))
     lookups, selected = {}, {}
     for code, candidates in groups.items():
-        index, row, rule = _select_reference_version(candidates, clock_interval)
+        # w1.getFullPosition uses ordered .find, NOT the active-version service.
+        # L2 retains its separate duplicate refusal through requires_vendor.
+        if kind == 'RELATED_PERSON_TYPE':
+            index, row = candidates[0]
+            rule = 'first-ordered-code-match'
+        else:
+            index, row, rule = _select_reference_version(candidates, clock_interval)
         lookups[code] = row['CodeDescription']
         entry = descriptions[index]
         entry['rule'] = ('reviewed-country-active-version:' if kind == 'COUNTRY_CODE'
+                         else 'reviewed-related-person-' if kind == 'RELATED_PERSON_TYPE'
                          else 'reviewed-corporate-catalog-active-version:') + rule
         entry['catalog_order_rule'] = order_rule
-        if clock_interval is not None and rule not in ('first-open-ended', 'only-version'):
+        if clock_interval is not None and rule not in ('first-open-ended', 'only-version',
+                                                       'first-ordered-code-match'):
             entry['clock_interval'] = dict(clock_interval)
         selected[code] = deepcopy(entry)
     return {'lookups': lookups, 'provenance': evidence, 'selected': selected,
+            'raw_catalog': deepcopy(catalog), 'catalog_index': catalog_index,
             'requires_vendor': any(len(items) > 1 for items in groups.values())}
 
 
