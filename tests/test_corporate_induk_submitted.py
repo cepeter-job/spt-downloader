@@ -5,7 +5,7 @@ import json
 import pytest
 
 import coretax_corporate_projection as projection
-from coretax_json import adapt_corporate_detail
+from coretax_json import JsonSafetyError, adapt_corporate_detail
 import support_json_corpus as corpus
 from test_corporate_induk_projection import main_form
 from test_corporate_l7_native import FRAME, REQUEST, selected
@@ -51,7 +51,8 @@ def bindings():
         'primary': {'endpoint': corpus.PRIMARY_URL, 'request_json': dict(REQUEST)},
         'projection': {'kind': 'corporate-induk-submitted-v2',
             'builds': dict(projection.L11C_BUILD_DIGESTS), 'route': DETAIL,
-            'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}}]
+            'locale': 'id-ID', 'timezone': 'Asia/Jakarta',
+            'controls': [s[1] for s in SLOTS]}}]
 
 
 def packet(value=None):
@@ -142,6 +143,23 @@ def test_unproved_profile_or_capability_refuses(defect):
     raw = packet(value)
     if defect == 'missing-component': del raw['context']['component_lifetime']
     result = adapt(raw, observed)
+    assert not result['eligible'] and result['sections'] == []
+
+
+@pytest.mark.parametrize(('outer', 'inner'), [
+    ('PeriodYear', 'TaxYear'), ('PeriodMonthStart', 'AccountingPeriodStart'),
+    ('PeriodMonthEnd', 'AccountingPeriodEnd'), ('ReturnSheetModel', 'Status'),
+    ('TIN', 'Tin'), ('Name', 'Name'), ('Email', 'EmailAddress'), ('PhoneNumber', 'PhoneNumber')])
+def test_base_form_identity_overwrite_cannot_leave_a_stale_main_identity(outer, inner):
+    value = source()
+    current = json.loads(value['Payload']['CurrentFormData'])
+    current['MainFormData'][inner] = 'SYNTHETIC STALE' if outer not in ('TIN', 'PeriodYear') else None
+    value['Payload']['CurrentFormData'] = corpus.wire(current)
+    if outer == 'TIN':
+        with pytest.raises(JsonSafetyError, match='taxpayer number contradicts'):
+            adapt(packet(value))
+        return
+    result = adapt(packet(value))
     assert not result['eligible'] and result['sections'] == []
 
 
