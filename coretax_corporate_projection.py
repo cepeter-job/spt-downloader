@@ -886,16 +886,28 @@ def l10b_nondisplay_covered(section, provenance):
             or report['kind'] != L10B_KIND or not _l10b_pins(report['builds'])
             or not isinstance(report['values'], list) or not isinstance(report['presence_facts'], list)):
         return False
+    if not report['values'] or not isinstance(report['values'][0], dict):
+        return False
+    sequence = report['values'][0].get('response_sequence')
+    if type(sequence) is not int or sequence < 1:
+        return False
+    # Select the one original report-bound event before reconstruction. An
+    # earlier admitted catalog is not a competing primary; mixed report values
+    # and duplicate/conflicting events for this sequence are still refused.
     events = [event for event in provenance.get('events', []) if isinstance(event, dict)
               and event.get('attempt') == report['attempt'] and event.get('frame_url') == report['route']
-              and event.get('corporate_l10b_lifetime') is not None
-              and event.get('component_lifetime') is not None]
+              and type(event.get('sequence')) is int and event['sequence'] == sequence]
+    if len(events) != 1:
+        return False
     for event in events:
         # Rebuild the admission from typed retained originals; a partial report
         # or a changed lifecycle predicate must not become a gate exemption.
         root, payload = {}, {}
         try:
             from coretax_json import _capture_component_lifetime, _capture_l10b_lifetime
+            if (event.get('url') != ORIGIN + '/returnsheet/api/prefillreturnsheet/corporate-income'
+                    or event.get('method') != 'POST'):
+                return False
             options = {'attempt': event['attempt'], 'record_id': event['record_id'],
                        'source_url': event['component_lifetime']['source_url'], 'detail_url': event['frame_url']}
             _capture_component_lifetime(event['component_lifetime'], **options)

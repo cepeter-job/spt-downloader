@@ -43,9 +43,11 @@ owned enabled tab/panel boundaries, detects transient removal/replacement,
 duplicates and disable/re-enable, and refuses unknown custom-form ancestry.
 The relevant-structure budget is 4096; browser query/observer allocations are
 not claimed as a hard memory cap. It reads no input/checked/business values.
-Final sampling is the last browser RPC inside the existing late-response drain
-fence. Missing/unavailable proof cannot authorize the new branch; known changed
-custody remains fatal. Old captures and unrelated native capabilities remain
+Final sealing now samples every requested retained L7/L8/L10-B history and the
+coarse parent/Document binding together in **one synchronous browser RPC**,
+inside the existing late-response drain fence. Earlier per-child reads are only
+candidates, not final authority. Missing/unavailable proof cannot authorize the
+new branch; known changed custody remains fatal. Old captures and unrelated native capabilities remain
 readable. Both live and held readers reject descriptor overrides and validate
 the manifest fact; absence-inclusive packet fingerprints reject mixed evidence.
 
@@ -66,6 +68,76 @@ gates are unchanged. `_display_sections`, workbook proof/index namespaces and
 historical links are untouched: new workbooks still omit literal L10-B/L10-D,
 while private checkpoints and published original JSON keep their custody.
 No worksheet mapping-complete claim or new transport/reference permission follows.
+
+## Review findings and correction
+
+The earlier successful run **44022505547**, head
+`d69e050dd964a4a34f9888bce43949ff6e37f21e`, is historical synthetic evidence,
+not clearance of the two independently confirmed review findings:
+
+1. **P1 — stale sibling custody.** The earlier drain sampled L7 before later
+   L10-B parent/child RPCs. A pure L7 structural change in those RPCs required no
+   network event, so the local request/sequence fence could not invalidate the
+   already-positive L7 fact. L7 also had an older post-sample parent-probe window;
+   the combined profile added later opportunities, rather than creating that
+   older window. Reordering sequential samples only transfers the defect.
+2. **P2 — earlier non-primary event.** A legitimate earlier admitted catalog
+   shared the attempt, frame and manifest lifetime. The dump gate tried that
+   event first and returned false on its sequence mismatch before considering
+   the actual primary bound by the report.
+
+The correction keeps the existing child-specific histories and typed manifest
+contracts. `_FINAL_LIFETIMES` receives only their actual retained handles (or null
+for an unrequested child) plus the retained Document. It drains each history and
+reads the existing coarse parent structure in one synchronous turn. There is no
+await, new page-side registry, speculative sibling capability or supplied
+boolean authority. `_final_lifetimes` can only **narrow** already-produced
+candidates; it checks changed child states before optional-unavailable exits.
+Only local Stop, binding/sticky-state, pending/sequence checks and file I/O follow
+that final RPC. L8 handle acquisition now retains its result before the
+post-RPC Stop check, matching L7/L10-B cleanup ownership.
+
+The report gate first selects exactly one positively typed original response
+sequence with the report's attempt/route, then requires the original primary
+POST, both strict lifetimes, typed source reconstruction, exact pins, positive
+presence facts and the unchanged raw table. Missing, mixed or duplicate/conflicting
+bound evidence is refused; it does not generically skip contradictions to find a
+passing event. No transport, original-data, worksheet or native-profile contract
+is broadened.
+
+Focused synthetic coverage lives in:
+
+- `tests/test_corporate_l10b_final_snapshot.py`: actual negative-L7 AND L10-B
+  observer bindings, real MutationObservers, network-free structural mutations
+  during final B evaluation, the inverse window, last-parent mutation,
+  unchanged dual-positive held replay, and late optional L7 unavailability that
+  cannot be dropped to accept native.
+- `tests/test_corporate_final_lifetimes.py`: final snapshot/parent/child refusal,
+  optional unavailable/malformed states, known-change priority, Stop, late JSON
+  and excluded-MIME replies, acquisition and cleanup. Its protocol-only
+  all-history case is not admission of mutually exclusive L7/L8 source profiles.
+- `tests/test_corporate_l10b_nondisplay.py`: legitimately admitted catalog-before-
+  primary adapter-to-gate positive, strict report sequence/attempt and duplicate
+  event negatives, and refusal to rebind primary values to a catalog event.
+
+The first hosted test run **44029879973** established P2 RED, but its first
+P1 hook targeted only the Document subclass rather than the plain history
+handles. Those P1 failures are **not** accepted as reproduction evidence. The
+corrected test hooks their shared JSHandle base, asserts that all three handles
+are intercepted, and independently requires the real history to witness the
+injected mutation outside production's unavailable-driver exception policy.
+The short superseded run **44032703379** was cancelled by that test correction.
+Corrected hosted **RED: run 44032924361**, test-only head
+`ca32bd66d0ecf4569fb69e7793fee67ed1603afd`. The real B-evaluation and last-parent
+L7 mutation cases both failed with `DID NOT RAISE JsonSafetyError`; the unchanged
+and inverse cases passed. The catalog-before-primary positive failed at the dump
+gate. The complete four-shard JUnit readback contained 249 focused cases, 27
+expected failures across the new final-snapshot/cleanup and report regressions,
+zero errors/skips. That run exercised unchanged production, before the correction.
+
+Final exact-head GREEN, run/head identities and downloaded four-shard JUnit
+readback belong to the verification ledger on PR #282. Local AST/source
+inspection is never reported as executed RED or GREEN.
 
 ## Verification and outstanding deliverables
 

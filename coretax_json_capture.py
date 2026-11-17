@@ -55,6 +55,17 @@ _COMPONENT_OWNERS = """() => {
  return {source_owner:count('rshshr-submitted-returnsheets')===1,
          detail_owner:count('rshshr-corporate-income-tax-return')===1};
 }"""
+_FINAL_LIFETIMES = """(d, histories) => {
+ // corporate-final-lifetimes: one synchronous turn, not successive RPCs.
+ // Only these already-owned history handles can supply child facts. Each
+ // sample drains its MutationObserver; an unavailable sibling cannot hide a
+ // changed one. No async work, DOM writes or business-value reads occur here.
+ const read=h=>{if(!h)return null;try{return h.sample();}catch{return null;}};
+ const l8=read(histories.l8),l7=read(histories.l7),l10b=read(histories.l10b);
+ let owners=null;
+ try{owners=(""" + _COMPONENT_OWNERS + """)();}catch{}
+ return {same_document:d===document,owners,l8,l7,l10b};
+}"""
 _L7_HISTORY = """(d) => {
  // corporate-l7-history: independent of the L8 all-DOM budget.
  const selectors=['rshshr-corporate-income-tax-return','rshshr-citr-l7-form',
@@ -600,8 +611,10 @@ class DetailJsonCapture:
             self._l10b_history = self._component_document.evaluate_handle(_L10B_HISTORY)
             return self._l10b_history
         self._l7_probe(retain_l10b_history)
-        self._l8_history = self._component_probe(
-            lambda: self._component_document.evaluate_handle(_L8_HISTORY))
+        def retain_l8_history():
+            self._l8_history = self._component_document.evaluate_handle(_L8_HISTORY)
+            return self._l8_history
+        self._component_probe(retain_l8_history)
         owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
         same = self._component_probe(lambda: self._component_document.evaluate('(d) => d === document'))
         if owners != {'source_owner': True, 'detail_owner': False} or same is not True:
@@ -729,8 +742,8 @@ class DetailJsonCapture:
         self._verify_binding()
         if self._component_invalid:
             raise JsonSafetyError('Observed submitted component lifetime changed')
-        # This child sample is the final browser RPC: another component probe
-        # here could pump an unobserved child replacement before manifest seal.
+        # Candidate only. Drain later samples ALL requested children and the
+        # parent together, in its final synchronous browser RPC.
         if self._l10b_unavailable or not state or not state['complete']:
             return None
         return _capture_l10b_lifetime({'kind': 'corporate-l10b-spa-v1', 'attempt': self.attempt,
@@ -858,6 +871,53 @@ class DetailJsonCapture:
             'fresh_root': True, 'stable_root': True, 'no_dependent_forms': True},
             attempt=self.attempt, record_id=self.record_id,
             source_url=self.source_url, detail_url=self._bound_url)
+
+    def _final_lifetimes(self, lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, *, check_cancel=None):
+        """Only narrow candidates, with every requested history in one last RPC.
+
+        Separate child/parent probes can pump a change to an already sampled
+        sibling. This fixed snapshot also closes L7's pre-existing post-sample
+        parent-probe window. After it, sealing performs only local checks/I/O.
+        """
+        self._cancel(check_cancel)
+        if not self._component_started or self._component_document is None:
+            return None, None, None, None
+        sample = self._l7_probe(lambda: self._component_document.evaluate(_FINAL_LIFETIMES, {
+            'l8': self._l8_history if self._l8_requested else None,
+            'l7': self._l7_history if self._l7_requested else None,
+            'l10b': self._l10b_history if self._l10b_requested else None}), check_cancel)
+        self._verify_binding()
+        if self._component_invalid:
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        sample = sample if isinstance(sample, dict) else {}
+        # Check known child changes even when another proof is unavailable or
+        # the surrounding reply is malformed; never discard a negative offer
+        # just to accept its sibling.
+        l7 = self._l7_state(sample.get('l7')) if self._l7_requested else None
+        l10b = self._l10b_state(sample.get('l10b')) if self._l10b_requested else None
+        l8 = sample.get('l8')
+        l8_valid = (isinstance(l8, dict) and set(l8) == {
+            'initial_clear', 'root_seen', 'root_changed', 'dependent_seen'}
+            and all(type(value) is bool for value in l8.values()))
+        if self._l8_requested and l8_valid and l8['root_changed']:
+            raise JsonSafetyError('Observed corporate L8 root history changed')
+        if set(sample) != {'same_document', 'owners', 'l8', 'l7', 'l10b'}:
+            return None, None, None, None
+        owners = {'source_owner': False, 'detail_owner': True}
+        if (sample['same_document'] is False
+                or self._component_observed and sample['owners'] != owners):
+            raise JsonSafetyError('Observed submitted component lifetime changed')
+        if lifetime is None or sample['same_document'] is not True or sample['owners'] != owners:
+            return None, None, None, None
+        if not l7 or self._l7_unavailable or not l7['available'] or not l7['complete']:
+            l7_lifetime = None
+        if not l10b or self._l10b_unavailable or not l10b['available'] or not l10b['complete']:
+            l10b_lifetime = None
+        if not l8_valid or not l8['initial_clear'] or not l8['root_seen'] or l8['dependent_seen']:
+            l8_lifetime = None
+        # A final snapshot cannot create a capability that was not offered by
+        # its own observer, or repair an unavailable parent/child candidate.
+        return lifetime, l8_lifetime, l7_lifetime, l10b_lifetime
 
     def _candidate(self, target, frame):
         return (target.context is self.context and frame is target.main_frame
@@ -1080,6 +1140,8 @@ class DetailJsonCapture:
         l8_lifetime = self.observe_l8_lifetime(check_cancel=check_cancel) if self._l8_requested else None
         l7_lifetime = self.observe_l7_lifetime(check_cancel=check_cancel) if self._l7_requested else None
         l10b_lifetime = self.observe_l10b_lifetime(check_cancel=check_cancel) if self._l10b_requested else None
+        lifetime, l8_lifetime, l7_lifetime, l10b_lifetime = self._final_lifetimes(
+            lifetime, l8_lifetime, l7_lifetime, l10b_lifetime, check_cancel=check_cancel)
         self._cancel(check_cancel)
         self._verify_binding()
         if self._requests or self._seen != seen_before_clock:
