@@ -368,6 +368,37 @@ def test_projected_l2_section_replaces_the_affiliate_dump_leaves():
     assert len(projected['values']) == len(project()['provenance'])
 
 
+@pytest.mark.parametrize('body,reason', [
+    ('ListOfShareholders', 'unprojected_corporate_l2_shareholder_body'),
+    ('InvestmentList', 'unverified_corporate_l2_affiliate_rendering'),
+])
+def test_populated_owner_blocks_refuse_until_render_equivalence_is_proven(body, reason):
+    value = form(ListOfShareholders=None, InvestmentList=None)
+    value[body] = [shareholder() if body == 'ListOfShareholders' else affiliate(1)]
+    with pytest.raises(_UnsupportedMetadata, match=reason):
+        project(value)
+
+
+@pytest.mark.parametrize('digest', ['a' * 64, None, 'APPROVED'])
+def test_l2_positive_build_proof_requires_the_reviewed_configured_digest(digest):
+    forms = observed()
+    binding, = [item for item in forms if item['name'] == 'L2']
+    binding['projection']['builds'] = {module_or('CIT_SOURCE'): digest}
+    result = adapt(forms)
+    assert not result['eligible']
+    assert result['reason'] == 'unverified_corporate_l2_binding'
+
+
+def test_l2_missing_pin_and_missing_asset_never_form_a_positive_build_proof(monkeypatch):
+    forms = observed()
+    monkeypatch.setattr(module(), 'BUILD_DIGESTS', {})
+    binding, = [item for item in forms if item['name'] == 'L2']
+    binding['projection']['builds'] = {module_or('CIT_SOURCE'): None}
+    result = adapt(forms)
+    assert not result['eligible']
+    assert result['reason'] == 'unverified_corporate_l2_binding'
+
+
 def test_l2_projection_does_not_mutate_source_bindings_or_payload():
     forms = observed()
     before = deepcopy(forms)
@@ -405,7 +436,9 @@ def test_projected_l2_binds_every_affiliate_cell_and_reports_the_partial_block(t
         assert sheet.cell(first, 6).number_format == '0.00%'
         assert sheet.cell(first, 6).value == 0.25
         assert sheet.cell(first, 8).value == '2025' and sheet.cell(first, 8).data_type == 's'
-        total = next(row for row in range(1, sheet.max_row + 1)
+        # The approved L2 sheet has two JUMLAH rows. Bind block B's
+        # footer after its actual populated body, never block A's first total.
+        total = next(row for row in range(first + 2, sheet.max_row + 1)
                      if sheet.cell(row, 1).value == 'JUMLAH')
         assert sheet.cell(total, 7).value == 2500
         assert sheet.cell(total, 10).value == 8000
