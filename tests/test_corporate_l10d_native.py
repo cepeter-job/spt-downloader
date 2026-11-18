@@ -74,6 +74,29 @@ def test_original_custody_is_retained_but_final_selection_is_explicitly_unsuppor
     assert (record, raw, observed) == before
 
 
+def test_absent_outer_flag_is_proven_by_the_enabled_owner_and_retained_as_absent():
+    value_source = envelope()
+    del value_source['Payload']['IsObligationTransferPricing']
+    observed = bindings()
+    observed[1]['original_custody']['visibility_binding'] = 'current-induk-enabled-v1'
+    result = adapt_corporate_detail([packet(value_source)], selected(), corpus.SCOPE, observed)
+    assert result['eligible']
+    candidate, = result['provenance']['non_display_originals']
+    outer = [item for item in candidate['predicate_values']
+             if item['path'] == ['IsObligationTransferPricing']]
+    assert [(item['present'], item['type'], item['value']) for item in outer] == [(False, 'absent', None)]
+    current = [item for item in candidate['predicate_values']
+               if item['path'] == ['MainFormData', 'IsObligationTransferPricing']]
+    assert [(item['present'], item['type'], item['value']) for item in current] == [(True, 'number', '1')]
+
+
+def test_absent_outer_flag_without_the_owned_binding_still_refuses():
+    value_source = envelope()
+    del value_source['Payload']['IsObligationTransferPricing']
+    result = adapt_corporate_detail([packet(value_source)], selected(), corpus.SCOPE, bindings())
+    assert not result['eligible'] and 'unverified_corporate_l10d_source_profile' in result['reason']
+
+
 @pytest.mark.parametrize('owner', ['outer', 'current'])
 @pytest.mark.parametrize('value', [None, False, True, '1', 0, 2, corpus.Number('1.0')])
 def test_unreviewed_flag_profile_does_not_turn_into_native_permission(owner, value):

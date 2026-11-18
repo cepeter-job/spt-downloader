@@ -330,10 +330,15 @@ def collect_original_custody(binding, observed_forms, *, root, payload, record, 
                        'ReturnSheetModel'), ['Payload'], []),
             (root['MainFormData'], (FLAG,), ['Payload', 'CurrentFormData'], ['MainFormData'])):
         for key in keys:
-            value = owner[key]
-            predicates.append({'container': list(container), 'path': [*prefix, key], 'present': True,
-                'type': 'null' if value is None else 'number' if type(value) is _CorporateNumber else 'string',
-                'value': str(value) if type(value) is _CorporateNumber else value,
+            # An absent outer flag is a retained fact, not a crash: the absent-outer
+            # selector above already proved it through the enabled L10-D owner.
+            present = key in owner
+            value = owner.get(key)
+            predicates.append({'container': list(container), 'path': [*prefix, key], 'present': present,
+                'type': ('absent' if not present else 'null' if value is None
+                         else 'number' if type(value) is _CorporateNumber else 'string'),
+                'value': (None if not present else
+                          str(value) if type(value) is _CorporateNumber else value),
                 'response_sequence': event['sequence'], 'rule': 'retained-original-custody-predicate'})
     return {'form': 'L10-D', 'kind': KIND, 'builds': dict(offer['builds']),
         'native_admission': False, 'blocker': FINAL_CUSTODY_BLOCKER,
