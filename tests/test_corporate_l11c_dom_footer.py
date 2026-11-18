@@ -91,7 +91,9 @@ def test_observed_dom_l11c_footer_is_bound_to_reviewed_merged_total(tmp_path, la
 
 @pytest.mark.parametrize('footer,spans', [
     (['', 'UNREVIEWED TOTAL', *FOOTER[2:]], None),
+    (['', 'total', *FOOTER[2:]], None),
     (FOOTER, [1, 4, 2, *([1] * 9)]),
+    ([None, *FOOTER[1:]], None),
     (['UNEXPECTED PREFIX', *FOOTER[1:]], None),
 ])
 def test_unproved_l11c_footer_keeps_raw_and_does_not_claim_mapping(tmp_path, footer, spans):

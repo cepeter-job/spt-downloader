@@ -551,13 +551,13 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
         for value, span in zip(values, widths):
             if value not in ('', None):
                 if ((form, block, index, column, span) == ('l11-c', 0, 0, 2, 5)
-                        and _label(value) == 'total'):
+                        and value == 'TOTAL'):
                     # The observed DOM footer has a blank A prefix and TOTAL
                     # spanning B:F; the reviewed reference merges A:F as JUMLAH.
                     # This exception is exact-shape and L11-C only. Source
                     # text/colspans remain untouched in the saved checkpoint.
-                    if (widths != [1, 5, *([1] * 10)] or values[0] not in ('', None)
-                            or _label(sheet.cell(row, 1).value) != 'jumlah'
+                    if (widths != [1, 5, *([1] * 10)] or values[0] != ''
+                            or sheet.cell(row, 1).value != 'JUMLAH'
                             or not any(region.min_row == region.max_row == row
                                        and region.min_col == 1 and region.max_col == 6
                                        for region in sheet.merged_cells.ranges)):
