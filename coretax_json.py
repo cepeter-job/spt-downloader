@@ -1676,9 +1676,21 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                 candidate = collect_original_custody(binding, observed_forms, root=root,
                     payload=payload, record=record, event=event)
                 provenance.setdefault('non_display_originals', []).append(candidate)
-                reasons.append(FINAL_CUSTODY_BLOCKER)
+                # Approved 2026-11-18: L10-D is non-display custody. Its raw
+                # originals stay sealed and its admission stays False, but the
+                # unobserved final-Induk capability is reported as a partial
+                # rather than vetoing the whole record's native source.
+                provenance.setdefault('non_display_partials', []).append(
+                    {'kind': candidate['kind'], 'blocker': FINAL_CUSTODY_BLOCKER})
             except _UnsupportedMetadata as error:
                 reasons.append(str(error))
+    # Non-display custody (approved 2026-11-18 for L10-D) keeps its originals in
+    # `sections` for positional pairing but never publishes a worksheet.
+    non_display = {binding['name'] for binding in observed_forms
+                   if 'original_custody' in binding and 'projection' not in binding}
+    for section in sections:
+        if section.get('name') in non_display:
+            section['disabled'] = True
     if not reasons and primary_source is not None:
         from coretax_corporate_projection import apply_projections
         try:

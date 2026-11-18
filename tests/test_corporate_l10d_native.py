@@ -52,8 +52,12 @@ def test_original_custody_is_retained_but_final_selection_is_explicitly_unsuppor
     record, raw, observed = selected(), packet(), bindings()
     before = deepcopy((record, raw, observed))
     result = adapt_corporate_detail([raw], record, corpus.SCOPE, observed)
-    assert not result['eligible'] and result['sections'] == []
-    assert result['reason'] == 'unverified_corporate_l10d_final_selection_custody'
+    # Non-display decision (2026-11-18): the unobserved final selection is a
+    # recorded partial, never a record-level veto and never a worksheet section.
+    assert result['eligible']
+    assert 'L10-D' not in [section['name'] for section in result['sections']]
+    assert [item['blocker'] for item in result['provenance']['non_display_partials']] == [
+        'unverified_corporate_l10d_final_selection_custody']
     candidate, = result['provenance']['non_display_originals']
     assert candidate['form'] == 'L10-D' and candidate['native_admission'] is False
     assert candidate['kind'] == 'corporate-l10d-originals-v1'

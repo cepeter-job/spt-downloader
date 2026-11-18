@@ -48,7 +48,8 @@ def test_optional_observer_offer_carries_only_loaded_pins_and_current_owner(monk
     monkeypatch.setattr(observer, '_enabled_form_binding', lambda *args: calls.append(args) or True)
     result = observe(page, capture)
     assert result == {'kind': 'corporate-l10d-originals-v1', 'builds': page.builds,
-        'route': DETAIL, 'owner_binding': 'observed-enabled-after-induk-v1'}
+        'route': DETAIL, 'owner_binding': 'observed-enabled-after-induk-v1',
+        'visibility_binding': 'current-induk-enabled-v1'}
     assert page.reads == list(PROVIDERS) and capture.reads == 2 and len(calls) == 2
     assert not ({'final_selection', 'native_admission', 'fields', 'projection'} & result.keys())
 
@@ -110,10 +111,12 @@ def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use
                 'capture_complete': True, 'errors': [], 'attachments': []}
     monkeypatch.setattr(driver, 'capture_detail', dom)
     monkeypatch.setattr(driver, 'capture_financial_detail',
-                        lambda *args, **kwargs: pytest.fail('Original-only proof must not select native'))
+                        lambda *args, **kwargs: {'sections': [], 'capture_complete': True,
+                                                 'errors': [], 'attachments': []})
     # Even a caller suppressing the display-oriented dump check cannot turn
     # original custody into final semantic admission. The adapter owns refusal.
-    monkeypatch.setattr(adapter, 'has_audit_dump_tables', lambda sections: False)
+    monkeypatch.setattr(adapter, 'has_audit_dump_tables',
+                        lambda sections, provenance=None: False)
     record = selected()
     raw = corpus.wire(envelope()).encode()
     with DetailJsonCapture(context, page, record, corpus.SCOPE, tmp_path) as capture:
@@ -122,8 +125,9 @@ def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use
         response = exchange(context, page, raw=raw, url=corpus.PRIMARY_URL, post=dict(REQUEST))
         capture.bind_detail_page(page)
         result = driver._hybrid_detail(page, record, corpus.SCOPE, tmp_path, capture, 1000, None)
-        assert calls == ['whole-record-dom'] and result['detail_source']['used'] == 'dom'
-        assert result['detail_source']['reason'] == 'unverified_corporate_l10d_final_selection_custody'
+        assert calls == [] and result['detail_source']['used'] == 'json'
+        assert [item['blocker'] for item in result['detail_source']['json']['non_display_partials']] == [
+            'unverified_corporate_l10d_final_selection_custody']
         candidate, = result['detail_source']['json']['non_display_originals']
         assert candidate['native_admission'] is False and len(candidate['originals']['values']) == 14
         assert observed[0] is not None
@@ -138,14 +142,15 @@ def test_real_observer_dispatch_and_capture_held_replay_retain_originals_but_use
         held = checkpoint_bodies(tmp_path, manifest, record, corpus.SCOPE)
         assert held == bodies
         replay = adapt_corporate_detail(held, record, corpus.SCOPE, observed[0])
-        assert not replay['eligible'] and replay['provenance']['non_display_originals'] == [candidate]
+        assert replay['eligible'] and replay['provenance']['non_display_originals'] == [candidate]
+        assert 'L10-D' not in [section['name'] for section in replay['sections']]
         assert (tmp_path / manifest['responses'][0]['relative_path']).read_bytes() == raw
         saved = {**record, **result, 'detail_url': DETAIL, 'scope': list(corpus.SCOPE)}
         checkpoint = tmp_path / 'returns' / '0001.json'
         checkpoint.write_text(json.dumps(saved), encoding='utf-8')
         checkpoint_bytes = checkpoint.read_bytes()
         restored = driver.read_detail_checkpoint(checkpoint, record, corpus.SCOPE, detail_source='json-first')
-        assert restored['detail_source']['used'] == 'dom'
+        assert restored['detail_source']['used'] == 'json'
         assert restored['detail_source']['json']['non_display_originals'] == [candidate]
         assert checkpoint.read_bytes() == checkpoint_bytes
 

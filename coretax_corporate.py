@@ -1480,8 +1480,11 @@ def _observe_l10d_originals(page, form, tab, capture, digest, check_cancel, *, p
         return None
     if history_started:
         bind_history(form, tab, panel, phase='end', check_cancel=check_cancel)
+    # The enabled L10-D owner was rechecked twice above; an absent outer flag is
+    # therefore proven by that binding, never by an outer copy.
     return {'kind': KIND, 'builds': builds, 'route': page.url,
-            'owner_binding': 'observed-enabled-after-induk-v1'}
+            'owner_binding': 'observed-enabled-after-induk-v1',
+            'visibility_binding': 'current-induk-enabled-v1'}
 
 
 def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=1000, check_cancel=None):

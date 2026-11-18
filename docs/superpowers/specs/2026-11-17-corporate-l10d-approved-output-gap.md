@@ -11,6 +11,23 @@ Date: 2026-11-17. Inspected baseline: `f5e40a2a4e02f0b03dcec6126a6416b5e10b3bbe`
 (`origin/main`, including #267). This is an independent per-form deliverable,
 not permission to merge or consolidate the other native-form PRs.
 
+## Recorded scope of the decision (2026-11-18)
+
+The non-display decision is enforced as **custody without admission**, not as a
+record-level veto:
+
+- `collect_original_custody` keeps every raw L10-D original and the exact
+  `IsObligationTransferPricing` / `PreviousFormData` / `LastSubmittedFormData`
+  predicate evidence, and `native_admission` stays `False`.
+- An absent outer `IsObligationTransferPricing` is proven by the enabled L10-D
+  owner observed after Induk (`visibility_binding=current-induk-enabled-v1`);
+  a non-exact or conflicting outer value still refuses.
+- `unverified_corporate_l10d_final_selection_custody` is reported once in
+  `provenance.non_display_partials` instead of joining the adapter's fatal
+  reasons, and the L10-D section is marked `disabled` so no worksheet is
+  published. The record can therefore still be served from verified native
+  JSON while L10-D remains explicitly unadmitted.
+
 ## Decision and approval blocker
 
 Keep the existing fail-closed behavior. Do not add a projection, dummy `fields`,

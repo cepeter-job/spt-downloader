@@ -63,8 +63,10 @@ def test_well_formed_supplied_fact_is_retained_but_does_not_flip_unproduced_admi
     raw['context'][KEY] = value
     result = adapt_corporate_detail([raw], selected(), corpus.SCOPE, bindings())
     assert result['provenance']['events'][0][KEY] == value
-    assert not result['eligible']
+    assert result['eligible']
     assert result['provenance']['non_display_originals'][0]['native_admission'] is False
+    assert [item['blocker'] for item in result['provenance']['non_display_partials']] == [
+        'unverified_corporate_l10d_final_selection_custody']
 
 
 @pytest.mark.parametrize('defect', ['none', 'descriptor', 'null', 'no-parent', 'cross-attempt', 'false-final'])

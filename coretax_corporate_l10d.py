@@ -262,7 +262,8 @@ def validate_binding(binding):
             or any(key in binding for key in ('disabled', 'primary', 'projection', 'raw_negative_projection'))
             or any(binding.get(key) for key in ('grids', 'responses', 'dependencies'))
             or not isinstance(offer, dict)
-            or set(offer) != {'kind', 'builds', 'route', 'owner_binding'}
+            or set(offer) - {'visibility_binding'} != {'kind', 'builds', 'route', 'owner_binding'}
+            or 'visibility_binding' in offer and offer['visibility_binding'] != 'current-induk-enabled-v1'
             or offer['kind'] != KIND or type(offer['route']) is not str
             or offer['owner_binding'] != 'observed-enabled-after-induk-v1'
             or not isinstance(offer['builds'], dict)
@@ -278,6 +279,16 @@ def approved_builds(builds):
             and all(type(pins.get(url)) is str and re.fullmatch(r'[a-f0-9]{64}', pins[url])
                     and type(builds[url]) is str and re.fullmatch(r'[a-f0-9]{64}', builds[url])
                     and builds[url] == pins[url] for url in PROVIDERS))
+
+
+def _owned_enabled_flag(payload, main, offer):
+    """Exact `1` on both owners, or an absent outer proven by the enabled form."""
+    if type(main.get(FLAG)) is not _CorporateNumber or str(main[FLAG]) != '1':
+        return False
+    if FLAG not in payload:
+        return offer.get('visibility_binding') == 'current-induk-enabled-v1'
+    outer = payload[FLAG]
+    return type(outer) is _CorporateNumber and str(outer) == '1'
 
 
 def collect_original_custody(binding, observed_forms, *, root, payload, record, event):
@@ -305,8 +316,7 @@ def collect_original_custody(binding, observed_forms, *, root, payload, record, 
             or any(key not in payload or payload[key] is not None
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or not isinstance(root.get('MainFormData'), dict)
-            or any(type(owner.get(FLAG)) is not _CorporateNumber or owner[FLAG] != '1'
-                   for owner in (payload, root['MainFormData']))
+            or not _owned_enabled_flag(payload, root['MainFormData'], offer)
             or not any(form.get('name') == 'Induk'
                        for form in observed_forms[:observed_forms.index(binding)])
             or event.get('component_lifetime') is None):
