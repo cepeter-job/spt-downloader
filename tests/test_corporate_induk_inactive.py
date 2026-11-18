@@ -71,33 +71,74 @@ def test_original_zero_amounts_and_normal_null_are_a_fixed_point_not_radio_amoun
 @pytest.mark.parametrize('key', [*SELECTORS, *(control for _, control, _ in EXTRA[:3])])
 @pytest.mark.parametrize('value', [None, False, '0', 1, corpus.Number('-0'), corpus.Number('0.1')])
 def test_nonzero_coercive_or_absent_fixed_point_is_not_inactive_permission(key, value):
+    # A v3 structural claim is not permission to emit the inactive slots: any
+    # deviation from the original fixed point keeps the normal submitted
+    # projection (18 slots) and never invents inactive zeroes.
     raw = inactive_source()
     current = json.loads(raw['Payload']['CurrentFormData'])
     current['MainFormData'][key] = value
     raw['Payload']['CurrentFormData'] = corpus.wire(current)
     result = run_adapter(raw)
-    assert not result['eligible'] and result['sections'] == []
-    assert result['reason'] == 'unsupported_corporate_induk_inactive_profile'
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = result['sections']
+    assert len(section['fields']) == 18
+    report, = result['provenance']['projections']
+    assert report['inactive_profile'] is False
 
 
 @pytest.mark.parametrize('key', [*SELECTORS, *(control for _, control, _ in EXTRA)])
 def test_inactive_control_presence_is_original_not_a_null_or_zero_default(key):
+    # Absence is never a zero default: a missing inactive control drops the
+    # inactive projection but keeps the normal submitted slots.
     raw = inactive_source()
     current = json.loads(raw['Payload']['CurrentFormData'])
     del current['MainFormData'][key]
     raw['Payload']['CurrentFormData'] = corpus.wire(current)
     result = run_adapter(raw)
-    assert not result['eligible'] and result['reason'] == 'unsupported_corporate_induk_inactive_profile'
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = result['sections']
+    assert len(section['fields']) == 18
+    report, = result['provenance']['projections']
+    assert report['inactive_profile'] is False
 
 
 @pytest.mark.parametrize('value', [0, False, '0', -1])
 def test_normal_amendment_difference_must_already_be_literal_null(value):
+    # The amendment difference is only inactive when it is an explicit null;
+    # any other value keeps the normal submitted projection.
     raw = inactive_source()
     current = json.loads(raw['Payload']['CurrentFormData'])
     current['MainFormData']['UnderpaymentIncomeDueAmended'] = value
     raw['Payload']['CurrentFormData'] = corpus.wire(current)
     result = run_adapter(raw)
-    assert not result['eligible'] and result['reason'] == 'unsupported_corporate_induk_inactive_profile'
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = result['sections']
+    assert len(section['fields']) == 18
+    report, = result['provenance']['projections']
+    assert report['inactive_profile'] is False
+
+
+def test_live_shaped_real_income_with_v3_structure_projects_the_normal_slots():
+    # Live evidence (job e12d7da7): a submitted Normal corporate SPT renders
+    # every control disabled, so the observer claims v3 even when the record
+    # carries real income and a negative main. The inactive projection must
+    # stay value-gated, never structural, or the whole record falls back to DOM.
+    raw = inactive_source(NetIncomeBeforeTax=-9093013897, IncomeTaxInAYear=0,
+        TotalIncomeTaxOverseas=1191481236, InstallmentOfIncome=0,
+        NoticeOfCollection=0, UnderpaymentIncomeTax=-1191481236,
+        TotalApprovalInstallment=0, IncomeTaxMustPaid=0)
+    current = json.loads(raw['Payload']['CurrentFormData'])
+    current['MainFormData'].update(IsIncomeSubject=1, IsIncomeExcluded=1,
+        IsIncomeTaxDeduction=0, TotalIncomeSubject=1068935, TotalIncomeExcluded=0,
+        TotalIncomeTaxDeduction=0, UnderpaymentIncomeDueAmended=None)
+    raw['Payload']['CurrentFormData'] = corpus.wire(current)
+    result = run_adapter(raw)
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = result['sections']
+    assert len(section['fields']) == 18
+    report, = result['provenance']['projections']
+    assert report['kind'] == 'corporate-induk-submitted-v3'
+    assert report['inactive_profile'] is False
 
 
 class InactiveFixture(IndukFixture):

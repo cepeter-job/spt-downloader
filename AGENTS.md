@@ -217,6 +217,17 @@ and retain a visible Audit note and PARTIAL template mapping. Ten identity
 slots do not certify a complete Induk/Corporate worksheet or live acceptance.
 See [Induk projection design](docs/superpowers/specs/2026-11-16-badan-induk-native-projection.md).
 
+The `corporate-induk-submitted-v2`/`v3` amount branch adds eight submitted
+amount slots and, for v3, four inactive slots. A v3 structural claim (the four
+inactive controls present and disabled) is **not** permission to emit the
+inactive slots: a submitted `?view=true` render disables every control, so v3 is
+claimed for every submitted record. Select the inactive projection only when the
+original values are the exact fixed point (three selectors and three amounts are
+`_CorporateNumber` zero tokens, `UnderpaymentIncomeDueAmended` is explicit
+`null`); otherwise keep the normal 18-slot submitted projection and leave the
+inactive slots unprojected. Record `inactive_profile` in the projection report.
+See [Induk submitted v3 value gate](docs/superpowers/specs/2026-11-18-corporate-induk-submitted-v3-inactive-value-gate.md).
+
 The L7 corporate semantic branch has its own source-proven boundary. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
