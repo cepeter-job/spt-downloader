@@ -1,6 +1,12 @@
 # Corporate L10-D: proven source, unapproved output destination
 
-Status: **design proposal only; L10-D native output is not implemented or accepted**.
+Status: **DECIDED — the operator confirmed on 2026-11-18 that L10-D's original
+decision is non-display. L10-D therefore keeps fail-closed original custody and
+gains no worksheet, no projection and no native admission. This record stays as
+the evidence for that decision.**
+
+Original status line (unchanged proposal text follows): **design proposal only;
+L10-D native output is not implemented or accepted**.
 Date: 2026-11-17. Inspected baseline: `f5e40a2a4e02f0b03dcec6126a6416b5e10b3bbe`
 (`origin/main`, including #267). This is an independent per-form deliverable,
 not permission to merge or consolidate the other native-form PRs.
