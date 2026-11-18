@@ -51,6 +51,8 @@ def saved_dom(tmp_path, *, footer=None, spans=None, fields=None, complete=True, 
                         tables=[table] if include_table else [],
                         text='SYNTHETIC READ-ONLY DOM PAGE CONTEXT')]
     run = source_run('PPh Badan', sections)
+    if not complete:
+        run['records'][0]['capture_complete'] = False
     before = deepcopy(run)
     reports = []
     paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
