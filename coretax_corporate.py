@@ -753,8 +753,8 @@ def _l3_visible_extra_owner(form):
 
 def _l3_standalone_layout(form):
     """Prove the pinned header-only overseas controls, never their values."""
-    from coretax_corporate_projection import _L3_CAPTIONS
-    return form.evaluate(r'''(form, captions) => {
+    from coretax_corporate_projection import _L3_LAYOUT_CAPTIONS
+    return form.evaluate(r'''(form, caption_sets) => {
       const a=[...form.querySelectorAll('rsh-citr-l3-grid1')];
       const b=[...form.querySelectorAll('rshshr-citr-l3-grid2')];
       const tables=[...form.querySelectorAll('table')];
@@ -782,20 +782,28 @@ def _l3_standalone_layout(form):
       if(rows.length!==2 || table.querySelectorAll('thead').length!==1 ||
          table.querySelectorAll('p-inputnumber').length!==2 ||
          table.querySelectorAll('input').length!==2) return false;
+      const texts=rows.map(row=>{
+        const cells=[...row.children];
+        return cells.length===2 && cells[0].localName==='th'
+          ? (cells[0].textContent||'').replace(/\\s+/g,' ').trim() : null;
+      });
+      const captions=caption_sets.find(set=>set.length===texts.length &&
+        set.every((text,index)=>text===texts[index]));
+      if(!captions) return false;
       return rows.every((row,i)=>{
         const cells=[...row.children];
         if(cells.length!==2 || cells.some(c=>c.localName!=='th') ||
            cells[0].colSpan!==10 || cells[1].colSpan!==1 ||
            cells.some(c=>c.rowSpan!==1) || cells[0].getAttribute('width')!=='1099' ||
            cells[1].getAttribute('width')!=='116' || cells[0].children.length ||
-           (cells[0].textContent||'').replace(/\s+/g,' ').trim()!==captions[i]) return false;
+           (cells[0].textContent||'').replace(/\\s+/g,' ').trim()!==captions[i]) return false;
         const controls=cells[1].querySelectorAll(':scope > p-inputnumber');
         if(controls.length!==1 || cells[1].children.length!==1 ||
            controls[0].getAttribute('formcontrolname')!==names[i]) return false;
         const inputs=controls[0].querySelectorAll('input');
         return inputs.length===1 && inputs[0].getAttribute('id')===names[i];
       });
-    }''', list(_L3_CAPTIONS), timeout=1000) is True
+    }''', [list(pair) for pair in _L3_LAYOUT_CAPTIONS], timeout=1000) is True
 
 
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
