@@ -120,6 +120,21 @@ def test_shareholder_null_defaults_differ_from_affiliate_nulls_and_subposition_i
                and e['rule'] == 'unused-subposition' for e in result['provenance'])
 
 
+def test_shareholder_row_omitting_subposition_still_projects():
+    # Live evidence (job baae8d60): the current portal omits SubPosition from
+    # every shareholder row. It is copied-but-unused metadata, so its absence
+    # must not refuse the whole owner block.
+    row = shareholder(PaidInCapital=None, PaidInCapitalPercentage=None, Dividend=None)
+    del row['SubPosition']
+    result = owner(form(ListOfShareholders=[row]))
+    a, _ = result['tables']
+    assert a['body_row_count'] == 1
+    assert a['rows'][0] == ['1', 'SYNTHETIC OWNER', 'SYNTHETIC ADDRESS',
+                             'SYNTHETIC INDONESIA', '0000000000000009',
+                             'SYNTHETIC DIRECTOR', '0', '0,0000', '0']
+    assert not any(e['path'][-1] == 'SubPosition' for e in result['provenance'])
+
+
 def test_displayed_totals_are_ordered_model_getters_not_stale_saved_aliases():
     value = populated()
     for key in projection.L2_TOTALS:
