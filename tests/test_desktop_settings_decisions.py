@@ -536,3 +536,122 @@ def test_manual_prune_warns_after_partial_source_removal(settings, monkeypatch):
     assert 'checkpoint' in warnings[0][1]
     assert not infos and not errors and not writes
     assert not app._manual_prune_busy and not ctl.active and not ctl.exports
+
+
+def test_storage_dashboard_shows_aggregate_fields_and_manual_action(settings):
+    root, app, ctl, dialog, path, writes, errors = settings
+    labels = [str(w.cget('text')) for w in widgets(dialog)
+              if w.winfo_class() in ('TLabel', 'TLabelframe')]
+    assert 'Dashboard penyimpanan job' in labels or any(
+        'Dashboard penyimpanan job' in str(w.cget('text'))
+        for w in widgets(dialog) if w.winfo_class() == 'TLabelframe')
+    assert 'COMPLETE' in labels
+    assert 'PARTIAL' in labels
+    assert 'Gagal / dibatalkan' in labels
+    assert 'Protected (Auto Clean)' in labels
+    assert button(dialog, 'hapus job PARTIAL/gagal')
+    assert button(dialog, 'Perbarui penggunaan storage')
+
+
+def test_incomplete_manual_cleanup_requires_selected_rows_and_confirmation(
+        settings, monkeypatch):
+    from types import SimpleNamespace
+    root, app, ctl, dialog, path, writes, errors = settings
+    calls, prompts, notices = [], [], []
+    token = 'a' * 32
+    # A finished job ID remains on the controller; it is not an active lease.
+    ctl.job_id = token
+    digest = 'b' * 64
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    preview = {'total': 1, 'complete': 0, 'partial': 1, 'failed': 0,
+               'protected': 1, 'estimated_bytes': 2048,
+               'scan_complete': True,
+               'removable': ({'id': token, 'status': 'PARTIAL',
+                              'bytes': 2048, 'digest': digest,
+                              'modified_ns': 1_700_000_000_000_000_000},)}
+    monkeypatch.setattr(gui, 'inspect_job_storage',
+                        lambda *a, **kw: calls.append(('preview', kw['active_id'])) or preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: calls.append(('delete', a[1])) or
+                        {'removed': 1, 'incomplete': False})
+    monkeypatch.setattr(gui.messagebox, 'askyesno',
+                        lambda title, body, **kwargs: prompts.append(body) or True)
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kwargs: notices.append((title, message)))
+    button(dialog, 'hapus job PARTIAL/gagal').invoke()
+    _pump_manual_prune(root)
+    picker = next(w for w in widgets(root)
+                  if isinstance(w, tk.Toplevel) and w.title() == 'Pilih job PARTIAL/gagal')
+    assert app._manual_prune_busy
+    assert not prompts
+    table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
+    assert token in table.get_children()
+    assert token not in str(table.item(token, 'values'))
+    button(picker, 'Hapus terpilih').invoke()
+    assert notices and 'Pilih job' in notices[-1][0]
+    assert not prompts
+    table.selection_set(token)
+    button(picker, 'Hapus terpilih').invoke()
+    _pump_manual_prune(root)
+    assert calls[:2] == [('preview', None), ('delete', ((token, digest),))]
+    assert len(prompts) == 1
+    assert token not in prompts[0]
+    assert not app._manual_prune_busy and not ctl.active and not ctl.exports
+
+
+def test_incomplete_cleanup_refuses_unsaved_changes(settings, monkeypatch):
+    root, app, ctl, dialog, path, writes, errors = settings
+    change_browser(dialog)
+    root.update()
+    notices = []
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, message, **kwargs: notices.append(title))
+    monkeypatch.setattr(gui, 'inspect_job_storage',
+                        lambda *args, **kwargs: pytest.fail('No scan before save'))
+    button(dialog, 'hapus job PARTIAL/gagal').invoke()
+    assert notices == ['Simpan pengaturan']
+    assert not app._manual_prune_busy
+
+
+def test_owned_app_starts_read_only_storage_check_without_manual_deletion(
+        tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    preview = {'total': 1, 'complete': 0, 'partial': 1, 'failed': 0,
+               'protected': 1, 'estimated_bytes': 1234,
+               'scan_complete': True, 'removable': ()}
+    calls = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
+    monkeypatch.setattr(gui.App, 'check_updates', lambda *args, **kwargs: None)
+    monkeypatch.setattr(gui, 'inspect_job_storage',
+                        lambda *args, **kwargs: calls.append('inspect') or preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *args, **kwargs: pytest.fail('Startup must not delete jobs'))
+    monkeypatch.setattr(gui, 'prune_published_jobs',
+                        lambda *args, **kwargs: pytest.fail('Startup inspect is read-only'))
+    root = tk.Tk()
+    app = gui.App(root, tmp_path)
+    try:
+        _pump_manual_prune(root)
+        assert calls == ['inspect']
+        assert app._storage_snapshot == preview
+        assert not app._storage_pending
+    finally:
+        app._dispose()
+        root.destroy()
