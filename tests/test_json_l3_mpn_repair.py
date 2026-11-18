@@ -9,7 +9,7 @@ from playwright.sync_api import Locator, ElementHandle
 
 import coretax_browser as driver
 import coretax_corporate as corporate
-from coretax_corporate_projection import _L3_CAPTIONS
+from coretax_corporate_projection import _L3_CAPTIONS, _L3_LAYOUT_CAPTIONS
 from coretax_json import adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
 from coretax_mpn_browser import collect_mpn
@@ -45,8 +45,14 @@ class StandaloneFixture(Fixture):
             'scaled-datatable p-datatable-sm p-datatable-gridlines p-datatable-striped '
             'p-datatable-responsiveness"><table><thead>' + rows
             + '</thead><tbody></tbody></table></div></p-table>')
+        english = _L3_LAYOUT_CAPTIONS[1]
+
+        def renamed(s):
+            return (s.replace(html.escape(_L3_CAPTIONS[0]), html.escape(english[0]))
+                     .replace(html.escape(_L3_CAPTIONS[1]), html.escape(english[1])))
         changes = {
             'caption': lambda s: s.replace(html.escape(_L3_CAPTIONS[0]), 'UNKNOWN HEADER'),
+            'english': renamed,
             'span': lambda s: s.replace('colspan="10"', 'colspan="9"', 1),
             'control': lambda s: s.replace('formcontrolname="RefundDeductionCreditOverseas"',
                                          'formcontrolname="Unknown"'),
@@ -87,6 +93,22 @@ def test_source_shaped_standalone_l3_is_native_and_replays_original_bytes(browse
             assert replay['sections'] == result['sections']
             assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
             assert owned.unexpected == []
+    finally:
+        owned.close()
+
+
+def test_standalone_l3_accepts_the_redeployed_english_caption_pair(browser, tmp_path, monkeypatch):
+    """The reviewed redeploy renamed only the two header-only labels to English."""
+    monkeypatch.setattr(StandaloneFixture, 'variant', 'english')
+    owned = StandaloneFixture(browser, monkeypatch)
+    try:
+        with DetailJsonCapture(owned.context, owned.page, owned.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(owned, capture)
+            forms = corporate.observe_forms(page, owned.record, corpus.SCOPE, capture,
+                                            approved_digest=owned.pins[ASSET])
+            assert forms is not None
+            assert forms[1]['projection']['standalone_layout'] == 'overseas-controls-v1'
+            assert page.evaluate('window.businessReads') == 0
     finally:
         owned.close()
 

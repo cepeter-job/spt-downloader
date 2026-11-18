@@ -17,7 +17,7 @@ import coretax_browser as driver
 import support_json_corpus as corpus
 import support_financial_browser as financial
 
-ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.32c49782948fc5ef.js'
+ASSET = corpus.ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js'
 BUILD = b'/* SYNTHETIC CORPORATE BUILD -- no portal code or taxpayer data */'
 PDF_URL = corpus.ORIGIN + '/synthetic-existing/statement.pdf'
 GROUPS = ((1, 'Group 1'), (1, 'Group 2'), (1, 'Group 3'), (1, 'Group 4'), (1, 'Other Group'),
@@ -59,13 +59,20 @@ class NativeFixture:
                     'inventory_complete': True, 'errors': [], 'records': [self.record]}
         form = corpus.current_form()
         if groups:
+            # Live-shaped empty L4: the reviewed projection reconciles the
+            # declared footer, the grid rows and these stored totals, so an
+            # empty final-income grid carries zero totals and no block B rows.
             form.update(ListOfIncomeSubjectToFinalTaxAndNonTaxableObject={
-                            'TotalTaxBase': 100, 'TotalFinalIncomeTaxPayable': 7,
-                            'TotalGrossIncome': 100, 'TotalFinalIncomeTaxPayableUsd': 0},
+                            'TotalTaxBase': 0, 'TotalFinalIncomeTaxPayable': 0,
+                            'TotalGrossIncome': 0, 'TotalFinalIncomeTaxPayableUsd': 0,
+                            'ListOfIncomeExcludedFromIncomeTax': []},
                         RecapitulationFiscalDepreciationAmortization=[], DeclarationTransactionRelatedParties=[])
         self.raw = corpus.primary(form)['body']
         self.build = BUILD + (b'/* CHANGED */' if changed_build else b'')
         monkeypatch.setattr(driver, 'CIT_SOURCE_SHA256', hashlib.sha256(BUILD).hexdigest(), raising=False)
+        if groups:
+            import coretax_corporate_projection as projection
+            monkeypatch.setitem(projection.BUILD_DIGESTS, ASSET, hashlib.sha256(BUILD).hexdigest())
         self.context.route('**/*', self.route)
 
     def close(self):
@@ -95,8 +102,8 @@ class NativeFixture:
                 'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025'}
             route.fulfill(content_type='application/json', body=corpus.wire({
                 'IsSuccessful': True, 'Payload': {
-                    'TaxBase': 100, 'TaxBaseUsd': 0,
-                    'IncomeTax': 7, 'IncomeTaxUsd': 0}}).encode())
+                    'TaxBase': 0, 'TaxBaseUsd': 0,
+                    'IncomeTax': 0, 'IncomeTaxUsd': 0}}).encode())
         elif url.startswith(corpus.ORIGIN + '/returnsheet/api/loadcit/'):
             post = request.post_data_json
             assert request.method == 'POST' and post['ReturnSheetRecordId'] == corpus.RECORD_ID
@@ -153,6 +160,16 @@ class NativeFixture:
         if self.groups:
             l4 = self.grid_html('rshshr-citr-l4-grid1', '/loadcit/l4-table-a-grid',
                  {'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025'}, 'SYNTHETIC L4')
+            from coretax_corporate_projection import L4_A_HEADERS, L4_B_HEADERS
+            l4 = l4.replace('<p-table', '<ui-grid><p-table').replace(
+                '</p-table>', '</p-table></ui-grid>')
+            l4 = l4.replace('<th>Value</th>', ''.join('<th>' + h + '</th>' for h in L4_A_HEADERS))
+            l4 = l4.replace('</tbody></table>', '</tbody><tfoot><tr><td colspan="4">TOTAL</td>'
+                '<td>0</td><td></td><td>0</td></tr></tfoot></table>')
+            l4 += ('<rsh-citr-l4-grid2><ui-grid-offline><p-table><table><thead><tr>' +
+                ''.join('<th>' + h + '</th>' for h in L4_B_HEADERS) +
+                '</tr></thead><tbody></tbody><tfoot><tr><td></td><td colspan="3">JUMLAH</td>'
+                '<td>0</td></tr></tfoot></table></p-table></ui-grid-offline></rsh-citr-l4-grid2>')
             l9 = ''.join(self.grid_html('rshshr-citr-l9-form-grid' + str(family),
                          '/loadcit/l9-table-' + str(family) + '-grid',
                          {'ReturnSheetRecordId': corpus.RECORD_ID, 'GroupType': group},
@@ -192,7 +209,7 @@ class NativeFixture:
             'function turn(b,d){let g=b.closest("p-table"),c=JSON.parse(g.dataset.fixtureConfig);'
             'c.first+=d;g.dataset.fixtureConfig=JSON.stringify(c);load(g)}'
             'function show(i){document.querySelectorAll(".p-tabview-panel").forEach((p,j)=>{'
-            'p.style.display=i===j?"block":"none";if(i===j)p.querySelectorAll("p-table").forEach(g=>{'
+            'p.style.display=i===j?"block":"none";if(i===j)p.querySelectorAll("p-table[data-fixture-config]").forEach(g=>{'
             'if(!g.dataset.started){g.dataset.started="yes";load(g)}})})}'
             'fetch(' + json.dumps(corpus.PRIMARY_URL) + ',{method:"POST",headers:{"Content-Type":"application/json"},'
             'body:JSON.stringify({RecordId:' + json.dumps(corpus.RECORD_ID) + ',OnManualClick:false})});'
@@ -230,9 +247,9 @@ def test_real_native_bridge_binds_all_grid_roles_and_all_sixty_duplicate_rows(br
     native_collector()
     # This test pins the JSON grid binding (14 roles, 60 duplicate rows). The
     # dump gate itself is covered by tests/test_corporate_native_dump_gate.py;
-    # L4/L9/L10-A are still unprojected dumps here, so isolate that predicate.
+    # L9/L10-A are still unprojected dumps here, so isolate that predicate.
     import coretax_json
-    monkeypatch.setattr(coretax_json, 'has_audit_dump_tables', lambda sections: False)
+    monkeypatch.setattr(coretax_json, 'has_audit_dump_tables', lambda sections, **kwargs: False)
     fixture = NativeFixture(browser, tmp_path, monkeypatch, groups=True)
     try:
         result = fixture.collect()

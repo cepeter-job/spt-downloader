@@ -18,9 +18,19 @@ def test_current_financial_caption_on_an_ordinary_link_is_recognized(routed, tmp
     assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
 
 
-def file_table(link, caption=''):
-    return f'''<table>{caption}<thead><tr><th>NO.</th><th>FILENAME</th><th>TINDAKAN</th></tr></thead>
+def file_table(link, caption='', header=('NO.', 'FILENAME', 'TINDAKAN')):
+    return f'''<table>{caption}<thead><tr><th>{header[0]}</th><th>{header[1]}</th><th>{header[2]}</th></tr></thead>
     <tbody><tr><td>1</td><td>{link}</td><td></td></tr></tbody></table>'''
+
+
+@pytest.mark.parametrize('header', [('NO.', 'FILENAME', 'TINDAKAN'), ('NO.', 'NAMA DOKUMEN', 'TINDAKAN')])
+def test_ordinary_attachment_caption_sets_bind_the_same_financial_link(routed, tmp_path, header):
+    link = f'<a href="{PDF_URL}">SYNTHETIC-PRIVATE-FILENAME.pdf</a>'
+    page, requests = routed(file_table(link, f'<caption>{CURRENT_LABEL}</caption>', header))
+    result = attachments().download_financial_attachments(page, deepcopy(RECORD), tmp_path)
+    item, _ = downloaded(result, tmp_path)
+    assert item['label'] == CURRENT_LABEL
+    assert requests == [('GET', DETAIL), ('GET', PDF_URL)]
 
 
 @pytest.mark.parametrize('binding', ['caption', 'labelledby', 'preceding_label'])

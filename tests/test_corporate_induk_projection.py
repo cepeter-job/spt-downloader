@@ -119,7 +119,7 @@ def test_unproven_projection_binding_refuses_the_capture():
     {'kind': 'corporate-induk-v0'},
     dict(proof(), builds={}),
     dict(proof(), builds={'https://coretax.intranet.pajak.go.id/other.js': '0' * 64}),
-    dict(proof(), builds={'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/525.32c49782948fc5ef.js': 'APPROVED'}),
+    dict(proof(), builds={'https://coretax.intranet.pajak.go.id/returnsheets/id-ID/525.c5690c441d8dbc45.js': 'APPROVED'}),
     dict(proof(), route=corpus.FRAME_URL + '/changed'),
     dict(proof(), tables=[]),
 ])
