@@ -4,6 +4,7 @@ from copy import deepcopy
 import pytest
 
 from coretax_json import _CorporateNumber as Number, _UnsupportedMetadata
+from coretax_masa_bindings import _evidence
 from test_corporate_l11b_hydrated import populated, project, bindings, packet, adapt
 from test_corporate_l11b_projection import project as restricted
 import support_json_corpus as corpus
@@ -85,3 +86,26 @@ def test_default_quarter_must_still_reconcile_and_missing_scalar_is_not_null():
     del source['IncomeTaxExpense']
     with pytest.raises(_UnsupportedMetadata, match='source_shape'):
         project(source)
+
+
+@pytest.mark.parametrize('value', [False, True])
+def test_shared_evidence_preserves_literal_boolean_without_coercion(value):
+    # PR #278 used a narrow typed-provenance literal; PR #287 centralizes it.
+    assert _evidence(value, ['IsMigrated']) == {
+        'path': ['IsMigrated'], 'type': 'boolean', 'value': value}
+
+
+@pytest.mark.parametrize('value', [0, 1, 0.0, [], {}])
+def test_shared_evidence_rejects_untyped_or_non_json_scalar_coercion(value):
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_masa_projected_scalar'):
+        _evidence(value, ['IsMigrated'])
+
+
+@pytest.mark.parametrize('key', [
+    'CommercialNettIncome', 'DepreciationAndAmortizationExpenses',
+    'IncomeTaxExpense', 'BorrowingCostExpense', 'Ebitda25',
+])
+def test_l11b_numeric_operands_still_reject_boolean_when_evidence_supports_it(key):
+    # Typed provenance is not permission for a boolean to become 0 or 1.
+    with pytest.raises(_UnsupportedMetadata):
+        project(populated(**{key: True}))
