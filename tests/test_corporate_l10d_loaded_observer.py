@@ -79,7 +79,11 @@ def test_loaded_positive_d_providers_and_real_capture_held_originals_are_not_fin
             bodies = list(capture.iter_bodies())
             assert len(bodies) == 1 and bodies[0]['body'] == fixture.raw
             result = adapt_corporate_detail(bodies, fixture.record, corpus.SCOPE, forms)
-            assert not result['eligible'] and result['reason'] == owner.FINAL_CUSTODY_BLOCKER
+            # Approved non-display scope: the unobserved final selection is a
+            # recorded partial, so the record stays native while D stays unadmitted.
+            assert result['eligible']
+            assert [item['blocker'] for item in result['provenance']['non_display_partials']] == [
+                owner.FINAL_CUSTODY_BLOCKER]
             candidate, = result['provenance']['non_display_originals']
             assert candidate['native_admission'] is False
             assert len(candidate['originals']['values']) == 14
