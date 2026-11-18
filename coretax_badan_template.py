@@ -63,6 +63,7 @@ def _reviewed_omissions(form, fields, source_tables):
         'l8': ('TaxPeriodYear', 'TAHUN PAJAK', 'NPWP'),
         'l9': ('PeriodYear', 'TAHUN PAJAK', 'NPWP'),
         'l10-a': ('PeriodYear', 'Tahun Pajak', 'Nomor Identitas WP'),
+        'l11-c': ('TaxPeriodYear', 'Tahun Pajak/Bagian Tahun Pajak', 'Nomor Identitas WP'),
     }
     unnamed = {
         'l2': {'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',
@@ -549,7 +550,21 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
         column, claimed = 1, set()
         for value, span in zip(values, widths):
             if value not in ('', None):
-                if span == 1 and column in money:
+                if ((form, block, index, column, span) == ('l11-c', 0, 0, 2, 5)
+                        and _label(value) == 'total'):
+                    # The observed DOM footer has a blank A prefix and TOTAL
+                    # spanning B:F; the reviewed reference merges A:F as JUMLAH.
+                    # This exception is exact-shape and L11-C only. Source
+                    # text/colspans remain untouched in the saved checkpoint.
+                    if (widths != [1, 5, *([1] * 10)] or values[0] not in ('', None)
+                            or _label(sheet.cell(row, 1).value) != 'jumlah'
+                            or not any(region.min_row == region.max_row == row
+                                       and region.min_col == 1 and region.max_col == 6
+                                       for region in sheet.merged_cells.ranges)):
+                        return None
+                    destination, numeric = 1, False
+                    value = sheet.cell(row, 1).value
+                elif span == 1 and column in money:
                     destination, numeric = column, True
                 elif form == 'l1-d' and column == 1 and span == 1:
                     destination, numeric = column, False
@@ -818,4 +833,13 @@ def render_template_form(sheet, form, sections, *, period=None):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
         return _clean_report(fields, pending, form=form, source_tables=source_tables, **derived)
+    if form == 'l11-c':
+        report = _clean_report(fields, pending, form=form, source_tables=source_tables, **derived)
+        # Suppress duplicated DOM page text only when the sole leftovers are
+        # the two known redundant HEADER controls. Unsupported controls or
+        # source tables remain visible raw evidence; audit stays PARTIAL.
+        if not pending and report.get('reviewed_redundant_fields', 0) == len(fields):
+            return report
+        raw = _raw_evidence(sheet, sections, fields, pending, blocks[0][1])
+        return {**raw, **_reviewed_omissions(form, fields, source_tables)}
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)
