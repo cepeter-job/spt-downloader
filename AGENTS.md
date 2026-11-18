@@ -32,6 +32,12 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
   names with explicit same-name re-exports; do not bulk-remove imports based on
   lint alone. The adopted Bugbear subset is B006/B012/B016/B018/B020; remaining
   findings require contract-specific triage before enabling additional rules.
+- The source of user-visible UI copy is `resources/ui/id-ID.xml`. Developer source
+  runs load this catalog; Windows packaging compiles it into
+  `spt_desktop/_ui_copy_generated.py` (ignored build output). Frozen EXEs must
+  never read editable external XML; preserve approved text IDs, placeholders,
+  locked labels and the `copy_text()` contract. No user text editor or runtime
+  override is supported. Keep schema validation and UI-copy tests in the gates.
 - The frozen GUI `--self-test` is a release gate: always use explicit `require(condition, fixed_description)` checks within `spt_gui.self_test`, never Python `assert` (which disappears under `-O` / `PYTHONOPTIMIZE`). A failure must exit nonzero and disclose only its fixed synthetic check label; keep the self-test offline and free of account/browser access. The existing `build_desktop.py` EXE invocation and report validation remain mandatory.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
@@ -340,9 +346,12 @@ command line, process names, browser data, resource URLs, source values,
 or other user processes. Log only aggregated direct-child and deeper-child
 CPU deltas in fixed numeric fields. No Playwright private transport hook,
 CDP, browser evaluate, polling thread, endpoint traffic, Python package
-or running browser process mutation. Bound to the first actual
-Previous lookup and at most three advance and three snapshot calls,
-**seven paired samples (14 Win32 snapshots) per large table**. A
+or running browser process mutation. Bound to the original pilot-label
+lookup, first actual
+Previous lookup, and at most three advance and three snapshot calls,
+**eight paired samples (16 Win32 snapshots) per large table**.
+The pilot sampling wraps the original query_selector without extra
+browser RPCs; opt-in diagnostics cannot certify performance acceptance. A
 snapshot failure, process churn, PID reuse, inaccessible child, or
 unsupported OS causes an explicit `unavailable`/missing metric, never
 guessed CPU or inferred idle. Only matching PIDs with unchanged
