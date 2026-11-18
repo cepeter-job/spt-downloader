@@ -42,10 +42,13 @@ _SCAN = r'''() => {
     const headings = 'label,legend,h1,h2,h3,h4,h5,h6,.p-panel-title,.p-accordion-header-text';
     const approved = el => el && visible(el) && typeof el.innerText==='string' &&
         labels.has(el.innerText.trim()) ? el.innerText : null;
+    const captionRows = [['NO.','FILENAME','TINDAKAN'], ['NO.','NAMA DOKUMEN','TINDAKAN']];
+    const approvedCaptions = cells => captionRows.some(row=>row.length === cells.length &&
+        cells.every((cell, index)=>cell === row[index]));
     const attachmentTable = table => {
         const rows = table.tHead ? [...table.tHead.rows] : [];
-        return rows.length === 1 && JSON.stringify([...rows[0].cells].map(c=>c.innerText.trim())) ===
-            JSON.stringify(['NO.','FILENAME','TINDAKAN']);
+        return rows.length === 1 &&
+            approvedCaptions([...rows[0].cells].map(c=>c.innerText.trim()));
     };
     const forms = [...root.querySelectorAll('rshshr-citr-main-form')].filter(visible);
     const modernAttachmentTable = table => {
@@ -64,9 +67,11 @@ _SCAN = r'''() => {
             !rows[1].classList.contains('ng-filterrow') || rows.some(row=>
                 !visible(row) || row.cells.length !== 3 || row.children.length !== 3 ||
                 [...row.cells].some(cell=>!visible(cell) || cell.colSpan !== 1 || cell.rowSpan !== 1))) return false;
-        const captions = ['NO.','FILENAME','TINDAKAN'];
-        if ([...rows[0].cells].some((cell, index)=>cell.innerText.trim() !== captions[index] ||
-                cell.textContent.trim() !== captions[index]) || rows[1].textContent.trim() ||
+        const captions = [['NO.','FILENAME','TINDAKAN'], ['NO.','NAMA DOKUMEN','TINDAKAN']];
+        const header = [...rows[0].cells];
+        if (!captions.some(caption=>header.every((cell, index)=>
+                cell.innerText.trim() === caption[index] && cell.textContent.trim() === caption[index])) ||
+            rows[1].textContent.trim() ||
             head.querySelector('a,button,select,textarea,[contenteditable],' +
                 '[role="button"],[role="checkbox"],[role="combobox"],[role="listbox"],' +
                 '[role="radio"],[role="slider"],[role="spinbutton"],[role="switch"],' +
