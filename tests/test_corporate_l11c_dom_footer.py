@@ -82,6 +82,8 @@ def test_observed_dom_l11c_footer_is_bound_to_reviewed_merged_total(tmp_path, la
         assert sheet['M3'].value == '4,38'
         assert not any('Data sumber tambahan' in str(cell.value)
                        for row in sheet for cell in row)
+        assert not any('SYNTHETIC READ-ONLY DOM PAGE CONTEXT' in str(cell.value)
+                       for row in sheet for cell in row)
         assert report['unmapped_tables'] == report['unmapped_rows'] == 0
         assert report['unmapped_fields'] == report['reviewed_redundant_fields'] == 2
         assert not report['complete']  # Redundant metadata remains audited.
@@ -102,6 +104,8 @@ def test_unproved_l11c_footer_keeps_raw_and_does_not_claim_mapping(tmp_path, foo
         sheet = book['L11-C']
         assert sheet['A3'].value in (None, '')
         assert any(cell.value == 'Data sumber tambahan / belum dipetakan'
+                   for row in sheet for cell in row)
+        assert any('SYNTHETIC READ-ONLY DOM PAGE CONTEXT' in str(cell.value)
                    for row in sheet for cell in row)
         assert not report['complete'] and report['unmapped_tables'] == 1
         assert report['unmapped_rows'] == 2
