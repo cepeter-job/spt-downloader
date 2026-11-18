@@ -66,8 +66,6 @@ def test_populated_whole_owner_keeps_both_blocks_labels_duplicates_and_number_ty
     ('ListOfShareholders', 'CountryCode', 'UNKNOWN'),
     ('ListOfShareholders', 'Position', 'UNKNOWN'),
     ('InvestmentList', 'CountryCode', 'UNKNOWN'),
-    ('InvestmentList', 'Debt', N('0.1')),
-    ('InvestmentList', 'DebtInterest', N('4.38')),
     ('InvestmentList', 'DebtInterest', N('0.0625')),
     ('InvestmentList', 'Debt', N('1000000000000000')),
     ('InvestmentList', 'Investment', N('999999999999998.125')),
@@ -133,6 +131,17 @@ def test_shareholder_row_omitting_subposition_still_projects():
                              'SYNTHETIC INDONESIA', '0000000000000009',
                              'SYNTHETIC DIRECTOR', '0', '0,0000', '0']
     assert not any(e['path'][-1] == 'SubPosition' for e in result['provenance'])
+
+
+@pytest.mark.parametrize('token,rendered', [('2.9', '2,9'), ('0.1', '0,1'), ('4.38', '4,38')])
+def test_affiliate_fractional_rate_is_not_refused_for_binary_inexactness(token, rendered):
+    # Live evidence (job 2ce7ad8f): a real saved DebtInterest of 2.9 is not
+    # binary-exact but renders exactly as 2,9. The browser only needs the
+    # double's shortest round-trip repr, not binary64 exactness.
+    row = affiliate(1, DebtInterest=N(token))
+    result = owner(form(InvestmentList=[row]))
+    _, b = result['tables']
+    assert b['rows'][0][8] == rendered
 
 
 def test_displayed_totals_are_ordered_model_getters_not_stale_saved_aliases():

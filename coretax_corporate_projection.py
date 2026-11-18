@@ -2585,7 +2585,11 @@ def _l2_exact(value, digits):
     if abs(exact) > _MAX_INTEGER or exact == 0 and value.startswith('-'):
         raise _UnsupportedMetadata('unsafe_corporate_l2_number')
     number = float(value)
-    if Fraction.from_float(number) != exact:
+    # The browser parses the token to a double and DecimalPipe renders that
+    # double's shortest round-trip repr. Require the repr to equal the source
+    # decimal exactly; binary-exactness is unnecessary and would refuse real
+    # fractional rates such as 2.9.
+    if Decimal(repr(number)) != Decimal(value):
         raise _UnsupportedMetadata('inexact_corporate_l2_browser_number')
     return number
 
