@@ -125,7 +125,9 @@ biaya metadata filesystem dan bukan janji jumlah byte yang pasti dibebaskan.
 Pengaturan sekarang menyediakan **hapus job PARTIAL/gagal** di samping
 **bersihkan cache job** (yang tetap khusus untuk COMPLETE bersegel dan sudah
 dipublikasi). Penghapusan PARTIAL/gagal **tidak dilakukan otomatis**, termasuk
-ketika aplikasi baru dibuka atau setelah worker gagal.
+ketika aplikasi baru dibuka atau setelah worker gagal. Pengaturan `jumlah
+cache job = 0` menonaktifkan pemangkasan COMPLETE, tetapi tidak menonaktifkan
+tombol penghapusan PARTIAL/gagal yang memerlukan pilihan dan konfirmasi.
 
 1. Selesaikan/Stop pekerjaan aktif dan simpan perubahan Pengaturan.
 2. Klik **hapus job PARTIAL/gagal**, lalu tunggu inventaris selesai.

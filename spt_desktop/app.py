@@ -214,6 +214,7 @@ class App:
         self._storage_snapshot=None
         self._storage_vars=None
         self._storage_pending=False
+        self._storage_rerun=False
         self._storage_results=queue.Queue(maxsize=1)
         self._storage_after=None
         self._interaction=None
@@ -414,7 +415,10 @@ class App:
     def _refresh_storage(self):
         """Inspect private job storage off Tk, without starting any cleanup."""
         self._storage_after = None
-        if self._disposed or self._storage_pending:
+        if self._disposed:
+            return
+        if self._storage_pending:
+            self._storage_rerun = True
             return
         self._storage_pending = True
         self._paint_storage()
@@ -445,6 +449,9 @@ class App:
             return
         self._storage_pending = False
         self._paint_storage()
+        if self._storage_rerun:
+            self._storage_rerun = False
+            self._refresh_storage()
 
     def _paint_storage(self):
         """Show only aggregates; do not display tax data or job identifiers."""
@@ -606,7 +613,9 @@ class App:
             self._settings_refresh(preserve_status=True)
         self._credential_status.set('Memeriksa job PARTIAL/gagal secara aman…')
         work = queue.Queue(maxsize=1)
-        excluded = getattr(self.controller, 'job_id', None)
+        # A finished PARTIAL job must be selectable. Exclude only an active ID.
+        excluded = (getattr(self.controller, 'job_id', None)
+                    if self.controller.active else None)
         candidates = {}
         approvals = ()
 

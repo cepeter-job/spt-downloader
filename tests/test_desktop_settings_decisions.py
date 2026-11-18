@@ -559,6 +559,8 @@ def test_incomplete_manual_cleanup_requires_selected_rows_and_confirmation(
     root, app, ctl, dialog, path, writes, errors = settings
     calls, prompts, notices = [], [], []
     token = 'a' * 32
+    # A finished job ID remains on the controller; it is not an active lease.
+    ctl.job_id = token
     digest = 'b' * 64
 
     class ImmediateThread:
@@ -576,7 +578,7 @@ def test_incomplete_manual_cleanup_requires_selected_rows_and_confirmation(
                               'bytes': 2048, 'digest': digest,
                               'modified_ns': 1_700_000_000_000_000_000},)}
     monkeypatch.setattr(gui, 'inspect_job_storage',
-                        lambda *a, **kw: calls.append('preview') or preview)
+                        lambda *a, **kw: calls.append(('preview', kw['active_id'])) or preview)
     monkeypatch.setattr(gui, 'delete_incomplete_jobs',
                         lambda *a, **kw: calls.append(('delete', a[1])) or
                         {'removed': 1, 'incomplete': False})
@@ -599,7 +601,7 @@ def test_incomplete_manual_cleanup_requires_selected_rows_and_confirmation(
     table.selection_set(token)
     button(picker, 'Hapus terpilih').invoke()
     _pump_manual_prune(root)
-    assert calls[:2] == ['preview', ('delete', ((token, digest),))]
+    assert calls[:2] == [('preview', None), ('delete', ((token, digest),))]
     assert len(prompts) == 1
     assert token not in prompts[0]
     assert not app._manual_prune_busy and not ctl.active and not ctl.exports

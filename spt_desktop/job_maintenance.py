@@ -3,6 +3,7 @@
 Automatic pruning stays in job_pruning: it may remove only sealed COMPLETE jobs.
 The manual path never interprets a terminal event as verified publication.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -107,6 +108,20 @@ def _has_recovery(job):
     return any(child.name.startswith('publication-recovery-') for child in job.iterdir())
 
 
+def _snapshot_digest(job, inventory):
+    """Bind an approval to actual native objects, not just matching file bytes."""
+    info = pruning._plain(job, directory=True)
+    digest = hashlib.sha256()
+    digest.update(json.dumps(
+        [info.st_dev, info.st_ino, info.st_mtime_ns],
+        separators=(',', ':')).encode('ascii'))
+    for name, fingerprint in sorted(inventory.items()):
+        digest.update(json.dumps(
+            [name, fingerprint], separators=(',', ':'), ensure_ascii=True
+        ).encode('utf-8'))
+    return digest.hexdigest()
+
+
 def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None):
     """Read-only dashboard and authorization snapshot. Never follows links.
 
@@ -138,8 +153,10 @@ def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None)
                 with DirectoryGuard() as guard:
                     guard.include(pruning._checked_ancestors(job))
                     status = _classification(job, deadline)
-                    count, digest, bytes_used = pruning._tree_digest(
-                        job, deadline=deadline, include_bytes=True)
+                    inventory = {}
+                    count, _, bytes_used = pruning._tree_digest(
+                        job, deadline=deadline, include_bytes=True,
+                        inventory=inventory)
                     sealed = (job / pruning.SEAL).exists()
                     if sealed:
                         bytes_used += pruning._plain(job / pruning.SEAL).st_size
@@ -154,7 +171,8 @@ def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None)
                         and not flagged and not recovery and not sealed
                         and job_id != active_id):
                     authorized.append({'id': job_id, 'status': status,
-                                       'bytes': bytes_used, 'digest': digest,
+                                       'bytes': bytes_used,
+                                       'digest': _snapshot_digest(job, inventory),
                                        'modified_ns': modified_ns})
             except (OSError, ValueError, TypeError, KeyError, RecursionError,
                     TimeoutError, UnicodeError):
@@ -214,9 +232,9 @@ def delete_incomplete_jobs(root, approvals, *, active_id=None):
                             incomplete = True
                             continue
                         inventory = {}
-                        _, digest = pruning._tree_digest(
+                        pruning._tree_digest(
                             job, deadline=deadline, inventory=inventory)
-                        if digest != approved_digest:
+                        if _snapshot_digest(job, inventory) != approved_digest:
                             incomplete = True
                             continue
                         _remove_tree(job, expected[job], guard, expected, deadline,

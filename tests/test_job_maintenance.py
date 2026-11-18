@@ -189,3 +189,30 @@ def test_symlink_is_never_followed_for_manual_cleanup(tmp_path, monkeypatch):
     preview = maintenance.inspect_job_storage(root)
     assert not preview['scan_complete'] and not preview['removable']
     assert (downloads / 'resume.xlsx').is_file()
+
+
+def test_same_bytes_replacement_after_preview_invalidates_native_snapshot(
+        tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    incomplete = _job(root, 1, complete=False)
+    preview = maintenance.inspect_job_storage(root)
+    assert len(preview['removable']) == 1
+    original = (incomplete / 'source.json').read_bytes()
+    replacement = incomplete / 'incoming.tmp'
+    replacement.write_bytes(original)
+    os.replace(replacement, incomplete / 'source.json')
+    assert (incomplete / 'source.json').read_bytes() == original
+    assert maintenance.delete_incomplete_jobs(root, _approve(preview)) == {
+        'removed': 0, 'incomplete': True}
+    assert incomplete.is_dir()
+
+
+def test_unmarked_legacy_partial_is_counted_but_not_authorized(
+        tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    old = _job(root, 1, complete=False)
+    (old / maintenance.TERMINAL).unlink()
+    inventory = maintenance.inspect_job_storage(root)
+    assert inventory['partial'] == 1 and inventory['protected'] == 1
+    assert inventory['removable'] == ()
+    assert old.is_dir()
