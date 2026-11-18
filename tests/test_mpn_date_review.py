@@ -91,7 +91,6 @@ def test_missing_date_container_is_refused_without_waiting_default_locator_timeo
 def test_detached_date_metadata_read_obeys_remaining_budget_and_stop(browser, tmp_path, monkeypatch):
     state = {'reading': False, 'detached': False, 'elapsed': []}
     stopped = threading.Event()
-    timers = []
     original_clear = AccountingUI._clear_initial_transaction_date
     original_attribute = Locator.get_attribute
     with portal(browser, monkeypatch, default_stuck=True, transaction_date_clear='valid') as (page, metrics):
@@ -108,25 +107,20 @@ def test_detached_date_metadata_read_obeys_remaining_budget_and_stop(browser, tm
             if state['reading'] and not state['detached'] and name == 'class':
                 page.evaluate("document.querySelector('p-calendar#filterTransactionDate').parentElement.remove()")
                 state['detached'] = True
-                timer = threading.Timer(.05, stopped.set)
-                timer.daemon = True
-                timers.append(timer)
-                timer.start()
+                # Inject Stop during this intercepted metadata read, not on a
+                # background timer that might fire after the PARTIAL exit.
+                stopped.set()
             return original_attribute(locator, name, **kwargs)
         def stop():
             if stopped.is_set():
                 raise CaptureCancelled('SYNTHETIC_STOP')
         monkeypatch.setattr(AccountingUI, '_clear_initial_transaction_date', clear)
         monkeypatch.setattr(Locator, 'get_attribute', attribute)
-        try:
-            with pytest.raises(CaptureCancelled):
-                collect_mpn(page, scope_run(), tmp_path, check_cancel=stop)
-            assert state['detached'] and max(state['elapsed']) < .75
-            assert page.evaluate('window.syntheticDateClicks') == 0
-            assert metrics['detail'] == []
-        finally:
-            for timer in timers:
-                timer.cancel()
+        with pytest.raises(CaptureCancelled):
+            collect_mpn(page, scope_run(), tmp_path, check_cancel=stop)
+        assert state['detached'] and max(state['elapsed']) < .75
+        assert page.evaluate('window.syntheticDateClicks') == 0
+        assert metrics['detail'] == []
 
 
 @pytest.mark.parametrize('phase', ['trial', 'actual'])
