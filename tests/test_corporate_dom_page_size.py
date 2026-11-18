@@ -774,11 +774,14 @@ def test_pilot_label_host_cpu_unavailable_preserves_stop_and_privacy(
     monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
     monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
     monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', lambda: None)
+    def synthetic_stop():
+        raise driver.CaptureCancelled(secret)
+
     with d.session(tmp_path, 'worker') as log:
         with pytest.raises(driver.CaptureCancelled, match=secret):
             with driver._timed_existing_rpc('pilot_label_lookup', 3, 500,
                                             [0], {}):
-                raise driver.CaptureCancelled(secret)
+                synthetic_stop()
         assert log.flush()
     events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
     assert len(events) == 1
