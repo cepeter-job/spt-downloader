@@ -151,7 +151,10 @@ coefficient digits, a finite `Decimal(str(float(x)))` round-trip and no signed
 zero. The raw Decimal stays the DER operand and the worksheet cell keeps the
 reviewed zero-digit display rounding. A non-binary DER ratio is reported
 `der_exact=false` and remains unqualified instead of refusing the whole form,
-rounding an operand or fabricating a ratio.
+rounding an operand or fabricating a ratio. This representation permission is
+recorded, with its approval basis and its explicit exclusions, in the [L11-B
+fractional-mean approval](docs/superpowers/specs/2026-11-18-corporate-l11b-fractional-mean-approval.md);
+it grants no header/question slot and no live-acceptance claim.
 
 Still unprojected pending proof: the header/question controls, and the derived
 DER ratio whenever it is not exactly binary. Keep `projection_complete=False`
