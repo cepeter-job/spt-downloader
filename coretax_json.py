@@ -24,19 +24,37 @@ UNIFIKASI_REFERENCE_URL = (ORIGIN + '/referencedata/api/currentreferencedata/id-
 CORPORATE_COUNTRY_REFERENCE_URL = ORIGIN + '/referencedata/api/currentreferencedata/id-ID/COUNTRY_CODE'
 CORPORATE_L3_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
     for kind in ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')}
+CORPORATE_L10A_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l10a-grid'
 CORPORATE_L3_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l3-table-b-grid'
 CORPORATE_L3_FOOTER_URL = CORPORATE_L3_GRID_URL + '/footer'
 CORPORATE_L11A_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
     for kind in ('TYPE_OF_PROMOTION_COST', 'TANGIBLE_ASSET_INCLUDING_BUILDINGS',
                  'NON_PERFORMING_LOAN_CATEGORY', 'DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')}
+CORPORATE_L10_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('COUNTRY_CODE', 'RELATIONSHIP_TYPE', 'TRANSACTION_TYPE', 'PRICING_METHOD')}
+CORPORATE_L4_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('TAX_OBJECT_CODE', 'INCOME_EXCLUDED_FROM_TAX_FOR_CIT')}
+CORPORATE_L2_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('COUNTRY_CODE', 'RELATED_PERSON_TYPE')}
+CORPORATE_L9_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('TANGIBLE_ASSET', 'GROUP_OF_BUILDINGS', 'INTANGIBLE_ASSET',
+                 'COMMERCIAL_METHOD', 'FISCAL_METHOD')}
+CORPORATE_INDUK_REFERENCE_URLS = {kind: ORIGIN + '/referencedata/api/currentreferencedata/id-ID/' + kind
+    for kind in ('CIT_TAX_RATE',)}
 CORPORATE_REFERENCE_REQUESTS = {url: (kind,) for kind, url in
-    {**CORPORATE_L3_REFERENCE_URLS, **CORPORATE_L11A_REFERENCE_URLS}.items()}
+    {**CORPORATE_L3_REFERENCE_URLS, **CORPORATE_L11A_REFERENCE_URLS,
+     **CORPORATE_L10_REFERENCE_URLS, **CORPORATE_L4_REFERENCE_URLS,
+     **CORPORATE_L2_REFERENCE_URLS, **CORPORATE_L9_REFERENCE_URLS,
+     **CORPORATE_INDUK_REFERENCE_URLS}.items()}
 CORPORATE_REFERENCE_REQUESTS[ORIGIN + '/referencedata/api/currentreferencedata/id-ID/'
     'DEDUCTION_METHOD,TYPE_OF_FULFILLMENT'] = ('DEDUCTION_METHOD', 'TYPE_OF_FULFILLMENT')
 CORPORATE_L11A_GRID_URLS = tuple(ORIGIN + f'/returnsheet/api/loadcit/l11a-table-{index}-grid'
                                   for index in (1, 2, 3, 5))
 REFERENCE_ORDER_SOURCE = ORIGIN + '/returnsheets/id-ID/vendor.c32c4ee39d966e30.js'
 REFERENCE_ORDER_SHA256 = load_build_pins().get(REFERENCE_ORDER_SOURCE)
+CORPORATE_REFERENCE_SOURCES = (
+    ORIGIN + '/returnsheets/id-ID/525.c5690c441d8dbc45.js',
+    ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js', REFERENCE_ORDER_SOURCE)
 SUBMITTED_ENDPOINT = '/returnsheet/api/returnsheetssubmitted'
 LOOKUP_HEADERS = {
     'TaxTypeCode': 'Jenis Pajak',
@@ -174,6 +192,42 @@ def _capture_l7_lifetime(value, *, attempt, record_id, source_url, detail_url):
     return dict(value)
 
 
+def _capture_l10b_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Own continuous non-display form history, not a borrowed sibling proof."""
+    facts = {'fresh_root', 'fresh_form', 'stable_root', 'stable_form', 'enabled_boundaries'}
+    if (not isinstance(value, dict)
+            or set(value) != facts | {'kind', 'attempt', 'record_id', 'source_url', 'detail_url'}
+            or value.get('kind') != 'corporate-l10b-spa-v1'
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in facts)):
+        raise JsonSafetyError('Captured L10-B history is invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return dict(value)
+
+
+def _capture_l10c_lifetime(value, *, attempt, record_id, source_url, detail_url):
+    """Closed C-owned fact; the shared final-snapshot owner must seal it."""
+    facts = {'fresh_root', 'fresh_form', 'stable_root', 'stable_form',
+             'stable_grid', 'stable_controls', 'enabled_boundaries'}
+    if (not isinstance(value, dict)
+            or set(value) != facts | {'kind', 'attempt', 'record_id', 'source_url', 'detail_url'}
+            or value.get('kind') != 'corporate-l10c-spa-v1'
+            or type(record_id) is not str or not record_id
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or any(value.get(key) is not True for key in facts)):
+        raise JsonSafetyError('Captured L10-C history is invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return dict(value)
+
+
 def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
     """Validate the stronger optional L8 history, never inferred during replay."""
     keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url',
@@ -192,6 +246,31 @@ def _capture_l8_lifetime(value, *, attempt, record_id, source_url, detail_url):
     return dict(value)
 
 
+def _corporate_reference_builds(value):
+    """Positive configured loaded pins, never missing==missing or SHA shape alone."""
+    pins = load_build_pins()
+    return (isinstance(value, dict) and set(value) == set(CORPORATE_REFERENCE_SOURCES)
+            and all(type(value[url]) is str and re.fullmatch(r'[0-9a-f]{64}', value[url])
+                    and type(pins.get(url)) is str and re.fullmatch(r'[0-9a-f]{64}', pins[url])
+                    and value[url] == pins[url] for url in CORPORATE_REFERENCE_SOURCES))
+
+
+def _capture_corporate_reference_providers(value, *, attempt, record_id, source_url, detail_url):
+    """Optional manifest-owned provider fact bound to the original owned Document."""
+    keys = {'kind', 'attempt', 'record_id', 'source_url', 'detail_url', 'builds'}
+    if (not isinstance(value, dict) or set(value) != keys
+            or value.get('kind') != 'corporate-reference-providers-v1'
+            or value.get('attempt') != attempt or value.get('record_id') != record_id
+            or value.get('source_url') != source_url or value.get('detail_url') != detail_url
+            or not _corporate_reference_builds(value.get('builds'))):
+        raise JsonSafetyError('Captured corporate reference providers are invalid or unbound')
+    _capture_component_lifetime({'kind': 'corporate-submitted-spa-v1', 'attempt': attempt,
+        'record_id': record_id, 'source_url': source_url, 'detail_url': detail_url,
+        'transition_count': 1, 'same_document': True, 'source_owner': True, 'detail_owner': True},
+        attempt=attempt, record_id=record_id, source_url=source_url, detail_url=detail_url)
+    return {**value, 'builds': dict(value['builds'])}
+
+
 def _reference_consumer_order(details, kind):
     """Pinned ordinary cache.add order, retaining original response ordinals.
 
@@ -201,7 +280,9 @@ def _reference_consumer_order(details, kind):
     ordinary = {'EBUPOT_TAX_CERTIFICATE', 'COUNTRY_CODE', 'EBUPOT_STATUS',
                 'EBUPOT_PAYMENT_METHOD', 'EBUPOTSP_TAX_OBJECT', 'EBUPOTCY_TAX_OBJECT',
                 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES',
-                *CORPORATE_L11A_REFERENCE_URLS}
+                *CORPORATE_L11A_REFERENCE_URLS, *CORPORATE_L10_REFERENCE_URLS,
+                *CORPORATE_L4_REFERENCE_URLS, *CORPORATE_L2_REFERENCE_URLS,
+                *CORPORATE_L9_REFERENCE_URLS, *CORPORATE_INDUK_REFERENCE_URLS}
     if (kind not in ordinary or not isinstance(details, list)
             or any(not isinstance(row, dict) or type(row.get('CodeDescription')) is not str for row in details)):
         raise _UnsupportedMetadata('unsupported_reference_cache_order')
@@ -584,7 +665,7 @@ CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
 
 
-def has_audit_dump_tables(sections):
+def has_audit_dump_tables(sections, *, provenance=None):
     """True when a captured section is nothing but the generic payload dump.
 
     The dump is evidence for an unmapped payload root, not a form projection:
@@ -592,6 +673,15 @@ def has_audit_dump_tables(sections):
     ``fields`` has been projected, so its dump stays custody evidence only.
     """
     for section in sections or ():
+        # Six recap fields do not cover twelve data-bearing grid inventories.
+        # Preserve whole-record DOM fallback, even with reviewed scalar fields.
+        if section.get('unprojected_grids'):
+            return True
+        if section.get('name') == 'L10-B':
+            from coretax_corporate_projection import l10b_nondisplay_covered
+            if not l10b_nondisplay_covered(section, provenance):
+                return True
+            continue
         if section.get('fields'):
             continue
         for table in section.get('tables') or ():
@@ -732,6 +822,9 @@ def _corporate_bindings(observed_forms):
         if not isinstance(form, dict) or not _corporate_literal(form.get('name')) or form['name'] in names:
             raise JsonSafetyError('Observed form names are missing or ambiguous')
         names.add(form['name'])
+        if 'original_custody' in form:
+            from coretax_corporate_l10d import validate_binding
+            validate_binding(form)
         section = {'name': form['name'], 'fields': [], 'tables': [], 'text': ''}
         if 'disabled' in form:
             if form['disabled'] is not True:
@@ -888,6 +981,13 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_WTR')
     reference = reference or (allow_corporate_reference is True and endpoint in CORPORATE_REFERENCE_REQUESTS
                  and ctx.get('method') == 'GET' and ctx.get('request_json') is None
+                 and (endpoint not in ({url for kind, url in CORPORATE_L10_REFERENCE_URLS.items()
+                                      if kind != 'COUNTRY_CODE'} | set(CORPORATE_L4_REFERENCE_URLS.values())
+                                      | {url for kind, url in CORPORATE_L2_REFERENCE_URLS.items()
+                                         if kind != 'COUNTRY_CODE'}
+                                      | set(CORPORATE_L9_REFERENCE_URLS.values())
+                                      | set(CORPORATE_INDUK_REFERENCE_URLS.values()))
+                      or 'request_json' in ctx)
                  and selected['native_fields'].get('TaxTypeCode') == 'ICT_RCIT'
                  and selected['native_fields'].get('ReturnSheetTypeCode') == 'ICT_RCITR')
     ordinary = (urlparse(endpoint).path.startswith('/returnsheet/api/')
@@ -914,11 +1014,24 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured component lifetime has an unsupported owner')
         lifetime = _capture_component_lifetime(ctx['component_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    providers = None
+    if 'corporate_reference_providers' in ctx:
+        if lifetime is None or clock is None:
+            raise JsonSafetyError('Corporate reference providers lack original lifetime or clock')
+        providers = _capture_corporate_reference_providers(ctx['corporate_reference_providers'],
+            attempt=current, record_id=selected['record_id'],
+            source_url=selected['source_url'], detail_url=frame)
     l7_lifetime = None
     if 'corporate_l7_lifetime' in ctx:
         if lifetime is None:
             raise JsonSafetyError('Captured L7 history lacks its component lifetime')
         l7_lifetime = _capture_l7_lifetime(ctx['corporate_l7_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10c_lifetime = None
+    if 'corporate_l10c_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L10-C history lacks its component lifetime')
+        l10c_lifetime = _capture_l10c_lifetime(ctx['corporate_l10c_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
     l8_lifetime = None
     if 'corporate_l8_lifetime' in ctx:
@@ -926,6 +1039,16 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
             raise JsonSafetyError('Captured L8 history lacks its component lifetime')
         l8_lifetime = _capture_l8_lifetime(ctx['corporate_l8_lifetime'], attempt=current,
             record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10b_lifetime = None
+    if 'corporate_l10b_lifetime' in ctx:
+        if lifetime is None:
+            raise JsonSafetyError('Captured L10-B history lacks its component lifetime')
+        l10b_lifetime = _capture_l10b_lifetime(ctx['corporate_l10b_lifetime'], attempt=current,
+            record_id=selected['record_id'], source_url=selected['source_url'], detail_url=frame)
+    l10d_lifetime = None
+    if 'corporate_l10d_lifetime' in ctx:
+        from coretax_corporate_l10d import validate_lifetime
+        l10d_lifetime = validate_lifetime(ctx['corporate_l10d_lifetime'], lifetime)
     status = ctx.get('status')
     if type(status) is not int or not 100 <= status <= 599 or status in (401, 403):
         raise JsonSafetyError('Captured corporate HTTP authorization is unsafe')
@@ -949,10 +1072,18 @@ def _corporate_packet(item, selected, scope, attempt, sequences, *, allow_pph21_
         event['clock_interval'] = clock
     if lifetime is not None:
         event['component_lifetime'] = lifetime
+    if providers is not None:
+        event['corporate_reference_providers'] = providers
     if l7_lifetime is not None:
         event['corporate_l7_lifetime'] = l7_lifetime
     if l8_lifetime is not None:
         event['corporate_l8_lifetime'] = l8_lifetime
+    if l10b_lifetime is not None:
+        event['corporate_l10b_lifetime'] = l10b_lifetime
+    if l10c_lifetime is not None:
+        event['corporate_l10c_lifetime'] = l10c_lifetime
+    if l10d_lifetime is not None:
+        event['corporate_l10d_lifetime'] = l10d_lifetime
     if ctx.get('request_json') is not None:
         _corporate_request_key(ctx['request_json'])
         event['request_json'] = json.loads(json.dumps(ctx['request_json'], ensure_ascii=False))
@@ -1293,10 +1424,12 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
     coverage = {'complete': False, 'source_root_count': 0, 'evidence_row_count': 0, 'grids': []}
     provenance = {'events': [], 'controls': [], 'draft_flags': {}}
     reasons, sequences, snapshots, clocks, lifetimes, l8_lifetimes = [], set(), {}, set(), set(), set()
-    l7_lifetimes = set()
+    l7_lifetimes, l10b_lifetimes, l10c_lifetimes, l10d_lifetimes = set(), set(), set(), set()
+    reference_providers = set()
     query_counts, catalog_snapshots = {}, {}
     attempt, primary_hash, total_bytes = None, None, 0
     primary_source, country_packets, reference_packets, auxiliary_packets = None, {}, {}, {}
+    grid_packets = {}
     supported_tax = record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
     if not supported_tax:
         reasons.append('unsupported_corporate_tax_kind')
@@ -1315,12 +1448,24 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         lifetimes.add(_corporate_request_key(event.get('component_lifetime')))
         if len(lifetimes) != 1:
             raise JsonSafetyError('Corporate component lifetime is missing or mixed within one attempt')
+        reference_providers.add(_corporate_request_key(event.get('corporate_reference_providers')))
+        if len(reference_providers) != 1:
+            raise JsonSafetyError('Corporate reference providers are missing or mixed within one attempt')
         l8_lifetimes.add(_corporate_request_key(event.get('corporate_l8_lifetime')))
         l7_lifetimes.add(_corporate_request_key(event.get('corporate_l7_lifetime')))
+        l10b_lifetimes.add(_corporate_request_key(event.get('corporate_l10b_lifetime')))
+        if len(l10b_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-B history is missing or mixed within one attempt')
         if len(l7_lifetimes) != 1:
             raise JsonSafetyError('Corporate L7 history is missing or mixed within one attempt')
+        l10c_lifetimes.add(_corporate_request_key(event.get('corporate_l10c_lifetime')))
+        if len(l10c_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-C history is missing or mixed within one attempt')
         if len(l8_lifetimes) != 1:
             raise JsonSafetyError('Corporate L8 history is missing or mixed within one attempt')
+        l10d_lifetimes.add(_corporate_request_key(event.get('corporate_l10d_lifetime')))
+        if len(l10d_lifetimes) != 1:
+            raise JsonSafetyError('Corporate L10-D history is missing or mixed within one attempt')
         total_bytes += ctx['bytes']
         if len(sequences) > 1024 or total_bytes > 128 * 1024 * 1024:
             raise JsonSafetyError('Corporate source response budget exceeded')
@@ -1334,7 +1479,8 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         is_primary = primary is not None and key == primary
         is_country = ctx['url'] == CORPORATE_COUNTRY_REFERENCE_URL
         reference_kinds = CORPORATE_REFERENCE_REQUESTS.get(ctx['url'])
-        is_auxiliary = ctx['url'] in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL, *CORPORATE_L11A_GRID_URLS)
+        is_auxiliary = ctx['url'] in (CORPORATE_L3_GRID_URL, CORPORATE_L3_FOOTER_URL,
+                                      CORPORATE_L4_FOOTER_URL, *CORPORATE_L11A_GRID_URLS)
         if is_primary or binding is not None or reference_kinds is not None or is_auxiliary:
             old_hash = snapshots.get(key)
             if old_hash is not None and old_hash != ctx['sha256']:
@@ -1420,6 +1566,25 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
                     raise _UnsupportedMetadata('failed_declared_corporate_source_response')
                 if state['kind'] == 'grids':
                     _corporate_grid_page(state, key, offset, payload, ctx['sha256'])
+                    if state['endpoint'] == CORPORATE_L4_GRID_URL:
+                        # The reviewed L4 projection consumes decoded page values,
+                        # exactly like the L3/L11-A auxiliary grids; the rendered
+                        # evidence rows stay audit-only. Keep the original payload
+                        # for this single endpoint instead of widening `is_auxiliary`.
+                        auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
+
+                    if ctx['url'] == CORPORATE_L10A_GRID_URL:
+                        # Keep the decoded original, including empty/null Data
+                        # and typed count/Index. Projection chooses the earliest
+                        # successful exact-query sequence after all safety gates.
+                        grid_packets[event['sequence']] = {
+                            'payload': payload, 'event': event, 'successful': success}
+                    if state['section']['name'] == 'L9':
+                        # Semantic consumers use the decoded ORIGINAL Data and
+                        # page event, never reconstructed flattened audit rows.
+                        # First successful original sequence wins; repeats must
+                        # already have passed the exact snapshot/hash guard.
+                        auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
                 else:
                     old = state['seen'].get(key)
                     if old is not None and old['sha256'] != ctx['sha256']:
@@ -1498,12 +1663,42 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
         else:
             provenance.setdefault('dependencies', []).append({'endpoint': state['endpoint'], 'rows': rows})
     if not reasons and primary_source is not None:
+        # Original-only custody is independent of worksheet projection. An
+        # offered L10-D candidate retains every raw operand but cannot supply
+        # the unobserved final-Induk/continuous-child capability. Keep that
+        # blocker explicit; never add dummy fields or exempt its dump table.
+        from coretax_corporate_l10d import collect_original_custody, FINAL_CUSTODY_BLOCKER
+        root, payload, event = primary_source
+        for binding in observed_forms:
+            if 'original_custody' not in binding:
+                continue
+            try:
+                candidate = collect_original_custody(binding, observed_forms, root=root,
+                    payload=payload, record=record, event=event)
+                provenance.setdefault('non_display_originals', []).append(candidate)
+                # Approved 2026-11-18: L10-D is non-display custody. Its raw
+                # originals stay sealed and its admission stays False, but the
+                # unobserved final-Induk capability is reported as a partial
+                # rather than vetoing the whole record's native source.
+                provenance.setdefault('non_display_partials', []).append(
+                    {'kind': candidate['kind'], 'blocker': FINAL_CUSTODY_BLOCKER})
+            except _UnsupportedMetadata as error:
+                reasons.append(str(error))
+    # Non-display custody (approved 2026-11-18 for L10-D) keeps its originals in
+    # `sections` for positional pairing but never publishes a worksheet.
+    non_display = {binding['name'] for binding in observed_forms
+                   if 'original_custody' in binding and 'projection' not in binding}
+    for section in sections:
+        if section.get('name') in non_display:
+            section['disabled'] = True
+    if not reasons and primary_source is not None:
         from coretax_corporate_projection import apply_projections
         try:
             root, payload, event = primary_source
             projected = apply_projections(sections, observed_forms, root=root, payload=payload,
                 record=record, event=event, country_packets=country_packets,
-                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets)
+                reference_packets=reference_packets, auxiliary_packets=auxiliary_packets,
+                grid_packets=grid_packets)
             if projected:
                 provenance['projections'] = projected
         except _UnsupportedMetadata as error:

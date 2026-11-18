@@ -5,7 +5,7 @@ import pytest
 
 from support_financial_browser import browser as browser, routed as routed
 from support_financial_browser import DETAIL, PDF_URL, RECORD, attachments, downloaded
-from support_financial_modern import CURRENT_LABEL, modern_content
+from support_financial_modern import CURRENT_CAPTIONS, CURRENT_LABEL, RENAMED_CAPTIONS, modern_content
 from support_financial_post import post_routed as post_routed
 
 
@@ -48,6 +48,30 @@ def test_modern_headers_are_observed_before_action_caption_admission(post_routed
     assert sorted(item['binding_state'] for item in buttons) == ['bound', 'unbound', 'unbound']
     assert observed['controls'] == []
     assert page.evaluate('window.syntheticClicks') == 0 and wire == []
+
+
+@pytest.mark.parametrize('captions', [CURRENT_CAPTIONS, RENAMED_CAPTIONS])
+def test_both_approved_attachment_captions_bind_the_financial_row(post_routed, captions):
+    page, wire = post_routed(content=modern_content(captions=captions))
+
+    observed = scan(page)
+
+    assert observed['observations'] and all(
+        item['attachment_tables'] == 3 for item in observed['observations'])
+    controls = observed['controls']
+    assert len(controls) == 1
+    assert controls[0]['label'] == CURRENT_LABEL
+    assert controls[0]['filename'] == 'synthetic-financial.pdf'
+    assert wire == [] and page.evaluate('window.syntheticClicks') == 0
+
+
+def test_unapproved_attachment_caption_never_binds_a_financial_row(post_routed):
+    page, wire = post_routed(content=modern_content(captions=('NO.', 'DOKUMEN', 'TINDAKAN')))
+
+    observed = scan(page)
+
+    assert observed['observations'][0]['attachment_tables'] == 0
+    assert observed['controls'] == [] and wire == []
 
 
 def test_modern_aria_only_action_is_scoped_to_one_financial_row(post_routed):

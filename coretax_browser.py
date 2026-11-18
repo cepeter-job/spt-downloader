@@ -74,14 +74,16 @@ GROUP_JS = r'''(element) => {
 
 CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  const panel=table.closest('.p-tabview-panel');
- const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form,rshshr-citr-l3-form,rshshr-citr-l11a-form');
+ const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l2-form,rshshr-citr-l9-form,rshshr-citr-l3-form,rshshr-citr-l11a-form,rshshr-citr-l11b-form');
  if(!panel || !form || form.closest('.p-tabview-panel')!==panel) return null;
- const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':name==='L11-A'?'rshshr-citr-l11a-form':'';
+ const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L2'?'rshshr-citr-l2-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':name==='L11-A'?'rshshr-citr-l11a-form':name==='L11-B'?'rshshr-citr-l11b-form':'';
  if(form.localName!==expectedForm) return null;
  const roles={
   'rsh-citr-l1d-grid1':['L1-D','A. LAPORAN LABA RUGI'],
   'rsh-citr-l1d-grid2':['L1-D','B. LAPORAN POSISI KEUANGAN'],
   'rsh-citr-l1d-grid3':['L1-D','B. LAPORAN POSISI KEUANGAN'],
+  'rsh-citr-l2-form-grid1':['L2','A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS'],
+  'rsh-citr-l2-form-grid2':['L2','B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI'],
   'rsh-citr-l3-grid1':['L3','A. PENGHASILAN DARI LUAR NEGERI'],
   'rshshr-citr-l3-grid2':['L3','B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'],
   'rshshr-citr-l11a-grid1':['L11-A','I. DAFTAR NOMINATIF BIAYA PROMOSI DAN PENJUALAN, SERTA PENGGANTIAN ATAU IMBALAN DALAM BENTUK NATURA DAN/ATAU KENIKMATAN'],
@@ -89,6 +91,9 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
   'rshshr-citr-l11a-grid3':['L11-A','III. DAFTAR PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH'],
   'rsh-citr-l11a-grid4':['L11-A','IV. RINCIAN BAGI WAJIB PAJAK PEMBERI NATURA DAN/ATAU KENIKMATAN'],
   'rshshr-citr-l11a-grid5':['L11-A','V. DAFTAR DEBITUR NON-PERFORMING LOAN'],
+  'rsh-citr-l11b-form-grid1':['L11-B','II. PERBANDINGAN ANTARA UTANG DAN MODAL (DEBT TO EQUITY RATIO)'],
+  'rsh-citr-l11b-form-grid2':['L11-B','II. PERBANDINGAN ANTARA UTANG DAN MODAL (DEBT TO EQUITY RATIO)'],
+  'rsh-citr-l11b-form-grid3':['L11-B','III. PENGHITUNGAN BIAYA PINJAMAN'],
   'rshshr-citr-l9-form-grid1':['L9','HARTA BERWUJUD'],
   'rshshr-citr-l9-form-grid2':['L9','BANGUNAN'],
   'rshshr-citr-l9-form-grid3':['L9','HARTA TIDAK BERWUJUD']
@@ -107,9 +112,12 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  if(components.length!==1) return null;
  const component=components[0], role=roles[component];
  if(role[0]!==name || groups[0]!==role[1]) return null;
- if(['L1-D','L3'].includes(name) && groups.length!==1) return null;
+ if(['L1-D','L2','L3'].includes(name) && groups.length!==1) return null;
  if(name==='L11-A' && (component==='rsh-citr-l11a-grid4'?
     groups.length!==2 || groups[1]!=='IV.A DAFTAR SARANA DAN FASILITAS SERTA PENYUSUTANNYA':groups.length!==1)) return null;
+ if(name==='L11-B' && (component==='rsh-citr-l11b-form-grid3'?groups.length!==1:
+    groups.length!==2 || groups[1]!== (component==='rsh-citr-l11b-form-grid1'?
+    'A. PENGHITUNGAN RATA-RATA SALDO UTANG':'B. PENGHITUNGAN SALDO RATA-RATA MODAL'))) return null;
  if(name==='L9'){
   const inner=component.endsWith('grid2')?['PERMANEN','TIDAK PERMANEN']:
    ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA','KELOMPOK LAINNYA'];
@@ -2745,7 +2753,8 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
         # carries the generic payload dump was never projected into the
         # worksheet, so the complete DOM capture must keep the output.
         from coretax_json import has_audit_dump_tables
-        if has_audit_dump_tables((decoded or {}).get('sections') or ()):
+        if has_audit_dump_tables((decoded or {}).get('sections') or (),
+                                 provenance=(decoded or {}).get('provenance')):
             eligible = False
     source_reason = ('native_verified' if eligible else
                      'unsupported_tax' if not corporate and not masa else

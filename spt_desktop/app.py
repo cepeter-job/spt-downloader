@@ -1,5 +1,5 @@
 """Simple native Windows interface; settings persist no password/token values."""
-from datetime import date
+from datetime import date, datetime
 import json
 import os
 import queue
@@ -19,6 +19,7 @@ from .ui_views import MainView
 from .ui_theme import configure_dialog, dip_to_px, effective_scale
 from .job_pruning import (DEFAULT_KEEP_JOBS, validate_keep_jobs,
                           preview_published_jobs, prune_published_jobs)
+from .job_maintenance import inspect_job_storage, delete_incomplete_jobs
 from .paths import downloads_folder
 from .build_info import read_build_info
 from . import update_notice
@@ -210,6 +211,12 @@ class App:
         self._settings_close=None
         self._settings_refresh=None
         self._manual_prune_busy=False
+        self._storage_snapshot=None
+        self._storage_vars=None
+        self._storage_pending=False
+        self._storage_rerun=False
+        self._storage_results=queue.Queue(maxsize=1)
+        self._storage_after=None
         self._interaction=None
         self._interaction_seen=set()
         self._interaction_stopped_job=None
@@ -247,6 +254,8 @@ class App:
         # Synthetic GUI self-tests inject a controller and must stay offline.
         if self._owns_controller:
             self._update_after = root.after(0, self.check_updates)
+            # Read-only private job inventory; never delete PARTIAL/failed on startup.
+            self._storage_after = root.after(0, self._refresh_storage)
 
     def check_updates(self, manual=False):
         """Fetch public release metadata off Tk's thread, never touching Coretax."""
@@ -403,6 +412,63 @@ class App:
                 'Folder log belum tersedia atau tidak dapat dibuka. Periksa izin workspace dan pengaturan logging.',
                 parent=self._settings_dialog or self.root)
 
+    def _refresh_storage(self):
+        """Inspect private job storage off Tk, without starting any cleanup."""
+        self._storage_after = None
+        if self._disposed:
+            return
+        if self._storage_pending:
+            self._storage_rerun = True
+            return
+        self._storage_pending = True
+        self._paint_storage()
+        workspace = self.workspace
+        keep = self.preferences['keep_jobs']
+        active_id = (getattr(self.controller, 'job_id', None)
+                     if self.controller.active else None)
+
+        def inspect():
+            try:
+                snapshot = inspect_job_storage(workspace, keep, active_id=active_id)
+            except (OSError, ValueError, TypeError, RuntimeError):
+                snapshot = None
+            self._storage_results.put(snapshot)
+
+        threading.Thread(target=inspect, name='spt-storage-inventory',
+                         daemon=True).start()
+        self._storage_after = self.root.after(150, self._receive_storage)
+
+    def _receive_storage(self):
+        self._storage_after = None
+        if self._disposed:
+            return
+        try:
+            self._storage_snapshot = self._storage_results.get_nowait()
+        except queue.Empty:
+            self._storage_after = self.root.after(150, self._receive_storage)
+            return
+        self._storage_pending = False
+        self._paint_storage()
+        if self._storage_rerun:
+            self._storage_rerun = False
+            self._refresh_storage()
+
+    def _paint_storage(self):
+        """Show only aggregates; do not display tax data or job identifiers."""
+        if self._storage_vars is None:
+            return
+        fields = self._storage_vars
+        if self._storage_pending or self._storage_snapshot is None:
+            for name in ('total', 'complete', 'partial', 'failed', 'protected', 'size'):
+                fields[name].set('Memeriksa…' if self._storage_pending else '—')
+            return
+        snapshot = self._storage_snapshot
+        for name in ('total', 'complete', 'partial', 'failed', 'protected'):
+            fields[name].set(str(snapshot[name]))
+        size = snapshot['estimated_bytes'] / (1024 * 1024)
+        prefix = '≥ ' if not snapshot['scan_complete'] else '≈ '
+        fields['size'].set(f'{prefix}{size:.1f} MiB')
+
     def _prune_old_jobs(self, dialog, dirty):
         """Dry-run, confirm, then revalidate in an idle worker before deleting."""
         if self._manual_prune_busy or self.controller.active or self._disposed:
@@ -529,8 +595,179 @@ class App:
                     self._settings_refresh(preserve_status=True)
                 self._credential_status.set(
                     'Pemangkasan selesai atau dibatalkan. Nilai retensi tetap tersimpan.')
+                self._refresh_storage()
 
         threading.Thread(target=inspect, name='spt-prune-preview', daemon=True).start()
+        self.root.after(100, receive)
+
+    def _remove_incomplete_jobs(self, dialog, dirty):
+        """Explicit selection and two-stage confirmation for incomplete jobs."""
+        if self._manual_prune_busy or self.controller.active or self._disposed:
+            return
+        if dirty():
+            messagebox.showinfo('Simpan pengaturan',
+                'Simpan atau abaikan perubahan sebelum membersihkan job.', parent=dialog)
+            return
+        self._manual_prune_busy = True
+        if self._settings_refresh is not None:
+            self._settings_refresh(preserve_status=True)
+        self._credential_status.set('Memeriksa job PARTIAL/gagal secara aman…')
+        work = queue.Queue(maxsize=1)
+        # A finished PARTIAL job must be selectable. Exclude only an active ID.
+        excluded = (getattr(self.controller, 'job_id', None)
+                    if self.controller.active else None)
+        candidates = {}
+        approvals = ()
+
+        def inspect():
+            try:
+                snapshot = inspect_job_storage(
+                    self.workspace, self.preferences['keep_jobs'], active_id=excluded)
+                work.put(('preview', snapshot))
+            except (OSError, ValueError, TypeError, RuntimeError):
+                work.put(('preview_error', None))
+
+        def delete():
+            try:
+                result = delete_incomplete_jobs(
+                    self.workspace, approvals, active_id=excluded)
+                work.put(('deleted', result))
+            except (OSError, ValueError, TypeError, RuntimeError):
+                work.put(('delete_error', None))
+
+        def finish():
+            self._manual_prune_busy = False
+            if self._settings_refresh is not None:
+                self._settings_refresh(preserve_status=True)
+
+        def choose(items):
+            nonlocal approvals
+            picker = tk.Toplevel(dialog)
+            picker.title('Pilih job PARTIAL/gagal')
+            picker.transient(dialog)
+            frame = ttk.Frame(picker, padding=16)
+            frame.pack(fill='both', expand=True)
+            ttk.Label(frame, text='Pilih job yang akan dihapus permanen. '
+                      'Capture dan checkpoint tidak dapat dipulihkan tanpa backup.',
+                      wraplength=560).pack(anchor='w', pady=(0, 12))
+            table = ttk.Treeview(frame, columns=('number', 'status', 'modified', 'size'),
+                                 show='headings', selectmode='extended', height=10)
+            columns = (('number', 'No.', 55), ('status', 'Status', 95),
+                       ('modified', 'Terakhir berubah', 155), ('size', 'Ukuran (MiB)', 110))
+            for key, label, width in columns:
+                table.heading(key, text=label)
+                table.column(key, width=width, anchor='center', stretch=(key == 'modified'))
+            for number, item in enumerate(items, 1):
+                try:
+                    changed = datetime.fromtimestamp(
+                        item['modified_ns'] / 1_000_000_000).strftime('%Y-%m-%d %H:%M')
+                except (OSError, ValueError, OverflowError):
+                    changed = 'Tidak tersedia'
+                table.insert('', 'end', iid=item['id'],
+                             values=(number, item['status'], changed,
+                                     f"{item['bytes'] / (1024 * 1024):.1f}"))
+            table.pack(fill='both', expand=True)
+            ttk.Label(frame, text='Gunakan Ctrl/Shift untuk memilih beberapa baris. '
+                      'Job dengan recovery, segel COMPLETE, atau file tak terverifikasi '
+                      'tidak tersedia di daftar ini.', wraplength=560).pack(
+                          anchor='w', pady=(10, 8))
+            actions = ttk.Frame(frame)
+            actions.pack(anchor='e')
+
+            def cancel():
+                picker.grab_release()
+                picker.destroy()
+                if dialog.winfo_exists():
+                    dialog.grab_set()
+                finish()
+                self._credential_status.set('Pembersihan job dibatalkan.')
+
+            def confirm():
+                nonlocal approvals
+                chosen = tuple(table.selection())
+                if not chosen:
+                    messagebox.showinfo('Pilih job',
+                        'Pilih sekurangnya satu job PARTIAL/gagal.', parent=picker)
+                    return
+                bytes_total = sum(candidates[i]['bytes'] for i in chosen)
+                accepted = messagebox.askyesno(
+                    'Konfirmasi penghapusan permanen',
+                    f'{len(chosen)} job PARTIAL/gagal dipilih '
+                    f'(≈ {bytes_total / (1024 * 1024):.1f} MiB).\n\n'
+                    'Seluruh capture dan checkpoint job terpilih akan dihapus '
+                    'secara permanen. Hasil Downloads, profil dan login tidak dihapus. '
+                    'Pemeriksaan keselamatan diulang sebelum menghapus. Lanjutkan?',
+                    parent=picker, default='no')
+                if not accepted:
+                    return
+                approvals = tuple((i, candidates[i]['digest']) for i in chosen)
+                picker.grab_release()
+                picker.destroy()
+                if dialog.winfo_exists():
+                    dialog.grab_set()
+                self._credential_status.set('Menghapus job terpilih setelah verifikasi ulang…')
+                threading.Thread(target=delete, name='spt-remove-incomplete',
+                                 daemon=True).start()
+                self.root.after(100, receive)
+
+            ttk.Button(actions, text='Batal', command=cancel).pack(side='left', padx=(0, 8))
+            ttk.Button(actions, text='Hapus terpilih', command=confirm).pack(side='left')
+            picker.protocol('WM_DELETE_WINDOW', cancel)
+            picker.bind('<Escape>', lambda event: cancel())
+            dialog.grab_release()
+            picker.grab_set()
+            picker.focus_set()
+
+        def receive():
+            if self._disposed:
+                return
+            try:
+                kind, result = work.get_nowait()
+            except queue.Empty:
+                self.root.after(100, receive)
+                return
+            if kind == 'preview' and result is not None:
+                self._storage_snapshot = result
+                self._paint_storage()
+                if not result['scan_complete']:
+                    finish()
+                    messagebox.showinfo('Inventaris belum lengkap',
+                        'Ada file job yang tidak dapat diverifikasi. '
+                        'Tidak ada job dihapus; periksa izin, link dan recovery.',
+                        parent=dialog)
+                elif not result['removable']:
+                    finish()
+                    messagebox.showinfo('Tidak ada job PARTIAL/gagal',
+                        'Tidak ada job PARTIAL/gagal yang aman dipilih untuk penghapusan.',
+                        parent=dialog)
+                elif self.controller.active:
+                    finish()
+                    messagebox.showinfo('Job masih aktif',
+                        'Pembersihan dibatalkan selama scraping berjalan.', parent=dialog)
+                else:
+                    candidates.update({item['id']: item for item in result['removable']})
+                    choose(result['removable'])
+                return
+            finish()
+            if kind in ('preview_error', 'delete_error'):
+                messagebox.showerror('Pembersihan gagal',
+                    'Pemeriksaan atau penghapusan tidak tuntas. '
+                    'Periksa ulang job sebelum mencoba kembali.', parent=dialog)
+            elif kind == 'deleted':
+                if result['incomplete']:
+                    messagebox.showwarning('Pembersihan tidak tuntas',
+                        f"{result['removed']} job dihapus sepenuhnya; ada kandidat "
+                        'yang berubah, terkunci atau gagal dihapus. '
+                        'Sisa checkpoint mungkin tidak lengkap.', parent=dialog)
+                else:
+                    messagebox.showinfo('Pembersihan selesai',
+                        f"{result['removed']} job PARTIAL/gagal berhasil dihapus. "
+                        'Hasil Downloads dan login tetap disimpan.', parent=dialog)
+            self._credential_status.set('Pembersihan selesai atau dibatalkan.')
+            self._refresh_storage()
+
+        threading.Thread(target=inspect, name='spt-incomplete-preview',
+                         daemon=True).start()
         self.root.after(100, receive)
 
     def start(self):
@@ -659,6 +896,14 @@ class App:
                 # Root teardown may already have removed the pending poll command.
                 pass
             self._poll_after = None
+        if self._storage_after is not None:
+            try:
+                self.root.after_cancel(self._storage_after)
+            except tk.TclError:
+                # Tk may already have retired the pending callback during root
+                # teardown. Disposal is terminal; no retry is safe or needed.
+                pass
+            self._storage_after = None
         if self._update_after is not None:
             try:
                 self.root.after_cancel(self._update_after)
@@ -1416,6 +1661,26 @@ class App:
         ttk.Button(frame, text='Buka folder log', command=self.open_logs).grid(row=9,column=0,columnspan=2,sticky='w',pady=(4,0))
         ttk.Button(frame, text='Cek pembaruan', command=lambda:self.check_updates(manual=True)).grid(
             row=10,column=0,columnspan=2,sticky='w',pady=(4,0))
+        storage_frame=ttk.LabelFrame(frame, text='Dashboard penyimpanan job', padding=10)
+        storage_frame.grid(row=11,column=0,columnspan=2,sticky='ew',pady=(12,4))
+        self._storage_vars={
+            name:tk.StringVar(dialog, value='—')
+            for name in ('total','complete','partial','failed','protected','size')}
+        for index,(key,caption) in enumerate((
+                ('total','Total job'),('complete','COMPLETE'),
+                ('partial','PARTIAL'),('failed','Gagal / dibatalkan'),
+                ('protected','Protected (Auto Clean)'),('size','Ruang data privat'))):
+            cell=ttk.Frame(storage_frame, padding=(8,4))
+            cell.grid(row=index // 3,column=index % 3,sticky='w',padx=(0,12))
+            ttk.Label(cell,text=caption).pack(anchor='w')
+            ttk.Label(cell,textvariable=self._storage_vars[key]).pack(anchor='w')
+        ttk.Label(storage_frame,text='Protected dapat termasuk COMPLETE, PARTIAL, dan gagal; '
+                  'bukan jumlah tambahan. Ukuran hanya estimasi file yang terverifikasi.',
+                  wraplength=540).grid(row=2,column=0,columnspan=3,sticky='w',pady=(6,4))
+        storage_refresh_button=ttk.Button(storage_frame,text='Perbarui penggunaan storage',
+                                          command=self._refresh_storage)
+        storage_refresh_button.grid(row=3,column=0,columnspan=3,sticky='w')
+        self._paint_storage()
         traces=[]
         decision_dialog = None
         pending_preferences = False
@@ -1433,7 +1698,8 @@ class App:
             return pending_preferences or bool(password.get()) or selected()!=self.preferences
         def refresh(*args,preserve_status=False):
             active=self.controller.active
-            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button,prune_button]:
+            for widget in [w for _,w in controls]+[hidden_button,save_button,remove_button,
+                    prune_button,incomplete_button,storage_refresh_button]:
                 widget.state(['disabled' if active or self._manual_prune_busy else '!disabled'])
             if not active and not preserve_status:
                 self._credential_status.set('Perubahan belum disimpan. Pilih Simpan untuk menerapkannya.' if dirty() else
@@ -1442,6 +1708,7 @@ class App:
             for variable,token in traces:variable.trace_remove('write',token)
             password.set('');dialog.grab_release();dialog.destroy()
             self._settings_dialog=None;self._credential_status=None
+            self._storage_vars=None
             self._settings_close=None
             self._settings_refresh=None
             self.settings_button.focus_set()
@@ -1543,6 +1810,8 @@ class App:
             password.set('');refresh()
             self._credential_status.set('Pengaturan disimpan. Akun tersimpan akan dipakai saat Mulai unduh.')
             self.status.set('Pengaturan disimpan. Password tidak ditulis ke file preferensi.')
+            if self._owns_controller:
+                self._refresh_storage()
             return True
         def remove():
             nonlocal pending_preferences, credential_account, credential_changed, credential_action
@@ -1575,6 +1844,9 @@ class App:
         prune_button=ttk.Button(buttons,text='bersihkan cache job',
             command=lambda: self._prune_old_jobs(dialog,dirty))
         prune_button.pack(side='left',padx=(0,8))
+        incomplete_button=ttk.Button(storage_frame,text='hapus job PARTIAL/gagal',
+            command=lambda: self._remove_incomplete_jobs(dialog,dirty))
+        incomplete_button.grid(row=4,column=0,columnspan=3,sticky='w',pady=(6,0))
         ttk.Button(buttons,text='Tutup',command=close).pack(side='left')
         self._settings_close=close
         self._settings_refresh=refresh
@@ -1582,4 +1854,6 @@ class App:
         dialog.protocol('WM_DELETE_WINDOW',close);dialog.bind('<Escape>',lambda e:close())
         refresh()
         controls[0][1].focus_set()
+        if self._owns_controller:
+            self._refresh_storage()
         return dialog

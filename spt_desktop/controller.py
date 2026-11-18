@@ -14,6 +14,7 @@ from .paths import downloads_folder
 from .interaction import read_message, select_records, write_reply
 from .profile_lifecycle import reap_profiles
 from .job_pruning import DEFAULT_KEEP_JOBS, prune_published_jobs
+from .job_maintenance import record_terminal_status
 from coretax_detail_source import validate_detail_source
 
 
@@ -303,6 +304,9 @@ class JobController:
         self._seen_requests.clear()
         self._readers=[]
         self.active=False
+        # Persist only fixed terminal state for manual, opt-in cleanup. The
+        # recorder neither creates jobs nor modifies a sealed COMPLETE tree.
+        record_terminal_status(self.root, self.job_id, event.get('status'))
         diagnostics.record('worker.finished', job_id=self.job_id, operation=self.operation,
                            status=event.get('status'), exit_code=exit_code)
         self.on_event(event)

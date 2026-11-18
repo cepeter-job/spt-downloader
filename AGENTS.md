@@ -95,6 +95,139 @@ Native observers read navigation and inspected structure, never business input v
 
 Native listing period binding accepts the exact literal source code or its already reviewed exact caption, after source custody, month bounds and scope-year checks. Preserve inventory/checkpoint metadata without normalization. Corporate annual codes must still be January-to-December. Monthly ranges remain unsupported. Primary-source period codes must also equal a selected literal code even when listing evidence is unavailable; a different code/year is a contradiction, never a caption repair or a successful DOM fallback.
 
+The L10-A correction admits only the separately versioned
+`corporate-l10a-empty-v1` capability: one completely captured original zero-row
+grid with the exact reviewed seven-field id-ID First=0/Rows=10 request. Require
+a positive loaded CIT digest equal to the reviewed configured pin, the exact
+selected submitted ordinary-Rupiah `?view=true` route, preceding observed
+Induk and capture-owned component lifetime. The declared decoded source root
+must be absent, null, an empty object or an empty array; preserve these distinct
+presence/type states. Retain original root/container/path/primary sequence and
+typed Data/count/Index with the earliest successful exact-query response
+sequence. Preserve earlier packet/count/snapshot refusals; never select custody
+by shared offset or iterator order. Every populated row, including duplicates,
+null reference codes and empty row objects, remains unsupported and retains
+whole-record DOM fallback. Country/relationship/transaction/pricing cells need
+original same-attempt catalog descriptions; raw codes are not labels, and the
+transaction amount is not a two-decimal field. Keep populated support closed
+until catalog transport/order/version/clock, rendering and held-replay proofs
+are reviewed. Empty-grid CI green is not populated or live acceptance. This
+contract adds no endpoint, request, gate exception or template permission. See
+[L10-A review](docs/superpowers/specs/2026-11-17-l10a-projection-review.md).
+
+The L9 recap candidate is deliberately partial: project only six recap controls
+for the reviewed non-migrated, current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR
+profile. Require the positively configured loaded CIT pin, id-ID, the exact
+selected `?view=true` route, capture-owned component lifetime and preceding
+observed Induk. Require explicit valid original operands, safe integral values,
+bounded ordered sums and exact stored recap fixed points; fractions, signed
+zero, null/default, migrated and amendment profiles remain unsupported. Retain
+the original root and all twelve detail-grid inventories, including duplicate
+leaves and metadata. Set `unprojected_grids` for all twelve names and check it
+before the reviewed-fields exemption in the native dump gate: recap fields
+must not hide unresolved detail rows or suppress whole-record DOM fallback.
+Keep `projection_complete=False` and `unprojected_l9_grid_rows` in the mapping
+report and visible Audit note. This candidate is not full native L9 or live
+acceptance. See [L9 recap boundary](docs/superpowers/reports/2026-11-17-corporate-l9-recap-partial.md).
+
+The L11-B restricted candidate (`corporate-l11b-v1`) projects only four stable
+literal scalar controls and the unconditional Part III borrowing-cost table.
+Require the positively configured loaded CIT/MAIN pins, exact selected submitted
+route, matching literal model and payload status, preceding observed Induk and
+valid explicit predecessor encoding. The manual marker must be literal true or
+JSON number token 1; auto/manual-false, malformed and scalar-null/default
+profiles remain unsupported. Preserve strict original number/string types, the
+15-digit integral operand and ordered-sum limits, and typed
+boolean/null/empty-array provenance. Retain all original root leaves and metadata
+alongside the reviewed table; never round a month mean into an invented DER
+denominator.
+
+The separately evidenced hydrated candidate (`corporate-l11b-hydrated-v2`) may
+additionally project the reconciled `Ebitda`/`Ebitda25` controls and, only when
+its conditional Part II is independently proven, the ordered debt/equity monthly
+tables. A saved row `Average` is a computed mean rather than a rupiah control, so
+it is admitted only inside a bounded binary64-exact subset: at most fifteen
+coefficient digits, a finite `Decimal(str(float(x)))` round-trip and no signed
+zero. The raw Decimal stays the DER operand and the worksheet cell keeps the
+reviewed zero-digit display rounding. A non-binary DER ratio is reported
+`der_exact=false` and remains unqualified instead of refusing the whole form,
+rounding an operand or fabricating a ratio. This representation permission is
+recorded, with its approval basis, its named maintainer approval and its
+explicit exclusions, in the [L11-B fractional-mean approval](docs/superpowers/specs/2026-11-18-corporate-l11b-fractional-mean-approval.md);
+it grants no header/question slot and no live-acceptance claim.
+
+Still unprojected pending proof: the header/question controls, and the derived
+DER ratio whenever it is not exactly binary. Keep `projection_complete=False`
+with `unprojected_l11b_header_question` (hydrated) or
+`unprojected_l11b_lifecycle` (restricted), truthful unresolved counts and a
+visible Audit note; neither emitted-slot mapping nor green synthetic tests
+certifies a complete L11-B worksheet or live acceptance. See [L11-B restricted
+boundary](docs/superpowers/reports/2026-11-17-corporate-l11b-projection.md).
+
+L10-B remains intentionally absent from new workbooks. The separate
+`corporate-l10b-nondisplay-v1` capability validates original-data custody, not
+checkbox/radio rendering or worksheet completeness. Admit only the reviewed
+ordinary-Rupiah ICT_RCIT/ICT_RCITR submitted Normal/NORMAL profile, preceding
+Induk and exact selected `?view=true` route, explicit null predecessors, matching
+original outer TIN/PeriodYear and literal numeric 1 on both outer/current
+IsTransactionWithRelated owners. Require exactly the fifteen original boolean
+Question controls: missing/null, strings, numeric substitutes, extra keys and
+unreviewed profiles remain unsupported. Require positive configured equality
+for the actual loaded CORPORATE/MAIN/VENDOR providers and an independently
+produced, manifest-owned continuous L10-B child history. Preserve every original
+boolean, metadata/presence path, sequence/hash/attempt and the unchanged raw dump;
+no dummy fields, replacement table or display-filter bypass grants permission.
+The provenance-aware dump gate must reconstruct the finite report against its
+unique positively typed original primary POST sequence and same-attempt
+route/lifetimes. An earlier catalog is not that primary; missing, mixed,
+duplicate/conflicting or catalog-rebound evidence still refuses. Both live and
+held readers retain strict manifest ownership and descriptor-override refusal.
+Historical proof/index/checkpoint namespaces and both B/D sheet exclusions stay
+unchanged. See [L10-B custody boundary](docs/superpowers/reports/2026-11-17-corporate-l10b-nondisplay.md).
+
+Final lifetime sealing validates the retained Document/parent and all requested
+actual L8/L7/L10-B history handles in one synchronous final browser snapshot.
+This may only narrow previously produced candidates, never create or repair a
+missing capability. Known changes remain fatal even when a sibling is
+unavailable. No browser RPC follows before sealing; only local Stop, binding,
+sticky-state, late-response fences and file I/O remain. Request/response counts
+do not detect pure DOM replacement, so sequential child samples or a later
+parent probe are not equivalent. Any future child capability must prove its own
+source-specific custody and join that same final consistency boundary before
+admission; B's proof grants no C/D permission. Synthetic exact-head green does
+not establish combined-form or application-owned live acceptance.
+
+The Induk identity branch is deliberately partial. `corporate-induk-v1`
+projects only the ten reviewed identity controls from primary `MainFormData`:
+`TaxYear`, `Status`, `AccountingPeriodStart`, `AccountingPeriodEnd`, `Tin`,
+`Name`, `TinAccountant`, `NameAccountant`, `EmailAddress` and `PhoneNumber`.
+Emit only present, non-null, nonblank string/number-token controls; never
+synthesize an omitted identity or coerce a boolean/container into its value.
+Require the admitted loaded CIT proof, exact source route, single reviewed root,
+primary binding and matching submitted/model lifecycle. These are literal
+identity slots; do not add locale/timezone rendering probes for them. `TaxRate`
+is still a tariff code, not the displayed tariff text; frontend-derived captions
+remain unprojected until their own rendering is proved. Preserve every original
+root leaf and the raw `JSON path / JSON type / Source value` custody table.
+The native dump gate exempts reviewed `fields` only within their own projected
+section; Induk must not admit a different unprojected section or suppress any
+independent unresolved-grid refusal. Keep `projection_complete=False` and
+`unprojected_induk_captions`, propagate `derived_complete=False` with its reason,
+and retain a visible Audit note and PARTIAL template mapping. Ten identity
+slots do not certify a complete Induk/Corporate worksheet or live acceptance.
+See [Induk projection design](docs/superpowers/specs/2026-11-16-badan-induk-native-projection.md).
+
+The `corporate-induk-submitted-v2`/`v3` amount branch adds eight submitted
+amount slots and, for v3, four inactive slots. A v3 structural claim (the four
+inactive controls present and disabled) is **not** permission to emit the
+inactive slots: a submitted `?view=true` render disables every control, so v3 is
+claimed for every submitted record. Select the inactive projection only when the
+original values are the exact fixed point (three selectors and three amounts are
+`_CorporateNumber` zero tokens, `UnderpaymentIncomeDueAmended` is explicit
+`null`); otherwise keep the normal 18-slot submitted projection and leave the
+inactive slots unprojected. Record `inactive_profile` in the projection report.
+See [Induk submitted v3 value gate](docs/superpowers/specs/2026-11-18-corporate-induk-submitted-v3-inactive-value-gate.md).
+
 The L7 corporate semantic branch has its own source-proven boundary. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
@@ -724,7 +857,23 @@ validity, replay, native eligibility, PDF completion or publication.
 
 Corporate presentation exceptions: `resources/corporate_format.xlsx` is the approved sanitized default for its twelve reference appendices; copy only observed forms and do not fabricate an Induk layout. Exclude only literal L10-B/L10-D from new corporate workbooks, never from checkpoints or retained physical proof/index namespaces. Repeated corporate table headers require observed owner/group metadata, not financial values or source order. Keep ambiguous content visible and mapping counts truthful, except the explicitly approved clean L6/L7/L10-A/L10-C presentation: omit their raw appendices while retaining checkpoints and unresolved audit counts. L6 B2:B8 and writable L7 C1:I13 cells use rupiah accounting; preserve merged labels. Corporate footer mapping preserves literal account codes, inspected colspan/label ownership and captured totals, including all three L3 footer rows and the final L1-D total at reference row 101. All observed approved Unifikasi reference forms, including Induk, omit redundant raw display appendices while retaining checkpoints and unresolved counts; DAFTAR-I rates use numeric percentage fractions and preserve the blank spacer. Preserve the blank separator before BPNR and exactly one empty row before the LAMPIRAN-I total, following observed body rows. PPN A-2 cell B15 uses centered alignment. These display rules do not relax capture completion or native eligibility gates.
 
-Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. L11-C DOM has a narrower reviewed exception: under the exact 16-column header/one-row physical footer structure, a blank A cell plus TOTAL spanning B:F may bind to the reference merged A:F JUMLAH label. No source footer rewrite or other-form alias is permitted. Suppress duplicated L11-C page/raw display only if the remaining fields are exactly the recognized HEADER TaxPeriodYear and CollectorTin controls (or neither), with no duplicate owners, and exactly one source table is fully mapped. Record both as reviewed-redundant yet unmapped in Audit; unknown controls and rejected footer/table shape stay visibly raw and PARTIAL. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
+Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. L11-C DOM has a narrower reviewed exception: under the exact 16-column header/one-row physical footer structure, a blank A cell plus TOTAL spanning B:F may bind to the reference merged A:F JUMLAH label. No source footer rewrite or unreviewed other-form alias is permitted. Suppress duplicated L11-C page/raw display only if the remaining fields are exactly the recognized HEADER TaxPeriodYear and CollectorTin controls (or neither), with no duplicate owners, and exactly one source table is fully mapped. Record both as reviewed-redundant yet unmapped in Audit; unknown controls and rejected footer/table shape stay visibly raw and PARTIAL. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
+
+The observed Corporate DOM L2/L3-A/L11-B TOTAL footer display exception is
+independent of L11-C. Only exact capture header sets, one complete source footer,
+original physical spans, reviewed form/block/label ownership and the matching
+reference JUMLAH target may bind: L2 block 1 [1,5,1,1,1] / A9:F9,
+L2 block 2 [1,5,1,2,1,2] / A22:F22, L3-A [1,4,1,1,2,1] /
+A4:E4, L11-B debt block [3,1x13] / A13:C13, L11-B capital
+block [1x14] / A23 and L11-B borrowing-cost block [1x5] /
+A32. L2/L3-A source A prefix must be literally blank before TOTAL;
+L11-B has literal TOTAL in its first cell. Do not accept lowercase,
+altered colspan/prefix, unapproved form, truncated body, additional footer,
+or source mutation. Audit unmapped counts remain truthful. L3-B has a separate
+capture-completeness gate and its verified partial rows may not be certified
+as a complete table. DER may reference only successfully written, safe
+captured debt and capital averages with nonzero capital; never derive from
+fabricated zero/default values.
 
 Latest approved corporate clean presentation: Induk now uses the operator-approved two-column layout and L8 the approved three-column table, with only static captions/styles in source. This supersedes the earlier generic-Induk restriction. Induk/L1-D/L8/L9 also omit redundant raw display appendices, retaining checkpoints and truthful unresolved counts. Compact only known template body ranges to populated captured rows (zero and False are content); keep one body slot for an empty table, intentional separators, headers, captured totals, merges and styles. Map before compaction and move verified DER references with both removed and inserted rows. L1-D omits its first three title/identity rows plus the empty row before its first header; metadata remains in checkpoint/proof. All corporate accounting defaults to zero decimal places, including existing reference accounting cells and newly bound monetary cells; retain exact stored numeric values without rounding. DER ratios and percentage displays keep their existing two-decimal formats. These are presentation exceptions only; native eligibility and capture/PDF completion gates are unchanged.
 
@@ -1338,13 +1487,34 @@ exact verified candidate IDs private in process memory and use only that set
 when the user approves; reapply newest-N/exclusion policy at deletion time.
 Pin the source directory before eligibility checks and keep the lease until
 deleting the verified tree; check deadlines between source/output file chunks.
-Both automatic and manual pruning serialize through the same bounded,
-identity-checked, no-clobber verification and deletion path. Revalidate all
-source bytes and immutable held published Downloads outputs after confirmation.
-Never purge historical/unsealed, partial, active, recovery-bearing, unknown,
-locked or redirected jobs. Prevent GUI export and preference changes during
-manual housekeeping. Do not expose taxpayer names, paths or job IDs in
-preview, confirmation or diagnostics.
+Automatic and manual sealed-COMPLETE pruning serialize through the same
+bounded, identity-checked, no-clobber verification and deletion path. Revalidate
+all source bytes and held published Downloads outputs after confirmation.
+The separate incomplete-job manual path serializes on the same lock and rechecks
+only private-tree evidence: it never touches or validates Downloads for deletion.
+`_PRUNE_LOCK` is a **process-local threading lock**, not a cross-process mutex.
+The production Windows GUI holds `InstanceLock(workspace)` in `spt_gui._run_gui`,
+so a second GUI for the same workspace is rejected (regression coverage in
+`tests/test_desktop_windows.py`). Independent CLI processes and external
+filesystem writers do not share that lock; an operator must stop them before
+manual maintenance. Native directory guards, tree fingerprints and recovery
+checks reduce race exposure but do not promise transactional isolation from
+an arbitrary outside process. Never present this as cross-process locking.
+The sealed-COMPLETE pruning path must never purge historical/unsealed, partial,
+active, recovery-bearing, unknown, locked or redirected jobs. A separate
+**manual-only** incomplete-job path may delete explicitly selected PARTIAL/failed
+jobs with a verified terminal marker, after a read-only complete scan, exact
+in-memory job+tree-fingerprint selection, explicit second confirmation and
+full revalidation under native source-directory guards. It must never delete a
+sealed COMPLETE job, job with publication recovery, active/unknown/redirected
+path, changed content, or job lacking a proven terminal marker. A failed or
+partially completed deletion is reported incomplete and cannot authorize a
+restart retry on a stale snapshot. Automatic cleanup never uses this path.
+Prevent GUI export and preference changes during manual housekeeping. Do not
+expose taxpayer names, paths or job IDs in aggregate preview, confirmation
+or diagnostics; the private picker may show only anonymous row numbers, status,
+timestamp and estimated bytes. Storage inspection at startup is read-only and
+non-blocking, with no popup and no PARTIAL/failed auto-delete.
 
 ## Automatic completed-job pruning (Settings)
 

@@ -129,6 +129,9 @@ def self_test(report=None):
             require('Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}, "login origin label absent")
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
             require({'Simpan','Hapus login','Tutup','Buka folder log'}<=labels, "settings actions present")
+            require({'bersihkan cache job', 'hapus job PARTIAL/gagal',
+                     'Perbarui penggunaan storage'}<=labels,
+                    "maintenance controls present")
             require(not {'Cek login','Batalkan cek'}.intersection(labels), "legacy login actions absent")
             require(not dialog.bind('<Alt-c>'), "legacy login shortcut absent")
             require(any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets), "password entry masked")
