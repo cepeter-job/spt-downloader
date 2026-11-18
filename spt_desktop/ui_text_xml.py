@@ -3,7 +3,7 @@
 from pathlib import Path
 import re
 from string import Formatter
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405 - bounded developer XML, DTD/entities blocked
 
 from .ui_text_schema import COUNT_PARAMETERS
 
@@ -25,7 +25,7 @@ def load_strings(path: Path | None = None) -> dict[str, str]:
     if len(raw) > _MAX_BYTES or b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():
         raise ValueError('Invalid UI XML structure')
     try:
-        root = ET.fromstring(raw)
+        root = ET.fromstring(raw)  # nosec B314 - 64 KiB cap; no DTD/entity declarations
     except ET.ParseError as exc:
         raise ValueError('Invalid UI XML syntax') from exc
     if root.tag != 'resources' or root.attrib != {'language': 'id-ID'}:
