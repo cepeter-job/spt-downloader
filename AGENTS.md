@@ -340,9 +340,12 @@ command line, process names, browser data, resource URLs, source values,
 or other user processes. Log only aggregated direct-child and deeper-child
 CPU deltas in fixed numeric fields. No Playwright private transport hook,
 CDP, browser evaluate, polling thread, endpoint traffic, Python package
-or running browser process mutation. Bound to the first actual
-Previous lookup and at most three advance and three snapshot calls,
-**seven paired samples (14 Win32 snapshots) per large table**. A
+or running browser process mutation. Bound to the original pilot-label
+lookup, first actual
+Previous lookup, and at most three advance and three snapshot calls,
+**eight paired samples (16 Win32 snapshots) per large table**.
+The pilot sampling wraps the original query_selector without extra
+browser RPCs; opt-in diagnostics cannot certify performance acceptance. A
 snapshot failure, process churn, PID reuse, inaccessible child, or
 unsupported OS causes an explicit `unavailable`/missing metric, never
 guessed CPU or inferred idle. Only matching PIDs with unchanged

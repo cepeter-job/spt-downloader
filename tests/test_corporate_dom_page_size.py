@@ -660,8 +660,8 @@ def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
     assert calls == uninstrumented
     rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
     assert 4 <= len(rows) <= driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
-    assert {'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
-            'cursor_init', 'cursor_advance', 'cursor_poll',
+    assert {'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
+            'initial_snapshot', 'cursor_init', 'cursor_advance', 'cursor_poll',
             'cursor_snapshot'} <= {r['table_existing_rpc_stage'] for r in rows}
     assert all(r['table_existing_rpc_outcome'] == 'returned' for r in rows)
     assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
@@ -669,7 +669,9 @@ def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
                for r in rows)
     assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
     cpu_rows = [r for r in rows if r.get('table_host_cpu_state') == 'paired']
-    assert len(cpu_rows) >= 3
+    assert len(cpu_rows) >= 4
+    pilot = [r for r in cpu_rows if r['table_existing_rpc_stage'] == 'pilot_label_lookup']
+    assert len(pilot) == 1
     assert all(r['table_rpc_direct_child_cpu_ms'] == 0.1
                and r['table_rpc_nested_child_cpu_ms'] == 0.2 for r in cpu_rows)
     assert len(snapshots) == 2 * len(cpu_rows)
@@ -762,6 +764,29 @@ def test_host_cpu_sampler_opt_in_bounded_on_raised_and_unavailable(
         'paired', 'paired', 'paired', None, None, None]
     assert host_slots['cursor_snapshot'] == 3
     assert len(samples) == 6
+    import json
+    assert secret not in json.dumps(events)
+
+
+def test_pilot_label_host_cpu_unavailable_preserves_stop_and_privacy(
+        tmp_path, monkeypatch):
+    secret = 'SYNTHETIC_PILOT_PRIVATE_STOP'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', lambda: None)
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled, match=secret):
+            with driver._timed_existing_rpc('pilot_label_lookup', 3, 500,
+                                            [0], {}):
+                raise driver.CaptureCancelled(secret)
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 1
+    assert events[0]['table_existing_rpc_stage'] == 'pilot_label_lookup'
+    assert events[0]['table_existing_rpc_outcome'] == 'raised'
+    assert events[0]['table_host_cpu_state'] == 'unavailable'
+    assert 'table_rpc_direct_child_cpu_ms' not in events[0]
+    assert 'table_rpc_nested_child_cpu_ms' not in events[0]
     import json
     assert secret not in json.dumps(events)
 
