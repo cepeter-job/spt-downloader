@@ -2638,8 +2638,11 @@ def project_l2_owner(form, *, tax_type, locale, country_labels, position_labels)
         if not isinstance(body, list) or len(body) > 10000:
             raise _UnsupportedMetadata('unsupported_corporate_l2_owner_body')
         rows, operands = [], {}
-        required = {*columns[block], *(['SubPosition'] if block == 0 else [])}
-        optional = {'ValidFrom', 'ValidTo'} if block == 0 else {'IsEditable'}
+        # SubPosition is copied-but-unused row metadata (see the L2 quarantine
+        # spec); the live portal omits it from shareholder rows, so it is
+        # optional, never a required shape key.
+        required = set(columns[block])
+        optional = {'SubPosition', 'ValidFrom', 'ValidTo'} if block == 0 else {'IsEditable'}
         money = ({'PaidInCapital', 'Dividend'} if block == 0 else
                  {'Investment', 'Debt', 'DebtInterest', 'Receivable', 'ReceivableInterest'})
         percentages = {'PaidInCapitalPercentage', 'InvestmentPercentage'}
