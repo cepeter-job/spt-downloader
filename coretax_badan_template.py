@@ -516,6 +516,20 @@ def _money_columns(sheet, form, header, columns, block):
         if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
 
 
+# Additional observed DOM footer forms are not a generic TOTAL/JUMLAH alias.
+# Each entry names exactly one form, matched template block, footer row,
+# physical label start/span, the complete source colspan signature and the
+# independently reviewed reference merge (None = unmerged A cell).
+_DOM_TOTAL_FOOTER_SHAPES = {
+    ('l2', 0, 0, 2, 5): ([1, 5, 1, 1, 1], (1, 6)),
+    ('l2', 1, 0, 2, 5): ([1, 5, 1, 2, 1, 2], (1, 6)),
+    ('l3', 0, 0, 2, 4): ([1, 4, 1, 1, 2, 1], (1, 5)),
+    ('l11-b', 0, 0, 1, 3): ([3, *([1] * 13)], (1, 3)),
+    ('l11-b', 1, 0, 1, 1): ([1] * 14, None),
+    ('l11-b', 2, 0, 1, 1): ([1] * 5, None),
+}
+
+
 def _footer_plan(sheet, form, block, table, target, money, columns):
     footer = table.get('footer', [])
     if not footer:
@@ -561,6 +575,24 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
                             or not any(region.min_row == region.max_row == row
                                        and region.min_col == 1 and region.max_col == 6
                                        for region in sheet.merged_cells.ranges)):
+                        return None
+                    destination, numeric = 1, False
+                    value = sheet.cell(row, 1).value
+                elif (value == 'TOTAL' and
+                      (form, block, index, column, span) in _DOM_TOTAL_FOOTER_SHAPES):
+                    expected_spans, expected_merge = _DOM_TOTAL_FOOTER_SHAPES[
+                        (form, block, index, column, span)]
+                    # Only the observed literal source spelling and physical
+                    # footer geometry can bind the reviewed JUMLAH caption.
+                    # Preserve the exact captured TOTAL and spans in checkpoints.
+                    merges = [(region.min_col, region.max_col)
+                              for region in sheet.merged_cells.ranges
+                              if region.min_row <= row <= region.max_row]
+                    if (widths != expected_spans
+                            or (column > 1 and values[0] != '')
+                            or sheet.cell(row, 1).value != 'JUMLAH'
+                            or (merges != [expected_merge] if expected_merge
+                                is not None else bool(merges))):
                         return None
                     destination, numeric = 1, False
                     value = sheet.cell(row, 1).value
