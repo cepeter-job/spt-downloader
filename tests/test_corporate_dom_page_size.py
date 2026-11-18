@@ -260,6 +260,15 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     assert steps['previous_verify']['count'] == 2
     assert steps['previous_limit_lookup']['count'] == 1
     assert steps['pilot_guard']['count'] == 1
+    # Only existing calls are wrapped: no additional Playwright dispatch.
+    first_parts = [row for row in records(tmp_path)
+                   if row['event'] == 'table.first_page_timing']
+    assert [r['table_first_page_step'] for r in first_parts] == [
+        'pilot_label_lookup', 'pilot_label_text',
+        'first_overlay_wait', 'first_settle_wait']
+    assert all(r['table_first_page_outcome'] == 'returned' for r in first_parts)
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3
+               for r in first_parts)
     assert steps['first_lookup']['count'] == 1
     assert steps['first_click']['count'] == 1
     assert steps['first_idle']['count'] == 1
@@ -323,6 +332,12 @@ def test_large_dom_first_idle_timeout_preserves_original_failure_and_timing(
     assert steps['first_idle']['count'] == 1
     assert steps['first_navigation']['count'] == 1
     assert steps['first_navigation']['duration_ms'] >= steps['first_idle']['duration_ms']
+    # The synthetic monkeypatch replaces wait_idle entirely, so no false
+    # overlay-wait outcome is invented; only actual pilot RPCs were sampled.
+    first_parts = [r for r in records(tmp_path)
+                   if r['event'] == 'table.first_page_timing']
+    assert [r['table_first_page_step'] for r in first_parts] == [
+        'pilot_label_lookup', 'pilot_label_text']
     assert not any(row['event'] == 'table.page_timing'
                    for row in records(tmp_path))
     assert all('error' not in row for row in records_for_reset)
@@ -599,3 +614,403 @@ def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapse
     assert steps['previous_verify']['count'] == 1
     assert 'previous_limit_lookup' not in steps
     assert all(row['duration_ms'] >= 0 for row in timing)
+
+
+def test_optional_dom_rpc_probe_disabled_by_default_avoids_extra_browser_calls(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
+    table = fixture(page, total=601, selected=500)
+    original_evaluate = ElementHandle.evaluate
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise AssertionError('Diagnostic-only RPC must remain disabled by default')
+        return original_evaluate(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_records_renderer_and_host_residual_without_business_values(
+        page, monkeypatch, tmp_path):
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=601, selected=500)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert [r['table_rpc_stage'] for r in rows] == [
+        'before_previous_lookup', 'before_previous_limit_lookup']
+    assert [r['table_rpc_state'] for r in rows] == ['absent', 'absent']
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
+    for row in rows:
+        assert row['duration_ms'] >= row['table_rpc_renderer_ms'] >= 0
+        assert row['table_rpc_residual_ms'] >= 0
+        assert abs(row['duration_ms'] - row['table_rpc_renderer_ms'] -
+                   row['table_rpc_residual_ms']) <= 0.03
+        assert not {'selector', 'html', 'url', 'body', 'rows', 'marker', 'name'} & row.keys()
+
+
+def test_optional_dom_rpc_probe_present_previous_still_preserves_rewind(
+        page, monkeypatch, tmp_path):
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const originalDraw = window.draw;
+        window.draw = () => {originalDraw();prev.disabled = at === 0;};
+        first.onclick = () => {moves++;at=2;draw();};
+        prev.onclick = () => {moves++;at--;draw();};
+        at = 4;draw();
+    }""")
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert page.evaluate('moves') == 4  # First + two Previous + Next.
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2  # Never one RPC per Previous click.
+    assert [r['table_rpc_state'] for r in rows] == ['present', 'absent']
+    assert [r['table_rpc_stage'] for r in rows] == [
+        'before_previous_lookup', 'before_previous_limit_lookup']
+
+
+def test_optional_dom_rpc_probe_failures_never_block_original_capture(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=601, selected=500)
+    original = ElementHandle.evaluate
+    secret = 'SYNTHETIC_PRIVATE_DOM_TIMING_SENTINEL'
+
+    def fail_only_diagnostic(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise RuntimeError(secret)
+        return original(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', fail_only_diagnostic)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert all(r['table_rpc_state'] == 'error' and 'error' in r for r in rows)
+    import json
+    assert secret not in json.dumps(records(tmp_path))
+
+
+@pytest.mark.parametrize('stage,seconds_left,simulated_rpc_seconds', [
+    ('before_previous_lookup', 30.01, 36.99),
+    ('before_previous_lookup', 119.9, 130),
+    # 120.1s is above the *first* probe guard but below the stricter
+    # 150s *final* guard; a modeled 130s RPC must not be dispatched.
+    ('before_previous_limit_lookup', 120.1, 130),
+    ('before_previous_limit_lookup', 149.9, 151),
+])
+def test_optional_dom_rpc_probe_skips_unsafe_budget_before_dispatch(
+        monkeypatch, tmp_path, stage, seconds_left, simulated_rpc_seconds):
+    import time
+
+    class SlowOwner:
+        def evaluate(self, _expression, _arg):
+            raise AssertionError('A slow diagnostic RPC must have been skipped')
+
+    assert seconds_left < simulated_rpc_seconds
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, 'worker') as log:
+        driver._observe_dom_rpc_delay(
+            SlowOwner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+            stage=stage, ordinal=3, max_page_size=500,
+            capture_deadline=time.monotonic() + seconds_left, check_cancel=None)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_small_tables_have_no_extra_browser_calls(
+        page, monkeypatch, tmp_path):
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 1, 100, max_page_size=100)
+        assert log.flush()
+    assert_rows(result, 101)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_preserves_stop_before_browser_rpc(
+        monkeypatch, tmp_path):
+    import time
+
+    class Owner:
+        def evaluate(self, _expression, _arg):
+            raise AssertionError('Stop must win before diagnostic browser RPC')
+
+    def stop():
+        raise driver.CaptureCancelled('synthetic stop signal')
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled, match='synthetic stop signal'):
+            driver._observe_dom_rpc_delay(
+                Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+                stage='before_previous_lookup', ordinal=3, max_page_size=500,
+                capture_deadline=time.monotonic() + 170,
+                check_cancel=stop)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_requires_active_diagnostic_session(
+        monkeypatch):
+    import time
+
+    class Owner:
+        def evaluate(self, _expression, _arg):
+            raise AssertionError('No probe without an active diagnostic session')
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    driver._observe_dom_rpc_delay(
+        Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+        stage='before_previous_lookup', ordinal=3, max_page_size=500,
+        capture_deadline=time.monotonic() + 170, check_cancel=None)
+
+
+def test_optional_dom_rpc_probe_eligible_guard_still_includes_rpc_without_timeout(
+        monkeypatch, tmp_path):
+    import time
+
+    class FastOwner:
+        def evaluate(self, expression, selector):
+            assert expression == driver.DOM_RPC_TIMING_JS
+            assert selector == '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+            return {'status': 'absent', 'renderer_ms': 0.01}
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    for stage in ('before_previous_lookup', 'before_previous_limit_lookup'):
+        with d.session(tmp_path, 'worker') as log:
+            driver._observe_dom_rpc_delay(
+                FastOwner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+                stage=stage, ordinal=3, max_page_size=500,
+                capture_deadline=time.monotonic() + (
+                    driver.DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS[stage] + 1),
+                check_cancel=None)
+            assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert events and all(e['table_rpc_state'] == 'absent' for e in events)
+    # This verifies only the guard; an RPC exceeding the remaining time
+    # cannot be interrupted by a synchronous Playwright evaluate.
+
+
+def test_optional_dom_rpc_probe_skipped_on_full_synthetic_capture_preserves_rows(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    # Both stages fail their pre-dispatch threshold, so no extra RPC may
+    # perturb the original source capture or completion decision.
+    monkeypatch.setattr(driver, 'DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS',
+                        {'before_previous_lookup': 181,
+                         'before_previous_limit_lookup': 181})
+    original = ElementHandle.evaluate
+
+    def fail_if_probed(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise AssertionError('Disallowed probe dispatched')
+        return original(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', fail_if_probed)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
+        page, tmp_path, monkeypatch):
+    from collections import Counter
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
+    monkeypatch.delenv('SPT_DIAG_HOST_CPU', raising=False)
+    real_evaluate = ElementHandle.evaluate
+    real_handle = ElementHandle.evaluate_handle
+    real_query = ElementHandle.query_selector
+    calls = Counter()
+
+    def tracked_evaluate(self, expression, arg=None):
+        assert expression != driver.DOM_RPC_TIMING_JS
+        calls['evaluate'] += 1
+        return real_evaluate(self, expression, arg)
+
+    def tracked_handle(self, expression, arg=None):
+        calls['evaluate_handle'] += 1
+        return real_handle(self, expression, arg)
+
+    def tracked_query(self, expression):
+        calls['query_selector'] += 1
+        return real_query(self, expression)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', tracked_evaluate)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', tracked_handle)
+    monkeypatch.setattr(ElementHandle, 'query_selector', tracked_query)
+
+    table = fixture(page, total=601, selected=500)
+    assert_rows(driver.capture_table(page, table, 3, 100, max_page_size=500), 601)
+    uninstrumented = calls.copy()
+    calls.clear()
+    # Opt in the child-CPU observer with fake local OS counters; the browser
+    # method-call inventory must remain byte-for-byte unchanged.
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    snapshots = []
+
+    def fake_process_sample():
+        n = len(snapshots)
+        snapshots.append(n)
+        return {421: (100, 10_000 + n * 1000, 1),
+                422: (200, 20_000 + n * 2000, 2)}
+
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', fake_process_sample)
+    table = fixture(page, total=601, selected=500)
+    with d.session(tmp_path, 'worker') as log:
+        assert_rows(driver.capture_table(page, table, 3, 100, max_page_size=500), 601)
+        assert log.flush()
+    # Logging only: exactly the same set of original Playwright method calls.
+    assert calls == uninstrumented
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert 4 <= len(rows) <= driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+    assert {'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
+            'cursor_init', 'cursor_advance', 'cursor_poll',
+            'cursor_snapshot'} <= {r['table_existing_rpc_stage'] for r in rows}
+    assert all(r['table_existing_rpc_outcome'] == 'returned' for r in rows)
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
+    assert all(r['duration_ms'] >= 0 and r['table_rpc_thread_cpu_ms'] >= 0
+               for r in rows)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    cpu_rows = [r for r in rows if r.get('table_host_cpu_state') == 'paired']
+    assert len(cpu_rows) >= 3
+    assert all(r['table_rpc_direct_child_cpu_ms'] == 0.1
+               and r['table_rpc_nested_child_cpu_ms'] == 0.2 for r in cpu_rows)
+    assert len(snapshots) == 2 * len(cpu_rows)
+
+
+def test_passive_rpc_records_raised_call_without_changing_original_exception(
+        tmp_path):
+    secret = 'SYNTHETIC_PRIVATE_RPC_EXCEPTION'
+    slots = [0]
+
+    def synthetic_call(should_fail):
+        if should_fail:
+            raise RuntimeError(secret)
+        return None
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(RuntimeError, match=secret):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500, slots):
+                synthetic_call(True)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 1
+    assert rows[0]['table_existing_rpc_outcome'] == 'raised'
+    import json
+    assert secret not in json.dumps(rows)
+
+
+def test_passive_rpc_stop_and_record_cap_preserve_bounded_diagnostics(tmp_path):
+    slots = [0]
+
+    def synthetic_stop(cancelled):
+        if cancelled:
+            raise driver.CaptureCancelled('synthetic stop')
+        return None
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled):
+            with driver._timed_existing_rpc('cursor_poll', 3, 500, slots):
+                synthetic_stop(True)
+        assert log.flush()
+        slots[0] = driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+        with driver._timed_existing_rpc('cursor_advance', 3, 500, slots):
+            pass
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 1
+    assert rows[0]['table_existing_rpc_outcome'] == 'raised'
+    assert slots[0] == driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+
+
+def test_passive_rpc_disabled_for_small_tables_even_with_diagnostics(page, tmp_path):
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        assert_rows(driver.capture_table(page, table, 1, 100, max_page_size=100),
+                    101)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+
+
+def test_host_cpu_sampler_opt_in_bounded_on_raised_and_unavailable(
+        tmp_path, monkeypatch):
+    secret = 'SYNTHETIC_CANCEL_PRIVATE_VALUE'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    samples = []
+
+    def fake_snapshot():
+        samples.append(None)
+        return {91: (2, 10000 + len(samples) * 1000, 1)}
+
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', fake_snapshot)
+    slots, host_slots = [0], {}
+    with d.session(tmp_path, 'worker') as log:
+        def synthetic_stop():
+            raise driver.CaptureCancelled(secret)
+
+        with pytest.raises(driver.CaptureCancelled):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500,
+                                            slots, host_slots):
+                synthetic_stop()
+        for _ in range(5):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500,
+                                            slots, host_slots):
+                pass
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 6
+    assert events[0]['table_existing_rpc_outcome'] == 'raised'
+    assert [e.get('table_host_cpu_state') for e in events] == [
+        'paired', 'paired', 'paired', None, None, None]
+    assert host_slots['cursor_snapshot'] == 3
+    assert len(samples) == 6
+    import json
+    assert secret not in json.dumps(events)
+
+
+def test_host_cpu_sampler_missing_process_data_does_not_invent_cpu(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', lambda: None)
+    with d.session(tmp_path, 'worker') as log:
+        with driver._timed_existing_rpc('previous_lookup', 3, 500, [0], {}):
+            pass
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 1
+    assert events[0]['table_host_cpu_state'] == 'unavailable'
+    assert 'table_rpc_direct_child_cpu_ms' not in events[0]
+    assert 'table_rpc_nested_child_cpu_ms' not in events[0]

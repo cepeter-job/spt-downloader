@@ -28,6 +28,8 @@ def test_semantic_route_proof_cannot_describe_a_different_captured_frame(form):
         reference.packets(), reference.bindings())
     for packet in raw:
         packet['context']['frame_url'] = reference.FRAME + '?view=true'
+    # Keep the structural proof's legacy query-free route. Both routes are
+    # permitted individually; evidence may not silently switch between them.
     result = adapt_corporate_detail(raw, reference.selected(), reference.corpus.SCOPE, bindings)
     assert not result['eligible']
 

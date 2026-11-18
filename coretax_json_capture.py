@@ -24,10 +24,21 @@ from coretax_json import (JsonSafetyError, PPH21_REFERENCE_URLS, UNIFIKASI_REFER
                           _capture_clock_interval, _capture_component_lifetime, _capture_l8_lifetime,
                           _capture_l7_lifetime,
                           _object_pairs, _reject_constant, _trusted_origin)
+from spt_desktop import diagnostics
 from spt_desktop.output_windows import DirectoryGuard, locked_file
 
 MAX_RESPONSES = 1024
 MAX_BODY_BYTES = 32 * 1024 * 1024
+# Fixed reasons reported by the L7 child-history script; enum-only diagnostics.
+_L7_JS_REASONS = frozenset({'budget', 'chain', 'enabled', 'roles', 'shape', 'document',
+                            'removed', 'depth', 'unknown', 'visibility', 'identity',
+                            'boundary', 'initial', 'detached'} | {
+    kind + '_' + str(index)
+    for kind in ('chain_owner', 'chain_form')
+    for index in range(1, 5)} | {
+    'chain_prefix_' + family + '_' + str(index)
+    for family in ('ui', 'p', 'rsh', 'rshshr', 'other')
+    for index in range(1, 5)})
 MAX_TOTAL_BYTES = 128 * 1024 * 1024
 DRAIN_SECONDS = 20
 MAX_REQUEST_METADATA_BYTES = 65536
@@ -52,14 +63,18 @@ _L7_HISTORY = """(d) => {
  const state={available:d===document&&!d.querySelector(hosts),changed:false,complete:false};
  let roles=[null,null,null,null,null],ancestors=new Set(),remaining=4096;
  let tab=null,panel=null,started=false,ended=false;
+ // Fixed reason for the first refusal; value-free and never a DOM fact.
+ let reason='ok';
+ const note=name=>{if(reason==='ok')reason=name;};
+ reason=d!==document?'document':(state.available?'ok':'initial');
  const observer=new MutationObserver(records=>process(records));
- const unavailable=()=>{state.available=false;observer.disconnect();};
- const debit=()=>{if(--remaining<0){unavailable();return false;}return true;};
+ const unavailable=()=>{note('unknown');state.available=false;observer.disconnect();};
+ const debit=()=>{if(--remaining<0){note('budget');unavailable();return false;}return true;};
  const remember=node=>{
    let depth=0;
    for(let p=node.parentElement;p;p=p.parentElement){
      ancestors.add(p);
-     if(++depth>64||ancestors.size>64){unavailable();return;}
+     if(++depth>64||ancestors.size>64){note('depth');unavailable();return;}
    }
  };
  const adopt=(node,index,removed)=>{
@@ -81,10 +96,11 @@ _L7_HISTORY = """(d) => {
      if(index<3){relevant=true;adopt(element,index,removed);return;}
      const scope=inside(element)||inside(target)||roles.includes(element);
      if(scope){relevant=true;adopt(element,index,removed);}
-     else if(!target.isConnected){
-       // A detached intermediate's historic generic-table owner is unknown.
-       // Never restart from its final closest() ancestry.
-       relevant=true;if(debit())unavailable();
+     else if(!target.isConnected&&(roles.includes(target)||ancestors.has(target))){
+       // Only a retained role or a remembered chain ancestor is provable L7
+       // attribution; a detached contains() check cannot prove ownership, so
+       // unrelated document teardown is not L7 evidence.
+       relevant=true;note('detached');if(debit())unavailable();
      }
    };
    if(node.matches(candidates))visit(node);
@@ -115,33 +131,45 @@ _L7_HISTORY = """(d) => {
      }
      if(local&&!body)relevant=true;
      if(relevant&&!debit())break;
-     if(removedStructure&&!state.changed)unavailable();
+     if(removedStructure&&!state.changed){note('removed');unavailable();}
      if(remaining<0)break;
    }
  };
  const snapshot=()=>{
-   if(d!==document){state.changed=true;return false;}
+   if(d!==document){note('document');state.changed=true;return false;}
    if(!state.available)return false;
-   if(roles.some(role=>!role))return false;
+   if(roles.some(role=>!role)){note('roles');return false;}
    if(roles.some(role=>!role.isConnected||role.ownerDocument!==d)){
      state.changed=true;return false;
    }
    const unique=selectors.slice(0,3).every((selector,index)=>{
      const nodes=d.querySelectorAll(selector);return nodes.length===1&&nodes[0]===roles[index];
    })&&roles[1].querySelectorAll('p-table').length===1&&roles[1].querySelectorAll('table').length===1;
-   if(!unique){state.changed=true;return false;}
+   if(!unique){note('shape');state.changed=true;return false;}
    // Known framework outlets may be transparent; another business component
    // cannot lend its children to the declared corporate owner chain.
    const transparent=new Set(['p-tabview','p-tabpanel','ui-grid-offline']);
+   const corporateHost=/^rsh(shr)?-(citr|corporate)-/;
+   // Framework outlets (PrimeNG p-*, ui-*) and the corporate component family
+   // are hosts; another *-form or an unknown business tag is not.
+   const frameworkHost=/^(p|ui)-/;
+   const family=name=>name.startsWith('rshshr-')?'rshshr':name.startsWith('rsh-')?'rsh':
+     name.startsWith('ui-')?'ui':name.startsWith('p-')?'p':'other';
    const chain=roles.slice(1).every((role,index)=>{
-     if(role.closest(selectors[index])!==roles[index])return false;
+     if(role.closest(selectors[index])!==roles[index]){note('chain_owner_'+(index+1));return false;}
      for(let p=role.parentElement;p&&p!==roles[index];p=p.parentElement){
-       if(p.localName.includes('-')&&!transparent.has(p.localName))return false;
+       if(p.localName.includes('-')&&!transparent.has(p.localName)){
+         if(!p.localName.endsWith('-form')&&
+            (corporateHost.test(p.localName)||frameworkHost.test(p.localName)))continue;
+         note(p.localName.endsWith('-form')?'chain_form_'+(index+1)
+              :'chain_prefix_'+family(p.localName)+'_'+(index+1));
+         return false;
+       }
      }
      return true;
    });
    // Unknown initial ancestry is unsupported, not an invented ownership fact.
-   if(!chain){if(started)state.changed=true;else unavailable();return false;}
+   if(!chain){note('chain');if(started)state.changed=true;else unavailable();return false;}
    return true;
  };
  const enabled=visible=>{
@@ -162,17 +190,17 @@ _L7_HISTORY = """(d) => {
  const sample=()=>{
    process(observer.takeRecords());
    const valid=snapshot();
-   if(started&&valid&&!enabled(false))state.changed=true;
+   if(started&&valid&&!enabled(false)){note('visibility');state.changed=true;}
    state.complete=!!(state.available&&!state.changed&&valid&&started&&ended);
    return {...state};
  };
- return {sample,bind:args=>{
+ return {sample,why:()=>reason,bind:args=>{
    process(observer.takeRecords());
    if(!snapshot())return {...state};
-   if(args.form!==roles[1]||args.grid!==roles[2]||args.table!==roles[4])state.changed=true;
+   if(args.form!==roles[1]||args.grid!==roles[2]||args.table!==roles[4]){note('identity');state.changed=true;}
    if(args.phase==='start'&&!started){tab=args.tab;panel=args.panel;}
-   else if(args.phase!=='end'||!started||ended||tab!==args.tab||panel!==args.panel)state.changed=true;
-   if(!enabled(true)){if(started)state.changed=true;else unavailable();}
+   else if(args.phase!=='end'||!started||ended||tab!==args.tab||panel!==args.panel){note('boundary');state.changed=true;}
+   if(!enabled(true)){note('enabled');if(started)state.changed=true;else unavailable();}
    if(state.available&&!state.changed){if(args.phase==='start')started=true;else ended=true;}
    return sample();
  },disconnect:()=>{
@@ -460,6 +488,7 @@ class DetailJsonCapture:
             self._l7_history = self._component_document.evaluate_handle(_L7_HISTORY)
             return self._l7_history
         self._l7_probe(retain_l7_history)
+        self._l7_arm_state()
         self._l8_history = self._component_probe(
             lambda: self._component_document.evaluate_handle(_L8_HISTORY))
         owners = self._component_probe(lambda: self.page.evaluate(_COMPONENT_OWNERS))
@@ -538,6 +567,25 @@ class DetailJsonCapture:
             self._l7_unavailable = True
         return state
 
+    def _l7_gate(self, name):
+        # Fixed enum only; the optional L7 proof must name its own refusal.
+        diagnostics.record('corporate.l7_capture_gate', corporate_l7_capture_gate=name)
+        return False
+
+    def _l7_arm_state(self):
+        """Record only the fixed arming precondition of the optional L7 history."""
+        history = self._l7_history
+        if history is None:
+            diagnostics.record('corporate.l7_history_arm', corporate_l7_history_arm='unsupported')
+            return
+        try:
+            reason = history.evaluate('(h) => h.why()')
+        except Exception:  # nosec B110 - Optional instrumentation must not replace Stop.
+            diagnostics.record('corporate.l7_history_arm', corporate_l7_history_arm='unsupported')
+            return
+        name = {'ok': 'clear', 'initial': 'occupied', 'document': 'document'}.get(reason, 'unsupported')
+        diagnostics.record('corporate.l7_history_arm', corporate_l7_history_arm=name)
+
     def bind_l7_structure(self, form, grid, table, tab, panel, *, phase, check_cancel=None):
         """Bind real held nodes twice; never adopt replacements after start."""
         self._cancel(check_cancel)
@@ -545,8 +593,13 @@ class DetailJsonCapture:
             raise ValueError('Unknown L7 structural boundary')
         self._l7_requested = True
         component = self.observe_component_lifetime(check_cancel=check_cancel)
-        if component is None or self._l7_history is None or self._l7_unavailable:
-            return False
+        if component is None:
+            return self._l7_gate('component')
+        if self._l7_history is None:
+            return self._l7_gate('history')
+        if self._l7_unavailable:
+            return self._l7_gate('flagged')
+        history = self._l7_history
         handles = {}
         try:
             for key, locator in (('form', form), ('grid', grid), ('table', table), ('tab', tab), ('panel', panel)):
@@ -557,15 +610,30 @@ class DetailJsonCapture:
                 handle = self._l7_probe(retain_element, check_cancel)
                 if handle is None:
                     self._l7_unavailable = True
-                    return False
+                    return self._l7_gate('handle_' + key)
                 handles[key] = handle
-            state = self._l7_probe(lambda: self._l7_history.evaluate(
+            state = self._l7_probe(lambda: history.evaluate(
                 '(h,args) => h.bind(args)', {**handles, 'phase': phase}), check_cancel)
             self._verify_binding()
             state = self._l7_state(state)
+            if state is None:
+                return self._l7_gate('state_malformed')
+            if not state['available']:
+                try:
+                    reason = history.evaluate('(h) => h.why()')
+                except JsonSafetyError:
+                    raise
+                except Exception:
+                    return self._l7_gate('js_no_method')
+                self._cancel(check_cancel)
+                name = 'js_' + reason if type(reason) is str and reason in _L7_JS_REASONS else 'js_unknown'
+                return self._l7_gate(name)
             component = self.observe_component_lifetime(check_cancel=check_cancel)
-            return bool(component is not None and state is not None and state['available']
-                        and (phase == 'start' or state['complete']))
+            if component is None:
+                return self._l7_gate('component_end')
+            if phase == 'end' and not state['complete']:
+                return self._l7_gate('incomplete')
+            return True
         finally:
             for handle in reversed(list(handles.values())):
                 if handle is None:

@@ -101,6 +101,20 @@ def test_l11c_unsupported_source_type_or_date_refuses_projection(field, value):
         project(form)
 
 
+def test_l11c_numeric_year_end_rate_is_rendered_with_two_decimals():
+    form = raw_source()
+    form[BODY][0]['EndOfYearRate'] = 15000.0
+    rows = project(_corporate_json(wire(form)))['table']['rows']
+    assert rows[0][5] == '15.000,00'
+
+
+def test_l11c_non_integral_year_end_rate_still_refuses():
+    form = raw_source()
+    form[BODY][0]['EndOfYearRate'] = 15000.5
+    with pytest.raises(_UnsupportedMetadata):
+        project(_corporate_json(wire(form)))
+
+
 def test_l11c_unsafe_ordered_partial_sum_is_not_hidden_by_later_cancellation():
     form = source()
     form[BODY] = [deepcopy(form[BODY][0]) for _ in range(3)]
@@ -209,3 +223,31 @@ def test_l11c_visible_headers_match_approved_reference_by_sheet_name():
         assert 'A4:F4' in {str(area) for area in book['L11-C'].merged_cells.ranges}
     finally:
         book.close()
+
+
+def test_l11c_dates_accept_jakarta_midnight_offset():
+    form = source()
+    form[BODY][0]['LoanStartDate'] = '2025-01-01T00:00:00+07:00'
+    rows = project(form)['table']['rows']
+    assert rows[0][10] == '01-01-2025'
+
+
+def test_l11c_dates_reject_non_midnight_offsets():
+    form = source()
+    form[BODY][0]['LoanStartDate'] = '2025-01-01T00:00:01+07:00'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form)
+
+
+def test_l11c_interest_rate_accepts_two_fraction_digits():
+    form = source()
+    form[BODY][0]['InterestRate'] = _corporate_json(wire(Number('4.38')))
+    rows = project(form)['table']['rows']
+    assert rows[0][12] == '4,38'
+
+
+def test_l11c_interest_rate_rejects_three_fraction_digits():
+    form = source()
+    form[BODY][0]['InterestRate'] = _corporate_json(wire(Number('5.125')))
+    with pytest.raises(_UnsupportedMetadata):
+        project(form)

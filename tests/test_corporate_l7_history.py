@@ -37,11 +37,14 @@ class History:
         self.state = {'available': True, 'changed': False, 'complete': False}
         self.phases, self.on_sample = [], None
         self.disposed = self.disconnected = False
+        self.reason = 'ok'
 
     def evaluate(self, script, args=None):
         if 'disconnect' in script:
             self.disconnected = True
             return None
+        if 'why()' in script:
+            return self.reason
         if args is not None:
             self.phases.append(args['phase'])
             self.state['complete'] = self.phases == ['start', 'end']

@@ -31,6 +31,23 @@ L1D_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L3_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L11A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 L8_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
+INDUK_ROOT = 'MainFormData'
+# The reviewed identity slots, spelled exactly as
+# coretax_badan_template._INDUK_IDENTITY declares them. A caption is never a
+# binding: every slot below also names the payload control it is read from.
+INDUK_IDENTITY_FIELDS = (
+    ('HEADER', 'TaxYear', 'Tahun Pajak/Bagian Tahun Pajak'),
+    ('HEADER', 'Status', 'Status'),
+    ('HEADER', 'AccountingPeriodStart', 'Periode Pembukuan'),
+    ('HEADER', 'AccountingPeriodEnd', 'Periode Pembukuan'),
+    ('A. IDENTITAS WAJIB PAJAK', 'Tin', '1. NPWP'),
+    ('A. IDENTITAS WAJIB PAJAK', 'Name', '2. Nama'),
+    ('B. INFORMASI LAPORAN KEUANGAN', 'TinAccountant', '2.b. NPWP Kantor Akuntan Publik'),
+    ('B. INFORMASI LAPORAN KEUANGAN', 'NameAccountant', '2.c. Nama Kantor Akuntan Publik'),
+    ('A. IDENTITAS WAJIB PAJAK', 'EmailAddress', '3. Alamat Email'),
+    ('A. IDENTITAS WAJIB PAJAK', 'PhoneNumber', '4. Nomor Telepon'),
+)
+INDUK_UNPROJECTED_REASON = 'unprojected_induk_captions'
 L11C_ROOT, L11C_BODY = 'L11CFormData', 'ForeignPrivateDebtReports'
 L11C_AMOUNTS = ('DebtPrincipalBeginningOfYear', 'AdditionOfDebtPrincipal',
     'SubstractionOfDebtPrincipal', 'DebtPrincipalEndOfYear', 'AmountOfInterest',
@@ -290,9 +307,11 @@ def _l11c_integer(value):
 def _l11c_date(value):
     if value is None or value == '':
         return ''
-    if type(value) is not str or not re.fullmatch(
-            r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
-            r'(?:\.[0-9]{1,3})?Z)?', value):
+    if type(value) is not str or not (
+            re.fullmatch(
+                r'[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
+                r'(?:\.[0-9]{1,3})?Z)?', value)
+            or re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T00:00:00\+07:00', value)):
         raise _UnsupportedMetadata('unsupported_corporate_l11c_date')
     try:
         date = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -391,7 +410,23 @@ def project_l11c(form, *, headers, footer_spans, tax_type, locale, timezone_name
                 text = _number(str(number), digits, locale=locale)
                 entry['rule'] = 'nullish-zero/angular-number-id' if value is None else 'angular-number-id'
             elif key == 'InterestRate':
-                text = '' if value is None else _number(str(_l11c_integer(value)), 2, locale=locale)
+                # Live rates carry up to two fraction digits; the integer helper
+                # only proved whole percentages.
+                if value is None:
+                    text = ''
+                else:
+                    number = _decimal(value)
+                    if abs(number) > _MAX_INTEGER or number.as_tuple().exponent < -2:
+                        raise _UnsupportedMetadata('unsupported_corporate_l11c_number_precision')
+                    text = _number(str(number), 2, locale=locale)
+                entry['rule'] = 'angular-number-1.2-2-id'
+            elif key == 'EndOfYearRate' and type(value) in (int, float, _CorporateNumber):
+                # The live build sends the year-end rate as a JSON number while
+                # the reviewed fixture keeps the locale-formatted string.
+                number = _decimal(value)
+                if number != number.to_integral_value() or abs(number) > _MAX_INTEGER:
+                    raise _UnsupportedMetadata('unsupported_corporate_l11c_number_precision')
+                text = _number(str(int(number)), 2, locale=locale)
                 entry['rule'] = 'angular-number-1.2-2-id'
             elif key in ('LoanStartDate', 'LoanDueDate'):
                 text = _l11c_date(value)
@@ -683,6 +718,75 @@ def _l7_negative_profile(binding, *, root, payload, record, event, route, table)
     return proof
 
 
+def project_induk(main, *, tax_type):
+    """Project the reviewed Induk identity slots; caller must prove the binding.
+
+    Only slots whose payload control is present and scalar are emitted. A
+    caption without a proven payload key is never guessed: the reviewed
+    template decorations (``_INDUK_INCOME``/``_INDUK_CALCULATIONS``) stay
+    unprojected, so the caller must report the section as partial.
+    """
+    if tax_type != 'ICT_RCIT' or not isinstance(main, dict):
+        raise _UnsupportedMetadata('unsupported_corporate_induk_structure')
+    fields, provenance = [], []
+    for group, name, caption in INDUK_IDENTITY_FIELDS:
+        if name not in main:
+            continue
+        value = main[name]
+        # Only reviewed scalar controls: a JSON string or a number token. The
+        # _CorporateNumber subclass marks number tokens; bool/list/dict/null
+        # are never coerced into an identity value.
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise _UnsupportedMetadata('unsupported_corporate_induk_identity_type')
+        entry = _evidence(value, [INDUK_ROOT, name])
+        text = entry['value']
+        if not text or not str(text).strip():
+            continue
+        fields.append({'group': group, 'field': name, 'label': caption, 'value': text})
+        entry.update(rule='literal-identity-control',
+                     destination={'form': 'Induk', 'field': name})
+        provenance.append(entry)
+    return {'fields': fields, 'provenance': provenance}
+
+
+def _apply_induk(binding, section, observed_forms, *, root, payload, record, event):
+    proof = binding['projection']
+    builds = proof.get('builds') if isinstance(proof, dict) else None
+    # The observer admits only a positively pinned 64-hex CIT digest and puts
+    # exactly that digest in the proof. Here the shape is re-verified (one
+    # known source, valid SHA), never a second hand-maintained pin copy.
+    if (not isinstance(proof, dict) or set(proof) != {'kind', 'builds', 'route'}
+            or proof['kind'] != 'corporate-induk-v1'
+            or not isinstance(builds, dict) or set(builds) != {CIT_SOURCE}
+            or type(builds[CIT_SOURCE]) is not str or len(builds[CIT_SOURCE]) != 64
+            or any(character not in '0123456789abcdef' for character in builds[CIT_SOURCE])
+            or proof['route'] != event['frame_url']
+            or binding.get('paths') != [[INDUK_ROOT]]
+            or 'primary' not in binding):
+        raise _UnsupportedMetadata('unverified_corporate_induk_binding')
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
+    if (record.get('source_status') != 'SPT Dilaporkan'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
+            or payload.get('ReturnSheetModel') != model):
+        raise _UnsupportedMetadata('unverified_corporate_induk_submitted_lifecycle')
+    fields = record.get('source_fields', {})
+    result = project_induk(root.get(INDUK_ROOT), tax_type=fields.get('TaxTypeCode'))
+    section['fields'] = result['fields']
+    # The reviewed Induk template renders 16 further caption slots that the
+    # frontend derives; until each derivation is proven the section stays
+    # explicitly partial instead of claiming a complete worksheet.
+    section['projection_complete'] = False
+    section['projection_reason'] = INDUK_UNPROJECTED_REASON
+    for entry in result['provenance']:
+        entry.update(response_sequence=event['sequence'], container=['Payload', 'CurrentFormData'])
+    return {'form': 'Induk', 'kind': proof['kind'], 'builds': dict(proof['builds']),
+            'route': proof['route'], 'values': result['provenance']}
+
+
 def apply_projections(sections, observed_forms, *, root, payload, record, event, country_packets=None,
                       reference_packets=None, auxiliary_packets=None):
     """Replace only explicitly declared semantic sections after packet safety."""
@@ -690,6 +794,13 @@ def apply_projections(sections, observed_forms, *, root, payload, record, event,
     for binding, section in zip(observed_forms, sections):
         if 'projection' not in binding:
             continue  # Preserve old evidence-leaf captures and caller contracts.
+        # An Induk binding that also declares extra evidence roots is left as
+        # plain evidence: only the reviewed single-root form is projected.
+        if binding['name'] == 'Induk':
+            if binding.get('paths') == [[INDUK_ROOT]]:
+                projected.append(_apply_induk(binding, section, observed_forms, root=root,
+                    payload=payload, record=record, event=event))
+            continue
         if binding['name'] == 'L11-A':
             projected.append(_apply_l11a(binding, section, observed_forms, root=root, payload=payload,
                 record=record, event=event, reference_packets=reference_packets or {},
@@ -1674,12 +1785,20 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
             or any(not isinstance(value, dict) for value in labels.values())):
         raise _UnsupportedMetadata('unverified_corporate_l11a_current_structure')
     if (not isinstance(form, dict) or set(form) != {'Facilities', 'Recapitulation'}
-            or not isinstance(form['Recapitulation'], dict) or set(form['Recapitulation']) != set(_L11A_RECAP)
+            or not isinstance(form['Recapitulation'], dict)
+            or set(form['Recapitulation']) not in (set(_L11A_RECAP),
+                                                   set(_L11A_RECAP) - {'TotalAmountofCosts'})
             or not isinstance(pages, dict) or set(pages) != set(_L11A_ENDPOINTS.values())):
         raise _UnsupportedMetadata('unsupported_corporate_l11a_source_shape')
+    absent_total = 'TotalAmountofCosts' not in form['Recapitulation']
     facilities = [] if form['Facilities'] is None else form['Facilities']
     if not isinstance(facilities, list) or len(facilities) > 10000:
         raise _UnsupportedMetadata('unsupported_corporate_l11a_facilities')
+    if absent_total and (form['Facilities'] is not None
+                         or any(form['Recapitulation'].get(cost) is not None for cost in _L11A_COSTS)):
+        # The live build omits the recap total only for a section with no
+        # facilities and no cost amounts; any amount still demands the key.
+        raise _UnsupportedMetadata('unsupported_corporate_l11a_missing_total')
     provenance = []
 
     def evidence(value, path, destination, *, endpoint=None, page_index=None, rule='literal-source'):
@@ -1712,7 +1831,9 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         if key in _L11A_MONEY:
             return number(value), 'source-number-id/null-blank'
         if key in ('RecipientDate', 'EntertainmentDate'):
-            return _l3_date(value), 'validated-iso/jakarta-dd-MM-yyyy'
+            # Live L11-A row dates are jakarta midnight with an explicit +07:00
+            # offset, the same shape already admitted for L3 withholding dates.
+            return _l3_date(value, domestic_jakarta_midnight=True), 'validated-iso/jakarta-dd-MM-yyyy'
         if key == 'PartnerName':
             if type(value) is _CorporateNumber:
                 return number(value, 2), 'source-number-id-1.2-2'
@@ -1748,7 +1869,15 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         for page_index, values in source_pages:
             for row_index, row in enumerate(values):
                 expected = set(keys) | ({'RecordId'} if endpoint is not None else set())
-                if not isinstance(row, dict) or set(row) != expected:
+                if not isinstance(row, dict):
+                    raise _UnsupportedMetadata('unsupported_corporate_l11a_row')
+                extras = set(row) - expected
+                # Live grid rows carry two non-column metadata fields: Action is
+                # always null and Index is the numeric row ordinal.
+                if (not expected <= set(row) or extras - {'Action', 'Index'}
+                        or ('Action' in extras and row['Action'] is not None)
+                        or ('Index' in extras
+                            and type(row['Index']) not in (int, _CorporateNumber))):
                     raise _UnsupportedMetadata('unsupported_corporate_l11a_row')
                 path = (['Data', row_index] if endpoint is not None else [_L11A_ROOT, 'Facilities', row_index])
                 if endpoint is not None:
@@ -1779,19 +1908,27 @@ def project_l11a(form, *, previous, pages, headers, footer_spans, tax_type, loca
         total += operand
         if abs(total) > _MAX_INTEGER:
             raise _UnsupportedMetadata('unsafe_corporate_l11a_ordered_cost_sum')
-    if _l11a_integer(recap['TotalAmountofCosts']) != max(0, total):
+    if not absent_total and _l11a_integer(recap['TotalAmountofCosts']) != max(0, total):
         raise _UnsupportedMetadata('unreconciled_corporate_l11a_total_costs')
     fields = []
     for key, caption in zip(_L11A_RECAP, _L11A_CAPTIONS):
-        value = recap[key]
+        value = recap.get(key)
         if key in _L11A_COSTS or key == 'TotalAmountofCosts':
             display, rule = number(value), 'input-number-id/null-blank'
             if key == 'TotalAmountofCosts':
-                rule = 'reconciled-six-cost-ordered-sum/final-nonnegative-clamp'
+                rule = ('absent-inert-zero-total' if absent_total
+                        else 'reconciled-six-cost-ordered-sum/final-nonnegative-clamp')
         elif key.startswith('DateOfDecree'):
             if type(value) is not str or not value:
                 raise _UnsupportedMetadata('unsupported_corporate_l11a_decree_date')
-            display, rule = _l3_date(value), 'validated-new-Date/jakarta-dd-MM-yyyy'
+            decree = re.fullmatch(r'([0-9]{4})-([0-9]{2})-([0-9]{2})T07:00:00\+07:00', value)
+            if decree:
+                # Live decree dates are the literal date at 07:00+07:00 (Jakarta
+                # midnight in UTC terms); the calendar date is unambiguous.
+                display, rule = (f'{decree.group(3)}-{decree.group(2)}-{decree.group(1)}',
+                                 'literal-date-jakarta-0700-offset')
+            else:
+                display, rule = _l3_date(value), 'validated-new-Date/jakarta-dd-MM-yyyy'
         else:
             display, rule = text(value), 'literal-input/null-blank'
         fields.append({'group': _L11A_GROUP, 'field': key, 'label': caption, 'value': display})

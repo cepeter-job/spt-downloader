@@ -122,6 +122,131 @@ the 180-second budget, source totals, native admission and publication gates;
 never infer complete capture or a reproducible speedup from a synthetic test.
 
 
+Optional large-table Previous RPC diagnostic (issue #161) is strictly
+**opt-in** via exact process environment `SPT_DIAG_DOM_RPC_PROBE=1` and
+an active diagnostic session. Only the literal value `1` passes through
+the desktop's *worker-only* environment policy; it is not inherited by
+bootstrap/uv or added to the general OS allowlist. It never runs with
+the default setting.
+When enabled, allow at most two read-only same-owner enabled-Previous
+selector probes: the first only if at least **120 seconds** remain in
+the original 180-second table budget, and the independent final-stage
+probe only if at least **150 seconds** remain. The thresholds exceed the
+largest historical **108.80-second** Previous lookup (single observation,
+not a safe upper bound) and add extra margin for the late stage.
+Each probe reports Python wall duration and page-side
+`performance.now()` selector duration. Their nonnegative
+difference is an inclusive transport/scheduler/serialization residual,
+**not** pure queueing, network time, or causality. The probe returns only
+a fixed presence/detached enum and timing; no values, HTML, row data,
+request/response or source authority. An extra RPC **consumes the original
+budget** and may shift/slow the job, including changing how many pages
+remain capturable or whether a table ends PARTIAL. These stage-specific
+guards reduce risk **but do not cap an in-flight Playwright evaluate**:
+arbitrary renderer/transport stalls can still exhaust the table budget.
+The probe result/exception never authorizes a click or overrides the
+normal error path, but time consumed can alter the final outcome. Do not
+use these runs for benchmark acceptance or presume unchanged row coverage.
+Probe exceptions are sanitized without disclosing their messages.
+All worker run-boundary events (`session.started`, `operation.started`,
+`operation.finished`, `session.closed`) carry an immutable
+`table_rpc_probe_enabled` boolean computed from the exact worker
+environment, whether or not a table probe was ultimately sent. Compare
+operator runs only after checking this run-level flag: `true` is an
+**investigative run**, never an unprobed baseline, even if no probe
+event appears because the 120s/150s guards skipped both calls.
+The diagnostic writer may drop an event if its bounded queue fills,
+its record exceeds 4096 bytes, or logging fails. A run whose boundary
+records are missing or lack `table_rpc_probe_enabled` is **UNKNOWN**,
+never `false`, and **must not** enter an unprobed baseline or
+performance/completeness comparison. Absence of individual
+`table.browser_rpc_probe` events is not proof that the probe was off.
+The flag does not certify data completeness or enter business manifests.
+Do not add listeners, CDP attachment, DOM writes, repeated polling,
+timer loops or attempts to compensate for the consumed budget.
+
+Passive large-table RPC timing for #161 is **separate from the opt-in
+extra-RPC probe**. With the normal diagnostic session active and
+`max_page_size >= 250`, only the **existing** Previous lookups,
+initial table snapshot, cursor initialization, cursor advance, cursor
+poll and cursor snapshot are wrapped with local Python wall-clock and
+`time.thread_time()` reads. Emit up to **48**
+`table.existing_rpc_timing` records per table, fixed stage/outcome enums,
+no values, URLs, selectors, output/capture status or new browser calls.
+A returned renderer duration is attached only when the **existing**
+browser command already returned it; there is no new JavaScript,
+instrumented browser hook or extra network request. `thread_cpu_ms`
+counts only the Python calling thread; low CPU vs wall time means
+the Python thread waited, **not** proof of Node/IPC/renderer queueing.
+`table_rpc_residual_ms` includes all host-vs-JavaScript differences,
+not transport time alone. Records may be missing after the 48-event cap
+or diagnostic logger drops; never infer that an original RPC did not
+run merely because its event is absent. The original 180s deadline,
+Stop priority, source evidence, completeness and result publishing
+remain the only capture authorities; clocks/logging do not change them.
+Do not claim that adding passive logs establishes performance
+equivalence or a causal bottleneck. Run-level
+`table_rpc_probe_enabled` continues to indicate only the
+**additional, invasive opt-in** RPC probe, not passive logging.
+
+Large-table **first-page readiness split timing** (#161) is passive and
+unconditional only when a diagnostic worker session is active and
+`max_page_size >= 250`. Four original operations, each at most once per
+table, emit fixed-stage `table.first_page_timing`: the already-required
+pilot page-size label `query_selector`, its original `inner_text`,
+the existing global `.p-datatable-loading-overlay:visible,.p-blockui:visible`
+`wait_for(hidden, timeout=45000)`, and the existing
+`page.wait_for_timeout(180)` (only when the overlay wait returns).
+Python monotonic wall and calling-thread CPU clocks record returned/raised;
+no new browser calls, ownership queries, CDP, timers, polling loops,
+DOM mutation or source behavior. The existing page request-object listener
+may report a **count of requests finishing during the original global
+overlay wait** and the last such local completion time; these are unbound
+request objects, not proof of table/backend/overlay ownership. Existing
+`first_idle_timeout` is unchanged, and no settling event is fabricated
+on a timeout. The ContextVar scope is set only around the original First
+`wait_idle(page)` call and always reset, including Stop and exceptions.
+No observer scope exists for other idle calls or diagnostics OFF. This
+does **not** establish which overlay is visible or why it persists: the
+global locator is the production authority and must not be scoped or
+replaced in this diagnostic PR. Emit no URLs, selector strings, request
+contents, process metadata or taxpayer data. Maintain original 180s
+per-table budget, 45s per idle wait, 180ms settle, fail-closed Stop and
+PARTIAL behavior. Compare with earlier runs only with build provenance
+and unaltered input/source digests; no performance improvement is implied.
+
+Optional local Windows process-CPU observation (follow-up #161) is separate
+from both the always-passive RPC wall/thread CPU recorder and
+`SPT_DIAG_DOM_RPC_PROBE`. Only exact worker environment
+`SPT_DIAG_HOST_CPU=1` enables it: the GUI forwards this fixed literal to
+the owned worker, never to bootstrap or the general environment allowlist.
+It enumerates *local* process parent relationships under the current worker
+PID via Toolhelp, then reads GetProcessTimes cumulative CPU ticks from
+descendants at the boundaries of **existing** RPC calls. Never inspect
+command line, process names, browser data, resource URLs, source values,
+or other user processes. Log only aggregated direct-child and deeper-child
+CPU deltas in fixed numeric fields. No Playwright private transport hook,
+CDP, browser evaluate, polling thread, endpoint traffic, Python package
+or running browser process mutation. Bound to the first actual
+Previous lookup and at most three advance and three snapshot calls,
+**seven paired samples (14 Win32 snapshots) per large table**. A
+snapshot failure, process churn, PID reuse, inaccessible child, or
+unsupported OS causes an explicit `unavailable`/missing metric, never
+guessed CPU or inferred idle. Only matching PIDs with unchanged
+creation time and parent-depth count as paired. Direct child is not
+provably the Node driver, deeper child is not provably Chromium;
+CPU consumption cannot identify network/IPC queue wait, and low
+CPU does not prove which process stalled. Windows snapshot enumeration
+has its own bounded overhead *outside* the measured RPC wall time and
+**inside** the original 180s capture budget: host-CPU opt-in runs are
+investigative, **not** performance or row-completeness baselines.
+The immutable worker boundary `table_host_cpu_enabled` labels that
+opt-in; missing boundaries mean UNKNOWN. Never widen deadlines,
+change capture/source authority, hide Stop/errors, or merge these
+diagnostics into business manifests. Documented sampling is not a
+runtime optimization and cannot satisfy #246's positive-Previous
+benchmark.
+
 Every PPN primary, including Normal, must explicitly bind ReturnSheetStatusCode=SUBMITTED before projection or fallback; missing status is ineligible and contradictory status is fatal. PPN AskedTo is a final-lifecycle projection, not a raw field copy. Negative submitted amendments may preserve a choice only when the facility null-write is excluded and calendar assignment is blocked across both initial and final export stages, by the source invoice/uncollected quartet predicate, or by a stable inactive capture-owned interval bound to outer PeriodYear. With calendar blocked, a proven facility null-write clears only the supported raw null/FAST_REFUND/CARRY_FORWARD branch. Exact source facility codes are AS.09-01/AS.09-02. Nonnegative FORWARD_REFUND requires a proved post-raw distinct clear event and stays unsupported. The narrow Normal nonnegative branch additionally reconciles captured output/input operands to the four/six ordered component sums before deriving its final balance; reject missing/mismatched components and unsafe operands/intermediates. Normal choice inputs are integral within fifteen digits. The shared final-balance amount helper retains only binary-exact direct fractions and exact intermediate arithmetic within that bound. Preserve all contributing source paths; do not use stale stored balances, a replay clock, or DOM checked state. Active-calendar, Normal-negative and other unproved branches use whole-record fallback.
 
 For clock-dependent grid catalogs, use only the interval sampled by the same owned capture attempt and require one source version throughout that interval. Preserve optional metadata for old captures; never use the replay machine's clock to resolve missing evidence. Final sampling must retain earlier pending-response counts and refuse late replies as COMPLETE. Native eligibility, mapping, capture/PDF completion and final publication remain separate gates.
@@ -599,7 +724,7 @@ validity, replay, native eligibility, PDF completion or publication.
 
 Corporate presentation exceptions: `resources/corporate_format.xlsx` is the approved sanitized default for its twelve reference appendices; copy only observed forms and do not fabricate an Induk layout. Exclude only literal L10-B/L10-D from new corporate workbooks, never from checkpoints or retained physical proof/index namespaces. Repeated corporate table headers require observed owner/group metadata, not financial values or source order. Keep ambiguous content visible and mapping counts truthful, except the explicitly approved clean L6/L7/L10-A/L10-C presentation: omit their raw appendices while retaining checkpoints and unresolved audit counts. L6 B2:B8 and writable L7 C1:I13 cells use rupiah accounting; preserve merged labels. Corporate footer mapping preserves literal account codes, inspected colspan/label ownership and captured totals, including all three L3 footer rows and the final L1-D total at reference row 101. All observed approved Unifikasi reference forms, including Induk, omit redundant raw display appendices while retaining checkpoints and unresolved counts; DAFTAR-I rates use numeric percentage fractions and preserve the blank spacer. Preserve the blank separator before BPNR and exactly one empty row before the LAMPIRAN-I total, following observed body rows. PPN A-2 cell B15 uses centered alignment. These display rules do not relax capture completion or native eligibility gates.
 
-Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
+Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. L11-C DOM has a narrower reviewed exception: under the exact 16-column header/one-row physical footer structure, a blank A cell plus TOTAL spanning B:F may bind to the reference merged A:F JUMLAH label. No source footer rewrite or other-form alias is permitted. Suppress duplicated L11-C page/raw display only if the remaining fields are exactly the recognized HEADER TaxPeriodYear and CollectorTin controls (or neither), with no duplicate owners, and exactly one source table is fully mapped. Record both as reviewed-redundant yet unmapped in Audit; unknown controls and rejected footer/table shape stay visibly raw and PARTIAL. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
 
 Latest approved corporate clean presentation: Induk now uses the operator-approved two-column layout and L8 the approved three-column table, with only static captions/styles in source. This supersedes the earlier generic-Induk restriction. Induk/L1-D/L8/L9 also omit redundant raw display appendices, retaining checkpoints and truthful unresolved counts. Compact only known template body ranges to populated captured rows (zero and False are content); keep one body slot for an empty table, intentional separators, headers, captured totals, merges and styles. Map before compaction and move verified DER references with both removed and inserted rows. L1-D omits its first three title/identity rows plus the empty row before its first header; metadata remains in checkpoint/proof. All corporate accounting defaults to zero decimal places, including existing reference accounting cells and newly bound monetary cells; retain exact stored numeric values without rounding. DER ratios and percentage displays keep their existing two-decimal formats. These are presentation exceptions only; native eligibility and capture/PDF completion gates are unchanged.
 
