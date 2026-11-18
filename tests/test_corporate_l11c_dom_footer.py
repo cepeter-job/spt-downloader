@@ -37,7 +37,7 @@ HEADER_FIELDS = [
 ]
 
 
-def saved_dom(tmp_path, *, footer=None, spans=None, fields=None, complete=True):
+def saved_dom(tmp_path, *, footer=None, spans=None, fields=None, complete=True, include_table=True):
     row = list(BODY)
     total = list(FOOTER if footer is None else footer)
     table = {
@@ -48,7 +48,8 @@ def saved_dom(tmp_path, *, footer=None, spans=None, fields=None, complete=True):
         'footer_spans': [list(spans if spans is not None else [1, 5, *([1] * 10)])],
     }
     sections = [section('L11-C', fields=HEADER_FIELDS if fields is None else fields,
-                        tables=[table], text='SYNTHETIC READ-ONLY DOM PAGE CONTEXT')]
+                        tables=[table] if include_table else [],
+                        text='SYNTHETIC READ-ONLY DOM PAGE CONTEXT')]
     run = source_run('PPh Badan', sections)
     before = deepcopy(run)
     reports = []
@@ -145,5 +146,18 @@ def test_duplicate_reviewed_l11c_header_is_visibly_unresolved(tmp_path):
                    for row in book['L11-C'] for cell in row)
         assert report['unmapped_fields'] == report['reviewed_redundant_fields'] == 3
         assert not report['complete']
+    finally:
+        book.close()
+
+
+def test_missing_dom_l11c_table_never_suppresses_source_context(tmp_path):
+    book, report = saved_dom(tmp_path, include_table=False)
+    try:
+        sheet = book['L11-C']
+        assert any(cell.value == 'Data sumber tambahan / belum dipetakan'
+                   for row in sheet for cell in row)
+        assert any('SYNTHETIC READ-ONLY DOM PAGE CONTEXT' in str(cell.value)
+                   for row in sheet for cell in row)
+        assert report['unmapped_fields'] == 2 and not report['complete']
     finally:
         book.close()
