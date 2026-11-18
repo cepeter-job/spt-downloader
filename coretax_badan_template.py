@@ -838,7 +838,8 @@ def render_template_form(sheet, form, sections, *, period=None):
         # Suppress duplicated DOM page text only when the sole leftovers are
         # the two known redundant HEADER controls. Unsupported controls or
         # source tables remain visible raw evidence; audit stays PARTIAL.
-        if not pending and report.get('reviewed_redundant_fields', 0) == len(fields):
+        if (not pending and report.get('reviewed_redundant_fields', 0) == len(fields)
+                and len({field.get('field') for field in fields}) == len(fields)):
             return report
         raw = _raw_evidence(sheet, sections, fields, pending, blocks[0][1])
         return {**raw, **_reviewed_omissions(form, fields, source_tables)}

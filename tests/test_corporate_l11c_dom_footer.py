@@ -135,3 +135,15 @@ def test_unreviewed_l11c_field_is_not_silently_hidden_from_sheet(tmp_path):
         assert not report['complete']
     finally:
         book.close()
+
+
+def test_duplicate_reviewed_l11c_header_is_visibly_unresolved(tmp_path):
+    duplicate = {**HEADER_FIELDS[0], 'value': 'SYNTHETIC CONFLICTING YEAR'}
+    book, report = saved_dom(tmp_path, fields=[*HEADER_FIELDS, duplicate])
+    try:
+        assert any(cell.value == 'Data sumber tambahan / belum dipetakan'
+                   for row in book['L11-C'] for cell in row)
+        assert report['unmapped_fields'] == report['reviewed_redundant_fields'] == 3
+        assert not report['complete']
+    finally:
+        book.close()
