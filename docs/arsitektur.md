@@ -366,6 +366,18 @@ Footer Badan memakai posisi fisik dan colspan sumber. Label total boleh berada s
 
 Sesuai pengecualian tampilan yang disetujui, Induk, L1-D, L2, L3, L4, L6, L7, L8, L9, L10-A, L10-C, L11-A, dan L11-B tidak menampilkan blok tambahan/belum dipetakan maupun salinan teks halaman. Checkpoint tetap utuh dan Audit pada resume tetap melaporkan field/tabel/baris yang belum terikat; penghilangan tampilan tidak menjadikannya COMPLETE. L11-C DOM mengikat hanya footer satu baris dengan prefix kosong, label TOTAL pada colspan B:F, dan struktur 16 kolom yang cocok dengan template JUMLAH A:F; sumber literal tidak diubah. Dua kontrol HEADER yang redundan dicatat sebagai belum terpetakan di Audit, tanpa menambahkan ulang teks halaman jika tepat satu tabel L11-C terpetakan penuh dan kontrol HEADER tidak duplikat. Header, footer, atau field lain yang tidak didukung tetap ditampilkan sebagai bukti mentah, dan tidak dianggap COMPLETE. Lampiran Badan lainnya tetap menampilkan bukti mentah yang belum didukung.
 
+Pengecualian DOM yang terbatas pada L2, L3-A dan L11-B mengizinkan hanya
+label TOTAL yang ditangkap dalam satu footer dengan header yang benar,
+colspan fisik teramati, serta label JUMLAH dan merge yang sesuai pada
+referensi. L2 Tabel 1 memakai [1,5,1,1,1] ke A9:F9 dan Tabel 2
+[1,5,1,2,1,2] ke A22:F22; L3-A [1,4,1,1,2,1] ke A4:E4.
+L11-B memakai [3,1x13] ke A13:C13, [1x14] ke A23, dan
+[1x5] ke A32. Nama label sumber dan bukti colspan tidak ditulis
+ulang; perubahan bentuk, ejaan, prefix atau owner tetap gagal tertutup.
+Form L3-B yang baru menangkap sebagian halaman tetap tidak boleh dipetakan
+sebagai COMPLETE walaupun footer L3-A kini didukung. DER hanya merujuk
+angka total rata-rata utang/modal yang telah dipetakan dan diverifikasi.
+
 Kapasitas body tabel referensi dipadatkan menjadi jumlah baris tangkapan yang berisi nilai, dengan satu slot body untuk tabel kosong. Nol dan False tetap merupakan isi. Hanya rentang body yang diketahui boleh dipadatkan; header, total tangkapan, pemisah, merge dan style tetap dipertahankan. Footer dan formula DER mengikuti pemadatan maupun pertumbuhan. L1-D menghilangkan tiga baris judul/identitas tampilan beserta satu baris kosong sebelum header pertama; metadata sumber tetap berada dalam checkpoint dan proof workbook. Induk menghilangkan field kosong tanpa mengisi default; satu baris pemisah identitas/perhitungan tetap ada bila kedua blok berisi data. Seluruh accounting Badan memakai nol desimal sesuai ketentuan operator terbaru, termasuk style referensi dan slot moneter baru. Nilai numerik tersimpan tetap persis tanpa dibulatkan; rasio DER dan tampilan persentase tetap memakai dua desimal. Pemadatan tidak mengubah jumlah/source_total atau bukti kelengkapan capture.
 
 Rentang moneter yang disetujui pada L1-D, L2, L3, L6, L7, L9, L10-A, L11-A, dan L11-B memakai format akuntansi pada sel yang dapat ditulis. Header, kode, dan nilai yang tidak aman tetap literal. Persentase L2 pada kolom yang terikat ke header persentase memakai pecahan numerik dengan pemeriksaan sintaks dan presisi; pemberian format persen pada sel teks tidak mengubah teks menjadi angka. Penambahan baris menyalin format aslinya dan mempertahankan merge label.
