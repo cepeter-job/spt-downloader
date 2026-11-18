@@ -1318,13 +1318,26 @@ exact verified candidate IDs private in process memory and use only that set
 when the user approves; reapply newest-N/exclusion policy at deletion time.
 Pin the source directory before eligibility checks and keep the lease until
 deleting the verified tree; check deadlines between source/output file chunks.
-Both automatic and manual pruning serialize through the same bounded,
-identity-checked, no-clobber verification and deletion path. Revalidate all
-source bytes and immutable held published Downloads outputs after confirmation.
-Never purge historical/unsealed, partial, active, recovery-bearing, unknown,
-locked or redirected jobs. Prevent GUI export and preference changes during
-manual housekeeping. Do not expose taxpayer names, paths or job IDs in
-preview, confirmation or diagnostics.
+Automatic and manual sealed-COMPLETE pruning serialize through the same
+bounded, identity-checked, no-clobber verification and deletion path. Revalidate
+all source bytes and held published Downloads outputs after confirmation.
+The separate incomplete-job manual path serializes on the same lock and rechecks
+only private-tree evidence: it never touches or validates Downloads for deletion.
+The sealed-COMPLETE pruning path must never purge historical/unsealed, partial,
+active, recovery-bearing, unknown, locked or redirected jobs. A separate
+**manual-only** incomplete-job path may delete explicitly selected PARTIAL/failed
+jobs with a verified terminal marker, after a read-only complete scan, exact
+in-memory job+tree-fingerprint selection, explicit second confirmation and
+full revalidation under native source-directory guards. It must never delete a
+sealed COMPLETE job, job with publication recovery, active/unknown/redirected
+path, changed content, or job lacking a proven terminal marker. A failed or
+partially completed deletion is reported incomplete and cannot authorize a
+restart retry on a stale snapshot. Automatic cleanup never uses this path.
+Prevent GUI export and preference changes during manual housekeeping. Do not
+expose taxpayer names, paths or job IDs in aggregate preview, confirmation
+or diagnostics; the private picker may show only anonymous row numbers, status,
+timestamp and estimated bytes. Storage inspection at startup is read-only and
+non-blocking, with no popup and no PARTIAL/failed auto-delete.
 
 ## Automatic completed-job pruning (Settings)
 
