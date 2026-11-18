@@ -999,6 +999,32 @@ def test_passive_existing_rpc_timing_fields_are_strictly_allowlisted(tmp_path):
     assert private not in json.dumps(rows)
 
 
+def test_pilot_label_rpc_stage_accepts_only_exact_diagnostic_enum(tmp_path):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_PILOT_SELECTOR'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage='pilot_label_lookup',
+                 table_existing_rpc_outcome='returned',
+                 duration_ms=55080.5, table_rpc_thread_cpu_ms=0,
+                 table_host_cpu_state='unavailable',
+                 form_ordinal=4, table_ordinal=3,
+                 selector=private, body=private)
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage=private,
+                 table_existing_rpc_outcome='returned',
+                 selector=private, body=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path)
+            if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 2
+    assert rows[0]['table_existing_rpc_stage'] == 'pilot_label_lookup'
+    assert rows[0]['table_host_cpu_state'] == 'unavailable'
+    assert rows[0]['duration_ms'] == 55080.5
+    assert 'table_existing_rpc_stage' not in rows[1]
+    assert private not in json.dumps(rows)
+
+
 def test_host_cpu_event_schema_and_run_marker_are_bounded(tmp_path, monkeypatch):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_HOST_CPU_VALUE'
