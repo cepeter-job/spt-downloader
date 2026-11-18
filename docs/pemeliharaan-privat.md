@@ -159,5 +159,14 @@ worker sesuai kebijakan retensi. Klik **Perbarui penggunaan storage** untuk
 melihat keadaan terbaru. Pembersihan manual tidak berjalan jika ada pekerjaan
 aktif, perubahan Pengaturan belum disimpan, atau inventaris tidak lengkap.
 
+**Batas konkurensi:** `_PRUNE_LOCK` hanya menyinkronkan thread di dalam satu
+proses aplikasi, bukan antarproses. Windows GUI normal memakai
+`InstanceLock(workspace)` sehingga dua jendela SPT Downloader untuk workspace
+yang sama ditolak. Namun CLI, skrip pihak lain, atau perubahan file dari
+proses lain tidak memakai lock tersebut. Hentikan pekerjaan eksternal yang
+menyentuh direktori job sebelum pembersihan manual. Pemeriksaan identitas,
+checksum dan native directory guards dapat menolak perubahan yang terdeteksi,
+tetapi bukan pengganti lock bersama antarproses atau transaksi filesystem.
+
 Menghapus capture/checkpoint berarti kehilangan kemampuan rebuild offline
 dari sumber tersebut. Pastikan kebutuhan audit/backup sebelum mengonfirmasi.

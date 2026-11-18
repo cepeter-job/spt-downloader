@@ -900,6 +900,8 @@ class App:
             try:
                 self.root.after_cancel(self._storage_after)
             except tk.TclError:
+                # Tk may already have retired the pending callback during root
+                # teardown. Disposal is terminal; no retry is safe or needed.
                 pass
             self._storage_after = None
         if self._update_after is not None:

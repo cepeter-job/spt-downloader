@@ -1323,6 +1323,14 @@ bounded, identity-checked, no-clobber verification and deletion path. Revalidate
 all source bytes and held published Downloads outputs after confirmation.
 The separate incomplete-job manual path serializes on the same lock and rechecks
 only private-tree evidence: it never touches or validates Downloads for deletion.
+`_PRUNE_LOCK` is a **process-local threading lock**, not a cross-process mutex.
+The production Windows GUI holds `InstanceLock(workspace)` in `spt_gui._run_gui`,
+so a second GUI for the same workspace is rejected (regression coverage in
+`tests/test_desktop_windows.py`). Independent CLI processes and external
+filesystem writers do not share that lock; an operator must stop them before
+manual maintenance. Native directory guards, tree fingerprints and recovery
+checks reduce race exposure but do not promise transactional isolation from
+an arbitrary outside process. Never present this as cross-process locking.
 The sealed-COMPLETE pruning path must never purge historical/unsealed, partial,
 active, recovery-bearing, unknown, locked or redirected jobs. A separate
 **manual-only** incomplete-job path may delete explicitly selected PARTIAL/failed
