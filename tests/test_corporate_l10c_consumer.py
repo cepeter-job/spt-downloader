@@ -27,26 +27,10 @@ def catalog(kind, code, description):
 
 @pytest.fixture
 def consumer_contract(monkeypatch):
-    # UNIT SEAM ONLY: the shared owner must independently admit the exact TX
-    # transport and ordinary consumer in production. This is not full native
-    # observer/capture acceptance and never changes the production registry.
-    monkeypatch.setitem(adapter.CORPORATE_REFERENCE_REQUESTS, TRANSACTION, ('TRANSACTION_TYPE',))
-    original = projection._project_corporate_catalog
-
-    def project(payload, *, kind, clock_interval=None, requested_types=None):
-        if kind != 'TRANSACTION_TYPE':
-            return original(payload, kind=kind, clock_interval=clock_interval, requested_types=requested_types)
-        assert requested_types == ('TRANSACTION_TYPE',)
-        assert payload[0]['ReferenceDataType'] == 'TRANSACTION_TYPE'
-        transformed = deepcopy(payload)
-        transformed[0]['ReferenceDataType'] = 'CURRENCY'
-        result = original(transformed, kind='CURRENCY', clock_interval=clock_interval, requested_types=('CURRENCY',))
-        for entry in result['provenance']:
-            if entry['path'] == [0, 'ReferenceDataType']:
-                entry['value'] = 'TRANSACTION_TYPE'
-        return result
-
-    monkeypatch.setattr(projection, '_project_corporate_catalog', project)
+    # The shared owner already registers TRANSACTION_TYPE as a reviewed
+    # reference kind, so no producer substitution is needed. This fixture is
+    # retained only to keep the existing test signatures stable.
+    yield
 
 
 def inputs():

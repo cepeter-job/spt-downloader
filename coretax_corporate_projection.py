@@ -1110,8 +1110,32 @@ def _l11b_exact(value):
     return amount
 
 
+def _l11b_average(value):
+    """Saved row Average is a computed mean, not a rupiah control.
+
+    The ordinary submitted profile stores sum/12 as a fractional saved value.
+    Admit only the reviewed binary64-exact subset (<=15 coefficient digits,
+    finite round-trip, no signed zero); the raw Decimal stays the DER operand
+    and the worksheet cell keeps the reviewed zero-digit display rounding.
+    """
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_type')
+    try:
+        number = _decimal(value)
+    except _UnsupportedMetadata:
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_type') from None
+    normalized = number.normalize()
+    if (abs(number) > _MAX_INTEGER or len(normalized.as_tuple().digits) > 15
+            or number.is_zero() and number.is_signed()
+            or Decimal(str(float(number))) != number):
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_average_precision')
+    # Integral group means keep the exact integer operand shape; only a truly
+    # fractional saved mean introduces a Decimal operand.
+    return int(number) if number == number.to_integral_value() else number
+
+
 def _l11b_add(total, amount):
-    total += amount
+    total = total + amount
     if abs(total) > _MAX_INTEGER:
         raise _UnsupportedMetadata('unsafe_corporate_l11b_ordered_total')
     return total
@@ -1170,7 +1194,8 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
                 evidence.append({**_evidence(row[name], [L11B_ROOT, key, row_index, name]),
                                  'rule': 'literal-view-model-text'})
             for column, name in enumerate(amount_keys):
-                amount = _l11b_exact(row[name])
+                amount = (_l11b_average(row[name]) if name == 'Average'
+                          else _l11b_exact(row[name]))
                 totals[column] = _l11b_add(totals[column], amount)
                 rendered.append(_number(row[name], 0, locale=locale))
                 evidence.append({**_evidence(row[name], [L11B_ROOT, key, row_index, name]),
@@ -1192,16 +1217,20 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
                         'footer': [footer], 'footer_spans': metadata['footer_spans'],
                         'body_row_count': len(body), 'source_total': len(body), 'complete': True})
         averages.append(totals[-1])
+    der_exact = False
     if part_ii:
         debt, equity = averages
         if equity == 0:
             if debt != 0:
                 raise _UnsupportedMetadata('unsupported_corporate_l11b_der_precision')
+            der_exact = True
         else:
-            ratio = Fraction(debt, equity)
-            if (debt == 0 or ratio.denominator not in (1, 2, 4)
-                    or abs(ratio * 100) > _MAX_INTEGER):
-                raise _UnsupportedMetadata('unsupported_corporate_l11b_der_precision')
+            ratio = Fraction(debt) / Fraction(equity)
+            # A fractional saved Average can make the DER a non-binary
+            # fraction. Keep the exact raw operands in custody and report the
+            # dependency as partial instead of manufacturing a rounded ratio.
+            der_exact = (debt != 0 and ratio.denominator in (1, 2, 4)
+                         and abs(ratio * 100) <= _MAX_INTEGER)
         result['tables'] = monthly + result['tables']
     else:
         for entry in evidence:
@@ -1209,6 +1238,7 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
                 entry['rule'] = 'unused-hidden-view-model'
                 entry.pop('destination', None)
     result['der_operands'] = averages if part_ii else None
+    result['der_exact'] = der_exact
     return result
 
 
@@ -1293,7 +1323,10 @@ def _apply_l11b(binding, section, observed_forms, *, root, payload, record, even
         entry['response_sequence'] = event['sequence']
         entry.setdefault('container', ['Payload', 'CurrentFormData'])
     return {'form': 'L11-B', 'kind': proof['kind'], 'builds': dict(proof['builds']),
-            'route': proof['route'], 'values': result['provenance']}
+            'route': proof['route'], 'values': result['provenance'],
+            # A fractional saved Average makes the DER a non-binary fraction.
+            # The exact raw operands stay in custody; the ratio stays partial.
+            'der_exact': result.get('der_exact', True)}
 
 
 def _apply_l1d(binding, section, observed_forms, *, root, payload, record, event):

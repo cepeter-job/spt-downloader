@@ -128,8 +128,7 @@ def test_empty_monthly_getters_preserve_original_null_vs_array(value):
 
 
 @pytest.mark.parametrize('key,value,reason', [
-    ('Average', Number('0.3333333333333333'), 'amount_precision'),
-    ('Average', Number('1.25'), 'amount_precision'),
+    ('Average', Number('0.3333333333333333'), 'average_precision'),
     ('Average', None, 'amount_type'), ('DebtMonth1', None, 'amount_type'),
     ('DebtMonth1', '', 'amount_type'), ('Average', True, 'amount_type'),
     ('Average', '1000', 'amount_type'), ('DebtMonth1', Number('-0'), 'signed_zero'),
@@ -166,9 +165,11 @@ def test_unproved_callback_profiles_remain_unsupported(change):
 
 def test_der_does_not_round_an_unsupported_ratio_into_a_supported_operand():
     source = populated()
-    source['EquityBalanceAverage'][0]['Average'] = Number('200')
-    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_der_precision'):
-        project(source)  # 2000/600 repeats; never round an operand or ratio.
+    for row in source['EquityBalanceAverage']:
+        row['Average'] = Number('600')
+    result = project(source)  # 2000/1200 repeats; never round an operand or ratio.
+    assert result['der_operands'] == [2000, 1200]
+    assert result['der_exact'] is False
 
 
 def test_hydrated_adapter_retains_original_overwritten_controls_and_custody():
@@ -275,15 +276,27 @@ def test_numeric_token_is_not_literal_identity_text():
         project(source)
 
 
-@pytest.mark.parametrize('debt,equity', [('0', '1'), ('1', '0'), ('999999999999999', '1')])
-def test_unrepresentable_der_does_not_emit_a_formula(debt, equity):
+def test_zero_equity_still_refuses_an_infinite_der():
+    source = populated()
+    source['DebtBalanceAverage'] = [source['DebtBalanceAverage'][0]]
+    source['EquityBalanceAverage'] = [source['EquityBalanceAverage'][0]]
+    source['DebtBalanceAverage'][0]['Average'] = Number('1')
+    source['EquityBalanceAverage'][0]['Average'] = Number('0')
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_der_precision'):
+        project(source)
+
+
+@pytest.mark.parametrize('debt,equity', [('0', '1'), ('999999999999999', '1')])
+def test_unrepresentable_der_is_partial_and_never_emits_a_formula(debt, equity):
     source = populated()
     source['DebtBalanceAverage'] = [source['DebtBalanceAverage'][0]]
     source['EquityBalanceAverage'] = [source['EquityBalanceAverage'][0]]
     source['DebtBalanceAverage'][0]['Average'] = Number(debt)
     source['EquityBalanceAverage'][0]['Average'] = Number(equity)
-    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_der_precision'):
-        project(source)
+    result = project(source)
+    assert result['der_exact'] is False
+    assert result['der_operands'] == [int(debt), int(equity)]
+    assert result['tables'][0]['complete'] is True
 
 
 def test_saved_totals_are_unused_metadata_not_captured_view_footer_aliases():
@@ -327,3 +340,37 @@ def test_encoded_null_predecessor_retains_the_original_string_provenance():
     values = next(p['values'] for p in result['provenance']['projections'] if p['form'] == 'L11-B')
     assert any(e['path'] == ['PreviousFormData'] and e['type'] == 'string' and e['value'] == 'null'
                and e['container'] == ['Payload'] for e in values)
+
+
+def test_real_fractional_saved_averages_and_der_are_admitted_and_stay_partial():
+    """The ordinary submitted target stores sum/12 means, not rupiah integers.
+
+    Exact raw operands stay in custody; the worksheet cell keeps the reviewed
+    zero-digit display rounding; the DER dependency is reported partial rather
+    than refusing the whole form or manufacturing a rounded ratio.
+    """
+    source = populated()
+    for row in source['DebtBalanceAverage']:
+        row['Average'] = Number('1000.125')
+    for row in source['EquityBalanceAverage']:
+        row['Average'] = Number('400.0625')
+    from decimal import Decimal
+    result = project(source)
+    assert [Decimal(value) for value in result['der_operands']] == [Decimal('2000.25'), Decimal('800.125')]
+    assert result['der_exact'] is False
+    debt, equity, _cost = result['tables']
+    assert debt['rows'][0][-1] == '1.000' and equity['rows'][0][-1] == '400'
+    assert debt['footer'] == [['JUMLAH', *map(str, range(2, 25, 2)), '2.000']]
+    assert equity['footer'] == [['JUMLAH', *map(str, range(4, 49, 4)), '800']]
+    # The exact saved mean is retained as typed custody evidence, not re-rounded.
+    raw = [e for e in result['provenance']
+           if e['path'][:3] == [module().L11B_ROOT, 'DebtBalanceAverage', 0]
+           and e['path'][-1] == 'Average']
+    assert raw and raw[0]['type'] == 'number' and raw[0]['value'] == '1000.125'
+
+
+def test_fractional_average_outside_the_binary64_subset_still_refuses():
+    source = populated()
+    source['DebtBalanceAverage'][0]['Average'] = Number('1000.10000000000001')
+    with pytest.raises(_UnsupportedMetadata, match='unsupported_corporate_l11b_average_precision'):
+        project(source)
