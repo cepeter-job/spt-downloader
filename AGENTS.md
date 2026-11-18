@@ -130,21 +130,36 @@ Keep `projection_complete=False` and `unprojected_l9_grid_rows` in the mapping
 report and visible Audit note. This candidate is not full native L9 or live
 acceptance. See [L9 recap boundary](docs/superpowers/reports/2026-11-17-corporate-l9-recap-partial.md).
 
-The L11-B candidate projects only four stable literal scalar controls and the
-unconditional Part III borrowing-cost table. Require the positively configured
-loaded CIT/MAIN pins, exact selected submitted route, matching literal model
-and payload status, preceding observed Induk and valid explicit predecessor
-encoding. The manual marker must be literal true or JSON number token 1;
-auto/manual-false, malformed and scalar-null/default profiles remain
-unsupported. Preserve strict original number/string types, the 15-digit
-integral operand and ordered-sum limits, and typed boolean/null/empty-array
-provenance. Retain all original root leaves and metadata alongside the reviewed
-table; never round a month mean into an invented DER denominator. EBITDA/25%,
-conditional Part II, averages and DER remain unprojected pending lifecycle and
-representation proof. Keep `projection_complete=False` with
-`unprojected_l11b_lifecycle`, truthful unresolved counts and a visible Audit
-note; neither emitted-slot mapping nor green synthetic tests certifies a
-complete L11-B worksheet or live acceptance. See [L11-B restricted boundary](docs/superpowers/reports/2026-11-17-corporate-l11b-projection.md).
+The L11-B restricted candidate (`corporate-l11b-v1`) projects only four stable
+literal scalar controls and the unconditional Part III borrowing-cost table.
+Require the positively configured loaded CIT/MAIN pins, exact selected submitted
+route, matching literal model and payload status, preceding observed Induk and
+valid explicit predecessor encoding. The manual marker must be literal true or
+JSON number token 1; auto/manual-false, malformed and scalar-null/default
+profiles remain unsupported. Preserve strict original number/string types, the
+15-digit integral operand and ordered-sum limits, and typed
+boolean/null/empty-array provenance. Retain all original root leaves and metadata
+alongside the reviewed table; never round a month mean into an invented DER
+denominator.
+
+The separately evidenced hydrated candidate (`corporate-l11b-hydrated-v2`) may
+additionally project the reconciled `Ebitda`/`Ebitda25` controls and, only when
+its conditional Part II is independently proven, the ordered debt/equity monthly
+tables. A saved row `Average` is a computed mean rather than a rupiah control, so
+it is admitted only inside a bounded binary64-exact subset: at most fifteen
+coefficient digits, a finite `Decimal(str(float(x)))` round-trip and no signed
+zero. The raw Decimal stays the DER operand and the worksheet cell keeps the
+reviewed zero-digit display rounding. A non-binary DER ratio is reported
+`der_exact=false` and remains unqualified instead of refusing the whole form,
+rounding an operand or fabricating a ratio.
+
+Still unprojected pending proof: the header/question controls, and the derived
+DER ratio whenever it is not exactly binary. Keep `projection_complete=False`
+with `unprojected_l11b_header_question` (hydrated) or
+`unprojected_l11b_lifecycle` (restricted), truthful unresolved counts and a
+visible Audit note; neither emitted-slot mapping nor green synthetic tests
+certifies a complete L11-B worksheet or live acceptance. See [L11-B restricted
+boundary](docs/superpowers/reports/2026-11-17-corporate-l11b-projection.md).
 
 L10-B remains intentionally absent from new workbooks. The separate
 `corporate-l10b-nondisplay-v1` capability validates original-data custody, not
