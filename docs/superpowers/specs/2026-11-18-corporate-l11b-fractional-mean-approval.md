@@ -6,6 +6,12 @@ subset below.** Live acceptance of any real record remains pending.
 Date: 2026-11-18. Supersedes nothing; it extends the existing L11-B restricted
 boundary without widening any other form.
 
+## Approval
+
+Approver: **@cepeter** (repository owner, non-author of the `Hermes Agent`
+commits). Recorded approval comment:
+<https://github.com/cepeter-job/spt-downloader/pull/287#issuecomment-6967477161>.
+
 ## Approval basis
 
 The operator instructed that the real ordinary submitted target must be served
