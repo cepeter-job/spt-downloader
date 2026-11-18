@@ -17,7 +17,6 @@ from .profile_lifecycle import _remove_tree
 
 TERMINAL = '.spt-terminal-v1.json'
 _FAILURES = frozenset({'ERROR', 'BLOCKED', 'CANCELLED'})
-_STATUS = frozenset({'COMPLETE', 'PARTIAL', 'FAILED', 'PROTECTED'})
 
 
 def record_terminal_status(root, job_id, status):
@@ -48,6 +47,8 @@ def record_terminal_status(root, job_id, status):
             try:
                 temporary.unlink(missing_ok=True)
             except OSError:
+                # The best-effort marker cleanup cannot change terminal status.
+                # A leftover file remains in private storage for later review.
                 pass
 
 
