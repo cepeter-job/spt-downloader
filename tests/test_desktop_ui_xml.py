@@ -44,7 +44,7 @@ def test_xml_is_not_exposed_as_an_external_packaging_resource(tmp_path):
     lambda value: value.replace('id="action.start"', 'id="unknown.placeholder"').replace(
         '>Mulai Sedot</string>', '>{unreviewed}</string>'),
     lambda value: value.replace('{selected} SPT dipilih', '{selection} SPT dipilih'),
-    lambda value: value.replace('<string id="stage.results">Hasil unduhan</string>', ''),
+    lambda value: value.replace('id="stage.results"', 'id="stage.results.removed"'),
     lambda value: value.replace('>Mulai Sedot</string>', '><b>Mulai Sedot</b></string>'),
     lambda value: value.replace('>Mulai Sedot</string>', '></string>'),
     lambda value: value.replace('>Mulai Sedot</string>', '>&unexpected;</string>'),

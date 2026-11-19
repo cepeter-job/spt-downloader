@@ -86,12 +86,12 @@ Pilih SPT yang ingin disedot.</string>
   <string id="main.poll.error">Proses tidak dapat dipantau. Periksa koneksi dan buka ulang aplikasi.</string>
   <string id="main.source.label.dom">DOM</string>
   <string id="main.source.label.json.hybrid.pilot">JSON-hybrid (pilot)</string>
-  <string id="main.status.menghentikan.sedotan.data.sementara.tetap">Menghentikan sedotan… data sementara tetap disimpan.</string>
-  <string id="main.status.menyiapkan.aplikasi.untuk.menyedot.spt">Menyiapkan aplikasi untuk menyedot SPT.</string>
+  <string id="main.status.menghentikan.unduhan.data.sementara.tetap">Menghentikan sedotan… data sementara tetap disimpan.</string>
+  <string id="main.status.menyiapkan.aplikasi.untuk.mengunduh.spt">Menyiapkan aplikasi untuk menyedot SPT.</string>
   <string id="main.status.periksa.kembali.npwp.dan.tahun">Periksa kembali NPWP dan tahun pajak.</string>
   <string id="main.status.proses.belum.bisa.dipantau.menunggu">Proses belum bisa dipantau. Menunggu proses berhenti; hasil belum dinyatakan selesai.</string>
   <string id="main.status.spt.diproses.0.total.terverifikasi">SPT diproses 0/{total}; terverifikasi 0.</string>
-  <string id="main.status.value1.menghentikan.sedotan">{value1} Menghentikan sedotan…</string>
+  <string id="main.status.value1.menghentikan.unduhan">{value1} Menghentikan sedotan…</string>
   <string id="main.status.value1.value2">{value1} · {value2}</string>
   <!-- overwrite: application presentation only -->
   <string id="overwrite.table.heading.file.yang.akan.diganti">File yang akan diganti</string>
@@ -246,10 +246,10 @@ Seluruh capture dan checkpoint job terpilih akan dihapus secara permanen. Hasil 
   <string id="view.state.title.menyiapkan.aplikasi">Menyiapkan aplikasi</string>
   <string id="view.state.title.menyiapkan.spt.pilihan">Menyiapkan SPT pilihan</string>
   <string id="view.state.title.periksa.file.yang.akan.diganti">Periksa file yang akan diganti</string>
-  <string id="view.state.title.pilih.spt.yang.ingin.disedot">Pilih SPT yang ingin disedot</string>
+  <string id="view.state.title.pilih.spt.yang.ingin.diunduh">Pilih SPT yang ingin disedot</string>
   <string id="view.state.title.selesaikan.login.di.browser">Selesaikan login di browser</string>
   <string id="view.state.title.tidak.ada.spt.yang.ditemukan">Tidak ada SPT yang ditemukan</string>
-  <string id="view.state.title.sedotan.belum.bisa.dilanjutkan">Sedotan belum bisa dilanjutkan</string>
+  <string id="view.state.title.unduhan.belum.bisa.dilanjutkan">Sedotan belum bisa dilanjutkan</string>
   <string id="view.widget.value1.label">{value1} · {label}</string>
   <!-- display placeholders and estimated-size captions -->
   <string id="settings.storage.approximate">≈ </string>
