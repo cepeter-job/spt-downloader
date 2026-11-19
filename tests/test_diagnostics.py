@@ -1025,6 +1025,66 @@ def test_pilot_label_rpc_stage_accepts_only_exact_diagnostic_enum(tmp_path):
     assert private not in json.dumps(rows)
 
 
+@pytest.mark.parametrize('value,enabled', [
+    ('1', True), ('0', False), ('true', False),
+    (' 1', False), ('', False), (None, False)])
+def test_gui_host_cpu_start_marker_is_immutable_and_exact(
+        tmp_path, monkeypatch, value, enabled):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_ENVIRONMENT_CONTENT'
+    if value is None:
+        monkeypatch.delenv('SPT_DIAG_HOST_CPU', raising=False)
+    else:
+        monkeypatch.setenv('SPT_DIAG_HOST_CPU', value)
+    with d.session(tmp_path, 'gui') as log:
+        # A caller cannot override the snapshot of GUI initialization.
+        d.record('session.started', table_host_cpu_gui_start_enabled=not enabled,
+                 table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=True, raw_environment=private)
+        d.record('operation.started', table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=True, raw_environment=private)
+        assert log.flush()
+    rows = records(tmp_path)
+    starts = [r for r in rows if r['event'] == 'session.started']
+    assert len(starts) == 2
+    assert all(r['table_host_cpu_gui_start_enabled'] is enabled for r in starts)
+    assert all('table_host_cpu_gui_at_spawn' not in r for r in starts)
+    assert all('table_host_cpu_worker_env_enabled' not in r for r in starts)
+    assert all('table_host_cpu_gui_at_spawn' not in r
+               for r in rows if r['event'] == 'operation.started')
+    assert private not in json.dumps(rows)
+
+
+def test_worker_spawn_markers_accept_only_gui_booleans(tmp_path):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_WORKER_ENV'
+    class Untrusted:
+        def __bool__(self):
+            raise AssertionError('must not coerce diagnostic marker')
+    with d.session(tmp_path, 'gui') as log:
+        d.record('worker.spawned', table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=False,
+                 env=private, command_line=private)
+        d.record('worker.spawned', table_host_cpu_gui_at_spawn='1',
+                 table_host_cpu_worker_env_enabled=Untrusted(), env=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'worker.spawned']
+    assert len(rows) == 2
+    assert rows[0]['table_host_cpu_gui_at_spawn'] is True
+    assert rows[0]['table_host_cpu_worker_env_enabled'] is False
+    assert 'table_host_cpu_gui_at_spawn' not in rows[1]
+    assert 'table_host_cpu_worker_env_enabled' not in rows[1]
+    assert private not in json.dumps(rows)
+    other = tmp_path / 'worker'
+    with d.session(other, 'worker') as log:
+        d.record('worker.spawned', table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=True)
+        assert log.flush()
+    worker_rows = [r for r in records(other) if r['event'] == 'worker.spawned']
+    assert all('table_host_cpu_gui_at_spawn' not in r and
+               'table_host_cpu_worker_env_enabled' not in r for r in worker_rows)
+
+
 def test_host_cpu_event_schema_and_run_marker_are_bounded(tmp_path, monkeypatch):
     d = diagnostics()
     secret = 'SYNTHETIC_PRIVATE_HOST_CPU_VALUE'

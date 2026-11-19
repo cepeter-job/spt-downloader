@@ -357,7 +357,12 @@ has its own bounded overhead *outside* the measured RPC wall time and
 **inside** the original 180s capture budget: host-CPU opt-in runs are
 investigative, **not** performance or row-completeness baselines.
 The immutable worker boundary `table_host_cpu_enabled` labels that
-opt-in; missing boundaries mean UNKNOWN. Never widen deadlines,
+opt-in; missing boundaries mean UNKNOWN. For issue #307, emit only
+`table_host_cpu_gui_start_enabled` at GUI session initialization,
+plus `table_host_cpu_gui_at_spawn` and `table_host_cpu_worker_env_enabled`
+on GUI worker.spawned as privacy-safe booleans. Never log the raw
+environment, process metadata, paths, credentials, or taxpayer content.
+Missing markers mean UNKNOWN, not false. Never widen deadlines,
 change capture/source authority, hide Stop/errors, or merge these
 diagnostics into business manifests. Documented sampling is not a
 runtime optimization and cannot satisfy #246's positive-Previous
