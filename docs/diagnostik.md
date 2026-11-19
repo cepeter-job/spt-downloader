@@ -382,8 +382,20 @@ dan `max_page_size >= 250`, event `table.existing_rpc_timing`
 mengukur panggilan Playwright **yang sudah dibutuhkan scraping**:
 `pilot_label_lookup` (label ukuran halaman setelah pemilihan),
 `previous_lookup`, `previous_limit_lookup`, `initial_snapshot`,
-`cursor_init`, `cursor_advance`, `cursor_poll` dan
-`cursor_snapshot`. Event memakai ordinal form/tabel, fixed enum
+`cursor_init`, `cursor_advance`, `cursor_poll`,
+`cursor_snapshot` dan `cursor_turn`. Khusus tabel kandidat 500-row
+L3-B, `cursor_turn` menggabungkan klik Next, pemeriksaan perubahan
+state dan snapshot owner-bound dalam satu RPC jika halaman sudah siap dalam
+slice renderer maksimum 850 ms. Jika state belum berubah, polling dan
+snapshot lama tetap berlaku; snapshot pending kembali ke Python untuk
+pemeriksaan Stop. Ini mengurangi jumlah round-trip pada jalur cepat,
+**bukan** mengurangi biaya per round-trip yang tertahan.
+Untuk page timing jalur gabungan, `table_click_ms` meliputi seluruh
+RPC `cursor_turn` (termasuk snapshot jika sukses di call tersebut),
+sedangkan `table_dom_ms` bisa mendekati nol. Bandingkan durasi
+wall-clock `cursor_turn`, bukan kedua field secara terpisah.
+Tidak ada klaim peningkatan throughput nyata tanpa live A/B setara.
+Event memakai ordinal form/tabel, fixed enum
 `table_existing_rpc_stage` dan `table_existing_rpc_outcome`
 (`returned`/`raised`), `duration_ms` (wall-clock Python),
 `table_rpc_thread_cpu_ms` (CPU thread Python saat memanggil),
