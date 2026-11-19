@@ -162,12 +162,14 @@ def _slots(mode):
     raise ValueError('Unknown Windows coverage mode')
 
 
-def check_windows_inputs(inventories, *, mode, python_version, commit, run_id, run_attempt):
+def check_windows_inputs(inventories, *, mode, python_version, commit, run_id, run_attempt,
+                         attempt_map=None):
     """Require the complete passing fixed Windows partition from this run."""
     if not isinstance(inventories, list) or len(inventories) != len(_slots(mode)):
         raise ValueError('Missing Windows coverage inventory')
     return check_windows_inventories(inventories, python_version, commit,
-                                    run_id=run_id, run_attempt=run_attempt)
+                                    run_id=run_id, run_attempt=run_attempt,
+                                    attempt_map=attempt_map)
 
 
 def data_files(root, mode):
@@ -268,14 +270,23 @@ def main():
     parser.add_argument('--commit', required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--run-attempt', required=True)
+    parser.add_argument('--producer-manifest', type=Path)
     parser.add_argument('--base', default='')
     parser.add_argument('--policy', type=Path, default=Path('coverage-policy.json'))
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    attempt_map = None
+    if args.producer_manifest is not None:
+        from scripts.ci_attempts import validated_attempts
+        attempt_map = validated_attempts(
+            json.loads(args.producer_manifest.read_text(encoding='utf-8')),
+            commit=args.commit, run_id=args.run_id, run_attempt=args.run_attempt,
+            python=args.python_version, mode=args.mode)
     inventories = [json.loads((args.root / slot / 'test-inventory.json').read_text(encoding='utf-8'))
                    for slot in _slots(args.mode)]
     check_windows_inputs(inventories, mode=args.mode, python_version=args.python_version,
-                         commit=args.commit, run_id=args.run_id, run_attempt=args.run_attempt)
+                         commit=args.commit, run_id=args.run_id, run_attempt=args.run_attempt,
+                         attempt_map=attempt_map)
     paths = data_files(args.root, args.mode)
     args.output.mkdir(parents=True, exist_ok=True)
     data = args.output / '.coverage-windows'
@@ -289,7 +300,8 @@ def main():
     policy = json.loads(args.policy.read_text(encoding='utf-8'))
     measured = evaluate(report, policy, changed_lines(args.base, args.commit) if args.base else None)
     proof = {'commit': args.commit, 'run_id': args.run_id, 'run_attempt': args.run_attempt,
-             'mode': args.mode, 'base': args.base or None, 'policy': policy, 'measured': measured}
+             'mode': args.mode, 'producer_attempts': attempt_map or {},
+              'base': args.base or None, 'policy': policy, 'measured': measured}
     (args.output / 'coverage-gate.json').write_text(json.dumps(proof, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(proof, indent=2))
 

@@ -363,7 +363,12 @@ has its own bounded overhead *outside* the measured RPC wall time and
 **inside** the original 180s capture budget: host-CPU opt-in runs are
 investigative, **not** performance or row-completeness baselines.
 The immutable worker boundary `table_host_cpu_enabled` labels that
-opt-in; missing boundaries mean UNKNOWN. Never widen deadlines,
+opt-in; missing boundaries mean UNKNOWN. For issue #307, emit only
+`table_host_cpu_gui_start_enabled` at GUI session initialization,
+plus `table_host_cpu_gui_at_spawn` and `table_host_cpu_worker_env_enabled`
+on GUI worker.spawned as privacy-safe booleans. Never log the raw
+environment, process metadata, paths, credentials, or taxpayer content.
+Missing markers mean UNKNOWN, not false. Never widen deadlines,
 change capture/source authority, hide Stop/errors, or merge these
 diagnostics into business manifests. Documented sampling is not a
 runtime optimization and cannot satisfy #246's positive-Previous
@@ -1242,8 +1247,17 @@ Keep CodeQL, locked dependency audits, Ruff and full test/build gates independen
 Windows parent-process coverage uses the existing `.coveragerc` and separately
 declared line/branch/module/diff floors in `coverage-policy.json`. Before package
 build, validate the complete passing serial, fixed two-shard or fixed four-shard Windows inventory
-for the exact commit/run/attempt and combine only its explicit raw-data slots.
-Never use portable-only, old, failed or missing-shard data as representative
+for the exact commit/run and each producer's original successful attempt,
+and combine only its explicit raw-data slots. A partial Actions rerun may reuse
+unchanged successful producer artifacts from an earlier attempt of that **same**
+run and commit, but only after binding each slot to its actual originating job
+and exact inventory/coverage artifact. Replayed job metadata does not prove
+a rerun; a genuinely failed or newly executed producer with missing evidence
+cannot fall back to an older successful artifact. Keep exact Python/matrix
+mode, source-head, job/attempt, artifact ID, digest, size and expiry constraints;
+each original inventory's embedded attempt must match its selected producer.
+The package's own build-info and readback remain tied to the **current** attempt.
+Never use portable-only, old, unrelated-run, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
 percentages use exact integer ratios.
 Pure comment-only files leave the diff budget only after complete non-comment
