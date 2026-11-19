@@ -212,6 +212,11 @@ def test_unoffered_unavailable_c_history_does_not_disable_a_legacy_sibling(tmp_p
         capture._l7_requested = True
         saved = capture.drain()
         assert saved['complete'] and 'corporate_l10c_lifetime' not in saved
+        # An unoffered C fact must not discard the joint turn clock: reference
+        # custody drops without a clock, which would refuse every populated
+        # form instead of only the unrelated C capability.
+        assert saved['clock_interval'] == {'attempt': capture.attempt, 'start_ms': 1000,
+                                           'end_ms': 1000, 'timezone': 'Asia/Jakarta'}
 
 
 @pytest.mark.parametrize('clock', [None, {'epoch_ms': 500, 'timezone': 'Asia/Jakarta'},
