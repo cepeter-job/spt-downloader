@@ -186,7 +186,6 @@ def validated_attempts(data, *, commit, run_id, run_attempt, python, mode):
 
 
 def _api(repo, token):
-    from urllib.parse import quote
     def fetch(path):
         url = 'https://api.github.com/' + path
         req = Request(url, headers={
@@ -233,6 +232,7 @@ def main(argv=None):
     args.output.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     with args.github_output.open('a', encoding='utf-8') as stream:
         for slot in slots(args.mode):
+            stream.write(f"{slot.replace('-', '_')}_attempt={manifest['producers'][slot]['attempt']}\n")
             for kind, item in manifest['producers'][slot]['artifacts'].items():
                 stream.write(f"{slot.replace('-', '_')}_{kind}={item['name']}\n")
     print('Resolved exact producer attempts: ' +
