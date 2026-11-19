@@ -96,6 +96,9 @@ def build(output, python_profile='production'):
         if not (ROOT/name).is_file():raise FileNotFoundError('Missing allowed build resource: '+name)
     if read_build_info(ROOT) is None:
         raise RuntimeError('Build requires valid immutable build-info.json metadata.')
+    # Compile reviewed XML before PyInstaller; frozen runtime reads only Python constants.
+    from scripts.compile_ui_copy import generate
+    generate()
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     subprocess.run(build_command(ROOT,output,uv_binary),cwd=ROOT,check=True)
     executable=output/'SPTDownloader.exe'
