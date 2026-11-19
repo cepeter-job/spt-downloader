@@ -4208,11 +4208,13 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
     requests = responses[0]['requests']
     if not isinstance(requests, list) or not 1 <= len(requests) <= 1000:
         raise _UnsupportedMetadata('missing_corporate_l3_page_requests')
+    period = fields.get('TaxPeriodCode')
     for request in requests:
-        if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId', 'Language',
+        if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId', 'PeriodYear',
                 'First', 'Rows', 'SortField', 'SortOrder', 'Filters', 'LanguageId'}
                 or request['ReturnSheetRecordId'] != record['record_id']
-                or request['Language'] != 'id-ID' or request['LanguageId'] != 'id-ID'
+                or request['LanguageId'] != 'id-ID'
+                or not isinstance(period, str) or request['PeriodYear'] != period[-4:]
                 or type(request['First']) is not int or request['First'] < 0
                 or type(request['Rows']) is not int or request['Rows'] != 10
                 or request['SortField'] != 'WithholdingSlipsDate'
