@@ -43,7 +43,7 @@ class MainView(ttk.Frame):
         self._root_bindings = []
         self.npwp = tk.StringVar(self)
         self.year = tk.StringVar(self, value=year_default)
-        self.status = tk.StringVar(self, value='Masukkan NPWP dan tahun pajak, lalu klik Mulai unduh.')
+        self.status = tk.StringVar(self, value=copy_text('status.initial'))
         self.percent = tk.StringVar(self, value='0%')
         self.npwp_error, self.year_error = tk.StringVar(self), tk.StringVar(self)
         self.scope_npwp, self.scope_year, self.scope_selected = (tk.StringVar(self, value='—') for _ in range(3))
@@ -56,7 +56,7 @@ class MainView(ttk.Frame):
         self.header.columnconfigure(0, weight=1)
         self.heading = ttk.Label(self.header, text=copy_text('app.title'), style='Title.TLabel', wraplength=self.px(500))
         self.heading.grid(row=0, column=0, sticky='ew', padx=(0, self.px(12)))
-        self.settings_button = ttk.Button(self.header, text='Pengaturan', command=on_settings, underline=0, style='SPT.TButton')
+        self.settings_button = ttk.Button(self.header, text=copy_text('settings.title'), command=on_settings, underline=0, style='SPT.TButton')
         self.settings_button.grid(row=0, column=1, sticky='ne')
         self.subtitle = ttk.Label(self.header, text=copy_text('app.subtitle'), style='SPT.Stage.TLabel', wraplength=self.px(500))
         self.subtitle.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(self.px(4), 0))
@@ -81,12 +81,12 @@ class MainView(ttk.Frame):
         self.content_slot.columnconfigure(0, weight=1)
         self.scope_panel = ttk.Frame(self.workspace, style='SPT.Card.TFrame', padding=self.px(16))
         self.scope_panel.columnconfigure(0, weight=1)
-        self.scope_title = ttk.Label(self.scope_panel, text='Ringkasan unduhan', style='SPT.Heading.TLabel')
+        self.scope_title = ttk.Label(self.scope_panel, text=copy_text('scope.title'), style='SPT.Heading.TLabel')
         self.scope_title.grid(row=0, column=0, columnspan=3, sticky='w', pady=(0, self.px(12)))
         self._scope_labels = []
         self._scope_holders = []
-        for row, (caption, value) in enumerate((('NPWP', self.scope_npwp), ('Tahun pajak', self.scope_year),
-                                                ('SPT dipilih', self.scope_selected)), start=1):
+        for row, (caption, value) in enumerate((('NPWP', self.scope_npwp), (copy_text('scope.year.label'), self.scope_year),
+                                                (copy_text('scope.selected.label'), self.scope_selected)), start=1):
             holder = ttk.Frame(self.scope_panel, style='SPT.Card.TFrame')
             holder.grid(row=row, sticky='ew', pady=(0, self.px(8)))
             holder.columnconfigure(0, weight=1)
@@ -137,7 +137,7 @@ class MainView(ttk.Frame):
             holder.columnconfigure(0, weight=1)
         self.npwp_label = ttk.Label(self.npwp_field, text=copy_text('form.npwp.label'), style='SPT.Label.TLabel')
         self.npwp_label.grid(row=0, sticky='w')
-        ttk.Label(self.year_field, text='Tahun pajak', style='SPT.Label.TLabel').grid(row=0, sticky='w')
+        ttk.Label(self.year_field, text=copy_text('form.year.label'), style='SPT.Label.TLabel').grid(row=0, sticky='w')
         self.npwp_entry = ttk.Entry(self.npwp_field, textvariable=self.npwp, width=24, style='SPT.TEntry')
         self.year_entry = ttk.Entry(self.year_field, textvariable=self.year, width=10, style='SPT.TEntry')
         self._field_wrappers = []
@@ -166,7 +166,7 @@ class MainView(ttk.Frame):
         self.status_label = ttk.Label(self.progress_panel, textvariable=self.status, style='SPT.Caption.TLabel', wraplength=self.px(500))
         self.status_label.grid(row=5, column=0, sticky='ew')
         self.setup_hint = ttk.Label(self.progress_panel,
-            text='Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.',
+            text=copy_text('setup.hint'),
             style='SPT.Caption.TLabel', wraplength=self.px(500))
         self.setup_hint.grid(row=6, column=0, sticky='ew', pady=(self.px(16), 0))
         self.result_panel = ttk.Frame(self.content_slot, style='SPT.Card.TFrame', padding=self.px(16))
