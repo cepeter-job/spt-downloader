@@ -74,4 +74,4 @@ def test_developer_xml_change_is_compiled_without_python_edits(tmp_path):
     generate(edited, target)
     namespace = {}
     exec(compile(target.read_text(encoding='utf-8'), str(target), 'exec'), namespace)
-    assert namespace['STRINGS']['action.start'] == 'Mulai sedot'
+    assert namespace['STRINGS']['action.start'] == 'Mulai SPT'
