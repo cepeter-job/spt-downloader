@@ -1257,7 +1257,7 @@ cannot fall back to an older successful artifact. Keep exact Python/matrix
 mode, source-head, job/attempt, artifact ID, digest, size and expiry constraints;
 each original inventory's embedded attempt must match its selected producer.
 The package's own build-info and readback remain tied to the **current** attempt.
-Never use portable-only, unrelated-run, failed or missing-shard data as representative
+Never use portable-only, old, unrelated-run, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
 percentages use exact integer ratios.
 Pure comment-only files leave the diff budget only after complete non-comment
