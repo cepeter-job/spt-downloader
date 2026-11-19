@@ -13,7 +13,7 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 Navigasi kontrak pada berkas ini: [perubahan/merge](#change-and-merge-discipline),
 [data/akses](#data-and-access-safety), [native JSON](#native-json-boundaries),
 [output](#output-contract), [diagnostik](#issue-143-diagnostics-boundary),
-[verifikasi](#verification), dan [desktop](#desktop-boundaries). Untuk pemilik
+[verifikasi](#verification), [CLI live](#cli-first-live-testing-scraping-and-export-development), dan [desktop](#desktop-boundaries). Untuk pemilik
 fungsi dan tes, gunakan [peta kode](docs/peta-kode.md). Pin/resource worker
 mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 
@@ -48,6 +48,66 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
 
+
+## CLI-first live testing (scraping and export development)
+
+For live investigation of shared capture/export behavior (DOM pagination, native
+JSON/DOM fallback, mapping, checkpoints and Excel/PDF output), prefer a
+**source-run CLI smoke test** from the exact checked-out change before waiting
+for a rebuilt Windows EXE. This shortens iteration but is **additional
+pre-acceptance evidence**, never a substitute for the project's required
+GitHub-hosted CI checks, peer review, frozen-EXE build/self-test or final
+Windows application acceptance. Follow
+[Windows CLI usage](README.md#memakai-cli-di-windows) and the
+[private manual acceptance checklist](docs/penerimaan-manual.md).
+
+1. On an authorized Windows machine, identify the tested source commit with
+   `git rev-parse HEAD`. Prepare the project's pinned environment with
+   `setup.cmd` if needed; the actual CLI entry point is
+   `.venv\Scripts\python.exe coretax.py`. Do not treat a test of one commit as
+   evidence for another commit.
+2. Use only authorized NPWP/year scope, a **dedicated CLI browser profile** and
+   a **fresh private output folder outside the repository**. Let the CLI own
+   its browser; do not implicitly attach to a running desktop/personal session
+   or run concurrent CLI/GUI jobs against a shared profile. Perform any
+   CAPTCHA/MFA manually. Never put real NPWP, passwords, cookies, captures,
+   workbook contents or private paths in public issues, PRs, commits or logs.
+3. Select `--detail-source dom` for a DOM baseline, or
+   `--detail-source json-first` to exercise JSON-hybrid with whole-record DOM
+   fallback. `--detail-limit N` is a short **first-N inventory** smoke test,
+   not a choice of specific SPT IDs/forms; `--inventory-only` checks listing
+   only. Limited runs are PARTIAL (CLI exit code 2) when records remain, not
+   COMPLETE. Remove limits for a full-scope comparison and verify the output
+   independently.
+4. Examine the private run checkpoint, `resume.xlsx` Audit, sheet mapping,
+   complete/partial counts and privacy-safe diagnostic stage/timing/reason
+   categories. For fallback fixes, compare equivalent authorized DOM and
+   JSON-first runs in separate output folders; do not infer native JSON success
+   merely because JSON-first produced an Excel file. To test rendering only,
+   `--from-json` rebuilds Excel offline and does **not** prove live capture.
+5. Record the exact source SHA, mode, bounded test scope, terminal status
+   (COMPLETE/PARTIAL/blocked), observed fallback category and remaining gaps
+   in a privacy-safe PR summary. A partial/failed run must not be described as
+   full live acceptance. Do not bypass any existing CI/release checks to save
+   build time.
+
+PowerShell example from the repository root (private values stay local):
+
+```powershell
+$npwp = Read-Host "Authorized NPWP (16 digits)"
+$runId = Get-Date -Format "yyyyMMdd-HHmmss"
+& ".\.venv\Scripts\python.exe" ".\coretax.py" `
+  --npwp $npwp --year 2025 --detail-source json-first --detail-limit 2 `
+  --output "$env:LOCALAPPDATA\SPTDownloader-CLI\json-first-$runId" `
+  --profile "$env:LOCALAPPDATA\SPTDownloader-CLI\profile"
+```
+
+This CLI path **does not** verify desktop-specific authentication/credential
+handling, user SPT selection and consent, worker/controller/Stop behavior, job
+cleanup, settings/XML copy, publication to Downloads, update notifications or
+frozen-runtime packaging. Exercise these with Windows application tests and
+an exact-build EXE during integration/release acceptance. Required PR CI,
+Windows build gates and the existing release safety contract remain unchanged.
 
 ## Public update notification boundary
 
