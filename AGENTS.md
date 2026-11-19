@@ -68,6 +68,17 @@ and idle-only notifications. Failed checks never block jobs; keep synthetic
 offline tests and frozen GUI self-test gates. See
 [update notification contract](docs/update-notifications.md).
 
+CLI opt-in `--spt-badan-only` is an exact literal PPh Badan detail
+selection, not a filter on submitted-list inventory acquisition. Keep the
+original full inventory and persisted hash-bound `selection.json` intact;
+only the identified PPh Badan records may receive View/detail capture,
+and MPN must not run for this explicitly selected scope. No matching
+records must fail closed; a resumed Corporate-only run must explicitly
+retain its scope. Ordinary CLI behavior and other taxes remain unchanged.
+Source/Excel COMPLETE refers only to the explicitly selected Corporate
+scope, never to unrelated SPT or MPN. Preserve exact year, NPWP,
+original record identity, DOM-only opt-in, Stop, and PARTIAL contracts.
+
 ## Data and access safety
 
 - Commit source, documentation and clearly synthetic tests only. Never commit real taxpayer identifiers/records, captured JSON, Excel/PDF outputs, cookies, credentials, browser profiles or local virtual environments.

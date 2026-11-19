@@ -558,12 +558,36 @@ def parser():
     cli.add_argument('--reuse-browser', metavar='HTTP_ORIGIN', help='Explicitly reuse a dedicated local Chromium profile launched with --remote-debugging-port=0')
     cli.add_argument('--non-interactive', action='store_true', help='Requires NPWP/year and an authenticated session; never prompts for credentials')
     cli.add_argument('--inventory-only', action='store_true', help='Capture SPT list only; output is explicitly PARTIAL for full-detail scope')
+    cli.add_argument('--spt-badan-only', action='store_true',
+                     help='Select only inventoried PPh Badan return details; skip MPN (persist selected IDs for resume)')
     cli.add_argument('--detail-limit', type=int, help='Test-only detail limit; output stays PARTIAL if any return remains unexported')
     cli.set_defaults(detail_source_explicit=False)
     cli.add_argument('--detail-source', choices=['dom', 'json-first'], default='dom', action=_DetailSource,
                      help='DOM by default; opt-in JSON hybrid with whole-record DOM fallback')
     cli.add_argument('--max-pages', type=int, default=1000, help='Safety cap per list/table; reaching it is reported as PARTIAL')
     return cli
+
+
+def _select_corporate_cli_scope(inventory, folder, *, detail_source):
+    """Persist exactly inventoried PPh Badan IDs before any detail View action."""
+    from coretax_resume import persist_selection
+    from spt_desktop.interaction import select_records
+
+    ids = [
+        record['record_id'] for record in inventory['records']
+        if record.get('meta', {}).get('Jenis Pajak') == 'PPh Badan'
+    ]
+    if not ids:
+        raise RuntimeError('No inventoried PPh Badan returns; refusing other return details')
+    scoped = select_records(inventory, ids)
+    scoped['started_at'] = scoped.get('started_at') or datetime.now().astimezone().isoformat()
+    scoped['cli_detail_scope'] = 'spt-badan-only'
+    scoped['scope_description'] += ' CLI menangkap detail PPh Badan saja; MPN tidak diambil.'
+    persist_selection(scoped, folder, detail_source=detail_source)
+    _atomic_checkpoint(Path(folder) / 'run.json', scoped)
+    return scoped
+
+
 
 
 @contextmanager
@@ -634,6 +658,8 @@ def _main(argv=None):
     args = cli.parse_args(argv)
     if args.max_pages < 1 or args.detail_limit is not None and args.detail_limit < 1:
         cli.error('Page and detail limits must be positive')
+    if args.spt_badan_only and (args.from_json or args.inventory_only):
+        cli.error('--spt-badan-only applies to live detail capture, not offline or inventory-only mode')
     diagnostics.record('operation.started', operation='offline' if args.from_json else 'resume' if args.resume else 'export')
     if args.from_json:
         run = json.loads(args.from_json.read_text(encoding='utf-8'))
@@ -654,6 +680,20 @@ def _main(argv=None):
         if args.npwp is not None and args.npwp != run['npwp'] or args.year is not None and str(args.year) != str(run['year']):
             cli.error('Resume scope must match the checkpoint exactly')
         npwp, year = validate_scope(run['npwp'], run['year'])
+        # Resume a persisted selection only when the operator explicitly
+        # requests Corporate-only again. Never broaden an existing CLI scope.
+        prior = folder / 'run.json'
+        if prior.exists() and not args.spt_badan_only:
+            prior_run = json.loads(prior.read_text(encoding='utf-8'))
+            if prior_run.get('cli_detail_scope') == 'spt-badan-only':
+                cli.error('This CLI run is Corporate-only; resume with --spt-badan-only')
+        if args.spt_badan_only:
+            if (not run.get('selection') or not run['records']
+                    or any(record.get('meta', {}).get('Jenis Pajak') != 'PPh Badan'
+                           for record in run['records'])):
+                cli.error('Corporate-only resume needs an exact saved PPh Badan selection; do not widen the scope')
+            run['cli_detail_scope'] = 'spt-badan-only'
+            run['scope_description'] += ' CLI menangkap detail PPh Badan saja; MPN tidak diambil.'
     else:
         if args.non_interactive and (args.npwp is None or args.year is None):
             cli.error('--non-interactive requires --npwp and --year, or --resume')
@@ -698,19 +738,27 @@ def _main(argv=None):
             authenticate(work_page, args.non_interactive)
             if run is None:
                 run = collect_inventory(work_page, npwp, year, args.year_basis, folder, max_pages=args.max_pages)
+                if args.spt_badan_only:
+                    # Full submitted-list metadata is needed to identify the
+                    # type. Only the selected Corporate IDs can reach View.
+                    run = _select_corporate_cli_scope(
+                        run, folder, detail_source=args.detail_source)
             run['started_at'] = run.get('started_at') or datetime.now().astimezone().isoformat()
             run['complete'] = False
             if args.inventory_only:
                 run['errors'].append({'object': 'Scope', 'message': 'Inventory-only run. Return-detail content not captured.'})
             else:
-                require_mpn(run, args.detail_source)
+                if not args.spt_badan_only:
+                    require_mpn(run, args.detail_source)
                 def progress(current_run, ordinal):
                     if ordinal % 5 == 0:
                         current_run['complete'] = False
                         save_output(current_run, folder)
                 collect_details(work_page, run, folder, max_pages=args.max_pages, detail_limit=args.detail_limit,
                                 on_progress=progress, detail_source=args.detail_source)
-                collect_mpn(work_page, run, folder, max_pages=args.max_pages, detail_source=args.detail_source)
+                if not args.spt_badan_only:
+                    collect_mpn(work_page, run, folder, max_pages=args.max_pages,
+                                detail_source=args.detail_source)
             run['finished_at'] = datetime.now().astimezone().isoformat()
             run['duration_seconds'] = round(time.monotonic() - start, 2)
             output_path = save_output(run, folder)
