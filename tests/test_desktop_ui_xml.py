@@ -73,15 +73,57 @@ def test_xml_rejects_invalid_edit(tmp_path, mutation):
     assert not (tmp_path / 'invalid_generated.py').exists()
 
 
-def test_developer_xml_change_is_compiled_without_python_edits(tmp_path):
+@pytest.mark.parametrize(('key', 'value'), [
+    ('app.title', 'SYNTHETIC TITLE'),
+    ('action.start', 'SYNTHETIC START'),
+    ('stage.results', 'SYNTHETIC RESULTS'),
+    ('settings.field.label.jumlah.cache.job.0.nonaktif', 'SYNTHETIC SETTING'),
+    ('main.status.value1.menghentikan.unduhan', '{value1} synthetic stopping'),
+    ('download.details.body', '{total} total, {processed} processed, {verified} verified'),
+    ('settings.dialog.body.total.job.lama.memenuhi.syarat', '{total} jobs, {value2} MiB'),
+])
+def test_developer_value_only_edits_compile_without_python_edits(tmp_path, key, value):
+    """Normal text changes may be shipped without changing IDs, tests or Python."""
     source = CATALOG_FILE.read_text(encoding='utf-8')
-    changed = replace_entry(source, 'action.start', 'SYNTHETIC_EDITED_CAPTION')
+    changed = replace_entry(source, key, value)
     assert changed != source
     edited = tmp_path / 'edited.xml'
     edited.write_text(changed, encoding='utf-8')
-    assert load_strings(edited)['action.start'] == 'SYNTHETIC_EDITED_CAPTION'
+    assert load_strings(edited)[key] == value
     target = tmp_path / 'generated.py'
     generate(edited, target)
     namespace = {}
     exec(compile(target.read_text(encoding='utf-8'), str(target), 'exec'), namespace)
-    assert namespace['STRINGS']['action.start'] == 'SYNTHETIC_EDITED_CAPTION'
+    assert namespace['STRINGS'][key] == value
+
+
+@pytest.mark.parametrize(('key', 'report_path'), [
+    ('app.title', ('ui_text', 'title')),
+    ('settings.background.label', ('ui_text', 'background')),
+    ('results.location_hint', ('ui_text', 'results')),
+    ('app.subtitle', ('personal_use_labels',)),
+    ('app.bugreport', ('bugreport_footer', 'text')),
+    ('settings.widget.simpan', ('gui_controls',)),
+    ('selection.table.type', ('selection_sorting_control', 'directions')),
+])
+def test_packaged_selftest_accepts_revised_valid_display_values(monkeypatch, key, report_path):
+    """The release gate must match the approved catalog, not yesterday's text."""
+    import build_desktop
+    from support_build_reports import report
+
+    current = build_desktop.copy_text
+    new_text = 'SYNTHETIC CHANGED DISPLAY VALUE'
+    monkeypatch.setattr(build_desktop, 'copy_text',
+                        lambda name: new_text if name == key else current(name))
+    data = report()
+    if report_path[0] == 'personal_use_labels':
+        data['personal_use_labels'] = [new_text]
+    elif report_path[0] == 'gui_controls':
+        data['gui_controls'] = [new_text if item == current(key) else item
+                                for item in data['gui_controls']]
+    elif report_path[-1] == 'directions':
+        data['selection_sorting_control']['directions'] = [
+            new_text + ' ▲', new_text + ' ▼']
+    else:
+        data[report_path[0]][report_path[1]] = new_text
+    build_desktop.validate_report(data)
