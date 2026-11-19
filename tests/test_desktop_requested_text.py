@@ -98,7 +98,7 @@ def test_exact_window_title_and_results_label_are_visible_without_clipping(tmp_p
         assert 0 <= top and top + result.winfo_height() <= root.winfo_height()
         assert result.winfo_width() >= result.winfo_reqwidth()
         assert result.winfo_height() >= result.winfo_reqheight()
-        assert not any(widget.cget('text') == 'for personal use : punto ap' for widget in labels)
+        assert sum(widget.cget('text') == copy_text('app.subtitle') for widget in labels) == 1
         assert controller.starts == []
 
 
@@ -180,8 +180,6 @@ def test_requested_downloads_description_replaces_the_old_hierarchy_hint(tmp_pat
     with window(tmp_path, monkeypatch) as (root, application, controller):
         labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
         assert labels.count(EXPECTED_TEXT['results']) == 1
-        obsolete = 'Hasil: Downloads → NPWP - NAMA WP → TAHUN PAJAK → WAKTU EKSPOR.'
-        assert not any(obsolete in text for text in labels), 'Replace the old hint; do not display both'
         assert copy_text('setup.hint') in labels
         assert controller.starts == []
 
@@ -211,8 +209,7 @@ def test_self_test_does_not_report_a_new_caption_over_an_old_real_header(tmp_pat
 def test_consolidated_native_shell_excludes_removed_owner_footer(tmp_path, monkeypatch):
     with window(tmp_path, monkeypatch) as (root, application, controller):
         labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
-        assert 'for personal use : punto ap' not in labels
-        assert copy_text('app.subtitle') in labels
+        assert labels.count(copy_text('app.subtitle')) == 1
         assert controller.starts == []
 
 

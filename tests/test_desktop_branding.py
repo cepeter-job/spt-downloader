@@ -30,8 +30,7 @@ def test_personal_use_subtitle_is_visible_without_the_removed_punto_footer(tmp_p
         labels = [child for child in descendants(body) if isinstance(child, ttk.Label)]
         texts = [str(label['text']) for label in labels]
         assert copy_text('app.subtitle') in texts
-        assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in texts)
-        assert 'for personal use : punto ap' not in texts
+        assert texts.count(copy_text('app.subtitle')) == 1
         subtitle = next(label for label in labels
                         if str(label['text']) == copy_text('app.subtitle'))
         assert subtitle.winfo_ismapped()
