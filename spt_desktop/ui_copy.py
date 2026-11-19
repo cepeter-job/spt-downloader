@@ -4,7 +4,7 @@ import sys
 from types import MappingProxyType
 from typing import Mapping
 
-from .ui_text_schema import COUNT_PARAMETERS
+from .ui_text_schema import COUNT_PARAMETERS, DISPLAY_PARAMETERS
 
 if getattr(sys, 'frozen', False):
     # PyInstaller bundles generated Python constants, never an external XML file.
@@ -32,4 +32,15 @@ def copy_text(key: str, **values: str | int) -> str:
             raise TypeError('Copy counters must be integers, not booleans or text')
         if value < 0:
             raise ValueError('Copy counters cannot be negative')
+    return template.format(**values)
+
+
+def format_text(key: str, **values: str | int) -> str:
+    """Interpolate only reviewed named UI fields, without format directives."""
+    template = COPY[key]
+    expected = DISPLAY_PARAMETERS[key]
+    if values.keys() != expected:
+        raise ValueError('Copy parameters do not match the named template')
+    if any(type(value) not in (int, str) for value in values.values()):
+        raise TypeError('Display values must be strings or integers')
     return template.format(**values)

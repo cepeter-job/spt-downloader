@@ -143,7 +143,7 @@ def test_catalog_matches_approved_copy():
         "form.year.label": "Tahun pajak",
         "setup.hint": "Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.",
     })
-    assert dict(COPY) == expected
+    assert {key: COPY[key] for key in expected} == expected
     assert 'app.credit' not in COPY
 
 

@@ -38,6 +38,11 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
   never read editable external XML; preserve approved text IDs, placeholders,
   locked labels and the `copy_text()` contract. No user text editor or runtime
   override is supported. Keep schema validation and UI-copy tests in the gates.
+  The catalog also owns Tk presentation copy in app.py, ui_views.py, and
+  spt_gui.py, including Settings, cleanup confirmations and update notices.
+  Source-domain parsing labels, persisted enums, and worker event messages
+  remain separate from editable copy. Non-count UI templates use reviewed
+  DISPLAY_PARAMETERS and format_text(); packaging rejects missing literal IDs.
 - The frozen GUI `--self-test` is a release gate: always use explicit `require(condition, fixed_description)` checks within `spt_gui.self_test`, never Python `assert` (which disappears under `-O` / `PYTHONOPTIMIZE`). A failure must exit nonzero and disclose only its fixed synthetic check label; keep the self-test offline and free of account/browser access. The existing `build_desktop.py` EXE invocation and report validation remain mandatory.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.

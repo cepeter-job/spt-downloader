@@ -10,6 +10,7 @@ import tempfile
 import tkinter as tk
 from tkinter import messagebox
 from spt_desktop.app import App
+from spt_desktop.ui_copy import copy_text
 from spt_desktop import diagnostics
 from spt_desktop.paths import workspace_root,downloads_folder
 from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
@@ -302,11 +303,11 @@ def _run_gui():
         return 0
     except RuntimeError as error:
         diagnostics.record('gui.failed', error=error, level='ERROR', phase='startup')
-        messagebox.showerror('SPT Downloader','Aplikasi sudah berjalan. Gunakan jendela yang sudah terbuka.',parent=root)
+        messagebox.showerror(copy_text('bootstrap.dialog.title.spt.downloader'),copy_text('bootstrap.dialog.body.aplikasi.sudah.berjalan.gunakan.jendela'),parent=root)
         return 1
     except Exception as error:
         diagnostics.record('gui.failed', error=error, level='ERROR', phase='startup')
-        messagebox.showerror('SPT Downloader','Aplikasi tidak dapat dibuka. Periksa izin LocalAppData dan kelengkapan executable.',parent=root)
+        messagebox.showerror(copy_text('bootstrap.dialog.title.spt.downloader'),copy_text('bootstrap.dialog.body.aplikasi.tidak.dapat.dibuka.periksa'),parent=root)
         return 1
     finally:
         if app:app.controller.close()
