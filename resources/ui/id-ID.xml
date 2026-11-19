@@ -3,40 +3,40 @@
   <string id="app.title">Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang</string>
   <string id="settings.background.label">jalankan proses sedot di background</string>
   <string id="results.location_hint">Hasil Sedot berada di folder Downloads Windows</string>
-  <string id="app.subtitle">Coretax → Excel · for personal use only</string>
+  <string id="app.subtitle">for personal use only</string>
   <string id="app.bugreport">bugreport : sharmila@kemenkeu.go.id</string>
   <string id="selection.confirm">Sedot SPT terpilih</string>
-  <string id="selection.mpn">Sedot MPN</string>
+  <string id="selection.mpn">Sedot MPN (lama)</string>
   <string id="form.title">Masukkan NPWP dan tahun pajak</string>
-  <string id="form.help">Setelah daftar muncul, pilih SPT yang ingin diunduh.</string>
+  <string id="form.help">Setelah daftar muncul, pilih SPT yang ingin disedot.</string>
   <string id="form.npwp.label">NPWP (16 digit)</string>
   <string id="form.npwp.help">Ketik 16 angka, tanpa spasi, titik, atau tanda hubung.</string>
   <string id="form.npwp.error">Isi NPWP dengan 16 angka (0–9), tanpa pemisah.</string>
   <string id="form.year.help">Gunakan tahun pajak, bukan tahun pelaporan.</string>
   <string id="form.year.error">Gunakan 4 angka, dari 1900 sampai 2100.</string>
-  <string id="action.start">Mulai unduh</string>
-  <string id="action.stop">Hentikan unduhan</string>
+  <string id="action.start">Mulai Sedot</string>
+  <string id="action.stop">Hentikan Sedotan</string>
   <string id="action.open_result">Buka folder hasil</string>
   <string id="action.open_partial">Buka hasil sementara</string>
   <string id="action.new">Unduh SPT lain</string>
   <string id="action.details">Lihat rincian</string>
-  <string id="selection.title">Pilih SPT yang akan diunduh</string>
+  <string id="selection.title">Pilih SPT yang akan disedot</string>
   <string id="selection.help">gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT
 
-Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.</string>
+Pilih SPT yang ingin disedot.</string>
   <string id="selection.search.label">Cari jenis pajak, masa, pembetulan, atau ID SPT</string>
   <string id="selection.empty">Daftar ini tidak memuat SPT yang bisa dipilih.</string>
-  <string id="selection.focused_id">ID SPT yang disorot</string>
+  <string id="selection.focused_id">ID SPT yang diblok</string>
   <string id="selection.keyboard_hint">Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.</string>
   <string id="selection.summary">{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.</string>
   <string id="selection.no_match">Tidak ada SPT yang cocok dengan pencarian.</string>
-  <string id="selection.filter_reset">Pencarian berubah. Pilih lagi SPT yang akan diunduh.</string>
+  <string id="selection.filter_reset">Pencarian berubah. Pilih lagi SPT yang akan disedot.</string>
   <string id="selection.shortcuts.all">All</string>
   <string id="selection.shortcuts.latest">Pemb. Terakhir</string>
   <string id="selection.shortcuts.potput">PPh Potput</string>
   <string id="selection.shortcuts.ppn">PPN</string>
-  <string id="selection.shortcuts.help">Pilihan cepat berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN.</string>
-  <string id="selection.shortcuts.manual">Sebagian SPT memiliki masa/model yang belum dapat diperingkat. Pilih SPT tersebut secara manual bila diperlukan.</string>
+  <string id="selection.shortcuts.help">Pilihan berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN.</string>
+  <string id="selection.shortcuts.manual">Sebagian SPT memiliki masa/model yang belum dapat dipetakan. Pilih SPT tersebut secara manual bila diperlukan.</string>
   <string id="download.details.body">{processed} dari {total} SPT sudah diproses. Kelengkapan {verified} SPT sudah diperiksa.</string>
   <string id="download.exported.title">File Excel sudah dibuat</string>
   <string id="download.publish.title">Menyimpan hasil unduhan</string>
@@ -50,7 +50,7 @@ Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi p
   <string id="overwrite.folder.label">Folder hasil sebelumnya</string>
   <string id="overwrite.help">File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.</string>
   <string id="overwrite.files_count">{count} file akan diganti.</string>
-  <string id="overwrite.keep_hint">Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.</string>
+  <string id="overwrite.keep_hint">Pilih Jangan ganti untuk menghentikan overwrite dan mempertahankan hasil sebelumnya.</string>
   <string id="overwrite.context_missing">Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.</string>
   <string id="overwrite.decline">Jangan ganti</string>
   <string id="overwrite.confirm">Ganti file tersebut</string>
@@ -68,9 +68,9 @@ Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi p
   <string id="scope.title">Ringkasan unduhan</string>
   <string id="scope.year.label">Tahun pajak</string>
   <string id="scope.selected.label">SPT dipilih</string>
-  <string id="status.initial">Masukkan NPWP dan tahun pajak, lalu klik Mulai unduh.</string>
+  <string id="status.initial">Masukkan NPWP dan tahun pajak, lalu klik Mulai Sedot.</string>
   <string id="form.year.label">Tahun pajak</string>
-  <string id="setup.hint">Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.</string>
+  <string id="setup.hint">Setup Python/uv otomatis saat Mulai. Password hanya tersimpan di Windows Credential Manager.</string>
   <!-- bootstrap: application presentation only -->
   <string id="bootstrap.dialog.body.aplikasi.sudah.berjalan.gunakan.jendela">Aplikasi sudah berjalan. Gunakan jendela yang sudah terbuka.</string>
   <string id="bootstrap.dialog.body.aplikasi.tidak.dapat.dibuka.periksa">Aplikasi tidak dapat dibuka. Periksa izin LocalAppData dan kelengkapan executable.</string>

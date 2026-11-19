@@ -139,3 +139,24 @@ def test_tk_widgets_dialog_titles_and_prompts_have_no_static_literal_text():
                         assert not isinstance(argument.value, (ast.Constant, ast.JoinedStr)), (
                             relative, node.lineno, name
                         )
+
+
+@pytest.mark.parametrize(('key', 'expected'), [
+    ("action.start", "Mulai Sedot"),
+    ("action.stop", "Hentikan Sedotan"),
+    ("app.subtitle", "for personal use only"),
+    ("form.help", "Setelah daftar muncul, pilih SPT yang ingin disedot."),
+    ("overwrite.keep_hint", "Pilih Jangan ganti untuk menghentikan overwrite dan mempertahankan hasil sebelumnya."),
+    ("selection.filter_reset", "Pencarian berubah. Pilih lagi SPT yang akan disedot."),
+    ("selection.focused_id", "ID SPT yang diblok"),
+    ("selection.help", "gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\nPilih SPT yang ingin disedot."),
+    ("selection.mpn", "Sedot MPN (lama)"),
+    ("selection.shortcuts.help", "Pilihan berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN."),
+    ("selection.shortcuts.manual", "Sebagian SPT memiliki masa/model yang belum dapat dipetakan. Pilih SPT tersebut secara manual bila diperlukan."),
+    ("selection.title", "Pilih SPT yang akan disedot"),
+    ("setup.hint", "Setup Python/uv otomatis saat Mulai. Password hanya tersimpan di Windows Credential Manager."),
+    ("status.initial", "Masukkan NPWP dan tahun pajak, lalu klik Mulai Sedot."),
+])
+def test_pr313_copy_changes_are_preserved_during_full_ui_catalog_migration(key, expected):
+    """Keep PR #313 copy decisions intact while expanding the catalog."""
+    assert copy_text(key) == expected

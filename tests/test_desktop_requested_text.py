@@ -135,7 +135,7 @@ def test_self_test_reports_actual_requested_widget_text_without_accounts(tmp_pat
     data = json.loads(report.read_text(encoding='utf-8'))
     assert data.get('ui_text') == EXPECTED_TEXT
     assert data['live_scrape'] is False and data['credentials_accessed'] is False
-    assert data['personal_use_labels'] == ['Coretax → Excel · for personal use only']
+    assert data['personal_use_labels'] == ['for personal use only']
     gc.collect()
 
 
@@ -211,7 +211,7 @@ def test_consolidated_native_shell_excludes_removed_owner_footer(tmp_path, monke
     with window(tmp_path, monkeypatch) as (root, application, controller):
         labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
         assert 'for personal use : punto ap' not in labels
-        assert 'Coretax → Excel · for personal use only' in labels
+        assert 'for personal use only' in labels
         assert controller.starts == []
 
 

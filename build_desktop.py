@@ -51,7 +51,7 @@ def validate_report(data, python_profile='production'):
             and {'Simpan', 'Hapus login', 'Tutup'}.issubset(data['gui_controls'])
             and data.get('automatic_login_controls') == {
                 'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
-            and data.get('personal_use_labels') == ['Coretax → Excel · for personal use only']
+            and data.get('personal_use_labels') == ['for personal use only']
             and data.get('bugreport_footer') == {
                 'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}
             and data.get('ui_text') == {

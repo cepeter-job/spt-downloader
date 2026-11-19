@@ -13,7 +13,7 @@ def report(profile='production'):
             'free_threaded': False, 'tcl': '8.6.15', 'tk': '8.6.15',
             'worker_python': python_version(), 'worker_resources': list(WORKER_FILES),
             'credential_check_controls': False, 'gui_controls': ['Simpan', 'Hapus login', 'Tutup'],
-            'personal_use_labels': ['Coretax → Excel · for personal use only'],
+            'personal_use_labels': ['for personal use only'],
             'ui_text': {'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
                         'background': 'jalankan proses sedot di background',
                         'results': 'Hasil Sedot berada di folder Downloads Windows'},
