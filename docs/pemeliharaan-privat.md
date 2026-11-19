@@ -132,7 +132,11 @@ tombol penghapusan PARTIAL/gagal yang memerlukan pilihan dan konfirmasi.
 1. Selesaikan/Stop pekerjaan aktif dan simpan perubahan Pengaturan.
 2. Klik **hapus job PARTIAL/gagal**, lalu tunggu inventaris selesai.
 3. Pilih satu atau beberapa baris berdasarkan status, waktu perubahan terakhir
-   dan ukuran. Identitas wajib pajak, path, dan job ID penuh tidak ditampilkan.
+   dan ukuran, atau centang **Select All** untuk memilih seluruh baris kandidat
+   yang lolos pemeriksaan. Hapus centang untuk mengosongkan pilihan; perubahan
+   pilihan secara manual juga memperbarui checkbox. Checkbox ini **tidak**
+   mengonfirmasi atau memulai penghapusan. Identitas wajib pajak, path, dan
+   job ID penuh tidak ditampilkan.
 4. Konfirmasikan penghapusan permanen secara terpisah (default **Tidak**).
 5. Sistem mengecek ulang snapshot seluruh file dan identitas folder, memastikan
    tidak ada perubahan/recovery, lalu menghapus hanya job yang dipilih.

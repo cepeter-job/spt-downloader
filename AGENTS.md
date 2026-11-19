@@ -238,6 +238,17 @@ The L7 corporate semantic branch has its own source-proven boundary. Require bot
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
 
+The large Corporate DOM pilot page-size guard may read the **same** inspected
+paginator label on the held owner via one read-only `evaluate` rather than
+`query_selector` followed by remote `inner_text`. A detached/replaced owner
+fails closed. Keep the original ASCII decimal and `max_page_size` check:
+no undocumented 1000-row selection, no global label fallback, no additional
+browser call or timeout change. `table.first_page_timing:pilot_label_lookup`
+now covers this single RPC and may report its bounded renderer duration;
+`pilot_label_text` is local trimming/validation only.
+This is an unverified transport-overhead hypothesis, not an established
+speedup; retain the 180-second table budget and PARTIAL behavior.
+
 DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
 
 
@@ -363,7 +374,12 @@ has its own bounded overhead *outside* the measured RPC wall time and
 **inside** the original 180s capture budget: host-CPU opt-in runs are
 investigative, **not** performance or row-completeness baselines.
 The immutable worker boundary `table_host_cpu_enabled` labels that
-opt-in; missing boundaries mean UNKNOWN. Never widen deadlines,
+opt-in; missing boundaries mean UNKNOWN. For issue #307, emit only
+`table_host_cpu_gui_start_enabled` at GUI session initialization,
+plus `table_host_cpu_gui_at_spawn` and `table_host_cpu_worker_env_enabled`
+on GUI worker.spawned as privacy-safe booleans. Never log the raw
+environment, process metadata, paths, credentials, or taxpayer content.
+Missing markers mean UNKNOWN, not false. Never widen deadlines,
 change capture/source authority, hide Stop/errors, or merge these
 diagnostics into business manifests. Documented sampling is not a
 runtime optimization and cannot satisfy #246's positive-Previous
@@ -1242,8 +1258,17 @@ Keep CodeQL, locked dependency audits, Ruff and full test/build gates independen
 Windows parent-process coverage uses the existing `.coveragerc` and separately
 declared line/branch/module/diff floors in `coverage-policy.json`. Before package
 build, validate the complete passing serial, fixed two-shard or fixed four-shard Windows inventory
-for the exact commit/run/attempt and combine only its explicit raw-data slots.
-Never use portable-only, old, failed or missing-shard data as representative
+for the exact commit/run and each producer's original successful attempt,
+and combine only its explicit raw-data slots. A partial Actions rerun may reuse
+unchanged successful producer artifacts from an earlier attempt of that **same**
+run and commit, but only after binding each slot to its actual originating job
+and exact inventory/coverage artifact. Replayed job metadata does not prove
+a rerun; a genuinely failed or newly executed producer with missing evidence
+cannot fall back to an older successful artifact. Keep exact Python/matrix
+mode, source-head, job/attempt, artifact ID, digest, size and expiry constraints;
+each original inventory's embedded attempt must match its selected producer.
+The package's own build-info and readback remain tied to the **current** attempt.
+Never use portable-only, old, unrelated-run, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
 percentages use exact integer ratios.
 Pure comment-only files leave the diff budget only after complete non-comment

@@ -176,6 +176,62 @@ def test_worker_exit_zero_alone_is_not_success(controlled_worker):
     assert events[-1]['status']=='ERROR' and events[-1]['percent']<100
 
 
+@pytest.mark.parametrize('flag, expected', [
+    ('1', True), ('0', False), ('true', False), (None, False)])
+def test_gui_worker_spawn_logs_exact_host_cpu_environment(
+        tmp_path, monkeypatch, flag, expected):
+    import io
+    from types import SimpleNamespace
+
+    controller = module('controller')
+    d = module('diagnostics')
+    if flag is None:
+        monkeypatch.delenv('SPT_DIAG_HOST_CPU', raising=False)
+    else:
+        monkeypatch.setenv('SPT_DIAG_HOST_CPU', flag)
+    monkeypatch.setattr(controller, 'reap_profiles', lambda root: None)
+    monkeypatch.setattr(controller, 'ensure_runtime', lambda *args: tmp_path / 'python.exe')
+    monkeypatch.setattr(controller, 'worker_source', lambda root: tmp_path)
+    spawned = threading.Event()
+    flags = []
+
+    class FakeJob:
+        def spawn(self, argv, **kwargs):
+            # Read only the exact allowlisted opt-in, never the full environment.
+            flags.append(kwargs['env'].get('SPT_DIAG_HOST_CPU') == '1')
+            spawned.set()
+            return SimpleNamespace(stdin=io.StringIO(),
+                                   stdout=io.StringIO(),
+                                   stderr=io.StringIO(),
+                                   poll=lambda: 0)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(controller, 'ProcessJob', FakeJob)
+    with d.session(tmp_path / 'gui', 'gui') as log:
+        ctl = controller.JobController(tmp_path / 'workspace', lambda event: None)
+        try:
+            ctl.start('0000000000000001', '2025')
+            assert spawned.wait(5)
+            ctl._prepare_thread.join(timeout=5)
+            assert not ctl._prepare_thread.is_alive()
+            assert log.flush()
+        finally:
+            ctl.close()
+    rows = [json.loads(line)
+            for path in (tmp_path / 'gui' / 'logs').glob('diag-gui-*.jsonl')
+            for line in path.read_text(encoding='utf-8').splitlines()]
+    start = next(row for row in rows if row['event'] == 'session.started')
+    spawn = next(row for row in rows if row['event'] == 'worker.spawned')
+    assert start['table_host_cpu_gui_start_enabled'] is expected
+    assert spawn['table_host_cpu_gui_at_spawn'] is expected
+    assert spawn['table_host_cpu_worker_env_enabled'] is expected
+    assert flags == [expected]
+    assert all('SPT_DIAG_HOST_CPU' not in row for row in rows)
+    assert all('table_host_cpu_enabled' not in row for row in rows)
+
+
 def test_worker_cannot_inherit_credential_logging_debug_flags(controlled_worker):
     ctl,child,state,events=controlled_worker
     blocked={'DEBUG','PWDEBUG','NODE_OPTIONS','NODE_PATH','PLAYWRIGHT_BROWSERS_PATH',

@@ -1,5 +1,6 @@
 """A thin stdlib GUI controller owns workers and distrusts stale/partial events."""
 import json
+import os
 from pathlib import Path
 import queue
 import re
@@ -125,7 +126,11 @@ class JobController:
                 if self._cancel.is_set():raise SetupCancelled('Persiapan dibatalkan.')
                 # The trusted GUI owns an explicit env allowlist; never let
                 # inherited Python/Node/Playwright startup hooks reach the worker.
+                # Compare the GUI's exact opt-in with the sanitized
+                # environment actually handed to the owned worker.
+                gui_host_cpu_at_spawn = os.environ.get('SPT_DIAG_HOST_CPU') == '1'
                 environment=worker_environment()
+                worker_env_host_cpu = environment.get('SPT_DIAG_HOST_CPU') == '1'
                 argv=[str(python),'-u','-m','spt_desktop.worker',*arguments,
                       '--root',str(self.root),'--job-id',job_id,'--browser',browser]
                 if not headless:argv.append('--visible')
@@ -134,7 +139,9 @@ class JobController:
                     stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                     text=True,encoding='utf-8',errors='replace',bufsize=1)
                 process=self.process
-                diagnostics.record('worker.spawned', job_id=job_id, operation=operation)
+                diagnostics.record('worker.spawned', job_id=job_id, operation=operation,
+                                   table_host_cpu_gui_at_spawn=gui_host_cpu_at_spawn,
+                                   table_host_cpu_worker_env_enabled=worker_env_host_cpu)
                 def read_events():
                     try:
                         while True:
