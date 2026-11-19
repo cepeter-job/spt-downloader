@@ -645,6 +645,7 @@ class DetailJsonCapture:
         self._component_started = False
         self._l8_history = None
         self._l8_requested = False
+        self._l8_refusal = None
         self._l7_history = None
         self._l7_requested = False
         self._l7_unavailable = False
@@ -1135,26 +1136,48 @@ class DetailJsonCapture:
 
     def observe_l8_lifetime(self, *, check_cancel=None):
         """Stronger L8-only structural history, armed before the inspected View."""
+        self._l8_refusal = None
         self._cancel(check_cancel)
         self._verify_binding()
         self._l8_requested = True
-        if self.observe_component_lifetime(check_cancel=check_cancel) is None or self._l8_history is None:
+        if self.observe_component_lifetime(check_cancel=check_cancel) is None:
+            self._l8_refusal = 'l8_component_lifetime'
+            return None
+        if self._l8_history is None:
+            self._l8_refusal = 'l8_history_missing'
             return None
         state = self._component_probe(lambda: self._l8_history.evaluate('(h) => h.sample()'), check_cancel)
         self._verify_binding()
         if (not isinstance(state, dict) or set(state) != {
                 'initial_clear', 'root_seen', 'root_changed', 'dependent_seen'}
                 or any(type(value) is not bool for value in state.values())):
+            self._l8_refusal = 'l8_state_shape'
             return None
         if state['root_changed']:
             raise JsonSafetyError('Observed corporate L8 root history changed')
-        if not state['initial_clear'] or not state['root_seen'] or state['dependent_seen']:
+        if not state['initial_clear']:
+            self._l8_refusal = 'l8_not_clear'
             return None
+        if not state['root_seen']:
+            self._l8_refusal = 'l8_no_root'
+            return None
+        if state['dependent_seen']:
+            self._l8_refusal = 'l8_dependent'
+            return None
+        self._l8_refusal = None
         return _capture_l8_lifetime({'kind': 'corporate-l8-spa-v1', 'attempt': self.attempt,
             'record_id': self.record_id, 'source_url': self.source_url, 'detail_url': self._bound_url,
             'fresh_root': True, 'stable_root': True, 'no_dependent_forms': True},
             attempt=self.attempt, record_id=self.record_id,
             source_url=self.source_url, detail_url=self._bound_url)
+
+    def l8_refusal_reason(self):
+        """Bounded enum naming the L8 guard that refused, or None."""
+        return self._l8_refusal
+
+    def l8_refuse(self, reason):
+        """Record a finite L8 guard name; never a value, URL, or digest."""
+        self._l8_refusal = reason
 
     def observe_corporate_reference_providers(self, *, check_cancel=None):
         """Optional once-only loaded-source proof; never fetch a reference catalog."""
