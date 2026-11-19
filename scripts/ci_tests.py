@@ -242,15 +242,17 @@ def _checked_inventory(report, workload, target, python_version, commit, run_id,
     return set(report['all']), set(report['selected'])
 
 
-def check_windows_inventories(windows, python_version, commit, *, run_id, run_attempt):
+def check_windows_inventories(windows, python_version, commit, *, run_id, run_attempt, attempt_map=None):
     """Validate original serial or shard evidence and return its full collection."""
     reports = [windows] if isinstance(windows, dict) else windows
     if not isinstance(reports, list) or len(reports) not in (1, 2, 4):
         raise ValueError('Expected one serial Windows report or exactly two or four shard reports.')
     all_nodes = None
     for index, report in enumerate(reports):
+        slot = 'serial' if len(reports) == 1 else f'shard-{index}'
+        producer_attempt = attempt_map[slot] if attempt_map is not None else run_attempt
         full, selected = _checked_inventory(
-            report, 'windows', 'win32', python_version, commit, run_id, run_attempt)
+            report, 'windows', 'win32', python_version, commit, run_id, producer_attempt)
         if all_nodes is None:
             all_nodes = full
         elif full != all_nodes:
@@ -273,13 +275,16 @@ def check_windows_inventories(windows, python_version, commit, *, run_id, run_at
     return all_nodes
 
 
-def check_inventories(portable, windows, python_version, commit, *, run_id, run_attempt):
+def check_inventories(portable, windows, python_version, commit, *, run_id, run_attempt,
+                      attempt_map=None):
+    portable_attempt = attempt_map['portable'] if attempt_map is not None else run_attempt
     all_nodes, selected = _checked_inventory(
-        portable, 'portable', 'linux', python_version, commit, run_id, run_attempt)
+        portable, 'portable', 'linux', python_version, commit, run_id, portable_attempt)
     if 'shard' in portable:
         raise ValueError('The portable workload must not be sharded.')
     windows_nodes = check_windows_inventories(
-        windows, python_version, commit, run_id=run_id, run_attempt=run_attempt)
+        windows, python_version, commit, run_id=run_id, run_attempt=run_attempt,
+        attempt_map=attempt_map)
     if all_nodes != windows_nodes:
         raise ValueError('Portable and Windows collectors disagree about the full test inventory.')
     if selected != {node for node in all_nodes if workload_for(node) == 'portable'}:
@@ -295,11 +300,23 @@ def main(argv=None):
     parser.add_argument('--commit', required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--run-attempt', required=True)
+    parser.add_argument('--windows-mode', choices=('serial', 'two-shards', 'four-shards'))
+    parser.add_argument('--producer-manifest', type=Path)
     args = parser.parse_args(argv)
+    attempt_map = None
+    if args.producer_manifest is not None:
+        if args.windows_mode is None:
+            raise ValueError('A producer manifest requires an explicit Windows mode')
+        from scripts.ci_attempts import validated_attempts
+        attempt_map = validated_attempts(
+            json.loads(args.producer_manifest.read_text(encoding='utf-8')),
+            commit=args.commit, run_id=args.run_id, run_attempt=args.run_attempt,
+            python=args.python_version, mode=args.windows_mode)
     count = check_inventories(json.loads(args.portable.read_text(encoding='utf-8')),
                               [json.loads(path.read_text(encoding='utf-8')) for path in args.windows],
                               args.python_version, args.commit,
-                              run_id=args.run_id, run_attempt=args.run_attempt)
+                              run_id=args.run_id, run_attempt=args.run_attempt,
+                              attempt_map=attempt_map)
     print(f'Verified full Windows inventory and matching Linux subset: {count} tests.')
 
 

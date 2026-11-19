@@ -398,6 +398,21 @@ Flag `table_host_cpu_enabled` pada `session.started`,
 `operation.started`, `operation.finished`, dan `session.closed`
 membuktikan status opt-in; marker tidak tersedia = **UNKNOWN**.
 
+Untuk investigasi pewarisan flag GUI ke worker (#307), build baru
+mencatat tiga boolean saja: `table_host_cpu_gui_start_enabled` pada
+`session.started` **GUI** (nilai tepat `1` ketika GUI dibuat),
+`table_host_cpu_gui_at_spawn` serta
+`table_host_cpu_worker_env_enabled` pada `worker.spawned` **GUI**
+(nilai ketika worker disiapkan dan nilai pada environment yang
+diberikan ke subprocess). Bandingkan ketiganya dengan
+`table_host_cpu_enabled` pada `session.started` **worker**. Penanda
+`false` hanya menegaskan titik pengamatan; tidak otomatis menunjukkan
+akar penyebab kehilangan flag. Ketidakadaan event/field berarti
+**UNKNOWN**, bukan `false`. Penanda hanya boolean tetap, tidak
+menyimpan nilai environment, command line, PID, akun, atau konten pajak.
+Pengukuran ini tidak menjalankan scrape tambahan dan tidak
+mengubah allowlist environment maupun akses browser.
+
 Untuk tabel besar (`max_page_size >= 250`), tepat sebelum/sesudah
 panggilan Playwright yang **sudah ada**, worker mengamati counter
 CPU melalui Toolhelp/GetProcessTimes hanya untuk proses anak di
