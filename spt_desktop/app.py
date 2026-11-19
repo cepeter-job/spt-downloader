@@ -667,6 +667,24 @@ class App:
                              values=(number, item['status'], changed,
                                      f"{item['bytes'] / (1024 * 1024):.1f}"))
             table.pack(fill='both', expand=True)
+            # This only changes the visible selection. The separate default-No
+            # confirmation and backend snapshot revalidation remain mandatory.
+            row_ids = tuple(table.get_children(''))
+            all_selected = tk.BooleanVar(master=picker, value=False)
+
+            def toggle_all():
+                if all_selected.get():
+                    table.selection_set(*row_ids)
+                elif table.selection():
+                    table.selection_remove(*table.selection())
+
+            def sync_all(_event=None):
+                all_selected.set(bool(row_ids) and set(table.selection()) == set(row_ids))
+
+            ttk.Checkbutton(frame, text='Select All', name='select_all_incomplete',
+                            variable=all_selected, command=toggle_all).pack(
+                                anchor='w', pady=(8, 0))
+            table.bind('<<TreeviewSelect>>', sync_all, add='+')
             ttk.Label(frame, text='Gunakan Ctrl/Shift untuk memilih beberapa baris. '
                       'Job dengan recovery, segel COMPLETE, atau file tak terverifikasi '
                       'tidak tersedia di daftar ini.', wraplength=560).pack(
