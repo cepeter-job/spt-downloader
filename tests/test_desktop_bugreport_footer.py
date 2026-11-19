@@ -47,7 +47,7 @@ def test_contact_is_visible_bottom_right_without_replacing_existing_copy(tmp_pat
         assert root.winfo_height() - bottom <= app.view.px(32)
         assert label.winfo_rooty() >= app.results_label.winfo_rooty() + app.results_label.winfo_height()
         assert str(app.results_label.cget('text')) == 'Hasil Sedot berada di folder Downloads Windows'
-        assert 'Coretax → Excel · for personal use only' in [str(w.cget('text')) for w in labels]
+        assert 'for personal use only' in [str(w.cget('text')) for w in labels]
         assert not app.controller.active
     finally:
         if app is not None:

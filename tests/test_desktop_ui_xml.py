@@ -42,12 +42,12 @@ def test_xml_is_not_exposed_as_an_external_packaging_resource(tmp_path):
     lambda value: value.replace('</resources>', '<string id="app.title">Duplicate</string></resources>'),
     lambda value: value.replace('id="action.start"', 'id="not valid"'),
     lambda value: value.replace('id="action.start"', 'id="unknown.placeholder"').replace(
-        '>Mulai unduh</string>', '>{unreviewed}</string>'),
+        '>Mulai Sedot</string>', '>{unreviewed}</string>'),
     lambda value: value.replace('{selected} SPT dipilih', '{selection} SPT dipilih'),
     lambda value: value.replace('<string id="stage.results">Hasil unduhan</string>', ''),
-    lambda value: value.replace('>Mulai unduh</string>', '><b>Mulai unduh</b></string>'),
-    lambda value: value.replace('>Mulai unduh</string>', '></string>'),
-    lambda value: value.replace('>Mulai unduh</string>', '>&unexpected;</string>'),
+    lambda value: value.replace('>Mulai Sedot</string>', '><b>Mulai Sedot</b></string>'),
+    lambda value: value.replace('>Mulai Sedot</string>', '></string>'),
+    lambda value: value.replace('>Mulai Sedot</string>', '>&unexpected;</string>'),
     lambda value: value.replace('<resources language="id-ID">', '<!DOCTYPE foo><resources language="id-ID">'),
 ])
 def test_xml_rejects_invalid_edit(tmp_path, mutation):
@@ -65,13 +65,13 @@ def test_xml_rejects_invalid_edit(tmp_path, mutation):
 
 def test_developer_xml_change_is_compiled_without_python_edits(tmp_path):
     source = CATALOG_FILE.read_text(encoding='utf-8')
-    changed = source.replace('>Mulai unduh</string>', '>Mulai sedot</string>')
+    changed = source.replace('>Mulai Sedot</string>', '>Mulai SPT</string>')
     assert changed != source
     edited = tmp_path / 'edited.xml'
     edited.write_text(changed, encoding='utf-8')
-    assert load_strings(edited)['action.start'] == 'Mulai sedot'
+    assert load_strings(edited)['action.start'] == 'Mulai SPT'
     target = tmp_path / 'generated.py'
     generate(edited, target)
     namespace = {}
     exec(compile(target.read_text(encoding='utf-8'), str(target), 'exec'), namespace)
-    assert namespace['STRINGS']['action.start'] == 'Mulai sedot'
+    assert namespace['STRINGS']['action.start'] == 'Mulai SPT'

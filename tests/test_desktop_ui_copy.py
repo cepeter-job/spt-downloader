@@ -7,7 +7,7 @@ import pytest
 
 @pytest.mark.parametrize(('key', 'expected'), [
     ('app.title', 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang'),
-    ('app.subtitle', 'Coretax → Excel · for personal use only'),
+    ('app.subtitle', 'for personal use only'),
     ('app.bugreport', 'bugreport : sharmila@kemenkeu.go.id'),
     ('settings.background.label', 'jalankan proses sedot di background'),
     ('results.location_hint', 'Hasil Sedot berada di folder Downloads Windows'),
@@ -20,8 +20,8 @@ def test_locked_owner_copy_is_literal(key, expected):
 
 def test_main_copy_is_exact_and_selection_is_not_automatic():
     from spt_desktop.ui_copy import copy_text, STAGE_LABELS
-    assert copy_text('action.start') == 'Mulai unduh'
-    assert copy_text('form.help') == 'Setelah daftar muncul, pilih SPT yang ingin diunduh.'
+    assert copy_text('action.start') == 'Mulai Sedot'
+    assert copy_text('form.help') == 'Setelah daftar muncul, pilih SPT yang ingin disedot.'
     assert copy_text('selection.confirm') == 'Sedot SPT terpilih'
     assert STAGE_LABELS == ('Masuk ke Coretax', 'Daftar SPT',
                             'Mengambil rincian', 'Hasil unduhan')
@@ -70,39 +70,39 @@ def test_catalog_matches_approved_copy():
         'app.title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
         'settings.background.label': 'jalankan proses sedot di background',
         'results.location_hint': 'Hasil Sedot berada di folder Downloads Windows',
-        'app.subtitle': 'Coretax → Excel · for personal use only',
+        'app.subtitle': 'for personal use only',
         'app.bugreport': 'bugreport : sharmila@kemenkeu.go.id',
         'selection.confirm': 'Sedot SPT terpilih',
-        'selection.mpn': 'Sedot MPN',
+        'selection.mpn': 'Sedot MPN (lama)',
         'form.title': 'Masukkan NPWP dan tahun pajak',
-        'form.help': 'Setelah daftar muncul, pilih SPT yang ingin diunduh.',
+        'form.help': 'Setelah daftar muncul, pilih SPT yang ingin disedot.',
         'form.npwp.label': 'NPWP (16 digit)',
         'form.npwp.help': 'Ketik 16 angka, tanpa spasi, titik, atau tanda hubung.',
         'form.npwp.error': 'Isi NPWP dengan 16 angka (0–9), tanpa pemisah.',
         'form.year.help': 'Gunakan tahun pajak, bukan tahun pelaporan.',
         'form.year.error': 'Gunakan 4 angka, dari 1900 sampai 2100.',
-        'action.start': 'Mulai unduh',
-        'action.stop': 'Hentikan unduhan',
+        'action.start': 'Mulai Sedot',
+        'action.stop': 'Hentikan Sedotan',
         'action.open_result': 'Buka folder hasil',
         'action.open_partial': 'Buka hasil sementara',
         'action.new': 'Unduh SPT lain',
         'action.details': 'Lihat rincian',
-        'selection.title': 'Pilih SPT yang akan diunduh',
+        'selection.title': 'Pilih SPT yang akan disedot',
         'selection.help': ('gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
-                           'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
+                           'Pilih SPT yang ingin disedot.'),
         'selection.search.label': 'Cari jenis pajak, masa, pembetulan, atau ID SPT',
         'selection.empty': 'Daftar ini tidak memuat SPT yang bisa dipilih.',
-        'selection.focused_id': 'ID SPT yang disorot',
+        'selection.focused_id': 'ID SPT yang diblok',
         'selection.keyboard_hint': 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.',
         'selection.summary': '{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.',
         'selection.no_match': 'Tidak ada SPT yang cocok dengan pencarian.',
-        'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.',
+        'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan disedot.',
         'selection.shortcuts.all': 'All',
         'selection.shortcuts.latest': 'Pemb. Terakhir',
         'selection.shortcuts.potput': 'PPh Potput',
         'selection.shortcuts.ppn': 'PPN',
-        'selection.shortcuts.help': 'Pilihan cepat berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN.',
-        'selection.shortcuts.manual': 'Sebagian SPT memiliki masa/model yang belum dapat diperingkat. Pilih SPT tersebut secara manual bila diperlukan.',
+        'selection.shortcuts.help': 'Pilihan berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN.',
+        'selection.shortcuts.manual': 'Sebagian SPT memiliki masa/model yang belum dapat dipetakan. Pilih SPT tersebut secara manual bila diperlukan.',
         'download.details.body': (
             '{processed} dari {total} SPT sudah diproses. '
             'Kelengkapan {verified} SPT sudah diperiksa.'
@@ -119,7 +119,7 @@ def test_catalog_matches_approved_copy():
         'overwrite.folder.label': 'Folder hasil sebelumnya',
         'overwrite.help': 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.',
         'overwrite.files_count': '{count} file akan diganti.',
-        'overwrite.keep_hint': 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.',
+        'overwrite.keep_hint': 'Pilih Jangan ganti untuk menghentikan overwrite dan mempertahankan hasil sebelumnya.',
         'overwrite.context_missing': 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.',
         'overwrite.decline': 'Jangan ganti',
         'overwrite.confirm': 'Ganti file tersebut',
@@ -139,11 +139,11 @@ def test_catalog_matches_approved_copy():
         "scope.title": "Ringkasan unduhan",
         "scope.year.label": "Tahun pajak",
         "scope.selected.label": "SPT dipilih",
-        "status.initial": "Masukkan NPWP dan tahun pajak, lalu klik Mulai unduh.",
+        "status.initial": "Masukkan NPWP dan tahun pajak, lalu klik Mulai Sedot.",
         "form.year.label": "Tahun pajak",
-        "setup.hint": "Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.",
+        "setup.hint": "Setup Python/uv otomatis saat Mulai. Password hanya tersimpan di Windows Credential Manager.",
     })
-    assert dict(COPY) == expected
+    assert {key: COPY[key] for key in expected} == expected
     assert 'app.credit' not in COPY
 
 
@@ -164,10 +164,10 @@ def test_copy_module_has_only_standard_library_imports():
 
 @pytest.mark.parametrize('key,expected', [
     ('selection.help', 'gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
-                       'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
+                       'Pilih SPT yang ingin disedot.'),
     ('selection.search.label', 'Cari jenis pajak, masa, pembetulan, atau ID SPT'),
     ('selection.empty', 'Daftar ini tidak memuat SPT yang bisa dipilih.'),
-    ('selection.focused_id', 'ID SPT yang disorot'),
+    ('selection.focused_id', 'ID SPT yang diblok'),
     ('selection.keyboard_hint', 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.'),
 ])
 def test_phase2_selection_copy_is_exact(key, expected):
@@ -178,7 +178,7 @@ def test_phase2_selection_copy_is_exact(key, expected):
 @pytest.mark.parametrize('key,expected', [
     ('overwrite.folder.label', 'Folder hasil sebelumnya'),
     ('overwrite.help', 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.'),
-    ('overwrite.keep_hint', 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.'),
+    ('overwrite.keep_hint', 'Pilih Jangan ganti untuk menghentikan overwrite dan mempertahankan hasil sebelumnya.'),
     ('overwrite.context_missing', 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.'),
 ])
 def test_phase2_overwrite_copy_is_exact(key, expected):

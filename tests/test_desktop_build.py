@@ -108,6 +108,6 @@ def test_production_build_rejects_unsupported_interpreter_before_writing(monkeyp
 
 def test_frozen_gate_rejects_the_obsolete_visible_punto_footer():
     data = report()
-    data['personal_use_labels'] = ['Coretax → Excel · for personal use only', 'for personal use : punto ap']
+    data['personal_use_labels'] = ['for personal use only', 'for personal use : punto ap']
     with pytest.raises(RuntimeError, match='self-test'):
         builder().validate_report(data)
