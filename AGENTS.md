@@ -59,7 +59,7 @@ Windows application acceptance. Follow
 1. On an authorized Windows machine, identify the tested source commit with
    `git rev-parse HEAD`. Prepare the project's pinned environment with
    `setup.cmd` if needed; the actual CLI entry point is
-   `.venv\\Scripts\\python.exe coretax.py`. Do not treat a test of one commit as
+   `.venv\Scripts\python.exe coretax.py`. Do not treat a test of one commit as
    evidence for another commit.
 2. Use only authorized NPWP/year scope, a **dedicated CLI browser profile** and
    a **fresh private output folder outside the repository**. Let the CLI own
@@ -91,10 +91,10 @@ PowerShell example from the repository root (private values stay local):
 ```powershell
 $npwp = Read-Host "Authorized NPWP (16 digits)"
 $runId = Get-Date -Format "yyyyMMdd-HHmmss"
-& ".\\.venv\\Scripts\\python.exe" ".\\coretax.py" `
+& ".\.venv\Scripts\python.exe" ".\coretax.py" `
   --npwp $npwp --year 2025 --detail-source json-first --detail-limit 2 `
-  --output "$env:LOCALAPPDATA\\SPTDownloader-CLI\\json-first-$runId" `
-  --profile "$env:LOCALAPPDATA\\SPTDownloader-CLI\\profile"
+  --output "$env:LOCALAPPDATA\SPTDownloader-CLI\json-first-$runId" `
+  --profile "$env:LOCALAPPDATA\SPTDownloader-CLI\profile"
 ```
 
 This CLI path **does not** verify desktop-specific authentication/credential
