@@ -102,3 +102,35 @@ def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch):
     assert code == 0
     assert selected_kinds == ['PPh Badan']
     assert (output / 'selection.json').exists()
+    # The saved DOM/Corporate subset must survive resume, without MPN.
+    assert coretax._main(['--resume', str(output), '--spt-badan-only',
+                          '--non-interactive']) == 0
+    assert selected_kinds == ['PPh Badan', 'PPh Badan']
+    # A CLI resume that omits the explicit subset opt-in must never widen.
+    with pytest.raises(SystemExit, match='2'):
+        coretax._main(['--resume', str(output), '--non-interactive'])
+
+
+@pytest.mark.parametrize('other_option', ['--inventory-only', '--from-json'])
+def test_corporate_only_disallows_non_detail_modes(tmp_path, other_option):
+    import coretax
+    args = ['--spt-badan-only', other_option]
+    if other_option == '--from-json':
+        args.append(str(tmp_path / 'fake-run.json'))
+    with pytest.raises(SystemExit, match='2'):
+        coretax._main(args)
+
+
+def test_corporate_only_resume_without_selection_fails_closed(tmp_path):
+    import coretax
+    existing = {
+        'npwp': '0000000000000001', 'year': 2025, 'year_basis': 'period',
+        'records': [{'record_id': 'fake-corp',
+                     'meta': {'Jenis Pajak': 'PPh Badan'}}],
+        'scope_description': 'Synthetic inventory',
+    }
+    (tmp_path / 'inventory.json').write_text(json.dumps(existing), encoding='utf-8')
+    # No saved selection: a broad CLI run cannot be silently reinterpreted.
+    with pytest.raises(SystemExit, match='2'):
+        coretax._main(['--resume', str(tmp_path), '--spt-badan-only',
+                       '--non-interactive'])
