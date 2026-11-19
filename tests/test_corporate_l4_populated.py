@@ -6,7 +6,7 @@ import pytest
 
 import coretax_corporate_projection as projection
 from coretax_json import _UnsupportedMetadata, _corporate_json
-from test_corporate_l4_projection import ROW, B_ROW, root, footer
+from test_corporate_l4_projection import A_HEADERS, ROW, B_ROW, root, footer
 
 KINDS = ('TAX_OBJECT_CODE', 'INCOME_EXCLUDED_FROM_TAX_FOR_CIT')
 LABELS = {KINDS[0]: {ROW['TaxObjectCode']: 'SYNTHETIC ACTIVE TAX OBJECT'},
@@ -162,11 +162,94 @@ def test_literal_null_text_and_reviewed_metadata_are_preserved_not_used_as_colum
 
 
 @pytest.mark.parametrize('key,value', [('Index', None), ('Index', .5), ('IsManually', 1),
-    ('Action', ''), ('TableSource', False), ('RecordId', 0), ('TaxObject', {}),
-    ('TaxBaseUsd', '0'), ('IncomeTaxUsd', .25)])
+    ('Action', ''), ('TableSource', False), ('RecordId', 0), ('TaxObject', {})])
 def test_malformed_nondisplayed_metadata_refuses_instead_of_disappearing(key, value):
     with pytest.raises(_UnsupportedMetadata):
         populated(a=[{**ROW, key: value}])
+
+
+@pytest.mark.parametrize('key,value', [('TaxBaseUsd', 0), ('IncomeTaxUsd', 0.25),
+    ('TaxBaseUsd', 62.08601963), ('IncomeTaxUsd', 12.41720393)])
+def test_fractional_usd_row_metadata_projects_and_keeps_original_lexemes(key, value):
+    # Non-displayed USD metadata legitimately carries up to eight decimal places
+    # (exchange-rate conversion scale). It is validated, not rendered, and its
+    # original lexeme must survive unchanged in provenance.
+    result = populated(a=[{**ROW, key: value}])
+    entry = next(e for e in result['provenance']
+                 if e['path'] == ['Data', 0, key] and e['source'] == 'grid')
+    assert entry['type'] == 'number' and entry['value'] == str(value)
+    assert entry['rule'] == 'original-unused-row-metadata'
+
+
+@pytest.mark.parametrize('key,value', [('TaxBaseUsd', -1), ('IncomeTaxUsd', -0.5),
+    ('TaxBaseUsd', '-0'), ('IncomeTaxUsd', '12.123456789'),
+    ('TaxBaseUsd', 'not-a-number')])
+def test_fractional_usd_metadata_rejects_negative_signed_zero_overprecision_and_garbage(key, value):
+    with pytest.raises(_UnsupportedMetadata):
+        populated(a=[{**ROW, key: value}])
+
+
+@pytest.mark.parametrize('key', ['TotalFinalIncomeTaxPayableUsd', 'TotalTaxBaseUsd'])
+def test_fractional_usd_root_total_projects_and_keeps_original_lexemes(key):
+    value = 12.41720393
+    footer_key = 'IncomeTaxUsd' if key == 'TotalFinalIncomeTaxPayableUsd' else 'TaxBaseUsd'
+    # Keep the footer USD at the same two-decimal rounded value so the root↔footer
+    # reconciliation passes while the root lexeme keeps its full eight decimals.
+    result = populated(form_changes={key: value}, footer_changes={footer_key: 12.42})
+    entry = next(e for e in result['provenance']
+                 if e['path'] == [projection.L4_ROOT, key] and e['source'] == 'current')
+    assert entry['type'] == 'number' and entry['value'] == str(value)
+    assert entry['rule'] == 'original-stored-total'
+
+
+@pytest.mark.parametrize('key', ['TaxBaseUsd', 'IncomeTaxUsd'])
+def test_fractional_usd_footer_reconciles_with_root_at_two_decimal_precision(key):
+    # Footer USD carries full precision; root USD total is stored at two decimals.
+    # Reconciliation compares at the root's proven two-decimal precision, so a
+    # footer 12.41720393 and root 12.42 agree, while the original lexemes differ.
+    form_changes = {'TotalFinalIncomeTaxPayableUsd': 12.42} if key == 'IncomeTaxUsd' else {}
+    footer_changes = {key: 12.41720393} if key == 'IncomeTaxUsd' else {key: 62.08601963}
+    result = populated(form_changes=form_changes, footer_changes=footer_changes)
+    entry = next(e for e in result['provenance'] if e['path'] == [key] and e['source'] == 'footer')
+    assert entry['value'] == str(footer_changes[key])
+
+
+def test_fractional_usd_footer_root_disagreement_at_two_decimals_fails_closed():
+    # Same integer/rounded part but different at the second decimal is a genuine
+    # root/footer disagreement and must refuse even if both carry <=8 decimals.
+    with pytest.raises(_UnsupportedMetadata, match='footer_total'):
+        populated(form_changes={'TotalFinalIncomeTaxPayableUsd': 12.43},
+                  footer_changes={'IncomeTaxUsd': 12.41720393})
+
+
+def test_fractional_usd_overprecision_beyond_eight_decimals_fails_closed():
+    with pytest.raises(_UnsupportedMetadata):
+        populated(form_changes={'TotalFinalIncomeTaxPayableUsd': '12.123456789'},
+                  footer_changes={'IncomeTaxUsd': '12.12345678'})
+
+
+def test_withholding_slip_extra_row_metadata_is_evidenced_not_projected():
+    # Withholding-slip-sourced A rows carry WithholdingDate and
+    # WithholdingSlipsAggregateIdentifier. They are non-projected metadata: their
+    # presence must not force a whole-record fallback, and they must be evidenced
+    # with the original lexeme rather than dropped or rendered into a column.
+    row = {**ROW, 'WithholdingDate': None,
+           'WithholdingSlipsAggregateIdentifier': 'fad90500-5ee7-7a86-3ed2-450d8d54a8dd'}
+    result = populated(a=[row])
+    for key, expected in (('WithholdingDate', None),
+                          ('WithholdingSlipsAggregateIdentifier', 'fad90500-5ee7-7a86-3ed2-450d8d54a8dd')):
+        entry = next(e for e in result['provenance'] if e['path'] == ['Data', 0, key])
+        assert entry['value'] == expected
+        assert entry['rule'] == 'original-unused-row-metadata'
+    # The rendered row keeps only the approved seven columns; no extra text leaks.
+    assert len(result['tables'][0]['rows'][0]) == len(A_HEADERS)
+
+
+def test_unknown_extra_row_metadata_still_fails_closed():
+    # Only the approved withholding-slip fields are tolerated; any other extra
+    # row key must still refuse the whole record.
+    with pytest.raises(_UnsupportedMetadata):
+        populated(a=[{**ROW, 'MysteryField': 'x'}])
 
 
 @pytest.mark.parametrize('case', ['empty-pages', 'missing-data', 'gap', 'partial', 'count-change',
