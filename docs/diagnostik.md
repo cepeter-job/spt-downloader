@@ -199,8 +199,11 @@ Mulai build yang memuat perubahan ini, event `table.first_page_timing`
 muncul otomatis untuk tabel besar (`max_page_size >= 250`)
 selama diagnostik worker aktif, **tanpa flag / browser call baru**.
 Masing-masing empat tahap asli hanya direkam maksimal sekali pada
-jalurnya: `pilot_label_lookup` (selector label ukuran halaman yang
-sudah dicari), `pilot_label_text` (pembacaan label yang sudah terjadi),
+jalurnya: `pilot_label_lookup` (satu evaluasi owner-bound yang membaca
+teks label ukuran halaman, tanpa membuat handle kedua, dan mengembalikan
+durasi renderer untuk pemisahan residual transport),
+`pilot_label_text` (normalisasi `.strip()` lokal dari teks tadi,
+**bukan** Playwright RPC tambahan),
 `first_overlay_wait` (wait global hidden yang sudah ada, timeout
 45.000 ms), dan `first_settle_wait` (jeda Playwright 180 ms yang
 sudah ada, hanya jika wait pertama sukses). Setiap event memiliki
@@ -431,8 +434,11 @@ kelahiran/keluarnya subprocess, pergantian PID, atau dukungan OS
 tidak ada, metrik CPU tidak dipaksakan; event sampling Windows
 menggunakan `table_host_cpu_state=unavailable`.
 Di luar jatah delapan sampel, field CPU host sengaja tidak tersedia.
-Sampel `pilot_label_lookup` hanya memantau satu `query_selector` asli,
-tanpa browser RPC baru. `table.first_page_timing` tetap mengukur
+Sampel `pilot_label_lookup` memantau satu `evaluate` owner-bound
+yang menggantikan `query_selector` ditambah `inner_text` remote
+pada tabel besar. Ini mengurangi satu perintah browser tetapi **tidak**
+menjamin waktu transport/CPU lebih cepat; instrumen CPU tidak menambah
+RPC browser. `table.first_page_timing` tetap mengukur
 operasi asli; snapshot CPU berada di luar timer. Variasi wall-clock
 lintas run tetap tidak membuktikan akar sebab.
 
