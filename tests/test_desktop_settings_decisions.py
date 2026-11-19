@@ -607,6 +607,95 @@ def test_incomplete_manual_cleanup_requires_selected_rows_and_confirmation(
     assert not app._manual_prune_busy and not ctl.active and not ctl.exports
 
 
+@pytest.mark.parametrize('confirmed', [False, True])
+def test_incomplete_select_all_tracks_manual_selection_without_skipping_confirmation(
+        settings, monkeypatch, confirmed):
+    from types import SimpleNamespace
+    root, app, ctl, dialog, path, writes, errors = settings
+    ids = tuple(str(number) * 32 for number in (1, 2, 3))
+    digests = tuple(letter * 64 for letter in 'abc')
+    approvals_seen, prompts, notices = [], [], []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    preview = {
+        'total': 3, 'complete': 0, 'partial': 2, 'failed': 1,
+        'protected': 3, 'estimated_bytes': 6144, 'scan_complete': True,
+        'removable': tuple(
+            {'id': job_id, 'status': 'FAILED' if i == 2 else 'PARTIAL',
+             'bytes': (i + 1) * 1024, 'digest': digests[i],
+             'modified_ns': 1_700_000_000_000_000_000 + i}
+            for i, job_id in enumerate(ids)),
+    }
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: approvals_seen.append(a[1]) or
+                        {'removed': len(a[1]), 'incomplete': False})
+    monkeypatch.setattr(gui.messagebox, 'askyesno',
+                        lambda title, body, **kw:
+                        prompts.append((body, kw.get('default'))) or confirmed)
+    monkeypatch.setattr(gui.messagebox, 'showinfo',
+                        lambda title, body, **kw: notices.append(title))
+
+    button(dialog, 'hapus job PARTIAL/gagal').invoke()
+    _pump_manual_prune(root)
+    picker = next(w for w in widgets(root)
+                  if isinstance(w, tk.Toplevel) and w.title() == 'Pilih job PARTIAL/gagal')
+    table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
+    select_all = next(w for w in widgets(picker)
+                      if w.winfo_class() == 'TCheckbutton'
+                      and w.cget('text') == 'Select All')
+    assert not table.selection()
+    assert not select_all.instate(('selected',))
+
+    select_all.invoke()
+    root.update()
+    assert set(table.selection()) == set(ids)
+    assert select_all.instate(('selected',))
+    assert not prompts and not approvals_seen  # Selection is never deletion.
+
+    select_all.invoke()
+    root.update()
+    assert not table.selection()
+    assert not select_all.instate(('selected',))
+
+    table.selection_set(*ids[:2])
+    root.update()
+    assert not select_all.instate(('selected',))
+    table.selection_add(ids[2])
+    root.update()
+    assert select_all.instate(('selected',))
+    table.selection_remove(ids[1])
+    root.update()
+    assert not select_all.instate(('selected',))
+
+    select_all.invoke()
+    root.update()
+    assert set(table.selection()) == set(ids)
+    button(picker, 'Hapus terpilih').invoke()
+    assert len(prompts) == 1
+    assert prompts[0][1] == 'no' and '3 job' in prompts[0][0]
+    assert all(job_id not in prompts[0][0] for job_id in ids)
+
+    if confirmed:
+        _pump_manual_prune(root)
+        assert approvals_seen == [tuple(zip(ids, digests))]
+        assert 'Pembersihan selesai' in notices
+        assert not app._manual_prune_busy
+    else:
+        assert not approvals_seen and picker.winfo_exists()
+        button(picker, 'Batal').invoke()
+        assert not app._manual_prune_busy
+    assert not ctl.active and not ctl.exports and not writes and not errors
+
+
 def test_incomplete_cleanup_refuses_unsaved_changes(settings, monkeypatch):
     root, app, ctl, dialog, path, writes, errors = settings
     change_browser(dialog)
