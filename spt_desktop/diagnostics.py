@@ -51,8 +51,9 @@ ENUMS = {
         'pilot_label_lookup', 'pilot_label_text', 'first_overlay_wait', 'first_settle_wait'}),
     'table_first_page_outcome': frozenset({'returned', 'raised'}),
     'table_existing_rpc_stage': frozenset({
-        'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
-        'cursor_init', 'cursor_advance', 'cursor_poll', 'cursor_snapshot'}),
+        'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
+        'initial_snapshot', 'cursor_init', 'cursor_advance',
+        'cursor_poll', 'cursor_snapshot'}),
     'table_existing_rpc_outcome': frozenset({'returned', 'raised'}),
     'table_host_cpu_state': frozenset({'paired', 'unavailable'}),
     'table_rpc_stage': frozenset({'before_previous_lookup',

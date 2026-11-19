@@ -631,11 +631,11 @@ def _timed_rewind_operation(timings, stage):
 # Python thread CPU excludes CPU on Playwright's Node/browser processes; a
 # tiny CPU time against large wall time proves waiting, not which process caused it.
 PASSIVE_RPC_MAX_EVENTS_PER_TABLE = 48
-# At most seven pairs of *local* process snapshots per table, opt-in only.
-# The caps sample the first genuine Previous lookup, and up to three original
-# advance/snapshot calls each. Other stages still emit basic passive timings.
-HOST_CPU_STAGE_SAMPLES = {'previous_lookup': 1, 'cursor_advance': 3,
-                          'cursor_snapshot': 3}
+# At most eight pairs of *local* process snapshots per table, opt-in only.
+# The caps sample the original pilot label and first genuine Previous lookup,
+# plus up to three original advance/snapshot calls each.
+HOST_CPU_STAGE_SAMPLES = {'pilot_label_lookup': 1, 'previous_lookup': 1,
+                          'cursor_advance': 3, 'cursor_snapshot': 3}
 
 
 def _host_cpu_snapshot():
@@ -799,8 +799,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     try:
         if max_page_size >= 250:
             # A previously selected larger page must not bypass the pilot limit.
-            with _timed_first_page_operation('pilot_label_lookup', ordinal, max_page_size):
-                label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+            # Attribute the original pilot lookup without an extra browser
+            # RPC. Host CPU snapshots are opt-in and outside the RPC timer.
+            with _timed_existing_rpc('pilot_label_lookup', ordinal, max_page_size,
+                                     passive_rpc_slots, host_cpu_slots):
+                with _timed_first_page_operation('pilot_label_lookup', ordinal, max_page_size):
+                    label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
             with _timed_first_page_operation('pilot_label_text', ordinal, max_page_size):
                 selected = label.inner_text().strip() if label else ''
             if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:

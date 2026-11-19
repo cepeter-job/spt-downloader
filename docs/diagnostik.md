@@ -357,6 +357,7 @@ Pengukuran pasif ini **berbeda** dari `SPT_DIAG_DOM_RPC_PROBE=1`,
 yang mengirim probe browser tambahan. Dengan sesi diagnostik normal
 dan `max_page_size >= 250`, event `table.existing_rpc_timing`
 mengukur panggilan Playwright **yang sudah dibutuhkan scraping**:
+`pilot_label_lookup` (label ukuran halaman setelah pemilihan),
 `previous_lookup`, `previous_limit_lookup`, `initial_snapshot`,
 `cursor_init`, `cursor_advance`, `cursor_poll` dan
 `cursor_snapshot`. Event memakai ordinal form/tabel, fixed enum
@@ -400,9 +401,10 @@ membuktikan status opt-in; marker tidak tersedia = **UNKNOWN**.
 Untuk tabel besar (`max_page_size >= 250`), tepat sebelum/sesudah
 panggilan Playwright yang **sudah ada**, worker mengamati counter
 CPU melalui Toolhelp/GetProcessTimes hanya untuk proses anak di
-bawah PID worker saat itu. Sampel maksimum: lookup Previous pertama,
-tiga `cursor_advance` pertama, dan tiga `cursor_snapshot`
-pertama — maksimum **7 pasangan (14 snapshot Win32) per tabel**.
+bawah PID worker saat itu. Sampel maksimum: satu `pilot_label_lookup`
+(label ukuran halaman), lookup Previous pertama, tiga `cursor_advance`
+pertama, dan tiga `cursor_snapshot` pertama — maksimum
+**8 pasangan (16 snapshot Win32) per tabel**.
 Tidak ada PID, nama executable, path, command line, request atau
 konten pajak pada log. Jika seluruh pasangan proses cocok (PID +
 creation time + kedalaman), event `table.existing_rpc_timing`
@@ -413,7 +415,11 @@ bukan durasi wall). Apabila gagal mengakses proses, terdapat
 kelahiran/keluarnya subprocess, pergantian PID, atau dukungan OS
 tidak ada, metrik CPU tidak dipaksakan; event sampling Windows
 menggunakan `table_host_cpu_state=unavailable`.
-Di luar jatah tujuh sampel, field CPU host sengaja tidak tersedia.
+Di luar jatah delapan sampel, field CPU host sengaja tidak tersedia.
+Sampel `pilot_label_lookup` hanya memantau satu `query_selector` asli,
+tanpa browser RPC baru. `table.first_page_timing` tetap mengukur
+operasi asli; snapshot CPU berada di luar timer. Variasi wall-clock
+lintas run tetap tidak membuktikan akar sebab.
 
 Kedalaman proses 1 sering berisi driver Node Playwright, sedangkan
 yang lebih dalam bisa berisi proses Chromium; **itu bukan bukti
