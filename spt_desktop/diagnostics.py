@@ -118,6 +118,15 @@ ENUMS = {
         'other_form_owner', 'mixed_owners'}),
     'corporate_observer_stage': frozenset({'build', 'tabs', 'tab', 'panel', 'form',
         'l3', 'l11a', 'l1d', 'l8', 'l7', 'l11c', 'grid', 'induk'}),
+    # Bounded, value-free refusal reasons so every corporate observer gate
+    # names itself instead of collapsing into one silent fallback. Mirrors the
+    # reviewed L3/L11-A reason contracts; never carries tab text or source bytes.
+    'corporate_refusal_reason': frozenset({
+        'build_unfamiliar', 'tabs_missing', 'tab_unrecognized', 'tab_duplicate',
+        'panel_unavailable', 'form_unavailable', 'grid_unavailable',
+        'induk_order', 'lifetime_unavailable', 'binding_unavailable',
+        'projection_unavailable', 'grid_structure', 'grid_pagination',
+        'incomplete_coverage', 'observation_error'}),
     'corporate_l7_negative_gate': frozenset({'protocol', 'pins', 'enabled', 'structure_start',
         'environment', 'builds', 'table', 'route', 'enabled_end', 'structure_end', 'lifetime'}),
     'corporate_l7_capture_gate': frozenset({'component', 'component_end', 'history', 'flagged',
@@ -191,7 +200,8 @@ ENUMS = {
     'masa_observer_gate': frozenset({'unsupported_tax', 'build_digest', 'tab_set', 'tab_disabled',
         'panel', 'form_root', 'fields', 'grid_structure', 'table_shape', 'total', 'reference',
         'catalog', 'evaluation_error'}),
-    'build_source': frozenset({'main', 'article', 'ppn_chunk', 'unifikasi_chunk'}),
+    'build_source': frozenset({'main', 'article', 'ppn_chunk', 'unifikasi_chunk',
+                               'corporate', 'vendor', 'pdf_guard'}),
     'tax_kind': frozenset({'ppn', 'pph21', 'unifikasi', 'corporate', 'other'}),
     'phase': frozenset({'startup', 'runtime', 'authentication', 'inventory', 'details', 'mpn',
                        'detail', 'table', 'pdf', 'export', 'verify', 'publish', 'rollback', 'cli',
