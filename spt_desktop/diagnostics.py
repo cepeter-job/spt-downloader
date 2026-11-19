@@ -51,8 +51,9 @@ ENUMS = {
         'pilot_label_lookup', 'pilot_label_text', 'first_overlay_wait', 'first_settle_wait'}),
     'table_first_page_outcome': frozenset({'returned', 'raised'}),
     'table_existing_rpc_stage': frozenset({
-        'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
-        'cursor_init', 'cursor_advance', 'cursor_poll', 'cursor_snapshot'}),
+        'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
+        'initial_snapshot', 'cursor_init', 'cursor_advance',
+        'cursor_poll', 'cursor_snapshot'}),
     'table_existing_rpc_outcome': frozenset({'returned', 'raised'}),
     'table_host_cpu_state': frozenset({'paired', 'unavailable'}),
     'table_rpc_stage': frozenset({'before_previous_lookup',
@@ -345,6 +346,10 @@ class DiagnosticLog:
             role == 'worker' and os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1')
         self._host_cpu_enabled = (
             role == 'worker' and os.environ.get('SPT_DIAG_HOST_CPU') == '1')
+        # Capture GUI startup separately from the worker-owned run flag.
+        # Never record the raw environment value, only exact opt-in equality.
+        self._gui_host_cpu_at_start = (
+            role == 'gui' and os.environ.get('SPT_DIAG_HOST_CPU') == '1')
         self.level = level if type(level) is str and level in LEVELS else 'INFO'
         self.job_ref = job_reference(job_id)
         self.dropped = 0
@@ -398,6 +403,17 @@ class DiagnosticLog:
                     # overridden by untrusted event fields or caller input.
                     row['table_rpc_probe_enabled'] = self._dom_rpc_probe_enabled
                     row['table_host_cpu_enabled'] = self._host_cpu_enabled
+                if self.role == 'gui':
+                    if event == 'session.started':
+                        # Immutable evidence of the frozen GUI entrypoint.
+                        row['table_host_cpu_gui_start_enabled'] = self._gui_host_cpu_at_start
+                    elif event == 'worker.spawned':
+                        # The controller samples these exact booleans at
+                        # worker spawn; never serialize arbitrary env entries.
+                        for name in ('table_host_cpu_gui_at_spawn',
+                                     'table_host_cpu_worker_env_enabled'):
+                            if type(fields.get(name)) is bool:
+                                row[name] = fields[name]
                 reference = job_reference(job_id) or _job.get() or self.job_ref
                 if reference:
                     row['job_ref'] = reference

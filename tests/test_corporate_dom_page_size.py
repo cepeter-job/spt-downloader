@@ -130,6 +130,68 @@ def test_corporate_size_uses_only_available_bounded_options_and_avoids_reload(pa
     assert page.locator('.p-dropdown-items').is_hidden()
 
 
+def test_large_pilot_guard_uses_one_owner_bound_label_read_without_remote_handle(
+        page, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    # The inspected size is already 500; isolate only the post-size pilot
+    # guard, not maximize_page_size's separate inspected UI interactions.
+    monkeypatch.setattr(driver, 'maximize_page_size',
+                        lambda *a, **kw: False)
+    original_eval = ElementHandle.evaluate
+    original_query = ElementHandle.query_selector
+    calls = {'pilot_eval': 0, 'pilot_query': 0}
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.OWNED_PILOT_LABEL_TEXT_JS:
+            calls['pilot_eval'] += 1
+        return original_eval(self, expression, arg)
+
+    def track_query(self, selector):
+        if selector == '.p-paginator-rpp-options .p-dropdown-label':
+            calls['pilot_query'] += 1
+        return original_query(self, selector)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    monkeypatch.setattr(ElementHandle, 'query_selector', track_query)
+    result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert_rows(result, 601)
+    assert calls == {'pilot_eval': 1, 'pilot_query': 0}
+    assert page.evaluate('moves') == 1
+
+
+@pytest.mark.parametrize('label', ['1000', '501', '500x', '５００', '', None])
+def test_large_pilot_owner_read_rejects_invalid_or_missing_label_before_pagination(
+        page, monkeypatch, label):
+    table = fixture(page, total=601, selected=500)
+    monkeypatch.setattr(driver, 'maximize_page_size',
+                        lambda *a, **kw: False)
+    if label is None:
+        page.locator('.p-paginator-rpp-options .p-dropdown-label').evaluate(
+            '(e)=>e.remove()')
+    else:
+        page.locator('.p-paginator-rpp-options .p-dropdown-label').evaluate(
+            '(e,t)=>e.innerText=t', label)
+    with pytest.raises(RuntimeError, match='page size'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0
+
+
+def test_large_pilot_owner_read_rejects_detached_owner(page):
+    from playwright.sync_api import Error as PlaywrightError
+
+    table = fixture(page, total=601, selected=500)
+    owner = table.element_handle().evaluate_handle(
+        "e=>e.closest('p-table')")
+    try:
+        page.evaluate("document.querySelector('p-table').remove()")
+        with pytest.raises(PlaywrightError):
+            owner.evaluate(driver.OWNED_PILOT_LABEL_TEXT_JS)
+    finally:
+        owner.dispose()
+
+
 def test_guarded_500_cap_refuses_unbounded_current_ui_option(page):
     table = fixture(page, total=1001, sizes=(1000,), selected=1000)
     with pytest.raises(RuntimeError, match='page size'):
@@ -269,6 +331,14 @@ def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clic
     assert all(r['table_first_page_outcome'] == 'returned' for r in first_parts)
     assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3
                for r in first_parts)
+    # The real owner-bound label evaluation emits its renderer boundary
+    # within the existing passive RPC event; it sends no diagnostic probe.
+    pilot_rpc = [row for row in records(tmp_path)
+                 if row['event'] == 'table.existing_rpc_timing'
+                 and row['table_existing_rpc_stage'] == 'pilot_label_lookup']
+    assert len(pilot_rpc) == 1
+    assert pilot_rpc[0]['table_rpc_renderer_ms'] >= 0
+    assert pilot_rpc[0]['table_rpc_residual_ms'] >= 0
     assert steps['first_lookup']['count'] == 1
     assert steps['first_click']['count'] == 1
     assert steps['first_idle']['count'] == 1
@@ -894,8 +964,8 @@ def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
     assert calls == uninstrumented
     rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
     assert 4 <= len(rows) <= driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
-    assert {'previous_lookup', 'previous_limit_lookup', 'initial_snapshot',
-            'cursor_init', 'cursor_advance', 'cursor_poll',
+    assert {'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
+            'initial_snapshot', 'cursor_init', 'cursor_advance', 'cursor_poll',
             'cursor_snapshot'} <= {r['table_existing_rpc_stage'] for r in rows}
     assert all(r['table_existing_rpc_outcome'] == 'returned' for r in rows)
     assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
@@ -903,7 +973,9 @@ def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
                for r in rows)
     assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
     cpu_rows = [r for r in rows if r.get('table_host_cpu_state') == 'paired']
-    assert len(cpu_rows) >= 3
+    assert len(cpu_rows) >= 4
+    pilot = [r for r in cpu_rows if r['table_existing_rpc_stage'] == 'pilot_label_lookup']
+    assert len(pilot) == 1
     assert all(r['table_rpc_direct_child_cpu_ms'] == 0.1
                and r['table_rpc_nested_child_cpu_ms'] == 0.2 for r in cpu_rows)
     assert len(snapshots) == 2 * len(cpu_rows)
@@ -996,6 +1068,32 @@ def test_host_cpu_sampler_opt_in_bounded_on_raised_and_unavailable(
         'paired', 'paired', 'paired', None, None, None]
     assert host_slots['cursor_snapshot'] == 3
     assert len(samples) == 6
+    import json
+    assert secret not in json.dumps(events)
+
+
+def test_pilot_label_host_cpu_unavailable_preserves_stop_and_privacy(
+        tmp_path, monkeypatch):
+    secret = 'SYNTHETIC_PILOT_PRIVATE_STOP'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', lambda: None)
+    def synthetic_stop():
+        raise driver.CaptureCancelled(secret)
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled, match=secret):
+            with driver._timed_existing_rpc('pilot_label_lookup', 3, 500,
+                                            [0], {}):
+                synthetic_stop()
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 1
+    assert events[0]['table_existing_rpc_stage'] == 'pilot_label_lookup'
+    assert events[0]['table_existing_rpc_outcome'] == 'raised'
+    assert events[0]['table_host_cpu_state'] == 'unavailable'
+    assert 'table_rpc_direct_child_cpu_ms' not in events[0]
+    assert 'table_rpc_nested_child_cpu_ms' not in events[0]
     import json
     assert secret not in json.dumps(events)
 

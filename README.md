@@ -132,6 +132,32 @@ Contoh berikut untuk **Command Prompt**. Ganti `NPWP_16_DIGIT_ANDA` dengan NPWP 
 .venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --output "%LOCALAPPDATA%\SPTDownloader-CLI\run-baru" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\profile"
 ```
 
+### Live test CLI khusus SPT Badan
+
+Gunakan `--spt-badan-only --detail-source dom` untuk membatasi **detail
+yang dibuka** hanya pada baris daftar SPT dengan `Jenis Pajak` persis
+`PPh Badan`. Contoh:
+
+```bat
+.venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --year-basis period --detail-source dom --spt-badan-only --output "%LOCALAPPDATA%\SPTDownloader-CLI\badan-2025-baru" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\profile"
+```
+
+CLI tetap harus membaca **metadata seluruh daftar SPT Dilaporkan** untuk
+menentukan jenis dokumen yang benar. Hanya record PPh Badan yang dibuka,
+tanpa mengambil detail SPT Masa atau MPN. Pilihan record yang tepat
+disimpan dalam `selection.json` dengan digest inventaris dan sumber DOM
+sebelum tindakan View pertama. Jika tidak ada PPh Badan dalam inventaris,
+CLI menolak alih-alih mengambil jenis lain. Hasil COMPLETE hanya
+menandakan seluruh **cakupan Badan yang dipilih** berhasil, bukan
+kelengkapan jenis SPT lain maupun MPN; `resume.xlsx` tetap memuat audit
+inventaris luas sebagai konteks.
+
+Untuk melanjutkan job ini, gunakan `--resume FOLDER_HASIL
+--spt-badan-only` dan profil browser yang sama. Resume tanpa flag ditolak
+bila checkpoint `run.json` menyatakan scope Corporate-only. Jangan
+mengubah `inventory.json`, `selection.json`, atau `run.json`
+secara manual. Gunakan folder hasil baru untuk live test pembanding.
+
 ### Penggunaan ulang browser CDP (khusus pengguna ahli)
 
 **Normal:** gunakan `run.cmd` tanpa `--reuse-browser`; CLI meluncurkan profil terpisah yang dikelola aplikasi. Tidak ada pemeriksaan port debugging otomatis.

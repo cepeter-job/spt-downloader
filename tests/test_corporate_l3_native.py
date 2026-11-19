@@ -23,7 +23,7 @@ GROUPS = ['A. PENGHASILAN DARI LUAR NEGERI', 'B. PPh YANG DIPOTONG/DIPUNGUT PIHA
 
 
 def request(first):
-    return {'ReturnSheetRecordId': corpus.RECORD_ID, 'Language': 'id-ID', 'First': first,
+    return {'ReturnSheetRecordId': corpus.RECORD_ID, 'PeriodYear': '2025', 'First': first,
             'Rows': 10, 'SortField': 'WithholdingSlipsDate', 'SortOrder': 1,
             'Filters': [], 'LanguageId': 'id-ID'}
 
@@ -208,7 +208,7 @@ def test_unproved_l3_packet_or_owner_dependency_keeps_whole_record_fallback(defe
         raw[0] = fresh_packet(envelope(form=form))
     elif defect == 'reference-sequence': proof['references'][0]['sequences'] = [999]
     elif defect in ('language', 'language-id', 'sort', 'filters'):
-        key = {'language': 'Language', 'language-id': 'LanguageId', 'sort': 'SortField', 'filters': 'Filters'}[defect]
+        key = {'language': 'PeriodYear', 'language-id': 'LanguageId', 'sort': 'SortField', 'filters': 'Filters'}[defect]
         value = [{'PropertyName': 'Name', 'Value': 'SYNTHETIC'}] if defect == 'filters' else 'SYNTHETIC UNPROVED'
         for item in raw:
             if item['context']['url'] == GRID: item['context']['request_json'][key] = deepcopy(value)

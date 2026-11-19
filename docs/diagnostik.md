@@ -199,8 +199,11 @@ Mulai build yang memuat perubahan ini, event `table.first_page_timing`
 muncul otomatis untuk tabel besar (`max_page_size >= 250`)
 selama diagnostik worker aktif, **tanpa flag / browser call baru**.
 Masing-masing empat tahap asli hanya direkam maksimal sekali pada
-jalurnya: `pilot_label_lookup` (selector label ukuran halaman yang
-sudah dicari), `pilot_label_text` (pembacaan label yang sudah terjadi),
+jalurnya: `pilot_label_lookup` (satu evaluasi owner-bound yang membaca
+teks label ukuran halaman, tanpa membuat handle kedua, dan mengembalikan
+durasi renderer untuk pemisahan residual transport),
+`pilot_label_text` (normalisasi `.strip()` lokal dari teks tadi,
+**bukan** Playwright RPC tambahan),
 `first_overlay_wait` (wait global hidden yang sudah ada, timeout
 45.000 ms), dan `first_settle_wait` (jeda Playwright 180 ms yang
 sudah ada, hanya jika wait pertama sukses). Setiap event memiliki
@@ -377,6 +380,7 @@ Pengukuran pasif ini **berbeda** dari `SPT_DIAG_DOM_RPC_PROBE=1`,
 yang mengirim probe browser tambahan. Dengan sesi diagnostik normal
 dan `max_page_size >= 250`, event `table.existing_rpc_timing`
 mengukur panggilan Playwright **yang sudah dibutuhkan scraping**:
+`pilot_label_lookup` (label ukuran halaman setelah pemilihan),
 `previous_lookup`, `previous_limit_lookup`, `initial_snapshot`,
 `cursor_init`, `cursor_advance`, `cursor_poll` dan
 `cursor_snapshot`. Event memakai ordinal form/tabel, fixed enum
@@ -417,12 +421,28 @@ Flag `table_host_cpu_enabled` pada `session.started`,
 `operation.started`, `operation.finished`, dan `session.closed`
 membuktikan status opt-in; marker tidak tersedia = **UNKNOWN**.
 
+Untuk investigasi pewarisan flag GUI ke worker (#307), build baru
+mencatat tiga boolean saja: `table_host_cpu_gui_start_enabled` pada
+`session.started` **GUI** (nilai tepat `1` ketika GUI dibuat),
+`table_host_cpu_gui_at_spawn` serta
+`table_host_cpu_worker_env_enabled` pada `worker.spawned` **GUI**
+(nilai ketika worker disiapkan dan nilai pada environment yang
+diberikan ke subprocess). Bandingkan ketiganya dengan
+`table_host_cpu_enabled` pada `session.started` **worker**. Penanda
+`false` hanya menegaskan titik pengamatan; tidak otomatis menunjukkan
+akar penyebab kehilangan flag. Ketidakadaan event/field berarti
+**UNKNOWN**, bukan `false`. Penanda hanya boolean tetap, tidak
+menyimpan nilai environment, command line, PID, akun, atau konten pajak.
+Pengukuran ini tidak menjalankan scrape tambahan dan tidak
+mengubah allowlist environment maupun akses browser.
+
 Untuk tabel besar (`max_page_size >= 250`), tepat sebelum/sesudah
 panggilan Playwright yang **sudah ada**, worker mengamati counter
 CPU melalui Toolhelp/GetProcessTimes hanya untuk proses anak di
-bawah PID worker saat itu. Sampel maksimum: lookup Previous pertama,
-tiga `cursor_advance` pertama, dan tiga `cursor_snapshot`
-pertama — maksimum **7 pasangan (14 snapshot Win32) per tabel**.
+bawah PID worker saat itu. Sampel maksimum: satu `pilot_label_lookup`
+(label ukuran halaman), lookup Previous pertama, tiga `cursor_advance`
+pertama, dan tiga `cursor_snapshot` pertama — maksimum
+**8 pasangan (16 snapshot Win32) per tabel**.
 Tidak ada PID, nama executable, path, command line, request atau
 konten pajak pada log. Jika seluruh pasangan proses cocok (PID +
 creation time + kedalaman), event `table.existing_rpc_timing`
@@ -433,7 +453,14 @@ bukan durasi wall). Apabila gagal mengakses proses, terdapat
 kelahiran/keluarnya subprocess, pergantian PID, atau dukungan OS
 tidak ada, metrik CPU tidak dipaksakan; event sampling Windows
 menggunakan `table_host_cpu_state=unavailable`.
-Di luar jatah tujuh sampel, field CPU host sengaja tidak tersedia.
+Di luar jatah delapan sampel, field CPU host sengaja tidak tersedia.
+Sampel `pilot_label_lookup` memantau satu `evaluate` owner-bound
+yang menggantikan `query_selector` ditambah `inner_text` remote
+pada tabel besar. Ini mengurangi satu perintah browser tetapi **tidak**
+menjamin waktu transport/CPU lebih cepat; instrumen CPU tidak menambah
+RPC browser. `table.first_page_timing` tetap mengukur
+operasi asli; snapshot CPU berada di luar timer. Variasi wall-clock
+lintas run tetap tidak membuktikan akar sebab.
 
 Kedalaman proses 1 sering berisi driver Node Playwright, sedangkan
 yang lebih dalam bisa berisi proses Chromium; **itu bukan bukti

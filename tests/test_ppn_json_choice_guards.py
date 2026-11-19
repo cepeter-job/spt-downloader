@@ -226,14 +226,12 @@ def test_normal_unchanged_live_path_rejects_mismatched_or_missing_stored(stored)
                            'VATIsUnderOrOverPaid', model='NORMAL')
 
 
-@pytest.mark.parametrize('defect', ['missing-choice', 'missing-facility', 'object-facility',
+@pytest.mark.parametrize('defect', ['missing-choice', 'object-facility',
     'missing-period', 'unsafe-turnover', 'string-export', 'fractional-export'])
 def test_unproved_choice_dependencies_do_not_gain_native_eligibility(defect):
     source = raw_source()
     if defect == 'missing-choice':
         del source['AskedTo']
-    elif defect == 'missing-facility':
-        del source['FacilityRegisters']
     elif defect == 'object-facility':
         source['FacilityRegisters'] = {}
     elif defect == 'missing-period':
@@ -247,6 +245,26 @@ def test_unproved_choice_dependencies_do_not_gain_native_eligibility(defect):
         source['ExportTangibleTaxableGoods']['SellingPrice'] = 1.5
     with pytest.raises(_UnsupportedMetadata):
         project(source)
+
+
+@pytest.mark.parametrize('declared', [False, True])
+def test_live_absent_facility_registers_equals_empty_list(declared):
+    # The live prefillreturnsheet/nvat FormData omits FacilityRegisters when the
+    # taxpayer has none; a missing key must project like an explicit empty list,
+    # not fall back to DOM.
+    source = raw_source()
+    source.update(FacilityRegisters=[], TaxPeriod='12122025')
+    source['TotalDeliveryOfGoodsAndServices']['SellingPrice'] = 0
+    if not declared:
+        del source['FacilityRegisters']
+    before = deepcopy(source)
+    result = project(source)
+    assert result['value'] is None
+    assert source == before
+    paths = {tuple(e['path']) for e in result['provenance']}
+    assert ('FacilityRegisters',) in paths or ('FacilityRegisters', 0) in paths
+    facility = [e for e in result['provenance'] if e['path'] and e['path'][0] == 'FacilityRegisters']
+    assert facility and facility[0]['value'] == '[]'
 
 
 @pytest.mark.parametrize('model,choice,cleared', [('NORMAL', 'FAST_REFUND', True),

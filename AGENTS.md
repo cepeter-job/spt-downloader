@@ -13,7 +13,7 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 Navigasi kontrak pada berkas ini: [perubahan/merge](#change-and-merge-discipline),
 [data/akses](#data-and-access-safety), [native JSON](#native-json-boundaries),
 [output](#output-contract), [diagnostik](#issue-143-diagnostics-boundary),
-[verifikasi](#verification), dan [desktop](#desktop-boundaries). Untuk pemilik
+[verifikasi](#verification), [CLI live](#cli-first-live-testing-scraping-and-export-development), dan [desktop](#desktop-boundaries). Untuk pemilik
 fungsi dan tes, gunakan [peta kode](docs/peta-kode.md). Pin/resource worker
 mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 
@@ -32,11 +32,82 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
   names with explicit same-name re-exports; do not bulk-remove imports based on
   lint alone. The adopted Bugbear subset is B006/B012/B016/B018/B020; remaining
   findings require contract-specific triage before enabling additional rules.
+- The source of user-visible UI copy is `resources/ui/id-ID.xml`. Developer source
+  runs load this catalog; Windows packaging compiles it into
+  `spt_desktop/_ui_copy_generated.py` (ignored build output). Frozen EXEs must
+  never read editable external XML; preserve approved text IDs, placeholders,
+  locked labels and the `copy_text()` contract. No user text editor or runtime
+  override is supported. Keep schema validation and UI-copy tests in the gates.
+  The catalog also owns Tk presentation copy in app.py, ui_views.py, and
+  spt_gui.py, including Settings, cleanup confirmations and update notices.
+  Source-domain parsing labels, persisted enums, and worker event messages
+  remain separate from editable copy. Non-count UI templates use reviewed
+  DISPLAY_PARAMETERS and format_text(); packaging rejects missing literal IDs.
 - The frozen GUI `--self-test` is a release gate: always use explicit `require(condition, fixed_description)` checks within `spt_gui.self_test`, never Python `assert` (which disappears under `-O` / `PYTHONOPTIMIZE`). A failure must exit nonzero and disclose only its fixed synthetic check label; keep the self-test offline and free of account/browser access. The existing `build_desktop.py` EXE invocation and report validation remain mandatory.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
 
+
+## CLI-first live testing (scraping and export development)
+
+For live investigation of shared capture/export behavior (DOM pagination, native
+JSON/DOM fallback, mapping, checkpoints and Excel/PDF output), prefer a
+**source-run CLI smoke test** from the exact checked-out change before waiting
+for a rebuilt Windows EXE. This shortens iteration but is **additional
+pre-acceptance evidence**, never a substitute for the project's required
+GitHub-hosted CI checks, peer review, frozen-EXE build/self-test or final
+Windows application acceptance. Follow
+[Windows CLI usage](README.md#memakai-cli-di-windows) and the
+[private manual acceptance checklist](docs/penerimaan-manual.md).
+
+1. On an authorized Windows machine, identify the tested source commit with
+   `git rev-parse HEAD`. Prepare the project's pinned environment with
+   `setup.cmd` if needed; the actual CLI entry point is
+   `.venv\Scripts\python.exe coretax.py`. Do not treat a test of one commit as
+   evidence for another commit.
+2. Use only authorized NPWP/year scope, a **dedicated CLI browser profile** and
+   a **fresh private output folder outside the repository**. Let the CLI own
+   its browser; do not implicitly attach to a running desktop/personal session
+   or run concurrent CLI/GUI jobs against a shared profile. Perform any
+   CAPTCHA/MFA manually. Never put real NPWP, passwords, cookies, captures,
+   workbook contents or private paths in public issues, PRs, commits or logs.
+3. Select `--detail-source dom` for a DOM baseline, or
+   `--detail-source json-first` to exercise JSON-hybrid with whole-record DOM
+   fallback. `--detail-limit N` is a short **first-N inventory** smoke test,
+   not a choice of specific SPT IDs/forms; `--inventory-only` checks listing
+   only. Limited runs are PARTIAL (CLI exit code 2) when records remain, not
+   COMPLETE. Remove limits for a full-scope comparison and verify the output
+   independently.
+4. Examine the private run checkpoint, `resume.xlsx` Audit, sheet mapping,
+   complete/partial counts and privacy-safe diagnostic stage/timing/reason
+   categories. For fallback fixes, compare equivalent authorized DOM and
+   JSON-first runs in separate output folders; do not infer native JSON success
+   merely because JSON-first produced an Excel file. To test rendering only,
+   `--from-json` rebuilds Excel offline and does **not** prove live capture.
+5. Record the exact source SHA, mode, bounded test scope, terminal status
+   (COMPLETE/PARTIAL/blocked), observed fallback category and remaining gaps
+   in a privacy-safe PR summary. A partial/failed run must not be described as
+   full live acceptance. Do not bypass any existing CI/release checks to save
+   build time.
+
+PowerShell example from the repository root (private values stay local):
+
+```powershell
+$npwp = Read-Host "Authorized NPWP (16 digits)"
+$runId = Get-Date -Format "yyyyMMdd-HHmmss"
+& ".\.venv\Scripts\python.exe" ".\coretax.py" `
+  --npwp $npwp --year 2025 --detail-source json-first --detail-limit 2 `
+  --output "$env:LOCALAPPDATA\SPTDownloader-CLI\json-first-$runId" `
+  --profile "$env:LOCALAPPDATA\SPTDownloader-CLI\profile"
+```
+
+This CLI path **does not** verify desktop-specific authentication/credential
+handling, user SPT selection and consent, worker/controller/Stop behavior, job
+cleanup, settings/XML copy, publication to Downloads, update notifications or
+frozen-runtime packaging. Exercise these with Windows application tests and
+an exact-build EXE during integration/release acceptance. Required PR CI,
+Windows build gates and the existing release safety contract remain unchanged.
 
 ## Public update notification boundary
 
@@ -61,6 +132,17 @@ HTTPS JSON GET, strict source-build identity validation, no source tax data,
 and idle-only notifications. Failed checks never block jobs; keep synthetic
 offline tests and frozen GUI self-test gates. See
 [update notification contract](docs/update-notifications.md).
+
+CLI opt-in `--spt-badan-only` is an exact literal PPh Badan detail
+selection, not a filter on submitted-list inventory acquisition. Keep the
+original full inventory and persisted hash-bound `selection.json` intact;
+only the identified PPh Badan records may receive View/detail capture,
+and MPN must not run for this explicitly selected scope. No matching
+records must fail closed; a resumed Corporate-only run must explicitly
+retain its scope. Ordinary CLI behavior and other taxes remain unchanged.
+Source/Excel COMPLETE refers only to the explicitly selected Corporate
+scope, never to unrelated SPT or MPN. Preserve exact year, NPWP,
+original record identity, DOM-only opt-in, Stop, and PARTIAL contracts.
 
 ## Data and access safety
 
@@ -232,6 +314,17 @@ The L7 corporate semantic branch has its own source-proven boundary. Require bot
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
 
+The large Corporate DOM pilot page-size guard may read the **same** inspected
+paginator label on the held owner via one read-only `evaluate` rather than
+`query_selector` followed by remote `inner_text`. A detached/replaced owner
+fails closed. Keep the original ASCII decimal and `max_page_size` check:
+no undocumented 1000-row selection, no global label fallback, no additional
+browser call or timeout change. `table.first_page_timing:pilot_label_lookup`
+now covers this single RPC and may report its bounded renderer duration;
+`pilot_label_text` is local trimming/validation only.
+This is an unverified transport-overhead hypothesis, not an established
+speedup; retain the 180-second table budget and PARTIAL behavior.
+
 DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
 
 For the large-table DOM fallback only (`max_page_size >= 250`), resolve
@@ -360,9 +453,12 @@ command line, process names, browser data, resource URLs, source values,
 or other user processes. Log only aggregated direct-child and deeper-child
 CPU deltas in fixed numeric fields. No Playwright private transport hook,
 CDP, browser evaluate, polling thread, endpoint traffic, Python package
-or running browser process mutation. Bound to the first actual
-Previous lookup and at most three advance and three snapshot calls,
-**seven paired samples (14 Win32 snapshots) per large table**. A
+or running browser process mutation. Bound to the original pilot-label
+lookup, first actual
+Previous lookup, and at most three advance and three snapshot calls,
+**eight paired samples (16 Win32 snapshots) per large table**.
+The pilot sampling wraps the original query_selector without extra
+browser RPCs; opt-in diagnostics cannot certify performance acceptance. A
 snapshot failure, process churn, PID reuse, inaccessible child, or
 unsupported OS causes an explicit `unavailable`/missing metric, never
 guessed CPU or inferred idle. Only matching PIDs with unchanged
@@ -374,7 +470,12 @@ has its own bounded overhead *outside* the measured RPC wall time and
 **inside** the original 180s capture budget: host-CPU opt-in runs are
 investigative, **not** performance or row-completeness baselines.
 The immutable worker boundary `table_host_cpu_enabled` labels that
-opt-in; missing boundaries mean UNKNOWN. Never widen deadlines,
+opt-in; missing boundaries mean UNKNOWN. For issue #307, emit only
+`table_host_cpu_gui_start_enabled` at GUI session initialization,
+plus `table_host_cpu_gui_at_spawn` and `table_host_cpu_worker_env_enabled`
+on GUI worker.spawned as privacy-safe booleans. Never log the raw
+environment, process metadata, paths, credentials, or taxpayer content.
+Missing markers mean UNKNOWN, not false. Never widen deadlines,
 change capture/source authority, hide Stop/errors, or merge these
 diagnostics into business manifests. Documented sampling is not a
 runtime optimization and cannot satisfy #246's positive-Previous
@@ -1253,8 +1354,17 @@ Keep CodeQL, locked dependency audits, Ruff and full test/build gates independen
 Windows parent-process coverage uses the existing `.coveragerc` and separately
 declared line/branch/module/diff floors in `coverage-policy.json`. Before package
 build, validate the complete passing serial, fixed two-shard or fixed four-shard Windows inventory
-for the exact commit/run/attempt and combine only its explicit raw-data slots.
-Never use portable-only, old, failed or missing-shard data as representative
+for the exact commit/run and each producer's original successful attempt,
+and combine only its explicit raw-data slots. A partial Actions rerun may reuse
+unchanged successful producer artifacts from an earlier attempt of that **same**
+run and commit, but only after binding each slot to its actual originating job
+and exact inventory/coverage artifact. Replayed job metadata does not prove
+a rerun; a genuinely failed or newly executed producer with missing evidence
+cannot fall back to an older successful artifact. Keep exact Python/matrix
+mode, source-head, job/attempt, artifact ID, digest, size and expiry constraints;
+each original inventory's embedded attempt must match its selected producer.
+The package's own build-info and readback remain tied to the **current** attempt.
+Never use portable-only, old, unrelated-run, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
 percentages use exact integer ratios.
 Pure comment-only files leave the diff budget only after complete non-comment

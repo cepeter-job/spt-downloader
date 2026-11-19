@@ -2585,7 +2585,11 @@ def _l2_exact(value, digits):
     if abs(exact) > _MAX_INTEGER or exact == 0 and value.startswith('-'):
         raise _UnsupportedMetadata('unsafe_corporate_l2_number')
     number = float(value)
-    if Fraction.from_float(number) != exact:
+    # The browser parses the token to a double and DecimalPipe renders that
+    # double's shortest round-trip repr. Require the repr to equal the source
+    # decimal exactly; binary-exactness is unnecessary and would refuse real
+    # fractional rates such as 2.9.
+    if Decimal(repr(number)) != Decimal(value):
         raise _UnsupportedMetadata('inexact_corporate_l2_browser_number')
     return number
 
@@ -4204,11 +4208,13 @@ def _apply_l3(binding, section, observed_forms, *, root, payload, record, event,
     requests = responses[0]['requests']
     if not isinstance(requests, list) or not 1 <= len(requests) <= 1000:
         raise _UnsupportedMetadata('missing_corporate_l3_page_requests')
+    period = fields.get('TaxPeriodCode')
     for request in requests:
-        if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId', 'Language',
+        if (not isinstance(request, dict) or set(request) != {'ReturnSheetRecordId', 'PeriodYear',
                 'First', 'Rows', 'SortField', 'SortOrder', 'Filters', 'LanguageId'}
                 or request['ReturnSheetRecordId'] != record['record_id']
-                or request['Language'] != 'id-ID' or request['LanguageId'] != 'id-ID'
+                or request['LanguageId'] != 'id-ID'
+                or not isinstance(period, str) or request['PeriodYear'] != period[-4:]
                 or type(request['First']) is not int or request['First'] < 0
                 or type(request['Rows']) is not int or request['Rows'] != 10
                 or request['SortField'] != 'WithholdingSlipsDate'

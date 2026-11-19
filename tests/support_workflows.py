@@ -162,7 +162,9 @@ def _inventory_command(step):
     }
     $inventoryArgs += @(
         '--python-version', "$env:PYTHON_VERSION", '--commit', "$env:GITHUB_SHA",
-        '--run-id', "$env:GITHUB_RUN_ID", '--run-attempt', "$env:GITHUB_RUN_ATTEMPT"
+        '--run-id', "$env:GITHUB_RUN_ID", '--run-attempt', "$env:GITHUB_RUN_ATTEMPT",
+        '--windows-mode', "$env:WINDOWS_MODE",
+        '--producer-manifest', "$env:RUNNER_TEMP/producer-attempts.json"
     )
     & .venv/Scripts/python.exe @inventoryArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"""
@@ -239,7 +241,15 @@ def _permissions(document, overrides=None):
                 assert step['with']['name'].endswith('-attempt${{ github.run_attempt }}')
                 assert step['with'].get('overwrite', False) is False, 'Previous attempt evidence must be retained'
             if _action(step, 'actions/download-artifact') and 'name' in step.get('with', {}):
-                assert step['with']['name'].endswith('-attempt${{ github.run_attempt }}')
+                name_value = step['with']['name']
+                if name == 'package' and name_value.startswith(
+                        ('test-inventory-', 'windows-coverage-')):
+                    # Exact producer-specific expression is additionally checked
+                    # by validate_production/validate_windows_coverage below.
+                    assert 'steps.producer-attempts.outputs.' in name_value
+                    assert name_value.endswith('_attempt }}')
+                else:
+                    assert name_value.endswith('-attempt${{ github.run_attempt }}')
 
 
 def validate_production(document):
@@ -300,6 +310,19 @@ def validate_production(document):
         "&&needs.route.result=='success'&&needs.validate.result=='success'")
 
     steps = package['steps']
+    resolver_i, resolver = _one(steps, lambda s: s.get('id') == 'producer-attempts')
+    _success_only(resolver)
+    assert resolver['env'] == {
+        'GH_TOKEN': '${{ github.token }}',
+        'SOURCE_HEAD_SHA': '${{ github.event.pull_request.head.sha || github.sha }}'}
+    assert _single_command(resolver) == [
+        '-m', 'scripts.ci_attempts', '--repository', '$env:GITHUB_REPOSITORY',
+        '--run-id', '$env:GITHUB_RUN_ID', '--commit', '$env:GITHUB_SHA',
+        '--head-sha', '$env:SOURCE_HEAD_SHA',
+        '--current-attempt', '$env:GITHUB_RUN_ATTEMPT',
+        '--python-version', '$env:PYTHON_VERSION', '--mode', '$env:WINDOWS_MODE',
+        '--output', '$env:RUNNER_TEMP/producer-attempts.json',
+        '--github-output', '$env:GITHUB_OUTPUT']
     all_downloads = [(i, s) for i, s in enumerate(steps)
                      if _action(s, 'actions/download-artifact') and 'name' in s.get('with', {})]
     downloads = [(i, s) for i, s in all_downloads
@@ -313,6 +336,7 @@ def validate_production(document):
         'windows-shard-3': "needs.route.outputs.windows_mode == 'four-shards'",
     }
     assert len(downloads) == len(expected_downloads)
+    assert resolver_i < min(i for i, _ in downloads)
     assert {s['with']['name'].split('-python', 1)[0] for _, s in downloads} == {
         'test-inventory-' + name for name in expected_downloads}
     download_indices = {i for i, _ in all_downloads}
@@ -326,7 +350,11 @@ def validate_production(document):
         label = step['with']['name'].split('-python', 1)[0].removeprefix('test-inventory-')
         _success_only(step, expected_downloads[label])
         assert set(step['with']) == {'name', 'path'}
-        assert step['with']['name'] == 'test-inventory-' + label + '-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}'
+        output = ('portable' if label == 'portable' else
+                  label.removeprefix('windows-')).replace('-', '_') + '_attempt'
+        assert step['with']['name'] == (
+            'test-inventory-' + label + '-python${{ matrix.python }}-${{ github.sha }}-attempt'
+            + '${{ steps.producer-attempts.outputs.' + output + ' }}')
         assert step['with']['path'] == '${{ runner.temp }}/inventory-' + label
     assert _expression(package['env']['WINDOWS_MODE']) == 'needs.route.outputs.windows_mode'
     inventory_i, inventory = _one(steps, lambda s: s.get('id') == 'inventory')
@@ -368,7 +396,9 @@ def validate_production(document):
             < build_i < sbom_i < update_i < checksum_i < upload_i < readback_i
             < verify_i < smoke_i < smoke_upload_i)
     _, attest_download = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/download-artifact'))
-    assert attest_download['with']['name'] == upload['with']['name']
+    assert attest_download['with'] == {
+        'artifact-ids': '${{ needs.package.outputs.artifact_id }}',
+        'path': 'verified-artifact', 'merge-multiple': True}
     _, attest = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/attest') and 'subject-path' in s.get('with', {}))
     assert set(attest['with']['subject-path'].split()) == {
         'verified-artifact/SPTDownloader.exe', 'verified-artifact/SHA256SUMS.txt',
@@ -377,6 +407,7 @@ def validate_production(document):
     assert archive_attest['with']['subject-name'] == 'SPTDownloader-Windows-x64.zip'
     assert archive_attest['with']['subject-digest'] == 'sha256:${{ needs.package.outputs.artifact_digest }}'
     assert package['outputs']['artifact_digest'] == '${{ steps.upload.outputs.artifact-digest }}'
+    assert package['outputs']['artifact_id'] == '${{ steps.upload.outputs.artifact-id }}'
 
     windows = jobs['windows']
     assert windows['runs-on'] == 'windows-2022' and _needs(windows) == {'route'}
@@ -506,7 +537,9 @@ def validate_windows_coverage(document):
         '-m', 'scripts.coverage_ratchet', '--root', '$env:RUNNER_TEMP/coverage-input',
         '--mode', '$env:WINDOWS_MODE', '--python-version', '$env:PYTHON_VERSION',
         '--commit', '$env:GITHUB_SHA', '--run-id', '$env:GITHUB_RUN_ID',
-        '--run-attempt', '$env:GITHUB_RUN_ATTEMPT', '--base', '$env:COVERAGE_BASE',
+        '--run-attempt', '$env:GITHUB_RUN_ATTEMPT',
+        '--producer-manifest', '$env:RUNNER_TEMP/producer-attempts.json',
+        '--base', '$env:COVERAGE_BASE',
         '--output', '$env:RUNNER_TEMP/coverage-proof']
     assert _expression(gate['env']['COVERAGE_BASE']) == "github.event.pull_request.base.sha||github.event.before||''"
     inventory_i, _ = _one(package, lambda s: s.get('id') == 'inventory')
@@ -523,7 +556,8 @@ def validate_windows_coverage(document):
         _success_only(download, condition)
         assert _action(download, 'actions/download-artifact')
         assert download['with'] == {
-            'name': 'windows-coverage-' + slot + '-python${{ matrix.python }}-${{ github.sha }}-attempt${{ github.run_attempt }}',
+            'name': 'windows-coverage-' + slot + '-python${{ matrix.python }}-${{ github.sha }}-attempt'
+                    + '${{ steps.producer-attempts.outputs.' + slot.replace('-', '_') + '_attempt }}',
             'path': '${{ runner.temp }}/coverage-input/' + slot}
         assert inventory_i < download_i < gate_i
     checkout_i, checkout = _one(package, lambda s: _action(s, 'actions/checkout'))

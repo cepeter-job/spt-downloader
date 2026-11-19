@@ -345,7 +345,7 @@ def test_dispatch_pilot_contract_rejects_incomplete_or_unbound_pipeline(mutation
         upload['with']['overwrite'] = True
     elif mutation == 'wrong-attestation-artifact':
         step = next(s for s in jobs['attest']['steps'] if s.get('uses', '').startswith('actions/download-artifact@'))
-        step['with']['name'] = 'unrelated-${{ github.sha }}-attempt${{ github.run_attempt }}'
+        step['with']['artifact-ids'] = '${{ needs.package.outputs.unrelated }}'
     else:
         windows['strategy']['fail-fast'] = True
     with pytest.raises(AssertionError):
