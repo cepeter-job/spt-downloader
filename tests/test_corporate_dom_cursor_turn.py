@@ -28,6 +28,12 @@ def test_500_row_turn_captures_owned_pages_in_one_rpc_each(context, monkeypatch,
     table = fixture(page, total=1001, selected=500)
     calls = _count_evaluations(monkeypatch)
 
+    def reject_legacy_click(*_args, **_kwargs):
+        pytest.fail('Owned cursor turn must not dispatch a second Python Next click')
+
+    # The large-table owner-bound turn clicks in TABLE_CURSOR_ADVANCE_JS.
+    # The Python click helper is reachable only on the cursor=None path.
+    monkeypatch.setattr(driver, '_click_table_paginator', reject_legacy_click)
     with d.session(tmp_path, 'worker') as log:
         captured = driver.capture_table(page, table, 1, 1000, max_page_size=500)
         assert log.flush()
