@@ -1538,9 +1538,8 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                       'tab': 'tab_unrecognized', 'panel': 'panel_unavailable',
                       'form': 'form_unavailable', 'grid': 'grid_structure',
                       'induk': 'induk_order'}.get(stage, 'observation_error')
-        diagnostics.record('corporate.observe_unavailable', level='WARNING',
-                           corporate_observer_stage=stage, form_ordinal=ordinal_safe,
-                           corporate_refusal_reason=reason,
+        diagnostics.record('corporate.observe_unavailable', level='WARNING', corporate_observer_stage=stage,
+                           form_ordinal=ordinal_safe, corporate_refusal_reason=reason,
                            corporate_l3_reason=l3_reason,
                            corporate_l3_table_shape=l3_table_shape,
                            corporate_l3_extra_layout=l3_extra_layout,
@@ -1743,40 +1742,39 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'L1-D':
                 _advance('l1d')
                 if 'Induk' not in names:
-                    return unavailable(reason='induk_order')
+                    return unavailable()
                 _check_cancel(check_cancel)
                 if not _enabled_form_binding(form, tab, name):
-                    return unavailable(reason='binding_unavailable')
+                    return unavailable()
                 projection = _observe_l1d(page, form, capture, digest, check_cancel)
                 _check_cancel(check_cancel)
                 _check_corporate_route(page.url, selected)
                 if projection is None or not _enabled_form_binding(form, tab, name):
-                    return unavailable(reason='projection_unavailable')
+                    return unavailable()
                 projection['visibility_binding'] = 'current-induk-enabled-v1'
                 binding['projection'] = projection
             if name == 'L8':
                 _advance('l8')
                 if 'Induk' not in names:
-                    return unavailable(reason='induk_order')
+                    return unavailable()
                 projection = _observe_l8(page, form, capture, digest, check_cancel)
                 if projection is None:
-                    return unavailable(reason='projection_unavailable')
+                    return unavailable()
                 binding['projection'] = projection
             if name == 'L7':
                 _advance('l7')
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
-                    return unavailable(reason='induk_order' if 'Induk' not in names
-                                       else 'binding_unavailable')
+                    return unavailable()
                 main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
                 _check_cancel(check_cancel)
                 if main_digest != BUILD_DIGESTS.get(MAIN_SOURCE):
-                    return unavailable(reason='binding_unavailable')
+                    return unavailable()
                 grid = form.locator('rsh-citr-l7-grid1')
                 if (grid.count() != 1 or grid.locator('p-table').count() != 1
                         or grid.locator('table').count() != 1 or form.locator('table').count() != 1):
-                    return unavailable(reason='grid_unavailable')
+                    return unavailable()
                 metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
                 locale = page.evaluate('() => navigator.language')
                 binding['projection'] = {'kind': 'corporate-l7-v1', 'builds': {
@@ -1793,20 +1791,19 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or L11C_BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
-                    return unavailable(reason='induk_order' if 'Induk' not in names
-                                       else 'binding_unavailable')
+                    return unavailable()
                 main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
                 _check_cancel(check_cancel)
                 vendor_digest = page.evaluate(_BUILD_HASH, VENDOR_SOURCE)
                 _check_cancel(check_cancel)
                 if (main_digest != L11C_BUILD_DIGESTS.get(MAIN_SOURCE)
                         or vendor_digest != L11C_BUILD_DIGESTS.get(VENDOR_SOURCE)):
-                    return unavailable(reason='binding_unavailable')
+                    return unavailable()
                 grid = form.locator('rshshr-citr-l11c-form-grid1')
                 if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
                         or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1
                         or form.locator('table').count() != 1):
-                    return unavailable(reason='grid_unavailable')
+                    return unavailable()
                 metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
                 environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
                 references = []
