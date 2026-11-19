@@ -89,6 +89,11 @@ def test_all_static_ui_references_exist_and_removal_is_blocked(tmp_path):
     with pytest.raises(ValueError, match='missing referenced IDs'):
         validate_referenced_ui_keys(deleted, ROOT)
 
+    deleted_dynamic = dict(current)
+    del deleted_dynamic['selection.table.type']
+    with pytest.raises(ValueError, match='missing referenced IDs'):
+        validate_referenced_ui_keys(deleted_dynamic, ROOT)
+
     source = tmp_path / 'edited.xml'
     xml = CATALOG_FILE.read_text(encoding='utf-8')
     xml = xml.replace('<string id="settings.widget.simpan">Simpan</string>', '')

@@ -33,9 +33,19 @@ def referenced_ui_keys(root: Path = CATALOG_FILE.parent.parent.parent) -> set[st
     return keys
 
 
+_DYNAMIC_UI_KEYS = frozenset({
+    'form.npwp.help', 'form.year.help',
+    'form.npwp.error', 'form.year.error',
+    'selection.shortcuts.all', 'selection.shortcuts.latest',
+    'selection.shortcuts.potput', 'selection.shortcuts.ppn',
+    'selection.table.type', 'selection.table.period',
+    'selection.table.model', 'selection.table.id',
+})
+
+
 def validate_referenced_ui_keys(strings: dict[str, str], root: Path) -> None:
-    """Fail the build if any statically referenced copy key was removed."""
-    missing = referenced_ui_keys(root) - strings.keys()
+    """Fail the build if referenced static or bounded dynamic IDs are missing."""
+    missing = (referenced_ui_keys(root) | _DYNAMIC_UI_KEYS) - strings.keys()
     if missing:
         raise ValueError('UI XML is missing referenced IDs: ' + ', '.join(sorted(missing)))
 
