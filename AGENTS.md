@@ -238,6 +238,17 @@ The L7 corporate semantic branch has its own source-proven boundary. Require bot
 
 An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
 
+The large Corporate DOM pilot page-size guard may read the **same** inspected
+paginator label on the held owner via one read-only `evaluate` rather than
+`query_selector` followed by remote `inner_text`. A detached/replaced owner
+fails closed. Keep the original ASCII decimal and `max_page_size` check:
+no undocumented 1000-row selection, no global label fallback, no additional
+browser call or timeout change. `table.first_page_timing:pilot_label_lookup`
+now covers this single RPC and may report its bounded renderer duration;
+`pilot_label_text` is local trimming/validation only.
+This is an unverified transport-overhead hypothesis, not an established
+speedup; retain the 180-second table budget and PARTIAL behavior.
+
 DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
 
 
