@@ -396,7 +396,9 @@ def validate_production(document):
             < build_i < sbom_i < update_i < checksum_i < upload_i < readback_i
             < verify_i < smoke_i < smoke_upload_i)
     _, attest_download = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/download-artifact'))
-    assert attest_download['with']['name'] == upload['with']['name']
+    assert attest_download['with'] == {
+        'artifact-ids': '${{ needs.package.outputs.artifact_id }}',
+        'path': 'verified-artifact', 'merge-multiple': True}
     _, attest = _one(jobs['attest']['steps'], lambda s: _action(s, 'actions/attest') and 'subject-path' in s.get('with', {}))
     assert set(attest['with']['subject-path'].split()) == {
         'verified-artifact/SPTDownloader.exe', 'verified-artifact/SHA256SUMS.txt',
@@ -405,6 +407,7 @@ def validate_production(document):
     assert archive_attest['with']['subject-name'] == 'SPTDownloader-Windows-x64.zip'
     assert archive_attest['with']['subject-digest'] == 'sha256:${{ needs.package.outputs.artifact_digest }}'
     assert package['outputs']['artifact_digest'] == '${{ steps.upload.outputs.artifact-digest }}'
+    assert package['outputs']['artifact_id'] == '${{ steps.upload.outputs.artifact-id }}'
 
     windows = jobs['windows']
     assert windows['runs-on'] == 'windows-2022' and _needs(windows) == {'route'}
