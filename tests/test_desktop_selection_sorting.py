@@ -1,6 +1,7 @@
 """Real Tk header sorting contracts. GitHub Windows execution only."""
 from copy import deepcopy
 import pytest
+from spt_desktop.ui_copy import copy_text
 from support_gui import named_widget, window, widgets, button
 
 
@@ -49,7 +50,7 @@ def test_header_toggles_two_directions_and_preserves_source_rows(tmp_path, click
     rows = displayed_fixture_rows(payload)
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = tree_in(dialog)
-        assert tree.heading('type', 'text') == 'Jenis pajak'
+        assert tree.heading('type', 'text') == copy_text('selection.table.type')
         assert tuple(tree.get_children()) == ('record-1', 'record-3', 'record-2', 'record-0')
         assert not tree.selection()
         for _ in range(clicks):
@@ -57,11 +58,11 @@ def test_header_toggles_two_directions_and_preserves_source_rows(tmp_path, click
         descending = clicks % 2 == 0
         expected = sorted(rows, key=lambda iid: rows[iid][0].casefold(), reverse=descending)
         assert list(tree.get_children()) == expected
-        assert tree.heading('type', 'text') == ('Jenis pajak ▼' if descending else 'Jenis pajak ▲')
+        assert tree.heading('type', 'text') == (copy_text('selection.table.type') + ' ▼' if descending else copy_text('selection.table.type') + ' ▲')
         assert {iid: tuple(tree.item(iid, 'values')) for iid in tree.get_children()} == rows
         assert payload == original and not controller.replies and not controller.stopped
         assert not tree.selection()
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
 
 
 @pytest.mark.parametrize('clicks', [1, 2])
@@ -76,9 +77,9 @@ def test_sorting_keeps_exact_selected_identifiers_and_inventory_order_in_reply(t
         for _ in range(clicks):
             click_type_heading(root, tree)
             assert set(tree.selection()) == set(chosen)
-            assert not button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+            assert not button(dialog, copy_text('selection.confirm')).instate(['disabled'])
             assert not controller.replies
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         root.update()
         expected_ids = [payload['records'][ordinal]['record_id'] for ordinal in (0, 3)]
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': expected_ids, 'mpn': False})]
@@ -102,11 +103,13 @@ def test_sorting_keeps_active_search_and_visible_selection_with_stable_ties(tmp_
             assert entry.get() == 'Badan'
             assert list(tree.get_children()) == ['record-1', 'record-3']
             assert tuple(tree.selection()) == ('record-3',)
-            assert not button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+            assert not button(dialog, copy_text('selection.confirm')).instate(['disabled'])
             assert any(widget.winfo_class() == 'TLabel' and
-                       str(widget.cget('text')).startswith('1 SPT dipilih')
+                       str(widget.cget('text')) == copy_text('selection.summary',
+                           selected=1, visible=len(tree.get_children()),
+                           inventory=len(payload['records']))
                        for widget in widgets(dialog))
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-two'], 'mpn': False})]
 
 
@@ -125,8 +128,8 @@ def test_search_change_preserves_sort_mode_but_clears_consent_as_before(tmp_path
         root.update()
         assert list(tree.get_children()) == ['record-1', 'record-3']
         assert not tree.selection()
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
-        assert tree.heading('type', 'text') == 'Jenis pajak ▼'
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
+        assert tree.heading('type', 'text') == copy_text('selection.table.type') + ' ▼'
         entry.delete(0, 'end')
         root.update()
         expected = sorted(rows, key=lambda iid: rows[iid][0].casefold(), reverse=True)
@@ -144,7 +147,7 @@ def test_empty_or_missing_type_sorting_does_not_authorize_records(tmp_path, payl
             click_type_heading(root, tree)
             assert tuple(tree.get_children()) == original
             assert not tree.selection() and not controller.replies
-            assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+            assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
 
 
 def test_no_search_matches_can_be_sorted_and_cleared_without_callback_errors(tmp_path):
@@ -285,8 +288,10 @@ def test_chronology_preserves_filtered_selection_focus_and_inventory_order_reply
             assert set(tree.selection()) == set(chosen) and tree.focus() == 'record-0'
             assert entry.get() == 'PPN' and not controller.replies
             assert any(w.winfo_class() == 'TLabel' and
-                       str(w.cget('text')).startswith('2 SPT dipilih') for w in widgets(dialog))
-        button(dialog, 'Sedot SPT terpilih').invoke()
+                       str(w.cget('text')) == copy_text('selection.summary',
+                           selected=2, visible=len(tree.get_children()),
+                           inventory=len(payload['records'])) for w in widgets(dialog))
+        button(dialog, copy_text('selection.confirm')).invoke()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [special, 'normal'], 'mpn': False})]
 
 
@@ -306,11 +311,11 @@ def test_chronology_survives_filter_clear_without_restoring_consent(tmp_path):
         entry.insert(0, 'Januari')
         root.update()
         assert visible_ids(tree) == ['jan', 'ten'] and not tree.selection()
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
         entry.delete(0, 'end')
         root.update()
         assert visible_ids(tree) == ['jan', 'ten', 'feb'] and not tree.selection()
-        assert tree.heading('type', 'text') == 'Jenis pajak ▼' and not controller.replies
+        assert tree.heading('type', 'text') == copy_text('selection.table.type') + ' ▼' and not controller.replies
 
 
 def test_source_selftest_observes_chronology_in_both_type_directions(tmp_path):

@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 
+from spt_desktop.ui_copy import copy_text
 from support_gui import window, widgets, button
 
 
@@ -34,7 +35,7 @@ def test_default_priority_before_any_click_and_manual_header_still_alphabetical(
     with window(tmp_path, records) as (root, app, controller, dialog):
         tree = tree_in(dialog)
         assert visible_ids(tree) == ['badan', '21', 'unifikasi', 'ppn', 'unknown']
-        assert not tree.selection() and button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert not tree.selection() and button(dialog, copy_text('selection.confirm')).instate(['disabled'])
         root.tk.call(tree.heading('type', 'command')); root.update()
         assert visible_ids(tree) == ['unknown', 'badan', '21', 'unifikasi', 'ppn']
         root.tk.call(tree.heading('type', 'command')); root.update()
@@ -91,7 +92,7 @@ def test_filter_clear_keeps_default_priority_without_restoring_consent(tmp_path)
         entry.delete(0, 'end'); root.update()
         assert visible_ids(tree) == ['badan', '21', 'unifikasi', 'ppn', 'unknown']
         assert not tree.selection() and not controller.replies
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
 
 
 def test_default_display_does_not_reorder_confirmed_inventory_ids(tmp_path):
@@ -100,7 +101,7 @@ def test_default_display_does_not_reorder_confirmed_inventory_ids(tmp_path):
         assert visible_ids(tree) == ['badan', '21', 'unifikasi', 'ppn', 'unknown']
         tree.selection_set(('record-4', 'record-1'))
         tree.event_generate('<<TreeviewSelect>>'); root.update()
-        button(dialog, 'Sedot SPT terpilih').invoke(); root.update()
+        button(dialog, copy_text('selection.confirm')).invoke(); root.update()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['ppn', 'badan'], 'mpn': False})]
 
 
