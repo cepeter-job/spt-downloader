@@ -1060,7 +1060,7 @@ def test_worker_spawn_markers_accept_only_gui_booleans(tmp_path):
     private = 'SYNTHETIC_PRIVATE_WORKER_ENV'
     class Untrusted:
         def __bool__(self):
-            raise AssertionError('must not coerce diagnostic marker')
+            raise TypeError('must not coerce diagnostic marker')
     with d.session(tmp_path, 'gui') as log:
         d.record('worker.spawned', table_host_cpu_gui_at_spawn=True,
                  table_host_cpu_worker_env_enabled=False,
