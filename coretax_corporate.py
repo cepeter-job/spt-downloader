@@ -654,6 +654,7 @@ def _observe_l8(page, form, capture, digest, check_cancel):
     from coretax_corporate_projection import L8_BUILD_DIGESTS, L8_HEADERS, _L8_GROUP, MAIN_SOURCE, VENDOR_SOURCE
     from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH, _REFERENCE_ORDER_BUILD_HASH
     if digest != L8_BUILD_DIGESTS.get(CIT_SOURCE_URL):
+        capture.l8_refuse('l8_digest')
         return None
     if capture.observe_l8_lifetime(check_cancel=check_cancel) is None:
         return None
@@ -663,6 +664,7 @@ def _observe_l8(page, form, capture, digest, check_cancel):
         [CIT_SOURCE_URL, MAIN_SOURCE, VENDOR_SOURCE])
     _check_cancel(check_cancel)
     if providers is not True:
+        capture.l8_refuse('l8_providers')
         return None
     main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
     _check_cancel(check_cancel)
@@ -673,6 +675,7 @@ def _observe_l8(page, form, capture, digest, check_cancel):
             or vendor_digest != L8_BUILD_DIGESTS.get(VENDOR_SOURCE)
             or form.locator('table').count() != 1 or grid.count() != 1 or not grid.is_visible()
             or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1):
+        capture.l8_refuse('l8_structure')
         return None
     table = grid.locator('table')
     structure = table.evaluate('''table => {
@@ -696,12 +699,15 @@ def _observe_l8(page, form, capture, digest, check_cancel):
     }''')
     _check_cancel(check_cancel)
     if structure != {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1', 'groups': [_L8_GROUP]}:
+        capture.l8_refuse('l8_grid_structure')
         return None
     metadata = table.evaluate(TABLE.replace('GROUP', '()=>""'))
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
     _check_cancel(check_cancel)
     if (metadata['headers'] != L8_HEADERS or metadata['footer_spans'] != [[1, 1, 1]]
             or capture.observe_l8_lifetime(check_cancel=check_cancel) is None):
+        if capture.l8_refusal_reason() is None:
+            capture.l8_refuse('l8_metadata')
         return None
     return {'kind': 'corporate-l8-v1', 'builds': {
         CIT_SOURCE_URL: digest, MAIN_SOURCE: main_digest, VENDOR_SOURCE: vendor_digest},
@@ -1756,10 +1762,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'L8':
                 _advance('l8')
                 if 'Induk' not in names:
-                    return unavailable()
+                    return unavailable(reason='induk_order')
                 projection = _observe_l8(page, form, capture, digest, check_cancel)
                 if projection is None:
-                    return unavailable()
+                    return unavailable(reason=capture.l8_refusal_reason() or 'observation_error')
                 binding['projection'] = projection
             if name == 'L7':
                 _advance('l7')

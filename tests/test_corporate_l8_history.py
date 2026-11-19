@@ -134,6 +134,35 @@ def test_unqualified_l8_history_does_not_poison_legacy_capture_or_create_proof(t
         assert manifest['complete'] and 'corporate_l8_lifetime' not in manifest
 
 
+@pytest.mark.parametrize('fact,value,reason', [
+    ('initial_clear', False, 'l8_not_clear'),
+    ('root_seen', False, 'l8_no_root'),
+    ('dependent_seen', True, 'l8_dependent')])
+def test_l8_history_names_the_refusing_sub_guard(tmp_path, fact, value, reason):
+    context, page, guard = history_setup()
+    guard.state[fact] = value
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        assert observe(capture) is None
+        assert capture.l8_refusal_reason() == reason
+        capture.l8_refuse('l8_digest')
+        assert capture.l8_refusal_reason() == 'l8_digest'
+
+
+def test_l8_qualified_history_keeps_refusal_reason_none(tmp_path):
+    context, page, guard = history_setup()
+    with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:
+        begin(capture)
+        navigate(page, DETAIL)
+        exchange(context, page)
+        capture.bind_detail_page(page)
+        assert observe(capture) is not None
+        assert capture.l8_refusal_reason() is None
+
+
 def test_known_l8_root_history_change_is_fatal_even_if_final_owner_is_same(tmp_path):
     context, page, guard = history_setup()
     with DetailJsonCapture(context, page, selected(), SCOPE, tmp_path) as capture:

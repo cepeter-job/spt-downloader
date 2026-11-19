@@ -118,7 +118,10 @@ dari enum tetap: `build_unfamiliar`, `tabs_missing`, `tab_unrecognized`,
 `tab_duplicate`, `panel_unavailable`, `form_unavailable`, `grid_unavailable`,
 `induk_order`, `lifetime_unavailable`, `binding_unavailable`,
 `projection_unavailable`, `grid_structure`, `grid_pagination`,
-`incomplete_coverage`, `observation_error`. Penolakan tanpa alasan eksplisit
+`incomplete_coverage`, `observation_error`, serta sub-guard L8 `l8_digest`,
+`l8_providers`, `l8_structure`, `l8_grid_structure`, `l8_metadata`, dan
+`l8_component_lifetime`, `l8_history_missing`, `l8_state_shape`,
+`l8_not_clear`, `l8_no_root`, `l8_dependent`. Penolakan tanpa alasan eksplisit
 memakai kelas turunan tahap, sehingga tidak ada gate Corporate yang jatuh ke
 fallback DOM tanpa nama. Khusus `corporate_observer_stage=build` dengan
 `corporate_refusal_reason=build_unfamiliar` juga mencatat
