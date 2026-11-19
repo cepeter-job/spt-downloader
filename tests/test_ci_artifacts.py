@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from spt_desktop.runtime import WORKER_FILES, python_version
 from support_build_reports import sorting_report
+from spt_desktop.ui_copy import copy_text
 
 
 def verifier():
@@ -28,7 +29,7 @@ def artifact(tmp_path, monkeypatch):
     (tmp_path / 'build-selftest.json').write_text(json.dumps({
         'ok': True, 'frozen': True, 'uv_bundled': True, 'bits': 64,
         'diagnostics': {'schema': 1, 'safe_logging': True},
-        'bugreport_footer': {'text': 'bugreport : sharmila@kemenkeu.go.id', 'bottom_right': True},
+        'bugreport_footer': {'text': copy_text('app.bugreport'), 'bottom_right': True},
         'automatic_login_controls': {'origin_selector_present': False,
             'credential_origin': 'satu', 'account_forwarded': True},
         'selection_sorting_control': sorting_report(),
@@ -36,12 +37,13 @@ def artifact(tmp_path, monkeypatch):
         'python': '3.14.8', 'python_implementation': 'CPython', 'free_threaded': False,
         'tcl': '8.6.15', 'tk': '8.6.15', 'worker_python': python_version(),
         'worker_resources': list(WORKER_FILES), 'credential_check_controls': False,
-        'gui_controls': ['Simpan', 'Hapus login', 'Tutup'], 'build_profile': 'production',
-        'personal_use_labels': ['for personal use only'],
+        'gui_controls': [copy_text('settings.widget.simpan'),
+                         copy_text('settings.delete'), copy_text('settings.widget.tutup')], 'build_profile': 'production',
+        'personal_use_labels': [copy_text('app.subtitle')],
         'ui_text': {
-            'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
-            'background': 'jalankan proses sedot di background',
-            'results': 'Hasil Sedot berada di folder Downloads Windows'},
+            'title': copy_text('app.title'),
+            'background': copy_text('settings.background.label'),
+            'results': copy_text('results.location_hint')},
     }))
     identity = {'schema': 1, 'commit': 'a' * 40, 'run_id': '123', 'run_attempt': 2}
     (tmp_path / 'build-info.json').write_text(json.dumps(identity), encoding='utf-8')

@@ -9,8 +9,9 @@ from spt_desktop.app import App
 from support_gui import Controller, widgets
 from support_build_reports import report
 from build_desktop import validate_report
+from spt_desktop.ui_copy import copy_text
 
-TEXT = 'bugreport : sharmila@kemenkeu.go.id'
+TEXT = copy_text('app.bugreport')
 
 
 @pytest.mark.parametrize('width,height,scale', [(540, 430, 1.0), (800, 620, 1.0),
@@ -46,8 +47,8 @@ def test_contact_is_visible_bottom_right_without_replacing_existing_copy(tmp_pat
         assert root.winfo_width() - right <= app.view.px(32)
         assert root.winfo_height() - bottom <= app.view.px(32)
         assert label.winfo_rooty() >= app.results_label.winfo_rooty() + app.results_label.winfo_height()
-        assert str(app.results_label.cget('text')) == 'Hasil Sedot berada di folder Downloads Windows'
-        assert 'for personal use only' in [str(w.cget('text')) for w in labels]
+        assert str(app.results_label.cget('text')) == copy_text('results.location_hint')
+        assert copy_text('app.subtitle') in [str(w.cget('text')) for w in labels]
         assert not app.controller.active
     finally:
         if app is not None:
