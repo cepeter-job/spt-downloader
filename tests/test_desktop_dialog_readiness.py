@@ -7,6 +7,7 @@ import tkinter as tk
 import pytest
 
 from support_gui import ConsentController, consent_event, named_widget
+from spt_desktop.ui_copy import copy_text
 
 
 def wait_for_existing_timers(root):
@@ -125,8 +126,8 @@ def test_filter_content_reflow_finishes_at_idle_and_keeps_reset_consent(active_w
     assert named_widget(dialog, 'confirm').instate(['disabled'])
     notice = named_widget(dialog, 'notice')
     text = str(notice.getvar(str(notice.cget('textvariable'))))
-    assert 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.' in text
-    assert 'Tidak ada SPT yang cocok dengan pencarian.' in text
+    assert copy_text('selection.filter_reset') in text
+    assert copy_text('selection.no_match') in text
     assert not controller.replies and not controller.stopped
 
 

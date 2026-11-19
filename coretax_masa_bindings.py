@@ -349,10 +349,15 @@ def _ppn_facility_clears(form, evidence):
             or period[:2] != period[2:4]):
         raise _UnsupportedMetadata('unverified_ppn_facility_period')
     end = _observed_ppn_number(form, ('BookkeepingPeriodEnd',), evidence)
-    if not 1 <= end <= 12 or 'FacilityRegisters' not in form:
+    if not 1 <= end <= 12:
         raise _UnsupportedMetadata('unverified_ppn_facility_source')
-    facilities = form['FacilityRegisters']
-    if facilities is None:
+    # The live prefillreturnsheet/nvat FormData omits FacilityRegisters when the
+    # taxpayer has no facility registers; absence is equivalent to an empty list,
+    # not missing evidence. Explicit null/wrong-type sources stay refused.
+    facilities = form.get('FacilityRegisters', [])
+    if 'FacilityRegisters' not in form:
+        evidence.append({'path': ['FacilityRegisters'], 'type': 'array', 'value': '[]'})
+    elif facilities is None:
         evidence.append(_evidence(None, ['FacilityRegisters']))
         facilities = []
     elif isinstance(facilities, list) and len(facilities) <= 10000 and all(type(v) is str for v in facilities):

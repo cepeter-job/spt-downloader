@@ -222,7 +222,7 @@ def test_self_test_uses_job_bound_progress_and_real_captions(tmp_path, monkeypat
     assert self_test(report) == 0
     data = json.loads(report.read_text(encoding='utf-8'))
     assert seen and seen[-1]['percent'] == 42
-    assert {'Mulai unduh', 'Hentikan unduhan', 'Buka folder hasil', 'Simpan', 'Hapus login'} <= set(data['gui_controls'])
+    assert {'Mulai Sedot', 'Hentikan Sedotan', 'Buka folder hasil', 'Simpan', 'Hapus login'} <= set(data['gui_controls'])
     assert data['credentials_accessed'] is False and data['live_scrape'] is False
 
 

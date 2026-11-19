@@ -5,12 +5,12 @@ import re
 from string import Formatter
 import xml.etree.ElementTree as ET  # nosec B405 - bounded developer XML, DTD/entities blocked
 
-from .ui_text_schema import COUNT_PARAMETERS
+from .ui_text_schema import COUNT_PARAMETERS, DISPLAY_PARAMETERS
 
 
 CATALOG_FILE = Path(__file__).resolve().parent.parent / 'resources' / 'ui' / 'id-ID.xml'
 _MAX_BYTES = 65536
-_MAX_ENTRIES = 256
+_MAX_ENTRIES = 512
 _KEY_PATTERN = re.compile(r'[a-z][a-z0-9_.]*\Z')
 _FIELD_PATTERN = re.compile(r'[a-z][a-z0-9_]*\Z')
 _STAGE_KEYS = frozenset({
@@ -51,7 +51,7 @@ def load_strings(path: Path | None = None) -> dict[str, str]:
                     fields.add(field)
         except ValueError as exc:
             raise ValueError('Invalid UI text placeholder') from exc
-        if fields != COUNT_PARAMETERS.get(key, frozenset()):
+        if fields != COUNT_PARAMETERS.get(key, DISPLAY_PARAMETERS.get(key, frozenset())):
             raise ValueError('UI text placeholder contract mismatch')
         entries[key] = value
     if not entries or not _STAGE_KEYS.issubset(entries):

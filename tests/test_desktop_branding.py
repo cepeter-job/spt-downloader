@@ -28,11 +28,11 @@ def test_personal_use_subtitle_is_visible_without_the_removed_punto_footer(tmp_p
         body = root.winfo_children()[0]
         labels = [child for child in descendants(body) if isinstance(child, ttk.Label)]
         texts = [str(label['text']) for label in labels]
-        assert 'Coretax → Excel · for personal use only' in texts
+        assert 'for personal use only' in texts
         assert not any('read-only' in text or 'data perpajakan rahasia' in text for text in texts)
         assert 'for personal use : punto ap' not in texts
         subtitle = next(label for label in labels
-                        if str(label['text']) == 'Coretax → Excel · for personal use only')
+                        if str(label['text']) == 'for personal use only')
         assert subtitle.winfo_ismapped()
         left = subtitle.winfo_rootx() - root.winfo_rootx()
         top = subtitle.winfo_rooty() - root.winfo_rooty()
@@ -58,7 +58,7 @@ def test_self_test_reports_the_actual_personal_use_labels(tmp_path):
     assert self_test(report) == 0
     data = json.loads(report.read_text(encoding='utf-8'))
     assert data.get('personal_use_labels') == [
-        'Coretax → Excel · for personal use only',
+        'for personal use only',
     ]
     assert data['credentials_accessed'] is False
     assert data['live_scrape'] is False
