@@ -1524,15 +1524,22 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 fields['form_ordinal'] = seg_ordinal
             diagnostics.record('corporate.observe_timing', **fields)
 
-    def unavailable(error=None, *, l3_reason=None, l3_table_shape=None,
+    def unavailable(error=None, *, reason=None, l3_reason=None, l3_table_shape=None,
                     l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         # Emit already-measured stage segments so even a late refusal keeps
         # the bounded, value-free performance trail.
         _emit_timings()
-        diagnostics.record('corporate.observe_unavailable', level='WARNING',
-                           corporate_observer_stage=stage, form_ordinal=ordinal_safe,
+        if reason is None:
+            # A bare refusal still names its stage-derived class, so no corporate
+            # gate collapses into an unexplained whole-record DOM fallback.
+            reason = {'build': 'build_unfamiliar', 'tabs': 'tabs_missing',
+                      'tab': 'tab_unrecognized', 'panel': 'panel_unavailable',
+                      'form': 'form_unavailable', 'grid': 'grid_structure',
+                      'induk': 'induk_order'}.get(stage, 'observation_error')
+        diagnostics.record('corporate.observe_unavailable', level='WARNING', corporate_observer_stage=stage,
+                           form_ordinal=ordinal_safe, corporate_refusal_reason=reason,
                            corporate_l3_reason=l3_reason,
                            corporate_l3_table_shape=l3_table_shape,
                            corporate_l3_extra_layout=l3_extra_layout,
@@ -1553,11 +1560,14 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or len(digest) != 64 or len(approved_digest) != 64
                 or any(c not in '0123456789abcdef' for c in digest + approved_digest)
                 or digest != approved_digest):
-            return unavailable()
+            # Name the redeploy instead of leaving a bare whole-record fallback:
+            # fixed enum only, never the digest, URL or asset bytes.
+            diagnostics.record('build.unfamiliar_build', build_source='corporate')
+            return unavailable(reason='build_unfamiliar')
         _advance('tabs')
         view, tabs = _tabs(page)
         if not tabs.count():
-            return unavailable()
+            return unavailable(reason='tabs_missing')
         forms, names = [], set()
         for ordinal in range(tabs.count()):
             _check_cancel(check_cancel)
@@ -1584,13 +1594,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             _advance('panel')
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
-                return unavailable()
+                return unavailable(reason='panel_unavailable')
             _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
             _advance('form')
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
-                return unavailable()
+                return unavailable(reason='form_unavailable')
             binding = {'name':name, 'paths':[[root]], 'grids':[]}
             l10a_before = None
             if name == 'Induk':
@@ -1915,7 +1925,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             # their approved pin can adopt this completeness contract.
             if digest == CIT_SOURCE_SHA256 and (
                     set(FORMS) - {'L1-B', 'L8'} - names):
-                return unavailable()
+                return unavailable(reason='incomplete_coverage')
             # Only L1-B and L8 are reviewed as legitimately absent.
             # Their path-only bindings remain strictly null/missing-inert.
             for absent in ('L1-B', 'L8'):
