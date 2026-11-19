@@ -1236,8 +1236,17 @@ Keep CodeQL, locked dependency audits, Ruff and full test/build gates independen
 Windows parent-process coverage uses the existing `.coveragerc` and separately
 declared line/branch/module/diff floors in `coverage-policy.json`. Before package
 build, validate the complete passing serial, fixed two-shard or fixed four-shard Windows inventory
-for the exact commit/run/attempt and combine only its explicit raw-data slots.
-Never use portable-only, old, failed or missing-shard data as representative
+for the exact commit/run and each producer's original successful attempt,
+and combine only its explicit raw-data slots. A partial Actions rerun may reuse
+unchanged successful producer artifacts from an earlier attempt of that **same**
+run and commit, but only after binding each slot to its actual originating job
+and exact inventory/coverage artifact. Replayed job metadata does not prove
+a rerun; a genuinely failed or newly executed producer with missing evidence
+cannot fall back to an older successful artifact. Keep exact Python/matrix
+mode, source-head, job/attempt, artifact ID, digest, size and expiry constraints;
+each original inventory's embedded attempt must match its selected producer.
+The package's own build-info and readback remain tied to the **current** attempt.
+Never use portable-only, unrelated-run, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
 percentages use exact integer ratios.
 Pure comment-only files leave the diff budget only after complete non-comment
