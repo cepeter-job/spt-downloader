@@ -18,7 +18,7 @@
   <string id="action.stop">Hentikan Sedotan</string>
   <string id="action.open_result">Buka folder hasil</string>
   <string id="action.open_partial">Buka hasil sementara</string>
-  <string id="action.new">Unduh SPT lain</string>
+  <string id="action.new">Sedot SPT lain</string>
   <string id="action.details">Lihat rincian</string>
   <string id="selection.title">Pilih SPT yang akan disedot</string>
   <string id="selection.help">gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT
@@ -39,13 +39,13 @@ Pilih SPT yang ingin disedot.</string>
   <string id="selection.shortcuts.manual">Sebagian SPT memiliki masa/model yang belum dapat dipetakan. Pilih SPT tersebut secara manual bila diperlukan.</string>
   <string id="download.details.body">{processed} dari {total} SPT sudah diproses. Kelengkapan {verified} SPT sudah diperiksa.</string>
   <string id="download.exported.title">File Excel sudah dibuat</string>
-  <string id="download.publish.title">Menyimpan hasil unduhan</string>
+  <string id="download.publish.title">Menyimpan hasil sedotan</string>
   <string id="download.complete.title">File Excel sudah siap</string>
   <string id="download.complete.body">Hasil untuk SPT yang dipilih sudah disimpan dan diperiksa.</string>
-  <string id="download.partial.title">Hasil unduhan belum lengkap</string>
-  <string id="download.stopping.title">Menghentikan unduhan…</string>
-  <string id="download.cancelled.title">Unduhan dihentikan</string>
-  <string id="download.error.title">Unduhan belum berhasil</string>
+  <string id="download.partial.title">Hasil sedotan belum lengkap</string>
+  <string id="download.stopping.title">Menghentikan sedotan…</string>
+  <string id="download.cancelled.title">Sedotan dihentikan</string>
+  <string id="download.error.title">Sedotan belum berhasil</string>
   <string id="overwrite.title">Ganti hasil sebelumnya?</string>
   <string id="overwrite.folder.label">Folder hasil sebelumnya</string>
   <string id="overwrite.help">File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.</string>
@@ -63,9 +63,9 @@ Pilih SPT yang ingin disedot.</string>
   <string id="stage.authentication">Masuk ke Coretax</string>
   <string id="stage.inventory">Daftar SPT</string>
   <string id="stage.details">Mengambil rincian</string>
-  <string id="stage.results">Hasil unduhan</string>
+  <string id="stage.results">Hasil sedotan</string>
   <string id="settings.title">Pengaturan</string>
-  <string id="scope.title">Ringkasan unduhan</string>
+  <string id="scope.title">Ringkasan sedotan</string>
   <string id="scope.year.label">Tahun pajak</string>
   <string id="scope.selected.label">SPT dipilih</string>
   <string id="status.initial">Masukkan NPWP dan tahun pajak, lalu klik Mulai Sedot.</string>
@@ -86,12 +86,12 @@ Pilih SPT yang ingin disedot.</string>
   <string id="main.poll.error">Proses tidak dapat dipantau. Periksa koneksi dan buka ulang aplikasi.</string>
   <string id="main.source.label.dom">DOM</string>
   <string id="main.source.label.json.hybrid.pilot">JSON-hybrid (pilot)</string>
-  <string id="main.status.menghentikan.unduhan.data.sementara.tetap">Menghentikan unduhan… data sementara tetap disimpan.</string>
-  <string id="main.status.menyiapkan.aplikasi.untuk.mengunduh.spt">Menyiapkan aplikasi untuk mengunduh SPT.</string>
+  <string id="main.status.menghentikan.unduhan.data.sementara.tetap">Menghentikan sedotan… data sementara tetap disimpan.</string>
+  <string id="main.status.menyiapkan.aplikasi.untuk.mengunduh.spt">Menyiapkan aplikasi untuk menyedot SPT.</string>
   <string id="main.status.periksa.kembali.npwp.dan.tahun">Periksa kembali NPWP dan tahun pajak.</string>
   <string id="main.status.proses.belum.bisa.dipantau.menunggu">Proses belum bisa dipantau. Menunggu proses berhenti; hasil belum dinyatakan selesai.</string>
   <string id="main.status.spt.diproses.0.total.terverifikasi">SPT diproses 0/{total}; terverifikasi 0.</string>
-  <string id="main.status.value1.menghentikan.unduhan">{value1} Menghentikan unduhan…</string>
+  <string id="main.status.value1.menghentikan.unduhan">{value1} Menghentikan sedotan…</string>
   <string id="main.status.value1.value2">{value1} · {value2}</string>
   <!-- overwrite: application presentation only -->
   <string id="overwrite.table.heading.file.yang.akan.diganti">File yang akan diganti</string>
@@ -128,7 +128,7 @@ Tahun pajak permintaan: {year}</string>
   <string id="settings.dialog.body.total.job.lama.memenuhi.syarat">{total} job lama memenuhi syarat. Perkiraan ruang: {value2} MiB.
 
 Capture mentah dan checkpoint job ini akan dihapus permanen; file hasil Downloads, akun, dan profil browser tetap disimpan. Pemeriksaan kepemilikan dan file akan diulang sebelum penghapusan. Jumlah yang dihapus dapat lebih sedikit. Lanjutkan?</string>
-  <string id="settings.dialog.body.ubah.jumlah.cache.job.ke">Ubah jumlah cache job ke 1–100 lalu Simpan. Nilai 0 menonaktifkan pemangkasan.</string>
+  <string id="settings.dialog.body.ubah.jumlah.cache.job.ke">Ubah jumlah cache job ke 1–100 lalu Simpan. Nilai 0 menonaktifkan auto pangkas.</string>
   <string id="settings.dialog.body.value1.job.dihapus.sepenuhnya.ada">{value1} job dihapus sepenuhnya; ada kandidat yang berubah, terkunci atau gagal dihapus. Sisa checkpoint mungkin tidak lengkap.</string>
   <string id="settings.dialog.body.value1.job.partial.gagal.berhasil">{value1} job PARTIAL/gagal berhasil dihapus. Hasil Downloads dan login tetap disimpan.</string>
   <string id="settings.dialog.body.value1.job.partial.gagal.dipilih">{value1} job PARTIAL/gagal dipilih (≈ {value2} MiB).
@@ -158,7 +158,7 @@ Seluruh capture dan checkpoint job terpilih akan dihapus secara permanen. Hasil 
   <string id="settings.dialog.title.tidak.dapat.menghapus">Tidak dapat menghapus</string>
   <string id="settings.field.label.akun.username">Akun / username</string>
   <string id="settings.field.label.browser">Browser</string>
-  <string id="settings.field.label.jumlah.cache.job.0.nonaktif">jumlah cache job (0 = nonaktif)</string>
+  <string id="settings.field.label.jumlah.cache.job.0.nonaktif">jumlah cache job disimpan (0 = nonaktif)</string>
   <string id="settings.field.label.password.baru">Password baru</string>
   <string id="settings.field.label.sumber.detail.spt">Sumber detail SPT</string>
   <string id="settings.message.login.sudah.dihapus">Login sudah dihapus</string>
@@ -171,8 +171,8 @@ Seluruh capture dan checkpoint job terpilih akan dihapus secara permanen. Hasil 
   <string id="settings.message.simpan.perubahan.sebelum.menutup.pengaturan">Simpan perubahan sebelum menutup Pengaturan?</string>
   <string id="settings.message.tidak.tersedia">Tidak tersedia</string>
   <string id="settings.message.value1.tetapi.pengaturan.belum.tersimpan">{value1}, tetapi pengaturan belum tersimpan. Coba Simpan lagi.</string>
-  <string id="settings.status.akun.tersimpan.dipakai.saat.mulai">Akun tersimpan dipakai saat Mulai unduh; akun kosong memakai login manual.</string>
-  <string id="settings.status.login.satu.yang.disimpan.sudah">Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai unduh.</string>
+  <string id="settings.status.akun.tersimpan.dipakai.saat.mulai">Akun tersimpan dipakai saat Mulai sedot; akun kosong memakai login manual.</string>
+  <string id="settings.status.login.satu.yang.disimpan.sudah">Login Satu yang disimpan sudah dihapus. Isi akun/password lalu Simpan untuk login otomatis saat Mulai sedot.</string>
   <string id="settings.status.memangkas.hanya.job.lama.yang">Memangkas hanya job lama yang masih aman...</string>
   <string id="settings.status.memeriksa.job.lama.yang.aman">Memeriksa job lama yang aman untuk dipangkas...</string>
   <string id="settings.status.memeriksa.job.partial.gagal.secara">Memeriksa job PARTIAL/gagal secara aman…</string>
@@ -180,7 +180,7 @@ Seluruh capture dan checkpoint job terpilih akan dihapus secara permanen. Hasil 
   <string id="settings.status.pemangkasan.selesai.atau.dibatalkan.nilai">Pemangkasan selesai atau dibatalkan. Nilai retensi tetap tersimpan.</string>
   <string id="settings.status.pembersihan.job.dibatalkan">Pembersihan job dibatalkan.</string>
   <string id="settings.status.pembersihan.selesai.atau.dibatalkan">Pembersihan selesai atau dibatalkan.</string>
-  <string id="settings.status.pengaturan.disimpan.akun.tersimpan.akan">Pengaturan disimpan. Akun tersimpan akan dipakai saat Mulai unduh.</string>
+  <string id="settings.status.pengaturan.disimpan.akun.tersimpan.akan">Pengaturan disimpan. Akun tersimpan akan dipakai saat Mulai sedot.</string>
   <string id="settings.status.pengaturan.disimpan.password.tidak.ditulis">Pengaturan disimpan. Password tidak ditulis ke file preferensi.</string>
   <string id="settings.status.perubahan.belum.disimpan.pilih.simpan">Perubahan belum disimpan. Pilih Simpan untuk menerapkannya.</string>
   <string id="settings.storage.unavailable">—</string>
@@ -230,8 +230,8 @@ Seluruh capture dan checkpoint job terpilih akan dihapus secara permanen. Hasil 
   <string id="update.window.title.pembaruan">Pembaruan</string>
   <!-- view: application presentation only -->
   <string id="view.hint.persentase.menunjukkan.progres.seluruh.proses">Persentase menunjukkan progres seluruh proses.</string>
-  <string id="view.hint.saat.pertama.kali.digunakan.aplikasi">Saat pertama kali digunakan, aplikasi perlu mengunduh paket pendukung. Pastikan koneksi internet tersedia.</string>
-  <string id="view.hint.selesaikan.login.captcha.atau.mfa">Selesaikan login, CAPTCHA, atau MFA di browser aplikasi. Unduhan berlanjut setelah akses siap.</string>
+  <string id="view.hint.saat.pertama.kali.digunakan.aplikasi">Saat pertama kali digunakan, aplikasi perlu menyedot paket pendukung. Pastikan koneksi internet tersedia.</string>
+  <string id="view.hint.selesaikan.login.captcha.atau.mfa">Selesaikan login, CAPTCHA, atau MFA di browser aplikasi. Sedotan berlanjut setelah akses siap.</string>
   <string id="view.hint.tunggu.sampai.proses.berhenti.data">Tunggu sampai proses berhenti. Data sementara yang sudah dibuat tetap disimpan.</string>
   <string id="view.metric.baris.terbaca.scanned">Baris terbaca: {scanned}</string>
   <string id="view.metric.belum.pasti.lengkap.value1">Belum pasti lengkap: {value1}</string>
@@ -246,10 +246,10 @@ Seluruh capture dan checkpoint job terpilih akan dihapus secara permanen. Hasil 
   <string id="view.state.title.menyiapkan.aplikasi">Menyiapkan aplikasi</string>
   <string id="view.state.title.menyiapkan.spt.pilihan">Menyiapkan SPT pilihan</string>
   <string id="view.state.title.periksa.file.yang.akan.diganti">Periksa file yang akan diganti</string>
-  <string id="view.state.title.pilih.spt.yang.ingin.diunduh">Pilih SPT yang ingin diunduh</string>
+  <string id="view.state.title.pilih.spt.yang.ingin.diunduh">Pilih SPT yang ingin disedot</string>
   <string id="view.state.title.selesaikan.login.di.browser">Selesaikan login di browser</string>
   <string id="view.state.title.tidak.ada.spt.yang.ditemukan">Tidak ada SPT yang ditemukan</string>
-  <string id="view.state.title.unduhan.belum.bisa.dilanjutkan">Unduhan belum bisa dilanjutkan</string>
+  <string id="view.state.title.unduhan.belum.bisa.dilanjutkan">Sedotan belum bisa dilanjutkan</string>
   <string id="view.widget.value1.label">{value1} · {label}</string>
   <!-- display placeholders and estimated-size captions -->
   <string id="settings.storage.approximate">≈ </string>

@@ -4,6 +4,7 @@ import tkinter as tk
 import pytest
 
 from spt_desktop import app as gui
+from spt_desktop.ui_copy import copy_text
 from spt_desktop import update_notice
 from support_gui import Controller, button, widgets
 
@@ -77,9 +78,9 @@ def test_check_updates_without_valid_build_does_not_fetch_or_open_browser(tmp_pa
         app = gui.App(root, tmp_path, controller=Controller())
         root.update()
         settings = app.settings()
-        assert button(settings, 'Cek pembaruan') is not None
-        button(settings, 'Cek pembaruan').invoke()
-        assert notices == ['Identitas build tidak tersedia']
+        assert button(settings, copy_text('settings.widget.cek.pembaruan')) is not None
+        button(settings, copy_text('settings.widget.cek.pembaruan')).invoke()
+        assert notices == [copy_text('update.dialog.title.identitas.build.tidak.tersedia')]
         assert app._update_after is None and not app._update_pending
         assert root.grab_current() is settings
         app._dispose()
@@ -103,15 +104,15 @@ def test_close_only_closes_notice_and_update_opens_fixed_folder(tmp_path, monkey
         labels = [w.cget('text') for w in widgets(dialog) if w.winfo_class() == 'TLabel']
         controls = sorted(w.cget('text') for w in widgets(dialog)
                           if w.winfo_class() == 'TButton')
-        assert labels == ['update tersedia']
-        assert controls == ['Close', 'Update']
+        assert labels == [copy_text('update.widget.update.tersedia')]
+        assert controls == [copy_text('update.widget.close'), copy_text('update.widget.update')]
         assert root.grab_current() is None
-        button(dialog, 'Close').invoke()
+        button(dialog, copy_text('update.widget.close')).invoke()
         assert app._update_dialog is None and not opened
 
         app._show_update_notice(notice)
         dialog = app._update_dialog
-        button(dialog, 'Update').invoke()
+        button(dialog, copy_text('update.widget.update')).invoke()
         assert opened == [(gui.UPDATE_FOLDER_URL, 2)]
         assert app._update_dialog is None
         assert controller.active is False
@@ -143,7 +144,7 @@ def test_update_notice_is_centered_on_its_visible_parent(
         # Allow small window-manager frame differences on Windows runners.
         assert abs(notice_center_x - parent_center_x) <= 16
         assert abs(notice_center_y - parent_center_y) <= 24
-        button(dialog, 'Close').invoke()
+        button(dialog, copy_text('update.widget.close')).invoke()
         assert app._update_dialog is None
         if from_settings:
             assert root.grab_current() is parent
@@ -173,7 +174,7 @@ def test_automatic_notice_waits_for_minimized_app_to_restore(
         app._receive_update(manual=False)
         assert app._update_dialog is not None
         assert app._update_seen == {'420'}
-        button(app._update_dialog, 'Close').invoke()
+        button(app._update_dialog, copy_text('update.widget.close')).invoke()
         app._dispose()
     finally:
         root.destroy()
@@ -205,7 +206,7 @@ def test_manual_settings_notice_is_not_deferred_by_iconic_main(
         assert not app._update_pending and app._update_results.empty()
         assert app._update_after is None
         assert root.grab_current() is dialog
-        button(dialog, 'Close').invoke()
+        button(dialog, copy_text('update.widget.close')).invoke()
         assert app._update_dialog is None
         assert root.grab_current() is settings
         app._dispose()
@@ -227,7 +228,7 @@ def test_update_from_settings_restores_settings_grab(tmp_path, monkeypatch):
         app._show_update_notice(notice)
         dialog = app._update_dialog
         assert root.grab_current() is dialog
-        button(dialog, 'Update').invoke()
+        button(dialog, copy_text('update.widget.update')).invoke()
         assert opened == [gui.UPDATE_FOLDER_URL]
         assert root.grab_current() is settings
         assert settings.winfo_exists()
@@ -259,7 +260,7 @@ def test_automatic_notice_deferred_until_active_job_finishes(tmp_path):
         assert app._update_results.empty()
         assert app._update_dialog is not None
         assert app._update_seen == {'420'}
-        button(app._update_dialog, 'Close').invoke()
+        button(app._update_dialog, copy_text('update.widget.close')).invoke()
         app._dispose()
     finally:
         controller.active = False
@@ -288,7 +289,7 @@ def test_automatic_notice_deferred_until_settings_closed(tmp_path):
         assert app._update_results.empty()
         assert app._update_dialog is not None
         assert root.grab_current() is None
-        button(app._update_dialog, 'Close').invoke()
+        button(app._update_dialog, copy_text('update.widget.close')).invoke()
         app._dispose()
     finally:
         root.destroy()
@@ -404,7 +405,7 @@ def test_update_notice_deferral_logs_once_until_presented(tmp_path, monkeypatch)
         app._receive_update(manual=False)
         assert app._update_dialog is not None
         assert not app._update_notice_deferred_logged
-        button(app._update_dialog, 'Close').invoke()
+        button(app._update_dialog, copy_text('update.widget.close')).invoke()
         app._dispose()
     finally:
         controller.active = False

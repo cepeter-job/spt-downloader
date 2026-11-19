@@ -5,6 +5,7 @@ import tkinter as tk
 
 import pytest
 from spt_desktop import app as gui
+from spt_desktop.ui_copy import copy_text
 from support_gui import Controller, widgets, button
 
 SATU = 'https://satu.intranet.pajak.go.id'
@@ -81,7 +82,7 @@ def test_saved_credentials_use_satu_even_after_legacy_coretax_settings(settings)
     password = next(w for w in widgets(app._settings_dialog)
                     if w.winfo_class() == 'TEntry' and w.cget('show'))
     password.insert(0, 'SYNTHETIC_PASSWORD_ONLY')
-    button(app._settings_dialog, 'Simpan').invoke(); root.update()
+    button(app._settings_dialog, copy_text('settings.widget.simpan')).invoke(); root.update()
     assert writes == [(SATU, ACCOUNT, 'SYNTHETIC_PASSWORD_ONLY')]
     assert password.get() == '' and not deletes
     assert not controller.active and not controller.exports and not controller.checks
@@ -102,7 +103,7 @@ def test_switch_to_manual_mode_keeps_saved_secret_and_requires_no_check(settings
                    if w.winfo_class() == 'TEntry' and not w.cget('show'))
     account.delete(0, 'end'); root.update()
     assert 'Login berhasil' not in app._credential_status.get()
-    button(app._settings_dialog, 'Simpan').invoke(); root.update()
+    button(app._settings_dialog, copy_text('settings.widget.simpan')).invoke(); root.update()
     assert app.preferences['identifier'] == '' and not writes and not deletes
     assert not controller.active and not controller.exports
 

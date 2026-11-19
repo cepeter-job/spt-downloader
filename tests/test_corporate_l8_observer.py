@@ -98,6 +98,31 @@ def test_l8_history_retains_transient_forbidden_hosts_removed_in_same_turn(
         fixture.close()
 
 
+def test_l8_history_large_unrelated_render_keeps_initial_clear(browser, tmp_path, monkeypatch):
+    """Regression: a burst of unrelated DOM nodes must not exhaust the L8 budget.
+
+    The real corporate SPA renders many unrelated grid cells; the old
+    full-subtree TreeWalker walked every one and flipped ``initial_clear`` to
+    false (``l8_not_clear``) on a clean, qualifying return. Only the L8 root
+    and a dependent form are L8 evidence, so unrelated nodes are not visited.
+    """
+    fixture = Fixture(browser, monkeypatch)
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            assert history(capture) is not None
+            page.evaluate('''() => {
+                const root = document.querySelector('rshshr-corporate-income-tax-return');
+                const wrap = document.createElement('div');
+                for (let i = 0; i < 8000; i++) wrap.appendChild(document.createElement('span'));
+                root.appendChild(wrap);
+            }''')
+            assert history(capture) is not None
+            assert page.evaluate('window.businessReads') == 0
+    finally:
+        fixture.close()
+
+
 @pytest.mark.parametrize('mutation', ['remove-reinsert', 'remove-parent-reinsert', 'replace', 'duplicate'])
 def test_l8_root_history_contradictions_are_fatal_even_with_final_connected_owner(
         browser, tmp_path, monkeypatch, mutation):
