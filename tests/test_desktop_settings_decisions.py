@@ -80,7 +80,7 @@ def test_settings_shows_requested_cache_and_login_copy(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     labels = [str(w.cget('text')) for w in widgets(dialog)
               if w.winfo_class() == 'TLabel']
-    assert 'jumlah cache job (0 = nonaktif)' in labels
+    assert 'jumlah cache job disimpan (0 = nonaktif)' in labels
     assert 'Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.' in labels
     assert not any('Job sukses lama hanya dipangkas' in label for label in labels)
     assert not any('CAPTCHA/MFA diselesaikan' in label for label in labels)

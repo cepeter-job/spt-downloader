@@ -24,7 +24,7 @@ def test_main_copy_is_exact_and_selection_is_not_automatic():
     assert copy_text('form.help') == 'Setelah daftar muncul, pilih SPT yang ingin disedot.'
     assert copy_text('selection.confirm') == 'Sedot SPT terpilih'
     assert STAGE_LABELS == ('Masuk ke Coretax', 'Daftar SPT',
-                            'Mengambil rincian', 'Hasil unduhan')
+                            'Mengambil rincian', 'Hasil sedotan')
 
 
 def test_selection_summary_requires_named_integer_counts():
@@ -85,7 +85,7 @@ def test_catalog_matches_approved_copy():
         'action.stop': 'Hentikan Sedotan',
         'action.open_result': 'Buka folder hasil',
         'action.open_partial': 'Buka hasil sementara',
-        'action.new': 'Unduh SPT lain',
+        'action.new': 'Sedot SPT lain',
         'action.details': 'Lihat rincian',
         'selection.title': 'Pilih SPT yang akan disedot',
         'selection.help': ('gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
@@ -108,13 +108,13 @@ def test_catalog_matches_approved_copy():
             'Kelengkapan {verified} SPT sudah diperiksa.'
         ),
         'download.exported.title': 'File Excel sudah dibuat',
-        'download.publish.title': 'Menyimpan hasil unduhan',
+        'download.publish.title': 'Menyimpan hasil sedotan',
         'download.complete.title': 'File Excel sudah siap',
         'download.complete.body': 'Hasil untuk SPT yang dipilih sudah disimpan dan diperiksa.',
-        'download.partial.title': 'Hasil unduhan belum lengkap',
-        'download.stopping.title': 'Menghentikan unduhan…',
-        'download.cancelled.title': 'Unduhan dihentikan',
-        'download.error.title': 'Unduhan belum berhasil',
+        'download.partial.title': 'Hasil sedotan belum lengkap',
+        'download.stopping.title': 'Menghentikan sedotan…',
+        'download.cancelled.title': 'Sedotan dihentikan',
+        'download.error.title': 'Sedotan belum berhasil',
         'overwrite.title': 'Ganti hasil sebelumnya?',
         'overwrite.folder.label': 'Folder hasil sebelumnya',
         'overwrite.help': 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.',
@@ -134,9 +134,9 @@ def test_catalog_matches_approved_copy():
         "stage.authentication": "Masuk ke Coretax",
         "stage.inventory": "Daftar SPT",
         "stage.details": "Mengambil rincian",
-        "stage.results": "Hasil unduhan",
+        "stage.results": "Hasil sedotan",
         "settings.title": "Pengaturan",
-        "scope.title": "Ringkasan unduhan",
+        "scope.title": "Ringkasan sedotan",
         "scope.year.label": "Tahun pajak",
         "scope.selected.label": "SPT dipilih",
         "status.initial": "Masukkan NPWP dan tahun pajak, lalu klik Mulai Sedot.",
