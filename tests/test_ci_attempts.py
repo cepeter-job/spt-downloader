@@ -159,6 +159,11 @@ def test_mixed_producer_attempts_still_verify_original_test_outcomes_and_partiti
     assert ci_tests.check_inventories(portable, shards, VERSION, COMMIT,
         run_id=RUN_ID, run_attempt='2',
         attempt_map={'portable': '1', 'shard-0': '1', 'shard-1': '2'}) == 15
+    from scripts.coverage_ratchet import check_windows_inputs
+    assert check_windows_inputs(
+        shards, mode='two-shards', python_version=VERSION, commit=COMMIT,
+        run_id=RUN_ID, run_attempt='2',
+        attempt_map={'shard-0': '1', 'shard-1': '2'}) == set(portable['all'])
     shards[1]['run_attempt'] = '1'
     with pytest.raises(ValueError, match='runner|run'):
         ci_tests.check_inventories(portable, shards, VERSION, COMMIT,
