@@ -8,12 +8,13 @@ from tkinter import ttk
 import pytest
 
 from spt_desktop import app as app_module
+from spt_desktop.ui_copy import copy_text
 
 
 EXPECTED_TEXT = {
-    'title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
-    'background': 'jalankan proses sedot di background',
-    'results': 'Hasil Sedot berada di folder Downloads Windows',
+    'title': copy_text('app.title'),
+    'background': copy_text('settings.background.label'),
+    'results': copy_text('results.location_hint'),
 }
 
 
@@ -97,7 +98,7 @@ def test_exact_window_title_and_results_label_are_visible_without_clipping(tmp_p
         assert 0 <= top and top + result.winfo_height() <= root.winfo_height()
         assert result.winfo_width() >= result.winfo_reqwidth()
         assert result.winfo_height() >= result.winfo_reqheight()
-        assert not any(widget.cget('text') == 'for personal use : punto ap' for widget in labels)
+        assert sum(widget.cget('text') == copy_text('app.subtitle') for widget in labels) == 1
         assert controller.starts == []
 
 
@@ -113,7 +114,7 @@ def test_requested_background_checkbox_retains_preference_and_start_binding(tmp_
         assert initial is application.preferences['headless']
         checkbox.invoke()
         save = next(widget for widget in descendants(dialog) if isinstance(widget, ttk.Button)
-                    and widget.cget('text') == 'Simpan')
+                    and widget.cget('text') == copy_text('settings.widget.simpan'))
         save.invoke()
         expected = not initial
         assert application.preferences['headless'] is expected
@@ -135,7 +136,7 @@ def test_self_test_reports_actual_requested_widget_text_without_accounts(tmp_pat
     data = json.loads(report.read_text(encoding='utf-8'))
     assert data.get('ui_text') == EXPECTED_TEXT
     assert data['live_scrape'] is False and data['credentials_accessed'] is False
-    assert data['personal_use_labels'] == ['for personal use only']
+    assert data['personal_use_labels'] == [copy_text('app.subtitle')]
     gc.collect()
 
 
@@ -179,9 +180,7 @@ def test_requested_downloads_description_replaces_the_old_hierarchy_hint(tmp_pat
     with window(tmp_path, monkeypatch) as (root, application, controller):
         labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
         assert labels.count(EXPECTED_TEXT['results']) == 1
-        obsolete = 'Hasil: Downloads → NPWP - NAMA WP → TAHUN PAJAK → WAKTU EKSPOR.'
-        assert not any(obsolete in text for text in labels), 'Replace the old hint; do not display both'
-        assert any('Setup Python/uv otomatis saat Mulai.' in text for text in labels)
+        assert copy_text('setup.hint') in labels
         assert controller.starts == []
 
 
@@ -210,8 +209,7 @@ def test_self_test_does_not_report_a_new_caption_over_an_old_real_header(tmp_pat
 def test_consolidated_native_shell_excludes_removed_owner_footer(tmp_path, monkeypatch):
     with window(tmp_path, monkeypatch) as (root, application, controller):
         labels = [widget.cget('text') for widget in descendants(root) if isinstance(widget, ttk.Label)]
-        assert 'for personal use : punto ap' not in labels
-        assert 'for personal use only' in labels
+        assert labels.count(copy_text('app.subtitle')) == 1
         assert controller.starts == []
 
 

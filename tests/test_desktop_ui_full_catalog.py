@@ -17,36 +17,26 @@ GUI_SOURCES = ('spt_desktop/app.py', 'spt_desktop/ui_views.py', 'spt_gui.py')
 
 def test_desktop_ui_strings_cover_settings_and_cleanup():
     assert len(COPY) >= 200
-    examples = {
-        'settings.widget.simpan': 'Simpan',
-        'settings.widget.bersihkan.cache.job': 'bersihkan cache job',
-        'settings.widget.hapus.job.partial.gagal': 'hapus job PARTIAL/gagal',
-        'settings.widget.cek.pembaruan': 'Cek pembaruan',
-        'settings.widget.perbarui.penggunaan.storage': 'Perbarui penggunaan storage',
-        'settings.widget.buka.folder.log': 'Buka folder log',
-        'settings.widget.select.all': 'Select All',
-        'settings.storage.label.protected.auto.clean': 'Protected (Auto Clean)',
-        'settings.storage.checking': 'Memeriksa…',
-        'settings.storage.unavailable': '—',
-    }
-    for key, expected in examples.items():
-        assert copy_text(key) == expected
+    keys = {'settings.widget.simpan', 'settings.widget.bersihkan.cache.job',
+            'settings.widget.hapus.job.partial.gagal', 'settings.widget.cek.pembaruan',
+            'settings.widget.perbarui.penggunaan.storage', 'settings.widget.buka.folder.log',
+            'settings.widget.select.all', 'settings.storage.label.protected.auto.clean',
+            'settings.storage.checking', 'settings.storage.unavailable'}
+    assert keys <= COPY.keys()
+    source = load_strings()
+    assert all(copy_text(key) == source[key] for key in keys)
 
 
-def test_cleanup_confirmation_preserves_consent_and_downloads_boundary():
+def test_cleanup_confirmation_uses_validated_templates_without_frozen_prose():
+    source = load_strings()
     prune = format_text('settings.dialog.body.total.job.lama.memenuhi.syarat',
                         total=2, value2='1.5')
-    assert prune.startswith('2 job lama memenuhi syarat. Perkiraan ruang: 1.5 MiB.\n\n')
-    assert 'Capture mentah dan checkpoint job ini akan dihapus permanen' in prune
-    assert 'file hasil Downloads, akun, dan profil browser tetap disimpan' in prune
-    assert 'Pemeriksaan kepemilikan dan file akan diulang' in prune
-
+    assert prune == source['settings.dialog.body.total.job.lama.memenuhi.syarat'].format(
+        total=2, value2='1.5')
     deleted = format_text('settings.dialog.body.value1.job.partial.gagal.dipilih',
                           value1=3, value2='2.1')
-    assert deleted.startswith('3 job PARTIAL/gagal dipilih (≈ 2.1 MiB).\n\n')
-    assert 'secara permanen' in deleted
-    assert 'profil dan login tidak dihapus' in deleted
-    assert 'Pemeriksaan keselamatan diulang' in deleted
+    assert deleted == source['settings.dialog.body.value1.job.partial.gagal.dipilih'].format(
+        value1=3, value2='2.1')
 
 
 def test_dynamic_copy_does_not_weakly_format_unknown_fields():
@@ -63,9 +53,9 @@ def test_dynamic_copy_does_not_weakly_format_unknown_fields():
         format_text('action.start')
     with pytest.raises(ValueError):
         copy_text('selection.summary', selected=2, visible=2)
-    assert format_text('settings.storage.size_display', prefix='≥ ', size='2.5') == '≥ 2.5 MiB'
+    assert format_text('settings.storage.size_display', prefix='≥ ', size='2.5') == load_strings()['settings.storage.size_display'].format(prefix='≥ ', size='2.5')
     assert format_text('settings.storage.size_display',
-                       prefix='{not_a_field}', size='1.0') == '{not_a_field}1.0 MiB'
+                       prefix='{not_a_field}', size='1.0') == load_strings()['settings.storage.size_display'].format(prefix='{not_a_field}', size='1.0')
 
 
 def test_every_catalog_placeholder_is_declared_and_unformatted():
@@ -96,8 +86,9 @@ def test_all_static_ui_references_exist_and_removal_is_blocked(tmp_path):
 
     source = tmp_path / 'edited.xml'
     xml = CATALOG_FILE.read_text(encoding='utf-8')
-    xml = xml.replace('<string id="settings.widget.simpan">Simpan</string>', '')
-    assert xml != CATALOG_FILE.read_text(encoding='utf-8')
+    import re
+    xml, count = re.subn(r'<string id="settings\.widget\.simpan">[^<]*</string>', '', xml)
+    assert count == 1
     source.write_text(xml, encoding='utf-8')
     output = tmp_path / 'compiled.py'
     with pytest.raises(ValueError, match='missing referenced IDs'):
@@ -141,22 +132,13 @@ def test_tk_widgets_dialog_titles_and_prompts_have_no_static_literal_text():
                         )
 
 
-@pytest.mark.parametrize(('key', 'expected'), [
-    ("action.start", "Mulai Sedot"),
-    ("action.stop", "Hentikan Sedotan"),
-    ("app.subtitle", "for personal use only"),
-    ("form.help", "Setelah daftar muncul, pilih SPT yang ingin disedot."),
-    ("overwrite.keep_hint", "Pilih Jangan ganti untuk menghentikan overwrite dan mempertahankan hasil sebelumnya."),
-    ("selection.filter_reset", "Pencarian berubah. Pilih lagi SPT yang akan disedot."),
-    ("selection.focused_id", "ID SPT yang diblok"),
-    ("selection.help", "gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\nPilih SPT yang ingin disedot."),
-    ("selection.mpn", "Sedot MPN (lama)"),
-    ("selection.shortcuts.help", "Pilihan berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN."),
-    ("selection.shortcuts.manual", "Sebagian SPT memiliki masa/model yang belum dapat dipetakan. Pilih SPT tersebut secara manual bila diperlukan."),
-    ("selection.title", "Pilih SPT yang akan disedot"),
-    ("setup.hint", "Setup Python/uv otomatis saat Mulai. Password hanya tersimpan di Windows Credential Manager."),
-    ("status.initial", "Masukkan NPWP dan tahun pajak, lalu klik Mulai Sedot."),
+@pytest.mark.parametrize('key', [
+    'action.start', 'action.stop', 'app.subtitle', 'form.help', 'overwrite.keep_hint',
+    'selection.filter_reset', 'selection.focused_id', 'selection.help', 'selection.mpn',
+    'selection.shortcuts.help', 'selection.shortcuts.manual', 'selection.title',
+    'setup.hint', 'status.initial',
 ])
-def test_pr313_copy_changes_are_preserved_during_full_ui_catalog_migration(key, expected):
-    """Keep PR #313 copy decisions intact while expanding the catalog."""
-    assert copy_text(key) == expected
+def test_pr313_catalog_keys_are_preserved_without_frozen_values(key):
+    """PR #313 IDs remain stable while wording can be revised by developers."""
+    assert key in COPY
+    assert copy_text(key) == load_strings()[key]

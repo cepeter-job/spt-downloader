@@ -3,10 +3,11 @@ from copy import deepcopy
 
 import pytest
 
+from spt_desktop.ui_copy import copy_text
 from support_gui import button, named_widget, window
 
 
-LABELS = ('All', 'Pemb. Terakhir', 'PPh Potput', 'PPN')
+LABELS = tuple(copy_text('selection.shortcuts.' + key) for key in ('all', 'latest', 'potput', 'ppn'))
 NAMES = ('select_all', 'select_latest', 'select_potput', 'select_ppn')
 
 
@@ -54,7 +55,7 @@ def test_four_top_checkboxes_start_unchecked_without_consent(tmp_path):
         tree = named_widget(dialog, 'records')
         assert all(w.winfo_rooty() + w.winfo_height() <= tree.winfo_rooty() for w in controls)
         assert not selected(dialog) and not controller.replies
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
 
 
 def test_all_selects_every_visible_record_and_unchecking_clears_it(tmp_path):
@@ -66,7 +67,7 @@ def test_all_selects_every_visible_record_and_unchecking_clears_it(tmp_path):
         assert checked(dialog, 'select_all') and not controller.replies
         invoke(root, dialog, 'select_all')
         assert not selected(dialog) and not controller.replies and data == original
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
 
 
 @pytest.mark.parametrize('name,expected', [
@@ -208,7 +209,7 @@ def test_unknown_models_and_missing_identity_require_manual_selection(tmp_path, 
         invoke(root, dialog, 'select_latest')
         assert selected(dialog) == {'known'}
         notice = named_widget(dialog, 'notice')
-        assert 'manual' in str(notice.getvar(str(notice.cget('textvariable')))).casefold()
+        assert copy_text('selection.shortcuts.manual') in str(notice.getvar(str(notice.cget('textvariable'))))
         invoke(root, dialog, 'select_all')
         assert selected(dialog) == {r['record_id'] for r in data['records']}
 
@@ -239,7 +240,7 @@ def test_search_never_promotes_an_older_model_when_latest_is_hidden(tmp_path):
         root.update()
         invoke(root, dialog, 'select_latest')
         assert not selected(dialog) and not controller.replies
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
         invoke(root, dialog, 'select_all')
         assert selected(dialog) == {'vat-normal'}
 
@@ -284,7 +285,7 @@ def test_confirm_sends_literal_ids_in_original_inventory_order_only(tmp_path):
         root.tk.call(tree.heading('type', 'command'))
         root.update()
         assert not controller.replies
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         assert controller.replies == [('selection', 'a' * 32, {
             'selected_ids': ['::synthetic {return}; [literal] / id', 'vat-feb'], 'mpn': False})]
         assert data == original and not controller.stopped
@@ -298,7 +299,7 @@ def test_empty_or_no_match_disables_shortcuts_and_confirmation(tmp_path, empty):
             root.update()
         assert all(named_widget(dialog, name).instate(['disabled']) for name in NAMES)
         assert not selected(dialog) and not controller.replies
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
 
 
 @pytest.mark.parametrize('name', NAMES)

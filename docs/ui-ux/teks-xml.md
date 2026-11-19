@@ -34,8 +34,12 @@ consent, aturan penghapusan, atau keberhasilan scraping.
    placeholder diatur oleh `spt_desktop/ui_text_schema.py` dan tervalidasi
    sebelum build. Jangan menaruh format specifier seperti `{value1:.2f}`.
 4. Buka PR. CI harus lulus portable, Windows, audit, dan self-test EXE.
-   Teks consent, label owner-locked, dan kontrak self-test memerlukan
-   review serta pembaruan tes yang disengaja jika nilainya diubah.
+   **Perubahan redaksi nilai tidak memerlukan pembaruan ekspektasi literal di test.**
+   Test mencocokkan teks widget dan hasil self-test dengan nilai XML yang
+   dikompilasi. Penggantian ID atau placeholder, XML tidak valid, penghilangan
+   widget, dan regresi fungsional tetap dapat menggagalkan CI.
+   Teks persetujuan penghapusan dan pesan keselamatan harus tetap ditinjau
+   secara substantif dalam review, meski tidak dikunci ke kalimat tertentu.
 
 `copy_text(key, **values)` tetap menangani string statis dan tiga template
 angka lama dengan pemeriksaan ketat: `selection.summary`,

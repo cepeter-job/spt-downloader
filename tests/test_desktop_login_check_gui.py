@@ -3,6 +3,7 @@ import gc
 import tkinter as tk
 import pytest
 from spt_desktop import app as gui
+from spt_desktop.ui_copy import copy_text
 
 ORIGIN='https://satu.intranet.pajak.go.id'
 ACCOUNT='SYNTHETIC_ACCOUNT'
@@ -41,7 +42,7 @@ def test_settings_has_no_login_check_controls_or_shortcut(window):
               if widget.winfo_class() == 'TButton']
     assert 'Cek login' not in labels
     assert 'Batalkan cek' not in labels
-    assert {'Simpan', 'Hapus login', 'Tutup'} <= set(labels)
+    assert {copy_text('settings.widget.simpan'), copy_text('settings.delete'), copy_text('settings.widget.tutup')} <= set(labels)
     assert not app._settings_dialog.bind('<Alt-c>')
     assert not ctl.exports and not ctl.checks
     assert not (path / 'jobs').exists()
@@ -54,7 +55,7 @@ def test_saving_password_keeps_settings_open_without_starting_a_worker(window, m
     entry.insert(0, 'SYNTHETIC_NEW_PASSWORD_ONLY')
     writes = []
     monkeypatch.setattr(gui, 'save_login', lambda *args: writes.append(args))
-    button(root, 'Simpan').invoke()
+    button(root, copy_text('settings.widget.simpan')).invoke()
     assert writes == [(ORIGIN, ACCOUNT, 'SYNTHETIC_NEW_PASSWORD_ONLY')]
     assert entry.get() == '' and app._settings_dialog.winfo_exists()
     assert not ctl.active and not ctl.exports and not ctl.checks
@@ -70,8 +71,8 @@ def test_settings_save_preserves_previous_export_result(window):
     app.open_button.state(['!disabled'])
     export_state = app._ui_state
     app.settings(); root.update_idletasks()
-    button(root, 'Simpan').invoke()
-    button(root, 'Tutup').invoke()
+    button(root, copy_text('settings.widget.simpan')).invoke()
+    button(root, copy_text('settings.widget.tutup')).invoke()
     assert app._result == previous and app.open_button.instate(['!disabled'])
     assert app._ui_state == export_state and not ctl.active
 
@@ -81,7 +82,7 @@ def test_source_selftest_exercises_masked_settings_without_login_check(tmp_path)
     report = tmp_path / 'selftest.json'
     assert spt_gui.self_test(report) == 0
     data = json.loads(report.read_text())
-    assert {'Simpan', 'Hapus login', 'Tutup'} <= set(data['gui_controls'])
+    assert {copy_text('settings.widget.simpan'), copy_text('settings.delete'), copy_text('settings.widget.tutup')} <= set(data['gui_controls'])
     assert 'Cek login' not in data['gui_controls'] and 'Batalkan cek' not in data['gui_controls']
     assert data['credential_check_controls'] is False
     assert not data['credentials_accessed'] and not data['live_scrape']

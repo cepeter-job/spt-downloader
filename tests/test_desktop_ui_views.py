@@ -2,6 +2,8 @@
 import gc
 import pytest
 
+from spt_desktop.ui_copy import copy_text
+
 
 def widgets(root):
     for child in root.winfo_children():
@@ -50,9 +52,9 @@ def test_shell_has_one_real_heading_and_downloads_hint(shell):
     headings = [w for w in widgets(root) if isinstance(w, ttk.Label)
                 and str(w.cget('style')) == 'Title.TLabel']
     assert len(headings) == 1 and headings[0] is view.heading
-    assert view.heading.cget('text') == 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang'
+    assert view.heading.cget('text') == copy_text('app.title')
     assert [w.cget('text') for w in widgets(root) if isinstance(w, ttk.Label)].count(
-        'Hasil Sedot berada di folder Downloads Windows') == 1
+        copy_text('results.location_hint')) == 1
     assert len(view.stage_labels) == 4
     assert all(str(w.cget('takefocus')) == '0' for w in view.stage_labels)
     assert isinstance(view.npwp_entry, ttk.Entry) and isinstance(view.year_entry, ttk.Entry)
@@ -281,7 +283,7 @@ def test_tiny_initial_window_shows_npwp_entry_without_scroll_action(shell):
     assert view.scope_panel.winfo_ismapped(), 'The summary remains reachable by scrolling up'
     assert _fits_scroll_viewport(view, view.npwp_entry)
     caption = next(widget for widget in view.npwp_field.winfo_children()
-                   if widget.winfo_class() == 'TLabel' and widget.cget('text') == 'NPWP (16 digit)')
+                   if widget.winfo_class() == 'TLabel' and widget.cget('text') == copy_text('form.npwp.label'))
     assert _fits_scroll_viewport(view, caption), 'Tiny window must keep the first field label with its entry'
 
 
