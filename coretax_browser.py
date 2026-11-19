@@ -244,6 +244,20 @@ FIELDS_JS = r'''(root) => {
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
 
+# Large-table pilot page-size guard: read the displayed label on the
+# original paginator owner in a single read-only Playwright evaluation,
+# without creating an ElementHandle that needs a second remote inner_text
+# RPC. The original ASCII decimal and caller size cap remain in Python.
+# Refuse a detached or replaced owner; no document-wide fallback.
+OWNED_PILOT_LABEL_TEXT_JS = r'''owner => {
+ const started=performance.now();
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
+ return {text:label ? label.innerText : '',
+         renderer_ms:performance.now()-started};
+}'''
+
 # Diagnostic-only: one read-only selector check on the ORIGINAL held owner.
 # performance.now() covers only renderer execution after the RPC begins.
 # The Python call duration minus this value is an inclusive residual: Playwright
@@ -799,14 +813,21 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     try:
         if max_page_size >= 250:
             # A previously selected larger page must not bypass the pilot limit.
-            # Attribute the original pilot lookup without an extra browser
-            # RPC. Host CPU snapshots are opt-in and outside the RPC timer.
+            # Resolve the same displayed label from the held paginator owner
+            # in one browser RPC (not query_selector + remote inner_text).
+            # Preserve passive/opt-in CPU attribution around that real call.
             with _timed_existing_rpc('pilot_label_lookup', ordinal, max_page_size,
-                                     passive_rpc_slots, host_cpu_slots):
+                                     passive_rpc_slots, host_cpu_slots) as timing:
                 with _timed_first_page_operation('pilot_label_lookup', ordinal, max_page_size):
-                    label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
+                    label_read = container_handle.evaluate(OWNED_PILOT_LABEL_TEXT_JS)
+                    if timing is not None and type(label_read) is dict:
+                        timing['renderer_ms'] = label_read.get('renderer_ms')
+            # The result is only a bounded structural label, never business
+            # data or capture authority. Unexpected shapes fail closed.
             with _timed_first_page_operation('pilot_label_text', ordinal, max_page_size):
-                selected = label.inner_text().strip() if label else ''
+                if type(label_read) is not dict or type(label_read.get('text')) is not str:
+                    raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+                selected = label_read['text'].strip()
             if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
                 raise RuntimeError('L3-B page size exceeds inspected pilot limit')
     finally:
