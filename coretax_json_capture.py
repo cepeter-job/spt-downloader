@@ -486,7 +486,8 @@ _L10C_HISTORY = """(d) => {
 _L8_HISTORY = """(d) => {
  const rootSelector='rshshr-corporate-income-tax-return';
  const dependents='rshshr-citr-l7-form,rshshr-citr-l13a-form,rshshr-citr-l13b-form';
- const state={initial_clear:d===document&&!d.querySelector(rootSelector+','+dependents),
+ const relevant=rootSelector+','+dependents;
+ const state={initial_clear:d===document&&!d.querySelector(relevant),
    root_seen:false,root_changed:false,dependent_seen:false};
  let root=null,remaining=4096;
  const visit=(node,removed)=>{
@@ -499,16 +500,17 @@ _L8_HISTORY = """(d) => {
      else {root=node;state.root_seen=true;}
    }
  };
+ // Only the L8 root and a dependent form are L8 evidence; a large but clean
+ // grid render must not exhaust the budget. Unrelated nodes are not visited.
  const inspect=(node,removed)=>{
-   visit(node,removed);
-   if(!state.initial_clear||!node.firstChild)return;
-   const walker=d.createTreeWalker(node,NodeFilter.SHOW_ELEMENT);
-   while(state.initial_clear){const next=walker.nextNode();if(!next)break;visit(next,removed);}
+   if(node.nodeType!==1)return;
+   const hits=node.matches(relevant)?[node]:[];
+   for(const el of node.querySelectorAll(relevant))hits.push(el);
+   for(const el of hits){if(!state.initial_clear)break;visit(el,removed);}
  };
  const process=records=>{
    if(!state.initial_clear)return;
    for(const record of records){
-     if(--remaining<0){state.initial_clear=false;break;}
      for(const node of record.removedNodes){inspect(node,true);if(!state.initial_clear)break;}
      for(const node of record.addedNodes){inspect(node,false);if(!state.initial_clear)break;}
      if(!state.initial_clear)break;
