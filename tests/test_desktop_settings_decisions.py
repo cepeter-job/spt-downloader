@@ -6,6 +6,7 @@ import tkinter as tk
 import pytest
 
 from spt_desktop import app as gui
+from spt_desktop.ui_copy import copy_text
 from support_gui import Controller, button, widgets
 
 
@@ -67,7 +68,7 @@ def current_decision(root, app, dialog):
     assert window_exists(root), 'Unsaved settings must prevent immediate application shutdown'
     assert app._settings_dialog is dialog, 'Unsaved settings must remain open for a decision'
     matches = [w for w in widgets(root)
-               if isinstance(w, tk.Toplevel) and w.title() == 'Perubahan belum disimpan']
+               if isinstance(w, tk.Toplevel) and w.title() == copy_text('settings.dirty.title')]
     assert len(matches) == 1, 'Closing dirty settings must offer one explicit decision'
     return matches[0]
 
@@ -80,12 +81,9 @@ def test_settings_shows_requested_cache_and_login_copy(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     labels = [str(w.cget('text')) for w in widgets(dialog)
               if w.winfo_class() == 'TLabel']
-    assert 'jumlah cache job (0 = nonaktif)' in labels
-    assert 'Login otomatis melalui Satu Kemenkeu. Akun kosong memakai login manual.' in labels
-    assert not any('Job sukses lama hanya dipangkas' in label for label in labels)
-    assert not any('CAPTCHA/MFA diselesaikan' in label for label in labels)
-    assert not any('Coretax → Satu' in label for label in labels)
-    assert button(dialog, 'bersihkan cache job')
+    assert copy_text('settings.field.label.jumlah.cache.job.0.nonaktif') in labels
+    assert copy_text('settings.widget.login.otomatis.melalui.satu.kemenkeu') in labels
+    assert button(dialog, copy_text('settings.widget.bersihkan.cache.job'))
     assert not writes and not errors
 
 
@@ -93,13 +91,13 @@ def test_dirty_close_defaults_to_return_and_preserves_edits(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     change_browser(dialog)
     prompt = decision(root, app, dialog)
-    assert root.focus_get() is button(prompt, 'Kembali')
+    assert root.focus_get() is button(prompt, copy_text('settings.widget.kembali'))
     assert root.grab_current() is prompt
     app._settings_close()
     root.update()
     assert len([w for w in widgets(root) if isinstance(w, tk.Toplevel)
-                and w.title() == 'Perubahan belum disimpan']) == 1
-    button(prompt, 'Kembali').invoke()
+                and w.title() == copy_text('settings.dirty.title')]) == 1
+    button(prompt, copy_text('settings.widget.kembali')).invoke()
     root.update()
     assert dialog.winfo_exists() and root.grab_current() is dialog
     assert persisted(path)['browser'] == 'msedge' and not writes and not errors
@@ -126,7 +124,7 @@ def test_discard_closes_without_writing_preferences_or_credentials(settings):
     change_browser(dialog)
     password_entry(dialog).insert(0, 'SYNTHETIC_NEW_PASSWORD_ONLY')
     prompt = decision(root, app, dialog)
-    button(prompt, 'Abaikan').invoke()
+    button(prompt, copy_text('settings.widget.abaikan')).invoke()
     root.update()
     assert app._settings_dialog is None and not dialog.winfo_exists()
     assert root.grab_current() is None
@@ -139,7 +137,7 @@ def test_save_from_decision_persists_then_closes(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     change_browser(dialog)
     prompt = decision(root, app, dialog)
-    button(prompt, 'Simpan').invoke()
+    button(prompt, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert persisted(path)['browser'] == 'chrome'
     assert app.preferences['browser'] == 'chrome'
@@ -157,7 +155,7 @@ def test_failed_save_keeps_settings_and_does_not_claim_success(settings, monkeyp
         raise OSError('SYNTHETIC_SECRET_MUST_NOT_APPEAR')
     monkeypatch.setattr(gui, 'save_login' if failure == 'credentials' else 'save_preferences', fail)
     prompt = decision(root, app, dialog)
-    button(prompt, 'Simpan').invoke()
+    button(prompt, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert app._settings_dialog is dialog and dialog.winfo_exists()
     assert not prompt.winfo_exists() and root.grab_current() is dialog
@@ -175,13 +173,13 @@ def test_partial_password_save_stays_pending_and_retry_does_not_repeat_vault_wri
     def fail(*args):
         raise OSError('SYNTHETIC_PREFERENCES_FAILURE')
     monkeypatch.setattr(gui, 'save_preferences', fail)
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert len(writes) == 1 and password_entry(dialog).get() == ''
-    assert 'Password sudah disimpan' in app._credential_status.get()
+    assert copy_text('settings.message.password.sudah.disimpan') in app._credential_status.get()
     prompt = decision(root, app, dialog)
     monkeypatch.setattr(gui, 'save_preferences', real_save)
-    button(prompt, 'Simpan').invoke()
+    button(prompt, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert len(writes) == 1 and app._settings_dialog is None
     assert 'password' not in persisted(path)
@@ -200,9 +198,9 @@ def test_reverted_preferences_close_without_a_false_dirty_prompt(settings):
 def test_settings_actions_preserve_credentials_without_starting_a_job(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     labels = [w.cget('text') for w in widgets(dialog) if w.winfo_class() == 'TButton']
-    assert {'Simpan', 'Hapus login', 'Tutup'} <= set(labels)
+    assert {copy_text('settings.widget.simpan'), copy_text('settings.delete'), copy_text('settings.widget.tutup')} <= set(labels)
     assert 'Cek login' not in labels and 'Batalkan cek' not in labels
-    button(dialog, 'Tutup').invoke()
+    button(dialog, copy_text('settings.widget.tutup')).invoke()
     root.update()
     assert app._settings_dialog is None and root.grab_current() is None
     assert not ctl.active and not ctl.exports and not writes and not errors
@@ -215,22 +213,22 @@ def test_partial_delete_keeps_saved_preferences_honest_and_requires_retry(settin
     def fail(*args):
         raise OSError('SYNTHETIC_DELETE_PREFERENCES_FAILURE')
     monkeypatch.setattr(gui, 'save_preferences', fail)
-    button(dialog, 'Hapus login').invoke()
+    button(dialog, copy_text('settings.delete')).invoke()
     root.update()
     assert app.preferences['identifier'] == 'SYNTHETIC_ACCOUNT'
     assert (path / 'preferences.json').read_bytes() == original
-    assert errors and 'Login sudah dihapus' in app._credential_status.get()
+    assert errors and copy_text('settings.message.login.sudah.dihapus') in app._credential_status.get()
     prompt = decision(root, app, dialog)
-    button(prompt, 'Kembali').invoke()
+    button(prompt, copy_text('settings.widget.kembali')).invoke()
 
 
 def test_deleted_login_cannot_be_reselected_without_new_password(settings, monkeypatch):
     root, app, ctl, dialog, path, writes, errors = settings
     monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *args, **kwargs: True)
-    button(dialog, 'Hapus login').invoke()
+    button(dialog, copy_text('settings.delete')).invoke()
     account = next(w for w in widgets(dialog) if w.winfo_class() == 'TEntry' and not w.cget('show'))
     account.insert(0, 'SYNTHETIC_ACCOUNT')
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert errors and persisted(path)['identifier'] == ''
     assert not writes
@@ -246,9 +244,9 @@ def test_settings_escape_and_window_close_offer_one_dirty_decision(settings, clo
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
     root.update()
     prompt = current_decision(root, app, dialog)
-    assert root.focus_get() is button(prompt, 'Kembali')
+    assert root.focus_get() is button(prompt, copy_text('settings.widget.kembali'))
     assert root.grab_current() is prompt
-    button(prompt, 'Kembali').invoke()
+    button(prompt, copy_text('settings.widget.kembali')).invoke()
     root.update()
     assert password_entry(dialog).get() == 'SYNTHETIC_NEW_PASSWORD_ONLY'
     assert root.grab_current() is dialog and not writes and not errors
@@ -265,7 +263,7 @@ def test_root_close_return_preserves_settings_and_cancels_shutdown(settings, pro
     if previous_prompt is not None:
         assert prompt is previous_prompt
     assert root.grab_current() is prompt
-    button(prompt, 'Kembali').invoke()
+    button(prompt, copy_text('settings.widget.kembali')).invoke()
     root.update()
     assert window_exists(root) and dialog.winfo_exists()
     assert root.grab_current() is dialog
@@ -273,13 +271,13 @@ def test_root_close_return_preserves_settings_and_cancels_shutdown(settings, pro
     # Returning must clear the application-close intent: a later Settings-only
     # discard should close just Settings, leaving the application running.
     prompt = decision(root, app, dialog)
-    button(prompt, 'Abaikan').invoke()
+    button(prompt, copy_text('settings.widget.abaikan')).invoke()
     assert window_exists(root)
     root.update()
     assert app._settings_dialog is None and root.grab_current() is None
 
 
-@pytest.mark.parametrize('choice', ['Simpan', 'Abaikan'])
+@pytest.mark.parametrize('choice', [copy_text('settings.widget.simpan'), copy_text('settings.widget.abaikan')])
 def test_root_close_waits_for_settings_save_or_discard(settings, choice):
     root, app, ctl, dialog, path, writes, errors = settings
     original = (path / 'preferences.json').read_bytes()
@@ -289,7 +287,7 @@ def test_root_close_waits_for_settings_save_or_discard(settings, choice):
     root.update()
     button(prompt, choice).invoke()
     assert not window_exists(root), 'An accepted application-close decision must finish shutdown'
-    if choice == 'Simpan':
+    if choice == copy_text('settings.widget.simpan'):
         assert persisted(path)['browser'] == 'chrome'
     else:
         assert (path / 'preferences.json').read_bytes() == original
@@ -306,14 +304,14 @@ def test_root_close_failed_save_keeps_settings_open_and_cancels_shutdown(setting
     root.tk.call(root.protocol('WM_DELETE_WINDOW'))
     prompt = current_decision(root, app, dialog)
     root.update()
-    button(prompt, 'Simpan').invoke()
+    button(prompt, copy_text('settings.widget.simpan')).invoke()
     assert window_exists(root)
     root.update()
     assert dialog.winfo_exists() and root.grab_current() is dialog
     assert errors and (path / 'preferences.json').read_bytes() == original
     assert 'Pengaturan disimpan.' not in app._credential_status.get()
     prompt = decision(root, app, dialog)
-    button(prompt, 'Abaikan').invoke()
+    button(prompt, copy_text('settings.widget.abaikan')).invoke()
     assert window_exists(root), 'A failed save must cancel the earlier application-close intent'
     root.update()
     assert app._settings_dialog is None and not writes
@@ -329,7 +327,7 @@ def test_changed_account_partial_save_retries_once_and_rejects_old_account_witho
     def fail(*args):
         raise OSError('SYNTHETIC_CHANGED_ACCOUNT_PREFERENCES_FAILURE')
     monkeypatch.setattr(gui, 'save_preferences', fail)
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert writes == [(gui.LOGIN_ORIGIN, 'SYNTHETIC_SECOND_ACCOUNT', 'SYNTHETIC_NEW_PASSWORD_ONLY')]
     assert password_entry(dialog).get() == ''
@@ -339,12 +337,12 @@ def test_changed_account_partial_save_retries_once_and_rejects_old_account_witho
     account.delete(0, 'end')
     account.insert(0, 'SYNTHETIC_ACCOUNT')
     error_count = len(errors)
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert len(errors) == error_count + 1
     account.delete(0, 'end')
     account.insert(0, 'SYNTHETIC_SECOND_ACCOUNT')
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert len(writes) == 1
     assert persisted(path)['identifier'] == 'SYNTHETIC_SECOND_ACCOUNT'
@@ -357,12 +355,12 @@ def test_return_discard_reopen_and_save_retire_old_dialog_callbacks(settings):
     original = (path / 'preferences.json').read_bytes()
     change_browser(dialog)
     first_prompt = decision(root, app, dialog)
-    button(first_prompt, 'Kembali').invoke()
+    button(first_prompt, copy_text('settings.widget.kembali')).invoke()
     root.update()
     assert not first_prompt.winfo_exists() and root.grab_current() is dialog
     second_prompt = decision(root, app, dialog)
     assert second_prompt is not first_prompt
-    button(second_prompt, 'Abaikan').invoke()
+    button(second_prompt, copy_text('settings.widget.abaikan')).invoke()
     root.update()
     assert not dialog.winfo_exists() and not second_prompt.winfo_exists()
     assert (path / 'preferences.json').read_bytes() == original
@@ -372,8 +370,8 @@ def test_return_discard_reopen_and_save_retire_old_dialog_callbacks(settings):
     assert reopened is not dialog and root.grab_current() is reopened
     change_browser(reopened)
     final_prompt = decision(root, app, reopened)
-    assert root.focus_get() is button(final_prompt, 'Kembali')
-    button(final_prompt, 'Simpan').invoke()
+    assert root.focus_get() is button(final_prompt, copy_text('settings.widget.kembali'))
+    button(final_prompt, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert app._settings_dialog is None and root.grab_current() is None
     assert root.focus_get() is app.settings_button
@@ -388,7 +386,7 @@ def test_retention_setting_defaults_to_ten_and_persists_without_credential_chang
     spinner.insert(0, '3')
     root.update()
     assert app.preferences['keep_jobs'] == 10  # Dirty until saved.
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert persisted(path)['keep_jobs'] == 3
     assert app.preferences['keep_jobs'] == 3
@@ -401,7 +399,7 @@ def test_invalid_retention_input_does_not_get_saved_or_claim_success(settings):
     spinner.delete(0, 'end')
     spinner.insert(0, '101')
     root.update()
-    button(dialog, 'Simpan').invoke()
+    button(dialog, copy_text('settings.widget.simpan')).invoke()
     root.update()
     assert errors and persisted(path)['keep_jobs'] == 10
     assert app.preferences['keep_jobs'] == 10
@@ -442,7 +440,7 @@ def test_manual_prune_previews_then_requires_explicit_confirmation(
                         lambda title, message, **kw: prompts.append((title, message)) or confirmed)
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kw: notices.append((title, message)))
-    button(dialog, 'bersihkan cache job').invoke()
+    button(dialog, copy_text('settings.widget.bersihkan.cache.job')).invoke()
     assert app._manual_prune_busy  # New export cannot begin during preview/delete.
     _pump_manual_prune(root)
     assert calls == (['preview', ('delete', ('1' * 32, '2' * 32))]
@@ -465,8 +463,8 @@ def test_manual_prune_refuses_unsaved_retention_change(settings, monkeypatch):
                         lambda title, message, **kw: notices.append((title, message)))
     monkeypatch.setattr(gui, 'preview_published_jobs',
                         lambda *a, **kw: pytest.fail('No preview before saved settings'))
-    button(dialog, 'bersihkan cache job').invoke()
-    assert notices and 'Simpan' in notices[0][0]
+    button(dialog, copy_text('settings.widget.bersihkan.cache.job')).invoke()
+    assert notices and copy_text('settings.dialog.title.simpan.pengaturan') == notices[0][0]
     assert not app._manual_prune_busy
     assert app.preferences['keep_jobs'] == 10 and not writes
 
@@ -495,7 +493,7 @@ def test_incomplete_preview_never_presents_delete_confirmation(settings, monkeyp
                         lambda *a, **kw: pytest.fail('Incomplete preview must not ask confirmation'))
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kw: notices.append((title, message)))
-    button(dialog, 'bersihkan cache job').invoke()
+    button(dialog, copy_text('settings.widget.bersihkan.cache.job')).invoke()
     _pump_manual_prune(root)
     assert calls == ['preview']
     assert len(notices) == 1 and 'belum lengkap' in notices[0][0]
@@ -528,7 +526,7 @@ def test_manual_prune_warns_after_partial_source_removal(settings, monkeypatch):
                         lambda title, message, **kw: warnings.append((title, message)))
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kw: infos.append((title, message)))
-    button(dialog, 'bersihkan cache job').invoke()
+    button(dialog, copy_text('settings.widget.bersihkan.cache.job')).invoke()
     _pump_manual_prune(root)
     assert calls and calls[0]['report'] is True
     assert calls[0]['allowed_ids'] == ('1' * 32,)
@@ -542,14 +540,14 @@ def test_storage_dashboard_shows_aggregate_fields_and_manual_action(settings):
     root, app, ctl, dialog, path, writes, errors = settings
     labels = [str(w.cget('text')) for w in widgets(dialog)
               if w.winfo_class() in ('TLabel', 'TLabelframe')]
-    assert 'Dashboard penyimpanan job' in labels or any(
-        'Dashboard penyimpanan job' in str(w.cget('text'))
+    assert copy_text('settings.widget.dashboard.penyimpanan.job') in labels or any(
+        copy_text('settings.widget.dashboard.penyimpanan.job') in str(w.cget('text'))
         for w in widgets(dialog) if w.winfo_class() == 'TLabelframe')
-    assert 'COMPLETE' in labels
-    assert 'PARTIAL' in labels
-    assert 'Gagal / dibatalkan' in labels
-    assert 'Protected (Auto Clean)' in labels
-    assert button(dialog, 'hapus job PARTIAL/gagal')
+    assert copy_text('settings.storage.label.complete') in labels
+    assert copy_text('settings.storage.label.partial') in labels
+    assert copy_text('settings.storage.label.gagal.dibatalkan') in labels
+    assert copy_text('settings.storage.label.protected.auto.clean') in labels
+    assert button(dialog, copy_text('settings.widget.hapus.job.partial.gagal'))
     assert button(dialog, 'Perbarui penggunaan storage')
 
 
@@ -586,20 +584,20 @@ def test_incomplete_manual_cleanup_requires_selected_rows_and_confirmation(
                         lambda title, body, **kwargs: prompts.append(body) or True)
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, message, **kwargs: notices.append((title, message)))
-    button(dialog, 'hapus job PARTIAL/gagal').invoke()
+    button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
     _pump_manual_prune(root)
     picker = next(w for w in widgets(root)
-                  if isinstance(w, tk.Toplevel) and w.title() == 'Pilih job PARTIAL/gagal')
+                  if isinstance(w, tk.Toplevel) and w.title() == copy_text('settings.window.title.pilih.job.partial.gagal'))
     assert app._manual_prune_busy
     assert not prompts
     table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
     assert token in table.get_children()
     assert token not in str(table.item(token, 'values'))
-    button(picker, 'Hapus terpilih').invoke()
-    assert notices and 'Pilih job' in notices[-1][0]
+    button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
+    assert notices and copy_text('settings.dialog.title.pilih.job') == notices[-1][0]
     assert not prompts
     table.selection_set(token)
-    button(picker, 'Hapus terpilih').invoke()
+    button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
     _pump_manual_prune(root)
     assert calls[:2] == [('preview', None), ('delete', ((token, digest),))]
     assert len(prompts) == 1
@@ -644,14 +642,14 @@ def test_incomplete_select_all_tracks_manual_selection_without_skipping_confirma
     monkeypatch.setattr(gui.messagebox, 'showinfo',
                         lambda title, body, **kw: notices.append(title))
 
-    button(dialog, 'hapus job PARTIAL/gagal').invoke()
+    button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
     _pump_manual_prune(root)
     picker = next(w for w in widgets(root)
-                  if isinstance(w, tk.Toplevel) and w.title() == 'Pilih job PARTIAL/gagal')
+                  if isinstance(w, tk.Toplevel) and w.title() == copy_text('settings.window.title.pilih.job.partial.gagal'))
     table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
     select_all = next(w for w in widgets(picker)
                       if w.winfo_class() == 'TCheckbutton'
-                      and w.cget('text') == 'Select All')
+                      and w.cget('text') == copy_text('settings.widget.select.all'))
     assert not table.selection()
     assert not select_all.instate(('selected',))
 
@@ -679,7 +677,7 @@ def test_incomplete_select_all_tracks_manual_selection_without_skipping_confirma
     select_all.invoke()
     root.update()
     assert set(table.selection()) == set(ids)
-    button(picker, 'Hapus terpilih').invoke()
+    button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
     assert len(prompts) == 1
     assert prompts[0][1] == 'no' and '3 job' in prompts[0][0]
     assert all(job_id not in prompts[0][0] for job_id in ids)
@@ -705,8 +703,8 @@ def test_incomplete_cleanup_refuses_unsaved_changes(settings, monkeypatch):
                         lambda title, message, **kwargs: notices.append(title))
     monkeypatch.setattr(gui, 'inspect_job_storage',
                         lambda *args, **kwargs: pytest.fail('No scan before save'))
-    button(dialog, 'hapus job PARTIAL/gagal').invoke()
-    assert notices == ['Simpan pengaturan']
+    button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
+    assert notices == [copy_text('settings.dialog.title.simpan.pengaturan')]
     assert not app._manual_prune_busy
 
 

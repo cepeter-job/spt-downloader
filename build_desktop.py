@@ -12,6 +12,7 @@ import sys
 import sysconfig
 from spt_desktop.runtime import WORKER_FILES, UV_VERSION, PYTHON_PROFILES, python_version
 from spt_desktop.windows import ProcessJob
+from spt_desktop.ui_copy import copy_text
 from spt_desktop.build_info import read_build_info
 
 ROOT=Path(__file__).resolve().parent
@@ -48,16 +49,17 @@ def validate_report(data, python_profile='production'):
             and data.get('credential_check_controls') is False
             and isinstance(data.get('gui_controls'), list)
             and not {'Cek login', 'Batalkan cek'}.intersection(data['gui_controls'])
-            and {'Simpan', 'Hapus login', 'Tutup'}.issubset(data['gui_controls'])
+            and {copy_text('settings.widget.simpan'),copy_text('settings.delete'),
+                 copy_text('settings.widget.tutup')}.issubset(data['gui_controls'])
             and data.get('automatic_login_controls') == {
                 'origin_selector_present':False,'credential_origin':'satu','account_forwarded':True}
-            and data.get('personal_use_labels') == ['for personal use only']
+            and data.get('personal_use_labels') == [copy_text('app.subtitle')]
             and data.get('bugreport_footer') == {
-                'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}
+                'text':copy_text('app.bugreport'),'bottom_right':True}
             and data.get('ui_text') == {
-                'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
-                'background':'jalankan proses sedot di background',
-                'results':'Hasil Sedot berada di folder Downloads Windows'}
+                'title':copy_text('app.title'),
+                'background':copy_text('settings.background.label'),
+                'results':copy_text('results.location_hint')}
             and data.get('credentials_accessed') is False and data.get('live_scrape') is False):
         raise RuntimeError('Packaged application self-test failed')
     sorting = data.get('selection_sorting_control')
@@ -70,7 +72,8 @@ def validate_report(data, python_profile='production'):
          'synthetic-unifikasi', 'synthetic-21', 'synthetic-badan-two', 'synthetic-badan-one']]
     if not (type(sorting) is dict
             and sorting.get('hierarchy') == ['type', 'year', 'month', 'model']
-            and sorting.get('directions') == ['Jenis pajak ▲', 'Jenis pajak ▼']
+            and sorting.get('directions') == [copy_text('selection.table.type') + ' ▲',
+                                              copy_text('selection.table.type') + ' ▼']
             and sorting.get('default_ordered_ids') == expected_orders[0]
             and sorting.get('ordered_ids') == expected_orders
             and sorting.get('selection_preserved') is True
