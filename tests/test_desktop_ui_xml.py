@@ -1,6 +1,7 @@
 """XML is the editable source; the packaged runtime is generated Python only."""
 
 from pathlib import Path
+import re
 
 import pytest
 
@@ -24,7 +25,7 @@ def test_compiler_generates_identical_python_constants(tmp_path):
     assert namespace['STRINGS'] == dict(COPY)
     assert '_ui_copy_generated' not in target.name
     assert copy_text('selection.summary', selected=2, visible=3, inventory=4) == (
-        '2 SPT dipilih · 3 dari 4 SPT ditampilkan.'
+        load_strings()['selection.summary'].format(selected=2, visible=3, inventory=4)
     )
 
 
@@ -37,17 +38,26 @@ def test_xml_is_not_exposed_as_an_external_packaging_resource(tmp_path):
     ).read_text(encoding='utf-8')
 
 
+def replace_entry(xml: str, key: str, value: str) -> str:
+    """Mutate exactly one string value, independently of its current wording."""
+    changed, count = re.subn(r'(<string id="' + re.escape(key) + r'">).*?(</string>)',
+                             lambda match: match.group(1) + value + match.group(2),
+                             xml, count=1, flags=re.DOTALL)
+    assert count == 1
+    return changed
+
+
 @pytest.mark.parametrize('mutation', [
     lambda value: value.replace('<resources language="id-ID">', '<resources language="en-US">'),
     lambda value: value.replace('</resources>', '<string id="app.title">Duplicate</string></resources>'),
     lambda value: value.replace('id="action.start"', 'id="not valid"'),
-    lambda value: value.replace('id="action.start"', 'id="unknown.placeholder"').replace(
-        '>Mulai Sedot</string>', '>{unreviewed}</string>'),
-    lambda value: value.replace('{selected} SPT dipilih', '{selection} SPT dipilih'),
+    lambda value: replace_entry(value.replace('id="action.start"', 'id="unknown.placeholder"'),
+                                'unknown.placeholder', '{unreviewed}'),
+    lambda value: replace_entry(value, 'selection.summary', '{selection}'),
     lambda value: value.replace('id="stage.results"', 'id="stage.results.removed"'),
-    lambda value: value.replace('>Mulai Sedot</string>', '><b>Mulai Sedot</b></string>'),
-    lambda value: value.replace('>Mulai Sedot</string>', '></string>'),
-    lambda value: value.replace('>Mulai Sedot</string>', '>&unexpected;</string>'),
+    lambda value: replace_entry(value, 'action.start', '<b>Nested UI</b>'),
+    lambda value: replace_entry(value, 'action.start', ''),
+    lambda value: replace_entry(value, 'action.start', '&unexpected;'),
     lambda value: value.replace('<resources language="id-ID">', '<!DOCTYPE foo><resources language="id-ID">'),
 ])
 def test_xml_rejects_invalid_edit(tmp_path, mutation):
@@ -65,13 +75,13 @@ def test_xml_rejects_invalid_edit(tmp_path, mutation):
 
 def test_developer_xml_change_is_compiled_without_python_edits(tmp_path):
     source = CATALOG_FILE.read_text(encoding='utf-8')
-    changed = source.replace('>Mulai Sedot</string>', '>Mulai SPT</string>')
+    changed = replace_entry(source, 'action.start', 'SYNTHETIC_EDITED_CAPTION')
     assert changed != source
     edited = tmp_path / 'edited.xml'
     edited.write_text(changed, encoding='utf-8')
-    assert load_strings(edited)['action.start'] == 'Mulai SPT'
+    assert load_strings(edited)['action.start'] == 'SYNTHETIC_EDITED_CAPTION'
     target = tmp_path / 'generated.py'
     generate(edited, target)
     namespace = {}
     exec(compile(target.read_text(encoding='utf-8'), str(target), 'exec'), namespace)
-    assert namespace['STRINGS']['action.start'] == 'Mulai SPT'
+    assert namespace['STRINGS']['action.start'] == 'SYNTHETIC_EDITED_CAPTION'
