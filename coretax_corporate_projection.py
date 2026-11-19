@@ -1599,6 +1599,10 @@ L4_POPULATED_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 _L4_A_COLUMNS = ('TIN', 'Name', 'TaxObjectCode', 'TaxBase', 'TaxRate', 'IncomeTax')
 _L4_A_METADATA = frozenset(('TaxObject', 'TaxBaseUsd', 'IncomeTaxUsd', 'Index',
                             'RecordId', 'IsManually', 'TableSource', 'Action'))
+# Withholding-slip-sourced L4 A rows carry these extra read-only fields. They are
+# not projected into any destination; they are evidenced as unused row metadata
+# only, so their presence must not force a whole-record fallback.
+_L4_A_EXTRA_METADATA = frozenset(('WithholdingDate', 'WithholdingSlipsAggregateIdentifier'))
 _L4_B_COLUMNS = ('TaxObjectCode', 'TypeOfIncome', 'IncomeSource', 'GrossIncome')
 
 
@@ -1628,6 +1632,23 @@ def _l4_text(value):
     return value
 
 
+# Non-displayed USD metadata (row TaxBaseUsd/IncomeTaxUsd, root
+# TotalFinalIncomeTaxPayableUsd/TotalTaxBaseUsd, footer TaxBaseUsd/IncomeTaxUsd)
+# carries finite, nonnegative exchange-rate precision up to eight decimal places.
+# It is validated but never rendered or summed; the original lexeme is preserved.
+_L4_USD_DECIMALS = 8
+
+
+def _l4_usd(value):
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l4_number')
+    number = _decimal(value)
+    if (number < 0 or number > _MAX_INTEGER or (number == 0 and number.is_signed())
+            or number != number.quantize(Decimal(1).scaleb(-_L4_USD_DECIMALS))):
+        raise _UnsupportedMetadata('unsupported_corporate_l4_number_precision')
+    return number
+
+
 def _l4_label(value, kind, labels):
     if type(value) is not str or not value or not isinstance(labels.get(kind), dict):
         raise _UnsupportedMetadata('unverified_corporate_l4_labels')
@@ -1642,8 +1663,10 @@ def _l4_metadata(value, key, path):
         if type(value) is not bool:
             raise _UnsupportedMetadata('unsupported_corporate_l4_row_metadata')
         return {'path': path, 'type': 'boolean', 'value': value}
-    if key in ('TaxBaseUsd', 'IncomeTaxUsd', 'Index'):
-        _l4_numeric(value, nullable=key != 'Index')
+    if key in ('TaxBaseUsd', 'IncomeTaxUsd'):
+        _l4_usd(value)
+    elif key == 'Index':
+        _l4_numeric(value, nullable=False)
     elif key == 'Action':
         if value is not None:
             raise _UnsupportedMetadata('unsupported_corporate_l4_row_metadata')
@@ -1682,7 +1705,7 @@ def _project_l4_populated(form, *, footer, pages, tax_type, locale, labels):
         total = page['total']
         for index, row in enumerate(page['data']):
             if (not isinstance(row, dict) or not set(_L4_A_COLUMNS) <= set(row)
-                    or set(row) - {*_L4_A_COLUMNS, *_L4_A_METADATA}):
+                    or set(row) - {*_L4_A_COLUMNS, *_L4_A_METADATA, *_L4_A_EXTRA_METADATA}):
                 raise _UnsupportedMetadata('unsupported_corporate_l4_row')
             rendered = [_l4_text(row['TIN']), _l4_text(row['Name']),
                         _l4_text(row['TaxObjectCode']),
@@ -1741,8 +1764,9 @@ def _project_l4_populated(form, *, footer, pages, tax_type, locale, labels):
                 entry['rule'] = 'angular-number-null-blank' if amount is None else 'angular-number-1.2-2-id'
             evidence.append(entry)
     for key in sorted(set(form) - {'ListOfIncomeExcludedFromIncomeTax'}):
-        number = _l4_numeric(form[key], 2 if key == 'TotalGrossIncome' else 0,
-                             exact_sum=key == 'TotalGrossIncome')
+        number = (_l4_usd(form[key]) if key in ('TotalFinalIncomeTaxPayableUsd', 'TotalTaxBaseUsd')
+                  else _l4_numeric(form[key], 2 if key == 'TotalGrossIncome' else 0,
+                                   exact_sum=key == 'TotalGrossIncome'))
         if key == 'TotalGrossIncome' and number != (gross or 0):
             raise _UnsupportedMetadata('unreconciled_corporate_l4_gross_total')
         entry = {**_evidence(form[key], [L4_ROOT, key]), 'source': 'current',
@@ -1761,11 +1785,17 @@ def _project_l4_populated(form, *, footer, pages, tax_type, locale, labels):
             'type': 'null' if value is None else 'array', 'value': deepcopy(value),
             'source': 'current', 'rule': 'original-inert-empty-block-b'})
     for key in sorted(footer):
-        number = _l4_numeric(footer[key])
+        number = _l4_usd(footer[key]) if key in ('TaxBaseUsd', 'IncomeTaxUsd') else _l4_numeric(footer[key])
         stored_key = {'TaxBase': 'TotalTaxBase', 'IncomeTax': 'TotalFinalIncomeTaxPayable',
                       'TaxBaseUsd': 'TotalTaxBaseUsd', 'IncomeTaxUsd': 'TotalFinalIncomeTaxPayableUsd'}[key]
-        if stored_key in form and number != _l4_numeric(form[stored_key]):
-            raise _UnsupportedMetadata('unreconciled_corporate_l4_footer_total')
+        if stored_key in form:
+            # USD footer carries full precision; the root USD total is stored at
+            # two decimals. Reconcile at the root's proven two-decimal precision
+            # while preserving each original lexeme in provenance.
+            stored = _l4_usd(form[stored_key]) if key in ('TaxBaseUsd', 'IncomeTaxUsd') else _l4_numeric(form[stored_key])
+            quantum = Decimal(1).scaleb(-2)
+            if number.quantize(quantum) != stored.quantize(quantum):
+                raise _UnsupportedMetadata('unreconciled_corporate_l4_footer_total')
         entry = {**_evidence(footer[key], [key]), 'source': 'footer',
                  'rule': 'original-reconciled-grid-footer'}
         if key in ('TaxBase', 'IncomeTax'):
