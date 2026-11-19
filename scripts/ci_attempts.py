@@ -110,9 +110,13 @@ def select(fetch, *, repo, run_id, sha, head_sha, current_attempt, python, mode)
                     or job.get('run_attempt') != attempt or not _positive(job.get('id'))
                     or job.get('status') != 'completed' or job.get('conclusion') != 'success'):
                 raise ValueError('Producer not successful on latest attempt: ' + slot)
-            if _time(job.get('started_at')) < began:
+            started = _time(job.get('started_at'))
+            if started < began:
                 # This is a UI/API replay of a job from an earlier attempt.
                 continue
+            completed = _time(job.get('completed_at'))
+            if completed < started:
+                raise ValueError('Invalid successful producer job lifetime')
             named = _names(slot, python, sha, attempt)
             checked = {}
             for kind, artifact_name in named.items():
@@ -126,6 +130,8 @@ def select(fetch, *, repo, run_id, sha, head_sha, current_attempt, python, mode)
                         or item['workflow_run'].get('id') != run_id
                         or item['workflow_run'].get('head_sha') != head_sha):
                     raise ValueError('Missing or invalid exact producer artifact: ' + artifact_name)
+                if not started <= _time(item.get('created_at')) <= completed:
+                    raise ValueError('Artifact was not uploaded during its successful producer job')
                 checked[kind] = {
                     'name': artifact_name, 'id': item['id'],
                     'size': item['size_in_bytes'], 'digest': item['digest'],
