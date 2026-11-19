@@ -13,6 +13,10 @@ STARTS = ['2026-11-18T11:00:00Z', '2026-11-18T12:00:00Z',
           '2026-11-18T13:00:00Z']
 
 
+def time_at(attempt, minute):
+    return STARTS[attempt - 1].replace('00:00Z', f'{minute:02d}:00Z')
+
+
 def fake_run(mode='four-shards', attempts=1, rerun=()):
     """Rerun entries: tuples of (attempt, slot) actually launched that attempt."""
     rerun = set(rerun)
@@ -31,7 +35,7 @@ def fake_run(mode='four-shards', attempts=1, rerun=()):
                     artifacts.append({
                         'name': name, 'id': attempt * 100 + index * 2 + (kind == 'coverage') + 1,
                         'size_in_bytes': 100, 'digest': 'sha256:' + 'c' * 64,
-                        'expired': False,
+                        'expired': False, 'created_at': time_at(attempt, 20),
                         'workflow_run': {'id': int(RUN_ID), 'head_sha': HEAD},
                     })
             name = (f'Portable tests (Python {VERSION})' if slot == 'portable'
@@ -40,8 +44,8 @@ def fake_run(mode='four-shards', attempts=1, rerun=()):
                 'id': attempt * 100 + index + 1, 'name': name,
                 'head_sha': HEAD, 'run_attempt': attempt,
                 'status': 'completed', 'conclusion': 'success',
-                'started_at': STARTS[last_run[slot] - 1].replace('11:00:', '11:01:') if
-                              last_run[slot] == 1 else STARTS[last_run[slot] - 1].replace('00:00Z', '01:00Z'),
+                'started_at': time_at(last_run[slot], 1),
+                'completed_at': time_at(last_run[slot], 25),
             })
         jobs[attempt] = rows
 
@@ -98,6 +102,7 @@ def test_package_retry_on_third_attempt_keeps_each_original_producer():
 @pytest.mark.parametrize('mutation', [
     'failed-rerun', 'missing-rerun-artifact', 'expired', 'wrong-head',
     'missing-digest', 'missing-shard', 'duplicate-artifact', 'zero-size',
+    'foreign-upload-time', 'invalid-job-lifetime',
 ])
 def test_invalid_producer_or_artifact_fails_closed(mutation):
     fetch, jobs, artifacts = fake_run(attempts=2, rerun={(2, 'shard-1')})
@@ -118,6 +123,10 @@ def test_invalid_producer_or_artifact_fails_closed(mutation):
         artifacts.append(deepcopy(artifacts[0]))
     elif mutation == 'zero-size':
         artifacts[0]['size_in_bytes'] = 0
+    elif mutation == 'foreign-upload-time':
+        artifacts[0]['created_at'] = time_at(2, 20)
+    elif mutation == 'invalid-job-lifetime':
+        jobs[1][0]['completed_at'] = time_at(1, 0)
     with pytest.raises(ValueError):
         resolve(fetch, attempts=2)
 
