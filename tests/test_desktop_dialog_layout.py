@@ -9,6 +9,7 @@ from tkinter import ttk
 import pytest
 
 from support_gui import ConsentController, consent_event, named_widget
+from spt_desktop.ui_copy import copy_text
 
 
 NPWP = '0000000000000001'
@@ -138,7 +139,7 @@ def test_filter_reset_survives_empty_tree_events(active_app):
     tree.event_generate('<<TreeviewSelect>>')
     settle(root)
     assert not tree.selection() and named_widget(dialog, 'confirm').instate(['disabled'])
-    assert 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.' in label_text(named_widget(dialog, 'notice'))
+    assert copy_text('selection.filter_reset') in label_text(named_widget(dialog, 'notice'))
     tree.selection_set('record-0')
     root.update()
     assert 'Pencarian berubah.' not in label_text(named_widget(dialog, 'notice'))
@@ -157,9 +158,10 @@ def test_selection_empty_and_no_match_keep_exact_counts(active_app, empty):
         named_widget(dialog, 'search').insert(0, 'synthetic-no-match')
         settle(root)
     assert label_text(named_widget(dialog, 'summary')) == (
-        '0 SPT dipilih · 0 dari 0 SPT ditampilkan.' if empty else '0 SPT dipilih · 0 dari 3 SPT ditampilkan.')
+        copy_text('selection.summary', selected=0, visible=0, inventory=0) if empty
+        else copy_text('selection.summary', selected=0, visible=0, inventory=3))
     assert label_text(named_widget(dialog, 'notice')) == (
-        'Daftar ini tidak memuat SPT yang bisa dipilih.' if empty else 'Tidak ada SPT yang cocok dengan pencarian.')
+        copy_text('selection.empty') if empty else copy_text('selection.no_match'))
     assert named_widget(dialog, 'confirm').instate(['disabled']) and not controller.replies
 
 

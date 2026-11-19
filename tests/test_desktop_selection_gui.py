@@ -5,6 +5,7 @@ import pytest
 
 
 from support_gui import named_widget, button, consent_event, widgets, window
+from spt_desktop.ui_copy import copy_text
 
 def select_first(root, dialog):
     tree = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'Treeview')
@@ -26,7 +27,7 @@ def test_selection_starts_empty_and_search_sends_only_the_clicked_return(tmp_pat
     with window(tmp_path, records()) as (root, app, controller, dialog):
         tree = next(widget for widget in widgets(dialog) if widget.winfo_class() == 'Treeview')
         button = next(widget for widget in widgets(dialog)
-                      if widget.winfo_class() == 'TButton' and widget.cget('text') == 'Sedot SPT terpilih')
+                      if widget.winfo_class() == 'TButton' and widget.cget('text') == copy_text('selection.confirm'))
         assert not tree.selection() and button.instate(['disabled']) and not controller.replies
         entry = named_widget(dialog, 'search')
         entry.insert(0, 'Februari')
@@ -69,7 +70,7 @@ def test_selection_uses_local_row_ids_and_preserves_the_observed_identifier(tmp_
     with window(tmp_path, payload) as (root, app, controller, dialog):
         tree = select_first(root, dialog)
         assert identifier not in tree.get_children()
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': [identifier], 'mpn': False})]
 
 
@@ -77,10 +78,10 @@ def test_mpn_checkbox_defaults_off_and_opts_in_on_confirm(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
         actions = named_widget(dialog, 'actions')
         mpn = named_widget(actions, 'mpn')
-        assert mpn.cget('text') == 'Sedot MPN'
+        assert mpn.cget('text') == copy_text('selection.mpn')
         assert mpn.instate(['!disabled']) and not mpn.instate(['selected'])
         select_first(root, dialog)
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         root.update()
         assert controller.replies == [('selection', 'a' * 32,
                                        {'selected_ids': ['badan-amendment'], 'mpn': False})]
@@ -94,7 +95,7 @@ def test_mpn_checkbox_checked_includes_mpn_in_reply(tmp_path):
         root.update()
         assert mpn.instate(['selected'])
         select_first(root, dialog)
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         root.update()
         assert controller.replies == [('selection', 'a' * 32,
                                        {'selected_ids': ['badan-amendment'], 'mpn': True})]
@@ -107,7 +108,7 @@ def test_filtering_clears_hidden_selections_before_consent(tmp_path):
         entry.insert(0, 'februari')
         root.update()
         assert len(tree.get_children()) == 1 and not tree.selection()
-        submit = button(dialog, 'Sedot SPT terpilih')
+        submit = button(dialog, copy_text('selection.confirm'))
         assert submit.instate(['disabled'])
         submit.invoke()
         assert not controller.replies
@@ -115,7 +116,7 @@ def test_filtering_clears_hidden_selections_before_consent(tmp_path):
 
 def test_empty_inventory_cannot_implicitly_authorize_all_returns(tmp_path):
     with window(tmp_path, {'records': []}) as (root, app, controller, dialog):
-        assert button(dialog, 'Sedot SPT terpilih').instate(['disabled'])
+        assert button(dialog, copy_text('selection.confirm')).instate(['disabled'])
         dialog.tk.call(dialog.protocol('WM_DELETE_WINDOW'))
         assert controller.stopped and not controller.replies
 
@@ -151,7 +152,7 @@ def test_dialog_callback_cannot_authorize_a_different_job(tmp_path, kind, payloa
     with window(tmp_path, payload, kind) as (root, app, controller, dialog):
         if kind == 'selection':
             select_first(root, dialog)
-            approve = button(dialog, 'Sedot SPT terpilih')
+            approve = button(dialog, copy_text('selection.confirm'))
         else:
             approve = button(dialog, 'Ganti file tersebut')
         controller.job_id = 'next-synthetic-job'
@@ -176,7 +177,7 @@ def test_duplicate_selection_requests_keep_one_dialog_and_cannot_reopen_after_re
         root.update()
         assert [child for child in root.winfo_children() if isinstance(child, tk.Toplevel)] == [dialog]
         assert tree.selection() == selected and len(controller.reads) == 1
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         app.on_event(consent_event(controller))
         root.update()
         assert not any(isinstance(child, tk.Toplevel) for child in root.winfo_children())
@@ -242,7 +243,7 @@ def test_rejected_consent_dismisses_without_cancelling_terminal_cleanup(tmp_path
         monkeypatch.setattr(controller, 'respond', lambda *args: False)
         if kind == 'selection':
             select_first(root, dialog)
-            approve = button(dialog, 'Sedot SPT terpilih')
+            approve = button(dialog, copy_text('selection.confirm'))
         else:
             approve = button(dialog, 'Ganti file tersebut')
         approve.invoke()
@@ -266,7 +267,7 @@ def test_overwrite_displays_the_exact_prior_export_folder(tmp_path):
 def test_selection_acknowledgement_updates_native_metrics_before_worker_event(tmp_path):
     with window(tmp_path, records()) as (root, app, controller, dialog):
         select_first(root, dialog)
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         root.update()
         assert app.view.scope_selected.get() == '1'
         assert 'SPT diproses: 0 / 1' in app.view.metric_text.get()
@@ -280,7 +281,7 @@ def test_confirmed_selection_updates_progress_before_first_detail_finishes(tmp_p
     with window(tmp_path, records()) as (root, app, controller, dialog):
         app.status.set('Pilih SPT yang akan disedot.')
         select_first(root, dialog)
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         root.update()
         assert controller.replies == [('selection', 'a' * 32, {'selected_ids': ['badan-amendment'], 'mpn': False})]
         assert app.status.get() == 'SPT diproses 0/1; terverifikasi 0.'
@@ -294,7 +295,7 @@ def test_stale_selection_reply_does_not_start_fake_capture_progress(tmp_path, mo
         app.status.set(original)
         monkeypatch.setattr(controller, 'respond', lambda *args: False)
         select_first(root, dialog)
-        button(dialog, 'Sedot SPT terpilih').invoke()
+        button(dialog, copy_text('selection.confirm')).invoke()
         root.update()
         assert app.status.get() == original
         assert not controller.replies and not controller.stopped
