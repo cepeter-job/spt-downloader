@@ -113,7 +113,17 @@ dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
 `panel`, `form`, `l3`, `l11a`, `l1d`, `l8`, `l7`,
 `l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
 nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
-Corporate verified. Khusus `corporate_observer_stage=l3`, sub-observer
+Corporate verified. Setiap penolakan juga membawa `corporate_refusal_reason`
+dari enum tetap: `build_unfamiliar`, `tabs_missing`, `tab_unrecognized`,
+`tab_duplicate`, `panel_unavailable`, `form_unavailable`, `grid_unavailable`,
+`induk_order`, `lifetime_unavailable`, `binding_unavailable`,
+`projection_unavailable`, `grid_structure`, `grid_pagination`,
+`incomplete_coverage`, `observation_error`. Penolakan tanpa alasan eksplisit
+memakai kelas turunan tahap, sehingga tidak ada gate Corporate yang jatuh ke
+fallback DOM tanpa nama. Khusus `corporate_observer_stage=build` dengan
+`corporate_refusal_reason=build_unfamiliar` juga mencatat
+`build.unfamiliar_build` (`build_source=corporate`, enum tetap saja, tanpa
+digest/URL/byte). Khusus `corporate_observer_stage=l3`, sub-observer
 mencatat `corporate_l3_reason` dari kategori tetap yang memisahkan pin/build,
 hash sumber MAIN (`main_digest`), hash sumber VENDOR (`vendor_digest`),
 jumlah tabel L3 (`table_count`), lifetime komponen awal/akhir,

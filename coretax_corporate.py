@@ -1524,15 +1524,23 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 fields['form_ordinal'] = seg_ordinal
             diagnostics.record('corporate.observe_timing', **fields)
 
-    def unavailable(error=None, *, l3_reason=None, l3_table_shape=None,
+    def unavailable(error=None, *, reason=None, l3_reason=None, l3_table_shape=None,
                     l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         # Emit already-measured stage segments so even a late refusal keeps
         # the bounded, value-free performance trail.
         _emit_timings()
+        if reason is None:
+            # A bare refusal still names its stage-derived class, so no corporate
+            # gate collapses into an unexplained whole-record DOM fallback.
+            reason = {'build': 'build_unfamiliar', 'tabs': 'tabs_missing',
+                      'tab': 'tab_unrecognized', 'panel': 'panel_unavailable',
+                      'form': 'form_unavailable', 'grid': 'grid_structure',
+                      'induk': 'induk_order'}.get(stage, 'observation_error')
         diagnostics.record('corporate.observe_unavailable', level='WARNING',
                            corporate_observer_stage=stage, form_ordinal=ordinal_safe,
+                           corporate_refusal_reason=reason,
                            corporate_l3_reason=l3_reason,
                            corporate_l3_table_shape=l3_table_shape,
                            corporate_l3_extra_layout=l3_extra_layout,
@@ -1553,11 +1561,14 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 or len(digest) != 64 or len(approved_digest) != 64
                 or any(c not in '0123456789abcdef' for c in digest + approved_digest)
                 or digest != approved_digest):
-            return unavailable()
+            # Name the redeploy instead of leaving a bare whole-record fallback:
+            # fixed enum only, never the digest, URL or asset bytes.
+            diagnostics.record('build.unfamiliar_build', build_source='corporate')
+            return unavailable(reason='build_unfamiliar')
         _advance('tabs')
         view, tabs = _tabs(page)
         if not tabs.count():
-            return unavailable()
+            return unavailable(reason='tabs_missing')
         forms, names = [], set()
         for ordinal in range(tabs.count()):
             _check_cancel(check_cancel)
@@ -1584,13 +1595,13 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             _advance('panel')
             panel = _native_panel(page, view, tab, name, record, check_cancel)
             if panel is None:
-                return unavailable()
+                return unavailable(reason='panel_unavailable')
             _check_corporate_route(page.url, selected)
             selector, root = FORMS[name]
             _advance('form')
             form = panel.locator(selector)
             if form.count() != 1 or not form.is_visible():
-                return unavailable()
+                return unavailable(reason='form_unavailable')
             binding = {'name':name, 'paths':[[root]], 'grids':[]}
             l10a_before = None
             if name == 'Induk':
@@ -1732,39 +1743,40 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             if name == 'L1-D':
                 _advance('l1d')
                 if 'Induk' not in names:
-                    return unavailable()
+                    return unavailable(reason='induk_order')
                 _check_cancel(check_cancel)
                 if not _enabled_form_binding(form, tab, name):
-                    return unavailable()
+                    return unavailable(reason='binding_unavailable')
                 projection = _observe_l1d(page, form, capture, digest, check_cancel)
                 _check_cancel(check_cancel)
                 _check_corporate_route(page.url, selected)
                 if projection is None or not _enabled_form_binding(form, tab, name):
-                    return unavailable()
+                    return unavailable(reason='projection_unavailable')
                 projection['visibility_binding'] = 'current-induk-enabled-v1'
                 binding['projection'] = projection
             if name == 'L8':
                 _advance('l8')
                 if 'Induk' not in names:
-                    return unavailable()
+                    return unavailable(reason='induk_order')
                 projection = _observe_l8(page, form, capture, digest, check_cancel)
                 if projection is None:
-                    return unavailable()
+                    return unavailable(reason='projection_unavailable')
                 binding['projection'] = projection
             if name == 'L7':
                 _advance('l7')
                 from coretax_corporate_projection import BUILD_DIGESTS, MAIN_SOURCE
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
-                    return unavailable()
+                    return unavailable(reason='induk_order' if 'Induk' not in names
+                                       else 'binding_unavailable')
                 main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
                 _check_cancel(check_cancel)
                 if main_digest != BUILD_DIGESTS.get(MAIN_SOURCE):
-                    return unavailable()
+                    return unavailable(reason='binding_unavailable')
                 grid = form.locator('rsh-citr-l7-grid1')
                 if (grid.count() != 1 or grid.locator('p-table').count() != 1
                         or grid.locator('table').count() != 1 or form.locator('table').count() != 1):
-                    return unavailable()
+                    return unavailable(reason='grid_unavailable')
                 metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
                 locale = page.evaluate('() => navigator.language')
                 binding['projection'] = {'kind': 'corporate-l7-v1', 'builds': {
@@ -1781,19 +1793,20 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                 from coretax_json import CORPORATE_COUNTRY_REFERENCE_URL
                 from coretax_masa_observer import TABLE, _PPN_MAIN_BUILD_HASH
                 if 'Induk' not in names or L11C_BUILD_DIGESTS.get(CIT_SOURCE_URL) != digest:
-                    return unavailable()
+                    return unavailable(reason='induk_order' if 'Induk' not in names
+                                       else 'binding_unavailable')
                 main_digest = page.evaluate(_PPN_MAIN_BUILD_HASH, MAIN_SOURCE)
                 _check_cancel(check_cancel)
                 vendor_digest = page.evaluate(_BUILD_HASH, VENDOR_SOURCE)
                 _check_cancel(check_cancel)
                 if (main_digest != L11C_BUILD_DIGESTS.get(MAIN_SOURCE)
                         or vendor_digest != L11C_BUILD_DIGESTS.get(VENDOR_SOURCE)):
-                    return unavailable()
+                    return unavailable(reason='binding_unavailable')
                 grid = form.locator('rshshr-citr-l11c-form-grid1')
                 if (grid.count() != 1 or grid.locator('ui-grid-offline').count() != 1
                         or grid.locator('p-table').count() != 1 or grid.locator('table').count() != 1
                         or form.locator('table').count() != 1):
-                    return unavailable()
+                    return unavailable(reason='grid_unavailable')
                 metadata = grid.locator('table').evaluate(TABLE.replace('GROUP', '()=>""'))
                 environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
                 references = []
@@ -1915,7 +1928,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             # their approved pin can adopt this completeness contract.
             if digest == CIT_SOURCE_SHA256 and (
                     set(FORMS) - {'L1-B', 'L8'} - names):
-                return unavailable()
+                return unavailable(reason='incomplete_coverage')
             # Only L1-B and L8 are reviewed as legitimately absent.
             # Their path-only bindings remain strictly null/missing-inert.
             for absent in ('L1-B', 'L8'):
