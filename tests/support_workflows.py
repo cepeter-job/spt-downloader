@@ -241,7 +241,15 @@ def _permissions(document, overrides=None):
                 assert step['with']['name'].endswith('-attempt${{ github.run_attempt }}')
                 assert step['with'].get('overwrite', False) is False, 'Previous attempt evidence must be retained'
             if _action(step, 'actions/download-artifact') and 'name' in step.get('with', {}):
-                assert step['with']['name'].endswith('-attempt${{ github.run_attempt }}')
+                name_value = step['with']['name']
+                if name == 'package' and name_value.startswith(
+                        ('test-inventory-', 'windows-coverage-')):
+                    # Exact producer-specific expression is additionally checked
+                    # by validate_production/validate_windows_coverage below.
+                    assert 'steps.producer-attempts.outputs.' in name_value
+                    assert name_value.endswith('_attempt }}')
+                else:
+                    assert name_value.endswith('-attempt${{ github.run_attempt }}')
 
 
 def validate_production(document):
