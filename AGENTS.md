@@ -327,6 +327,26 @@ speedup; retain the 180-second table budget and PARTIAL behavior.
 
 DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
 
+For the large-table DOM fallback only (`max_page_size >= 250`), resolve
+Previous on the original captured owner in **one** read-only `evaluate_handle`
+call with the exact enabled selector; `as_element()` returns its original
+control (or None). Dispose the returned handle on every path, including Stop,
+exceptions and an absent control. Never follow a second probe with a
+`query_selector`, use a global replacement or assume the control is actionable.
+The original state read, click-time owner/actionability checks, idle wait and
+state verification still govern each real Previous click. The independent
+final Previous limit check remains, but uses a single owner-bound boolean
+`evaluate` rather than constructing an unused missing-control handle.
+Smaller-table lookup/limit paths remain unchanged. A detached owner or
+disconnected control must still fail closed; the existing `capture_panel`
+exception handler marks the record/run non-COMPLETE, reports `capture_failed`
+and omits the table, not a retained-rows result. An ordinary bounded
+pagination failure after a verified snapshot retains prior verified pages
+with `complete=False`. A fast lookup is an *unverified latency hypothesis*:
+the shared browser transport can still stall. Preserve Stop, original owner,
+the 180-second budget, source totals, native admission and publication gates;
+never infer complete capture or a reproducible speedup from a synthetic test.
+
 
 Optional large-table Previous RPC diagnostic (issue #161) is strictly
 **opt-in** via exact process environment `SPT_DIAG_DOM_RPC_PROBE=1` and

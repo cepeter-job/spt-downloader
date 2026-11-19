@@ -243,6 +243,25 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
+# One owner-bound query returns the *original control*, not a boolean that
+# requires a second round-trip to resolve an ElementHandle when it exists.
+# A returned handle is used only by the existing click guard and is disposed
+# after the attempt. Missing Previous yields a JSHandle(null), never a guessed
+# replacement or a document-wide search.
+OWNED_PREVIOUS_CONTROL_JS = r'''(owner, selector) => {
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ return owner.querySelector(selector);
+}'''
+
+# The final post-loop limit check needs only presence, not a button handle.
+# Keep its independent check (including after max_pages iterations), on the
+# same owner with the exact original enabled selector.
+OWNED_PREVIOUS_PRESENT_JS = r'''(owner, selector) => {
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ return owner.querySelector(selector)!==null;
+}'''
 
 # Large-table pilot page-size guard: read the displayed label on the
 # original paginator owner in a single read-only Playwright evaluation,
@@ -879,39 +898,49 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     rewind_started = _diagnostic_clock()
     rewind_clicks = 0
     # Aggregate repeated Previous operations into one bounded event per stage.
-    # No extra locator/evaluate/click/wait calls; all exception/Stop paths retain
-    # their original propagation and the inclusive previous_rewind timing.
+    # Large tables resolve the owned control in a single browser round-trip,
+    # dispose that result on every path, and retain original Stop/actionability
+    # checks, rewind semantics and inclusive timings.
     rewind_timings = {} if max_page_size >= 250 else None
     try:
         for attempt in range(max_pages):
             with _timed_rewind_operation(rewind_timings, 'previous_stop_check'):
                 _check_cancel(check_cancel)
             if attempt == 0:
-                # At most one read-only probe before the FIRST existing
-                # Previous lookup; no new RPC on ordinary/default captures.
+                # Keep main's independently reviewed optional read-only
+                # diagnostic. No extra browser RPC when diagnostic is OFF.
                 _observe_dom_rpc_delay(
                     container_handle, previous_selector,
                     stage='before_previous_lookup', ordinal=ordinal,
                     max_page_size=max_page_size, capture_deadline=capture_deadline,
                     check_cancel=check_cancel)
-            with _timed_existing_rpc('previous_lookup', ordinal, max_page_size,
-                                     passive_rpc_slots, host_cpu_slots):
-                with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
-                    previous = container_handle.query_selector(previous_selector)
-            if not previous:
-                break
-            with _timed_rewind_operation(rewind_timings, 'previous_state'):
-                state = container_handle.evaluate(STATE_JS)
-            with _timed_rewind_operation(rewind_timings, 'previous_click'):
-                _click_table_paginator(previous, container_handle, check_cancel)
-                rewind_clicks += 1
-            with _timed_rewind_operation(rewind_timings, 'previous_idle'):
-                wait_idle(page)
-            with _timed_rewind_operation(rewind_timings, 'previous_verify'):
-                if container_handle.evaluate(STATE_JS) == state:
-                    raise RuntimeError('Table pagination did not return to the first page')
-        # Independent, at-most-once final-limit diagnostic, only when ample
-        # capture time remains. No authority to skip the real final check.
+            previous_handle = None
+            try:
+                with _timed_existing_rpc('previous_lookup', ordinal, max_page_size,
+                                         passive_rpc_slots, host_cpu_slots):
+                    with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
+                        if max_page_size >= 250:
+                            previous_handle = container_handle.evaluate_handle(
+                                OWNED_PREVIOUS_CONTROL_JS, previous_selector)
+                            previous = previous_handle.as_element()
+                        else:
+                            previous = container_handle.query_selector(previous_selector)
+                if not previous:
+                    break
+                with _timed_rewind_operation(rewind_timings, 'previous_state'):
+                    state = container_handle.evaluate(STATE_JS)
+                with _timed_rewind_operation(rewind_timings, 'previous_click'):
+                    _click_table_paginator(previous, container_handle, check_cancel)
+                    rewind_clicks += 1
+                with _timed_rewind_operation(rewind_timings, 'previous_idle'):
+                    wait_idle(page)
+                with _timed_rewind_operation(rewind_timings, 'previous_verify'):
+                    if container_handle.evaluate(STATE_JS) == state:
+                        raise RuntimeError('Table pagination did not return to the first page')
+            finally:
+                if previous_handle is not None:
+                    _dispose_table_handle(previous_handle)
+        # Preserve main's opt-in diagnostic before the independent final check.
         _observe_dom_rpc_delay(
             container_handle, previous_selector,
             stage='before_previous_limit_lookup', ordinal=ordinal,
@@ -920,7 +949,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         with _timed_existing_rpc('previous_limit_lookup', ordinal, max_page_size,
                                  passive_rpc_slots):
             with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
-                if container_handle.query_selector(previous_selector):
+                if (container_handle.evaluate(OWNED_PREVIOUS_PRESENT_JS, previous_selector)
+                        if max_page_size >= 250
+                        else container_handle.query_selector(previous_selector)):
                     raise RuntimeError(f'Table reset page limit {max_pages} reached')
     finally:
         if rewind_timings is not None:
