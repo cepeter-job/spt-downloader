@@ -55,3 +55,6 @@ cache/
 tools/
 app/
 *.exe
+
+# Generated from resources/ui/id-ID.xml at build time, not a hand-edited source.
+/spt_desktop/_ui_copy_generated.py

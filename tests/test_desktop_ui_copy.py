@@ -130,6 +130,19 @@ def test_catalog_matches_approved_copy():
         'settings.delete': 'Hapus login',
         'settings.dirty.title': 'Perubahan belum disimpan',
     }
+    expected.update({
+        "stage.authentication": "Masuk ke Coretax",
+        "stage.inventory": "Daftar SPT",
+        "stage.details": "Mengambil rincian",
+        "stage.results": "Hasil unduhan",
+        "settings.title": "Pengaturan",
+        "scope.title": "Ringkasan unduhan",
+        "scope.year.label": "Tahun pajak",
+        "scope.selected.label": "SPT dipilih",
+        "status.initial": "Masukkan NPWP dan tahun pajak, lalu klik Mulai unduh.",
+        "form.year.label": "Tahun pajak",
+        "setup.hint": "Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.",
+    })
     assert dict(COPY) == expected
     assert 'app.credit' not in COPY
 
@@ -142,9 +155,11 @@ def test_copy_module_has_only_standard_library_imports():
         if isinstance(node, ast.Import):
             modules.extend(alias.name.split('.')[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            assert node.level == 0
-            modules.append(node.module.split('.')[0])
-    assert set(modules) <= {'typing', 'types', 'string', '__future__', 'collections'}
+            if node.level == 1:
+                assert node.module in {'ui_text_schema', 'ui_text_xml', '_ui_copy_generated'}
+            else:
+                modules.append(node.module.split('.')[0])
+    assert set(modules) <= {'typing', 'types', 'sys', 'string', '__future__', 'collections'}
 
 
 @pytest.mark.parametrize('key,expected', [
