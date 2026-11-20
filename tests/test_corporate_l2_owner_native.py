@@ -17,13 +17,14 @@ from test_corporate_l1d_observer import open_selected
 from test_corporate_l1d_native import DETAIL
 from test_corporate_l2_owner import populated
 from test_corporate_l2_projection import wire
-from test_corporate_l11c_native import COUNTRY, catalog
+from test_corporate_l11c_native import COUNTRY, catalog, related_person_catalog
 from test_json_hybrid_native import browser as browser
 import support_json_corpus as corpus
 
 
 A_HEADERS = ['NO.', 'NAMA', 'ALAMAT', 'NEGARA', 'NPWP/NIK', 'Jabatan',
              'Modal Disetor / NILAI (Rp)', 'Modal Disetor / %', 'DIVIDEN/PEMBAGIAN LABA(Rp)']
+RELATED_PERSON = corpus.ORIGIN + '/referencedata/api/currentreferencedata/id-ID/RELATED_PERSON_TYPE'
 GROUPS = [
     'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',
     'B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI']
@@ -59,6 +60,13 @@ class Fixture(SpaFixture):
             assert route.request.method == 'GET' and route.request.post_data is None
             return route.fulfill(content_type='application/json',
                 body=corpus.wire({'IsSuccessful': True, 'Payload': catalog()}))
+        if route.request.url == RELATED_PERSON:
+            # The L2 owner needs COUNTRY_CODE + RELATED_PERSON_TYPE; a later
+            # return reacquires the cached catalogs, so serve both here.
+            self.requests.append((route.request.url, route.request.method))
+            assert route.request.method == 'GET' and route.request.post_data is None
+            return route.fulfill(content_type='application/json',
+                body=corpus.wire({'IsSuccessful': True, 'Payload': related_person_catalog()}))
         return super().route(route)
 
     def document(self):
@@ -66,6 +74,10 @@ class Fixture(SpaFixture):
         # Only the test's separate post-native DOM oracle enables value reads.
         # Every production observer/capture call still runs with the trap armed.
         source = source.replace('if(owner&&(', 'if(!window.oracleRead&&owner&&(')
+        if self.defect == 'cached-references':
+            # A later return in the same job: the SPA served the catalog from
+            # cache, so no fresh reference GET is observed.
+            return source
         return source.replace('.then(()=>window.primaryDone=true)',
             '.then(()=>fetch(' + json.dumps(COUNTRY) + ')).then(r=>r.json()).then(()=>window.primaryDone=true)')
 
@@ -312,6 +324,29 @@ def test_unproved_native_owner_keeps_quarantine_or_whole_record_fallback(browser
                 capture.drain()
                 result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
                 assert not result['eligible']
+            assert page.evaluate('window.businessReads') == 0
+    finally:
+        fixture.close()
+
+
+def test_cached_l2_references_are_reacquired(browser, tmp_path, monkeypatch):
+    # A later return in the same job observes no fresh reference GETs (the SPA
+    # serves COUNTRY_CODE + RELATED_PERSON_TYPE from cache). The observer
+    # reacquires them with a bounded cache-busting GET; the L2 owner is
+    # reconciled against both catalogs and the record stays eligible.
+    fixture = Fixture(browser, monkeypatch, defect='cached-references')
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observer.observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[ASSET])
+            assert forms is not None
+            binding, = [f for f in forms if f['name'] == 'L2']
+            endpoints = {r['endpoint'] for r in binding['projection']['references']}
+            assert endpoints == {COUNTRY, RELATED_PERSON}
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
+            assert result['eligible'], result['reason']
             assert page.evaluate('window.businessReads') == 0
     finally:
         fixture.close()

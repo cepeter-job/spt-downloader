@@ -4023,8 +4023,10 @@ def _l3_usd(value, *, nullish=False):
 
 def _l3_usd_exact(value, *, nullish=False):
     # Hidden USD totals (the footer callback and row metadata) keep the portal's
-    # exact source lexeme, up to 8 decimals. Admit any finite decimal in bound;
-    # never round. The 2-decimal scalar controls stay on _l3_usd.
+    # exact source lexeme. The observed portal emits up to 8 decimals, but the
+    # contract is a bounded finite decimal (|value| <= _MAX_INTEGER) of any
+    # scale, preserved exactly and never rounded. The 2-decimal scalar controls
+    # stay on _l3_usd.
     if value is None and nullish:
         return Decimal(0)
     if type(value) is not _CorporateNumber:
@@ -4166,6 +4168,7 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                 except _UnsupportedMetadata:
                     raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row') from None
                 if (type(row['IsManually']) is not bool
+                        or type(row['TableSource']) not in (str, type(None))
                         or row['TableSource'] not in _L3_B_TABLE_SOURCES
                         or row['Action'] is not None or not index_ok):
                     raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')

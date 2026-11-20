@@ -126,16 +126,42 @@ def test_l3b_sixty_row_paged_shape_with_extended_metadata():
     assert b['body_row_count'] == 60
 
 
-def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
-    # Fail-closed: an unknown TableSource or a non-boolean IsManually refuses.
-    for bad in ({'TableSource': 'UNKNOWN_GRID'}, {'IsManually': 'true'}):
-        form, pages, footer = inputs()
-        for page in pages:
-            for row in page['data']:
-                row.update({'IncomeTaxUsd': 16.5, 'IsManually': False,
-                            'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None, **bad})
-        with pytest.raises(_UnsupportedMetadata):
-            project(form, pages, footer)
+@pytest.mark.parametrize('table_source,manual', [
+    ('EBUPOTBPU_GRID', False), ('TAXPAYER_ACCOUNTING', False),
+    ('EBUPOTBPU_GRID', True)])
+def test_l3b_extended_row_admits_observed_metadata_variants(table_source, manual):
+    # Both admitted source grids, the manual flag variant, and a null
+    # TableSource (manual rows) are admitted; IsManually stays a captured bool.
+    form, pages, footer = inputs()
+    for page in pages:
+        for row in page['data']:
+            row.update({'IncomeTaxUsd': 16.5, 'IsManually': manual, 'TableSource': table_source,
+                        'Index': 0, 'Action': None})
+    result = project(form, pages, footer)
+    assert result['tables'][1]['body_row_count'] == 12
+
+
+@pytest.mark.parametrize('row_overrides', [
+    {'TableSource': 'UNKNOWN_GRID'},
+    {'IsManually': 'true'},
+    {'TableSource': ['LIST']},
+    {'TableSource': {'Key': 1}},
+    {'Action': 'EDIT'},
+    {'Index': 2},
+    {'IncomeTaxUsd': 10 ** 18},
+    {'IncomeTaxUsd': 'not-a-number'}])
+def test_l3b_extended_row_rejects_unproved_or_unsafe_metadata(row_overrides):
+    # Fail-closed: unproved TableSource, non-boolean IsManually, malformed
+    # (unhashable) source, non-null Action, nonzero Index, or an unsafe/non-
+    # numeric USD lexeme refuses the domestic row.
+    form, pages, footer = inputs()
+    for page in pages:
+        for row in page['data']:
+            row.update({'IncomeTaxUsd': 16.5, 'IsManually': False,
+                        'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None,
+                        **row_overrides})
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages, footer)
 
 
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():

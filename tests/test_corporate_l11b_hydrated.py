@@ -248,6 +248,33 @@ def test_hydrated_saved_workbook_keeps_unrounded_der_references_and_partial_resu
         resume.close()
 
 
+def test_fractional_quarter_workbook_export_shows_rounded_cell_and_exact_provenance(tmp_path):
+    # Ebitda25 = 1.25 (ebitda 5 * 0.25) renders at 0 decimals in the workbook
+    # while the provenance keeps the exact lexeme; the export completes cleanly.
+    from openpyxl import load_workbook
+    import coretax_exporter as exporter
+    from support_templates import source_run
+    frac = populated(CommercialNettIncome=Number('5'),
+                     DepreciationAndAmortizationExpenses=Number('0'),
+                     IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('2'),
+                     Ebitda25=Number('1.25'))
+    result = adapt(forms=bindings(part_ii=True), packet=packet(frac))
+    assert result['eligible'], result['reason']
+    section = next(s for s in result['sections'] if s['name'] == 'L11-B')
+    fields = {f['field']: f for f in section['fields']}
+    assert fields['Ebitda25']['value'] == '1'
+    run = source_run('PPh Badan', [section])
+    run['year'] = 2025
+    run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
+    reports = []
+    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    book = load_workbook(tmp_path / [p for p in paths if p != 'resume.xlsx'][0])
+    try:
+        assert 'L11-B' in book.sheetnames
+    finally:
+        book.close()
+
+
 @pytest.mark.parametrize('commercial,quarter,display', [
     ('-200004', '-1', '-1'), ('-200001', '-0.25', '0'), ('-200000', '0', '0')])
 def test_nonpositive_ebitda_uses_exact_quarter_product(commercial, quarter, display):
@@ -297,6 +324,18 @@ def test_signed_zero_quarter_refuses():
                        Ebitda25=Number('-0.0'))
     with pytest.raises(_UnsupportedMetadata, match='signed_zero'):
         project(source)
+
+
+@pytest.mark.parametrize('borrowing,visible', [(1, False), (2, True)])
+def test_fractional_quarter_visibility_threshold(borrowing, visible):
+    # Part II is visible exactly when BorrowingCost > quarter (ebitda > 0).
+    # With quarter = 1.25, the integer BorrowingCost threshold is >= 2; 1 hides.
+    source = populated(CommercialNettIncome=Number('5'),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'),
+                       BorrowingCostExpense=Number(str(borrowing)), Ebitda25=Number('1.25'))
+    result = project(source, part_ii=visible)
+    assert len(result['tables']) == (3 if visible else 1)
 
 
 def test_exact_quarter_boundary_hides_part_ii():

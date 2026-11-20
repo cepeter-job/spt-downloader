@@ -314,7 +314,7 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
             or metadata.get('footer_spans') != []):
         return None
     references, kinds_seen = [], set()
-    observations = capture.request_observations()
+    observations = _reacquire_reference_observations(page, capture, list(urls), check_cancel)
     for url, kinds in sorted(urls.items()):
         sequences = sorted({event['sequence'] for event in observations if event['url'] == url
                             and event['method'] == 'GET' and event['request_json'] is None})
@@ -472,7 +472,9 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
         tables.append({'component': L2_COMPONENTS[index], 'source_structure': structure,
             'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
     references = []
-    observations = capture.request_observations()
+    l2_urls = [url for url, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if kinds and not set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}]
+    observations = _reacquire_reference_observations(page, capture, l2_urls, check_cancel)
     for url, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:
             continue
@@ -812,6 +814,38 @@ def _l3_standalone_layout(form):
     }''', [list(pair) for pair in _L3_LAYOUT_CAPTIONS], timeout=1000) is True
 
 
+def _reacquire_reference_observations(page, capture, urls, check_cancel):
+    """Reacquire allowlisted reference catalogs the SPA served from cache.
+
+    A later return in the same job observes no fresh reference GETs (the SPA
+    caches the catalogs). Reacquire only the missing ones with a bounded,
+    cache-busting, same-origin GET on the DETAIL page (so the capture records
+    them) rather than fabricating or bypassing. A fetch failure or cancellation
+    leaves them absent and the caller refuses; the provider/locale/route/
+    lifetime proof is unchanged.
+    """
+    from coretax_browser import _check_cancel
+    def _observed(items, url):
+        return any(item['url'] == url and item['method'] == 'GET'
+                   and item.get('request_json') is None for item in items)
+    observations = capture.request_observations()
+    missing = [url for url in dict.fromkeys(urls) if not _observed(observations, url)]
+    if not missing:
+        return observations
+    _check_cancel(check_cancel)
+    try:
+        page.evaluate(
+            '''urls => Promise.all(urls.map(u => Promise.race([
+                fetch(u, {cache: 'reload', credentials: 'include'}),
+                new Promise((_, reject) => setTimeout(
+                    () => reject(new Error('reference-timeout')), 8000))])))''',
+            missing)
+    except Exception:
+        pass
+    _check_cancel(check_cancel)
+    return capture.request_observations()
+
+
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -924,23 +958,11 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if not requests or not footer:
         return refuse('grid_or_footer_missing')
     references = []
-    def _reference_sequences(items, url):
-        return [item['sequence'] for item in items
-            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
-    missing = [url for url in CORPORATE_L3_REFERENCE_URLS.values()
-               if not _reference_sequences(observations, url)]
-    if missing:
-        # The SPA caches the reference catalogs after the first return, so a
-        # later return in the same job observes no fresh GETs. Reacquire them
-        # with a cache-busting same-origin GET (never bypass or fabricate); the
-        # capture records the new requests and the build/locale/scope/lifetime
-        # checks below still gate the record.
-        page.evaluate('''urls => Promise.all(urls.map(u =>
-            fetch(u, {cache: 'reload', credentials: 'include'})))''', missing)
-        _check_cancel(check_cancel)
-        observations = capture.request_observations()
+    observations = _reacquire_reference_observations(
+        page, capture, list(CORPORATE_L3_REFERENCE_URLS.values()), check_cancel)
     for url in CORPORATE_L3_REFERENCE_URLS.values():
-        sequences = _reference_sequences(observations, url)
+        sequences = [item['sequence'] for item in observations
+            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
         if not sequences:
             return refuse('reference_request')
         references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
@@ -958,7 +980,7 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
               **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
 
-def corporate_reference_bindings(capture, kinds, *, check_cancel=None):
+def corporate_reference_bindings(capture, kinds, *, page=None, check_cancel=None):
     """Collect only original admitted singleton metadata and capture-owned pins."""
     from coretax_browser import _check_cancel
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
@@ -971,7 +993,11 @@ def corporate_reference_bindings(capture, kinds, *, check_cancel=None):
     builds = capture.observe_corporate_reference_providers(check_cancel=check_cancel)
     if builds is None:
         return None
-    observations = capture.request_observations()
+    if page is not None:
+        observations = _reacquire_reference_observations(
+            page, capture, [urls[kind] for kind in kinds], check_cancel)
+    else:
+        observations = capture.request_observations()
     _check_cancel(check_cancel)
     references = []
     for kind in kinds:
@@ -1147,7 +1173,7 @@ def _l4_populated_projection(page, capture, digest, tables, check_cancel):
                    and 'request_json' in item and item['request_json'] is None for item in observations)
                for url in CORPORATE_L4_REFERENCE_URLS.values()):
         return None  # No optional provider RPC for a cache-only/legacy visit.
-    shared = corporate_reference_bindings(capture, L4_CATALOG_KINDS, check_cancel=check_cancel)
+    shared = corporate_reference_bindings(capture, L4_CATALOG_KINDS, page=page, check_cancel=check_cancel)
     _check_cancel(check_cancel)
     if shared is None or shared['builds'] != pins:
         return None
@@ -1201,7 +1227,7 @@ def _observe_l10a_populated(page, form, tab, capture, before, check_cancel):
     _check_cancel(check_cancel)
     if before is None or not callable(getattr(capture, 'observe_corporate_reference_providers', None)):
         return None
-    references = corporate_reference_bindings(capture, tuple(L10A_LABELS.values()), check_cancel=check_cancel)
+    references = corporate_reference_bindings(capture, tuple(L10A_LABELS.values()), page=page, check_cancel=check_cancel)
     if references is None or references['builds'] != L10A_BUILD_DIGESTS:
         return None
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
@@ -1309,10 +1335,13 @@ def _observe_l9(page, form, capture, digest, check_cancel):
             or pins[CIT_SOURCE_URL] != digest):
         return None
     references, observed_kinds = [], set()
+    l9_urls = [endpoint for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if len(kinds) == 1 and kinds[0] in L9_REFERENCE_KINDS]
+    observations = _reacquire_reference_observations(page, capture, l9_urls, check_cancel)
     for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if len(kinds) != 1 or kinds[0] not in L9_REFERENCE_KINDS:
             continue
-        sequences = [event['sequence'] for event in capture.request_observations()
+        sequences = [event['sequence'] for event in observations
             if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None]
         if not sequences:
             continue
