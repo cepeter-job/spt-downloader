@@ -610,12 +610,15 @@ def _apply_l10c(binding, section, observed_forms, *, root, payload, record, even
         str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
                                 fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
     main = root.get('MainFormData')
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
     if (proof['route'] != route or fields.get('TaxTypeCode') != 'ICT_RCIT'
             or record.get('source_status') != 'SPT Dilaporkan'
-            or record.get('meta', {}).get('Model SPT') != 'Normal'
-            or fields.get('ReturnSheetModel') != 'Normal'
+            or model is None
+            or fields.get('ReturnSheetModel') != literal
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
-            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or payload.get('ReturnSheetModel') != model
             or any(key not in payload or payload[key] is not None
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or 'Induk' not in [form['name'] for form in observed_forms[:observed_forms.index(binding)]]
@@ -1822,6 +1825,9 @@ def _l7_negative_profile(binding, *, root, payload, record, event, route, table)
     fields = record.get('source_fields', {})
     pins = L7_NEGATIVE_BUILD_DIGESTS
     urls = {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
     if (not isinstance(proof, dict) or proof.get('kind') != 'corporate-l7-stable-negative-v1'
             or set(pins) != urls or set(proof.get('builds', {})) != urls
             or any(type(value) is not str or not re.fullmatch(r'[a-f0-9]{64}', value)
@@ -1833,8 +1839,8 @@ def _l7_negative_profile(binding, *, root, payload, record, event, route, table)
             or proof['tables'] != [{**table, 'owner_chain': L7_OWNER_CHAIN}]
             or event.get('component_lifetime') is None or event.get('corporate_l7_lifetime') is None
             or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
-            or record.get('meta', {}).get('Model SPT') != 'Normal'
-            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or model is None or fields.get('ReturnSheetModel') != literal
+            or payload.get('ReturnSheetModel') != model
             or root.get('TaxType') != 'ICT_RCIT'
             or any(key not in payload or payload[key] is not None
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
@@ -3181,13 +3187,16 @@ def _apply_l9(binding, section, observed_forms, *, root, payload, record, event,
     route = ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' + '/'.join(
         str(value) for value in (fields.get('TaxpayerAggregateIdentifier'), record['record_id'],
                                 fields.get('TaxTypeCode'), fields.get('AggregateIdentifier'))) + '?view=true'
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
     if (proof['route'] != route or event.get('component_lifetime') is None
             or record.get('source_status') != 'SPT Dilaporkan'
-            or record.get('meta', {}).get('Model SPT') != 'Normal'
-            or fields.get('ReturnSheetModel') != 'Normal'
+            or model is None
+            or fields.get('ReturnSheetModel') != literal
             or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR' or root.get('TaxType') != 'ICT_RCIT'
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
-            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or payload.get('ReturnSheetModel') != model
             or any(key not in payload or payload[key] is not None
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]):
@@ -3368,10 +3377,10 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
         raise _UnsupportedMetadata('unverified_corporate_l10b_nondisplay_custody')
     main, form = root.get('MainFormData'), root.get(L10B_ROOT)
     if (record.get('source_status') != 'SPT Dilaporkan'
-            or record.get('meta', {}).get('Model SPT') != 'Normal'
-            or fields.get('ReturnSheetModel') != 'Normal'
+            or model is None
+            or fields.get('ReturnSheetModel') != literal
             or fields.get('TaxTypeCode') != 'ICT_RCIT' or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
-            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or payload.get('ReturnSheetModel') != 'NORMAL'
+            or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or payload.get('ReturnSheetModel') != model
             or any(key not in payload or payload[key] is not None
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
