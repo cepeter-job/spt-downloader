@@ -2850,7 +2850,11 @@ def _identity_checked_packets(packets, record, scope):
         yield packet
 
 
-def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
+def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel, *, detail_source='json-first'):
+    if detail_source not in ('json-first', 'json-only'):
+        raise ValueError('JSON detail capture requires json-first or json-only')
+    if detail_source == 'json-only' and record['meta'].get('Jenis Pajak') != 'PPh Badan':
+        raise ValueError('json-only is restricted to PPh Badan details')
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
     masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi')
@@ -2918,9 +2922,11 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
                      'forms_unavailable' if forms is None else
                      'capture_incomplete' if not manifest['complete'] else
                      'adapter_ineligible' if not decoded['eligible'] else 'coverage_incomplete')
-    diagnostics.record('detail.source', source_requested='json-first',
-                       source_used='json' if eligible else 'dom', source_reason=source_reason)
-    audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
+    strict = detail_source == 'json-only'
+    source_used = 'json' if eligible else 'none' if strict else 'dom'
+    diagnostics.record('detail.source', source_requested=detail_source,
+                       source_used=source_used, source_reason=source_reason)
+    audit = {'version': 1, 'requested': detail_source, 'used': source_used,
              'capture': manifest}
     if decoded is not None:
         audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
@@ -2937,8 +2943,15 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     else:
         audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
                            else 'unsupported_observed_forms_or_capture')
-        result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
-                                record=record, folder=folder)
+        if strict:
+            # Never upgrade incomplete/unsupported JSON by reading DOM values.
+            # Preserve the audited JSON body manifest for diagnosis and resume.
+            result = {'sections': [], 'capture_complete': False, 'attachments': [],
+                      'errors': [{'object': 'Detail JSON',
+                                  'message': 'Verified JSON detail is incomplete; DOM fallback disabled.'}]}
+        else:
+            result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
+                                    record=record, folder=folder)
     result['detail_source'] = audit
     return result
 
@@ -2993,11 +3006,23 @@ def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
     audit = saved.get('detail_source')
+    if detail_source == 'json-only' and audit is None and (
+            saved.get('capture_complete') or saved.get('sections') or saved.get('attachments')):
+        raise JsonSafetyError('Unaudited DOM checkpoint cannot be reused in strict JSON mode')
     if audit is not None:
         if (not isinstance(audit, dict) or type(audit.get('version')) is not int or audit['version'] != 1
-                or audit.get('requested') not in ('dom', 'json-first') or audit.get('used') not in ('dom', 'json')):
+                or audit.get('requested') not in ('dom', 'json-first', 'json-only')
+                or audit.get('used') not in ('dom', 'json', 'none')):
             raise JsonSafetyError('Checkpoint detail-source descriptor is unsupported')
-        if audit['used'] == 'json' and (audit['requested'] != 'json-first' or detail_source != 'json-first'):
+        if (audit['requested'] == 'json-only') != (detail_source == 'json-only'):
+            raise JsonSafetyError('Checkpoint strict JSON mode does not match the requested mode')
+        if detail_source == 'json-only' and audit['used'] == 'dom':
+            raise JsonSafetyError('DOM checkpoint cannot be reused in strict JSON mode')
+        if audit['used'] == 'none' and (audit['requested'] != 'json-only'
+                or saved.get('capture_complete') or saved.get('sections') or saved.get('attachments')):
+            raise JsonSafetyError('Incomplete JSON checkpoint cannot contain completed detail')
+        if audit['used'] == 'json' and (audit['requested'] not in ('json-first', 'json-only')
+                or detail_source != audit['requested']):
             raise JsonSafetyError('Checkpoint JSON source does not match the requested mode')
         if audit.get('capture') is not None or audit['used'] == 'json':
             from coretax_json_capture import checkpoint_bodies
@@ -3147,6 +3172,9 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     failures retain fixed public error categories and PARTIAL. Final completion
     requires persisted detail reconciliation, independently of later publication."""
     validate_detail_source(detail_source)
+    if detail_source == 'json-only' and any(
+            r.get('meta', {}).get('Jenis Pajak') != 'PPh Badan' for r in run['records']):
+        raise ValueError('json-only detail capture supports PPh Badan only')
     _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
@@ -3220,7 +3248,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             _verify_restored_metadata(page, run, record, current_meta,
                                 current_response['rows'][position], folder, ordinal, check_cancel)
                             observer._check_state()
-                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
+                            if detail_source in ('json-first', 'json-only') and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
                                                                bind_unifikasi_listing_identity, bind_corporate_listing_identity)
                                 prefix, bind_identity = {
@@ -3248,7 +3276,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     record['source_identity'] = {**identity['source_identity'],
                                                                  'relative_path': relative.as_posix()}
                             session = nullcontext(None)
-                            if detail_source == 'json-first':
+                            if detail_source in ('json-first', 'json-only'):
                                 from coretax_json_capture import DetailJsonCapture
                                 session = DetailJsonCapture(page.context, page, record, scope, folder,
                                                             ordinal=ordinal, check_cancel=check_cancel)
@@ -3264,7 +3292,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
                                                              record=record, folder=folder)
                                 else:
-                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
+                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages,
+                                                             check_cancel, detail_source=detail_source)
                             timing['source_used'] = capture.get('detail_source', {}).get('used', 'dom')
                             if 'detail_source' in capture:
                                 record['detail_source'] = capture['detail_source']

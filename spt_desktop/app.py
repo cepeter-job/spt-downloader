@@ -156,6 +156,8 @@ def save_preferences(root,data):
     allowed={key:data.get(key,default) for key,default in DEFAULTS.items()}
     allowed['login_origin']=LOGIN_ORIGIN
     validate_detail_source(allowed['detail_source'])
+    if allowed['detail_source'] not in DETAIL_SOURCE_LABELS:
+        raise ValueError('Mode sumber detail hanya didukung melalui CLI SPT Badan.')
     validate_keep_jobs(allowed['keep_jobs'])
     if allowed['browser'] not in ('msedge','chrome') or allowed['login_origin'] not in ALLOWED_ORIGINS:
         raise ValueError('Preferensi browser/origin tidak valid.')

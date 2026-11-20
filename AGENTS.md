@@ -74,7 +74,11 @@ Windows application acceptance. Follow
    workbook contents or private paths in public issues, PRs, commits or logs.
 3. Select `--detail-source dom` for a DOM baseline, or
    `--detail-source json-first` to exercise JSON-hybrid with whole-record DOM
-   fallback. `--detail-limit N` is a short **first-N inventory** smoke test,
+   fallback. For a strict JSON-only test of Corporate return details, use
+   `--detail-source json-only --spt-badan-only`. Incomplete/unverified JSON
+   MUST remain PARTIAL without DOM detail-value fallback. Inventory, UI form
+   binding verification, and financial PDF capture remain read-only.
+   `--detail-limit N` is a short **first-N inventory** smoke test,
    not a choice of specific SPT IDs/forms; `--inventory-only` checks listing
    only. Limited runs are PARTIAL (CLI exit code 2) when records remain, not
    COMPLETE. Remove limits for a full-scope comparison and verify the output

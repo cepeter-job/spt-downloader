@@ -142,10 +142,36 @@ yang dibuka** hanya pada baris daftar SPT dengan `Jenis Pajak` persis
 .venv\Scripts\python.exe coretax.py --npwp NPWP_16_DIGIT_ANDA --year 2025 --year-basis period --detail-source dom --spt-badan-only --output "%LOCALAPPDATA%\SPTDownloader-CLI\badan-2025-baru" --profile "%LOCALAPPDATA%\SPTDownloader-CLI\profile"
 ```
 
+Untuk menguji **JSON secara ketat** tanpa fallback DOM, gunakan
+`--detail-source json-only` bersama `--spt-badan-only`. Mode ini **khusus
+CLI SPT Badan**; GUI tidak menampilkan opsi baru. Jika cakupan sumber JSON
+belum lengkap/terverifikasi, hasil tetap **PARTIAL (exit code 2)** dan
+checkpoint JSON dipertahankan, bukan mengganti data dengan nilai DOM.
+Metadata daftar SPT, observasi binding form UI, dan pengunduhan PDF keuangan
+tetap memakai alur read-only yang ada; `json-only` membatasi **sumber
+nilai form/tabel detail SPT**, bukan seluruh interaksi browser.
+
+Contoh PowerShell dari root checkout (variabel berisi nilai lokal yang sesuai):
+
+```powershell
+& ".\.venv\Scripts\python.exe" ".\coretax.py" `
+  --npwp $npwp `
+  --year 2025 `
+  --year-basis period `
+  --detail-source json-only `
+  --spt-badan-only `
+  --output $output `
+  --profile $profile
+```
+
+Lanjutkan hasil tersebut memakai `--resume $output --spt-badan-only`; mode
+`json-only` diambil dari `selection.json`. Selalu gunakan folder output baru
+untuk membandingkan JSON-only, JSON-first, dan DOM.
+
 CLI tetap harus membaca **metadata seluruh daftar SPT Dilaporkan** untuk
 menentukan jenis dokumen yang benar. Hanya record PPh Badan yang dibuka,
 tanpa mengambil detail SPT Masa atau MPN. Pilihan record yang tepat
-disimpan dalam `selection.json` dengan digest inventaris dan sumber DOM
+disimpan dalam `selection.json` dengan digest inventaris dan mode sumber yang dipilih
 sebelum tindakan View pertama. Jika tidak ada PPh Badan dalam inventaris,
 CLI menolak alih-alih mengambil jenis lain. Hasil COMPLETE hanya
 menandakan seluruh **cakupan Badan yang dipilih** berhasil, bukan
