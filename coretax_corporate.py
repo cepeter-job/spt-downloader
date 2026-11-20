@@ -317,7 +317,8 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
     observations = _reacquire_reference_observations(page, capture, list(urls), check_cancel)
     for url, kinds in sorted(urls.items()):
         sequences = sorted({event['sequence'] for event in observations if event['url'] == url
-                            and event['method'] == 'GET' and event['request_json'] is None})
+                            and event['method'] == 'GET' and event['request_json'] is None
+                            and event.get('status') in (None, 200)})
         if sequences:
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
             kinds_seen.update(kinds)
@@ -479,7 +480,8 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
         if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:
             continue
         sequences = [item['sequence'] for item in observations if item['url'] == url
-                     and item['method'] == 'GET' and item.get('request_json') is None]
+                     and item['method'] == 'GET' and item.get('request_json') is None
+                     and item.get('status') in (None, 200)]
         if sequences:
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
@@ -818,30 +820,36 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
     """Reacquire allowlisted reference catalogs the SPA served from cache.
 
     A later return in the same job observes no fresh reference GETs (the SPA
-    caches the catalogs). Reacquire only the missing ones with a bounded,
-    cache-busting, same-origin GET on the DETAIL page (so the capture records
-    them) rather than fabricating or bypassing. A fetch failure or cancellation
-    leaves them absent and the caller refuses; the provider/locale/route/
+    caches the catalogs). Reacquire only the missing allowlisted ones with a
+    bounded, cache-busting, same-origin GET on the DETAIL page. An
+    AbortController cancels the outstanding fetches on timeout so a late
+    response is never captured; only successful captured responses count, so
+    a failure, timeout or cancellation leaves the catalog absent and the
+    caller refuses. Cancellation is preserved; the provider/locale/route/
     lifetime proof is unchanged.
     """
     from coretax_browser import _check_cancel
     def _observed(items, url):
         return any(item['url'] == url and item['method'] == 'GET'
-                   and item.get('request_json') is None for item in items)
+                   and item.get('request_json') is None and item.get('status') in (None, 200)
+                   for item in items)
     observations = capture.request_observations()
     missing = [url for url in dict.fromkeys(urls) if not _observed(observations, url)]
     if not missing:
         return observations
     _check_cancel(check_cancel)
-    try:
-        page.evaluate(
-            '''urls => Promise.all(urls.map(u => Promise.race([
-                fetch(u, {cache: 'reload', credentials: 'include'}),
-                new Promise((_, reject) => setTimeout(
-                    () => reject(new Error('reference-timeout')), 8000))])))''',
-            missing)
-    except Exception:  # nosec B110 - Bounded reacquisition is best effort; a failed/cancelled fetch leaves the catalog absent and the caller still refuses.
-        pass
+    page.evaluate(
+        '''urls => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            return Promise.all(urls.map(u =>
+                fetch(u, {cache: 'reload', credentials: 'include',
+                          signal: controller.signal})
+                    .then(r => (r.ok ? r : null))
+                    .catch(() => null)))
+              .then(() => clearTimeout(timer));
+        }''',
+        missing)
     _check_cancel(check_cancel)
     return capture.request_observations()
 
@@ -958,10 +966,12 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if not requests or not footer:
         return refuse('grid_or_footer_missing')
     references = []
-    observations = capture.request_observations()
+    observations = _reacquire_reference_observations(
+        page, capture, list(CORPORATE_L3_REFERENCE_URLS.values()), check_cancel)
     for url in CORPORATE_L3_REFERENCE_URLS.values():
         sequences = [item['sequence'] for item in observations
-            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
+            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None
+            and item.get('status') in (None, 200)]
         if not sequences:
             return refuse('reference_request')
         references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
@@ -979,7 +989,7 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
               **({'standalone_layout': 'overseas-controls-v1'} if standalone else {})}}
 
 
-def corporate_reference_bindings(capture, kinds, *, page=None, check_cancel=None):
+def corporate_reference_bindings(capture, kinds, *, check_cancel=None):
     """Collect only original admitted singleton metadata and capture-owned pins."""
     from coretax_browser import _check_cancel
     from coretax_json import CORPORATE_REFERENCE_REQUESTS
@@ -1168,7 +1178,7 @@ def _l4_populated_projection(page, capture, digest, tables, check_cancel):
                    and 'request_json' in item and item['request_json'] is None for item in observations)
                for url in CORPORATE_L4_REFERENCE_URLS.values()):
         return None  # No optional provider RPC for a cache-only/legacy visit.
-    shared = corporate_reference_bindings(capture, L4_CATALOG_KINDS, page=page, check_cancel=check_cancel)
+    shared = corporate_reference_bindings(capture, L4_CATALOG_KINDS, check_cancel=check_cancel)
     _check_cancel(check_cancel)
     if shared is None or shared['builds'] != pins:
         return None
@@ -1222,7 +1232,7 @@ def _observe_l10a_populated(page, form, tab, capture, before, check_cancel):
     _check_cancel(check_cancel)
     if before is None or not callable(getattr(capture, 'observe_corporate_reference_providers', None)):
         return None
-    references = corporate_reference_bindings(capture, tuple(L10A_LABELS.values()), page=page, check_cancel=check_cancel)
+    references = corporate_reference_bindings(capture, tuple(L10A_LABELS.values()), check_cancel=check_cancel)
     if references is None or references['builds'] != L10A_BUILD_DIGESTS:
         return None
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
@@ -1330,12 +1340,15 @@ def _observe_l9(page, form, capture, digest, check_cancel):
             or pins[CIT_SOURCE_URL] != digest):
         return None
     references, observed_kinds = [], set()
-    observations = capture.request_observations()
+    l9_urls = [endpoint for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if len(kinds) == 1 and kinds[0] in L9_REFERENCE_KINDS]
+    observations = _reacquire_reference_observations(page, capture, l9_urls, check_cancel)
     for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if len(kinds) != 1 or kinds[0] not in L9_REFERENCE_KINDS:
             continue
         sequences = [event['sequence'] for event in observations
-            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None]
+            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None
+            and event.get('status') in (None, 200)]
         if not sequences:
             continue
         if kinds[0] in observed_kinds:

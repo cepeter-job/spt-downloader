@@ -120,6 +120,26 @@ def test_unproved_owned_l3_structure_provider_or_dependency_cannot_grant_native_
         fixture.close()
 
 
+def test_cached_reference_is_reacquired_via_bounded_cache_bust(browser, tmp_path, monkeypatch):
+    # A later return caches the last reference catalog (no fresh GET). The
+    # bounded cache-busting re-fetch restores it, so the L3 stays observed and
+    # the record projects from the native source (the re-fetch request is a
+    # fixture-known allowlisted URL, so nothing unexpected is recorded).
+    fixture = Fixture(browser, monkeypatch, defect='cached-reference')
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            assert forms is not None
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
+            assert result['eligible'] and result['sections'], result['reason']
+            assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
+            assert fixture.unexpected == []
+    finally:
+        fixture.close()
+
+
 def test_late_conflicting_l3_footer_remains_fatal_after_owned_observation(browser, tmp_path, monkeypatch):
     fixture = Fixture(browser, monkeypatch, defect='conflicting-footer')
     try:

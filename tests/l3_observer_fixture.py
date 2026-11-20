@@ -47,6 +47,11 @@ class Fixture(BaseFixture):
         if req.url in self.reference_raw:
             self.requests.append((req.url, req.method))
             assert req.method == 'GET' and req.post_data is None
+            if self.defect == 'missing-reference' and req.url == list(self.reference_raw)[-1]:
+                # Genuinely missing: the catalog is not served at all, so a
+                # bounded re-fetch cannot restore it and the L3 must refuse.
+                return route.fulfill(status=404, content_type='application/json',
+                    body=corpus.wire({'IsSuccessful': False, 'Payload': None}))
             return route.fulfill(content_type='application/json', body=self.reference_raw[req.url])
         return super().route(route)
 
@@ -116,7 +121,7 @@ class Fixture(BaseFixture):
         base = base.replace('!e.target.closest("a[role=tab]"))window.forbiddenClicks++;',
             '!e.target.closest("a[role=tab]")&&!e.target.closest(".p-paginator button"))window.forbiddenClicks++;')
         references = list(REFERENCES.values())
-        if self.defect == 'missing-reference': references.pop()
+        if self.defect in ('missing-reference', 'cached-reference'): references.pop()
         if self.defect == 'missing-footer': footer = 'Promise.resolve()'
         else: footer = 'fetchFooterL3()'
         script = ('<script>window.l3Started=false;window.l3Done=false;window.l3FooterDone=false;window.l3FooterReplies=0;'

@@ -37,12 +37,12 @@ class Fixture(SpaFixture):
         monkeypatch.setattr(projection, 'L2_BUILD_DIGESTS', self.pins, raising=False)
         value = corpus.current_form()
         l2 = populated()
-        # Position transport is separately owned. This end-to-end admitted
-        # subset uses literal-null Position, not a fake catalog or raw code.
-        # Non-null job descriptions are covered by the pure owner tests and
-        # remain blocked until the shared producer's reviewed transport lands.
+        # Position transport is separately owned. The default end-to-end subset
+        # uses literal-null Position; the cache-miss case uses a real code so the
+        # re-fetched nonempty catalog proves binding a Position label.
+        position = 'SYN_REL_A' if defect == 'cached-references' else None
         for row in l2['ListOfShareholders']:
-            row['Position'] = None
+            row['Position'] = position
             row['CountryCode'] = 'SYN_COUNTRY_A'
         for row in l2['InvestmentList']:
             row['CountryCode'] = 'SYN_COUNTRY_A'
@@ -62,11 +62,18 @@ class Fixture(SpaFixture):
                 body=corpus.wire({'IsSuccessful': True, 'Payload': catalog()}))
         if route.request.url == RELATED_PERSON:
             # The L2 owner needs COUNTRY_CODE + RELATED_PERSON_TYPE; a later
-            # return reacquires the cached catalogs, so serve both here.
+            # return reacquires the cached catalogs, so serve both here. For the
+            # cache-miss case serve a NONEMPTY catalog so the re-fetch proves
+            # binding a real Position label, not an empty placeholder.
             self.requests.append((route.request.url, route.request.method))
             assert route.request.method == 'GET' and route.request.post_data is None
+            payload = related_person_catalog()
+            if self.defect == 'cached-references':
+                payload = [{'ReferenceDataType': 'RELATED_PERSON_TYPE', 'language': 'id-ID',
+                            'Details': [{'Code': 'SYN_REL_A',
+                                         'CodeDescription': 'SYNTHETIC RELATED PERSON A'}]}]
             return route.fulfill(content_type='application/json',
-                body=corpus.wire({'IsSuccessful': True, 'Payload': related_person_catalog()}))
+                body=corpus.wire({'IsSuccessful': True, 'Payload': payload}))
         return super().route(route)
 
     def document(self):

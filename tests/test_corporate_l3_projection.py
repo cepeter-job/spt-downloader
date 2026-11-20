@@ -87,15 +87,16 @@ def test_usd_scalars_and_footer_allow_two_decimal_foreign_currency():
     assert [a['body_row_count'], b['body_row_count']] == [2, 12]
 
 
-def test_l3b_extended_rows_admit_reviewed_metadata_and_exact_footer_usd_lexeme():
-    # The pinned L3-B grid may carry the reviewed extended metadata (IsManually
-    # true, null TableSource/Action, zero Index/IncomeTaxUsd). The footer USD
-    # total keeps the portal's exact high-precision lexeme, not a 2-decimal round.
+def test_l3b_extended_rows_admit_grid_source_metadata_and_exact_footer_usd_lexeme():
+    # The pinned L3-B grid emits grid-sourced rows: IsManually false, a known
+    # TableSource, and a bounded nonzero USD lexeme (43 fractional / 28 with >2
+    # decimals in the live capture). The footer USD total keeps the portal's
+    # exact high-precision lexeme, not a 2-decimal round.
     form, pages, footer = inputs()
     for page in pages:
         for row in page['data']:
-            row.update({'IncomeTaxUsd': 0, 'IsManually': True,
-                        'TableSource': None, 'Index': 0, 'Action': None})
+            row.update({'IncomeTaxUsd': 16.50003087, 'IsManually': False,
+                        'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None})
     footer['IncomeTaxUsd'] = 10736.41742465
     result = project(form, pages, footer)
     a, b = result['tables']
@@ -105,17 +106,21 @@ def test_l3b_extended_rows_admit_reviewed_metadata_and_exact_footer_usd_lexeme()
     assert usd and usd[0]['value'] == '10736.41742465'
 
 
-def test_l3b_sixty_row_paged_shape_with_reviewed_metadata():
-    # The live L3-B grid is 60 distinct rows across six pages of ten; every row
-    # carries the reviewed extended metadata. Verify per-page provenance (last
-    # page / last row evidence) and the exact USD footer lexeme.
+def test_l3b_sixty_row_paged_shape_with_grid_source_metadata():
+    # The live L3-B grid is 60 distinct grid-sourced rows across six pages of
+    # ten (IsManually false, a known TableSource, a fractional USD lexeme).
+    # Verify per-page provenance (last page / last row) and the exact USD
+    # footer lexeme — the shape that actually regressed when the guard was
+    # narrowed to manual/zero/null rows.
     form, pages, footer = inputs()
     base = pages[0]['data'][0]
     rows = []
     for n in range(60):
         row = deepcopy(base)
-        row.update({'RecordId': 'ROW-%02d' % n, 'IncomeTaxUsd': 0, 'IsManually': True,
-                    'TableSource': None, 'Index': 0, 'Action': None})
+        row.update({'RecordId': 'ROW-%02d' % n,
+                    'IncomeTaxUsd': 16.5 + n / 10000, 'IsManually': False,
+                    'TableSource': ('EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING')[n % 2],
+                    'Index': 0, 'Action': None})
         rows.append(row)
     pages = [{'offset': i, 'rows': 10, 'total': 60, 'data': rows[i:i + 10]}
              for i in range(0, 60, 10)]
@@ -132,6 +137,10 @@ def test_l3b_sixty_row_paged_shape_with_reviewed_metadata():
     assert any(e.get('source') == 'grid' and e.get('page_index') == 5
                and e.get('path') == ['Data', 9, 'RecordId'] and e.get('value') == 'ROW-59'
                for e in result['provenance'])
+    # Both admitted grid sources survive into per-row metadata provenance.
+    sources = {e['value'] for e in result['provenance']
+               if e.get('destination', {}).get('metadata') == 'TableSource'}
+    assert sources == {'EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'}
     # The footer USD total keeps the exact 8-decimal lexeme, not a rounded form.
     usd = [p for p in result['provenance']
            if p.get('path') == ['IncomeTaxUsd'] and p.get('source') == 'footer']

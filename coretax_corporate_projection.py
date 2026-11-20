@@ -3979,6 +3979,9 @@ _L3_A_FIELDS = ('Name', 'CountryCode', 'DateOfTransaction', 'IncomeCode', 'NetIn
 _L3_B_FIELDS = ('Name', 'TIN', 'TaxType', 'TaxBase', 'IncomeTax',
     'WithholdingSlipsNumber', 'WithholdingSlipsDate')
 _L3_B_METADATA = ('IncomeTaxUsd', 'IsManually', 'TableSource', 'Index', 'Action')
+# The pinned L3-B grid emits rows from these two source grids (plus manual rows
+# with a null TableSource). Any other TableSource is unproved and refuses.
+_L3_B_TABLE_SOURCES = frozenset((None, 'EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'))
 _L3_B_ROW_FIELDS = frozenset(('RecordId', *_L3_B_FIELDS))
 _L3_B_EXTENDED_FIELDS = _L3_B_ROW_FIELDS | frozenset(_L3_B_METADATA)
 _L3_LABELS = ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')
@@ -4158,10 +4161,23 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
             if not isinstance(row, dict) or set(row) not in (_L3_B_ROW_FIELDS, _L3_B_EXTENDED_FIELDS):
                 raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             extended = set(row) == _L3_B_EXTENDED_FIELDS
-            if extended and (row['IsManually'] is not True or row['TableSource'] is not None
-                    or row['Action'] is not None or _l3_integer(row['Index']) != 0
-                    or _l3_integer(row['IncomeTaxUsd']) != 0):
-                raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
+            if extended:
+                # The pinned grid emits both manual rows (IsManually true, null
+                # TableSource) and grid-sourced rows (IsManually false, a known
+                # TableSource) with a bounded nonnegative USD lexeme. Admit both
+                # proved variants; refuse unknown/inconsistent combinations,
+                # malformed types, nonzero Index, non-null Action and unproved
+                # numeric values.
+                try:
+                    _l3_usd_exact(row['IncomeTaxUsd'])
+                    index_ok = _l3_integer(row['Index']) == 0
+                except _UnsupportedMetadata:
+                    raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row') from None
+                if (type(row['IsManually']) is not bool
+                        or type(row['TableSource']) not in (str, type(None))
+                        or row['TableSource'] not in _L3_B_TABLE_SOURCES
+                        or row['Action'] is not None or not index_ok):
+                    raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             text(row['RecordId'])
             brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
                 label(row['TaxType'], 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),

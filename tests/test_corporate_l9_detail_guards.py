@@ -17,8 +17,10 @@ class Page:
     url = ROUTE
     def __init__(self, defect=None):
         self.calls, self.defect = [], defect
-    def evaluate(self, script, arg=None):
+    def evaluate(self, script, arg=None, **kwargs):
         self.calls.append((script, arg))
+        if 'AbortController' in script:
+            return None
         if arg in (projection.MAIN_SOURCE, projection.VENDOR_SOURCE):
             return 'a' * 64 if self.defect == arg else projection.L9_DETAIL_BUILD_DIGESTS[arg]
         if 'urls.every' in script:
@@ -58,8 +60,14 @@ def test_observer_only_offers_details_with_positive_pins_sources_and_dependencie
     assert (proof is not None) is (defect is None)
     if defect is None:
         assert proof['kind'] == 'corporate-l9-details-v1' and len(proof['tables']) == 12
-    if defect in ('missing-reference', 'no-shared-producer', 'malformed-pin', 'no-pin', 'lifetime'):
+    if defect in ('no-shared-producer', 'malformed-pin', 'no-pin', 'lifetime'):
         assert page.calls == []
+    elif defect == 'missing-reference':
+        # The bounded re-fetch is an approved read-only catalog acquisition; it
+        # makes one cache-bust call even though the reference stays absent here
+        # (the stub capture does not record the re-fetch response), so the L9
+        # still refuses.
+        assert sum(1 for call in page.calls if 'AbortController' in call[0]) <= 1
 
 
 def test_stop_precedes_any_details_provider_rpc(shared_catalog_contract, monkeypatch):

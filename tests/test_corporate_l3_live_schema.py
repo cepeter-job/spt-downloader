@@ -121,11 +121,12 @@ def test_partial_metadata_extension_is_not_silently_stripped(field):
 
 @pytest.mark.parametrize(('field', 'value'), [
     ('Index', False), ('Index', True), ('Index', '0'), ('Index', 1), ('Index', None),
-    ('IncomeTaxUsd', False), ('IncomeTaxUsd', '0'), ('IncomeTaxUsd', 1),
-    ('IncomeTaxUsd', None), ('IncomeTaxUsd', 0.5), ('IncomeTaxUsd', 1000000000000000),
-    ('IsManually', False), ('IsManually', 1), ('IsManually', 'true'), ('IsManually', None),
-    ('TableSource', 'TAXPAYER_ACCOUNTING'), ('TableSource', ''), ('TableSource', False),
-    ('TableSource', {}), ('Action', 'download'), ('Action', False), ('Action', []),
+    ('IncomeTaxUsd', False), ('IncomeTaxUsd', '0'), ('IncomeTaxUsd', None),
+    ('IncomeTaxUsd', 1000000000000000),
+    ('IsManually', 1), ('IsManually', 'true'), ('IsManually', None),
+    ('TableSource', ''), ('TableSource', False), ('TableSource', {}),
+    ('TableSource', 'UNKNOWN_GRID'),
+    ('Action', 'download'), ('Action', False), ('Action', []),
 ])
 def test_extended_row_rejects_nonreviewed_metadata_values(field, value):
     form, pages, footer = inputs()
@@ -135,6 +136,22 @@ def test_extended_row_rejects_nonreviewed_metadata_values(field, value):
     with pytest.raises(_UnsupportedMetadata):
         project(form, pages, footer)
     assert (form, pages, footer) == before
+
+
+@pytest.mark.parametrize(('field', 'value'), [
+    ('IsManually', False),
+    ('TableSource', 'EBUPOTBPU_GRID'), ('TableSource', 'TAXPAYER_ACCOUNTING'),
+    ('IncomeTaxUsd', 1), ('IncomeTaxUsd', 0.5), ('IncomeTaxUsd', 16.50003087),
+])
+def test_extended_row_admits_reviewed_source_variants(field, value):
+    # The pinned grid emits both manual rows (default metadata) and grid-sourced
+    # rows: IsManually false, a known TableSource, and a bounded nonnegative USD
+    # lexeme (43 fractional / 28 with >2 decimals in the live capture).
+    form, pages, footer = inputs()
+    _extend(pages)
+    pages[0]['data'][0][field] = value
+    result = project(form, pages, footer)
+    assert result['tables'][1]['body_row_count'] == 12
 
 
 @pytest.mark.parametrize('extended', [False, True])

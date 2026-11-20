@@ -263,6 +263,10 @@ def test_fractional_quarter_workbook_export_shows_rounded_cell_and_exact_provena
     section = next(s for s in result['sections'] if s['name'] == 'L11-B')
     fields = {f['field']: f for f in section['fields']}
     assert fields['Ebitda25']['value'] == '1'
+    # The adapter provenance keeps the exact original quarter lexeme (1.25).
+    projected = next(p for p in result['provenance']['projections'] if p['form'] == 'L11-B')
+    saved = [e for e in projected['values'] if e.get('path') == ['L11BFormData', 'Ebitda25']]
+    assert saved and saved[0]['value'] == '1.25'
     run = source_run('PPh Badan', [section])
     run['year'] = 2025
     run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
@@ -270,7 +274,9 @@ def test_fractional_quarter_workbook_export_shows_rounded_cell_and_exact_provena
     paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
     book = load_workbook(tmp_path / [p for p in paths if p != 'resume.xlsx'][0])
     try:
-        assert 'L11-B' in book.sheetnames
+        sheet = book['L11-B']
+        # The saved EBITDA (25%) cell renders the exact 1.25 at 0 decimals.
+        assert sheet['B7'].value == 1
     finally:
         book.close()
 
