@@ -3907,23 +3907,23 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
         data = form[root]
         descriptors = _L1D_BALANCE_ROWS[index - 1]
         expected = {entry[4] for entry in descriptors if entry[4] is not None}
-        if not isinstance(data, dict) or set(data) != expected:
+        if not isinstance(data, dict) or set(data) - expected:
             raise _UnsupportedMetadata('unsupported_corporate_l1d_balance_source')
-        values = {key: _l1d_integer(value, nullish=True) for key, value in data.items()}
+        values = {key: _l1d_integer(data.get(key), nullish=True) for key in expected}
         calculations = [('AC1700', _L1D_ASSET_CALC)] if index == 1 else [
             ('AC2999', _L1D_DEBT_CALC), ('AC3299', _L1D_EQUITY_CALC),
             ('AC3300', ['2999', '3299'])]
         for total, operands in calculations:
             computed = _l1d_sum([(-1 if code.startswith('-') else 1) * values['AC' + code.lstrip('-')]
                                  for code in operands])
-            if _l1d_integer(data[total]) != computed:
+            if _l1d_integer(data.get(total)) != computed:
                 raise _UnsupportedMetadata('unreconciled_corporate_l1d_balance_total')
         rows, foot = [], None
         for _, location, code, caption, key in descriptors:
-            row = [code or '', caption, '' if key is None or data[key] is None
-                   else _number(data[key], 0, locale=locale)]
+            row = [code or '', caption, '' if key is None or data.get(key) is None
+                   else _number(data.get(key), 0, locale=locale)]
             if key is not None:
-                evidence(data[key], [root, key], {'table': f'L1-D/grid{index + 1}',
+                evidence(data.get(key), [root, key], {'table': f'L1-D/grid{index + 1}',
                     'footer': 0} if location == 'footer' else {'table': f'L1-D/grid{index + 1}',
                     'row': len(rows), 'column': 2}, 'reconciled-reported-total' if key in
                     {total for total, _ in calculations} else 'angular-number-1.0-0-id')
