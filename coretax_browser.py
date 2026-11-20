@@ -273,9 +273,30 @@ OWNED_PILOT_LABEL_TEXT_JS = r'''owner => {
  if(!owner.isConnected || owner.ownerDocument!==document)
    throw new Error('Original paginator owner changed');
  const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
- return {text:label ? label.innerText : '',
+ // Same held owner, same exact enabled-First selector as the next Python
+ // query. A negative result is a pilot proof, never a click permission.
+ const firstAbsence=owner.querySelector(
+   '.p-paginator-first:not([disabled]):not(.p-disabled)')===null;
+ return {text:label ? label.innerText : '', first_absent:firstAbsence,
          renderer_ms:performance.now()-started};
 }'''
+
+# Only the no-First 500-row pilot path may reuse its observed negative lookup.
+# Recheck the same enabled First selector, held owner and admitted label
+# atomically with the original initial TABLE_JS read; a newly enabled First
+# fails closed rather than skipping a required reset. No new browser RPC.
+TABLE_PILOT_INITIAL_JS = r'''(table, {owner, selected}) => {
+ if(!owner.isConnected || owner.ownerDocument!==document ||
+    !table.isConnected || table.closest('p-table')!==owner)
+   throw new Error('Inspected paginator owner changed before initial snapshot');
+ if(owner.querySelector('.p-paginator-first:not([disabled]):not(.p-disabled)'))
+   throw new Error('First-page pilot proof changed before initial snapshot');
+ const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
+ if(!label || label.innerText.trim()!==selected)
+   throw new Error('Pilot page size changed before initial snapshot');
+ return (CAPTURE_TABLE)(table);
+}'''.replace('CAPTURE_TABLE', TABLE_JS)
+
 
 # Diagnostic-only: one read-only selector check on the ORIGINAL held owner.
 # performance.now() covers only renderer execution after the RPC begins.
@@ -416,7 +437,9 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
      if(loading) cursor.idleSince=null;
      else if(cursor.idleSince==null) cursor.idleSince=now;
      if(cursor.idleSince!==null && now-cursor.idleSince>=180) break;
-     if(now>=sliceEnd) return {pending:true};
+     // Non-business enum: which existing readiness gate was still active.
+     if(now>=sliceEnd) return {pending:true,
+       pending_reason:loading?'overlay':'settle'};
      await new Promise(resolve=>setTimeout(resolve,Math.min(40,sliceEnd-now)));
    }
  }
@@ -449,11 +472,23 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
 TABLE_CURSOR_TURN_JS = r'''async (cursor, options) => {
  const started=performance.now();
  const advance=(ADVANCE)(cursor,options);
+ const outcome=(snapshot)=>{
+   if(snapshot===null) return 'late_state';
+   if(snapshot?.pending) return snapshot.pending_reason==='overlay'?
+     'pending_overlay':'pending_settle';
+   if(snapshot?.refusal) return 'refused';
+   if(snapshot?.budget) return 'budget';
+   if(snapshot?.idle_timeout) return 'idle_timeout';
+   if(typeof snapshot?.packed==='string') return 'ready';
+   return 'unavailable';
+ };
  const done=(snapshot)=>({
-   ...advance, snapshot, turn_renderer_ms:performance.now()-started
+   ...advance, snapshot, turn_outcome:outcome(snapshot),
+   turn_renderer_ms:performance.now()-started
  });
  if(advance.status!=='advanced')
-   return {...advance,turn_renderer_ms:performance.now()-started};
+   return {...advance,turn_outcome:'not_advanced',
+           turn_renderer_ms:performance.now()-started};
  const owner=cursor.owner;
  const stopAt=Math.min(cursor.deadline,performance.now()+850);
  while(true){
@@ -664,10 +699,30 @@ class _InitialLoadingDiagnostics:
 
 
 
-def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks):
+def _snapshot_diagnostic_outcome(reply):
+    """Closed enum only; never inspect or emit captured page data."""
+    if type(reply) is not dict:
+        return 'unavailable'
+    if reply.get('pending') is True:
+        return ('pending_overlay' if reply.get('pending_reason') == 'overlay'
+                else 'pending_settle')
+    if 'refusal' in reply:
+        return 'refused'
+    if reply.get('budget') is True:
+        return 'budget'
+    if reply.get('idle_timeout') is True:
+        return 'idle_timeout'
+    if type(reply.get('packed')) is str:
+        return 'ready'
+    return 'unavailable'
+
+
+def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks,
+                              *, first_lookup_source=None):
     """Bounded preparation timings; only large-table candidates, no DOM values."""
     if max_page_size >= 250:
         diagnostics.record('table.reset_timing', table_reset_step=stage,
+                           table_first_lookup_source=first_lookup_source,
                            form_ordinal=_INITIAL_FORM_ORDINAL.get(),
                            table_ordinal=ordinal, count=clicks,
                            duration_ms=(_diagnostic_clock() - started) * 1000)
@@ -760,6 +815,12 @@ def _timed_existing_rpc(stage, ordinal, max_page_size, slots, host_cpu_slots=Non
         if (type(renderer_ms) in (int, float) and 0 <= renderer_ms <= wall_ms):
             fields['table_rpc_renderer_ms'] = renderer_ms
             fields['table_rpc_residual_ms'] = max(0, wall_ms - renderer_ms)
+        # Fixed, bounded result categories only: never store snapshot data,
+        # paginator state, source labels or browser error text.
+        if stage == 'cursor_turn':
+            fields['table_cursor_turn_outcome'] = observation.get('cursor_outcome')
+        elif stage == 'cursor_snapshot':
+            fields['table_cursor_snapshot_outcome'] = observation.get('snapshot_outcome')
         try:
             diagnostics.record('table.existing_rpc_timing', **fields)
         except Exception:  # nosec B110 - Optional diagnostics may never mask capture or Stop.
@@ -861,6 +922,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     if observer is not None:
         observer.emit('size_complete')
     guard_started = _diagnostic_clock()
+    pilot_absence_proved = False
+    pilot_selected = None
     try:
         if max_page_size >= 250:
             # A previously selected larger page must not bypass the pilot limit.
@@ -881,6 +944,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 selected = label_read['text'].strip()
             if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
                 raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+            pilot_selected = selected
+            # Only the admitted 500-row branch may reuse the read-only
+            # negative First result; a positive result uses the old guarded
+            # Python lookup + click path without extra browser dispatches.
+            pilot_absence_proved = (max_page_size >= 500 and int(selected) == 500
+                                    and label_read.get('first_absent') is True)
     finally:
         _record_large_table_reset('pilot_guard', guard_started, ordinal, max_page_size, 1)
     first_started = _diagnostic_clock()
@@ -889,10 +958,13 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         lookup_started = _diagnostic_clock()
         first_found = 0
         try:
-            first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
+            first = (None if pilot_absence_proved else container_handle.query_selector(
+                '.p-paginator-first:not([disabled]):not(.p-disabled)'))
             first_found = int(first is not None)
         finally:
-            _record_large_table_reset('first_lookup', lookup_started, ordinal, max_page_size, first_found)
+            _record_large_table_reset(
+                'first_lookup', lookup_started, ordinal, max_page_size, first_found,
+                first_lookup_source='pilot_absence' if pilot_absence_proved else 'owner_query')
         if first:
             if observer is not None:
                 observer.stage = 'first_click'
@@ -1001,7 +1073,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     first_read_started = _diagnostic_clock()
     with _timed_existing_rpc('initial_snapshot', ordinal, max_page_size,
                              passive_rpc_slots):
-        result = table.evaluate(TABLE_JS)
+        if pilot_absence_proved:
+            result = table.evaluate(TABLE_PILOT_INITIAL_JS,
+                                    {'owner': container_handle, 'selected': pilot_selected})
+        else:
+            result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
     diagnostics.record('table.page_timing', table_page_stage='initial',
                        pages=1, page_rows=len(result['rows']), page_size_cap=max_page_size,
@@ -1039,6 +1115,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                         'turn_renderer_ms' if use_turn else 'renderer_ms')
                 if use_turn and type(advance) is dict:
                     embedded_snapshot = advance.get('snapshot')
+                    if timing is not None:
+                        timing['cursor_outcome'] = advance.get('turn_outcome')
             _check_cancel(check_cancel)
             status = advance['status']
             if status == 'done':
@@ -1172,6 +1250,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
                     if timing is not None and type(snapshot) is dict:
                         timing['renderer_ms'] = snapshot.get('renderer_ms')
+                        timing['snapshot_outcome'] = _snapshot_diagnostic_outcome(snapshot)
             while cursor is not None:
                 _check_cancel(check_cancel)
                 if time.monotonic() >= capture_deadline:
@@ -1186,6 +1265,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
                     if timing is not None and type(snapshot) is dict:
                         timing['renderer_ms'] = snapshot.get('renderer_ms')
+                        timing['snapshot_outcome'] = _snapshot_diagnostic_outcome(snapshot)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.

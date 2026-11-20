@@ -46,13 +46,16 @@ def test_500_row_turn_captures_owned_pages_in_one_rpc_each(context, monkeypatch,
     assert calls.get(driver.TABLE_VERIFIED_JS, 0) == 0
     timings = [r for r in records(tmp_path)
                if r['event'] == 'table.existing_rpc_timing']
-    assert len([r for r in timings if r['table_existing_rpc_stage'] == 'cursor_turn']) == 3
+    turn = [r for r in timings if r['table_existing_rpc_stage'] == 'cursor_turn']
+    assert len(turn) == 3
+    assert [r.get('table_cursor_turn_outcome') for r in turn] == [
+        'ready', 'ready', 'not_advanced']
     assert all('row' not in r and 'url' not in r and 'body' not in r for r in timings)
     page.close()
 
 
 def test_500_row_turn_falls_back_to_existing_poll_when_server_page_is_late(
-        context, monkeypatch):
+        context, monkeypatch, tmp_path):
     page = context.new_page()
     page.route('**/*', lambda route: route.abort())
     table = fixture(page, total=601, selected=500)
@@ -64,11 +67,17 @@ def test_500_row_turn_falls_back_to_existing_poll_when_server_page_is_late(
     }""")
     calls = _count_evaluations(monkeypatch)
 
-    captured = driver.capture_table(page, table, 1, 1000, max_page_size=500)
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 1000, max_page_size=500)
+        assert log.flush()
 
     assert_rows(captured, 601)
     assert captured['pages'] == 2 and page.evaluate('moves') == 1
     assert calls.get(driver.TABLE_CURSOR_TURN_JS) == 2
+    turn = [r for r in records(tmp_path)
+            if r['event'] == 'table.existing_rpc_timing'
+            and r['table_existing_rpc_stage'] == 'cursor_turn']
+    assert turn[0]['table_cursor_turn_outcome'] == 'late_state'
     assert calls.get(driver.TABLE_CURSOR_POLL_JS, 0) >= 1
     assert calls.get(driver.TABLE_VERIFIED_JS, 0) >= 1
     page.close()
@@ -125,7 +134,7 @@ def test_500_row_turn_budget_does_not_click_after_expiry(context, monkeypatch):
 
 
 def test_500_row_turn_pending_overlay_retains_stop_slice_and_owned_snapshot(
-        context, monkeypatch):
+        context, monkeypatch, tmp_path):
     page = context.new_page()
     page.route('**/*', lambda route: route.abort())
     table = fixture(page, total=601, selected=500)
@@ -144,10 +153,21 @@ def test_500_row_turn_pending_overlay_retains_stop_slice_and_owned_snapshot(
     }""")
     calls = _count_evaluations(monkeypatch)
 
-    captured = driver.capture_table(page, table, 1, 1000, max_page_size=500)
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 1000, max_page_size=500)
+        assert log.flush()
 
     assert_rows(captured, 601)
     assert page.evaluate('moves') == 1
     assert calls.get(driver.TABLE_CURSOR_TURN_JS) == 2
     assert calls.get(driver.TABLE_VERIFIED_JS, 0) >= 1
+    rpc = [r for r in records(tmp_path)
+           if r['event'] == 'table.existing_rpc_timing']
+    turn = [r for r in rpc if r['table_existing_rpc_stage'] == 'cursor_turn']
+    snapshot = [r for r in rpc
+                if r['table_existing_rpc_stage'] == 'cursor_snapshot']
+    assert turn[0]['table_cursor_turn_outcome'] == 'pending_overlay'
+    assert snapshot
+    assert snapshot[-1]['table_cursor_snapshot_outcome'] == 'ready'
+    assert all('row' not in r and 'url' not in r and 'body' not in r for r in rpc)
     page.close()
