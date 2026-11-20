@@ -75,6 +75,18 @@ def test_absent_overseas_refund_projects_as_zero_not_refusal():
     assert [a['body_row_count'], b['body_row_count']] == [2, 12]
 
 
+def test_usd_scalars_and_footer_allow_two_decimal_foreign_currency():
+    # The *Usd controls are foreign-currency amounts with a 2-decimal fraction;
+    # the whole-rupiah controls stay integer. Beyond 2 decimals still refuses.
+    form, pages, footer = inputs()
+    form['OtherPartiesIncomeTaxWithheldUsd'] = 10736.42
+    form['OtherPartiesTotalCreditUsd'] = 10736.42
+    footer['IncomeTaxUsd'] = 10736.42
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert [a['body_row_count'], b['body_row_count']] == [2, 12]
+
+
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():
     form, pages, footer = inputs()
     before = deepcopy((form, pages, footer))

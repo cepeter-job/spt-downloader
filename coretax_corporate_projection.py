@@ -3992,6 +3992,19 @@ def _l3_integer(value, *, nullish=False):
     return int(number)
 
 
+def _l3_usd(value, *, nullish=False):
+    # Foreign-currency (USD) amounts carry a 2-decimal fraction, unlike the
+    # whole-rupiah controls. Never invent precision: reject beyond 2 decimals.
+    if value is None and nullish:
+        return Decimal(0)
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l3_number_type')
+    number = _decimal(value)
+    if abs(number) > _MAX_INTEGER or number != number.quantize(Decimal('0.01')):
+        raise _UnsupportedMetadata('unsupported_corporate_l3_number_precision')
+    return number
+
+
 def _l3_sum(values):
     result = 0
     for value in values:
@@ -4070,7 +4083,10 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
 
     for field in _L3_SCALARS:
         value = form.get(field)
-        _l3_integer(value, nullish=True)
+        if field.endswith('Usd'):
+            _l3_usd(value, nullish=True)
+        else:
+            _l3_integer(value, nullish=True)
         evidence(value, [_L3_ROOT, field], {'control': field})
     sums = []
     for field, reported in zip(('NetIncome', 'PayableRupiah', 'CreditCalculated'), _L3_SCALARS[:3]):
@@ -4146,7 +4162,8 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                                  rule='non-displayed-domestic-row-metadata')
     if len(brows) != total:
         raise _UnsupportedMetadata('incomplete_corporate_l3_pages')
-    amounts = {key: _l3_integer(value, nullish=True) for key, value in footer_payload.items()}
+    amounts = {key: (_l3_usd(value, nullish=True) if key == 'IncomeTaxUsd'
+                     else _l3_integer(value, nullish=True)) for key, value in footer_payload.items()}
     credit = _l3_sum([foreign_credit, amounts['IncomeTax']])
     _l3_sum([foreign_credit, amounts['IncomeTaxUsd']])  # The same callback writes the hidden USD total.
     for field, value in footer_payload.items():
