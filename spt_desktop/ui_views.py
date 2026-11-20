@@ -2,7 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Mapping
-from .ui_copy import copy_text, STAGE_LABELS
+from .ui_copy import copy_text, format_text, STAGE_LABELS
 from .ui_state import ExportState
 from .ui_theme import configure_theme, effective_scale, dip_to_px, layout_policy
 
@@ -10,15 +10,15 @@ from .ui_theme import configure_theme, effective_scale, dip_to_px, layout_policy
 _STAGE_INDEX = {'authentication': 0, 'inventory': 1, 'selection': 1,
                 'details': 2, 'export': 3, 'publish': 3, 'overwrite': 3}
 _TITLES = {
-    'preparing': 'Menyiapkan aplikasi', 'authenticating': 'Memeriksa akses ke Coretax',
-    'login_required': 'Selesaikan login di browser', 'inventory': 'Membaca daftar SPT',
-    'awaiting_selection': 'Pilih SPT yang ingin diunduh', 'selection_submitted': 'Menyiapkan SPT pilihan',
-    'capturing': 'Mengambil rincian SPT', 'exported': 'File Excel sudah dibuat',
-    'publishing': 'Menyimpan hasil unduhan', 'awaiting_overwrite': 'Periksa file yang akan diganti',
-    'cancellation_pending': 'Menunggu proses berhenti', 'stopping': 'Menghentikan unduhan…',
-    'complete': 'File Excel sudah siap', 'empty_complete': 'Tidak ada SPT yang ditemukan',
-    'partial': 'Hasil unduhan belum lengkap', 'cancelled': 'Unduhan dihentikan',
-    'blocked': 'Unduhan belum bisa dilanjutkan', 'error': 'Unduhan belum berhasil',
+    'preparing': copy_text('view.state.title.menyiapkan.aplikasi'), 'authenticating': copy_text('view.state.title.memeriksa.akses.ke.coretax'),
+    'login_required': copy_text('view.state.title.selesaikan.login.di.browser'), 'inventory': copy_text('view.state.title.membaca.daftar.spt'),
+    'awaiting_selection': copy_text('view.state.title.pilih.spt.yang.ingin.diunduh'), 'selection_submitted': copy_text('view.state.title.menyiapkan.spt.pilihan'),
+    'capturing': copy_text('view.state.title.mengambil.rincian.spt'), 'exported': copy_text('download.exported.title'),
+    'publishing': copy_text('download.publish.title'), 'awaiting_overwrite': copy_text('view.state.title.periksa.file.yang.akan.diganti'),
+    'cancellation_pending': copy_text('view.state.title.menunggu.proses.berhenti'), 'stopping': copy_text('download.stopping.title'),
+    'complete': copy_text('download.complete.title'), 'empty_complete': copy_text('view.state.title.tidak.ada.spt.yang.ditemukan'),
+    'partial': copy_text('download.partial.title'), 'cancelled': copy_text('download.cancelled.title'),
+    'blocked': copy_text('view.state.title.unduhan.belum.bisa.dilanjutkan'), 'error': copy_text('download.error.title'),
 }
 
 
@@ -43,10 +43,10 @@ class MainView(ttk.Frame):
         self._root_bindings = []
         self.npwp = tk.StringVar(self)
         self.year = tk.StringVar(self, value=year_default)
-        self.status = tk.StringVar(self, value='Masukkan NPWP dan tahun pajak, lalu klik Mulai unduh.')
-        self.percent = tk.StringVar(self, value='0%')
+        self.status = tk.StringVar(self, value=copy_text('status.initial'))
+        self.percent = tk.StringVar(self, value=copy_text('view.progress.zero'))
         self.npwp_error, self.year_error = tk.StringVar(self), tk.StringVar(self)
-        self.scope_npwp, self.scope_year, self.scope_selected = (tk.StringVar(self, value='—') for _ in range(3))
+        self.scope_npwp, self.scope_year, self.scope_selected = (tk.StringVar(self, value=copy_text('view.placeholder.unknown')) for _ in range(3))
         self.process_title, self.process_help = tk.StringVar(self), tk.StringVar(self)
         self.metric_text = tk.StringVar(self)
         self.columnconfigure(0, weight=1)
@@ -56,13 +56,13 @@ class MainView(ttk.Frame):
         self.header.columnconfigure(0, weight=1)
         self.heading = ttk.Label(self.header, text=copy_text('app.title'), style='Title.TLabel', wraplength=self.px(500))
         self.heading.grid(row=0, column=0, sticky='ew', padx=(0, self.px(12)))
-        self.settings_button = ttk.Button(self.header, text='Pengaturan', command=on_settings, underline=0, style='SPT.TButton')
+        self.settings_button = ttk.Button(self.header, text=copy_text('settings.title'), command=on_settings, underline=0, style='SPT.TButton')
         self.settings_button.grid(row=0, column=1, sticky='ne')
         self.subtitle = ttk.Label(self.header, text=copy_text('app.subtitle'), style='SPT.Stage.TLabel', wraplength=self.px(500))
         self.subtitle.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(self.px(4), 0))
         self.stage_strip = ttk.Frame(self, style='SPT.Shell.TFrame')
         self.stage_strip.grid(row=1, column=0, sticky='ew', pady=(0, self.px(12)))
-        self.stage_labels = tuple(ttk.Label(self.stage_strip, text=f'{index + 1} · {label}',
+        self.stage_labels = tuple(ttk.Label(self.stage_strip, text=format_text('view.widget.value1.label', value1=index + 1, label=label),
             style='SPT.Stage.TLabel', takefocus=False, padding=(0, self.px(4)))
             for index, label in enumerate(STAGE_LABELS))
         self.viewport = ttk.Frame(self, style='SPT.Shell.TFrame')
@@ -81,12 +81,12 @@ class MainView(ttk.Frame):
         self.content_slot.columnconfigure(0, weight=1)
         self.scope_panel = ttk.Frame(self.workspace, style='SPT.Card.TFrame', padding=self.px(16))
         self.scope_panel.columnconfigure(0, weight=1)
-        self.scope_title = ttk.Label(self.scope_panel, text='Ringkasan unduhan', style='SPT.Heading.TLabel')
+        self.scope_title = ttk.Label(self.scope_panel, text=copy_text('scope.title'), style='SPT.Heading.TLabel')
         self.scope_title.grid(row=0, column=0, columnspan=3, sticky='w', pady=(0, self.px(12)))
         self._scope_labels = []
         self._scope_holders = []
-        for row, (caption, value) in enumerate((('NPWP', self.scope_npwp), ('Tahun pajak', self.scope_year),
-                                                ('SPT dipilih', self.scope_selected)), start=1):
+        for row, (caption, value) in enumerate(((copy_text('scope.npwp.label'), self.scope_npwp), (copy_text('scope.year.label'), self.scope_year),
+                                                (copy_text('scope.selected.label'), self.scope_selected)), start=1):
             holder = ttk.Frame(self.scope_panel, style='SPT.Card.TFrame')
             holder.grid(row=row, sticky='ew', pady=(0, self.px(8)))
             holder.columnconfigure(0, weight=1)
@@ -137,7 +137,7 @@ class MainView(ttk.Frame):
             holder.columnconfigure(0, weight=1)
         self.npwp_label = ttk.Label(self.npwp_field, text=copy_text('form.npwp.label'), style='SPT.Label.TLabel')
         self.npwp_label.grid(row=0, sticky='w')
-        ttk.Label(self.year_field, text='Tahun pajak', style='SPT.Label.TLabel').grid(row=0, sticky='w')
+        ttk.Label(self.year_field, text=copy_text('form.year.label'), style='SPT.Label.TLabel').grid(row=0, sticky='w')
         self.npwp_entry = ttk.Entry(self.npwp_field, textvariable=self.npwp, width=24, style='SPT.TEntry')
         self.year_entry = ttk.Entry(self.year_field, textvariable=self.year, width=10, style='SPT.TEntry')
         self._field_wrappers = []
@@ -166,7 +166,7 @@ class MainView(ttk.Frame):
         self.status_label = ttk.Label(self.progress_panel, textvariable=self.status, style='SPT.Caption.TLabel', wraplength=self.px(500))
         self.status_label.grid(row=5, column=0, sticky='ew')
         self.setup_hint = ttk.Label(self.progress_panel,
-            text='Setup Python/uv otomatis saat Mulai. Password hanya di Windows Credential Manager.',
+            text=copy_text('setup.hint'),
             style='SPT.Caption.TLabel', wraplength=self.px(500))
         self.setup_hint.grid(row=6, column=0, sticky='ew', pady=(self.px(16), 0))
         self.result_panel = ttk.Frame(self.content_slot, style='SPT.Card.TFrame', padding=self.px(16))
@@ -183,30 +183,30 @@ class MainView(ttk.Frame):
                 or state.terminal_status != self._state.terminal_status):
             self._pending_reveal = self._priority_area(state)
         self._state = state
-        self.scope_npwp.set(state.npwp or '—')
-        self.scope_year.set(state.year or '—')
-        self.scope_selected.set(str(state.selected_count) if state.selected_count is not None else 'Belum dipilih')
+        self.scope_npwp.set(state.npwp or copy_text('view.placeholder.unknown'))
+        self.scope_year.set(state.year or copy_text('view.placeholder.unknown'))
+        self.scope_selected.set(str(state.selected_count) if state.selected_count is not None else copy_text('scope.selected.empty'))
         self.process_title.set(_TITLES.get(state.view_state, ''))
-        help_text = 'Persentase menunjukkan progres seluruh proses.'
+        help_text = copy_text('view.hint.persentase.menunjukkan.progres.seluruh.proses')
         if state.view_state == 'preparing':
-            help_text = 'Saat pertama kali digunakan, aplikasi perlu mengunduh paket pendukung. Pastikan koneksi internet tersedia.'
+            help_text = copy_text('view.hint.saat.pertama.kali.digunakan.aplikasi')
         elif state.view_state == 'login_required':
-            help_text = 'Selesaikan login, CAPTCHA, atau MFA di browser aplikasi. Unduhan berlanjut setelah akses siap.'
+            help_text = copy_text('view.hint.selesaikan.login.captcha.atau.mfa')
         elif state.view_state in ('stopping', 'cancellation_pending'):
-            help_text = 'Tunggu sampai proses berhenti. Data sementara yang sudah dibuat tetap disimpan.'
+            help_text = copy_text('view.hint.tunggu.sampai.proses.berhenti.data')
         self.process_help.set(help_text)
         counts = state.inventory if state.view_state == 'inventory' else state.details
         metrics = []
         if counts is not None:
             if counts.processed is not None and counts.total is not None:
-                caption = 'Bagian daftar dibaca' if state.view_state == 'inventory' else 'SPT diproses'
-                metrics.append(f'{caption}: {counts.processed} / {counts.total}')
+                caption = (copy_text('view.metric.title.bagian.daftar.dibaca') if state.view_state == 'inventory' else copy_text('view.metric.title.spt.diproses'))
+                metrics.append(format_text('view.metric.caption.processed.total', caption=caption, processed=counts.processed, total=counts.total))
             if state.view_state == 'inventory' and counts.scanned is not None:
-                metrics.append(f'Baris terbaca: {counts.scanned}')
+                metrics.append(format_text('view.metric.baris.terbaca.scanned', scanned=counts.scanned))
             elif state.view_state != 'inventory' and counts.verified is not None:
-                metrics.append(f'Lengkap: {counts.verified}')
+                metrics.append(format_text('view.metric.lengkap.verified', verified=counts.verified))
                 if counts.processed is not None:
-                    metrics.append(f'Belum pasti lengkap: {counts.processed - counts.verified}')
+                    metrics.append(format_text('view.metric.belum.pasti.lengkap.value1', value1=counts.processed - counts.verified))
         self.metric_text.set('\n'.join(metrics))
         is_form = state.view_state in ('idle', 'form_invalid') or state.terminal_status is not None
         if is_form:
@@ -219,7 +219,7 @@ class MainView(ttk.Frame):
             self.result_panel.grid(row=1, column=0, sticky='ew', pady=(self.px(12), 0))
         else:
             self.result_panel.grid_remove()
-        self.percent.set('—' if state.percent is None else f'{state.percent}%')
+        self.percent.set(copy_text('view.placeholder.unknown') if state.percent is None else f'{state.percent}%')
         if state.percent is None:
             if not self._indeterminate:
                 self.bar.configure(mode='indeterminate')

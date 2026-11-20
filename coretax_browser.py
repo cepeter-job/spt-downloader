@@ -16,12 +16,14 @@ Exception-handling policy for this module:
 """
 
 from spt_desktop import diagnostics
+from spt_desktop import owned_process_cpu
 import time
 from time import perf_counter as _diagnostic_clock
 import re
 import json
 import os
-from contextlib import ExitStack, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
+from contextvars import ContextVar
 from uuid import uuid4
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlparse
@@ -72,14 +74,16 @@ GROUP_JS = r'''(element) => {
 
 CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  const panel=table.closest('.p-tabview-panel');
- const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l9-form,rshshr-citr-l3-form,rshshr-citr-l11a-form');
+ const form=table.closest('rshshr-citr-l1d-form,rshshr-citr-l2-form,rshshr-citr-l9-form,rshshr-citr-l3-form,rshshr-citr-l11a-form,rshshr-citr-l11b-form');
  if(!panel || !form || form.closest('.p-tabview-panel')!==panel) return null;
- const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':name==='L11-A'?'rshshr-citr-l11a-form':'';
+ const expectedForm=name==='L1-D'?'rshshr-citr-l1d-form':name==='L2'?'rshshr-citr-l2-form':name==='L9'?'rshshr-citr-l9-form':name==='L3'?'rshshr-citr-l3-form':name==='L11-A'?'rshshr-citr-l11a-form':name==='L11-B'?'rshshr-citr-l11b-form':'';
  if(form.localName!==expectedForm) return null;
  const roles={
   'rsh-citr-l1d-grid1':['L1-D','A. LAPORAN LABA RUGI'],
   'rsh-citr-l1d-grid2':['L1-D','B. LAPORAN POSISI KEUANGAN'],
   'rsh-citr-l1d-grid3':['L1-D','B. LAPORAN POSISI KEUANGAN'],
+  'rsh-citr-l2-form-grid1':['L2','A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS'],
+  'rsh-citr-l2-form-grid2':['L2','B. DAFTAR PENYERTAAN MODAL, UTANG, DAN/ATAU PIUTANG PADA PERUSAHAAN AFILIASI'],
   'rsh-citr-l3-grid1':['L3','A. PENGHASILAN DARI LUAR NEGERI'],
   'rshshr-citr-l3-grid2':['L3','B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'],
   'rshshr-citr-l11a-grid1':['L11-A','I. DAFTAR NOMINATIF BIAYA PROMOSI DAN PENJUALAN, SERTA PENGGANTIAN ATAU IMBALAN DALAM BENTUK NATURA DAN/ATAU KENIKMATAN'],
@@ -87,6 +91,9 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
   'rshshr-citr-l11a-grid3':['L11-A','III. DAFTAR PIUTANG YANG NYATA-NYATA TIDAK DAPAT DITAGIH'],
   'rsh-citr-l11a-grid4':['L11-A','IV. RINCIAN BAGI WAJIB PAJAK PEMBERI NATURA DAN/ATAU KENIKMATAN'],
   'rshshr-citr-l11a-grid5':['L11-A','V. DAFTAR DEBITUR NON-PERFORMING LOAN'],
+  'rsh-citr-l11b-form-grid1':['L11-B','II. PERBANDINGAN ANTARA UTANG DAN MODAL (DEBT TO EQUITY RATIO)'],
+  'rsh-citr-l11b-form-grid2':['L11-B','II. PERBANDINGAN ANTARA UTANG DAN MODAL (DEBT TO EQUITY RATIO)'],
+  'rsh-citr-l11b-form-grid3':['L11-B','III. PENGHITUNGAN BIAYA PINJAMAN'],
   'rshshr-citr-l9-form-grid1':['L9','HARTA BERWUJUD'],
   'rshshr-citr-l9-form-grid2':['L9','BANGUNAN'],
   'rshshr-citr-l9-form-grid3':['L9','HARTA TIDAK BERWUJUD']
@@ -105,9 +112,12 @@ CORPORATE_STRUCTURE_JS = r'''(table, name) => {
  if(components.length!==1) return null;
  const component=components[0], role=roles[component];
  if(role[0]!==name || groups[0]!==role[1]) return null;
- if(['L1-D','L3'].includes(name) && groups.length!==1) return null;
+ if(['L1-D','L2','L3'].includes(name) && groups.length!==1) return null;
  if(name==='L11-A' && (component==='rsh-citr-l11a-grid4'?
     groups.length!==2 || groups[1]!=='IV.A DAFTAR SARANA DAN FASILITAS SERTA PENYUSUTANNYA':groups.length!==1)) return null;
+ if(name==='L11-B' && (component==='rsh-citr-l11b-form-grid3'?groups.length!==1:
+    groups.length!==2 || groups[1]!== (component==='rsh-citr-l11b-form-grid1'?
+    'A. PENGHITUNGAN RATA-RATA SALDO UTANG':'B. PENGHITUNGAN SALDO RATA-RATA MODAL'))) return null;
  if(name==='L9'){
   const inner=component.endsWith('grid2')?['PERMANEN','TIDAK PERMANEN']:
    ['KELOMPOK 1','KELOMPOK 2','KELOMPOK 3','KELOMPOK 4','LAINNYA','KELOMPOK LAINNYA'];
@@ -233,6 +243,82 @@ FIELDS_JS = r'''(root) => {
 # unobserved change fails closed under the existing state-poll deadline.
 STATE_JS = "(e)=>JSON.stringify({p:[...e.querySelectorAll('.p-paginator-page.p-highlight')].map(x=>x.textContent.trim()),rows:[...e.querySelectorAll('tbody tr')].map(x=>x.textContent)})"
 
+# One owner-bound query returns the *original control*, not a boolean that
+# requires a second round-trip to resolve an ElementHandle when it exists.
+# A returned handle is used only by the existing click guard and is disposed
+# after the attempt. Missing Previous yields a JSHandle(null), never a guessed
+# replacement or a document-wide search.
+OWNED_PREVIOUS_CONTROL_JS = r'''(owner, selector) => {
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ return owner.querySelector(selector);
+}'''
+
+# The final post-loop limit check needs only presence, not a button handle.
+# Keep its independent check (including after max_pages iterations), on the
+# same owner with the exact original enabled selector.
+OWNED_PREVIOUS_PRESENT_JS = r'''(owner, selector) => {
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ return owner.querySelector(selector)!==null;
+}'''
+
+# Large-table pilot page-size guard: read the displayed label on the
+# original paginator owner in a single read-only Playwright evaluation,
+# without creating an ElementHandle that needs a second remote inner_text
+# RPC. The original ASCII decimal and caller size cap remain in Python.
+# Refuse a detached or replaced owner; no document-wide fallback.
+OWNED_PILOT_LABEL_TEXT_JS = r'''owner => {
+ const started=performance.now();
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   throw new Error('Original paginator owner changed');
+ const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
+ // Same held owner, same exact enabled-First selector as the next Python
+ // query. A negative result is a pilot proof, never a click permission.
+ const firstAbsence=owner.querySelector(
+   '.p-paginator-first:not([disabled]):not(.p-disabled)')===null;
+ return {text:label ? label.innerText : '', first_absent:firstAbsence,
+         renderer_ms:performance.now()-started};
+}'''
+
+# Only the no-First 500-row pilot path may reuse its observed negative lookup.
+# Recheck the same enabled First selector, held owner and admitted label
+# atomically with the original initial TABLE_JS read; a newly enabled First
+# fails closed rather than skipping a required reset. No new browser RPC.
+TABLE_PILOT_INITIAL_JS = r'''(table, {owner, selected}) => {
+ if(!owner.isConnected || owner.ownerDocument!==document ||
+    !table.isConnected || table.closest('p-table')!==owner)
+   throw new Error('Inspected paginator owner changed before initial snapshot');
+ if(owner.querySelector('.p-paginator-first:not([disabled]):not(.p-disabled)'))
+   throw new Error('First-page pilot proof changed before initial snapshot');
+ const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
+ if(!label || label.innerText.trim()!==selected)
+   throw new Error('Pilot page size changed before initial snapshot');
+ return (CAPTURE_TABLE)(table);
+}'''.replace('CAPTURE_TABLE', TABLE_JS)
+
+
+# Diagnostic-only: one read-only selector check on the ORIGINAL held owner.
+# performance.now() covers only renderer execution after the RPC begins.
+# The Python call duration minus this value is an inclusive residual: Playwright
+# scheduling, IPC/transport, queueing and serialization, not proven queue time.
+# No body rows, captions, HTML, control handles or request data leave the page.
+DOM_RPC_TIMING_JS = r'''(owner, selector) => {
+ const started=performance.now();
+ if(!owner.isConnected || owner.ownerDocument!==document)
+   return {status:'detached', renderer_ms:performance.now()-started};
+ const present=owner.querySelector(selector)!==null;
+ return {status:present?'present':'absent', renderer_ms:performance.now()-started};
+}'''
+# Observed positive-path/absent-control calls reached 108.80s on the
+# pre-PR main baseline (12 Nov); 120s includes ~11s headroom. A stricter
+# 150s guard for the late final check protects time for subsequent capture.
+# These guards reduce risk but cannot time out an already queued sync RPC.
+DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS = {
+    'before_previous_lookup': 120,
+    'before_previous_limit_lookup': 150,
+}
+
 PAGINATOR_CLICK_JS = r'''(e, owner, deadline) => {
  const actual = e.closest('p-table') || e.closest('.p-datatable') || e.parentElement;
  const style = getComputedStyle(e);
@@ -351,7 +437,9 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
      if(loading) cursor.idleSince=null;
      else if(cursor.idleSince==null) cursor.idleSince=now;
      if(cursor.idleSince!==null && now-cursor.idleSince>=180) break;
-     if(now>=sliceEnd) return {pending:true};
+     // Non-business enum: which existing readiness gate was still active.
+     if(now>=sliceEnd) return {pending:true,
+       pending_reason:loading?'overlay':'settle'};
      await new Promise(resolve=>setTimeout(resolve,Math.min(40,sliceEnd-now)));
    }
  }
@@ -376,6 +464,49 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
  return {data,state};
 }'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
 
+# Large Corporate tables: one guarded browser round-trip can contain the
+# inspected Next click, page-state transition and owned atomic snapshot.
+# If the state has not changed within one bounded renderer slice, resume the
+# original Python poll/read path. A returned snapshot never bypasses Stop,
+# ownership, source identity or the total table budget.
+TABLE_CURSOR_TURN_JS = r'''async (cursor, options) => {
+ const started=performance.now();
+ const advance=(ADVANCE)(cursor,options);
+ const outcome=(snapshot)=>{
+   if(snapshot===null) return 'late_state';
+   if(snapshot?.pending) return snapshot.pending_reason==='overlay'?
+     'pending_overlay':'pending_settle';
+   if(snapshot?.refusal) return 'refused';
+   if(snapshot?.budget) return 'budget';
+   if(snapshot?.idle_timeout) return 'idle_timeout';
+   if(typeof snapshot?.packed==='string') return 'ready';
+   return 'unavailable';
+ };
+ const done=(snapshot)=>({
+   ...advance, snapshot, turn_outcome:outcome(snapshot),
+   turn_renderer_ms:performance.now()-started
+ });
+ if(advance.status!=='advanced')
+   return {...advance,turn_outcome:'not_advanced',
+           turn_renderer_ms:performance.now()-started};
+ const owner=cursor.owner;
+ const stopAt=Math.min(cursor.deadline,performance.now()+850);
+ while(true){
+   const refusal=(CHECK_OWNER)(cursor);
+   if(refusal) return done({refusal});
+   const now=performance.now();
+   if(now>=cursor.deadline) return done({budget:true});
+   if((READ_STATE)(owner)!==cursor.pending) break;
+   if(now>=stopAt) return done(null); // Python's original state poll follows.
+   await new Promise(resolve=>setTimeout(resolve,Math.min(120,stopAt-now)));
+ }
+ return done(await (VERIFIED)(owner,cursor));
+}'''.replace('ADVANCE', TABLE_CURSOR_ADVANCE_JS
+).replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS
+).replace('READ_STATE', STATE_JS
+).replace('VERIFIED', TABLE_VERIFIED_JS)
+
+
 
 class CaptureCancelled(KeyboardInterrupt):
     """Lewati penanganan Exception per SPT agar Stop tetap menghasilkan PARTIAL."""
@@ -386,9 +517,55 @@ def _check_cancel(check_cancel):
         check_cancel()
 
 
+# Bound to one original large-table First wait, not ordinary other waits.
+# ContextVar keeps the existing wait_idle(page) call and 45s/180ms constants.
+_FIRST_PAGE_TIMING_SCOPE = ContextVar('spt_first_page_timing_scope', default=None)
+
+
+@contextmanager
+def _timed_first_page_operation(stage, ordinal, max_page_size, observer=None):
+    '''Measure an original call only; never inspect page or authorize readiness.'''
+    if max_page_size < 250 or not diagnostics.active():
+        yield
+        return
+    started = _diagnostic_clock()
+    cpu_started = time.thread_time()
+    returned = False
+    if stage == 'first_overlay_wait' and observer is not None:
+        observer.first_overlay_started = started
+        observer.first_overlay_finished_count = 0
+        observer.first_overlay_last_finished_ms = None
+    try:
+        yield
+        returned = True
+    finally:
+        elapsed_ms = max(0, (_diagnostic_clock() - started) * 1000)
+        cpu_ms = max(0, (time.thread_time() - cpu_started) * 1000)
+        fields = dict(table_first_page_step=stage,
+                      table_first_page_outcome='returned' if returned else 'raised',
+                      form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                      table_ordinal=ordinal,
+                      duration_ms=elapsed_ms,
+                      table_rpc_thread_cpu_ms=cpu_ms)
+        if stage == 'first_overlay_wait' and observer is not None:
+            fields['table_first_page_finished_requests'] = observer.first_overlay_finished_count
+            if observer.first_overlay_last_finished_ms is not None:
+                fields['table_first_page_last_finish_ms'] = observer.first_overlay_last_finished_ms
+            observer.first_overlay_started = None
+        try:
+            diagnostics.record('table.first_page_timing', **fields)
+        except Exception:  # nosec B110 - Optional diagnostic must not mask original wait/Stop.
+            pass  # No control-flow or result authority in this recorder.
+
+
 def wait_idle(page):
-    page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
-    page.wait_for_timeout(180)
+    scope = _FIRST_PAGE_TIMING_SCOPE.get()
+    with (_timed_first_page_operation('first_overlay_wait', *scope)
+          if scope is not None else nullcontext()):
+        page.locator('.p-datatable-loading-overlay:visible,.p-blockui:visible').first.wait_for(state='hidden', timeout=45000)
+    with (_timed_first_page_operation('first_settle_wait', *scope)
+          if scope is not None else nullcontext()):
+        page.wait_for_timeout(180)
 
 
 def maximize_page_size(page, container, *, max_page_size=100):
@@ -429,6 +606,277 @@ def _click_table_paginator(control, container, check_cancel):
 
 TABLE_CAPTURE_BUDGET_SECONDS = 180
 
+_INITIAL_FORM_ORDINAL = ContextVar('spt_initial_loading_form_ordinal', default=1)
+class _InitialLoadingDiagnostics:
+    """One optional held-owner preparation observer, never capture authority."""
+
+    _MAX_REQUESTS = 64
+    def __init__(self, page, ordinal):
+        self.page = page
+        self.ordinal = ordinal
+        self.form_ordinal = _INITIAL_FORM_ORDINAL.get()
+        self.started = _diagnostic_clock()
+        self.stage = 'prepare_entry'
+        self.first_overlay_started = None
+        self.first_overlay_finished_count = 0
+        self.first_overlay_last_finished_ms = None
+        self.requests = {}
+        self.counts = {'observed': 0, 'finished': 0, 'failed': 0}
+        self.overflow = False
+        self.listeners = []
+        for name, callback in (('request', self._on_request),
+                               ('requestfinished', self._on_finished),
+                               ('requestfailed', self._on_failed)):
+            try:
+                page.on(name, callback)
+                self.listeners.append((name, callback))
+            except Exception:
+                # Optional diagnostic listener registration is best effort.
+                self.overflow = True
+                break
+
+    def _on_request(self, request):
+        try:
+            if request in self.requests:
+                return
+            if len(self.requests) >= self._MAX_REQUESTS:
+                self.overflow = True
+                return
+            # Request objects only: never read headers, URL, data or response.
+            self.requests[request] = [self.stage, 'pending']
+            self.counts['observed'] += 1
+        except Exception:
+            self.overflow = True
+
+    def _done(self, request, state):
+        try:
+            entry = self.requests.get(request)
+            if entry is not None and entry[1] == 'pending':
+                entry[1] = state
+                self.counts[state] += 1
+                # Existing unbound request-object lifecycle only; no headers,
+                # URL, payload, response or follow-up browser request is read.
+                if state == 'finished' and self.first_overlay_started is not None:
+                    self.first_overlay_finished_count += 1
+                    self.first_overlay_last_finished_ms = max(
+                        0, (_diagnostic_clock() - self.first_overlay_started) * 1000)
+        except Exception:
+            self.overflow = True
+
+    def _on_finished(self, request):
+        self._done(request, 'finished')
+
+    def _on_failed(self, request):
+        self._done(request, 'failed')
+
+    def emit(self, stage, *, error=None):
+        try:
+            # Never attach CDP on a timeout/Stop path. Request-object metrics
+            # are value-free, but cannot prove the owner of a visible overlay.
+            diagnostics.record('table.initial_loading',
+                level='WARNING' if error is not None else 'INFO', error=error,
+                table_initial_stage=stage, table_loading_scope='unavailable',
+                table_loading_first_match='unavailable', table_owner_state='unavailable',
+                table_request_scope='unavailable' if self.overflow else 'other_unbound',
+                table_request_observed=self.counts['observed'],
+                table_request_finished=self.counts['finished'],
+                table_request_failed=self.counts['failed'],
+                table_request_pending=sum(v[1] == 'pending' for v in self.requests.values()),
+                form_ordinal=self.form_ordinal, table_ordinal=self.ordinal,
+                duration_ms=(_diagnostic_clock() - self.started) * 1000)
+        except Exception:
+            # Always preserve the original timeout/Stop/capture outcome.
+            return None
+
+    def close(self):
+        for event, handler in reversed(self.listeners):
+            try:
+                self.page.remove_listener(event, handler)
+            except Exception:  # nosec B110 - Optional listener cleanup cannot mask capture errors.
+                pass  # Optional listener cleanup must not mask capture results.
+        self.listeners.clear()
+        self.requests.clear()
+
+
+
+def _snapshot_diagnostic_outcome(reply):
+    """Closed enum only; never inspect or emit captured page data."""
+    if type(reply) is not dict:
+        return 'unavailable'
+    if reply.get('pending') is True:
+        return ('pending_overlay' if reply.get('pending_reason') == 'overlay'
+                else 'pending_settle')
+    if 'refusal' in reply:
+        return 'refused'
+    if reply.get('budget') is True:
+        return 'budget'
+    if reply.get('idle_timeout') is True:
+        return 'idle_timeout'
+    if type(reply.get('packed')) is str:
+        return 'ready'
+    return 'unavailable'
+
+
+def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks,
+                              *, first_lookup_source=None):
+    """Bounded preparation timings; only large-table candidates, no DOM values."""
+    if max_page_size >= 250:
+        diagnostics.record('table.reset_timing', table_reset_step=stage,
+                           table_first_lookup_source=first_lookup_source,
+                           form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                           table_ordinal=ordinal, count=clicks,
+                           duration_ms=(_diagnostic_clock() - started) * 1000)
+
+
+@contextmanager
+def _timed_rewind_operation(timings, stage):
+    """Aggregate timings of original calls, without extra page/DOM operations."""
+    if timings is None:
+        yield
+        return
+    started = _diagnostic_clock()
+    try:
+        yield
+    finally:
+        duration_ms = (_diagnostic_clock() - started) * 1000
+        current = timings.setdefault(stage, [0.0, 0])
+        current[0] += duration_ms
+        current[1] += 1
+
+
+# Passive timing wraps existing Playwright RPCs only: it never sends its own
+# browser command, alters JS, sets a timeout or authorizes a capture result.
+# At most 48 fixed-category records per large table, regardless of page count.
+# Python thread CPU excludes CPU on Playwright's Node/browser processes; a
+# tiny CPU time against large wall time proves waiting, not which process caused it.
+PASSIVE_RPC_MAX_EVENTS_PER_TABLE = 48
+# At most eight pairs of *local* process snapshots per table, opt-in only.
+# The caps sample the original pilot label and first genuine Previous lookup,
+# plus up to three original advance/snapshot calls each.
+HOST_CPU_STAGE_SAMPLES = {'pilot_label_lookup': 1, 'previous_lookup': 1,
+                          'cursor_advance': 3, 'cursor_snapshot': 3,
+                          'cursor_turn': 3}
+
+
+def _host_cpu_snapshot():
+    try:
+        return owned_process_cpu.snapshot()
+    except Exception:  # nosec B110 - Optional Win32 diagnostics cannot mask original RPC/Stop.
+        return None
+
+
+
+
+@contextmanager
+def _timed_existing_rpc(stage, ordinal, max_page_size, slots, host_cpu_slots=None):
+    if (max_page_size < 250 or not diagnostics.active()
+            or slots[0] >= PASSIVE_RPC_MAX_EVENTS_PER_TABLE):
+        yield None
+        return
+    cpu_before = None
+    cpu_selected = (host_cpu_slots is not None
+                    and os.environ.get('SPT_DIAG_HOST_CPU') == '1'
+                    and owned_process_cpu.supported()
+                    and stage in HOST_CPU_STAGE_SAMPLES
+                    and host_cpu_slots.get(stage, 0) < HOST_CPU_STAGE_SAMPLES[stage])
+    if cpu_selected:
+        host_cpu_slots[stage] = host_cpu_slots.get(stage, 0) + 1
+        cpu_before = _host_cpu_snapshot()
+    started = _diagnostic_clock()
+    cpu_started = time.thread_time()
+    observation = {}
+    returned = False
+    try:
+        yield observation
+        returned = True
+    finally:
+        # Only local clocks and an allowlisted, bounded diagnostic event.
+        # Neither this observer nor its failure changes the wrapped RPC result.
+        wall_ms = (_diagnostic_clock() - started) * 1000
+        cpu_ms = (time.thread_time() - cpu_started) * 1000
+        # Snapshot after the original elapsed measurement: Win32 enumeration
+        # must not inflate the measured browser-RPC wall duration.
+        cpu_after = _host_cpu_snapshot() if cpu_selected else None
+        slots[0] += 1
+        fields = dict(table_existing_rpc_stage=stage,
+                      table_existing_rpc_outcome='returned' if returned else 'raised',
+                      form_ordinal=_INITIAL_FORM_ORDINAL.get(), table_ordinal=ordinal,
+                      duration_ms=wall_ms, table_rpc_thread_cpu_ms=cpu_ms)
+        if cpu_selected:
+            try:
+                delta = owned_process_cpu.paired_cpu_delta(cpu_before, cpu_after)
+            except Exception:  # nosec B110 - Optional CPU evidence cannot mask capture.
+                delta = None
+            fields['table_host_cpu_state'] = 'paired' if delta is not None else 'unavailable'
+            if delta is not None:
+                fields['table_rpc_direct_child_cpu_ms'] = delta[0]
+                fields['table_rpc_nested_child_cpu_ms'] = delta[1]
+        renderer_ms = observation.get('renderer_ms')
+        if (type(renderer_ms) in (int, float) and 0 <= renderer_ms <= wall_ms):
+            fields['table_rpc_renderer_ms'] = renderer_ms
+            fields['table_rpc_residual_ms'] = max(0, wall_ms - renderer_ms)
+        # Fixed, bounded result categories only: never store snapshot data,
+        # paginator state, source labels or browser error text.
+        if stage == 'cursor_turn':
+            fields['table_cursor_turn_outcome'] = observation.get('cursor_outcome')
+        elif stage == 'cursor_snapshot':
+            fields['table_cursor_snapshot_outcome'] = observation.get('snapshot_outcome')
+        try:
+            diagnostics.record('table.existing_rpc_timing', **fields)
+        except Exception:  # nosec B110 - Optional diagnostics may never mask capture or Stop.
+            # Only suppress a logger failure; the wrapped RPC's error/Stop
+            # continues to propagate unchanged through the generator.
+            pass  # nosec B110 - Deliberate best-effort diagnostic containment.
+
+
+def _observe_dom_rpc_delay(owner, selector, *, stage, ordinal, max_page_size,
+                           capture_deadline, check_cancel):
+    """Opt-in, bounded-count diagnostic; never supplies capture/click authority.
+
+    Only active when explicitly requested for a diagnostic operator run.
+    The probe's result is never used to select/authorize paginator actions.
+    Its extra synchronous browser RPC *can* still consume the table deadline,
+    change remaining page coverage, and cannot be cancelled once dispatched.
+    Only its own exceptions are contained; capture errors/Stop retain authority.
+    """
+    guard_seconds = DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS.get(stage)
+    if (max_page_size < 250 or not diagnostics.active()
+            or os.environ.get('SPT_DIAG_DOM_RPC_PROBE') != '1'
+            or guard_seconds is None
+            or capture_deadline - time.monotonic() < guard_seconds):
+        return
+    _check_cancel(check_cancel)
+    started = _diagnostic_clock()
+    try:
+        observation = owner.evaluate(DOM_RPC_TIMING_JS, selector)
+        duration_ms = (_diagnostic_clock() - started) * 1000
+        state = 'unavailable'
+        renderer_ms = None
+        if type(observation) is dict:
+            observed_state = observation.get('status')
+            observed_ms = observation.get('renderer_ms')
+            if observed_state in ('present', 'absent', 'detached'):
+                state = observed_state
+            if (type(observed_ms) in (int, float)
+                    and 0 <= observed_ms <= min(duration_ms, 604_800_000)):
+                renderer_ms = observed_ms
+        fields = dict(table_rpc_stage=stage, table_rpc_state=state,
+                      form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                      table_ordinal=ordinal, duration_ms=duration_ms)
+        if renderer_ms is not None:
+            fields['table_rpc_renderer_ms'] = renderer_ms
+            fields['table_rpc_residual_ms'] = max(0, duration_ms - renderer_ms)
+        diagnostics.record('table.browser_rpc_probe', **fields)
+    except Exception as exc:
+        # Pure diagnostic failure is contained: never block/replace a real
+        # capture outcome or inspect remote error messages.
+        diagnostics.record('table.browser_rpc_probe', level='WARNING',
+                           error=exc, table_rpc_stage=stage,
+                           table_rpc_state='error',
+                           form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                           table_ordinal=ordinal,
+                           duration_ms=(_diagnostic_clock()-started)*1000)
+
 
 def capture_table(page, table, ordinal, max_pages, check_cancel=None, *, max_page_size=100):
     """Baca tabel dengan Stop, batas halaman dan batas waktu satu tabel."""
@@ -448,36 +896,188 @@ def _dispose_table_handle(handle):
 def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_size, resources):
     _check_cancel(check_cancel)
     capture_deadline = time.monotonic() + TABLE_CAPTURE_BUDGET_SECONDS
+    passive_rpc_slots = [0]
+    host_cpu_slots = {}
+    preparation_started = _diagnostic_clock()
     handle = table.element_handle()
-    container_handle = handle.evaluate_handle("e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
+    resources.callback(_dispose_table_handle, handle)
+    # Diagnostics ON and OFF use the same inspected, read-only owner path.
+    # Both handles are registered exactly once with the owned ExitStack.
+    container_handle = handle.evaluate_handle(
+        "e=>e.closest('p-table')||e.closest('.p-datatable')||e.parentElement")
     resources.callback(_dispose_table_handle, container_handle)
-    maximize_page_size(page, container_handle, max_page_size=max_page_size)
-    if max_page_size >= 250:
-        # A previously selected larger page must not bypass the pilot limit.
-        label = container_handle.query_selector('.p-paginator-rpp-options .p-dropdown-label')
-        selected = label.inner_text().strip() if label else ''
-        if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
-            raise RuntimeError('L3-B page size exceeds inspected pilot limit')
-    first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
-    if first:
-        _click_table_paginator(first, container_handle, check_cancel)
-        wait_idle(page)
+    observer = _InitialLoadingDiagnostics(page, ordinal) if diagnostics.active() else None
+    if observer is not None:
+        resources.callback(observer.close)
+        observer.stage = 'size_action'
+    size_started = _diagnostic_clock()
+    try:
+        maximize_page_size(page, container_handle, max_page_size=max_page_size)
+    except PlaywrightTimeoutError as exc:
+        if observer is not None:
+            observer.emit('size_idle_timeout', error=exc)
+        raise
+    finally:
+        _record_large_table_reset('size_action', size_started, ordinal, max_page_size, 1)
+    if observer is not None:
+        observer.emit('size_complete')
+    guard_started = _diagnostic_clock()
+    pilot_absence_proved = False
+    pilot_selected = None
+    try:
+        if max_page_size >= 250:
+            # A previously selected larger page must not bypass the pilot limit.
+            # Resolve the same displayed label from the held paginator owner
+            # in one browser RPC (not query_selector + remote inner_text).
+            # Preserve passive/opt-in CPU attribution around that real call.
+            with _timed_existing_rpc('pilot_label_lookup', ordinal, max_page_size,
+                                     passive_rpc_slots, host_cpu_slots) as timing:
+                with _timed_first_page_operation('pilot_label_lookup', ordinal, max_page_size):
+                    label_read = container_handle.evaluate(OWNED_PILOT_LABEL_TEXT_JS)
+                    if timing is not None and type(label_read) is dict:
+                        timing['renderer_ms'] = label_read.get('renderer_ms')
+            # The result is only a bounded structural label, never business
+            # data or capture authority. Unexpected shapes fail closed.
+            with _timed_first_page_operation('pilot_label_text', ordinal, max_page_size):
+                if type(label_read) is not dict or type(label_read.get('text')) is not str:
+                    raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+                selected = label_read['text'].strip()
+            if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
+                raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+            pilot_selected = selected
+            # Only the admitted 500-row branch may reuse the read-only
+            # negative First result; a positive result uses the old guarded
+            # Python lookup + click path without extra browser dispatches.
+            pilot_absence_proved = (max_page_size >= 500 and int(selected) == 500
+                                    and label_read.get('first_absent') is True)
+    finally:
+        _record_large_table_reset('pilot_guard', guard_started, ordinal, max_page_size, 1)
+    first_started = _diagnostic_clock()
+    first_clicks = 0
+    try:
+        lookup_started = _diagnostic_clock()
+        first_found = 0
+        try:
+            first = (None if pilot_absence_proved else container_handle.query_selector(
+                '.p-paginator-first:not([disabled]):not(.p-disabled)'))
+            first_found = int(first is not None)
+        finally:
+            _record_large_table_reset(
+                'first_lookup', lookup_started, ordinal, max_page_size, first_found,
+                first_lookup_source='pilot_absence' if pilot_absence_proved else 'owner_query')
+        if first:
+            if observer is not None:
+                observer.stage = 'first_click'
+            click_started = _diagnostic_clock()
+            try:
+                _click_table_paginator(first, container_handle, check_cancel)
+                first_clicks = 1
+            finally:
+                _record_large_table_reset('first_click', click_started, ordinal, max_page_size, first_clicks)
+            if observer is not None:
+                observer.stage = 'first_idle'
+            idle_started = _diagnostic_clock()
+            # The original global-overlay wait is unchanged. Attribute only
+            # its original boundary and the original 180ms settle, not overlay
+            # identity (which needs an extra DOM call and remains unproved).
+            scope_token = (_FIRST_PAGE_TIMING_SCOPE.set((ordinal, max_page_size, observer))
+                           if observer is not None and max_page_size >= 250 else None)
+            try:
+                try:
+                    wait_idle(page)
+                except PlaywrightTimeoutError as exc:
+                    if observer is not None:
+                        observer.emit('first_idle_timeout', error=exc)
+                    raise
+            finally:
+                if scope_token is not None:
+                    _FIRST_PAGE_TIMING_SCOPE.reset(scope_token)
+                _record_large_table_reset('first_idle', idle_started, ordinal, max_page_size, 1)
+            if observer is not None:
+                observer.emit('first_idle_complete')
+    finally:
+        _record_large_table_reset('first_navigation', first_started, ordinal, max_page_size, first_clicks)
     # Sebagian tabel menyimpan halaman terakhir dan hanya menyediakan Prev.
     previous_selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
-    for _ in range(max_pages):
-        _check_cancel(check_cancel)
-        previous = container_handle.query_selector(previous_selector)
-        if not previous:
-            break
-        state = container_handle.evaluate(STATE_JS)
-        _click_table_paginator(previous, container_handle, check_cancel)
-        wait_idle(page)
-        if container_handle.evaluate(STATE_JS) == state:
-            raise RuntimeError('Table pagination did not return to the first page')
-    if container_handle.query_selector(previous_selector):
-        raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    rewind_started = _diagnostic_clock()
+    rewind_clicks = 0
+    # Aggregate repeated Previous operations into one bounded event per stage.
+    # Large tables resolve the owned control in a single browser round-trip,
+    # dispose that result on every path, and retain original Stop/actionability
+    # checks, rewind semantics and inclusive timings.
+    rewind_timings = {} if max_page_size >= 250 else None
+    try:
+        for attempt in range(max_pages):
+            with _timed_rewind_operation(rewind_timings, 'previous_stop_check'):
+                _check_cancel(check_cancel)
+            if attempt == 0:
+                # Keep main's independently reviewed optional read-only
+                # diagnostic. No extra browser RPC when diagnostic is OFF.
+                _observe_dom_rpc_delay(
+                    container_handle, previous_selector,
+                    stage='before_previous_lookup', ordinal=ordinal,
+                    max_page_size=max_page_size, capture_deadline=capture_deadline,
+                    check_cancel=check_cancel)
+            previous_handle = None
+            try:
+                with _timed_existing_rpc('previous_lookup', ordinal, max_page_size,
+                                         passive_rpc_slots, host_cpu_slots):
+                    with _timed_rewind_operation(rewind_timings, 'previous_lookup'):
+                        if max_page_size >= 250:
+                            previous_handle = container_handle.evaluate_handle(
+                                OWNED_PREVIOUS_CONTROL_JS, previous_selector)
+                            previous = previous_handle.as_element()
+                        else:
+                            previous = container_handle.query_selector(previous_selector)
+                if not previous:
+                    break
+                with _timed_rewind_operation(rewind_timings, 'previous_state'):
+                    state = container_handle.evaluate(STATE_JS)
+                with _timed_rewind_operation(rewind_timings, 'previous_click'):
+                    _click_table_paginator(previous, container_handle, check_cancel)
+                    rewind_clicks += 1
+                with _timed_rewind_operation(rewind_timings, 'previous_idle'):
+                    wait_idle(page)
+                with _timed_rewind_operation(rewind_timings, 'previous_verify'):
+                    if container_handle.evaluate(STATE_JS) == state:
+                        raise RuntimeError('Table pagination did not return to the first page')
+            finally:
+                if previous_handle is not None:
+                    _dispose_table_handle(previous_handle)
+        # Preserve main's opt-in diagnostic before the independent final check.
+        _observe_dom_rpc_delay(
+            container_handle, previous_selector,
+            stage='before_previous_limit_lookup', ordinal=ordinal,
+            max_page_size=max_page_size, capture_deadline=capture_deadline,
+            check_cancel=check_cancel)
+        with _timed_existing_rpc('previous_limit_lookup', ordinal, max_page_size,
+                                 passive_rpc_slots):
+            with _timed_rewind_operation(rewind_timings, 'previous_limit_lookup'):
+                if (container_handle.evaluate(OWNED_PREVIOUS_PRESENT_JS, previous_selector)
+                        if max_page_size >= 250
+                        else container_handle.query_selector(previous_selector)):
+                    raise RuntimeError(f'Table reset page limit {max_pages} reached')
+    finally:
+        if rewind_timings is not None:
+            for step, (duration_ms, count) in rewind_timings.items():
+                diagnostics.record('table.reset_timing', table_reset_step=step,
+                                   form_ordinal=_INITIAL_FORM_ORDINAL.get(),
+                                   table_ordinal=ordinal, count=count,
+                                   duration_ms=duration_ms)
+        _record_large_table_reset('previous_rewind', rewind_started, ordinal, max_page_size, rewind_clicks)
+    # The preparation interval ends before any table snapshot/cursor work.
+    # Release request-object references and listeners immediately.
+    if observer is not None:
+        observer.close()
+    _record_large_table_reset('total_pre_read', preparation_started, ordinal, max_page_size, 1)
     first_read_started = _diagnostic_clock()
-    result = table.evaluate(TABLE_JS)
+    with _timed_existing_rpc('initial_snapshot', ordinal, max_page_size,
+                             passive_rpc_slots):
+        if pilot_absence_proved:
+            result = table.evaluate(TABLE_PILOT_INITIAL_JS,
+                                    {'owner': container_handle, 'selected': pilot_selected})
+        else:
+            result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
     diagnostics.record('table.page_timing', table_page_stage='initial',
                        pages=1, page_rows=len(result['rows']), page_size_cap=max_page_size,
@@ -488,16 +1088,35 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     cursor = None
     if max_page_size >= 250:
         _check_cancel(check_cancel)
-        cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
+        with _timed_existing_rpc('cursor_init', ordinal, max_page_size,
+                                 passive_rpc_slots):
+            cursor = container_handle.evaluate_handle(TABLE_CURSOR_INIT_JS)
         resources.callback(_dispose_table_handle, cursor)
     while True:
         _check_cancel(check_cancel)
         advance_renderer_ms = None
+        embedded_snapshot = None
         if cursor is not None:
             page_started = _diagnostic_clock()
             remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
-            advance = cursor.evaluate(TABLE_CURSOR_ADVANCE_JS,
-                                      {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+            # L3-B's 500-row candidate pays ~15s wall time per browser RPC
+            # in operator logs even when renderer work is <250ms. Try to
+            # capture an already-updated page in the same owner-bound call.
+            # A late state transition falls back to the unchanged poll path.
+            use_turn = max_page_size >= 500
+            stage = 'cursor_turn' if use_turn else 'cursor_advance'
+            with _timed_existing_rpc(stage, ordinal, max_page_size,
+                                     passive_rpc_slots, host_cpu_slots) as timing:
+                advance = cursor.evaluate(
+                    TABLE_CURSOR_TURN_JS if use_turn else TABLE_CURSOR_ADVANCE_JS,
+                    {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+                if timing is not None and type(advance) is dict:
+                    timing['renderer_ms'] = advance.get(
+                        'turn_renderer_ms' if use_turn else 'renderer_ms')
+                if use_turn and type(advance) is dict:
+                    embedded_snapshot = advance.get('snapshot')
+                    if timing is not None:
+                        timing['cursor_outcome'] = advance.get('turn_outcome')
             _check_cancel(check_cancel)
             status = advance['status']
             if status == 'done':
@@ -522,7 +1141,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 result['complete'] = False
                 result['warning'] = 'Table capture elapsed budget exceeded'
                 diagnostics.record('table.elapsed_budget', level='WARNING',
-                                   table_elapsed_stage='before_next_click', pages=result['pages'])
+                                   table_elapsed_stage='before_next_click', pages=result['pages'],
+                                   duration_ms=(_diagnostic_clock()-page_started)*1000)
                 break
             if status != 'advanced':
                 raise RuntimeError('Unsupported pagination cursor state')
@@ -552,15 +1172,21 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             page_started = _diagnostic_clock()
             _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
         poll_started = _diagnostic_clock()
+        # On the bundled 500-row path this click time includes the browser's
+        # atomic snapshot when it fits in the same call, not just the click.
         click_ms = (poll_started - page_started) * 1000
         deadline = min(time.monotonic() + 30, capture_deadline)
         try:
             def unchanged():
                 if cursor is not None:
-                    return not cursor.evaluate(TABLE_CURSOR_POLL_JS)
+                    with _timed_existing_rpc('cursor_poll', ordinal, max_page_size,
+                                             passive_rpc_slots):
+                        return not cursor.evaluate(TABLE_CURSOR_POLL_JS)
                 return container_handle.evaluate(STATE_JS) == state
 
-            while unchanged():
+            # A bundled snapshot is issued only after the original state
+            # changed. Otherwise the legacy Python poll remains authoritative.
+            while embedded_snapshot is None and unchanged():
                 _check_cancel(check_cancel)
                 if time.monotonic() >= deadline:
                     result['complete'] = False
@@ -570,7 +1196,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     if expired:
                         diagnostics.record('table.elapsed_budget', level='WARNING',
                                            table_elapsed_stage='state_poll',
-                                           pages=result['pages'])
+                                           pages=result['pages'],
+                                           duration_ms=(_diagnostic_clock()-page_started)*1000,
+                                           table_click_ms=click_ms,
+                                           table_poll_ms=(_diagnostic_clock()-poll_started)*1000)
                     break
                 page.wait_for_timeout(120)
         except PlaywrightTimeoutError as error:
@@ -601,14 +1230,27 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
                                table_elapsed_stage='before_dom_read',
-                               pages=result['pages'])
+                               pages=result['pages'],
+                               duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms)
             break
         verify_ms = 0.0  # Verification is part of the atomic DOM read.
         dom_started = _diagnostic_clock()
         try:
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
-            snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+            if embedded_snapshot is not None:
+                # Same exact owner/snapshot verification JS was invoked by the
+                # cursor turn. Stop and remaining deadline are checked above.
+                snapshot = embedded_snapshot
+            else:
+                with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
+                                         passive_rpc_slots, host_cpu_slots) as timing:
+                    snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                    if timing is not None and type(snapshot) is dict:
+                        timing['renderer_ms'] = snapshot.get('renderer_ms')
+                        timing['snapshot_outcome'] = _snapshot_diagnostic_outcome(snapshot)
             while cursor is not None:
                 _check_cancel(check_cancel)
                 if time.monotonic() >= capture_deadline:
@@ -618,7 +1260,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     raise PlaywrightTimeoutError('Owned table loading readiness deadline exceeded')
                 if not snapshot.get('pending'):
                     break
-                snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
+                                         passive_rpc_slots, host_cpu_slots) as timing:
+                    snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                    if timing is not None and type(snapshot) is dict:
+                        timing['renderer_ms'] = snapshot.get('renderer_ms')
+                        timing['snapshot_outcome'] = _snapshot_diagnostic_outcome(snapshot)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.
@@ -655,7 +1302,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
-                               table_elapsed_stage='before_dom_read', pages=result['pages'])
+                               table_elapsed_stage='before_dom_read', pages=result['pages'],
+                               duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_dom_ms=dom_ms)
             break
         if snapshot is None or 'refusal' in snapshot:
             result['complete'] = False
@@ -687,7 +1337,10 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             result['complete'] = False
             result['warning'] = 'Table capture elapsed budget exceeded'
             diagnostics.record('table.elapsed_budget', level='WARNING',
-                               table_elapsed_stage='before_dom_read', pages=result['pages'])
+                               table_elapsed_stage='before_dom_read', pages=result['pages'],
+                               duration_ms=(_diagnostic_clock()-page_started)*1000,
+                               table_click_ms=click_ms, table_poll_ms=poll_ms,
+                               table_idle_ms=idle_ms, table_dom_ms=dom_ms)
             break
         result['rows'].extend(data['rows'])
         if 'body_spans' in result:
@@ -940,8 +1593,12 @@ def capture_detail(page, max_pages=1000, check_cancel=None, *, record=None, fold
                     # 500 rows stays negligible versus the grid fetch.
                     max_page_size = 500
                 with diagnostics.measure('table', form_ordinal=len(sections) + 1, table_ordinal=i + 1) as timing:
-                    captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
-                                             max_page_size=max_page_size)
+                    form_token = _INITIAL_FORM_ORDINAL.set(len(sections) + 1)
+                    try:
+                        captured = capture_table(page, table, i + 1, max_pages, check_cancel=check_cancel,
+                                                 max_page_size=max_page_size)
+                    finally:
+                        _INITIAL_FORM_ORDINAL.reset(form_token)
                     timing.update(body_rows=captured.get('body_row_count'), pages=captured.get('pages'),
                                   status='COMPLETE' if captured['complete'] else 'PARTIAL')
                 if financial_required and name in ('L1-D', 'L9'):
@@ -2193,7 +2850,11 @@ def _identity_checked_packets(packets, record, scope):
         yield packet
 
 
-def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
+def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel, *, detail_source='json-first'):
+    if detail_source not in ('json-first', 'json-only'):
+        raise ValueError('JSON detail capture requires json-first or json-only')
+    if detail_source == 'json-only' and record['meta'].get('Jenis Pajak') != 'PPh Badan':
+        raise ValueError('json-only is restricted to PPh Badan details')
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
     masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi')
@@ -2248,14 +2909,24 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     # tidak dicampur dengan sebagian nilai DOM dan dianggap satu capture utuh.
     eligible = ((corporate or masa) and forms is not None and manifest['complete']
                 and decoded['eligible'] and decoded['coverage']['complete'])
+    if eligible and corporate:
+        # Capture completeness is not template completeness: a form that still
+        # carries the generic payload dump was never projected into the
+        # worksheet, so the complete DOM capture must keep the output.
+        from coretax_json import has_audit_dump_tables
+        if has_audit_dump_tables((decoded or {}).get('sections') or (),
+                                 provenance=(decoded or {}).get('provenance')):
+            eligible = False
     source_reason = ('native_verified' if eligible else
                      'unsupported_tax' if not corporate and not masa else
                      'forms_unavailable' if forms is None else
                      'capture_incomplete' if not manifest['complete'] else
                      'adapter_ineligible' if not decoded['eligible'] else 'coverage_incomplete')
-    diagnostics.record('detail.source', source_requested='json-first',
-                       source_used='json' if eligible else 'dom', source_reason=source_reason)
-    audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
+    strict = detail_source == 'json-only'
+    source_used = 'json' if eligible else 'none' if strict else 'dom'
+    diagnostics.record('detail.source', source_requested=detail_source,
+                       source_used=source_used, source_reason=source_reason)
+    audit = {'version': 1, 'requested': detail_source, 'used': source_used,
              'capture': manifest}
     if decoded is not None:
         audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
@@ -2272,8 +2943,15 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     else:
         audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
                            else 'unsupported_observed_forms_or_capture')
-        result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
-                                record=record, folder=folder)
+        if strict:
+            # Never upgrade incomplete/unsupported JSON by reading DOM values.
+            # Preserve the audited JSON body manifest for diagnosis and resume.
+            result = {'sections': [], 'capture_complete': False, 'attachments': [],
+                      'errors': [{'object': 'Detail JSON',
+                                  'message': 'Verified JSON detail is incomplete; DOM fallback disabled.'}]}
+        else:
+            result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
+                                    record=record, folder=folder)
     result['detail_source'] = audit
     return result
 
@@ -2328,11 +3006,23 @@ def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
     audit = saved.get('detail_source')
+    if detail_source == 'json-only' and audit is None and (
+            saved.get('capture_complete') or saved.get('sections') or saved.get('attachments')):
+        raise JsonSafetyError('Unaudited DOM checkpoint cannot be reused in strict JSON mode')
     if audit is not None:
         if (not isinstance(audit, dict) or type(audit.get('version')) is not int or audit['version'] != 1
-                or audit.get('requested') not in ('dom', 'json-first') or audit.get('used') not in ('dom', 'json')):
+                or audit.get('requested') not in ('dom', 'json-first', 'json-only')
+                or audit.get('used') not in ('dom', 'json', 'none')):
             raise JsonSafetyError('Checkpoint detail-source descriptor is unsupported')
-        if audit['used'] == 'json' and (audit['requested'] != 'json-first' or detail_source != 'json-first'):
+        if (audit['requested'] == 'json-only') != (detail_source == 'json-only'):
+            raise JsonSafetyError('Checkpoint strict JSON mode does not match the requested mode')
+        if detail_source == 'json-only' and audit['used'] == 'dom':
+            raise JsonSafetyError('DOM checkpoint cannot be reused in strict JSON mode')
+        if audit['used'] == 'none' and (audit['requested'] != 'json-only'
+                or saved.get('capture_complete') or saved.get('sections') or saved.get('attachments')):
+            raise JsonSafetyError('Incomplete JSON checkpoint cannot contain completed detail')
+        if audit['used'] == 'json' and (audit['requested'] not in ('json-first', 'json-only')
+                or detail_source != audit['requested']):
             raise JsonSafetyError('Checkpoint JSON source does not match the requested mode')
         if audit.get('capture') is not None or audit['used'] == 'json':
             from coretax_json_capture import checkpoint_bodies
@@ -2482,6 +3172,9 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     failures retain fixed public error categories and PARTIAL. Final completion
     requires persisted detail reconciliation, independently of later publication."""
     validate_detail_source(detail_source)
+    if detail_source == 'json-only' and any(
+            r.get('meta', {}).get('Jenis Pajak') != 'PPh Badan' for r in run['records']):
+        raise ValueError('json-only detail capture supports PPh Badan only')
     _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
@@ -2555,7 +3248,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             _verify_restored_metadata(page, run, record, current_meta,
                                 current_response['rows'][position], folder, ordinal, check_cancel)
                             observer._check_state()
-                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
+                            if detail_source in ('json-first', 'json-only') and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
                                                                bind_unifikasi_listing_identity, bind_corporate_listing_identity)
                                 prefix, bind_identity = {
@@ -2583,7 +3276,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     record['source_identity'] = {**identity['source_identity'],
                                                                  'relative_path': relative.as_posix()}
                             session = nullcontext(None)
-                            if detail_source == 'json-first':
+                            if detail_source in ('json-first', 'json-only'):
                                 from coretax_json_capture import DetailJsonCapture
                                 session = DetailJsonCapture(page.context, page, record, scope, folder,
                                                             ordinal=ordinal, check_cancel=check_cancel)
@@ -2599,7 +3292,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
                                                              record=record, folder=folder)
                                 else:
-                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
+                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages,
+                                                             check_cancel, detail_source=detail_source)
                             timing['source_used'] = capture.get('detail_source', {}).get('used', 'dom')
                             if 'detail_source' in capture:
                                 record['detail_source'] = capture['detail_source']

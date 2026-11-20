@@ -23,7 +23,10 @@ SEAL = '.spt-published-prune-v1.json'
 _JOB = re.compile(r'[0-9a-f]{32}')
 _LIMIT = 16384
 _MAX_SEAL_BYTES = 128 * 1024
-_PRUNE_LOCK = threading.Lock()  # Serialize automatic and manual housekeeping.
+# Process-local housekeeping serialization only. The normal Windows GUI
+# holds a per-workspace InstanceLock; independent CLI/external filesystem
+# writers do not share this mutex and must be stopped before maintenance.
+_PRUNE_LOCK = threading.Lock()
 
 
 def validate_keep_jobs(value):

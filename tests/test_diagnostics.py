@@ -34,6 +34,28 @@ def test_renderer_timing_schema_keeps_bounded_numbers_and_rounds(field, tmp_path
     assert [row.get(field) for row in events] == [0, 1, 1.23, 604_800_000]
 
 
+def test_corporate_missing_forms_keeps_only_fixed_sheet_names(tmp_path):
+    d = diagnostics()
+    with d.session(tmp_path, 'worker') as log:
+        d.record('corporate.observe_unavailable', level='WARNING',
+                 corporate_observer_stage='grid', form_ordinal=10,
+                 corporate_refusal_reason='incomplete_coverage',
+                 corporate_missing_forms='L10-C,L10-D,L6,L11-B')
+        # A foreign token, a duplicate, or free text must drop the whole field.
+        d.record('corporate.observe_unavailable', level='WARNING',
+                 corporate_observer_stage='grid', form_ordinal=10,
+                 corporate_refusal_reason='incomplete_coverage',
+                 corporate_missing_forms='L6,EVIL,<script>')
+        d.record('corporate.observe_unavailable', level='WARNING',
+                 corporate_observer_stage='grid', form_ordinal=10,
+                 corporate_refusal_reason='incomplete_coverage',
+                 corporate_missing_forms='L6,L6')
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'corporate.observe_unavailable']
+    assert [row.get('corporate_missing_forms') for row in events] == [
+        'L10-C,L10-D,L6,L11-B', None, None]
+
+
 @pytest.mark.parametrize('field', ['table_advance_renderer_ms', 'table_dom_renderer_ms'])
 def test_renderer_timing_schema_drops_invalid_private_values_without_coercion(field, tmp_path):
     d = diagnostics()
@@ -80,6 +102,40 @@ def test_native_paginator_timing_keeps_only_fixed_enums_and_bounded_aggregates(
     assert 'native_paginator_step' not in events[1]
     assert 'duration_ms' not in events[1]
     assert 'count' not in events[1]
+    assert private not in json.dumps(events)
+
+
+@pytest.mark.parametrize('scope', ['target_datatable', 'other_datatable', 'blockui',
+                                  'mixed', 'none', 'unavailable'])
+def test_initial_loading_diagnostic_keeps_only_fixed_categories_and_counts(tmp_path, scope):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_DOM_INITIAL_LOADING_REQUEST'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.initial_loading', table_initial_stage='first_idle_timeout',
+                 table_loading_scope=scope, table_loading_first_match='unavailable',
+                 table_owner_state='held', table_request_scope='other_unbound',
+                 form_ordinal=1, table_ordinal=2,
+                 table_request_observed=4, table_request_finished=2,
+                 table_request_failed=1, table_request_pending=1,
+                 request_url=private, headers=private, payload=private,
+                 error=ValueError(private))
+        d.record('table.initial_loading', table_initial_stage=private,
+                 table_loading_scope=private, table_loading_first_match=private,
+                 table_owner_state=private, table_request_scope=private,
+                 table_request_observed=True, table_request_pending=-1,
+                 request_url=private)
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.initial_loading']
+    assert len(events) == 2
+    first, second = events
+    assert first['table_initial_stage'] == 'first_idle_timeout'
+    assert first['table_loading_scope'] == scope
+    assert first['table_owner_state'] == 'held'
+    assert first['table_request_observed'] == 4
+    assert first['table_request_pending'] == 1
+    assert first['form_ordinal'] == 1 and first['table_ordinal'] == 2
+    assert 'table_loading_scope' not in second and 'table_initial_stage' not in second
+    assert 'table_request_observed' not in second and 'table_request_pending' not in second
     assert private not in json.dumps(events)
 
 
@@ -768,3 +824,316 @@ def test_source_and_frozen_diagnostic_selftest_exercises_auth_categories(tmp_pat
     assert state['observed_origin'] == 'coretax'
     assert result['reason'] == 'origin_mismatch' and result['status'] == 'LOGIN_BLOCKED'
     assert result['submitted'] is False
+
+
+
+@pytest.mark.parametrize(('result', 'trigger'), [
+    ('started', 'automatic'), ('already_pending', 'manual'),
+    ('deferred_active', 'automatic'), ('invalid_build', 'manual'),
+    ('up_to_date', 'automatic'), ('update_available', 'manual'),
+    ('unavailable', 'automatic'), ('notice_deferred', 'automatic'),
+])
+def test_update_check_diagnostics_keep_only_bounded_safe_fields(tmp_path, result, trigger):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_UPDATE_URL_OR_TOKEN'
+    with d.session(tmp_path, 'gui') as log:
+        d.record('update.check', update_check_result=result, update_check_trigger=trigger,
+                 duration_ms=123.456, url=secret, manifest=secret, commit=secret,
+                 run_id=secret, exception=ValueError(secret), message=secret)
+        d.record('update.check', update_check_result=secret, update_check_trigger=secret,
+                 duration_ms=float('nan'), body=secret)
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'update.check']
+    assert len(events) == 2
+    assert events[0]['update_check_result'] == result
+    assert events[0]['update_check_trigger'] == trigger
+    assert events[0]['duration_ms'] == 123.46
+    assert 'update_check_result' not in events[1]
+    assert 'update_check_trigger' not in events[1]
+    assert 'duration_ms' not in events[1]
+    assert secret not in json.dumps(events)
+
+
+def test_update_check_diagnostics_reject_objects_and_out_of_range_duration(tmp_path):
+    d = diagnostics()
+
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Update diagnostics must not stringify unknown data')
+
+    with d.session(tmp_path, 'gui') as log:
+        for bad in (Untrusted(), True, None, 42, 'PRIVATE'):
+            d.record('update.check', update_check_result=bad, update_check_trigger=bad,
+                     duration_ms=-1, extra=bad)
+        d.record('update.check', update_check_result='up_to_date',
+                 update_check_trigger='automatic', duration_ms=604_800_001)
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'update.check']
+    assert len(events) == 6
+    assert all('duration_ms' not in row for row in events)
+    assert all('update_check_result' not in row for row in events[:5])
+    assert all('update_check_trigger' not in row for row in events[:5])
+
+@pytest.mark.parametrize('step', [
+    'size_action', 'pilot_guard', 'first_lookup', 'first_click', 'first_idle',
+    'first_navigation', 'previous_rewind', 'previous_stop_check',
+    'previous_lookup', 'previous_state', 'previous_click',
+    'previous_idle', 'previous_verify', 'previous_limit_lookup',
+    'total_pre_read',
+])
+def test_large_dom_reset_diagnostic_only_emits_fixed_bounded_metadata(tmp_path, step):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_DOM_RESET_MARKER'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.reset_timing', table_reset_step=step, duration_ms=120000.1234,
+                 count=7, form_ordinal=4, table_ordinal=3,
+                 url=private, response=private, marker=private, request=private,
+                 headers=private, body=private)
+        d.record('table.reset_timing', table_reset_step=private,
+                 duration_ms=float('inf'), count=-1, source_total=private,
+                 form_ordinal=True, table_ordinal=private)
+        assert log.flush()
+    entries = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
+    assert len(entries) == 2
+    assert entries[0]['table_reset_step'] == step
+    assert entries[0]['duration_ms'] == 120000.12
+    assert entries[0]['count'] == 7
+    assert entries[0]['form_ordinal'] == 4 and entries[0]['table_ordinal'] == 3
+    assert 'table_reset_step' not in entries[1]
+    assert 'duration_ms' not in entries[1]
+    assert 'count' not in entries[1]
+    assert 'form_ordinal' not in entries[1]
+    assert 'table_ordinal' not in entries[1]
+    assert private not in json.dumps(entries)
+
+
+def test_large_dom_reset_diagnostic_does_not_stringify_untrusted_fields(tmp_path):
+    d = diagnostics()
+
+    class Untrusted:
+        def __str__(self):
+            raise AssertionError('Reset diagnostics cannot stringify private objects')
+
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.reset_timing', table_reset_step=Untrusted(),
+                 duration_ms=-1, count=True, request=Untrusted())
+        assert log.flush()
+    event, = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
+    assert 'table_reset_step' not in event
+    assert 'duration_ms' not in event
+    assert 'count' not in event
+
+
+def test_dom_rpc_probe_schema_admits_only_bounded_timings_and_fixed_states(tmp_path):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_DOM_TIMING_SENTINEL'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.browser_rpc_probe', table_rpc_stage='before_previous_lookup',
+                 table_rpc_state='absent', form_ordinal=4, table_ordinal=3,
+                 duration_ms=110000, table_rpc_renderer_ms=0.6,
+                 table_rpc_residual_ms=109999.4, url=secret, selector=secret,
+                 html=secret, headers=secret, body=secret, control=secret)
+        d.record('table.browser_rpc_probe', table_rpc_stage=secret,
+                 table_rpc_state=secret, table_rpc_renderer_ms=secret,
+                 table_rpc_residual_ms=-1, duration_ms=float('nan'),
+                 form_ordinal=True, table_ordinal=10_000_001)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert rows[0]['table_rpc_stage'] == 'before_previous_lookup'
+    assert rows[0]['table_rpc_state'] == 'absent'
+    assert rows[0]['table_rpc_renderer_ms'] == 0.6
+    assert rows[0]['table_rpc_residual_ms'] == 109999.4
+    assert rows[0]['duration_ms'] == 110000
+    assert not {'table_rpc_stage', 'table_rpc_state', 'table_rpc_renderer_ms',
+                'table_rpc_residual_ms', 'duration_ms', 'form_ordinal',
+                'table_ordinal'} & rows[1].keys()
+    assert secret not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('value,enabled', [('1', True), ('0', False),
+                                           ('true', False), ('', False)])
+@pytest.mark.parametrize('terminal_status', ['COMPLETE', 'PARTIAL'])
+def test_dom_rpc_probe_run_is_labeled_at_start_and_terminal_even_without_probes(
+        tmp_path, monkeypatch, value, enabled, terminal_status):
+    d = diagnostics()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', value)
+    with d.session(tmp_path, 'worker', level='INFO') as log:
+        # Caller-supplied flags must never override trusted run provenance.
+        d.record('operation.started', table_rpc_probe_enabled=not enabled)
+        d.record('operation.finished', status=terminal_status,
+                 table_rpc_probe_enabled=not enabled)
+        assert log.flush()
+    rows = records(tmp_path)
+    tagged = [r for r in rows if r['event'] in (
+        'session.started', 'operation.started', 'operation.finished',
+        'session.closed')]
+    assert len(tagged) == 4
+    assert [r['table_rpc_probe_enabled'] for r in tagged] == [enabled] * 4
+    assert next(r for r in tagged if r['event'] == 'operation.finished')[
+        'status'] == terminal_status
+    assert not any(r['event'] == 'table.browser_rpc_probe' for r in rows)
+
+
+@pytest.mark.parametrize('role', ['gui', 'cli'])
+def test_dom_rpc_probe_run_marker_is_worker_scoped_not_caller_supplied(
+        tmp_path, monkeypatch, role):
+    d = diagnostics()
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, role, level='INFO') as log:
+        d.record('operation.started', table_rpc_probe_enabled=True)
+        d.record('operation.finished', status='PARTIAL',
+                 table_rpc_probe_enabled=True)
+        assert log.flush()
+    rows = records(tmp_path)
+    assert all('table_rpc_probe_enabled' not in r for r in rows)
+
+
+def test_passive_existing_rpc_timing_fields_are_strictly_allowlisted(tmp_path):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_RPC_STRING'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage='cursor_snapshot',
+                 table_existing_rpc_outcome='returned',
+                 duration_ms=56087.42, table_rpc_thread_cpu_ms=0.6,
+                 table_rpc_renderer_ms=0.3, table_rpc_residual_ms=56087.12,
+                 form_ordinal=4, table_ordinal=3, url=private,
+                 selector=private, result=private, body=private, html=private)
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage=private,
+                 table_existing_rpc_outcome=private,
+                 duration_ms=-1, table_rpc_thread_cpu_ms=private,
+                 table_rpc_renderer_ms=float('nan'), table_rpc_residual_ms=-8,
+                 form_ordinal=True, table_ordinal=10000001, body=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 2
+    assert rows[0]['table_existing_rpc_stage'] == 'cursor_snapshot'
+    assert rows[0]['table_existing_rpc_outcome'] == 'returned'
+    assert rows[0]['table_rpc_thread_cpu_ms'] == 0.6
+    assert rows[0]['table_rpc_renderer_ms'] == 0.3
+    assert rows[0]['table_rpc_residual_ms'] == 56087.12
+    assert not ({'table_existing_rpc_stage', 'table_existing_rpc_outcome',
+                 'duration_ms', 'table_rpc_thread_cpu_ms',
+                 'table_rpc_renderer_ms', 'table_rpc_residual_ms',
+                 'form_ordinal', 'table_ordinal'} & rows[1].keys())
+    assert private not in json.dumps(rows)
+
+
+def test_pilot_label_rpc_stage_accepts_only_exact_diagnostic_enum(tmp_path):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_PILOT_SELECTOR'
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage='pilot_label_lookup',
+                 table_existing_rpc_outcome='returned',
+                 duration_ms=55080.5, table_rpc_thread_cpu_ms=0,
+                 table_host_cpu_state='unavailable',
+                 form_ordinal=4, table_ordinal=3,
+                 selector=private, body=private)
+        d.record('table.existing_rpc_timing',
+                 table_existing_rpc_stage=private,
+                 table_existing_rpc_outcome='returned',
+                 selector=private, body=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path)
+            if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 2
+    assert rows[0]['table_existing_rpc_stage'] == 'pilot_label_lookup'
+    assert rows[0]['table_host_cpu_state'] == 'unavailable'
+    assert rows[0]['duration_ms'] == 55080.5
+    assert 'table_existing_rpc_stage' not in rows[1]
+    assert private not in json.dumps(rows)
+
+
+@pytest.mark.parametrize('value,enabled', [
+    ('1', True), ('0', False), ('true', False),
+    (' 1', False), ('', False), (None, False)])
+def test_gui_host_cpu_start_marker_is_immutable_and_exact(
+        tmp_path, monkeypatch, value, enabled):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_ENVIRONMENT_CONTENT'
+    if value is None:
+        monkeypatch.delenv('SPT_DIAG_HOST_CPU', raising=False)
+    else:
+        monkeypatch.setenv('SPT_DIAG_HOST_CPU', value)
+    with d.session(tmp_path, 'gui') as log:
+        # A caller cannot override the snapshot of GUI initialization.
+        d.record('session.started', table_host_cpu_gui_start_enabled=not enabled,
+                 table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=True, raw_environment=private)
+        d.record('operation.started', table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=True, raw_environment=private)
+        assert log.flush()
+    rows = records(tmp_path)
+    starts = [r for r in rows if r['event'] == 'session.started']
+    assert len(starts) == 2
+    assert all(r['table_host_cpu_gui_start_enabled'] is enabled for r in starts)
+    assert all('table_host_cpu_gui_at_spawn' not in r for r in starts)
+    assert all('table_host_cpu_worker_env_enabled' not in r for r in starts)
+    assert all('table_host_cpu_gui_at_spawn' not in r
+               for r in rows if r['event'] == 'operation.started')
+    assert private not in json.dumps(rows)
+
+
+def test_worker_spawn_markers_accept_only_gui_booleans(tmp_path):
+    d = diagnostics()
+    private = 'SYNTHETIC_PRIVATE_WORKER_ENV'
+    class Untrusted:
+        def __bool__(self):
+            raise TypeError('must not coerce diagnostic marker')
+    with d.session(tmp_path, 'gui') as log:
+        d.record('worker.spawned', table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=False,
+                 env=private, command_line=private)
+        d.record('worker.spawned', table_host_cpu_gui_at_spawn='1',
+                 table_host_cpu_worker_env_enabled=Untrusted(), env=private)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'worker.spawned']
+    assert len(rows) == 2
+    assert rows[0]['table_host_cpu_gui_at_spawn'] is True
+    assert rows[0]['table_host_cpu_worker_env_enabled'] is False
+    assert 'table_host_cpu_gui_at_spawn' not in rows[1]
+    assert 'table_host_cpu_worker_env_enabled' not in rows[1]
+    assert private not in json.dumps(rows)
+    other = tmp_path / 'worker'
+    with d.session(other, 'worker') as log:
+        d.record('worker.spawned', table_host_cpu_gui_at_spawn=True,
+                 table_host_cpu_worker_env_enabled=True)
+        assert log.flush()
+    worker_rows = [r for r in records(other) if r['event'] == 'worker.spawned']
+    assert all('table_host_cpu_gui_at_spawn' not in r and
+               'table_host_cpu_worker_env_enabled' not in r for r in worker_rows)
+
+
+def test_host_cpu_event_schema_and_run_marker_are_bounded(tmp_path, monkeypatch):
+    d = diagnostics()
+    secret = 'SYNTHETIC_PRIVATE_HOST_CPU_VALUE'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    with d.session(tmp_path, 'worker') as log:
+        d.record('table.existing_rpc_timing', table_host_cpu_state='paired',
+                 table_rpc_direct_child_cpu_ms=1.237,
+                 table_rpc_nested_child_cpu_ms=5.778,
+                 table_existing_rpc_stage='cursor_snapshot',
+                 form_ordinal=4, table_ordinal=3,
+                 pid=secret, process_name=secret, command_line=secret,
+                 process_path=secret, request_body=secret)
+        d.record('table.existing_rpc_timing', table_host_cpu_state=secret,
+                 table_rpc_direct_child_cpu_ms=-1,
+                 table_rpc_nested_child_cpu_ms=secret)
+        d.record('operation.started', table_host_cpu_enabled=False)
+        assert log.flush()
+    rows = records(tmp_path)
+    start, = [r for r in rows if r['event'] == 'session.started']
+    operation, = [r for r in rows if r['event'] == 'operation.started']
+    assert start['table_host_cpu_enabled'] is True
+    assert operation['table_host_cpu_enabled'] is True
+    cpu_rows = [r for r in rows if r['event'] == 'table.existing_rpc_timing']
+    assert cpu_rows[0]['table_host_cpu_state'] == 'paired'
+    assert cpu_rows[0]['table_rpc_direct_child_cpu_ms'] == 1.24
+    assert cpu_rows[0]['table_rpc_nested_child_cpu_ms'] == 5.78
+    assert 'table_host_cpu_state' not in cpu_rows[1]
+    assert 'table_rpc_direct_child_cpu_ms' not in cpu_rows[1]
+    assert 'table_rpc_nested_child_cpu_ms' not in cpu_rows[1]
+    assert secret not in json.dumps(rows)

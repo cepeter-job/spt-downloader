@@ -10,6 +10,7 @@ import tempfile
 import tkinter as tk
 from tkinter import messagebox
 from spt_desktop.app import App
+from spt_desktop.ui_copy import copy_text
 from spt_desktop import diagnostics
 from spt_desktop.paths import workspace_root,downloads_folder
 from spt_desktop.runtime import resource_root, WORKER_FILES, python_version
@@ -106,9 +107,9 @@ def self_test(report=None):
                     and contact.winfo_rooty()>=app.results_label.winfo_rooty()+app.results_label.winfo_height()))
                 del settled
             bugreport_footer={'text':str(contact.cget('text')),'bottom_right':all(positions)}
-            require(bugreport_footer=={'text':'bugreport : sharmila@kemenkeu.go.id','bottom_right':True}, "footer text and placement")
+            require(bugreport_footer=={'text':copy_text('app.bugreport'),'bottom_right':True}, "footer text and placement")
             root.withdraw()
-            require(app.start_button.cget('text')=='Mulai unduh', "start button caption")
+            require(app.start_button.cget('text')==copy_text('action.start'), "start button caption")
             require(app.npwp.get()=='', "blank initial NPWP")
             require(app.stop_button.instate(['disabled']), "stop button initially disabled")
             dialog=app.settings();root.update_idletasks()
@@ -116,8 +117,8 @@ def self_test(report=None):
                 for child in widget.winfo_children():
                     yield child;yield from descendants(child)
             main_labels={w.cget('text') for w in descendants(root) if w.winfo_class()=='TLabel'}
-            personal_use_labels=sorted(text for text in main_labels if 'for personal use' in text)
-            require(personal_use_labels==['Coretax → Excel · for personal use only'], "personal-use heading")
+            personal_use_labels=sorted(text for text in main_labels if text == copy_text('app.subtitle'))
+            require(personal_use_labels==[copy_text('app.subtitle')], "personal-use heading")
             require(not any('read-only' in text or 'data perpajakan rahasia' in text for text in main_labels), "private/readonly labels absent")
             widgets=list(descendants(dialog))
             from spt_desktop.credentials import LOGIN_ORIGIN,ALLOWED_ORIGINS
@@ -128,7 +129,12 @@ def self_test(report=None):
             require(not origin_selector, "login origin selector absent")
             require('Origin login' not in {w.cget('text') for w in widgets if w.winfo_class()=='TLabel'}, "login origin label absent")
             labels={w.cget('text') for w in widgets if w.winfo_class()=='TButton'}
-            require({'Simpan','Hapus login','Tutup','Buka folder log'}<=labels, "settings actions present")
+            require({copy_text('settings.widget.simpan'),copy_text('settings.delete'),
+                     copy_text('settings.widget.tutup'),copy_text('settings.widget.buka.folder.log')}<=labels, "settings actions present")
+            require({copy_text('settings.widget.bersihkan.cache.job'),
+                     copy_text('settings.widget.hapus.job.partial.gagal'),
+                     copy_text('settings.widget.perbarui.penggunaan.storage')}<=labels,
+                    "maintenance controls present")
             require(not {'Cek login','Batalkan cek'}.intersection(labels), "legacy login actions absent")
             require(not dialog.bind('<Alt-c>'), "legacy login shortcut absent")
             require(any(w.winfo_class()=='TEntry' and w.cget('show')=='●' for w in widgets), "password entry masked")
@@ -140,18 +146,18 @@ def self_test(report=None):
             ui_text={'title':headings[0].cget('text'),'background':background[0].cget('text'),
                      'results':app.results_label.cget('text')}
             require(root.title()==ui_text['title'], "window title")
-            require((ui_text=={
-                'title':'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
-                'background':'jalankan proses sedot di background',
-                'results':'Hasil Sedot berada di folder Downloads Windows'}), "actual UI captions")
+            require(ui_text=={'title':copy_text('app.title'),
+                              'background':copy_text('settings.background.label'),
+                              'results':copy_text('results.location_hint')}, "actual UI captions")
             gui_controls=sorted({w.cget('text') for w in descendants(root)
                                  if w.winfo_class()=='TButton'})
             modes=[w for w in widgets if w.winfo_class()=='TCombobox'
-                   and tuple(w.cget('values'))==('DOM','JSON-hybrid (pilot)')]
+                   and tuple(w.cget('values'))==(copy_text('main.source.label.dom'),
+                         copy_text('main.source.label.json.hybrid.pilot'))]
             require(len(modes)==1 and modes[0].get()=='JSON-hybrid (pilot)' and modes[0].instate(['readonly']), "single read-only source selector")
             mode_control={'labels':list(modes[0].cget('values')),'default':app.preferences['detail_source']}
             modes[0].current(1)
-            next(w for w in widgets if w.winfo_class()=='TButton' and w.cget('text')=='Simpan').invoke()
+            next(w for w in widgets if w.winfo_class()=='TButton' and w.cget('text')==copy_text('settings.widget.simpan')).invoke()
             from spt_desktop.app import load_preferences
             mode_control['saved']=load_preferences(Path(folder))['detail_source']
             require(mode_control['saved']=='json-first', "saved JSON source preference")
@@ -185,7 +191,9 @@ def self_test(report=None):
             shortcuts={w.winfo_name():w for w in descendants(selection) if w.winfo_class()=='TCheckbutton'}
             shortcut_report={'labels':[shortcuts['select_'+name].cget('text')
                                       for name in ('all','latest','potput','ppn')]}
-            require(shortcut_report['labels']==['All','Pemb. Terakhir','PPh Potput','PPN'], "selection shortcut labels")
+            require(shortcut_report['labels']==[
+                copy_text('selection.shortcuts.all'), copy_text('selection.shortcuts.latest'),
+                copy_text('selection.shortcuts.potput'), copy_text('selection.shortcuts.ppn')], "selection shortcut labels")
             shortcuts['select_all'].invoke();root.update()
             shortcut_report['all_count']=len(tree.selection())
             require(shortcut_report['all_count']==9, "select-all count")
@@ -227,7 +235,7 @@ def self_test(report=None):
                 require({iid:tuple(tree.item(iid,'values')) for iid in observed}==values, "sort preserves literal row values")
                 sorting['directions'].append(tree.heading('type','text'))
             next(w for w in descendants(selection) if w.winfo_class()=='TButton'
-                 and w.cget('text')=='Sedot SPT terpilih').invoke()
+                 and w.cget('text')==copy_text('selection.confirm')).invoke()
             expected_ids=[values[iid][3] for iid in chosen]
             require(app.controller.selection_reply==('selection','a'*32,{'selected_ids':expected_ids,'mpn':False}), "selected identifiers forwarded")
             require(app._interaction is None, "interaction released")
@@ -299,11 +307,11 @@ def _run_gui():
         return 0
     except RuntimeError as error:
         diagnostics.record('gui.failed', error=error, level='ERROR', phase='startup')
-        messagebox.showerror('SPT Downloader','Aplikasi sudah berjalan. Gunakan jendela yang sudah terbuka.',parent=root)
+        messagebox.showerror(copy_text('bootstrap.dialog.title.spt.downloader'),copy_text('bootstrap.dialog.body.aplikasi.sudah.berjalan.gunakan.jendela'),parent=root)
         return 1
     except Exception as error:
         diagnostics.record('gui.failed', error=error, level='ERROR', phase='startup')
-        messagebox.showerror('SPT Downloader','Aplikasi tidak dapat dibuka. Periksa izin LocalAppData dan kelengkapan executable.',parent=root)
+        messagebox.showerror(copy_text('bootstrap.dialog.title.spt.downloader'),copy_text('bootstrap.dialog.body.aplikasi.tidak.dapat.dibuka.periksa'),parent=root)
         return 1
     finally:
         if app:app.controller.close()

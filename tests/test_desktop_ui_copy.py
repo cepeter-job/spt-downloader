@@ -4,33 +4,33 @@ from pathlib import Path
 
 import pytest
 
+from spt_desktop.ui_text_xml import load_strings
 
-@pytest.mark.parametrize(('key', 'expected'), [
-    ('app.title', 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang'),
-    ('app.subtitle', 'Coretax → Excel · for personal use only'),
-    ('app.bugreport', 'bugreport : sharmila@kemenkeu.go.id'),
-    ('settings.background.label', 'jalankan proses sedot di background'),
-    ('results.location_hint', 'Hasil Sedot berada di folder Downloads Windows'),
-    ('selection.confirm', 'Sedot SPT terpilih'),
+
+@pytest.mark.parametrize('key', [
+    'app.title', 'app.subtitle', 'app.bugreport', 'settings.background.label',
+    'results.location_hint', 'selection.confirm',
 ])
-def test_locked_owner_copy_is_literal(key, expected):
+def test_owner_copy_uses_xml_value_without_frozen_literal(key):
     from spt_desktop.ui_copy import copy_text
-    assert copy_text(key) == expected
+    from spt_desktop.ui_text_xml import load_strings
+    assert copy_text(key) == load_strings()[key]
 
 
 def test_main_copy_is_exact_and_selection_is_not_automatic():
     from spt_desktop.ui_copy import copy_text, STAGE_LABELS
-    assert copy_text('action.start') == 'Mulai unduh'
-    assert copy_text('form.help') == 'Setelah daftar muncul, pilih SPT yang ingin diunduh.'
-    assert copy_text('selection.confirm') == 'Sedot SPT terpilih'
-    assert STAGE_LABELS == ('Masuk ke Coretax', 'Daftar SPT',
-                            'Mengambil rincian', 'Hasil unduhan')
+    from spt_desktop.ui_text_xml import load_strings
+    source = load_strings()
+    for key in ('action.start', 'form.help', 'selection.confirm'):
+        assert copy_text(key) == source[key]
+    assert STAGE_LABELS == tuple(source[key] for key in (
+        'stage.authentication', 'stage.inventory', 'stage.details', 'stage.results'))
 
 
 def test_selection_summary_requires_named_integer_counts():
     from spt_desktop.ui_copy import copy_text
     assert copy_text('selection.summary', selected=2, visible=3, inventory=8) == (
-        '2 SPT dipilih · 3 dari 8 SPT ditampilkan.')
+        load_strings()['selection.summary'].format(selected=2, visible=3, inventory=8))
     with pytest.raises(TypeError):
         copy_text('selection.summary', selected=True, visible=3, inventory=8)
     with pytest.raises(ValueError):
@@ -55,82 +55,16 @@ def test_template_rejects_extra_or_negative_counts(values, error):
 def test_detail_template_keeps_counts_separate_from_percentage():
     from spt_desktop.ui_copy import copy_text
     assert copy_text('download.details.body', processed=2, total=3, verified=1) == (
-        '2 dari 3 SPT sudah diproses. Kelengkapan 1 SPT sudah diperiksa.')
+        load_strings()['download.details.body'].format(processed=2, total=3, verified=1))
     assert copy_text('selection.summary', selected=0, visible=0, inventory=0) == (
-        '0 SPT dipilih · 0 dari 0 SPT ditampilkan.')
+        load_strings()['selection.summary'].format(selected=0, visible=0, inventory=0))
     with pytest.raises(ValueError):
         copy_text('action.start', percent=30)
 
 
-def test_catalog_matches_approved_copy():
+def test_catalog_matches_developer_xml():
     from spt_desktop.ui_copy import COPY
-    # Reviewed expectations are independent of implementation and design-document formatting.
-    # Update these only for an intentional copy change, never by snapshotting runtime COPY.
-    expected = {
-        'app.title': 'Coretax SPT downloader : kalau bisa ribet, kenapa dibikin gampang',
-        'settings.background.label': 'jalankan proses sedot di background',
-        'results.location_hint': 'Hasil Sedot berada di folder Downloads Windows',
-        'app.subtitle': 'Coretax → Excel · for personal use only',
-        'app.bugreport': 'bugreport : sharmila@kemenkeu.go.id',
-        'selection.confirm': 'Sedot SPT terpilih',
-        'selection.mpn': 'Sedot MPN',
-        'form.title': 'Masukkan NPWP dan tahun pajak',
-        'form.help': 'Setelah daftar muncul, pilih SPT yang ingin diunduh.',
-        'form.npwp.label': 'NPWP (16 digit)',
-        'form.npwp.help': 'Ketik 16 angka, tanpa spasi, titik, atau tanda hubung.',
-        'form.npwp.error': 'Isi NPWP dengan 16 angka (0–9), tanpa pemisah.',
-        'form.year.help': 'Gunakan tahun pajak, bukan tahun pelaporan.',
-        'form.year.error': 'Gunakan 4 angka, dari 1900 sampai 2100.',
-        'action.start': 'Mulai unduh',
-        'action.stop': 'Hentikan unduhan',
-        'action.open_result': 'Buka folder hasil',
-        'action.open_partial': 'Buka hasil sementara',
-        'action.new': 'Unduh SPT lain',
-        'action.details': 'Lihat rincian',
-        'selection.title': 'Pilih SPT yang akan diunduh',
-        'selection.help': ('gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
-                           'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
-        'selection.search.label': 'Cari jenis pajak, masa, pembetulan, atau ID SPT',
-        'selection.empty': 'Daftar ini tidak memuat SPT yang bisa dipilih.',
-        'selection.focused_id': 'ID SPT yang disorot',
-        'selection.keyboard_hint': 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.',
-        'selection.summary': '{selected} SPT dipilih · {visible} dari {inventory} SPT ditampilkan.',
-        'selection.no_match': 'Tidak ada SPT yang cocok dengan pencarian.',
-        'selection.filter_reset': 'Pencarian berubah. Pilih lagi SPT yang akan diunduh.',
-        'selection.shortcuts.all': 'All',
-        'selection.shortcuts.latest': 'Pemb. Terakhir',
-        'selection.shortcuts.potput': 'PPh Potput',
-        'selection.shortcuts.ppn': 'PPN',
-        'selection.shortcuts.help': 'Pilihan cepat berlaku untuk SPT yang ditampilkan. Pemb. Terakhir dapat digabung dengan PPh Potput dan PPN.',
-        'selection.shortcuts.manual': 'Sebagian SPT memiliki masa/model yang belum dapat diperingkat. Pilih SPT tersebut secara manual bila diperlukan.',
-        'download.details.body': (
-            '{processed} dari {total} SPT sudah diproses. '
-            'Kelengkapan {verified} SPT sudah diperiksa.'
-        ),
-        'download.exported.title': 'File Excel sudah dibuat',
-        'download.publish.title': 'Menyimpan hasil unduhan',
-        'download.complete.title': 'File Excel sudah siap',
-        'download.complete.body': 'Hasil untuk SPT yang dipilih sudah disimpan dan diperiksa.',
-        'download.partial.title': 'Hasil unduhan belum lengkap',
-        'download.stopping.title': 'Menghentikan unduhan…',
-        'download.cancelled.title': 'Unduhan dihentikan',
-        'download.error.title': 'Unduhan belum berhasil',
-        'overwrite.title': 'Ganti hasil sebelumnya?',
-        'overwrite.folder.label': 'Folder hasil sebelumnya',
-        'overwrite.help': 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.',
-        'overwrite.files_count': '{count} file akan diganti.',
-        'overwrite.keep_hint': 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.',
-        'overwrite.context_missing': 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.',
-        'overwrite.decline': 'Jangan ganti',
-        'overwrite.confirm': 'Ganti file tersebut',
-        'settings.origin.label': 'Situs login',
-        'settings.account.label': 'Nama pengguna',
-        'settings.password.help': 'Kosongkan jika tidak diganti',
-        'settings.background.help': 'Jika memungkinkan. Browser tetap muncul saat perlu login.',
-        'settings.delete': 'Hapus login',
-        'settings.dirty.title': 'Perubahan belum disimpan',
-    }
-    assert dict(COPY) == expected
+    assert dict(COPY) == load_strings()
     assert 'app.credit' not in COPY
 
 
@@ -142,39 +76,35 @@ def test_copy_module_has_only_standard_library_imports():
         if isinstance(node, ast.Import):
             modules.extend(alias.name.split('.')[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
-            assert node.level == 0
-            modules.append(node.module.split('.')[0])
-    assert set(modules) <= {'typing', 'types', 'string', '__future__', 'collections'}
+            if node.level == 1:
+                assert node.module in {'ui_text_schema', 'ui_text_xml', '_ui_copy_generated'}
+            else:
+                modules.append(node.module.split('.')[0])
+    assert set(modules) <= {'typing', 'types', 'sys', 'string', '__future__', 'collections'}
 
 
-@pytest.mark.parametrize('key,expected', [
-    ('selection.help', 'gunakan SHIFT untuk ngeblok SPT, dan CTRL untuk memilih multi SPT\n\n'
-                       'Pilih SPT yang ingin diunduh. Rincian hanya diambil setelah Anda mengonfirmasi pilihan.'),
-    ('selection.search.label', 'Cari jenis pajak, masa, pembetulan, atau ID SPT'),
-    ('selection.empty', 'Daftar ini tidak memuat SPT yang bisa dipilih.'),
-    ('selection.focused_id', 'ID SPT yang disorot'),
-    ('selection.keyboard_hint', 'Pilih beberapa SPT dengan Ctrl atau Shift. Urutkan jenis: Alt+J.'),
+@pytest.mark.parametrize('key', [
+    'selection.help', 'selection.search.label', 'selection.empty',
+    'selection.focused_id', 'selection.keyboard_hint',
 ])
-def test_phase2_selection_copy_is_exact(key, expected):
+def test_phase2_selection_copy_matches_catalog(key):
     from spt_desktop.ui_copy import copy_text
-    assert copy_text(key) == expected
+    assert copy_text(key) == load_strings()[key]
 
 
-@pytest.mark.parametrize('key,expected', [
-    ('overwrite.folder.label', 'Folder hasil sebelumnya'),
-    ('overwrite.help', 'File dalam daftar ini akan diganti seluruhnya. Isi file lama tidak digabung dengan hasil baru.'),
-    ('overwrite.keep_hint', 'Pilih Jangan ganti untuk menghentikan publikasi dan mempertahankan hasil sebelumnya.'),
-    ('overwrite.context_missing', 'Folder hasil sebelumnya belum tersedia. Keputusan penggantian belum dikirim.'),
+@pytest.mark.parametrize('key', [
+    'overwrite.folder.label', 'overwrite.help', 'overwrite.keep_hint',
+    'overwrite.context_missing',
 ])
-def test_phase2_overwrite_copy_is_exact(key, expected):
+def test_phase2_overwrite_copy_matches_catalog(key):
     from spt_desktop.ui_copy import copy_text
-    assert copy_text(key) == expected
+    assert copy_text(key) == load_strings()[key]
 
 
-@pytest.mark.parametrize('count,expected', [(0, '0 file akan diganti.'), (2, '2 file akan diganti.')])
-def test_overwrite_count_template_is_strict(count, expected):
+@pytest.mark.parametrize('count', [0, 2])
+def test_overwrite_count_template_is_strict(count):
     from spt_desktop.ui_copy import copy_text
-    assert copy_text('overwrite.files_count', count=count) == expected
+    assert copy_text('overwrite.files_count', count=count) == load_strings()['overwrite.files_count'].format(count=count)
 
 
 @pytest.mark.parametrize('values,error', [

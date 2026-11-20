@@ -44,6 +44,42 @@ Pesan exception, chain, locals, baris kode, path lengkap, URL, NPWP, tahun/nama 
 
 `phase.completed` berarti fungsi keluar normal, **bukan** bukti hasil pajak COMPLETE. Gunakan `worker.finished` yang berasal dari rekonsiliasi controller, beserta Audit hasil untuk lingkup data. Error yang sudah ditangani sebagai PARTIAL tetap mempunyai event diagnostik tanpa mengubah status bisnis.
 
+## Diagnostik pemeriksaan pembaruan
+
+`update.check` merekam status pemeriksaan **manifest publik** Cloudflare Worker
+pada log **GUI**, baik ketika dijadwalkan otomatis maupun saat pengguna
+memilih **Cek pembaruan**. Field `update_check_trigger` hanya `automatic`
+atau `manual`. Field `update_check_result` dibatasi pada kategori berikut:
+
+- `started`: identitas build lokal tersedia dan pekerjaan pemeriksaan
+  asinkron dijadwalkan; belum berarti jaringan berhasil.
+- `up_to_date`: respons valid tidak mengumumkan build yang lebih baru
+  daripada yang terpasang.
+- `update_available`: manifest valid mengumumkan run ID yang lebih baru;
+  bukan jaminan tanda tangan, review, atau kelayakan instalasi.
+- `unavailable`: jaringan, HTTP, skema/manifest, atau pemanggilan gagal;
+  tidak ada teks exception atau alamat yang dicatat.
+- `invalid_build`: metadata build terpasang tidak bisa diverifikasi,
+  sehingga aplikasi **tidak** menghubungi Worker.
+- `deferred_active`: pemeriksaan ditunda ketika tugas SPT masih aktif;
+  satu event saja untuk rangkaian retry otomatis per pekerjaan.
+- `already_pending`: permintaan baru diabaikan karena pemeriksaan
+  sebelumnya belum selesai.
+- `notice_deferred`: respons memuat manifest baru, tetapi dialog
+  pemberitahuan menunggu selesainya pekerjaan/interaksi/Pengaturan;
+  event tidak diulang pada setiap polling dialog.
+
+Untuk hasil yang berasal dari jaringan, `duration_ms` mengukur durasi
+panggilan pemeriksaan di thread latar, **tidak** termasuk penjadwalan Tk,
+penundaan dialog, atau navigasi browser. Tidak ada durasi pada event yang
+hanya memeriksa status UI. Bahkan jika `update_available` tercatat,
+aplikasi **tidak otomatis mengunduh atau memasang** executable. Log tidak
+memuat URL Worker/OneDrive, respons/manifest mentah, commit atau run ID
+pembaruan yang diumumkan, token, data pajak, atau error message. Metadata
+build terpasang yang sudah diizinkan oleh schema log tetap tersedia pada
+envelope umum. `SPT_LOG_LEVEL=OFF` menonaktifkan event ini, dan ketiadaan
+event pada log lama tidak membuktikan bahwa update check tidak dijalankan.
+
 ## Diagnostik sumber MPN
 
 `mpn.source_rejected` menyimpan penolakan sumber pertama dengan tahap tetap
@@ -77,7 +113,20 @@ dengan `corporate_observer_stage` terbatas: `build`, `tabs`, `tab`,
 `panel`, `form`, `l3`, `l11a`, `l1d`, `l8`, `l7`,
 `l11c`, `grid`, `induk`. `form_ordinal` hanya indeks tab
 nonnegatif yang teramati, bukan nama form/isi. Tidak ada event bila native
-Corporate verified. Khusus `corporate_observer_stage=l3`, sub-observer
+Corporate verified. Setiap penolakan juga membawa `corporate_refusal_reason`
+dari enum tetap: `build_unfamiliar`, `tabs_missing`, `tab_unrecognized`,
+`tab_duplicate`, `panel_unavailable`, `form_unavailable`, `grid_unavailable`,
+`induk_order`, `lifetime_unavailable`, `binding_unavailable`,
+`projection_unavailable`, `grid_structure`, `grid_pagination`,
+`incomplete_coverage`, `observation_error`, serta sub-guard L8 `l8_digest`,
+`l8_providers`, `l8_structure`, `l8_grid_structure`, `l8_metadata`, dan
+`l8_component_lifetime`, `l8_history_missing`, `l8_state_shape`,
+`l8_not_clear`, `l8_no_root`, `l8_dependent`. Penolakan tanpa alasan eksplisit
+memakai kelas turunan tahap, sehingga tidak ada gate Corporate yang jatuh ke
+fallback DOM tanpa nama. Khusus `corporate_observer_stage=build` dengan
+`corporate_refusal_reason=build_unfamiliar` juga mencatat
+`build.unfamiliar_build` (`build_source=corporate`, enum tetap saja, tanpa
+digest/URL/byte). Khusus `corporate_observer_stage=l3`, sub-observer
 mencatat `corporate_l3_reason` dari kategori tetap yang memisahkan pin/build,
 hash sumber MAIN (`main_digest`), hash sumber VENDOR (`vendor_digest`),
 jumlah tabel L3 (`table_count`), lifetime komponen awal/akhir,
@@ -97,6 +146,33 @@ URL, digest, atau status halaman. Catatan diterbitkan idempoten pada jalur
 sukses maupun penolakan (segmen berjalan ditutup terlebih dahulu), sehingga
 pelacakan performa (#208) tetap memberi data pada live run yang gagal.
 Catatan ini tidak mengubah hasil adopsi JSON.
+
+### Gate bukti L7 raw-negative Corporate
+
+`corporate.l7_negative_gate` mencatat `corporate_l7_negative_gate` — kategori
+tetap `protocol`, `pins`, `enabled`, `structure_start`, `environment`,
+`builds`, `table`, `route`, `enabled_end`, `structure_end`, atau `lifetime` —
+setiap kali bukti opsional `raw_negative_projection` L7 tidak tersedia. Event
+ini hanya dinamai pada penolakan; bukti yang lengkap tidak mencatat apa pun.
+Tidak ada URL, digest, route, identitas, atau nilai yang direkam, dan
+ketersediaan bukti opsional tetap tidak mengubah jalur non-negatif v1.
+
+`corporate.l7_capture_gate` menamai lapisan custody di bawah gate
+`structure_start`: kategori tetap `component`, `component_end`, `history`,
+`flagged`, `handle_form`/`handle_grid`/`handle_table`/`handle_tab`/`handle_panel`,
+`state_malformed`, `incomplete`, serta `js_*` untuk alasan skrip riwayat anak L7
+(`budget`, `chain`, `enabled`, `roles`, `shape`, `document`, `removed`, `depth`,
+`visibility`, `identity`, `boundary`, `unknown`, `initial`, `detached`, dan
+`chain_owner_1..4`, `chain_form_1..4`, `chain_prefix_ui|p|rsh|rshshr|other_1..4`
+untuk role rantai yang gagal). Alasan `js_*` berasal dari
+skrip halaman dan hanya dipetakan ke enum; teks bebas, node, atribut, dan nilai
+tidak pernah dicatat. Event ini tidak mengubah hasil adopsi JSON.
+
+`corporate.l7_history_arm` mencatat prasyarat pemasangan skrip riwayat L7 pada
+saat View diperiksa: `clear` (tidak ada root/host corporate di dokumen),
+`occupied` (sudah ada root/host corporate), `document` (dokumen yang dipertahankan
+bukan dokumen aktif), atau `unsupported`. Event ini tidak memuat elemen, atribut,
+URL, atau nilai, dan tidak mengubah admission.
 
 `native.paginator_timing` (Stage 0b untuk #161/#208) merekam *agregat per satu
 pemanggilan* paginator native yang sudah ada, bukan satu event per halaman.
@@ -129,6 +205,386 @@ request, response, query parameter, URL, identity, atau file path yang dicatat.
 Tahap ini belum memisahkan kronologi request/response maupun membuktikan
 pilihan ukuran halaman native. Live acceptance membutuhkan run yang cocok
 dengan build dan scope yang diuji serta validasi source/parity/PDF terpisah.
+
+### Rincian penantian First yang sudah ada (#161)
+
+Mulai build yang memuat perubahan ini, event `table.first_page_timing`
+muncul otomatis untuk tabel besar (`max_page_size >= 250`)
+selama diagnostik worker aktif, **tanpa flag / browser call baru**.
+Masing-masing empat tahap asli hanya direkam maksimal sekali pada
+jalurnya: `pilot_label_lookup` (satu evaluasi owner-bound yang membaca
+teks label ukuran halaman, tanpa membuat handle kedua, dan mengembalikan
+durasi renderer untuk pemisahan residual transport),
+`pilot_label_text` (normalisasi `.strip()` lokal dari teks tadi,
+**bukan** Playwright RPC tambahan),
+`first_overlay_wait` (wait global hidden yang sudah ada, timeout
+45.000 ms), dan `first_settle_wait` (jeda Playwright 180 ms yang
+sudah ada, hanya jika wait pertama sukses). Setiap event memiliki
+`table_first_page_outcome=returned|raised`,
+`duration_ms`, `table_rpc_thread_cpu_ms` dan ordinal form/tabel.
+Waktu `first_overlay_wait` adalah waktu host Python,
+**bukan** lamanya overlay target sebenarnya atau waktu jaringan.
+
+Jumlah `table_first_page_finished_requests` menunjukkan hanya berapa
+request-object yang teramati *selesai* selama wait First yang asli.
+`table_first_page_last_finish_ms` adalah selisih waktu lokal sejak
+awal wait hingga event finish terakhir, hanya jika ada yang selesai.
+Callback request-object berasal dari observer yang **sudah ada**,
+tidak mencatat URL, header, response, isi tabel, kode sumber atau ID.
+Lifecycle itu bersifat **unbound**: request yang selesai tidak
+membuktikan overlay/tab target siap, dan tidak mengisolasi backend,
+Chromium, Node, jaringan, atau penyebab timeout. Jika callback tidak
+lengkap/drop, bukti tetap tidak lengkap, bukan 0 network activity.
+
+Pemisahan ini tidak mengganti locator global yang memang sudah dipakai
+oleh `wait_idle(page)`. Overlay lain di tab yang sama mungkin
+memengaruhi wait, tetapi identitas overlay **tetap tidak diketahui**
+tanpa pembacaan DOM tambahan (tidak diizinkan dalam PR diagnostik ini).
+Pada timeout, tahap settle **tidak boleh** muncul. Pada Stop atau error,
+exception asli tetap diteruskan; tidak ada retry, polling lain,
+perubahan deadline 180 detik, klik tambahan atau promosi PARTIAL menjadi
+COMPLETE. Scope event hanya pada penantian setelah klik First; bukan
+semua `wait_idle` di aplikasi. `table.reset_timing:first_idle` tetap
+merupakan durasi inklusif; jangan jumlahkan dengan kedua tahap anak
+yang baru. Uji penerimaan live perlu membuktikan identitas build,
+event lengkap dan jumlah Playwright call tidak berubah, bukan
+mengasumsikan root cause dari satu run.
+
+### Pembagian waktu reset tabel DOM besar (#161)
+
+`table.reset_timing` hanya diterbitkan untuk tabel dengan batas
+`max_page_size >= 250` (jalur besar L3-B). Optimasi berikutnya menambah
+satu pemeriksaan keberadaan Previous yang terbatas pada owner awal,
+tanpa membaca data tabel bisnis.
+`table_reset_step` berupa kategori tetap:
+
+- `size_action`: satu pemanggilan pemilihan ukuran halaman yang **sudah ada**,
+  termasuk menunggu idle jika ukuran berubah; `count=1` berarti pemanggilan,
+  bukan jumlah perubahan atau request.
+- `pilot_guard`: verifikasi ulang ukuran halaman yang **sudah ada**
+  setelah `size_action` (termasuk locator/label asli). `count=1`
+  berarti verifikasi dipanggil, bukan keberhasilan atau perubahan ukuran.
+- `first_lookup`: hanya pencarian tombol First yang sudah ada.
+  `count=1` berarti kontrol ditemukan, bukan diklik.
+- `first_click`: hanya validasi dan klik First yang sudah ada.
+  `count=1` berarti klik telah berhasil diajukan, bukan respons selesai.
+- `first_idle`: penantian loading overlay global dan 180 ms settle
+  **asli**, sesudah klik First. `count=1` berarti wait dijalankan
+  meskipun timeout; tidak mengklaim overlay milik tabel ini.
+- `first_navigation`: interval inklusif pencarian, klik jika tersedia,
+  dan `wait_idle` aslinya; `count=0/1` berarti jumlah klik First yang
+  berhasil diajukan. **Jangan menjumlahkan** tahap ini dengan tahap anak.
+- `previous_stop_check`, `previous_lookup`, `previous_state`,
+  `previous_click`, `previous_idle`, `previous_verify`, dan
+  `previous_limit_lookup`: durasi agregat setiap jenis operasi
+  **yang sudah ada** di loop Previous. `count` berarti jumlah
+  pemanggilan/percobaan tahap, **bukan** jumlah respons atau klik sukses.
+  Semua tahap hanya diterbitkan sekali per tabel besar, termasuk saat
+  exception/Stop; tahap yang belum dicapai tidak diterbitkan.
+  Jalur tabel besar menggunakan **satu** `evaluate_handle` JavaScript
+  pada owner paginator awal dengan selector enabled Previous yang sama.
+  `as_element()` mengembalikan tombol asli jika ada, atau `None`;
+  tidak ada tahap probe terpisah sebelum lookup handle. Handle sementara
+  selalu dilepas, termasuk saat Stop/error/tombol tidak ditemukan.
+  Tombol yang ditemukan masih harus lolos validasi aksi dan owner asli
+  tepat sebelum klik; tidak ada pencarian ulang global atau klik spekulatif.
+  Jika owner terlepas atau Previous menghilang sebelum klik, exception
+  ditangani oleh `capture_panel`: tabel **tidak ditambahkan** ke hasil,
+  error disanitasi sebagai `capture_failed`, dan record/job non-COMPLETE.
+  Ini bukan PARTIAL tabel dengan baris sebelumnya dipertahankan. Kegagalan
+  pagination biasa setelah snapshot awal tetap mengembalikan
+  `complete=False` dengan halaman valid yang sudah terverifikasi.
+  `previous_lookup` kini mengukur satu `evaluate_handle` saja.
+  `previous_limit_lookup` tetap diperiksa independen setelah loop
+  (termasuk saat page limit), tetapi satu `evaluate` boolean owner-bound
+  tidak membuat handle yang tidak akan diklik. Tabel kecil tetap memakai
+  jalur lama. Transport yang sama masih bisa lambat; waktu live belum
+  diverifikasi ulang pada implementasi ini. Sumber, Stop, rewind,
+  batas 180 detik dan hasil PARTIAL tetap aman.
+  Jumlah klik Previous sukses tetap di `previous_rewind.count`.
+- `previous_rewind`: seluruh loop Previous, verifikasi state,
+  `wait_idle` serta pemeriksaan limit yang sudah ada. `count` adalah
+  jumlah klik Previous yang berhasil diajukan, **bukan** bukti respons
+  server atau total halaman; event tetap dicatat pada Stop/exception.
+- `total_pre_read`: total waktu persiapan sebelum memulai pembacaan
+  sel halaman pertama (`TABLE_JS`). Tidak termasuk biaya snapshot
+  pertama, yang sudah tercatat sebagai `table.page_timing:initial`.
+
+Semua catatan hanya membawa `form_ordinal`, `table_ordinal`,
+`duration_ms` dan `count` yang sudah lolos sanitizer. Tidak ada label
+paginator, isi/identitas baris, URL, request atau nama dokumen.
+Durasi berasal dari boundary host/Playwright dan tidak dengan
+sendirinya membuktikan waktu jaringan. Event tiap tahap tidak boleh
+dijumlahkan begitu saja dengan `total_pre_read`, karena total mencakup
+semua tahap. Penyebaran event hanya pada large-table candidate mencegah
+log spam untuk tabel kecil.
+
+### Probe RPC browser/renderer opsional untuk L3-B (#161)
+
+Pengukuran ini **tidak berjalan secara default**. Pada run diagnostik
+yang secara eksplisit diizinkan, aktifkan environment proses
+`SPT_DIAG_DOM_RPC_PROBE=1` bersama log diagnostik pada **proses GUI
+sebelum worker dijalankan**. Hanya nilai tepat `1` diteruskan oleh
+allowlist worker; flag ini tidak diteruskan ke bootstrap/uv, dan tidak
+tersedia pada job yang sudah berjalan. **Setiap run worker** dilabeli
+`table_rpc_probe_enabled=true/false` pada `session.started`,
+`operation.started`, `operation.finished`, dan `session.closed`,
+berdasarkan flag worker saat session dimulai. `true` berarti mode
+investigasi diizinkan, **bukan** bukti probe benar-benar dijalankan:
+budget guard dapat melewati keduanya sehingga tidak ada event
+`table.browser_rpc_probe`. Pisahkan seluruh run berlabel `true`
+dari run baseline, termasuk pada analisis COMPLETE/PARTIAL,
+waktu eksekusi, dan perbandingan baris. **Jika field
+`table_rpc_probe_enabled` hilang pada event batas run, statusnya
+UNKNOWN, bukan `false`.** Logger dapat kehilangan event saat antrean
+penuh, record lebih dari 4096 byte, atau logging gagal. Run dengan
+penanda hilang/tidak lengkap **tidak boleh** diperlakukan sebagai
+baseline tanpa probe atau dimasukkan ke perbandingan performa maupun
+kelengkapan. Tidak adanya event `table.browser_rpc_probe` juga
+bukan bukti probe dimatikan. Penanda ini hanya metadata
+log worker dan tidak ditambahkan pada `run.json`/workbook.
+
+Pada tabel dengan
+`max_page_size >= 250`, fungsi baca-saja akan mencoba maksimal dua
+RPC tambahan terhadap **owner paginator awal**: satu tepat sebelum
+`previous_lookup` pertama dan satu sebelum `previous_limit_lookup`
+akhir. Probe pertama **dilewati** jika sisa budget asli kurang dari
+**120 detik**; probe sebelum limit dilewati jika kurang dari **150 detik**.
+Kedua ambang melampaui observasi panggilan Previous terlama **108,80 detik**
+dengan cadangan lebih besar di tahap akhir. Observasi ini hanya satu
+sampel dan bukan batas maksimum latensi browser; guard 150 detik
+**sering melewati probe tahap akhir pada run lambat**, sehingga hasil
+diagnostik bisa kosong. Catat skip ini dalam laporan run.
+Tahap yang dilewati tidak membuat event.
+Jika loop Previous memiliki banyak klik, tidak dilakukan probe per klik.
+
+Event `table.browser_rpc_probe` hanya membawa:
+`table_rpc_stage` (kategori tetap `before_previous_lookup` atau
+`before_previous_limit_lookup`), `table_rpc_state`
+(`present`/`absent`/`detached`/`unavailable`/`error`),
+`form_ordinal`, `table_ordinal`, `duration_ms` (waktu host
+dalam Python), `table_rpc_renderer_ms` (durasi selector
+`performance.now()` **di dalam eksekusi JS**) dan
+`table_rpc_residual_ms=max(0, duration_ms-renderer_ms)`. Dua field
+terakhir tidak diterbitkan jika respons tidak valid/terjadi error.
+Semua field melalui allowlist diagnostik. Tidak ada teks HTML, hasil
+selector, label, baris, nilai SPT, URL, header, body atau identitas.
+
+**Interpretasi:** residual bukan pengukuran antrean browser murni;
+ia juga memuat driver Playwright, serialisasi, IPC/transport, scheduling
+dan pembulatan jam. Probe sendiri merupakan operasi terpisah dari
+`query_selector` asli; hasilnya **bukan durasi eksekusi JS dari
+`query_selector` asli**. Korelasikan dengan `table.reset_timing`
+untuk mencari indikasi macet di luar eksekusi selector, bukan
+menyatakan akar sebab. Mode opt-in menambah hingga dua panggilan yang
+dapat menghabiskan waktu capture dan mengubah jumlah halaman atau
+status PARTIAL. Batas awal 120/150 detik **bukan timeout RPC**:
+`evaluate` sinkron yang sudah dijalankan tidak dapat diputus saat
+browser/transport macet. Run dengan probe tidak boleh digunakan sebagai
+tolok ukur peningkatan performa atau bukti COMPLETE. Keputusan klik
+tetap mengikuti jalur asli, tetapi konsumsi budget bisa mengubah hasil
+akhir tabel. Capture, Stop, source proof, batas 180 detik dan verifikasi
+publikasi tidak diberi kewenangan baru oleh probe. Error probe
+disanitasi sebagai WARNING; hanya exception probe yang ditahan.
+
+### Waktu RPC Playwright asli tanpa browser call tambahan (#161)
+
+Pengukuran pasif ini **berbeda** dari `SPT_DIAG_DOM_RPC_PROBE=1`,
+yang mengirim probe browser tambahan. Dengan sesi diagnostik normal
+dan `max_page_size >= 250`, event `table.existing_rpc_timing`
+mengukur panggilan Playwright **yang sudah dibutuhkan scraping**:
+`pilot_label_lookup` (label ukuran halaman setelah pemilihan),
+`previous_lookup`, `previous_limit_lookup`, `initial_snapshot`,
+`cursor_init`, `cursor_advance`, `cursor_poll`,
+`cursor_snapshot` dan `cursor_turn`. Khusus tabel kandidat 500-row
+L3-B, `cursor_turn` menggabungkan klik Next, pemeriksaan perubahan
+state dan snapshot owner-bound dalam satu RPC jika halaman sudah siap dalam
+slice renderer maksimum 850 ms. Jika state belum berubah, polling dan
+snapshot lama tetap berlaku; snapshot pending kembali ke Python untuk
+pemeriksaan Stop. Ini mengurangi jumlah round-trip pada jalur cepat,
+**bukan** mengurangi biaya per round-trip yang tertahan.
+Untuk page timing jalur gabungan, `table_click_ms` meliputi seluruh
+RPC `cursor_turn` (termasuk snapshot jika sukses di call tersebut),
+sedangkan `table_dom_ms` bisa mendekati nol. Bandingkan durasi
+wall-clock `cursor_turn`, bukan kedua field secara terpisah.
+Tidak ada klaim peningkatan throughput nyata tanpa live A/B setara.
+
+Untuk 500-row candidate dengan tombol First tidak aktif, pembacaan label
+pilot yang sudah ada juga mengembalikan bukti negatif tombol First pada
+owner yang sama. `table.reset_timing` menampilkan
+`table_first_lookup_source=pilot_absence` jika lookup terpisah dilewati,
+atau `owner_query` jika tetap dilakukan. Sebelum membaca halaman pertama,
+snapshot awal yang sudah ada memeriksa ulang owner yang dipegang, label
+page size, dan absennya tombol First aktif secara atomik; perubahan
+kondisi ditolak, bukan dianggap sebagai halaman pertama. Jalur 250-row,
+First aktif, dan native JSON tetap mengikuti perilaku lama.
+
+Pada event `table.existing_rpc_timing` yang sudah ada,
+`table_cursor_turn_outcome` dan `table_cursor_snapshot_outcome` hanya
+mencatat kategori aman: `ready`, `late_state`, `pending_overlay`,
+`pending_settle`, `refused`, `budget`, `idle_timeout`,
+`not_advanced`, atau `unavailable` sesuai tahap.
+`pending_overlay` berarti overlay global yang diuji readiness belum
+hilang, sedangkan `pending_settle` berarti interval 180 ms belum selesai
+pada batas satu slice. Keduanya bukan bukti pemilik network request
+atau sumber latensi wall/renderer. Tidak ada probe tambahan, body
+JSON, selector, URL, ataupun row data di log. Perubahan ini tidak
+meningkatkan budget 180 detik maupun memanjangkan slice Stop.
+Event memakai ordinal form/tabel, fixed enum
+`table_existing_rpc_stage` dan `table_existing_rpc_outcome`
+(`returned`/`raised`), `duration_ms` (wall-clock Python),
+`table_rpc_thread_cpu_ms` (CPU thread Python saat memanggil),
+dan hanya jika sudah disediakan oleh panggilan asli:
+`table_rpc_renderer_ms` serta selisih
+`table_rpc_residual_ms`. Tidak ada teks kontrol, isi tabel,
+URL, selector, request/response, raw exception maupun identitas
+pengguna. Maksimal **48 event per tabel**; saat ambang tercapai,
+tidak lagi dicatat, dan drop logger juga mungkin terjadi.
+Hilangnya event tidak membuktikan bahwa RPC tidak berjalan.
+
+Tidak ada `evaluate`/locator/handler/CDP/network tambahan, tidak
+ada modifikasi JavaScript halaman atau isi capture. CPU thread
+Python **tidak** menghitung proses Node Playwright atau Chromium.
+Wall-clock tinggi dengan CPU thread rendah merupakan bukti thread
+menunggu, **bukan pengukuran spesifik** IPC, antrean Chromium,
+Node event loop, serialisasi atau network. Durasi renderer yang
+dikembalikan hanya mengukur lingkup JavaScript yang sudah
+diinstrumentasi sebelumnya. Perbedaan wall-versus-renderer
+mencampur semua latensi di luar lingkup itu. Batas 180 detik,
+prioritas Stop, sumber baris, dan COMPLETE/PARTIAL tidak berubah.
+Flag run `table_rpc_probe_enabled` tetap merepresentasikan
+**probe invasif ekstra** saja, bukan event pasif. Hindari klaim
+perbaikan throughput/kelengkapan dari perbedaan run tunggal,
+terutama jika digest katalog berubah. Gunakan sebagai dasar
+penentuan stage bottleneck untuk investigasi terpisah.
+
+### Sample CPU proses anak milik worker — opt-in, khusus Windows (#161)
+
+Pada build baru, **set `SPT_DIAG_HOST_CPU=1` sebelum menjalankan EXE
+dari PowerShell bersih**, dan biarkan
+`SPT_DIAG_DOM_RPC_PROBE` *tidak disetel*. Mode ini berbeda dari
+probe JavaScript tambahan: tidak ada RPC/DOM/browser command baru.
+Flag `table_host_cpu_enabled` pada `session.started`,
+`operation.started`, `operation.finished`, dan `session.closed`
+membuktikan status opt-in; marker tidak tersedia = **UNKNOWN**.
+
+Untuk investigasi pewarisan flag GUI ke worker (#307), build baru
+mencatat tiga boolean saja: `table_host_cpu_gui_start_enabled` pada
+`session.started` **GUI** (nilai tepat `1` ketika GUI dibuat),
+`table_host_cpu_gui_at_spawn` serta
+`table_host_cpu_worker_env_enabled` pada `worker.spawned` **GUI**
+(nilai ketika worker disiapkan dan nilai pada environment yang
+diberikan ke subprocess). Bandingkan ketiganya dengan
+`table_host_cpu_enabled` pada `session.started` **worker**. Penanda
+`false` hanya menegaskan titik pengamatan; tidak otomatis menunjukkan
+akar penyebab kehilangan flag. Ketidakadaan event/field berarti
+**UNKNOWN**, bukan `false`. Penanda hanya boolean tetap, tidak
+menyimpan nilai environment, command line, PID, akun, atau konten pajak.
+Pengukuran ini tidak menjalankan scrape tambahan dan tidak
+mengubah allowlist environment maupun akses browser.
+
+Untuk tabel besar (`max_page_size >= 250`), tepat sebelum/sesudah
+panggilan Playwright yang **sudah ada**, worker mengamati counter
+CPU melalui Toolhelp/GetProcessTimes hanya untuk proses anak di
+bawah PID worker saat itu. Sampel maksimum: satu `pilot_label_lookup`
+(label ukuran halaman), lookup Previous pertama, tiga `cursor_advance`
+pertama, dan tiga `cursor_snapshot` pertama — maksimum
+**8 pasangan (16 snapshot Win32) per tabel**.
+Tidak ada PID, nama executable, path, command line, request atau
+konten pajak pada log. Jika seluruh pasangan proses cocok (PID +
+creation time + kedalaman), event `table.existing_rpc_timing`
+menambahkan `table_host_cpu_state=paired`,
+`table_rpc_direct_child_cpu_ms`, dan
+`table_rpc_nested_child_cpu_ms` (waktu **CPU kumulatif**,
+bukan durasi wall). Apabila gagal mengakses proses, terdapat
+kelahiran/keluarnya subprocess, pergantian PID, atau dukungan OS
+tidak ada, metrik CPU tidak dipaksakan; event sampling Windows
+menggunakan `table_host_cpu_state=unavailable`.
+Di luar jatah delapan sampel, field CPU host sengaja tidak tersedia.
+Sampel `pilot_label_lookup` memantau satu `evaluate` owner-bound
+yang menggantikan `query_selector` ditambah `inner_text` remote
+pada tabel besar. Ini mengurangi satu perintah browser tetapi **tidak**
+menjamin waktu transport/CPU lebih cepat; instrumen CPU tidak menambah
+RPC browser. `table.first_page_timing` tetap mengukur
+operasi asli; snapshot CPU berada di luar timer. Variasi wall-clock
+lintas run tetap tidak membuktikan akar sebab.
+
+Kedalaman proses 1 sering berisi driver Node Playwright, sedangkan
+yang lebih dalam bisa berisi proses Chromium; **itu bukan bukti
+identitas proses**. CPU proses anak rendah tidak membuktikan
+penyebab antrean IPC, event-loop driver, scheduling Chromium,
+blokir jaringan atau rendering. Snapshot Win32 itu sendiri
+mengonsumsi sedikit waktu di dalam budget asli 180 detik, meskipun
+di luar interval wall-clock RPC. Karena itu, run opt-in **tidak
+boleh dibandingkan sebagai benchmark** kelengkapan/kecepatan
+dengan run normal. Status COMPLETE/PARTIAL, urutan data, Stop,
+sumber, deadline, dan penerbitan berkas tetap sama. Hasil
+investigasi harus dibahas sebagai korelasi CPU, bukan kepastian
+akar masalah; perubahan mekanisme scraper membutuhkan desain,
+tes regresi, dan review tersendiri.
+
+**Tindak lanjut 11 November 2026 (build `df60d3d7`):** operator-run
+berakhir PARTIAL pada form 4/tabel 3, `first_idle_timeout` setelah
+60,14 detik sejak awal persiapan. `size_action` 1,49 detik dan interval
+`first_navigation` 45,18 detik; jeda sekitar 13,5 detik sebelum
+`first_navigation` belum dipisahkan. Dua request-object yang teramati
+sudah selesai pada timeout; bukti itu tidak memastikan backend idle
+atau overlay sasaran. Tahap baru hanya memisahkan batas waktu pemanggilan
+yang **sudah terjadi**, tanpa RPC/browser lookup, perubahan klik,
+deadlines, dan tanpa mengubah PARTIAL atau native JSON. Live run baru
+perlu membuktikan penyebab visual idle sebelum ada perubahan perilaku.
+
+**Tindak lanjut 12 November 2026:** build PR #242 `a781e778`
+(tree-identik dengan head `5cadfc9`) menghasilkan `previous_rewind`
+53,83 detik dengan **nol klik Previous** pada L3-B form 4/tabel 3.
+Tahap baru memisahkan waktu dalam pemeriksaan Stop, locator, state,
+klik, idle dan verifikasi yang semula tidak bisa dibedakan. Tabel
+kemudian PARTIAL pada 1.500/4.654 baris karena budget 180 detik.
+Log sebelumnya sudah memuat `table.page_timing`: DOM read halaman
+kedua/ketiga 28,74/33,84 detik dan waktu advance/click hingga
+29,52 detik. Instrumentasi baru **bukan** perbaikan latensi atau
+bukti penyebab backend. Tidak ada tambahan operasi browser dan
+pemilihan sumber/Stop/timeout/PARTIAL tidak berubah.
+
+**Alasan penambahan:** pada 11 November 2026 build `8726aae5`, log
+mencatat `first_idle_complete` di 15:01:19 WIB tetapi
+`table.page_timing:initial` baru di 15:03:20 WIB (jeda ~121 detik).
+Tidak ada event di antara keduanya; loop Previous memang dijalankan
+di area tersebut tetapi jumlah klik dan waktunya **belum terbukti**.
+Pengukuran baru dibuat untuk membedakan biaya reset dari pembacaan DOM,
+tanpa menaikkan batas waktu 180 detik, tanpa mengubah request/klik,
+dan tanpa menerima baris yang tidak terverifikasi. Untuk pembuktian
+diperlukan operator-run build yang cocok dan hasil terminal tetap jujur.
+
+Pada penolakan `table.elapsed_budget` setelah aksi halaman, event yang sama
+sekarang dapat menyertakan durasi host untuk `duration_ms` seluruh aksi,
+`table_click_ms`, `table_poll_ms`, `table_idle_ms`, dan
+`table_dom_ms` **hanya bila tahap itu sudah dicapai**. Kategori
+`before_next_click` dapat mencatat durasi persiapan advance cursor
+yang dihentikan sebelum klik. Field tambahan memakai sanitizer numerik
+yang sudah ada, tanpa response, marker, URL, atau perubahan keputusan
+PARTIAL. Ketiadaan field bukan berarti durasi nol.
+
+`table.initial_loading` (PR #235) merekam tahapan persiapan DOM pertama:
+`size_complete`, `size_idle_timeout`, `first_idle_complete`, dan
+`first_idle_timeout`, ordinal form/tabel, durasi serta hitungan lifecycle
+request-object yang dipantau sementara. Tidak ada URL, NPWP, identitas
+record, header, body, isi pajak, nama dokumen, atau nilai DOM yang dibaca.
+Request tidak dipetakan secara spekulatif ke pemilik tabel;
+`table_request_scope` hanya `other_unbound` atau `unavailable` jika
+overflow/registrasi tidak lengkap.
+
+Untuk menjamin jalur Stop dan timeout asli, **tidak ada lagi probe CDP,
+panggilan struktural tambahan, WeakRef, setTimeout, maupun penulisan
+property window dari diagnostik**. Semua kategori struktural
+`table_loading_scope`, `table_loading_first_match`, dan
+`table_owner_state` sengaja dilaporkan `unavailable`, termasuk ketika
+overlay tabel sendiri, tabel lain atau BlockUI tampak pada fixture.
+Tidak dilaporkan `none` atau `target_datatable` tanpa bukti. Pengamatan
+request dihentikan dan referensinya dilepas saat persiapan selesai atau
+pada kegagalan/Stop melalui cleanup yang sudah dimiliki capture.
+Saat logging `OFF`, observer tidak dipasang. Perilaku klik, durasi tunggu,
+pemilihan source, PARTIAL, dan pemrosesan panel berikutnya tidak berubah.
 
 Pada tahap `l11a`, `corporate_l11a_reason` memisahkan pin/provider, lifetime,
 jumlah tabel, ancestry/grup, paginator, perubahan metadata, bentuk/offset request,

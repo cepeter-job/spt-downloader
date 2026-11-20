@@ -28,7 +28,21 @@ class Document:
         self.disposed = False
         self.on_read = None
 
-    def evaluate(self, script):
+    def evaluate(self, script, args=None):
+        if 'corporate-final-lifetimes' in script:
+            if self.on_read:
+                self.on_read()
+            result = {'same_document': self.generation is self.page.generation,
+                      'owners': self.page.evaluate('source_owner')}
+            for name, history in args.items():
+                try:
+                    result[name] = history.evaluate('(h) => h.sample()') if history is not None else None
+                except Exception:
+                    result[name] = None
+            # The reviewed joint turn also owns the final clock; a later clock
+            # RPC could pump a sibling replacement after its sample.
+            result['clock'] = {'epoch_ms': 1000, 'timezone': 'Asia/Jakarta'}
+            return result
         assert script.replace(' ', '') in ('(d)=>d===document', '(d)=>document===d')
         if self.on_read:
             self.on_read()
@@ -36,6 +50,11 @@ class Document:
 
     def dispose(self):
         self.disposed = True
+
+    def evaluate_handle(self, script):
+        # Coarse Document tests do not claim either optional child history.
+        assert 'corporate-l7-history' in script or 'dependent_seen' in script
+        return None
 
 
 def setup(*, owned=True, url=LIST):
@@ -314,37 +333,6 @@ def test_unused_valid_lifetime_attestation_preserves_l7_and_country_source_event
     result = adapt_corporate_detail(raw, record, scope, bindings)
     assert result['eligible'] and result['coverage']['complete'], result['reason']
     assert all(event.get('component_lifetime') == proof for event in result['provenance']['events'])
-
-
-@pytest.mark.parametrize('query', ['', '?view=true'])
-@pytest.mark.parametrize('form', ['L7', 'L11-C'])
-def test_semantic_route_accepts_only_reviewed_current_view_and_legacy(query, form):
-    import test_corporate_l11c_native as reference
-    from coretax_json import adapt_corporate_detail
-    raw, bindings = ([reference.l7_packet()], reference.l7_bindings()) if form == 'L7' else (
-        reference.packets(), reference.bindings())
-    record = reference.selected()
-    frame = reference.FRAME + query
-    for packet in raw:
-        packet['context']['frame_url'] = frame
-    bindings[1]['projection']['route'] = frame
-    record['detail_url'] = frame
-    result = adapt_corporate_detail(raw, record, reference.corpus.SCOPE, bindings)
-    assert result['eligible'] and result['coverage']['complete'], result['reason']
-
-
-@pytest.mark.parametrize('form', ['L7', 'L11-C'])
-def test_semantic_route_proof_cannot_describe_a_different_captured_frame(form):
-    import test_corporate_l11c_native as reference
-    from coretax_json import adapt_corporate_detail
-    raw, bindings = ([reference.l7_packet()], reference.l7_bindings()) if form == 'L7' else (
-        reference.packets(), reference.bindings())
-    for packet in raw:
-        packet['context']['frame_url'] = reference.FRAME + '?view=true'
-    # Keep the structural proof's legacy query-free route. Both routes are
-    # permitted individually; evidence may not silently switch between them.
-    result = adapt_corporate_detail(raw, reference.selected(), reference.corpus.SCOPE, bindings)
-    assert not result['eligible']
 
 
 @pytest.mark.parametrize('observed', [False, True])

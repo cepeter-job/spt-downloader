@@ -101,6 +101,84 @@ def test_corporate_observer_exception_keeps_safe_type_not_exception_text(monkeyp
     assert secret not in json.dumps(event)
 
 
+@pytest.mark.parametrize('observed,approved', [
+    ('a' * 64, 'b' * 64),   # live asset hashed, reviewed pin differs
+    (None, 'a' * 64),       # live digest unreadable
+    ('a' * 64, None),       # reviewed pin absent
+])
+def test_corporate_build_mismatch_names_gate_and_emits_unfamiliar_build(
+        monkeypatch, tmp_path, observed, approved):
+    """A corporate build mismatch must name itself, not return a bare refusal.
+
+    The corporate observer previously collapsed every refusal into one silent
+    ``unavailable()``, so a redeployed frontend and a structural gate were
+    indistinguishable without a live CDP session. The build gate must emit the
+    privacy-safe ``build.unfamiliar_build`` diagnostic and a fixed reason enum.
+    """
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(count=lambda: 0)))
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: observed)
+    record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
+    with diagnostics.session(tmp_path, 'worker') as log:
+        forms = coretax_corporate.observe_forms(
+            page, record, ('synthetic', 2025, 'period'), object(), approved_digest=approved)
+        assert log.flush()
+    assert forms is None
+    events = [e for e in records(tmp_path) if e['event'] == 'corporate.observe_unavailable']
+    assert len(events) == 1 and events[0]['corporate_observer_stage'] == 'build'
+    assert events[0].get('corporate_refusal_reason') == 'build_unfamiliar'
+    # The live build must be reported as unfamiliar, with the fixed enum only.
+    unfamiliar, = [e for e in records(tmp_path) if e['event'] == 'build.unfamiliar_build']
+    assert unfamiliar['build_source'] == 'corporate'
+    # Privacy: never the digest, URL or record identity.
+    assert 'SYNTHETIC-ID' not in json.dumps(events + [unfamiliar])
+
+
+def test_corporate_unfamiliar_build_carries_only_fixed_enums(monkeypatch, tmp_path):
+    """The diagnostic is bounded: a fixed source enum, never values or URLs."""
+    import coretax_browser
+    import coretax_corporate
+    import coretax_json
+    from spt_desktop import diagnostics
+
+    monkeypatch.setattr(coretax_browser, 'verify_detail_url', lambda *a: None)
+    monkeypatch.setattr(coretax_browser, 'list_taxpayer_id', lambda url: 'SYNTHETIC-ID')
+    monkeypatch.setattr(coretax_json, '_corporate_selected', lambda *a: {})
+    monkeypatch.setattr(coretax_json, '_check_corporate_route', lambda *a: None)
+    monkeypatch.setattr(coretax_corporate, '_tabs',
+                        lambda page: (object(), SimpleNamespace(count=lambda: 0)))
+    page = SimpleNamespace(url='https://synthetic.invalid/view',
+                           evaluate=lambda *a: 'a' * 64)
+    record = {'list_url': 'https://synthetic.invalid/list', 'record_id': 'SYNTHETIC-ID'}
+    with diagnostics.session(tmp_path, 'worker') as log:
+        forms = coretax_corporate.observe_forms(
+            page, record, ('synthetic', 2025, 'period'), object(), approved_digest='b' * 64)
+        assert log.flush()
+    assert forms is None
+    unfamiliar, = [e for e in records(tmp_path) if e['event'] == 'build.unfamiliar_build']
+    assert unfamiliar['build_source'] == 'corporate'
+    # Bounded: only the fixed source enum plus optional byte count; never a
+    # digest, URL, tab caption or record identity.
+    allowed = {
+        'schema', 'timestamp', 'level', 'event', 'role', 'session_id', 'sequence',
+        'elapsed_ms', 'python', 'frozen', 'build_source', 'observed_bytes',
+        'source_requested', 'tax_kind', 'build_commit', 'build_run_id',
+        'build_run_attempt', 'job_ref'}
+    assert set(unfamiliar) <= allowed
+    if 'observed_bytes' in unfamiliar:
+        assert type(unfamiliar['observed_bytes']) is int
+
+
 @pytest.mark.parametrize('phase', ['session', 'open', 'parent_inventory', 'final_drain'])
 def test_mpn_unsupported_stage_does_not_grant_completion(monkeypatch, tmp_path, phase):
     import coretax_mpn_browser as browser

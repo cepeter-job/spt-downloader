@@ -4,7 +4,9 @@ from math import ceil
 import pytest
 
 import coretax_browser as driver
+from spt_desktop import diagnostics as d
 from support_isolated_browser import browser as browser, context as context
+from test_diagnostics import records
 
 
 CAPTION = 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN'
@@ -128,6 +130,68 @@ def test_corporate_size_uses_only_available_bounded_options_and_avoids_reload(pa
     assert page.locator('.p-dropdown-items').is_hidden()
 
 
+def test_large_pilot_guard_uses_one_owner_bound_label_read_without_remote_handle(
+        page, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    # The inspected size is already 500; isolate only the post-size pilot
+    # guard, not maximize_page_size's separate inspected UI interactions.
+    monkeypatch.setattr(driver, 'maximize_page_size',
+                        lambda *a, **kw: False)
+    original_eval = ElementHandle.evaluate
+    original_query = ElementHandle.query_selector
+    calls = {'pilot_eval': 0, 'pilot_query': 0}
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.OWNED_PILOT_LABEL_TEXT_JS:
+            calls['pilot_eval'] += 1
+        return original_eval(self, expression, arg)
+
+    def track_query(self, selector):
+        if selector == '.p-paginator-rpp-options .p-dropdown-label':
+            calls['pilot_query'] += 1
+        return original_query(self, selector)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    monkeypatch.setattr(ElementHandle, 'query_selector', track_query)
+    result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert_rows(result, 601)
+    assert calls == {'pilot_eval': 1, 'pilot_query': 0}
+    assert page.evaluate('moves') == 1
+
+
+@pytest.mark.parametrize('label', ['1000', '501', '500x', '５００', '', None])
+def test_large_pilot_owner_read_rejects_invalid_or_missing_label_before_pagination(
+        page, monkeypatch, label):
+    table = fixture(page, total=601, selected=500)
+    monkeypatch.setattr(driver, 'maximize_page_size',
+                        lambda *a, **kw: False)
+    if label is None:
+        page.locator('.p-paginator-rpp-options .p-dropdown-label').evaluate(
+            '(e)=>e.remove()')
+    else:
+        page.locator('.p-paginator-rpp-options .p-dropdown-label').evaluate(
+            '(e,t)=>e.innerText=t', label)
+    with pytest.raises(RuntimeError, match='page size'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0
+
+
+def test_large_pilot_owner_read_rejects_detached_owner(page):
+    from playwright.sync_api import Error as PlaywrightError
+
+    table = fixture(page, total=601, selected=500)
+    owner = table.element_handle().evaluate_handle(
+        "e=>e.closest('p-table')")
+    try:
+        page.evaluate("document.querySelector('p-table').remove()")
+        with pytest.raises(PlaywrightError):
+            owner.evaluate(driver.OWNED_PILOT_LABEL_TEXT_JS)
+    finally:
+        owner.dispose()
+
+
 def test_guarded_500_cap_refuses_unbounded_current_ui_option(page):
     table = fixture(page, total=1001, sizes=(1000,), selected=1000)
     with pytest.raises(RuntimeError, match='page size'):
@@ -184,3 +248,867 @@ def test_large_page_capture_stop_after_first_move_propagates(page):
         capture(page, check_cancel=stop)
     assert page.evaluate('sizeChanges') == [500]
     assert page.evaluate('moves') == 1
+
+
+def test_large_dom_reset_timings_attribute_first_and_previous_without_extra_clicks(
+        page, tmp_path, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    real_query = ElementHandle.query_selector
+    real_handle = ElementHandle.evaluate_handle
+    real_evaluate = ElementHandle.evaluate
+    calls = {'owned': 0, 'legacy': 0, 'final_limit': 0}
+    selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+
+    def track_query(self, value):
+        if value == selector:
+            calls['legacy'] += 1
+        return real_query(self, value)
+
+    def track_handle(self, expression, arg=None):
+        if expression == driver.OWNED_PREVIOUS_CONTROL_JS:
+            assert arg == selector
+            calls['owned'] += 1
+        return real_handle(self, expression, arg)
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.OWNED_PREVIOUS_PRESENT_JS:
+            assert arg == selector
+            calls['final_limit'] += 1
+        return real_evaluate(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', track_query)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', track_handle)
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    # Synthetic page: First legitimately lands on page 3 and the existing
+    # inspected Previous fallback must restore page 1. Never skip source pages.
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        prev.textContent = 'Previous';
+        first.after(prev);
+        const previousDraw = window.draw;
+        window.draw = () => { previousDraw(); prev.disabled = at === 0; };
+        first.onclick = () => { moves++; at = 2; draw(); };
+        prev.onclick = () => { moves++; at--; draw(); };
+        at = 4;
+        draw();
+    }""")
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(captured, 601)
+    assert captured['pages'] == 2
+    # First (one), Previous (two), Next (one) are the original required actions.
+    assert page.evaluate('moves') == 4
+    # Two Previous controls + final absent probe, without extra handle lookup.
+    assert calls == {'owned': 3, 'legacy': 0, 'final_limit': 1}
+    rows = [row for row in records(tmp_path) if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in rows}
+    assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
+                          'first_click', 'first_idle', 'first_navigation',
+                          'previous_stop_check', 'previous_lookup',
+                          'previous_state', 'previous_click',
+                          'previous_idle', 'previous_verify',
+                          'previous_limit_lookup', 'previous_rewind',
+                          'total_pre_read'}
+    assert steps['previous_stop_check']['count'] == 3
+    assert steps['previous_lookup']['count'] == 3
+    assert steps['previous_state']['count'] == 2
+    assert steps['previous_click']['count'] == 2
+    assert steps['previous_idle']['count'] == 2
+    assert steps['previous_verify']['count'] == 2
+    assert steps['previous_limit_lookup']['count'] == 1
+    assert steps['pilot_guard']['count'] == 1
+    # Only existing calls are wrapped: no additional Playwright dispatch.
+    first_parts = [row for row in records(tmp_path)
+                   if row['event'] == 'table.first_page_timing']
+    assert [r['table_first_page_step'] for r in first_parts] == [
+        'pilot_label_lookup', 'pilot_label_text',
+        'first_overlay_wait', 'first_settle_wait']
+    assert all(r['table_first_page_outcome'] == 'returned' for r in first_parts)
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3
+               for r in first_parts)
+    # The real owner-bound label evaluation emits its renderer boundary
+    # within the existing passive RPC event; it sends no diagnostic probe.
+    pilot_rpc = [row for row in records(tmp_path)
+                 if row['event'] == 'table.existing_rpc_timing'
+                 and row['table_existing_rpc_stage'] == 'pilot_label_lookup']
+    assert len(pilot_rpc) == 1
+    assert pilot_rpc[0]['table_rpc_renderer_ms'] >= 0
+    assert pilot_rpc[0]['table_rpc_residual_ms'] >= 0
+    assert steps['first_lookup']['count'] == 1
+    assert steps['first_click']['count'] == 1
+    assert steps['first_idle']['count'] == 1
+    assert steps['first_navigation']['count'] == 1
+    assert steps['first_navigation']['duration_ms'] >= steps['first_idle']['duration_ms']
+    assert steps['previous_rewind']['count'] == 2
+    assert steps['previous_rewind']['duration_ms'] > 0
+    assert steps['total_pre_read']['duration_ms'] >= steps['previous_rewind']['duration_ms']
+    assert all(row['form_ordinal'] == 1 and row['table_ordinal'] == 3 for row in rows)
+    assert all(set(row).isdisjoint({'url', 'body', 'marker', 'table_text'}) for row in rows)
+
+
+def test_large_dom_first_click_stop_preserves_cancel_and_zero_click_timing(
+        page, tmp_path, monkeypatch):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate('at=1; draw()')
+
+    def cancel_during_first_click(_control, _container, _check_cancel):
+        raise driver.CaptureCancelled('synthetic stop during First click')
+
+    monkeypatch.setattr(driver, '_click_table_paginator', cancel_during_first_click)
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled,
+                           match='synthetic stop during First click'):
+            driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+
+    assert page.evaluate('moves') == 0
+    events = records(tmp_path)
+    reset_events = [row for row in events
+                    if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in reset_events}
+    assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
+                          'first_click', 'first_navigation'}
+    assert steps['first_lookup']['count'] == 1
+    assert steps['first_click']['count'] == 0
+    assert steps['first_navigation']['count'] == 0
+    assert all(row['duration_ms'] >= 0 for row in reset_events)
+    assert not any(row['event'] == 'table.page_timing' for row in events)
+
+
+def test_large_dom_first_idle_timeout_preserves_original_failure_and_timing(
+        page, tmp_path, monkeypatch):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate('at=1; draw()')
+    def original_wait_times_out(_page):
+        raise driver.PlaywrightTimeoutError('synthetic first idle timeout')
+
+    monkeypatch.setattr(driver, 'wait_idle', original_wait_times_out)
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.PlaywrightTimeoutError):
+            driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    # No retry, Previous, Next, DOM snapshot or altered source acceptance.
+    assert page.evaluate('moves') == 1
+    records_for_reset = [row for row in records(tmp_path)
+                         if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in records_for_reset}
+    assert set(steps) == {'size_action', 'pilot_guard', 'first_lookup',
+                          'first_click', 'first_idle', 'first_navigation'}
+    assert steps['first_idle']['count'] == 1
+    assert steps['first_navigation']['count'] == 1
+    assert steps['first_navigation']['duration_ms'] >= steps['first_idle']['duration_ms']
+    # The synthetic monkeypatch replaces wait_idle entirely, so no false
+    # overlay-wait outcome is invented; only actual pilot RPCs were sampled.
+    first_parts = [r for r in records(tmp_path)
+                   if r['event'] == 'table.first_page_timing']
+    assert [r['table_first_page_step'] for r in first_parts] == [
+        'pilot_label_lookup', 'pilot_label_text']
+    assert not any(row['event'] == 'table.page_timing'
+                   for row in records(tmp_path))
+    assert all('error' not in row for row in records_for_reset)
+
+
+def test_small_dom_table_does_not_emit_large_reset_diagnostics(page, tmp_path):
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        captured = driver.capture_table(page, table, 1, 100, max_page_size=100)
+        assert log.flush()
+    assert_rows(captured, 101)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.reset_timing']
+
+
+def test_large_dom_zero_previous_clicks_attributes_lookup_without_retry(
+        page, tmp_path):
+    table = fixture(page, total=601, selected=500)
+    # First is disabled on page 1 and the synthetic table has no Previous.
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert page.evaluate('moves') == 1  # The original Next only.
+    events = records(tmp_path)
+    timing = {row['table_reset_step']: row for row in events
+              if row['event'] == 'table.reset_timing'}
+    assert timing['previous_rewind']['count'] == 0
+    assert timing['previous_stop_check']['count'] == 1
+    assert timing['previous_lookup']['count'] == 1
+    assert timing['previous_limit_lookup']['count'] == 1
+    assert set(timing).isdisjoint({'previous_state', 'previous_click',
+                                   'previous_idle', 'previous_verify'})
+    assert timing['previous_rewind']['duration_ms'] >= timing['previous_lookup']['duration_ms']
+
+
+@pytest.mark.parametrize('limit,expected_legacy,expected_owned', [
+    (500, 0, 1),  # No handle lookup or extra probe on the large-table path.
+    (100, 2, 0),  # Small DOM tables retain their two original lookups.
+])
+def test_absent_previous_uses_one_owned_lookup_and_bounded_final_check(
+        page, monkeypatch, limit, expected_legacy, expected_owned):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=100)
+    old_query = ElementHandle.query_selector
+    old_eval_handle = ElementHandle.evaluate_handle
+    old_evaluate = ElementHandle.evaluate
+    old_dispose = driver._dispose_table_handle
+    legacy_queries, owned_handles, final_checks, disposed = [], [], [], []
+    selector = '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+
+    def track_query(self, value):
+        if value == selector:
+            legacy_queries.append(value)
+        return old_query(self, value)
+
+    def track_handle(self, expression, arg=None):
+        result = old_eval_handle(self, expression, arg)
+        if expression == driver.OWNED_PREVIOUS_CONTROL_JS:
+            assert arg == selector
+            owned_handles.append(result)
+        return result
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.OWNED_PREVIOUS_PRESENT_JS:
+            assert arg == selector
+            final_checks.append(arg)
+        return old_evaluate(self, expression, arg)
+
+    def track_dispose(handle):
+        if any(handle is item for item in owned_handles):
+            disposed.append(handle)
+        return old_dispose(handle)
+
+    monkeypatch.setattr(ElementHandle, 'query_selector', track_query)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', track_handle)
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    monkeypatch.setattr(driver, '_dispose_table_handle', track_dispose)
+    result = driver.capture_table(page, table, 3, 100, max_page_size=limit)
+    assert_rows(result, 601)
+    assert len(legacy_queries) == expected_legacy
+    assert len(owned_handles) == expected_owned
+    assert len(disposed) == expected_owned
+    assert len(final_checks) == (1 if limit >= 250 else 0)
+    assert page.evaluate('moves') == ceil(601 / limit) - 1
+
+
+def test_large_previous_owned_handle_refuses_disappearing_control_before_click(
+        page, monkeypatch):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        first.after(previous);
+    }""")
+    original = driver._click_table_paginator
+    original_dispose = driver._dispose_table_handle
+    disposed = []
+
+    def disappear_before_click(control, container, check_cancel):
+        if control.evaluate("(e)=>e.matches('.p-paginator-prev')"):
+            page.evaluate("document.querySelector('.p-paginator-prev').remove()")
+        return original(control, container, check_cancel)
+
+    def tracked_dispose(handle):
+        disposed.append(handle)
+        return original_dispose(handle)
+
+    monkeypatch.setattr(driver, '_click_table_paginator', disappear_before_click)
+    monkeypatch.setattr(driver, '_dispose_table_handle', tracked_dispose)
+    with pytest.raises(RuntimeError, match='Unavailable or unsupported pagination control'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0  # Neither speculative click nor retry.
+    assert len(disposed) >= 3  # Original table, owner and owned Previous.
+
+
+def test_large_previous_probe_rejects_nested_foreign_control(page):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const foreign = document.createElement('p-table');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        foreign.append(previous);
+        document.querySelector('p-table').append(foreign);
+    }""")
+    # A nested paginator may match the selector, but cannot belong to
+    # the original owner. The old guarded click must still reject it.
+    with pytest.raises(RuntimeError, match='Unavailable or unsupported pagination control'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 0
+
+
+def test_large_previous_owned_handle_disappearing_at_panel_omits_table(
+        page, monkeypatch):
+    fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const previous = document.createElement('button');
+        previous.className = 'p-paginator-prev';
+        first.after(previous);
+    }""")
+    original = driver._click_table_paginator
+
+    def disappear_before_click(control, container, check_cancel):
+        if control.evaluate("(e)=>e.matches('.p-paginator-prev')"):
+            page.evaluate("document.querySelector('.p-paginator-prev').remove()")
+        return original(control, container, check_cancel)
+
+    monkeypatch.setattr(driver, '_click_table_paginator', disappear_before_click)
+    result = capture(page)
+    assert not result['capture_complete']
+    assert result['sections'][0]['tables'] == []
+    assert any(e['message'] == 'capture_failed' and
+               e['object'] == 'L3/table 1' for e in result['errors'])
+    assert page.evaluate('moves') == 0
+
+
+def test_large_previous_owned_lookup_rejects_detached_owner(page):
+    from playwright.sync_api import Error as PlaywrightError
+
+    table = fixture(page, total=601, selected=500)
+    owner = table.element_handle().evaluate_handle(
+        "e=>e.closest('p-table')")
+    try:
+        page.evaluate("document.querySelector('p-table').remove()")
+        with pytest.raises(PlaywrightError):
+            owner.evaluate_handle(driver.OWNED_PREVIOUS_CONTROL_JS,
+                                  '.p-paginator-prev:not([disabled]):not(.p-disabled)')
+        with pytest.raises(PlaywrightError):
+            owner.evaluate(driver.OWNED_PREVIOUS_PRESENT_JS,
+                           '.p-paginator-prev:not([disabled]):not(.p-disabled)')
+    finally:
+        owner.dispose()
+
+
+def test_large_previous_owned_handle_disposed_on_cancel(page, monkeypatch):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const drawOriginal = window.draw;
+        window.draw = () => {drawOriginal();prev.disabled = at === 0;};
+        first.onclick = () => {moves++;at=2;draw();};
+        prev.onclick = () => {moves++;at--;draw();};
+        at=4;draw();
+    }""")
+    old_eval_handle = ElementHandle.evaluate_handle
+    old_dispose = driver._dispose_table_handle
+    old_click = driver._click_table_paginator
+    owned, disposed = [], []
+
+    def track_handle(self, expression, arg=None):
+        h = old_eval_handle(self, expression, arg)
+        if expression == driver.OWNED_PREVIOUS_CONTROL_JS:
+            owned.append(h)
+        return h
+
+    def track_dispose(h):
+        if any(h is x for x in owned):
+            disposed.append(h)
+        return old_dispose(h)
+
+    def stop_during_previous_click(control, container, check_cancel):
+        if control.evaluate("(e)=>e.matches('.p-paginator-prev')"):
+            raise driver.CaptureCancelled('synthetic stop before Previous click')
+        return old_click(control, container, check_cancel)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', track_handle)
+    monkeypatch.setattr(driver, '_dispose_table_handle', track_dispose)
+    monkeypatch.setattr(driver, '_click_table_paginator', stop_during_previous_click)
+    with pytest.raises(driver.CaptureCancelled, match='synthetic stop before Previous click'):
+        driver.capture_table(page, table, 3, 100, max_page_size=500)
+    assert page.evaluate('moves') == 1  # First dispatched, no Previous click.
+    assert len(owned) == len(disposed) == 1
+
+
+def test_large_previous_page_limit_retains_guard_with_owner_bool_lookup(page):
+    table = fixture(page, total=1501, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const drawOriginal=window.draw;
+        window.draw=()=>{drawOriginal();prev.disabled=at===0;};
+        first.onclick=()=>{moves++;at=2;draw();};
+        prev.onclick=()=>{moves++;at--;draw();};
+        at=2;draw();
+    }""")
+    with pytest.raises(RuntimeError, match='Table reset page limit 1 reached'):
+        driver.capture_table(page, table, 3, max_pages=1, max_page_size=500)
+    assert page.evaluate('moves') == 2  # First + bounded Previous only.
+
+
+def test_large_dom_reset_stop_preserves_original_cancel_and_emits_bounded_elapsed(
+        page, tmp_path):
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const drawOriginal = window.draw;
+        window.draw = () => { drawOriginal(); prev.disabled = at === 0; };
+        first.onclick = () => { moves++; at = 2; draw(); };
+        prev.onclick = () => { moves++; at--; draw(); };
+        at = 4;
+        draw();
+    }""")
+
+    def cancel_after_first_previous():
+        if page.evaluate('moves') >= 2:
+            raise driver.CaptureCancelled('synthetic stop')
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled):
+            driver.capture_table(page, table, 3, 100,
+                                 check_cancel=cancel_after_first_previous,
+                                 max_page_size=500)
+        assert log.flush()
+    assert page.evaluate('moves') == 2
+    timing = [row for row in records(tmp_path)
+              if row['event'] == 'table.reset_timing']
+    steps = {row['table_reset_step']: row for row in timing}
+    assert steps['previous_rewind']['count'] == 1
+    assert steps['previous_stop_check']['count'] == 2
+    assert steps['previous_lookup']['count'] == 1
+    assert steps['previous_click']['count'] == 1
+    assert steps['previous_verify']['count'] == 1
+    assert 'previous_limit_lookup' not in steps
+    assert all(row['duration_ms'] >= 0 for row in timing)
+
+
+def test_optional_dom_rpc_probe_disabled_by_default_avoids_extra_browser_calls(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
+    table = fixture(page, total=601, selected=500)
+    original_evaluate = ElementHandle.evaluate
+
+    def track_evaluate(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise AssertionError('Diagnostic-only RPC must remain disabled by default')
+        return original_evaluate(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', track_evaluate)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_records_renderer_and_host_residual_without_business_values(
+        page, monkeypatch, tmp_path):
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=601, selected=500)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert [r['table_rpc_stage'] for r in rows] == [
+        'before_previous_lookup', 'before_previous_limit_lookup']
+    assert [r['table_rpc_state'] for r in rows] == ['absent', 'absent']
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
+    for row in rows:
+        assert row['duration_ms'] >= row['table_rpc_renderer_ms'] >= 0
+        assert row['table_rpc_residual_ms'] >= 0
+        assert abs(row['duration_ms'] - row['table_rpc_renderer_ms'] -
+                   row['table_rpc_residual_ms']) <= 0.03
+        assert not {'selector', 'html', 'url', 'body', 'rows', 'marker', 'name'} & row.keys()
+
+
+def test_optional_dom_rpc_probe_present_previous_still_preserves_rewind(
+        page, monkeypatch, tmp_path):
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=601, selected=500)
+    page.evaluate("""() => {
+        const first = document.querySelector('.p-paginator-first');
+        const prev = document.createElement('button');
+        prev.className = 'p-paginator-prev';
+        first.after(prev);
+        const originalDraw = window.draw;
+        window.draw = () => {originalDraw();prev.disabled = at === 0;};
+        first.onclick = () => {moves++;at=2;draw();};
+        prev.onclick = () => {moves++;at--;draw();};
+        at = 4;draw();
+    }""")
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert page.evaluate('moves') == 4  # First + two Previous + Next.
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2  # Never one RPC per Previous click.
+    assert [r['table_rpc_state'] for r in rows] == ['present', 'absent']
+    assert [r['table_rpc_stage'] for r in rows] == [
+        'before_previous_lookup', 'before_previous_limit_lookup']
+
+
+def test_optional_dom_rpc_probe_failures_never_block_original_capture(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=601, selected=500)
+    original = ElementHandle.evaluate
+    secret = 'SYNTHETIC_PRIVATE_DOM_TIMING_SENTINEL'
+
+    def fail_only_diagnostic(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise RuntimeError(secret)
+        return original(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', fail_only_diagnostic)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert len(rows) == 2
+    assert all(r['table_rpc_state'] == 'error' and 'error' in r for r in rows)
+    import json
+    assert secret not in json.dumps(records(tmp_path))
+
+
+@pytest.mark.parametrize('stage,seconds_left,simulated_rpc_seconds', [
+    ('before_previous_lookup', 30.01, 36.99),
+    ('before_previous_lookup', 119.9, 130),
+    # 120.1s is above the *first* probe guard but below the stricter
+    # 150s *final* guard; a modeled 130s RPC must not be dispatched.
+    ('before_previous_limit_lookup', 120.1, 130),
+    ('before_previous_limit_lookup', 149.9, 151),
+])
+def test_optional_dom_rpc_probe_skips_unsafe_budget_before_dispatch(
+        monkeypatch, tmp_path, stage, seconds_left, simulated_rpc_seconds):
+    import time
+
+    class SlowOwner:
+        def evaluate(self, _expression, _arg):
+            raise AssertionError('A slow diagnostic RPC must have been skipped')
+
+    assert seconds_left < simulated_rpc_seconds
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, 'worker') as log:
+        driver._observe_dom_rpc_delay(
+            SlowOwner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+            stage=stage, ordinal=3, max_page_size=500,
+            capture_deadline=time.monotonic() + seconds_left, check_cancel=None)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_small_tables_have_no_extra_browser_calls(
+        page, monkeypatch, tmp_path):
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 1, 100, max_page_size=100)
+        assert log.flush()
+    assert_rows(result, 101)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_preserves_stop_before_browser_rpc(
+        monkeypatch, tmp_path):
+    import time
+
+    class Owner:
+        def evaluate(self, _expression, _arg):
+            raise AssertionError('Stop must win before diagnostic browser RPC')
+
+    def stop():
+        raise driver.CaptureCancelled('synthetic stop signal')
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled, match='synthetic stop signal'):
+            driver._observe_dom_rpc_delay(
+                Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+                stage='before_previous_lookup', ordinal=3, max_page_size=500,
+                capture_deadline=time.monotonic() + 170,
+                check_cancel=stop)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_optional_dom_rpc_probe_requires_active_diagnostic_session(
+        monkeypatch):
+    import time
+
+    class Owner:
+        def evaluate(self, _expression, _arg):
+            raise AssertionError('No probe without an active diagnostic session')
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    driver._observe_dom_rpc_delay(
+        Owner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+        stage='before_previous_lookup', ordinal=3, max_page_size=500,
+        capture_deadline=time.monotonic() + 170, check_cancel=None)
+
+
+def test_optional_dom_rpc_probe_eligible_guard_still_includes_rpc_without_timeout(
+        monkeypatch, tmp_path):
+    import time
+
+    class FastOwner:
+        def evaluate(self, expression, selector):
+            assert expression == driver.DOM_RPC_TIMING_JS
+            assert selector == '.p-paginator-prev:not([disabled]):not(.p-disabled)'
+            return {'status': 'absent', 'renderer_ms': 0.01}
+
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    for stage in ('before_previous_lookup', 'before_previous_limit_lookup'):
+        with d.session(tmp_path, 'worker') as log:
+            driver._observe_dom_rpc_delay(
+                FastOwner(), '.p-paginator-prev:not([disabled]):not(.p-disabled)',
+                stage=stage, ordinal=3, max_page_size=500,
+                capture_deadline=time.monotonic() + (
+                    driver.DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS[stage] + 1),
+                check_cancel=None)
+            assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    assert events and all(e['table_rpc_state'] == 'absent' for e in events)
+    # This verifies only the guard; an RPC exceeding the remaining time
+    # cannot be interrupted by a synchronous Playwright evaluate.
+
+
+def test_optional_dom_rpc_probe_skipped_on_full_synthetic_capture_preserves_rows(
+        page, monkeypatch, tmp_path):
+    from playwright.sync_api import ElementHandle
+
+    table = fixture(page, total=601, selected=500)
+    monkeypatch.setenv('SPT_DIAG_DOM_RPC_PROBE', '1')
+    # Both stages fail their pre-dispatch threshold, so no extra RPC may
+    # perturb the original source capture or completion decision.
+    monkeypatch.setattr(driver, 'DOM_RPC_DIAGNOSTIC_MIN_REMAINING_SECONDS',
+                        {'before_previous_lookup': 181,
+                         'before_previous_limit_lookup': 181})
+    original = ElementHandle.evaluate
+
+    def fail_if_probed(self, expression, arg=None):
+        if expression == driver.DOM_RPC_TIMING_JS:
+            raise AssertionError('Disallowed probe dispatched')
+        return original(self, expression, arg)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', fail_if_probed)
+    with d.session(tmp_path, 'worker') as log:
+        result = driver.capture_table(page, table, 3, 100, max_page_size=500)
+        assert log.flush()
+    assert_rows(result, 601)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+
+
+def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
+        page, tmp_path, monkeypatch):
+    from collections import Counter
+    from playwright.sync_api import ElementHandle
+
+    monkeypatch.delenv('SPT_DIAG_DOM_RPC_PROBE', raising=False)
+    monkeypatch.delenv('SPT_DIAG_HOST_CPU', raising=False)
+    real_evaluate = ElementHandle.evaluate
+    real_handle = ElementHandle.evaluate_handle
+    real_query = ElementHandle.query_selector
+    calls = Counter()
+
+    def tracked_evaluate(self, expression, arg=None):
+        assert expression != driver.DOM_RPC_TIMING_JS
+        calls['evaluate'] += 1
+        return real_evaluate(self, expression, arg)
+
+    def tracked_handle(self, expression, arg=None):
+        calls['evaluate_handle'] += 1
+        return real_handle(self, expression, arg)
+
+    def tracked_query(self, expression):
+        calls['query_selector'] += 1
+        return real_query(self, expression)
+
+    monkeypatch.setattr(ElementHandle, 'evaluate', tracked_evaluate)
+    monkeypatch.setattr(ElementHandle, 'evaluate_handle', tracked_handle)
+    monkeypatch.setattr(ElementHandle, 'query_selector', tracked_query)
+
+    table = fixture(page, total=601, selected=500)
+    assert_rows(driver.capture_table(page, table, 3, 100, max_page_size=500), 601)
+    uninstrumented = calls.copy()
+    calls.clear()
+    # Opt in the child-CPU observer with fake local OS counters; the browser
+    # method-call inventory must remain byte-for-byte unchanged.
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    snapshots = []
+
+    def fake_process_sample():
+        n = len(snapshots)
+        snapshots.append(n)
+        return {421: (100, 10_000 + n * 1000, 1),
+                422: (200, 20_000 + n * 2000, 2)}
+
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', fake_process_sample)
+    table = fixture(page, total=601, selected=500)
+    with d.session(tmp_path, 'worker') as log:
+        assert_rows(driver.capture_table(page, table, 3, 100, max_page_size=500), 601)
+        assert log.flush()
+    # Logging only: exactly the same set of original Playwright method calls.
+    assert calls == uninstrumented
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert 4 <= len(rows) <= driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+    assert {'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
+            'initial_snapshot', 'cursor_init', 'cursor_turn'} <= {
+                r['table_existing_rpc_stage'] for r in rows}
+    assert all(r['table_existing_rpc_outcome'] == 'returned' for r in rows)
+    assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
+    assert all(r['duration_ms'] >= 0 and r['table_rpc_thread_cpu_ms'] >= 0
+               for r in rows)
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.browser_rpc_probe']
+    cpu_rows = [r for r in rows if r.get('table_host_cpu_state') == 'paired']
+    assert len(cpu_rows) >= 4
+    pilot = [r for r in cpu_rows if r['table_existing_rpc_stage'] == 'pilot_label_lookup']
+    assert len(pilot) == 1
+    assert all(r['table_rpc_direct_child_cpu_ms'] == 0.1
+               and r['table_rpc_nested_child_cpu_ms'] == 0.2 for r in cpu_rows)
+    assert len(snapshots) == 2 * len(cpu_rows)
+
+
+def test_passive_rpc_records_raised_call_without_changing_original_exception(
+        tmp_path):
+    secret = 'SYNTHETIC_PRIVATE_RPC_EXCEPTION'
+    slots = [0]
+
+    def synthetic_call(should_fail):
+        if should_fail:
+            raise RuntimeError(secret)
+        return None
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(RuntimeError, match=secret):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500, slots):
+                synthetic_call(True)
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 1
+    assert rows[0]['table_existing_rpc_outcome'] == 'raised'
+    import json
+    assert secret not in json.dumps(rows)
+
+
+def test_passive_rpc_stop_and_record_cap_preserve_bounded_diagnostics(tmp_path):
+    slots = [0]
+
+    def synthetic_stop(cancelled):
+        if cancelled:
+            raise driver.CaptureCancelled('synthetic stop')
+        return None
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled):
+            with driver._timed_existing_rpc('cursor_poll', 3, 500, slots):
+                synthetic_stop(True)
+        assert log.flush()
+        slots[0] = driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+        with driver._timed_existing_rpc('cursor_advance', 3, 500, slots):
+            pass
+        assert log.flush()
+    rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(rows) == 1
+    assert rows[0]['table_existing_rpc_outcome'] == 'raised'
+    assert slots[0] == driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
+
+
+def test_passive_rpc_disabled_for_small_tables_even_with_diagnostics(page, tmp_path):
+    table = fixture(page, total=101, selected=100)
+    with d.session(tmp_path, 'worker') as log:
+        assert_rows(driver.capture_table(page, table, 1, 100, max_page_size=100),
+                    101)
+        assert log.flush()
+    assert not [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+
+
+def test_host_cpu_sampler_opt_in_bounded_on_raised_and_unavailable(
+        tmp_path, monkeypatch):
+    secret = 'SYNTHETIC_CANCEL_PRIVATE_VALUE'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    samples = []
+
+    def fake_snapshot():
+        samples.append(None)
+        return {91: (2, 10000 + len(samples) * 1000, 1)}
+
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', fake_snapshot)
+    slots, host_slots = [0], {}
+    with d.session(tmp_path, 'worker') as log:
+        def synthetic_stop():
+            raise driver.CaptureCancelled(secret)
+
+        with pytest.raises(driver.CaptureCancelled):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500,
+                                            slots, host_slots):
+                synthetic_stop()
+        for _ in range(5):
+            with driver._timed_existing_rpc('cursor_snapshot', 3, 500,
+                                            slots, host_slots):
+                pass
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 6
+    assert events[0]['table_existing_rpc_outcome'] == 'raised'
+    assert [e.get('table_host_cpu_state') for e in events] == [
+        'paired', 'paired', 'paired', None, None, None]
+    assert host_slots['cursor_snapshot'] == 3
+    assert len(samples) == 6
+    import json
+    assert secret not in json.dumps(events)
+
+
+def test_pilot_label_host_cpu_unavailable_preserves_stop_and_privacy(
+        tmp_path, monkeypatch):
+    secret = 'SYNTHETIC_PILOT_PRIVATE_STOP'
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', lambda: None)
+    def synthetic_stop():
+        raise driver.CaptureCancelled(secret)
+
+    with d.session(tmp_path, 'worker') as log:
+        with pytest.raises(driver.CaptureCancelled, match=secret):
+            with driver._timed_existing_rpc('pilot_label_lookup', 3, 500,
+                                            [0], {}):
+                synthetic_stop()
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 1
+    assert events[0]['table_existing_rpc_stage'] == 'pilot_label_lookup'
+    assert events[0]['table_existing_rpc_outcome'] == 'raised'
+    assert events[0]['table_host_cpu_state'] == 'unavailable'
+    assert 'table_rpc_direct_child_cpu_ms' not in events[0]
+    assert 'table_rpc_nested_child_cpu_ms' not in events[0]
+    import json
+    assert secret not in json.dumps(events)
+
+
+def test_host_cpu_sampler_missing_process_data_does_not_invent_cpu(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv('SPT_DIAG_HOST_CPU', '1')
+    monkeypatch.setattr(driver.owned_process_cpu, 'supported', lambda: True)
+    monkeypatch.setattr(driver.owned_process_cpu, 'snapshot', lambda: None)
+    with d.session(tmp_path, 'worker') as log:
+        with driver._timed_existing_rpc('previous_lookup', 3, 500, [0], {}):
+            pass
+        assert log.flush()
+    events = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
+    assert len(events) == 1
+    assert events[0]['table_host_cpu_state'] == 'unavailable'
+    assert 'table_rpc_direct_child_cpu_ms' not in events[0]
+    assert 'table_rpc_nested_child_cpu_ms' not in events[0]

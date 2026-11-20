@@ -26,7 +26,7 @@ WORKER_FILES = (
     'coretax_mpn.py', 'coretax_mpn_browser.py',
     'coretax_mpn_export.py', 'coretax_mpn_ui.py',
     'coretax_json_capture.py', 'coretax_corporate.py', 'coretax_pph21.py', 'resources/pph21_format.xlsx',
-    'coretax_corporate_projection.py',
+    'coretax_corporate_projection.py', 'coretax_corporate_l10d.py',
     'coretax_pph21_json_bindings.py', 'coretax_pph21_observer.py', 'coretax_pph21_projection.py',
     'coretax_template_cells.py', 'coretax_masa_templates.py',
     'coretax_badan_template.py', 'resources/corporate_format.xlsx',
@@ -44,6 +44,7 @@ WORKER_FILES = (
     'spt_desktop/build_info.py', 'spt_desktop/publication_recovery.py',
     'spt_desktop/profile_lifecycle.py', 'spt_desktop/job_pruning.py',
     'coretax_detail_source.py',
+    'spt_desktop/owned_process_cpu.py',
     'coretax_transport.py',
 )
 
@@ -114,6 +115,13 @@ def worker_environment():
     """
     environment = _inherited_process_environment()
     environment.update(_OWNED_PYTHON_ENV)
+    # Explicit, fixed-value diagnostic permission for the owned worker only.
+    # Do not broaden the OS allowlist or pass this flag to uv/bootstrap.
+    if os.environ.get('SPT_DIAG_DOM_RPC_PROBE') == '1':
+        environment['SPT_DIAG_DOM_RPC_PROBE'] = '1'
+    # Separate read-only Win32 child-CPU sampling for existing RPCs.
+    if os.environ.get('SPT_DIAG_HOST_CPU') == '1':
+        environment['SPT_DIAG_HOST_CPU'] = '1'
     return environment
 
 

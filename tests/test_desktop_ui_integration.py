@@ -3,6 +3,8 @@ import gc
 import json
 import pytest
 
+from spt_desktop.ui_copy import copy_text, format_text
+
 
 NPWP = '0000000000000001'
 
@@ -142,12 +144,12 @@ def test_setup_login_required_and_counts_use_correct_presentation(window):
     begin(app)
     assert str(app.bar['mode']) == 'indeterminate' and app.percent.get() == '—'
     app.on_event(progress(controller, type='login_required', stage='authentication', percent=5))
-    assert app.view.process_title.get() == 'Selesaikan login di browser'
+    assert app.view.process_title.get() == copy_text('view.state.title.selesaikan.login.di.browser')
     app.on_event(progress(controller, stage='inventory', processed=4, total=4, scanned=90, percent=20))
-    assert 'Baris terbaca: 90' in app.view.metric_text.get()
+    assert format_text('view.metric.baris.terbaca.scanned', scanned=90) in app.view.metric_text.get()
     app.on_event(progress(controller, processed=1, total=3))
     assert '1 / 3' in app.view.metric_text.get()
-    assert '90' not in app.view.metric_text.get() and 'Lengkap:' not in app.view.metric_text.get()
+    assert '90' not in app.view.metric_text.get() and format_text('view.metric.lengkap.verified', verified=1) not in app.view.metric_text.get()
 
 
 @pytest.mark.parametrize('output', [None, 'SYNTHETIC_NOT_VERIFIED'])
@@ -222,7 +224,8 @@ def test_self_test_uses_job_bound_progress_and_real_captions(tmp_path, monkeypat
     assert self_test(report) == 0
     data = json.loads(report.read_text(encoding='utf-8'))
     assert seen and seen[-1]['percent'] == 42
-    assert {'Mulai unduh', 'Hentikan unduhan', 'Buka folder hasil', 'Simpan', 'Hapus login'} <= set(data['gui_controls'])
+    assert {copy_text(key) for key in ('action.start', 'action.stop', 'action.open_result',
+        'settings.widget.simpan', 'settings.delete')} <= set(data['gui_controls'])
     assert data['credentials_accessed'] is False and data['live_scrape'] is False
 
 

@@ -119,3 +119,58 @@ menghapus hasil Downloads, profil atau sandi. Nilai **0** menonaktifkan
 pemangkasan otomatis maupun manual. *Perkiraan* ukuran tidak termasuk
 biaya metadata filesystem dan bukan janji jumlah byte yang pasti dibebaskan.
 
+
+## Pengelolaan job PARTIAL/gagal (manual saja)
+
+Pengaturan sekarang menyediakan **hapus job PARTIAL/gagal** di samping
+**bersihkan cache job** (yang tetap khusus untuk COMPLETE bersegel dan sudah
+dipublikasi). Penghapusan PARTIAL/gagal **tidak dilakukan otomatis**, termasuk
+ketika aplikasi baru dibuka atau setelah worker gagal. Pengaturan `jumlah
+cache job = 0` menonaktifkan pemangkasan COMPLETE, tetapi tidak menonaktifkan
+tombol penghapusan PARTIAL/gagal yang memerlukan pilihan dan konfirmasi.
+
+1. Selesaikan/Stop pekerjaan aktif dan simpan perubahan Pengaturan.
+2. Klik **hapus job PARTIAL/gagal**, lalu tunggu inventaris selesai.
+3. Pilih satu atau beberapa baris berdasarkan status, waktu perubahan terakhir
+   dan ukuran, atau centang **Select All** untuk memilih seluruh baris kandidat
+   yang lolos pemeriksaan. Hapus centang untuk mengosongkan pilihan; perubahan
+   pilihan secara manual juga memperbarui checkbox. Checkbox ini **tidak**
+   mengonfirmasi atau memulai penghapusan. Identitas wajib pajak, path, dan
+   job ID penuh tidak ditampilkan.
+4. Konfirmasikan penghapusan permanen secara terpisah (default **Tidak**).
+5. Sistem mengecek ulang snapshot seluruh file dan identitas folder, memastikan
+   tidak ada perubahan/recovery, lalu menghapus hanya job yang dipilih.
+
+Untuk membuktikan bahwa suatu job sudah benar-benar terminal, versi baru mencatat
+marker kecil `.spt-terminal-v1.json` sesudah controller selesai dan status
+PARTIAL/ERROR/BLOCKED/CANCELLED telah ditetapkan. **Job PARTIAL historis tanpa
+marker tetap dilindungi** sampai ada prosedur migrasi/arsip yang secara terpisah
+menentukan bahwa prosesnya tidak aktif. Unknown/reparse/hardlink/recovery,
+COMPLETE bersegel, serta job yang masih aktif tidak tersedia di pemilih.
+Perubahan file antara pratinjau dan penghapusan menyebabkan penolakan; kegagalan
+setelah sebagian file dihapus dilaporkan sebagai **belum tuntas**, bukan sukses.
+
+Di **Dashboard penyimpanan job**, jumlah COMPLETE, PARTIAL, gagal dan protected
+ditampilkan bersama total job dan estimasi ruang privat. Protected dapat
+tumpang tindih dengan status lain: job yang dijaga dari Auto Clean karena
+retensi, incomplete, unknown atau recovery. Total ukuran berasal dari file yang
+berhasil diperiksa; jika pemindaian tidak lengkap, angka adalah batas bawah.
+
+Saat **startup**, GUI melakukan inventaris read-only pada thread terpisah.
+Tidak ada dialog konfirmasi spontan, penghapusan otomatis PARTIAL/gagal, atau
+operasi terhadap Downloads. Auto Clean COMPLETE tetap berjalan pada terminal
+worker sesuai kebijakan retensi. Klik **Perbarui penggunaan storage** untuk
+melihat keadaan terbaru. Pembersihan manual tidak berjalan jika ada pekerjaan
+aktif, perubahan Pengaturan belum disimpan, atau inventaris tidak lengkap.
+
+**Batas konkurensi:** `_PRUNE_LOCK` hanya menyinkronkan thread di dalam satu
+proses aplikasi, bukan antarproses. Windows GUI normal memakai
+`InstanceLock(workspace)` sehingga dua jendela SPT Downloader untuk workspace
+yang sama ditolak. Namun CLI, skrip pihak lain, atau perubahan file dari
+proses lain tidak memakai lock tersebut. Hentikan pekerjaan eksternal yang
+menyentuh direktori job sebelum pembersihan manual. Pemeriksaan identitas,
+checksum dan native directory guards dapat menolak perubahan yang terdeteksi,
+tetapi bukan pengganti lock bersama antarproses atau transaksi filesystem.
+
+Menghapus capture/checkpoint berarti kehilangan kemampuan rebuild offline
+dari sumber tersebut. Pastikan kebutuhan audit/backup sebelum mengonfirmasi.

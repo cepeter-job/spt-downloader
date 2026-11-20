@@ -63,6 +63,7 @@ def _reviewed_omissions(form, fields, source_tables):
         'l8': ('TaxPeriodYear', 'TAHUN PAJAK', 'NPWP'),
         'l9': ('PeriodYear', 'TAHUN PAJAK', 'NPWP'),
         'l10-a': ('PeriodYear', 'Tahun Pajak', 'Nomor Identitas WP'),
+        'l11-c': ('TaxPeriodYear', 'Tahun Pajak/Bagian Tahun Pajak', 'Nomor Identitas WP'),
     }
     unnamed = {
         'l2': {'A. DAFTAR PEMEGANG SAHAM/PEMILIK MODAL DAN JUMLAH DIVIDEN/PEMBAGIAN LABA YANG DIBAGIKAN SERTA DAFTAR SUSUNAN PENGURUS DAN KOMISARIS',
@@ -231,9 +232,16 @@ def _induk(sheet, sections):
             row += 1
         if block:
             _thin_grid(sheet, first, row - 1, 2)
+    derived = {}
+    reason = next((section.get('projection_reason') for section in sections
+                   if section.get('projection_complete') is False), None)
+    if reason is not None:
+        # A projected section that is still partial must never be reported as a
+        # complete worksheet; keep the derivation signal separate from counts.
+        derived = {'derived_complete': False, 'derived_reason': reason}
     return _clean_report([field for index, field in enumerate(fields) if index not in used],
                          [{**table, 'complete': False} for section in sections
-                          for table in section.get('tables', [])])
+                          for table in section.get('tables', [])], **derived)
 
 
 def _l8_body(table, count):
@@ -370,7 +378,7 @@ def _columns(table, sheet, header):
     return [targets[key] for key in keys]
 
 
-def _write_amount(sheet, row, column, value, *, subtract=False):
+def _write_amount(sheet, row, column, value, *, subtract=False, number_default=False):
     # Display precision never rounds or rewrites the captured numeric value.
     sheet.cell(row, column).number_format = ACCOUNTING
     text = value
@@ -381,7 +389,10 @@ def _write_amount(sheet, row, column, value, *, subtract=False):
         marker = re.fullmatch(r'Rp\.?\s*\|\s*([^|]+)', text)
         if marker:
             text = marker.group(1)
-        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,2})?', text):
+        # Only the reviewed L10-C body uses DecimalPipe's default 0..3
+        # fraction digits. Other forms and every footer keep the 2-digit parser.
+        fraction = r'(?:,[0-9]{1,3})?' if number_default is True else r'(?:,[0-9]{1,2})?'
+        if not re.fullmatch(r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)' + fraction, text):
             _write(sheet, row, column, value)
             return False
         number = Decimal(text.replace('.', '').replace(',', '.'))
@@ -402,6 +413,31 @@ def _write_amount(sheet, row, column, value, *, subtract=False):
         return False
     _write(sheet, row, column, -abs(converted) if subtract else converted)
     return True
+
+
+def _write_l2_number(sheet, row, column, value, *, monetary=True, subtract=False):
+    """L2's reviewed offline Number has 0..3, not the generic money's 0..2.
+
+    Called only after binding the approved L2 block headers. Preserve legacy
+    currency-marker handling and all other forms' original two-digit grammar.
+    Non-money interest cells retain the approved General style, not Rp or %.
+    """
+    style = sheet.cell(row, column).number_format
+    parsed = value
+    if isinstance(value, str) and re.fullmatch(
+            r'-?(?:[1-9][0-9]{0,2}(?:\.[0-9]{3})+|0|[1-9][0-9]*)(?:,[0-9]{1,3})?', value):
+        number = Decimal(value.replace('.', '').replace(',', '.'))
+        converted = float(number)
+        if (not number.is_finite() or Decimal(format(number, '.15g')) != number
+                or not math.isfinite(converted) or Decimal(str(converted)) != number):
+            _write(sheet, row, column, value)
+            sheet.cell(row, column).number_format = ACCOUNTING if monetary else style
+            return False
+        parsed = converted
+    safe = _write_amount(sheet, row, column, parsed, subtract=subtract)
+    if not monetary:
+        sheet.cell(row, column).number_format = style
+    return safe
 
 
 def _write_percentage(sheet, row, column, value):
@@ -508,6 +544,20 @@ def _money_columns(sheet, form, header, columns, block):
         if re.search(r'\((?:rp\.?|rupiah)\)', str(sheet.cell(header, column).value), re.I)}
 
 
+# Additional observed DOM footer forms are not a generic TOTAL/JUMLAH alias.
+# Each entry names exactly one form, matched template block, footer row,
+# physical label start/span, the complete source colspan signature and the
+# independently reviewed reference merge (None = unmerged A cell).
+_DOM_TOTAL_FOOTER_SHAPES = {
+    ('l2', 0, 0, 2, 5): ([1, 5, 1, 1, 1], (1, 6)),
+    ('l2', 1, 0, 2, 5): ([1, 5, 1, 2, 1, 2], (1, 6)),
+    ('l3', 0, 0, 2, 4): ([1, 4, 1, 1, 2, 1], (1, 5)),
+    ('l11-b', 0, 0, 1, 3): ([3, *([1] * 13)], (1, 3)),
+    ('l11-b', 1, 0, 1, 1): ([1] * 14, None),
+    ('l11-b', 2, 0, 1, 1): ([1] * 5, None),
+}
+
+
 def _footer_plan(sheet, form, block, table, target, money, columns):
     footer = table.get('footer', [])
     if not footer:
@@ -516,6 +566,11 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
     if columns != list(range(1, len(table['headers']) + 1)):
         return None
     spans = table.get('footer_spans', [])
+    # The reviewed L9 ui-grid emits a leading zero-cell tFoot row. It has no
+    # worksheet cells: retain it in original section custody, but map its sole
+    # real TOTAL to the approved one-row footer. No other form/shape is relaxed.
+    if form == 'l9' and len(footer) == 2 and footer[0] == [] and spans == [[], [7, 1, 1]]:
+        footer, spans = footer[1:], spans[1:]
     capacity = 3 if (form, block) == ('l3', 1) else 1
     if len(footer) > capacity or len(spans) != len(footer):
         return None
@@ -542,7 +597,39 @@ def _footer_plan(sheet, form, block, table, target, money, columns):
         column, claimed = 1, set()
         for value, span in zip(values, widths):
             if value not in ('', None):
-                if span == 1 and column in money:
+                if ((form, block, index, column, span) == ('l11-c', 0, 0, 2, 5)
+                        and value == 'TOTAL'):
+                    # The observed DOM footer has a blank A prefix and TOTAL
+                    # spanning B:F; the reviewed reference merges A:F as JUMLAH.
+                    # This exception is exact-shape and L11-C only. Source
+                    # text/colspans remain untouched in the saved checkpoint.
+                    if (widths != [1, 5, *([1] * 10)] or values[0] != ''
+                            or sheet.cell(row, 1).value != 'JUMLAH'
+                            or not any(region.min_row == region.max_row == row
+                                       and region.min_col == 1 and region.max_col == 6
+                                       for region in sheet.merged_cells.ranges)):
+                        return None
+                    destination, numeric = 1, False
+                    value = sheet.cell(row, 1).value
+                elif (value == 'TOTAL' and
+                      (form, block, index, column, span) in _DOM_TOTAL_FOOTER_SHAPES):
+                    expected_spans, expected_merge = _DOM_TOTAL_FOOTER_SHAPES[
+                        (form, block, index, column, span)]
+                    # Only the observed literal source spelling and physical
+                    # footer geometry can bind the reviewed JUMLAH caption.
+                    # Preserve the exact captured TOTAL and spans in checkpoints.
+                    merges = [(region.min_col, region.max_col)
+                              for region in sheet.merged_cells.ranges
+                              if region.min_row <= row <= region.max_row]
+                    if (widths != expected_spans
+                            or (column > 1 and values[0] != '')
+                            or sheet.cell(row, 1).value != 'JUMLAH'
+                            or (merges != [expected_merge] if expected_merge
+                                is not None else bool(merges))):
+                        return None
+                    destination, numeric = 1, False
+                    value = sheet.cell(row, 1).value
+                elif span == 1 and column in money:
                     destination, numeric = column, True
                 elif form == 'l1-d' and column == 1 and span == 1:
                     destination, numeric = column, False
@@ -773,9 +860,15 @@ def render_template_form(sheet, form, sections, *, period=None):
                     subtract = (form == 'l1-d' and _l1d_role(table) == 1 and column == 3
                                 and _label(cells.get(2)) == _label(
                                     'Dikurangi: Akumulasi penyusutan aset tetap dan inventaris'))
-                    safe = _write_amount(sheet, row, column, value, subtract=subtract) and safe
+                    if form == 'l2':
+                        safe = _write_l2_number(sheet, row, column, value, subtract=subtract) and safe
+                    else:
+                        safe = _write_amount(sheet, row, column, value, subtract=subtract,
+                                             number_default=form == 'l10-c') and safe
                     if form == 'l9' and block >= 2 and column == 8 and _present(value):
                         sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
+                elif (form, block) == ('l2', 1) and column in (9, 12):
+                    safe = _write_l2_number(sheet, row, column, value, monetary=False) and safe
                 else:
                     _write(sheet, row, column, value)
             if not safe:
@@ -784,7 +877,8 @@ def render_template_form(sheet, form, sections, *, period=None):
         for row_offset, column, value, numeric in foot:
             row = last + extra + 1 + row_offset
             if numeric:
-                writer = _write_percentage if column in percentages else _write_amount
+                writer = (_write_percentage if column in percentages else
+                          _write_l2_number if form == 'l2' else _write_amount)
                 footer_safe = writer(sheet, row, column, value) and footer_safe
                 if form == 'l9' and block >= 2 and column == 8 and _present(value):
                     sheet.cell(row, column).number_format = ACCOUNTING_WHOLE
@@ -807,8 +901,40 @@ def render_template_form(sheet, form, sections, *, period=None):
         offset += extra
     der_row, averages = _compact_layout(sheet, form, deleted, der_row, averages)
     derived = _l11b_der(sheet, der_row, averages) if form == 'l11-b' else {}
+    # A projected section that is still partial (for example a form whose detail
+    # grids have no provable cell value) must never be reported as a complete
+    # worksheet; keep the reason separate from the unresolved audit counts.
+    reason = next((section.get('projection_reason') for section in sections
+                   if section.get('projection_complete') is False), None)
+    if reason is not None:
+        derived = {**derived, 'derived_complete': False, 'derived_reason': reason}
+    if form == 'l10-c' and any(section.get('projection_complete') is False for section in sections):
+        # The populated row candidate has no approved destination for header
+        # controls or the unproved radio. Count identities without inventing
+        # display values, and preserve PARTIAL even if its inventory is absent.
+        derived = {'derived_complete': False, 'derived_reason': 'unprojected_l10c_controls'}
+        identities = {(field.get('group'), field.get('field'), field.get('label')) for field in fields}
+        for section in sections:
+            if section.get('projection_complete') is not False:
+                continue
+            for field in section.get('projection_unresolved_fields', []):
+                identity = (field.get('group'), field.get('field'), field.get('label'))
+                if identity not in identities:
+                    fields.append(dict(zip(('group', 'field', 'label'), identity)))
+                    identities.add(identity)
     if form in ('l1-d', 'l2', 'l3', 'l4', 'l6', 'l7', 'l9', 'l10-a', 'l10-c', 'l11-a', 'l11-b'):
         # Approved display-only omission. Keep unresolved audit counts and the
         # unchanged checkpoint; never promote an unmapped form to COMPLETE.
         return _clean_report(fields, pending, form=form, source_tables=source_tables, **derived)
+    if form == 'l11-c':
+        report = _clean_report(fields, pending, form=form, source_tables=source_tables, **derived)
+        # Suppress duplicated DOM page text only when the sole leftovers are
+        # the two known redundant HEADER controls. Unsupported controls or
+        # source tables remain visible raw evidence; audit stays PARTIAL.
+        if (not pending and len(source_tables) == 1 and len(grouped[0]) == 1
+                and report.get('reviewed_redundant_fields', 0) == len(fields)
+                and len({field.get('field') for field in fields}) == len(fields)):
+            return report
+        raw = _raw_evidence(sheet, sections, fields, pending, blocks[0][1])
+        return {**raw, **_reviewed_omissions(form, fields, source_tables)}
     return _raw_evidence(sheet, sections, fields, pending, blocks[0][1] if blocks else 2)

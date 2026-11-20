@@ -13,7 +13,7 @@ Panduan kontributor bahasa Indonesia: mulai dari [docs/README.md](docs/README.md
 Navigasi kontrak pada berkas ini: [perubahan/merge](#change-and-merge-discipline),
 [data/akses](#data-and-access-safety), [native JSON](#native-json-boundaries),
 [output](#output-contract), [diagnostik](#issue-143-diagnostics-boundary),
-[verifikasi](#verification), dan [desktop](#desktop-boundaries). Untuk pemilik
+[verifikasi](#verification), [CLI live](#cli-first-live-testing-scraping-and-export-development), dan [desktop](#desktop-boundaries). Untuk pemilik
 fungsi dan tes, gunakan [peta kode](docs/peta-kode.md). Pin/resource worker
 mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
 
@@ -32,11 +32,86 @@ mengikuti `spt_desktop.runtime`, bukan hitungan pada laporan historis.
   names with explicit same-name re-exports; do not bulk-remove imports based on
   lint alone. The adopted Bugbear subset is B006/B012/B016/B018/B020; remaining
   findings require contract-specific triage before enabling additional rules.
+- The source of user-visible UI copy is `resources/ui/id-ID.xml`. Developer source
+  runs load this catalog; Windows packaging compiles it into
+  `spt_desktop/_ui_copy_generated.py` (ignored build output). Frozen EXEs must
+  never read editable external XML; preserve approved text IDs, placeholders,
+  locked labels and the `copy_text()` contract. No user text editor or runtime
+  override is supported. Keep schema validation and UI-copy tests in the gates.
+  The catalog also owns Tk presentation copy in app.py, ui_views.py, and
+  spt_gui.py, including Settings, cleanup confirmations and update notices.
+  Source-domain parsing labels, persisted enums, and worker event messages
+  remain separate from editable copy. Non-count UI templates use reviewed
+  DISPLAY_PARAMETERS and format_text(); packaging rejects missing literal IDs.
 - The frozen GUI `--self-test` is a release gate: always use explicit `require(condition, fixed_description)` checks within `spt_gui.self_test`, never Python `assert` (which disappears under `-O` / `PYTHONOPTIMIZE`). A failure must exit nonzero and disclose only its fixed synthetic check label; keep the self-test offline and free of account/browser access. The existing `build_desktop.py` EXE invocation and report validation remain mandatory.
 - Understand the existing functions and repository contracts before changing behavior.
 - Before merging a PR, review preceding PRs merged by other sessions and the latest `main`. Read their changed functions, tests and contracts, preserve their changes, and verify interactions with the candidate being merged.
 - Update this `AGENTS.md` when making significant behavior or architecture changes, recording the actual supported boundaries rather than inferring new permissions.
 
+
+## CLI-first live testing (scraping and export development)
+
+For live investigation of shared capture/export behavior (DOM pagination, native
+JSON/DOM fallback, mapping, checkpoints and Excel/PDF output), prefer a
+**source-run CLI smoke test** from the exact checked-out change before waiting
+for a rebuilt Windows EXE. This shortens iteration but is **additional
+pre-acceptance evidence**, never a substitute for the project's required
+GitHub-hosted CI checks, peer review, frozen-EXE build/self-test or final
+Windows application acceptance. Follow
+[Windows CLI usage](README.md#memakai-cli-di-windows) and the
+[private manual acceptance checklist](docs/penerimaan-manual.md).
+
+1. On an authorized Windows machine, identify the tested source commit with
+   `git rev-parse HEAD`. Prepare the project's pinned environment with
+   `setup.cmd` if needed; the actual CLI entry point is
+   `.venv\Scripts\python.exe coretax.py`. Do not treat a test of one commit as
+   evidence for another commit.
+2. Use only authorized NPWP/year scope, a **dedicated CLI browser profile** and
+   a **fresh private output folder outside the repository**. Let the CLI own
+   its browser; do not implicitly attach to a running desktop/personal session
+   or run concurrent CLI/GUI jobs against a shared profile. Perform any
+   CAPTCHA/MFA manually. Never put real NPWP, passwords, cookies, captures,
+   workbook contents or private paths in public issues, PRs, commits or logs.
+3. Select `--detail-source dom` for a DOM baseline, or
+   `--detail-source json-first` to exercise JSON-hybrid with whole-record DOM
+   fallback. For a strict JSON-only test of Corporate return details, use
+   `--detail-source json-only --spt-badan-only`. Incomplete/unverified JSON
+   MUST remain PARTIAL without DOM detail-value fallback. Inventory, UI form
+   binding verification, and financial PDF capture remain read-only.
+   `--detail-limit N` is a short **first-N inventory** smoke test,
+   not a choice of specific SPT IDs/forms; `--inventory-only` checks listing
+   only. Limited runs are PARTIAL (CLI exit code 2) when records remain, not
+   COMPLETE. Remove limits for a full-scope comparison and verify the output
+   independently.
+4. Examine the private run checkpoint, `resume.xlsx` Audit, sheet mapping,
+   complete/partial counts and privacy-safe diagnostic stage/timing/reason
+   categories. For fallback fixes, compare equivalent authorized DOM and
+   JSON-first runs in separate output folders; do not infer native JSON success
+   merely because JSON-first produced an Excel file. To test rendering only,
+   `--from-json` rebuilds Excel offline and does **not** prove live capture.
+5. Record the exact source SHA, mode, bounded test scope, terminal status
+   (COMPLETE/PARTIAL/blocked), observed fallback category and remaining gaps
+   in a privacy-safe PR summary. A partial/failed run must not be described as
+   full live acceptance. Do not bypass any existing CI/release checks to save
+   build time.
+
+PowerShell example from the repository root (private values stay local):
+
+```powershell
+$npwp = Read-Host "Authorized NPWP (16 digits)"
+$runId = Get-Date -Format "yyyyMMdd-HHmmss"
+& ".\.venv\Scripts\python.exe" ".\coretax.py" `
+  --npwp $npwp --year 2025 --detail-source json-first --detail-limit 2 `
+  --output "$env:LOCALAPPDATA\SPTDownloader-CLI\json-first-$runId" `
+  --profile "$env:LOCALAPPDATA\SPTDownloader-CLI\profile"
+```
+
+This CLI path **does not** verify desktop-specific authentication/credential
+handling, user SPT selection and consent, worker/controller/Stop behavior, job
+cleanup, settings/XML copy, publication to Downloads, update notifications or
+frozen-runtime packaging. Exercise these with Windows application tests and
+an exact-build EXE during integration/release acceptance. Required PR CI,
+Windows build gates and the existing release safety contract remain unchanged.
 
 ## Public update notification boundary
 
@@ -61,6 +136,17 @@ HTTPS JSON GET, strict source-build identity validation, no source tax data,
 and idle-only notifications. Failed checks never block jobs; keep synthetic
 offline tests and frozen GUI self-test gates. See
 [update notification contract](docs/update-notifications.md).
+
+CLI opt-in `--spt-badan-only` is an exact literal PPh Badan detail
+selection, not a filter on submitted-list inventory acquisition. Keep the
+original full inventory and persisted hash-bound `selection.json` intact;
+only the identified PPh Badan records may receive View/detail capture,
+and MPN must not run for this explicitly selected scope. No matching
+records must fail closed; a resumed Corporate-only run must explicitly
+retain its scope. Ordinary CLI behavior and other taxes remain unchanged.
+Source/Excel COMPLETE refers only to the explicitly selected Corporate
+scope, never to unrelated SPT or MPN. Preserve exact year, NPWP,
+original record identity, DOM-only opt-in, Stop, and PARTIAL contracts.
 
 ## Data and access safety
 
@@ -95,7 +181,309 @@ Native observers read navigation and inspected structure, never business input v
 
 Native listing period binding accepts the exact literal source code or its already reviewed exact caption, after source custody, month bounds and scope-year checks. Preserve inventory/checkpoint metadata without normalization. Corporate annual codes must still be January-to-December. Monthly ranges remain unsupported. Primary-source period codes must also equal a selected literal code even when listing evidence is unavailable; a different code/year is a contradiction, never a caption repair or a successful DOM fallback.
 
+The L10-A correction admits only the separately versioned
+`corporate-l10a-empty-v1` capability: one completely captured original zero-row
+grid with the exact reviewed seven-field id-ID First=0/Rows=10 request. Require
+a positive loaded CIT digest equal to the reviewed configured pin, the exact
+selected submitted ordinary-Rupiah `?view=true` route, preceding observed
+Induk and capture-owned component lifetime. The declared decoded source root
+must be absent, null, an empty object or an empty array; preserve these distinct
+presence/type states. Retain original root/container/path/primary sequence and
+typed Data/count/Index with the earliest successful exact-query response
+sequence. Preserve earlier packet/count/snapshot refusals; never select custody
+by shared offset or iterator order. Every populated row, including duplicates,
+null reference codes and empty row objects, remains unsupported and retains
+whole-record DOM fallback. Country/relationship/transaction/pricing cells need
+original same-attempt catalog descriptions; raw codes are not labels, and the
+transaction amount is not a two-decimal field. Keep populated support closed
+until catalog transport/order/version/clock, rendering and held-replay proofs
+are reviewed. Empty-grid CI green is not populated or live acceptance. This
+contract adds no endpoint, request, gate exception or template permission. See
+[L10-A review](docs/superpowers/specs/2026-11-17-l10a-projection-review.md).
+
+The L9 recap candidate is deliberately partial: project only six recap controls
+for the reviewed non-migrated, current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR
+profile. Require the positively configured loaded CIT pin, id-ID, the exact
+selected `?view=true` route, capture-owned component lifetime and preceding
+observed Induk. Require explicit valid original operands, safe integral values,
+bounded ordered sums and exact stored recap fixed points; fractions, signed
+zero, null/default, migrated and amendment profiles remain unsupported. Retain
+the original root and all twelve detail-grid inventories, including duplicate
+leaves and metadata. Set `unprojected_grids` for all twelve names and check it
+before the reviewed-fields exemption in the native dump gate: recap fields
+must not hide unresolved detail rows or suppress whole-record DOM fallback.
+Keep `projection_complete=False` and `unprojected_l9_grid_rows` in the mapping
+report and visible Audit note. This candidate is not full native L9 or live
+acceptance. See [L9 recap boundary](docs/superpowers/reports/2026-11-17-corporate-l9-recap-partial.md).
+
+The L11-B restricted candidate (`corporate-l11b-v1`) projects only four stable
+literal scalar controls and the unconditional Part III borrowing-cost table.
+Require the positively configured loaded CIT/MAIN pins, exact selected submitted
+route, matching literal model and payload status, preceding observed Induk and
+valid explicit predecessor encoding. The manual marker must be literal true or
+JSON number token 1; auto/manual-false, malformed and scalar-null/default
+profiles remain unsupported. Preserve strict original number/string types, the
+15-digit integral operand and ordered-sum limits, and typed
+boolean/null/empty-array provenance. Retain all original root leaves and metadata
+alongside the reviewed table; never round a month mean into an invented DER
+denominator.
+
+The separately evidenced hydrated candidate (`corporate-l11b-hydrated-v2`) may
+additionally project the reconciled `Ebitda`/`Ebitda25` controls and, only when
+its conditional Part II is independently proven, the ordered debt/equity monthly
+tables. A saved row `Average` is a computed mean rather than a rupiah control, so
+it is admitted only inside a bounded binary64-exact subset: at most fifteen
+coefficient digits, a finite `Decimal(str(float(x)))` round-trip and no signed
+zero. The raw Decimal stays the DER operand and the worksheet cell keeps the
+reviewed zero-digit display rounding. A non-binary DER ratio is reported
+`der_exact=false` and remains unqualified instead of refusing the whole form,
+rounding an operand or fabricating a ratio. This representation permission is
+recorded, with its approval basis, its named maintainer approval and its
+explicit exclusions, in the [L11-B fractional-mean approval](docs/superpowers/specs/2026-11-18-corporate-l11b-fractional-mean-approval.md);
+it grants no header/question slot and no live-acceptance claim.
+
+Still unprojected pending proof: the header/question controls, and the derived
+DER ratio whenever it is not exactly binary. Keep `projection_complete=False`
+with `unprojected_l11b_header_question` (hydrated) or
+`unprojected_l11b_lifecycle` (restricted), truthful unresolved counts and a
+visible Audit note; neither emitted-slot mapping nor green synthetic tests
+certifies a complete L11-B worksheet or live acceptance. See [L11-B restricted
+boundary](docs/superpowers/reports/2026-11-17-corporate-l11b-projection.md).
+
+L10-B remains intentionally absent from new workbooks. The separate
+`corporate-l10b-nondisplay-v1` capability validates original-data custody, not
+checkbox/radio rendering or worksheet completeness. Admit only the reviewed
+ordinary-Rupiah ICT_RCIT/ICT_RCITR submitted Normal/NORMAL profile, preceding
+Induk and exact selected `?view=true` route, explicit null predecessors, matching
+original outer TIN/PeriodYear and literal numeric 1 on both outer/current
+IsTransactionWithRelated owners. Require exactly the fifteen original boolean
+Question controls: missing/null, strings, numeric substitutes, extra keys and
+unreviewed profiles remain unsupported. Require positive configured equality
+for the actual loaded CORPORATE/MAIN/VENDOR providers and an independently
+produced, manifest-owned continuous L10-B child history. Preserve every original
+boolean, metadata/presence path, sequence/hash/attempt and the unchanged raw dump;
+no dummy fields, replacement table or display-filter bypass grants permission.
+The provenance-aware dump gate must reconstruct the finite report against its
+unique positively typed original primary POST sequence and same-attempt
+route/lifetimes. An earlier catalog is not that primary; missing, mixed,
+duplicate/conflicting or catalog-rebound evidence still refuses. Both live and
+held readers retain strict manifest ownership and descriptor-override refusal.
+Historical proof/index/checkpoint namespaces and both B/D sheet exclusions stay
+unchanged. See [L10-B custody boundary](docs/superpowers/reports/2026-11-17-corporate-l10b-nondisplay.md).
+
+Final lifetime sealing validates the retained Document/parent and all requested
+actual L8/L7/L10-B history handles in one synchronous final browser snapshot.
+This may only narrow previously produced candidates, never create or repair a
+missing capability. Known changes remain fatal even when a sibling is
+unavailable. No browser RPC follows before sealing; only local Stop, binding,
+sticky-state, late-response fences and file I/O remain. Request/response counts
+do not detect pure DOM replacement, so sequential child samples or a later
+parent probe are not equivalent. Any future child capability must prove its own
+source-specific custody and join that same final consistency boundary before
+admission; B's proof grants no C/D permission. Synthetic exact-head green does
+not establish combined-form or application-owned live acceptance.
+
+The Induk identity branch is deliberately partial. `corporate-induk-v1`
+projects only the ten reviewed identity controls from primary `MainFormData`:
+`TaxYear`, `Status`, `AccountingPeriodStart`, `AccountingPeriodEnd`, `Tin`,
+`Name`, `TinAccountant`, `NameAccountant`, `EmailAddress` and `PhoneNumber`.
+Emit only present, non-null, nonblank string/number-token controls; never
+synthesize an omitted identity or coerce a boolean/container into its value.
+Require the admitted loaded CIT proof, exact source route, single reviewed root,
+primary binding and matching submitted/model lifecycle. These are literal
+identity slots; do not add locale/timezone rendering probes for them. `TaxRate`
+is still a tariff code, not the displayed tariff text; frontend-derived captions
+remain unprojected until their own rendering is proved. Preserve every original
+root leaf and the raw `JSON path / JSON type / Source value` custody table.
+The native dump gate exempts reviewed `fields` only within their own projected
+section; Induk must not admit a different unprojected section or suppress any
+independent unresolved-grid refusal. Keep `projection_complete=False` and
+`unprojected_induk_captions`, propagate `derived_complete=False` with its reason,
+and retain a visible Audit note and PARTIAL template mapping. Ten identity
+slots do not certify a complete Induk/Corporate worksheet or live acceptance.
+See [Induk projection design](docs/superpowers/specs/2026-11-16-badan-induk-native-projection.md).
+
+The `corporate-induk-submitted-v2`/`v3` amount branch adds eight submitted
+amount slots and, for v3, four inactive slots. A v3 structural claim (the four
+inactive controls present and disabled) is **not** permission to emit the
+inactive slots: a submitted `?view=true` render disables every control, so v3 is
+claimed for every submitted record. Select the inactive projection only when the
+original values are the exact fixed point (three selectors and three amounts are
+`_CorporateNumber` zero tokens, `UnderpaymentIncomeDueAmended` is explicit
+`null`); otherwise keep the normal 18-slot submitted projection and leave the
+inactive slots unprojected. Record `inactive_profile` in the projection report.
+See [Induk submitted v3 value gate](docs/superpowers/specs/2026-11-18-corporate-induk-submitted-v3-inactive-value-gate.md).
+
 The L7 corporate semantic branch has its own source-proven boundary. Require both loaded corporate/main source pins, the literal selected submitted/non-history route, explicitly present valid `PreviousFormData` encoding, current source and a current-year body row. Preserve duplicate rows, literal year/model strings and raw source provenance. Only the first matching current-year zero profit may use the stable nonnegative captured Induk amount. Require exact integral operands and every ordered partial sum within the 15-digit bound; copy each captured total only after reconciliation. Empty/no-current-year, prior-only, unknown, unsafe-precision and unsupported currency branches remain unsupported. Legacy evidence-leaf bindings remain readable and do not certify template mapping. See [L7 and consolidated verification](docs/superpowers/reports/2026-10-23-corporate-l7-semantic.md).
+
+An **additive, separately versioned** `corporate-l7-stable-negative-v1` capability may admit an exact safe raw negative main only for current-only SUBMITTED/NORMAL ICT_RCIT/ICT_RCITR, with literal-null preceding form references, absent outer carry, and explicit current zero-under/null-sole/one-carry selectors. The first original current-year profit must already equal main; preserve every duplicate, operand, year and captured total, with the same exact ordered-sum checks. Require three positively verified loaded CORPORATE/MAIN/VENDOR pins plus an independent manifest-owned continuous L7 child history (fresh unique owner, no detach/reinsert, relevant-structure bound, rechecked at final drain/held replay). Missing/unavailable optional history preserves the legacy two-pin nonnegative admission, never grants negative permission; malformed/conflicting history is fatal under the existing custody rules. Use separate typed original provenance for Payload and CurrentFormData and an explicit absence fact, never synthesize zero/null. No new loading/timeout/pagination fix or live native acceptance follows from this candidate; see [L7 negative implementation boundary](docs/superpowers/reports/2026-11-11-corporate-l7-stable-negative.md).
+
+The large Corporate DOM pilot page-size guard may read the **same** inspected
+paginator label on the held owner via one read-only `evaluate` rather than
+`query_selector` followed by remote `inner_text`. A detached/replaced owner
+fails closed. Keep the original ASCII decimal and `max_page_size` check:
+no undocumented 1000-row selection, no global label fallback, no additional
+browser call or timeout change. `table.first_page_timing:pilot_label_lookup`
+now covers this single RPC and may report its bounded renderer duration;
+`pilot_label_text` is local trimming/validation only.
+This is an unverified transport-overhead hypothesis, not an established
+speedup; retain the 180-second table budget and PARTIAL behavior.
+
+DOM first-page preparation diagnostics are independent of native admission: the original owner expression, First/size actions, 45-second overlay wait, Stop and PARTIAL semantics remain authoritative. `table.initial_loading` retains fixed stage, bounded request-object counts and timing, without business values or request/response bytes. The optional structural/CDP probe is intentionally removed: overlay scope, first match and original-owner connectivity are always `unavailable`, never a guessed `none` or a ready assertion. No page-side WeakRef, timer, DOM write, CDP attach or CDP detach is permitted in the timeout diagnostic path. With diagnostics OFF, no additional request listeners are installed. Never infer that an observed request caused the timeout without application-owned live evidence.
+
+For the large-table DOM fallback only (`max_page_size >= 250`), resolve
+Previous on the original captured owner in **one** read-only `evaluate_handle`
+call with the exact enabled selector; `as_element()` returns its original
+control (or None). Dispose the returned handle on every path, including Stop,
+exceptions and an absent control. Never follow a second probe with a
+`query_selector`, use a global replacement or assume the control is actionable.
+The original state read, click-time owner/actionability checks, idle wait and
+state verification still govern each real Previous click. The independent
+final Previous limit check remains, but uses a single owner-bound boolean
+`evaluate` rather than constructing an unused missing-control handle.
+Smaller-table lookup/limit paths remain unchanged. A detached owner or
+disconnected control must still fail closed; the existing `capture_panel`
+exception handler marks the record/run non-COMPLETE, reports `capture_failed`
+and omits the table, not a retained-rows result. An ordinary bounded
+pagination failure after a verified snapshot retains prior verified pages
+with `complete=False`. A fast lookup is an *unverified latency hypothesis*:
+the shared browser transport can still stall. Preserve Stop, original owner,
+the 180-second budget, source totals, native admission and publication gates;
+never infer complete capture or a reproducible speedup from a synthetic test.
+
+
+Optional large-table Previous RPC diagnostic (issue #161) is strictly
+**opt-in** via exact process environment `SPT_DIAG_DOM_RPC_PROBE=1` and
+an active diagnostic session. Only the literal value `1` passes through
+the desktop's *worker-only* environment policy; it is not inherited by
+bootstrap/uv or added to the general OS allowlist. It never runs with
+the default setting.
+When enabled, allow at most two read-only same-owner enabled-Previous
+selector probes: the first only if at least **120 seconds** remain in
+the original 180-second table budget, and the independent final-stage
+probe only if at least **150 seconds** remain. The thresholds exceed the
+largest historical **108.80-second** Previous lookup (single observation,
+not a safe upper bound) and add extra margin for the late stage.
+Each probe reports Python wall duration and page-side
+`performance.now()` selector duration. Their nonnegative
+difference is an inclusive transport/scheduler/serialization residual,
+**not** pure queueing, network time, or causality. The probe returns only
+a fixed presence/detached enum and timing; no values, HTML, row data,
+request/response or source authority. An extra RPC **consumes the original
+budget** and may shift/slow the job, including changing how many pages
+remain capturable or whether a table ends PARTIAL. These stage-specific
+guards reduce risk **but do not cap an in-flight Playwright evaluate**:
+arbitrary renderer/transport stalls can still exhaust the table budget.
+The probe result/exception never authorizes a click or overrides the
+normal error path, but time consumed can alter the final outcome. Do not
+use these runs for benchmark acceptance or presume unchanged row coverage.
+Probe exceptions are sanitized without disclosing their messages.
+All worker run-boundary events (`session.started`, `operation.started`,
+`operation.finished`, `session.closed`) carry an immutable
+`table_rpc_probe_enabled` boolean computed from the exact worker
+environment, whether or not a table probe was ultimately sent. Compare
+operator runs only after checking this run-level flag: `true` is an
+**investigative run**, never an unprobed baseline, even if no probe
+event appears because the 120s/150s guards skipped both calls.
+The diagnostic writer may drop an event if its bounded queue fills,
+its record exceeds 4096 bytes, or logging fails. A run whose boundary
+records are missing or lack `table_rpc_probe_enabled` is **UNKNOWN**,
+never `false`, and **must not** enter an unprobed baseline or
+performance/completeness comparison. Absence of individual
+`table.browser_rpc_probe` events is not proof that the probe was off.
+The flag does not certify data completeness or enter business manifests.
+Do not add listeners, CDP attachment, DOM writes, repeated polling,
+timer loops or attempts to compensate for the consumed budget.
+
+Passive large-table RPC timing for #161 is **separate from the opt-in
+extra-RPC probe**. With the normal diagnostic session active and
+`max_page_size >= 250`, only the **existing** Previous lookups,
+initial table snapshot, cursor initialization, cursor advance, cursor
+poll and cursor snapshot are wrapped with local Python wall-clock and
+`time.thread_time()` reads. Emit up to **48**
+`table.existing_rpc_timing` records per table, fixed stage/outcome enums,
+no values, URLs, selectors, output/capture status or new browser calls.
+A returned renderer duration is attached only when the **existing**
+browser command already returned it; there is no new JavaScript,
+instrumented browser hook or extra network request. `thread_cpu_ms`
+counts only the Python calling thread; low CPU vs wall time means
+the Python thread waited, **not** proof of Node/IPC/renderer queueing.
+`table_rpc_residual_ms` includes all host-vs-JavaScript differences,
+not transport time alone. Records may be missing after the 48-event cap
+or diagnostic logger drops; never infer that an original RPC did not
+run merely because its event is absent. The original 180s deadline,
+Stop priority, source evidence, completeness and result publishing
+remain the only capture authorities; clocks/logging do not change them.
+Do not claim that adding passive logs establishes performance
+equivalence or a causal bottleneck. Run-level
+`table_rpc_probe_enabled` continues to indicate only the
+**additional, invasive opt-in** RPC probe, not passive logging.
+
+Large-table **first-page readiness split timing** (#161) is passive and
+unconditional only when a diagnostic worker session is active and
+`max_page_size >= 250`. Four original operations, each at most once per
+table, emit fixed-stage `table.first_page_timing`: the already-required
+pilot page-size label `query_selector`, its original `inner_text`,
+the existing global `.p-datatable-loading-overlay:visible,.p-blockui:visible`
+`wait_for(hidden, timeout=45000)`, and the existing
+`page.wait_for_timeout(180)` (only when the overlay wait returns).
+Python monotonic wall and calling-thread CPU clocks record returned/raised;
+no new browser calls, ownership queries, CDP, timers, polling loops,
+DOM mutation or source behavior. The existing page request-object listener
+may report a **count of requests finishing during the original global
+overlay wait** and the last such local completion time; these are unbound
+request objects, not proof of table/backend/overlay ownership. Existing
+`first_idle_timeout` is unchanged, and no settling event is fabricated
+on a timeout. The ContextVar scope is set only around the original First
+`wait_idle(page)` call and always reset, including Stop and exceptions.
+No observer scope exists for other idle calls or diagnostics OFF. This
+does **not** establish which overlay is visible or why it persists: the
+global locator is the production authority and must not be scoped or
+replaced in this diagnostic PR. Emit no URLs, selector strings, request
+contents, process metadata or taxpayer data. Maintain original 180s
+per-table budget, 45s per idle wait, 180ms settle, fail-closed Stop and
+PARTIAL behavior. Compare with earlier runs only with build provenance
+and unaltered input/source digests; no performance improvement is implied.
+
+Optional local Windows process-CPU observation (follow-up #161) is separate
+from both the always-passive RPC wall/thread CPU recorder and
+`SPT_DIAG_DOM_RPC_PROBE`. Only exact worker environment
+`SPT_DIAG_HOST_CPU=1` enables it: the GUI forwards this fixed literal to
+the owned worker, never to bootstrap or the general environment allowlist.
+It enumerates *local* process parent relationships under the current worker
+PID via Toolhelp, then reads GetProcessTimes cumulative CPU ticks from
+descendants at the boundaries of **existing** RPC calls. Never inspect
+command line, process names, browser data, resource URLs, source values,
+or other user processes. Log only aggregated direct-child and deeper-child
+CPU deltas in fixed numeric fields. No Playwright private transport hook,
+CDP, browser evaluate, polling thread, endpoint traffic, Python package
+or running browser process mutation. Bound to the original pilot-label
+lookup, first actual
+Previous lookup, and at most three advance and three snapshot calls,
+**eight paired samples (16 Win32 snapshots) per large table**.
+The pilot sampling wraps the original query_selector without extra
+browser RPCs; opt-in diagnostics cannot certify performance acceptance. A
+snapshot failure, process churn, PID reuse, inaccessible child, or
+unsupported OS causes an explicit `unavailable`/missing metric, never
+guessed CPU or inferred idle. Only matching PIDs with unchanged
+creation time and parent-depth count as paired. Direct child is not
+provably the Node driver, deeper child is not provably Chromium;
+CPU consumption cannot identify network/IPC queue wait, and low
+CPU does not prove which process stalled. Windows snapshot enumeration
+has its own bounded overhead *outside* the measured RPC wall time and
+**inside** the original 180s capture budget: host-CPU opt-in runs are
+investigative, **not** performance or row-completeness baselines.
+The immutable worker boundary `table_host_cpu_enabled` labels that
+opt-in; missing boundaries mean UNKNOWN. For issue #307, emit only
+`table_host_cpu_gui_start_enabled` at GUI session initialization,
+plus `table_host_cpu_gui_at_spawn` and `table_host_cpu_worker_env_enabled`
+on GUI worker.spawned as privacy-safe booleans. Never log the raw
+environment, process metadata, paths, credentials, or taxpayer content.
+Missing markers mean UNKNOWN, not false. Never widen deadlines,
+change capture/source authority, hide Stop/errors, or merge these
+diagnostics into business manifests. Documented sampling is not a
+runtime optimization and cannot satisfy #246's positive-Previous
+benchmark.
 
 Every PPN primary, including Normal, must explicitly bind ReturnSheetStatusCode=SUBMITTED before projection or fallback; missing status is ineligible and contradictory status is fatal. PPN AskedTo is a final-lifecycle projection, not a raw field copy. Negative submitted amendments may preserve a choice only when the facility null-write is excluded and calendar assignment is blocked across both initial and final export stages, by the source invoice/uncollected quartet predicate, or by a stable inactive capture-owned interval bound to outer PeriodYear. With calendar blocked, a proven facility null-write clears only the supported raw null/FAST_REFUND/CARRY_FORWARD branch. Exact source facility codes are AS.09-01/AS.09-02. Nonnegative FORWARD_REFUND requires a proved post-raw distinct clear event and stays unsupported. The narrow Normal nonnegative branch additionally reconciles captured output/input operands to the four/six ordered component sums before deriving its final balance; reject missing/mismatched components and unsafe operands/intermediates. Normal choice inputs are integral within fifteen digits. The shared final-balance amount helper retains only binary-exact direct fractions and exact intermediate arithmetic within that bound. Preserve all contributing source paths; do not use stale stored balances, a replay clock, or DOM checked state. Active-calendar, Normal-negative and other unproved branches use whole-record fallback.
 
@@ -574,7 +962,23 @@ validity, replay, native eligibility, PDF completion or publication.
 
 Corporate presentation exceptions: `resources/corporate_format.xlsx` is the approved sanitized default for its twelve reference appendices; copy only observed forms and do not fabricate an Induk layout. Exclude only literal L10-B/L10-D from new corporate workbooks, never from checkpoints or retained physical proof/index namespaces. Repeated corporate table headers require observed owner/group metadata, not financial values or source order. Keep ambiguous content visible and mapping counts truthful, except the explicitly approved clean L6/L7/L10-A/L10-C presentation: omit their raw appendices while retaining checkpoints and unresolved audit counts. L6 B2:B8 and writable L7 C1:I13 cells use rupiah accounting; preserve merged labels. Corporate footer mapping preserves literal account codes, inspected colspan/label ownership and captured totals, including all three L3 footer rows and the final L1-D total at reference row 101. All observed approved Unifikasi reference forms, including Induk, omit redundant raw display appendices while retaining checkpoints and unresolved counts; DAFTAR-I rates use numeric percentage fractions and preserve the blank spacer. Preserve the blank separator before BPNR and exactly one empty row before the LAMPIRAN-I total, following observed body rows. PPN A-2 cell B15 uses centered alignment. These display rules do not relax capture completion or native eligibility gates.
 
-Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
+Additional approved corporate presentation rules: L2/L3/L4/L11-A/L11-B also omit redundant raw display appendices while preserving checkpoints and truthful unresolved counts. L11-C DOM has a narrower reviewed exception: under the exact 16-column header/one-row physical footer structure, a blank A cell plus TOTAL spanning B:F may bind to the reference merged A:F JUMLAH label. No source footer rewrite or unreviewed other-form alias is permitted. Suppress duplicated L11-C page/raw display only if the remaining fields are exactly the recognized HEADER TaxPeriodYear and CollectorTin controls (or neither), with no duplicate owners, and exactly one source table is fully mapped. Record both as reviewed-redundant yet unmapped in Audit; unknown controls and rejected footer/table shape stay visibly raw and PARTIAL. Apply the user-approved accounting ranges and L2 percentage formats without converting identifiers, dates, job titles or headings. Verified percentage points become Excel fractions under strict id-ID and precision checks. In the verified L1-D balance-sheet owner, the exact subtraction caption `Dikurangi: Akumulasi penyusutan aset tetap dan inventaris` displays a safely parsed amount as negative absolute value; retain its literal source value in checkpoints. L9 accepts the observed `KELOMPOK LAINNYA` caption only with its inspected component/outer-group ownership; never infer missing legacy ownership from table order. L11-B DER references the uniquely bound captured debt/capital average totals, follows inserted rows, and divides only valid numeric inputs with nonzero capital. Missing/unsafe/zero operands remain unqualified without invented zero results or fabricated unmapped-source counts. Preserve the requested DER labels and merges.
+
+The observed Corporate DOM L2/L3-A/L11-B TOTAL footer display exception is
+independent of L11-C. Only exact capture header sets, one complete source footer,
+original physical spans, reviewed form/block/label ownership and the matching
+reference JUMLAH target may bind: L2 block 1 [1,5,1,1,1] / A9:F9,
+L2 block 2 [1,5,1,2,1,2] / A22:F22, L3-A [1,4,1,1,2,1] /
+A4:E4, L11-B debt block [3,1x13] / A13:C13, L11-B capital
+block [1x14] / A23 and L11-B borrowing-cost block [1x5] /
+A32. L2/L3-A source A prefix must be literally blank before TOTAL;
+L11-B has literal TOTAL in its first cell. Do not accept lowercase,
+altered colspan/prefix, unapproved form, truncated body, additional footer,
+or source mutation. Audit unmapped counts remain truthful. L3-B has a separate
+capture-completeness gate and its verified partial rows may not be certified
+as a complete table. DER may reference only successfully written, safe
+captured debt and capital averages with nonzero capital; never derive from
+fabricated zero/default values.
 
 Latest approved corporate clean presentation: Induk now uses the operator-approved two-column layout and L8 the approved three-column table, with only static captions/styles in source. This supersedes the earlier generic-Induk restriction. Induk/L1-D/L8/L9 also omit redundant raw display appendices, retaining checkpoints and truthful unresolved counts. Compact only known template body ranges to populated captured rows (zero and False are content); keep one body slot for an empty table, intentional separators, headers, captured totals, merges and styles. Map before compaction and move verified DER references with both removed and inserted rows. L1-D omits its first three title/identity rows plus the empty row before its first header; metadata remains in checkpoint/proof. All corporate accounting defaults to zero decimal places, including existing reference accounting cells and newly bound monetary cells; retain exact stored numeric values without rounding. DER ratios and percentage displays keep their existing two-decimal formats. These are presentation exceptions only; native eligibility and capture/PDF completion gates are unchanged.
 
@@ -954,8 +1358,17 @@ Keep CodeQL, locked dependency audits, Ruff and full test/build gates independen
 Windows parent-process coverage uses the existing `.coveragerc` and separately
 declared line/branch/module/diff floors in `coverage-policy.json`. Before package
 build, validate the complete passing serial, fixed two-shard or fixed four-shard Windows inventory
-for the exact commit/run/attempt and combine only its explicit raw-data slots.
-Never use portable-only, old, failed or missing-shard data as representative
+for the exact commit/run and each producer's original successful attempt,
+and combine only its explicit raw-data slots. A partial Actions rerun may reuse
+unchanged successful producer artifacts from an earlier attempt of that **same**
+run and commit, but only after binding each slot to its actual originating job
+and exact inventory/coverage artifact. Replayed job metadata does not prove
+a rerun; a genuinely failed or newly executed producer with missing evidence
+cannot fall back to an older successful artifact. Keep exact Python/matrix
+mode, source-head, job/attempt, artifact ID, digest, size and expiry constraints;
+each original inventory's embedded attempt must match its selected producer.
+The package's own build-info and readback remain tied to the **current** attempt.
+Never use portable-only, old, unrelated-run, failed or missing-shard data as representative
 acceptance. Changed excluded or unmeasured production lines remain refused;
 percentages use exact integer ratios.
 Pure comment-only files leave the diff budget only after complete non-comment
@@ -1159,6 +1572,41 @@ final page retains prior verified rows as PARTIAL even if its browser snapshot
 finished in time; source-count equality cannot override the host deadline.
 RPC reduction alone is not build-matched live speed or completion acceptance.
 
+For the L3-B 500-row candidate only, the guarded owned cursor may bundle one
+authorized Next action, a state-change observation (up to 850ms in one browser
+slice), and the existing verified owned snapshot in a single RPC. This is
+not an alternative source, replay or permission to take multiple Next actions:
+the exact page-state set, unique original p-table/Document/route, click guard,
+overlay/180ms settling, source count and fixed 180s browser/host deadlines
+remain authoritative. If state has not changed within the slice, resume the
+existing Python state poll then owned snapshot. Pending overlay snapshots
+return for Python Stop checks before another read; Stop and expiration still
+take priority before data acceptance, with no retry of a dispatched click.
+A source or time inconsistency stays PARTIAL, and unproven live throughput
+must not be described as improved. This fusion does not affect <=250 DOM
+cursor paths or native JSON selection.
+
+When the same owner-bound 500-row pilot label read also proves that the
+exact enabled-First selector is absent, the original separate First lookup
+may be omitted. A positive or missing proof retains the original Python
+First lookup, guarded click and Stop path. Before accepting any initial
+rows on the negative proof, reuse the existing table snapshot RPC to
+atomically recheck the *same held* paginator owner, the exact enabled-First
+selector (must remain absent) and unchanged admitted page-size label.
+Any change must fail closed, not infer first-page state or issue a click.
+Never apply this optimization to <=250 row-cap tables or native JSON.
+
+For the fused cursor, record only closed-category readiness outcomes
+(ready, late_state, pending_overlay, pending_settle, refused, budget,
+idle_timeout, not_advanced or unavailable) on existing passive RPC
+events. A pending reply can occur because the global overlay is still
+visible or the existing 180ms settling interval is not complete.
+Do not extend a single renderer Stop-check slice, the 180s table budget,
+the 45s overlay deadline, or the number of browser RPCs for diagnostics.
+The new codes contain no page body, state, source IDs or control text. Diagnostics use the fixed cursor_turn
+stage and measure bundled wall time inclusively, not separate click/snapshot
+durations; do not infer renderer queue time from wall-minus-renderer residual.
+
 The source-proven MPN transaction-date Clear date uses the same5000ms maximum
 actual dispatch timeout as Search, always within preparation's original45s
 deadline. Trial-only readiness retries remain separate from the single actual
@@ -1188,13 +1636,34 @@ exact verified candidate IDs private in process memory and use only that set
 when the user approves; reapply newest-N/exclusion policy at deletion time.
 Pin the source directory before eligibility checks and keep the lease until
 deleting the verified tree; check deadlines between source/output file chunks.
-Both automatic and manual pruning serialize through the same bounded,
-identity-checked, no-clobber verification and deletion path. Revalidate all
-source bytes and immutable held published Downloads outputs after confirmation.
-Never purge historical/unsealed, partial, active, recovery-bearing, unknown,
-locked or redirected jobs. Prevent GUI export and preference changes during
-manual housekeeping. Do not expose taxpayer names, paths or job IDs in
-preview, confirmation or diagnostics.
+Automatic and manual sealed-COMPLETE pruning serialize through the same
+bounded, identity-checked, no-clobber verification and deletion path. Revalidate
+all source bytes and held published Downloads outputs after confirmation.
+The separate incomplete-job manual path serializes on the same lock and rechecks
+only private-tree evidence: it never touches or validates Downloads for deletion.
+`_PRUNE_LOCK` is a **process-local threading lock**, not a cross-process mutex.
+The production Windows GUI holds `InstanceLock(workspace)` in `spt_gui._run_gui`,
+so a second GUI for the same workspace is rejected (regression coverage in
+`tests/test_desktop_windows.py`). Independent CLI processes and external
+filesystem writers do not share that lock; an operator must stop them before
+manual maintenance. Native directory guards, tree fingerprints and recovery
+checks reduce race exposure but do not promise transactional isolation from
+an arbitrary outside process. Never present this as cross-process locking.
+The sealed-COMPLETE pruning path must never purge historical/unsealed, partial,
+active, recovery-bearing, unknown, locked or redirected jobs. A separate
+**manual-only** incomplete-job path may delete explicitly selected PARTIAL/failed
+jobs with a verified terminal marker, after a read-only complete scan, exact
+in-memory job+tree-fingerprint selection, explicit second confirmation and
+full revalidation under native source-directory guards. It must never delete a
+sealed COMPLETE job, job with publication recovery, active/unknown/redirected
+path, changed content, or job lacking a proven terminal marker. A failed or
+partially completed deletion is reported incomplete and cannot authorize a
+restart retry on a stale snapshot. Automatic cleanup never uses this path.
+Prevent GUI export and preference changes during manual housekeeping. Do not
+expose taxpayer names, paths or job IDs in aggregate preview, confirmation
+or diagnostics; the private picker may show only anonymous row numbers, status,
+timestamp and estimated bytes. Storage inspection at startup is read-only and
+non-blocking, with no popup and no PARTIAL/failed auto-delete.
 
 ## Automatic completed-job pruning (Settings)
 

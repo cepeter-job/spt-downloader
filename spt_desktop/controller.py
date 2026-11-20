@@ -1,5 +1,6 @@
 """A thin stdlib GUI controller owns workers and distrusts stale/partial events."""
 import json
+import os
 from pathlib import Path
 import queue
 import re
@@ -14,6 +15,7 @@ from .paths import downloads_folder
 from .interaction import read_message, select_records, write_reply
 from .profile_lifecycle import reap_profiles
 from .job_pruning import DEFAULT_KEEP_JOBS, prune_published_jobs
+from .job_maintenance import record_terminal_status
 from coretax_detail_source import validate_detail_source
 
 
@@ -91,6 +93,8 @@ class JobController:
     def start(self,npwp,year,browser='msedge',headless=True,*,detail_source='dom',account=''):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
         validate_detail_source(detail_source)
+        if detail_source == 'json-only':
+            raise ValueError('json-only is a Corporate CLI-only mode')
         npwp,year=validate_job_scope(npwp,year)
         if not isinstance(account,str) or (account and (not account.strip() or len(account)>256 or '\0' in account)):
             raise ValueError('Akun login tidak valid; simpan ulang Pengaturan.')
@@ -124,7 +128,11 @@ class JobController:
                 if self._cancel.is_set():raise SetupCancelled('Persiapan dibatalkan.')
                 # The trusted GUI owns an explicit env allowlist; never let
                 # inherited Python/Node/Playwright startup hooks reach the worker.
+                # Compare the GUI's exact opt-in with the sanitized
+                # environment actually handed to the owned worker.
+                gui_host_cpu_at_spawn = os.environ.get('SPT_DIAG_HOST_CPU') == '1'
                 environment=worker_environment()
+                worker_env_host_cpu = environment.get('SPT_DIAG_HOST_CPU') == '1'
                 argv=[str(python),'-u','-m','spt_desktop.worker',*arguments,
                       '--root',str(self.root),'--job-id',job_id,'--browser',browser]
                 if not headless:argv.append('--visible')
@@ -133,7 +141,9 @@ class JobController:
                     stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                     text=True,encoding='utf-8',errors='replace',bufsize=1)
                 process=self.process
-                diagnostics.record('worker.spawned', job_id=job_id, operation=operation)
+                diagnostics.record('worker.spawned', job_id=job_id, operation=operation,
+                                   table_host_cpu_gui_at_spawn=gui_host_cpu_at_spawn,
+                                   table_host_cpu_worker_env_enabled=worker_env_host_cpu)
                 def read_events():
                     try:
                         while True:
@@ -303,6 +313,9 @@ class JobController:
         self._seen_requests.clear()
         self._readers=[]
         self.active=False
+        # Persist only fixed terminal state for manual, opt-in cleanup. The
+        # recorder neither creates jobs nor modifies a sealed COMPLETE tree.
+        record_terminal_status(self.root, self.job_id, event.get('status'))
         diagnostics.record('worker.finished', job_id=self.job_id, operation=self.operation,
                            status=event.get('status'), exit_code=exit_code)
         self.on_event(event)

@@ -15,10 +15,10 @@ from test_corporate_l7_projection import ROOT, HEADERS, SPANS, raw_source
 from test_json_hybrid_native import ASSET, BUILD, NativeFixture, browser as browser, PDF_URL
 
 
-MAIN = corpus.ORIGIN + '/returnsheets/id-ID/main.bed1449c3647a8ca.js'
+MAIN = corpus.ORIGIN + '/returnsheets/id-ID/main.16a01374a2a1ece5.js'
 MAIN_BUILD = b'/* SYNTHETIC MAIN BUILD -- no portal code or taxpayer data */'
-PINS = {ASSET: '500e5aa4110d211c42ad4d901095e83ca0ae595791bc852a2cec12e00633b153',
-        MAIN: 'ad856c925cddef51d84d49de2027cdb558ef64c0fbd7d4ecac630d54118c5b44'}
+PINS = {ASSET: 'fc4d7037e40fc2c7e3dfbba6f196e7146947046f987cf71c7773e6c01d7110d2',
+        MAIN: '1c22ed2bf02466a71ede7a91f7a5da5677c7bd112f42de1b59ae1eb0c77e2e1b'}
 FRAME = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' +
          '/'.join((corpus.TAXPAYER_ID, corpus.RECORD_ID, 'ICT_RCIT', corpus.AGGREGATE_ID)))
 REQUEST = {'RecordId': corpus.RECORD_ID, 'OnManualClick': False}
@@ -75,7 +75,8 @@ def test_l7_packet_semantics_preserve_literal_model_source_and_saved_approved_la
     assert table['rows'][1][:3] == ['2', '2025', '1.000']
     assert table['rows'][2:] == table['footer']
     assert result['provenance']['draft_flags'] == {'outer': True, 'inner': False}
-    assert result['provenance']['projections'][0]['form'] == 'L7'
+    l7_projection, = [p for p in result['provenance']['projections'] if p['form'] == 'L7']
+    assert l7_projection['form'] == 'L7'
     assert (record, raw, observed) == before
     record.update(capture_complete=True, sections=[section])
     run = {'npwp': corpus.NPWP, 'year': 2025, 'year_basis': 'period',
@@ -331,7 +332,7 @@ def test_l7_native_fixture_is_independently_valid_before_native_support(browser,
         detail.get_by_role('tab', name='L7', exact=True).click()
         assert detail.locator('rsh-citr-l7-grid1 tbody td').first.inner_text() == '999999'
         assert detail.locator('rsh-citr-l7-grid1 tfoot td').first.get_attribute('colspan') == '3'
-        detail.wait_for_function("() => performance.getEntriesByType('resource').some(e=>e.name.endsWith('/main.bed1449c3647a8ca.js'))")
+        detail.wait_for_function("() => performance.getEntriesByType('resource').some(e=>e.name.endsWith('/main.16a01374a2a1ece5.js'))")
         assert fixture.unexpected == []
     finally:
         fixture.close()

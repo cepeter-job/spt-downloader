@@ -264,6 +264,111 @@ def test_unproved_l11a_predecessor_source_arithmetic_pages_or_metadata_remains_u
         project(form, pages, **options)
 
 
+def test_l11a_absent_inert_total_is_blank_with_explicit_rule():
+    form, pages = inputs()
+    form['Facilities'] = None
+    for cost in COSTS:
+        form['Recapitulation'][cost] = None
+    del form['Recapitulation']['TotalAmountofCosts']
+    result = project(form, pages)
+    total = [field for field in result['fields'] if field['field'] == 'TotalAmountofCosts'][0]
+    assert total['value'] == ''
+    entry = [item for item in result['provenance']
+             if item['destination'].get('field') == 'TotalAmountofCosts'][0]
+    assert entry['rule'] == 'absent-inert-zero-total'
+
+
+def test_l11a_absent_total_with_a_numeric_cost_still_refuses():
+    form, pages = inputs()
+    del form['Recapitulation']['TotalAmountofCosts']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_absent_total_with_facilities_still_refuses():
+    form, pages = inputs()
+    for cost in COSTS:
+        form['Recapitulation'][cost] = None
+    del form['Recapitulation']['TotalAmountofCosts']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_grid_row_metadata_fields_are_accepted_and_not_rendered():
+    form, pages = inputs()
+    row = pages[ENDPOINTS[1]][0]['data'][0]
+    row['Action'] = None
+    row['Index'] = 1
+    result = project(form, pages)
+    table = [item for item in result['tables'] if item['name'] == 'L11-A/grid2'][0]
+    assert table['complete'] is True
+    assert all(len(cells) == 10 for cells in table['rows'])
+
+
+def test_l11a_unknown_row_metadata_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0]['Synthetic'] = 'x'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_non_dict_row_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0] = ['synthetic']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_non_integer_extra_index_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0]['Index'] = 'synthetic'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_decree_date_with_jakarta_offset_is_rendered_literally():
+    form, pages = inputs()
+    form['Recapitulation']['DateOfDecreeOfSpecificAreasDetermination'] = '2025-03-01T07:00:00+07:00'
+    result = project(form, pages)
+    field = [item for item in result['fields']
+             if item['field'] == 'DateOfDecreeOfSpecificAreasDetermination'][0]
+    assert field['value'] == '01-03-2025'
+    entry = [item for item in result['provenance']
+             if item['destination'].get('field') == 'DateOfDecreeOfSpecificAreasDetermination'][0]
+    assert entry['rule'] == 'literal-date-jakarta-0700-offset'
+
+
+def test_l11a_other_decree_date_offsets_still_refuse():
+    form, pages = inputs()
+    form['Recapitulation']['DateOfDecreeOfSpecificAreasDetermination'] = '2025-03-01T00:00:00+07:00'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_row_dates_accept_jakarta_midnight_offset():
+    form, pages = inputs()
+    row = pages[ENDPOINTS[1]][0]['data'][0]
+    row['EntertainmentDate'] = '2025-12-01T00:00:00+07:00'
+    result = project(form, pages)
+    table = [item for item in result['tables'] if item['name'] == 'L11-A/grid2'][0]
+    assert table['rows'][0][0] == '01-12-2025'
+
+
+def test_l11a_row_dates_reject_other_offsets():
+    form, pages = inputs()
+    row = pages[ENDPOINTS[1]][0]['data'][0]
+    row['EntertainmentDate'] = '2025-12-01T07:00:00+07:00'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
+def test_l11a_non_null_action_still_refuses():
+    form, pages = inputs()
+    pages[ENDPOINTS[1]][0]['data'][0]['Action'] = 'edit'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages)
+
+
 @pytest.mark.parametrize('model', ['Normal', 'Amendment 002'])
 def test_l11a_final_saved_compact_export_keeps_five_tables_and_truthful_recap_audit(tmp_path, model):
     result = project(*inputs())

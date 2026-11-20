@@ -110,7 +110,7 @@ class Scenario:
             assert source is self.page
             source.view_calls += 1
             for event in ('request', 'response', 'requestfinished'):
-                assert bool(source.context.listeners.get(event)) is (source.mode == 'json-first'), (
+                assert bool(source.context.listeners.get(event)) is (source.mode in ('json-first', 'json-only')), (
                     'Capture must be entered after row validation and before View')
             original_view(view, script)
             for exchange in source.exchanges:
