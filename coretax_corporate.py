@@ -924,9 +924,23 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if not requests or not footer:
         return refuse('grid_or_footer_missing')
     references = []
-    for url in CORPORATE_L3_REFERENCE_URLS.values():
-        sequences = [item['sequence'] for item in observations
+    def _reference_sequences(items, url):
+        return [item['sequence'] for item in items
             if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
+    missing = [url for url in CORPORATE_L3_REFERENCE_URLS.values()
+               if not _reference_sequences(observations, url)]
+    if missing:
+        # The SPA caches the reference catalogs after the first return, so a
+        # later return in the same job observes no fresh GETs. Reacquire them
+        # with a cache-busting same-origin GET (never bypass or fabricate); the
+        # capture records the new requests and the build/locale/scope/lifetime
+        # checks below still gate the record.
+        page.evaluate('''urls => Promise.all(urls.map(u =>
+            fetch(u, {cache: 'reload', credentials: 'include'})))''', missing)
+        _check_cancel(check_cancel)
+        observations = capture.request_observations()
+    for url in CORPORATE_L3_REFERENCE_URLS.values():
+        sequences = _reference_sequences(observations, url)
         if not sequences:
             return refuse('reference_request')
         references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})

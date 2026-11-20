@@ -96,7 +96,7 @@ def test_owned_l3_view_to_original_packets_checkpoint_and_compact_saved_form(
 
 @pytest.mark.parametrize('defect', ['external-context', 'timezone', 'locale', 'vendor-pin', 'owner', 'header', 'span',
     'wrong-group', 'misplaced-grid', 'wrong-ui-owner', 'table-outside-p-table', 'duplicate-owner',
-    'hidden-owner', 'missing-reference', 'missing-footer', 'failed-footer',
+    'hidden-owner', 'missing-footer', 'failed-footer',
     'corporate-fetch-only', 'corporate-preload-only', 'main-fetch-only', 'main-preload-only',
     'vendor-fetch-only', 'vendor-preload-only'])
 def test_unproved_owned_l3_structure_provider_or_dependency_cannot_grant_native_coverage(
@@ -116,6 +116,23 @@ def test_unproved_owned_l3_structure_provider_or_dependency_cannot_grant_native_
                 assert not result['eligible'] and result['sections'] == []
             assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
             assert fixture.unexpected == []
+    finally:
+        fixture.close()
+
+
+def test_missing_reference_is_reacquired_via_cache_bust(browser, tmp_path, monkeypatch):
+    # The SPA caches the reference catalogs after the first return, so a later
+    # return observes no fresh GETs. The observer reacquires them with a
+    # cache-busting same-origin GET instead of refusing or fabricating.
+    fixture = Fixture(browser, monkeypatch, defect='missing-reference')
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture, approved_digest=fixture.pins[ASSET])
+            assert forms is not None
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), fixture.record, corpus.SCOPE, forms)
+            assert result['eligible'] and result['sections'], result['reason']
     finally:
         fixture.close()
 
