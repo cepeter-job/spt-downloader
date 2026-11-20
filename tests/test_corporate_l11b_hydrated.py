@@ -261,6 +261,44 @@ def test_nonpositive_ebitda_uses_exact_quarter_product(commercial, quarter, disp
     assert result['fields'][-1]['value'] == display
 
 
+@pytest.mark.parametrize('commercial,quarter,display,part_ii', [
+    ('5', '1.25', '1', False), ('3', '0.75', '1', False), ('2', '0.5', '1', False),
+    ('-2', '-0.5', '-1', True), ('-3', '-0.75', '-1', True)])
+def test_fractional_quarter_products_admit_both_signs(commercial, quarter, display, part_ii):
+    # Ebitda25 = Ebitda * 0.25 for a non-multiple-of-4 EBITDA leaves .25/.5/.75
+    # fractions in both signs; the saved lexeme survives independently of the
+    # 0-decimal rendered cell. Positive EBITDA hides part II (debt/equity).
+    source = populated(CommercialNettIncome=Number(commercial),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                       Ebitda25=Number(quarter))
+    result = project(source, part_ii=part_ii)
+    assert result['fields'][-1]['value'] == display
+    saved = [e for e in result['provenance'] if e.get('path') == ['L11BFormData', 'Ebitda25']]
+    assert saved and str(saved[0]['value']) == quarter
+
+
+@pytest.mark.parametrize('quarter,reason', [
+    ('1.3', 'unverified_corporate_l11b_quarter_hydration'),
+    ('1.123', 'unsupported_corporate_l11b_amount_precision')])
+def test_mismatched_or_excess_precision_quarter_refuses(quarter, reason):
+    source = populated(CommercialNettIncome=Number('5'),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                       Ebitda25=Number(quarter))
+    with pytest.raises(_UnsupportedMetadata, match=reason):
+        project(source)
+
+
+def test_signed_zero_quarter_refuses():
+    source = populated(CommercialNettIncome=Number('0'),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                       Ebitda25=Number('-0.0'))
+    with pytest.raises(_UnsupportedMetadata, match='signed_zero'):
+        project(source)
+
+
 def test_exact_quarter_boundary_hides_part_ii():
     result = project(populated(BorrowingCostExpense=Number('312500')), part_ii=False)
     assert len(result['tables']) == 1
