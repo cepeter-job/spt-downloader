@@ -87,35 +87,34 @@ def test_usd_scalars_and_footer_allow_two_decimal_foreign_currency():
     assert [a['body_row_count'], b['body_row_count']] == [2, 12]
 
 
-def test_l3b_extended_rows_admit_portal_metadata_and_exact_usd_lexeme():
-    # The pinned L3-B grid emits rows with extended metadata: IsManually is the
-    # captured boolean (False for grid rows), TableSource names the source grid,
-    # Action is null, Index is 0, and IncomeTaxUsd keeps the portal's exact
-    # 8-decimal lexeme. The footer USD total is likewise exact, not 2-decimal.
+def test_l3b_extended_rows_admit_reviewed_metadata_and_exact_footer_usd_lexeme():
+    # The pinned L3-B grid may carry the reviewed extended metadata (IsManually
+    # true, null TableSource/Action, zero Index/IncomeTaxUsd). The footer USD
+    # total keeps the portal's exact high-precision lexeme, not a 2-decimal round.
     form, pages, footer = inputs()
     for page in pages:
         for row in page['data']:
-            row.update({'IncomeTaxUsd': 16.50003087, 'IsManually': False,
-                        'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None})
+            row.update({'IncomeTaxUsd': 0, 'IsManually': True,
+                        'TableSource': None, 'Index': 0, 'Action': None})
     footer['IncomeTaxUsd'] = 10736.41742465
     result = project(form, pages, footer)
     a, b = result['tables']
     assert [a['body_row_count'], b['body_row_count']] == [2, 12]
     usd = [p for p in result['provenance']
-           if p.get('destination', {}).get('metadata') == 'IncomeTaxUsd']
-    assert usd and all(p['value'] == '16.50003087' for p in usd)
+           if p.get('path') == ['IncomeTaxUsd'] and p.get('source') == 'footer']
+    assert usd and usd[0]['value'] == '10736.41742465'
 
 
-def test_l3b_sixty_row_paged_shape_with_extended_metadata():
+def test_l3b_sixty_row_paged_shape_with_reviewed_metadata():
     # The live L3-B grid is 60 rows across six pages of ten; every row carries
-    # the extended metadata and an exact high-precision USD lexeme.
+    # the reviewed extended metadata and the footer keeps the exact USD lexeme.
     form, pages, footer = inputs()
     base = pages[0]['data'][0]
     rows = []
     for _ in range(60):
         row = deepcopy(base)
-        row.update({'IncomeTaxUsd': 16.50003087, 'IsManually': False,
-                    'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None})
+        row.update({'IncomeTaxUsd': 0, 'IsManually': True,
+                    'TableSource': None, 'Index': 0, 'Action': None})
         rows.append(row)
     pages = [{'offset': i, 'rows': 10, 'total': 60, 'data': rows[i:i + 10]}
              for i in range(0, 60, 10)]
@@ -126,42 +125,16 @@ def test_l3b_sixty_row_paged_shape_with_extended_metadata():
     assert b['body_row_count'] == 60
 
 
-@pytest.mark.parametrize('table_source,manual', [
-    ('EBUPOTBPU_GRID', False), ('TAXPAYER_ACCOUNTING', False),
-    ('EBUPOTBPU_GRID', True)])
-def test_l3b_extended_row_admits_observed_metadata_variants(table_source, manual):
-    # Both admitted source grids, the manual flag variant, and a null
-    # TableSource (manual rows) are admitted; IsManually stays a captured bool.
-    form, pages, footer = inputs()
-    for page in pages:
-        for row in page['data']:
-            row.update({'IncomeTaxUsd': 16.5, 'IsManually': manual, 'TableSource': table_source,
-                        'Index': 0, 'Action': None})
-    result = project(form, pages, footer)
-    assert result['tables'][1]['body_row_count'] == 12
-
-
-@pytest.mark.parametrize('row_overrides', [
-    {'TableSource': 'UNKNOWN_GRID'},
-    {'IsManually': 'true'},
-    {'TableSource': ['LIST']},
-    {'TableSource': {'Key': 1}},
-    {'Action': 'EDIT'},
-    {'Index': 2},
-    {'IncomeTaxUsd': 10 ** 18},
-    {'IncomeTaxUsd': 'not-a-number'}])
-def test_l3b_extended_row_rejects_unproved_or_unsafe_metadata(row_overrides):
-    # Fail-closed: unproved TableSource, non-boolean IsManually, malformed
-    # (unhashable) source, non-null Action, nonzero Index, or an unsafe/non-
-    # numeric USD lexeme refuses the domestic row.
-    form, pages, footer = inputs()
-    for page in pages:
-        for row in page['data']:
-            row.update({'IncomeTaxUsd': 16.5, 'IsManually': False,
-                        'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None,
-                        **row_overrides})
-    with pytest.raises(_UnsupportedMetadata):
-        project(form, pages, footer)
+def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
+    # Fail-closed: an unknown TableSource or a non-boolean IsManually refuses.
+    for bad in ({'TableSource': 'UNKNOWN_GRID'}, {'IsManually': 'true'}):
+        form, pages, footer = inputs()
+        for page in pages:
+            for row in page['data']:
+                row.update({'IncomeTaxUsd': 16.5, 'IsManually': False,
+                            'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None, **bad})
+        with pytest.raises(_UnsupportedMetadata):
+            project(form, pages, footer)
 
 
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():

@@ -958,8 +958,7 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if not requests or not footer:
         return refuse('grid_or_footer_missing')
     references = []
-    observations = _reacquire_reference_observations(
-        page, capture, list(CORPORATE_L3_REFERENCE_URLS.values()), check_cancel)
+    observations = capture.request_observations()
     for url in CORPORATE_L3_REFERENCE_URLS.values():
         sequences = [item['sequence'] for item in observations
             if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
@@ -1331,9 +1330,7 @@ def _observe_l9(page, form, capture, digest, check_cancel):
             or pins[CIT_SOURCE_URL] != digest):
         return None
     references, observed_kinds = [], set()
-    l9_urls = [endpoint for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items()
-               if len(kinds) == 1 and kinds[0] in L9_REFERENCE_KINDS]
-    observations = _reacquire_reference_observations(page, capture, l9_urls, check_cancel)
+    observations = capture.request_observations()
     for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if len(kinds) != 1 or kinds[0] not in L9_REFERENCE_KINDS:
             continue
