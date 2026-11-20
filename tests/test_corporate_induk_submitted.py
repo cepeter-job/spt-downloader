@@ -232,3 +232,21 @@ def test_submitted_inventory_does_not_emit_unproved_questions_or_tariff_aliases(
     assert result['eligible'], result['reason']
     assert not any(f['field'] == 'TaxRate' for f in result['sections'][0]['fields'])
     assert all(f['label'] != 'Ganti SPT sebelumnya' for f in result['sections'][0]['fields'])
+
+
+def test_consistent_amendment_submitted_is_accepted():
+    # Pembetulan (Amendment) SPTs are submitted with the same lifecycle; only the
+    # model literal differs. A fully consistent amendment must project natively.
+    raw = source()
+    raw['Payload']['ReturnSheetModel'] = 'AMENDMENT'
+    raw['Payload']['CurrentFormData'] = raw['Payload']['CurrentFormData'].replace(
+        '"Status":"NORMAL"', '"Status":"AMENDMENT"')
+    result = adapt(raw=packet(raw), record=selected('Amendment 001'))
+    assert result['eligible'], result['reason']
+
+
+def test_inconsistent_amendment_payload_model_still_refuses():
+    # Record says Amendment but the prefill payload stays NORMAL → mismatch fails closed.
+    result = adapt(raw=packet(source()), record=selected('Amendment 001'))
+    assert not result['eligible']
+    assert result['reason'] == 'unverified_corporate_induk_submitted_lifecycle'

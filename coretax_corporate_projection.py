@@ -1906,12 +1906,14 @@ def _induk_submitted(binding, *, main, root, payload, record, event):
             or binding.get('paths') != [[INDUK_ROOT]] or 'primary' not in binding
             or any(binding.get(key) for key in ('grids', 'responses', 'dependencies'))):
         raise _UnsupportedMetadata('unverified_corporate_induk_submitted_binding')
+    literal = record.get('meta', {}).get('Model SPT')
+    model = ('NORMAL' if literal == 'Normal' else 'AMENDMENT'
+             if isinstance(literal, str) and re.fullmatch(r'Amendment [0-9]{3}', literal) else None)
     if (event.get('component_lifetime') is None or fields.get('TaxTypeCode') != 'ICT_RCIT'
             or fields.get('ReturnSheetTypeCode') != 'ICT_RCITR'
-            or fields.get('ReturnSheetModel') != 'Normal'
-            or record.get('meta', {}).get('Model SPT') != 'Normal'
+            or model is None or fields.get('ReturnSheetModel') != literal
             or record.get('source_status') != 'SPT Dilaporkan'
-            or payload.get('ReturnSheetModel') != 'NORMAL'
+            or payload.get('ReturnSheetModel') != model
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED'
             or payload.get('IsMigrated') is not False or root.get('TaxType') != 'ICT_RCIT'
             or any(key not in payload or payload[key] is not None
