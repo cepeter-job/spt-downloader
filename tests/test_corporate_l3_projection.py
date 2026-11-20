@@ -87,6 +87,37 @@ def test_usd_scalars_and_footer_allow_two_decimal_foreign_currency():
     assert [a['body_row_count'], b['body_row_count']] == [2, 12]
 
 
+def test_l3b_extended_rows_admit_portal_metadata_and_exact_usd_lexeme():
+    # The pinned L3-B grid emits rows with extended metadata: IsManually is the
+    # captured boolean (False for grid rows), TableSource names the source grid,
+    # Action is null, Index is 0, and IncomeTaxUsd keeps the portal's exact
+    # 8-decimal lexeme. The footer USD total is likewise exact, not 2-decimal.
+    form, pages, footer = inputs()
+    for page in pages:
+        for row in page['data']:
+            row.update({'IncomeTaxUsd': 16.50003087, 'IsManually': False,
+                        'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None})
+    footer['IncomeTaxUsd'] = 10736.41742465
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert [a['body_row_count'], b['body_row_count']] == [2, 12]
+    usd = [p for p in result['provenance']
+           if p.get('destination', {}).get('metadata') == 'IncomeTaxUsd']
+    assert usd and all(p['value'] == '16.50003087' for p in usd)
+
+
+def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
+    # Fail-closed: an unknown TableSource or a non-boolean IsManually refuses.
+    for bad in ({'TableSource': 'UNKNOWN_GRID'}, {'IsManually': 'true'}):
+        form, pages, footer = inputs()
+        for page in pages:
+            for row in page['data']:
+                row.update({'IncomeTaxUsd': 16.5, 'IsManually': False,
+                            'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None, **bad})
+        with pytest.raises(_UnsupportedMetadata):
+            project(form, pages, footer)
+
+
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():
     form, pages, footer = inputs()
     before = deepcopy((form, pages, footer))

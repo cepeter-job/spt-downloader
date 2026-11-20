@@ -3979,6 +3979,9 @@ _L3_A_FIELDS = ('Name', 'CountryCode', 'DateOfTransaction', 'IncomeCode', 'NetIn
 _L3_B_FIELDS = ('Name', 'TIN', 'TaxType', 'TaxBase', 'IncomeTax',
     'WithholdingSlipsNumber', 'WithholdingSlipsDate')
 _L3_B_METADATA = ('IncomeTaxUsd', 'IsManually', 'TableSource', 'Index', 'Action')
+# The pinned L3-B grid emits rows from these two source grids; any other
+# TableSource is unproved and refuses.
+_L3_B_TABLE_SOURCES = frozenset((None, 'EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'))
 _L3_B_ROW_FIELDS = frozenset(('RecordId', *_L3_B_FIELDS))
 _L3_B_EXTENDED_FIELDS = _L3_B_ROW_FIELDS | frozenset(_L3_B_METADATA)
 _L3_LABELS = ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')
@@ -4014,6 +4017,20 @@ def _l3_usd(value, *, nullish=False):
         raise _UnsupportedMetadata('unsupported_corporate_l3_number_type')
     number = _decimal(value)
     if abs(number) > _MAX_INTEGER or number != number.quantize(Decimal('0.01')):
+        raise _UnsupportedMetadata('unsupported_corporate_l3_number_precision')
+    return number
+
+
+def _l3_usd_exact(value, *, nullish=False):
+    # Hidden USD totals (the footer callback and row metadata) keep the portal's
+    # exact source lexeme, up to 8 decimals. Admit any finite decimal in bound;
+    # never round. The 2-decimal scalar controls stay on _l3_usd.
+    if value is None and nullish:
+        return Decimal(0)
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l3_number_type')
+    number = _decimal(value)
+    if not number.is_finite() or abs(number) > _MAX_INTEGER:
         raise _UnsupportedMetadata('unsupported_corporate_l3_number_precision')
     return number
 
@@ -4142,10 +4159,16 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
             if not isinstance(row, dict) or set(row) not in (_L3_B_ROW_FIELDS, _L3_B_EXTENDED_FIELDS):
                 raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             extended = set(row) == _L3_B_EXTENDED_FIELDS
-            if extended and (row['IsManually'] is not True or row['TableSource'] is not None
-                    or row['Action'] is not None or _l3_integer(row['Index']) != 0
-                    or _l3_integer(row['IncomeTaxUsd']) != 0):
-                raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
+            if extended:
+                try:
+                    _l3_usd_exact(row['IncomeTaxUsd'], nullish=True)
+                    index_ok = _l3_integer(row['Index']) == 0
+                except _UnsupportedMetadata:
+                    raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row') from None
+                if (type(row['IsManually']) is not bool
+                        or row['TableSource'] not in _L3_B_TABLE_SOURCES
+                        or row['Action'] is not None or not index_ok):
+                    raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             text(row['RecordId'])
             brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
                 label(row['TaxType'], 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
@@ -4165,8 +4188,8 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                     path = ['Data', local_index, field]
                     destination = {'table': 'L3/domestic', 'row': len(brows) - 1, 'metadata': field}
                     if field == 'IsManually':
-                        # Only the reviewed literal true is admitted above. Do not
-                        # widen shared Masa scalar evidence to accept booleans.
+                        # IsManually is a captured boolean flag (the portal emits
+                        # False for grid-sourced rows); record its literal value.
                         provenance.append({'path': path, 'type': 'boolean', 'value': row[field],
                             'source': 'grid', 'page_index': page_index, 'destination': destination,
                             'rule': 'non-displayed-domestic-row-metadata'})
@@ -4175,7 +4198,7 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                                  rule='non-displayed-domestic-row-metadata')
     if len(brows) != total:
         raise _UnsupportedMetadata('incomplete_corporate_l3_pages')
-    amounts = {key: (_l3_usd(value, nullish=True) if key == 'IncomeTaxUsd'
+    amounts = {key: (_l3_usd_exact(value, nullish=True) if key == 'IncomeTaxUsd'
                      else _l3_integer(value, nullish=True)) for key, value in footer_payload.items()}
     credit = _l3_sum([foreign_credit, amounts['IncomeTax']])
     _l3_sum([foreign_credit, amounts['IncomeTaxUsd']])  # The same callback writes the hidden USD total.
