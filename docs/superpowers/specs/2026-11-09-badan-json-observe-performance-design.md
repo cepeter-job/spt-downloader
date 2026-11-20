@@ -1,6 +1,6 @@
 # Corporate `json_observe` performance — measured, proof-preserving follow-up
 
-Original proposal: 2026-11-09. Updated evidence/status: **2026-11-11**.
+Original proposal: 2026-11-09. Updated evidence/status: **2026-11-20**.
 Scope: design and measurement planning **only** in PR #208. The production
 instrumentation and performance implementation were separately reviewed,
 tested and merged through [#234](https://github.com/cepeter-job/spt-downloader/pull/234)
@@ -8,9 +8,122 @@ and [#236](https://github.com/cepeter-job/spt-downloader/pull/236); this
 proposal **does not** change either of their runtime contracts. Corporate L7
 native correctness and DOM initial-loading diagnostics are independently
 tracked by [#235](https://github.com/cepeter-job/spt-downloader/pull/235)
-(open at this update).
+(merged as `8726aae`; see current status below).
 
-## What the recorded runs actually establish
+## Current baseline and decision — 20 November 2026
+
+Baseline: [main `818246f`](https://github.com/cepeter-job/spt-downloader/commit/818246f9c0d1714bdf02941f3edb28644bb662ad).
+This section supersedes historical implementation/dependency status below,
+not the recorded measurements. #208 remains a design-only PR.
+
+### Native JSON: establish admission before optimizing
+
+| Work | Status at baseline |
+| --- | --- |
+| #234 / #236 native paginator timing and owned probe | Merged; historical measurements below |
+| #235 strict L7 lifecycle / initial loading | Merged; subsequent L7 fixes and #287 native consolidation do not prove live acceptance |
+| #267 / #269 / #287 native representation and integration | Merged; preserve exact source, identity and workbook contracts |
+| #295 / #299 / #305 / #312 / #319 Corporate correctness | Merged; L2 optional fields and numeric roundtrip, L3 period/year, L10-C clock and L4 fractional USD |
+| #322 / #323 / #324 / #325 observer refusal diagnostics and L8 history budget | Merged; distinguish build, stage, L8 sub-guard and missing forms; no blanket admission |
+| #327 strict Corporate CLI JSON-only mode | Merged; no DOM detail-value fallback on refusal |
+| [#328](https://github.com/cepeter-job/spt-downloader/pull/328) data-conditional sheets | OPEN candidate; exact-head CI/review and live acceptance pending |
+| Stage 0b part 2 request/response chronology | Pending proposal; not implemented by the refusal diagnostics |
+| Larger native page size / packet reuse | Not approved; separate proof and review required |
+
+The #328 description reports a #325 live refusal with
+`corporate_missing_forms=L10-D,L11-A,L11-C,L4,L7`, whose corresponding
+source roots were reported absent. It proposes tolerating genuinely
+data-conditional missing tabs; it is not a merged change or proof of native
+COMPLETE. Review must establish return-specific source absence (not just a
+missing tab), reject present data with missing/unowned UI evidence, preserve
+required forms and L1-B/L8 custody, and verify complete workbook projection.
+Its reported 60-row L3-B API example is a **different workload** from issue
+#161's 4,654-row case; never use it to certify the large case.
+
+Use the exact checked-out commit, pinned environment and authorized private
+scope per [AGENTS.md](../../../AGENTS.md). Baseline each case with
+`--detail-source json-only --spt-badan-only` (#327), using a fresh private
+output folder/profile and no detail limit for full acceptance. Inventory,
+UI binding and PDF work can still occur. Incomplete native capture remains
+PARTIAL (exit 2), with retained JSON and no DOM detail-value fallback.
+Run `json-first` and `dom` separately when comparing fallback behavior.
+Record the actual checkout SHA for source CLI even if diagnostic build
+metadata says unknown; CLI is pre-acceptance evidence, not a CI/release
+or frozen-EXE substitute.
+
+### DOM: independent correctness and performance track (#161)
+
+Merged since the historical comparison: #241/#242/#243 reset/rewind
+attribution, #247/#248/#250/#252/#301 passive/opt-in diagnostics,
+#311 owned pilot lookup, #246 missing-Previous lookup, #321 guarded
+fused cursor turn, and #326 proved-absent First lookup plus finite
+cursor readiness outcomes. #246 is **merged**, not an open dependency;
+the documented runs had zero enabled-Previous clicks, so an actual
+enabled-Previous A/B remains unproven.
+
+Latest documented authorized source CLI evidence in
+[#161](https://github.com/cepeter-job/spt-downloader/issues/161#issuecomment-7026296865):
+
+| Metric | 19 Nov main a3a4ff0 (#246) | 20 Nov main 8ed1e9d (#321) |
+| --- | ---: | ---: |
+| Whole job | 465.98 s | 404.30 s |
+| L3-B retained original rows | 2,500/4,654 | 2,000/4,654 |
+| L3-B table wall | 205.62 s | 207.03 s |
+| L3-B pre-read | 37.51 s | 56.86 s |
+| Pilot label lookup | 17.07 s | 26.67 s |
+| First lookup (zero clicks) | 17.32 s | 28.12 s |
+| Complete tables | 36/37 | 36/37 |
+| L3 worksheet dimensions | 11 x 10 | 11 x 10 |
+| Result | PARTIAL | PARTIAL |
+
+Four fused turns still needed separate 16–19 s snapshot RPCs. The
+different-day source values differ; the shorter whole job does not
+establish a causal speedup, and L3-B coverage was worse. The wall/renderer
+residual does not identify an IPC, browser, network or scheduling cause.
+The unchanged nominal 180 s table budget can be crossed by an in-flight
+synchronous RPC but still prevents further row acceptance. Retained
+checkpoint rows are not verified workbook rows.
+
+[#326](https://github.com/cepeter-job/spt-downloader/pull/326) merged at
+the baseline above. It skips a redundant First lookup only for a proven
+negative on the selected 500-row owner, rechecks owner/label/First in the
+existing initial snapshot, and emits allowlisted readiness outcomes on
+existing calls. It does not establish that the extra snapshot RPC is
+eliminated or that live throughput improved. Next authorized DOM CLI run:
+check `table_first_lookup_source`, `table_cursor_turn_outcome` and
+`table_cursor_snapshot_outcome`, compare same-source wall/RPC counts,
+and require all 4,654 original ordered rows, footer and workbook parity.
+Keep the 180 s budget, Stop, ownership and fail-closed rules; investigate
+pending overlay/settle separately rather than raising limits.
+
+### Open backlog and sequencing
+
+- **#161** — active: large-table DOM coverage and genuine native/DOM
+  acceptance; no COMPLETE claim. **#328** — active native admission
+  candidate; do not duplicate or presume merge.
+- **#291** — #289/#293 DOM mapping fixes are merged; L3-A live footer
+  acceptance remains open, independent of L3-B source completeness.
+- **#307** — HOST_CPU forwarding/diagnostics: #310 added tracing;
+  frozen-worker flag acceptance remains open unless separately proved.
+- **#302** — #303 XML catalog and #320 value-only-edit CI fixes merged;
+  issue remains open, UI/build acceptance separate from capture.
+- **#156** — MPN source acceptance remains open; #298 test stabilization
+  does not establish live success. **#296** closed; #310 CI retry work
+  is separate from scraper optimization.
+- **#168/#169** — conditional filesystem/hash-reader extraction backlog;
+  no helper consolidation or policy weakening authorized.
+- **#288/#290** — deferred architecture and parallel capture; no
+  implementation authorization and no new concurrency in #208.
+
+Priority: (1) review #328 and verify strict JSON-only admission with
+source/workbook/PDF parity; (2) independently verify merged #326 on
+large DOM #161 and resolve #291/#307 where relevant; (3) collect
+repeatable native timings and separately propose bounded chronology
+instrumentation if needed; (4) consider native page size or packet reuse
+only on measured evidence and separate approval. No architecture or
+parallel capture changes are authorized by this design.
+
+## Historical evidence — what the recorded runs actually establish
 
 The initial observation used build/workflow `42595786607` (the #206-era
 artifact). The capture accumulated **572 responses by the end of interactive
@@ -45,8 +158,8 @@ The original run's private, value-free request inventory indicated **466
 L3-B page requests with `Rows=10` and `TotalRecords=4654`**, out of
 572 captured responses. This makes pagination a candidate, **not a
 measured causal attribution**. Do not treat all 572 as independently
-necessary source requests or as arrivals before navigation. The current
-pinned-build tab inventory is **15 observed tabs** (L1-B and L8 absent),
+necessary source requests or as arrivals before navigation. The historical
+pinned-build tab inventory was **15 observed tabs** (L1-B and L8 absent),
 not the 17-tab count assumed in this original proposal.
 
 ## Current code and status of measurement
@@ -190,11 +303,11 @@ performance win without controlled repetitions.
   do **not** prove that the Corporate workbook has complete SPT content.
 - This is **neither** native JSON admission **nor** full 4,654-row
   capture acceptance. Keep [issue #161](https://github.com/cepeter-job/spt-downloader/issues/161)
-  OPEN and address strict L7/DOM diagnostics in the independently reviewed
-  [PR #235](https://github.com/cepeter-job/spt-downloader/pull/235).
+  OPEN; the independently reviewed
+  [PR #235](https://github.com/cepeter-job/spt-downloader/pull/235) has since merged. See current baseline above.
   Do not claim that a performance PR repairs L7, a PDF or a DOM timeout.
 
-### Updated implementation status
+### Historical 11 November stage status (native performance)
 
 1. **Stage 0a: DONE** — coarse `corporate.observe_timing`.
 2. **Stage 0b/part 1: DONE** — #234 fixed-enum reset/advance click,
@@ -216,7 +329,7 @@ performance win without controlled repetitions.
 
 ## Next steps, in evidence-first order
 
-### Step 0b — remaining request/response chronology (proposed)
+### Step 0b — remaining request/response chronology (proposed after admission baseline)
 
 Extend the already merged, bounded, **fixed-enum** native timing events
 without changing source calls, control flow, request ownership or capture
@@ -241,9 +354,9 @@ admission. Do not reimplement #234/#236 or duplicate their probes:
   financial data. Fixed enum and aggregate counts only. Keep Stop,
   lifetime, build pins and refusal behavior unchanged.
 
-**Gate:** the #236 operator-run has supplied measured step timings, but
+**Historical gate:** the #236 operator-run supplied measured step timings, but
 was PARTIAL, with no native admission and differing inventory checksum.
-Before approving further optimization, obtain source-compatible repeat
+Before approving further optimization, use the #327 strict JSON-only mode on the current reviewed baseline and obtain source-compatible repeat
 measurements, verify UI ownership for any new control, and establish a
 concrete bottleneck and complete acceptance criteria. Incomplete native
 admission supplies diagnostic evidence **only**, not JSON-first success.
@@ -306,16 +419,16 @@ PDF completeness.
    exact-head portable, dependency/security, Windows shards, packaging,
    artifact-readback and bootstrap CI. Independent peer review and
    authorized merge required.
-4. **Live acceptance:** the #236 merged-tree artifact was verified and
+4. **Historical live acceptance:** the #236 merged-tree artifact was verified and
    run but returned PARTIAL (L7 refusal plus DOM L3 timeout), so the
    end-to-end gate remains **open**. Require an operator-run id-ID
    `detail.source=native_verified`, complete L3-B 4,654-row source-
    to-workbook parity and independently verified financial-PDF custody/
    publication, or a separately supported fully complete DOM fallback.
-   Track this under #161, not as proof furnished by design PR #208.
+   Track this under #161, not as proof furnished by design PR #208. The 20 November DOM evidence above still fails this gate; a smaller native return cannot stand in for the large workload.
 
-PR #208 remains **design-only** and should be rebased/synchronized with
-current `main` before review. Merged #234/#236 are completed stages,
-not changes delivered by this design document. Any next runtime proposal
-must link exact-build evidence and remain independent of the open #235
-correctness gate.
+PR #208 remains **design-only** and must be synchronized with current
+`main` before review. Merged runtime changes are not delivered by this
+design document. Any next runtime proposal must link exact-build evidence,
+preserve the merged #235 correctness contract and coordinate with open
+#328 and #161 without duplicating their implementation.
