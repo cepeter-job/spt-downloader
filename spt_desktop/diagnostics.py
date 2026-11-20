@@ -54,6 +54,12 @@ ENUMS = {
     'table_first_page_step': frozenset({
         'pilot_label_lookup', 'pilot_label_text', 'first_overlay_wait', 'first_settle_wait'}),
     'table_first_page_outcome': frozenset({'returned', 'raised'}),
+    'table_first_lookup_source': frozenset({'pilot_absence', 'owner_query'}),
+    'table_cursor_turn_outcome': frozenset({'ready', 'late_state', 'pending_overlay',
+        'pending_settle', 'refused', 'budget', 'idle_timeout', 'not_advanced',
+        'unavailable'}),
+    'table_cursor_snapshot_outcome': frozenset({'ready', 'pending_overlay',
+        'pending_settle', 'refused', 'budget', 'idle_timeout', 'unavailable'}),
     'table_existing_rpc_stage': frozenset({
         'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
         'initial_snapshot', 'cursor_init', 'cursor_advance',
@@ -197,7 +203,7 @@ ENUMS = {
         'enumeration_unavailable', 'enumeration_error', 'database_missing', 'store_missing',
         'record_missing', 'record_identity', 'open_blocked', 'open_error', 'upgrade_refused',
         'version_changed', 'read_error', 'projection_error', 'read_timeout', 'evaluation_error'}),
-    'source_requested': frozenset({'dom', 'json-first'}),
+    'source_requested': frozenset({'dom', 'json-first', 'json-only'}),
     'source_used': frozenset({'dom', 'json', 'none'}),
     'source_reason': frozenset({'dom_requested', 'native_verified', 'capture_incomplete',
         'adapter_ineligible', 'coverage_incomplete', 'forms_unavailable', 'unsupported_tax', 'checkpoint_reuse'}),

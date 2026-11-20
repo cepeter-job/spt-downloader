@@ -562,8 +562,8 @@ def parser():
                      help='Select only inventoried PPh Badan return details; skip MPN (persist selected IDs for resume)')
     cli.add_argument('--detail-limit', type=int, help='Test-only detail limit; output stays PARTIAL if any return remains unexported')
     cli.set_defaults(detail_source_explicit=False)
-    cli.add_argument('--detail-source', choices=['dom', 'json-first'], default='dom', action=_DetailSource,
-                     help='DOM by default; opt-in JSON hybrid with whole-record DOM fallback')
+    cli.add_argument('--detail-source', choices=['dom', 'json-first', 'json-only'], default='dom', action=_DetailSource,
+                     help='DOM by default; json-first may fall back to DOM; json-only is strict and requires --spt-badan-only')
     cli.add_argument('--max-pages', type=int, default=1000, help='Safety cap per list/table; reaching it is reported as PARTIAL')
     return cli
 
@@ -660,6 +660,8 @@ def _main(argv=None):
         cli.error('Page and detail limits must be positive')
     if args.spt_badan_only and (args.from_json or args.inventory_only):
         cli.error('--spt-badan-only applies to live detail capture, not offline or inventory-only mode')
+    if args.detail_source == 'json-only' and not (args.spt_badan_only or args.from_json):
+        cli.error('--detail-source json-only requires --spt-badan-only for live capture')
     diagnostics.record('operation.started', operation='offline' if args.from_json else 'resume' if args.resume else 'export')
     if args.from_json:
         run = json.loads(args.from_json.read_text(encoding='utf-8'))

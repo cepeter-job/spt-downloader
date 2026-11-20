@@ -273,9 +273,30 @@ OWNED_PILOT_LABEL_TEXT_JS = r'''owner => {
  if(!owner.isConnected || owner.ownerDocument!==document)
    throw new Error('Original paginator owner changed');
  const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
- return {text:label ? label.innerText : '',
+ // Same held owner, same exact enabled-First selector as the next Python
+ // query. A negative result is a pilot proof, never a click permission.
+ const firstAbsence=owner.querySelector(
+   '.p-paginator-first:not([disabled]):not(.p-disabled)')===null;
+ return {text:label ? label.innerText : '', first_absent:firstAbsence,
          renderer_ms:performance.now()-started};
 }'''
+
+# Only the no-First 500-row pilot path may reuse its observed negative lookup.
+# Recheck the same enabled First selector, held owner and admitted label
+# atomically with the original initial TABLE_JS read; a newly enabled First
+# fails closed rather than skipping a required reset. No new browser RPC.
+TABLE_PILOT_INITIAL_JS = r'''(table, {owner, selected}) => {
+ if(!owner.isConnected || owner.ownerDocument!==document ||
+    !table.isConnected || table.closest('p-table')!==owner)
+   throw new Error('Inspected paginator owner changed before initial snapshot');
+ if(owner.querySelector('.p-paginator-first:not([disabled]):not(.p-disabled)'))
+   throw new Error('First-page pilot proof changed before initial snapshot');
+ const label=owner.querySelector('.p-paginator-rpp-options .p-dropdown-label');
+ if(!label || label.innerText.trim()!==selected)
+   throw new Error('Pilot page size changed before initial snapshot');
+ return (CAPTURE_TABLE)(table);
+}'''.replace('CAPTURE_TABLE', TABLE_JS)
+
 
 # Diagnostic-only: one read-only selector check on the ORIGINAL held owner.
 # performance.now() covers only renderer execution after the RPC begins.
@@ -416,7 +437,9 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
      if(loading) cursor.idleSince=null;
      else if(cursor.idleSince==null) cursor.idleSince=now;
      if(cursor.idleSince!==null && now-cursor.idleSince>=180) break;
-     if(now>=sliceEnd) return {pending:true};
+     // Non-business enum: which existing readiness gate was still active.
+     if(now>=sliceEnd) return {pending:true,
+       pending_reason:loading?'overlay':'settle'};
      await new Promise(resolve=>setTimeout(resolve,Math.min(40,sliceEnd-now)));
    }
  }
@@ -449,11 +472,23 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
 TABLE_CURSOR_TURN_JS = r'''async (cursor, options) => {
  const started=performance.now();
  const advance=(ADVANCE)(cursor,options);
+ const outcome=(snapshot)=>{
+   if(snapshot===null) return 'late_state';
+   if(snapshot?.pending) return snapshot.pending_reason==='overlay'?
+     'pending_overlay':'pending_settle';
+   if(snapshot?.refusal) return 'refused';
+   if(snapshot?.budget) return 'budget';
+   if(snapshot?.idle_timeout) return 'idle_timeout';
+   if(typeof snapshot?.packed==='string') return 'ready';
+   return 'unavailable';
+ };
  const done=(snapshot)=>({
-   ...advance, snapshot, turn_renderer_ms:performance.now()-started
+   ...advance, snapshot, turn_outcome:outcome(snapshot),
+   turn_renderer_ms:performance.now()-started
  });
  if(advance.status!=='advanced')
-   return {...advance,turn_renderer_ms:performance.now()-started};
+   return {...advance,turn_outcome:'not_advanced',
+           turn_renderer_ms:performance.now()-started};
  const owner=cursor.owner;
  const stopAt=Math.min(cursor.deadline,performance.now()+850);
  while(true){
@@ -664,10 +699,30 @@ class _InitialLoadingDiagnostics:
 
 
 
-def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks):
+def _snapshot_diagnostic_outcome(reply):
+    """Closed enum only; never inspect or emit captured page data."""
+    if type(reply) is not dict:
+        return 'unavailable'
+    if reply.get('pending') is True:
+        return ('pending_overlay' if reply.get('pending_reason') == 'overlay'
+                else 'pending_settle')
+    if 'refusal' in reply:
+        return 'refused'
+    if reply.get('budget') is True:
+        return 'budget'
+    if reply.get('idle_timeout') is True:
+        return 'idle_timeout'
+    if type(reply.get('packed')) is str:
+        return 'ready'
+    return 'unavailable'
+
+
+def _record_large_table_reset(stage, started, ordinal, max_page_size, clicks,
+                              *, first_lookup_source=None):
     """Bounded preparation timings; only large-table candidates, no DOM values."""
     if max_page_size >= 250:
         diagnostics.record('table.reset_timing', table_reset_step=stage,
+                           table_first_lookup_source=first_lookup_source,
                            form_ordinal=_INITIAL_FORM_ORDINAL.get(),
                            table_ordinal=ordinal, count=clicks,
                            duration_ms=(_diagnostic_clock() - started) * 1000)
@@ -760,6 +815,12 @@ def _timed_existing_rpc(stage, ordinal, max_page_size, slots, host_cpu_slots=Non
         if (type(renderer_ms) in (int, float) and 0 <= renderer_ms <= wall_ms):
             fields['table_rpc_renderer_ms'] = renderer_ms
             fields['table_rpc_residual_ms'] = max(0, wall_ms - renderer_ms)
+        # Fixed, bounded result categories only: never store snapshot data,
+        # paginator state, source labels or browser error text.
+        if stage == 'cursor_turn':
+            fields['table_cursor_turn_outcome'] = observation.get('cursor_outcome')
+        elif stage == 'cursor_snapshot':
+            fields['table_cursor_snapshot_outcome'] = observation.get('snapshot_outcome')
         try:
             diagnostics.record('table.existing_rpc_timing', **fields)
         except Exception:  # nosec B110 - Optional diagnostics may never mask capture or Stop.
@@ -861,6 +922,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     if observer is not None:
         observer.emit('size_complete')
     guard_started = _diagnostic_clock()
+    pilot_absence_proved = False
+    pilot_selected = None
     try:
         if max_page_size >= 250:
             # A previously selected larger page must not bypass the pilot limit.
@@ -881,6 +944,12 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                 selected = label_read['text'].strip()
             if not selected.isascii() or not selected.isdecimal() or int(selected) > max_page_size:
                 raise RuntimeError('L3-B page size exceeds inspected pilot limit')
+            pilot_selected = selected
+            # Only the admitted 500-row branch may reuse the read-only
+            # negative First result; a positive result uses the old guarded
+            # Python lookup + click path without extra browser dispatches.
+            pilot_absence_proved = (max_page_size >= 500 and int(selected) == 500
+                                    and label_read.get('first_absent') is True)
     finally:
         _record_large_table_reset('pilot_guard', guard_started, ordinal, max_page_size, 1)
     first_started = _diagnostic_clock()
@@ -889,10 +958,13 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         lookup_started = _diagnostic_clock()
         first_found = 0
         try:
-            first = container_handle.query_selector('.p-paginator-first:not([disabled]):not(.p-disabled)')
+            first = (None if pilot_absence_proved else container_handle.query_selector(
+                '.p-paginator-first:not([disabled]):not(.p-disabled)'))
             first_found = int(first is not None)
         finally:
-            _record_large_table_reset('first_lookup', lookup_started, ordinal, max_page_size, first_found)
+            _record_large_table_reset(
+                'first_lookup', lookup_started, ordinal, max_page_size, first_found,
+                first_lookup_source='pilot_absence' if pilot_absence_proved else 'owner_query')
         if first:
             if observer is not None:
                 observer.stage = 'first_click'
@@ -1001,7 +1073,11 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     first_read_started = _diagnostic_clock()
     with _timed_existing_rpc('initial_snapshot', ordinal, max_page_size,
                              passive_rpc_slots):
-        result = table.evaluate(TABLE_JS)
+        if pilot_absence_proved:
+            result = table.evaluate(TABLE_PILOT_INITIAL_JS,
+                                    {'owner': container_handle, 'selected': pilot_selected})
+        else:
+            result = table.evaluate(TABLE_JS)
     first_read_ms = (_diagnostic_clock() - first_read_started) * 1000
     diagnostics.record('table.page_timing', table_page_stage='initial',
                        pages=1, page_rows=len(result['rows']), page_size_cap=max_page_size,
@@ -1039,6 +1115,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                         'turn_renderer_ms' if use_turn else 'renderer_ms')
                 if use_turn and type(advance) is dict:
                     embedded_snapshot = advance.get('snapshot')
+                    if timing is not None:
+                        timing['cursor_outcome'] = advance.get('turn_outcome')
             _check_cancel(check_cancel)
             status = advance['status']
             if status == 'done':
@@ -1172,6 +1250,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
                     if timing is not None and type(snapshot) is dict:
                         timing['renderer_ms'] = snapshot.get('renderer_ms')
+                        timing['snapshot_outcome'] = _snapshot_diagnostic_outcome(snapshot)
             while cursor is not None:
                 _check_cancel(check_cancel)
                 if time.monotonic() >= capture_deadline:
@@ -1186,6 +1265,7 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                     snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
                     if timing is not None and type(snapshot) is dict:
                         timing['renderer_ms'] = snapshot.get('renderer_ms')
+                        timing['snapshot_outcome'] = _snapshot_diagnostic_outcome(snapshot)
         except PlaywrightTimeoutError as error:
             # A post-dispatch read timeout retains only previously verified
             # rows as PARTIAL; no retry, promotion, or guessed current page.
@@ -2770,7 +2850,11 @@ def _identity_checked_packets(packets, record, scope):
         yield packet
 
 
-def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel):
+def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel, *, detail_source='json-first'):
+    if detail_source not in ('json-first', 'json-only'):
+        raise ValueError('JSON detail capture requires json-first or json-only')
+    if detail_source == 'json-only' and record['meta'].get('Jenis Pajak') != 'PPh Badan':
+        raise ValueError('json-only is restricted to PPh Badan details')
     from coretax_json import adapt_corporate_detail
     corporate = record['meta'].get('Jenis Pajak') == 'PPh Badan'
     masa = record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi')
@@ -2838,9 +2922,11 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
                      'forms_unavailable' if forms is None else
                      'capture_incomplete' if not manifest['complete'] else
                      'adapter_ineligible' if not decoded['eligible'] else 'coverage_incomplete')
-    diagnostics.record('detail.source', source_requested='json-first',
-                       source_used='json' if eligible else 'dom', source_reason=source_reason)
-    audit = {'version': 1, 'requested': 'json-first', 'used': 'json' if eligible else 'dom',
+    strict = detail_source == 'json-only'
+    source_used = 'json' if eligible else 'none' if strict else 'dom'
+    diagnostics.record('detail.source', source_requested=detail_source,
+                       source_used=source_used, source_reason=source_reason)
+    audit = {'version': 1, 'requested': detail_source, 'used': source_used,
              'capture': manifest}
     if decoded is not None:
         audit.update(coverage=decoded['coverage'], json=decoded['provenance'])
@@ -2857,8 +2943,15 @@ def _hybrid_detail(page, record, scope, folder, capture, max_pages, check_cancel
     else:
         audit['reason'] = (decoded['reason'] if decoded is not None and not decoded['eligible']
                            else 'unsupported_observed_forms_or_capture')
-        result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
-                                record=record, folder=folder)
+        if strict:
+            # Never upgrade incomplete/unsupported JSON by reading DOM values.
+            # Preserve the audited JSON body manifest for diagnosis and resume.
+            result = {'sections': [], 'capture_complete': False, 'attachments': [],
+                      'errors': [{'object': 'Detail JSON',
+                                  'message': 'Verified JSON detail is incomplete; DOM fallback disabled.'}]}
+        else:
+            result = capture_detail(page, max_pages=max_pages, check_cancel=check_cancel,
+                                    record=record, folder=folder)
     result['detail_source'] = audit
     return result
 
@@ -2913,11 +3006,23 @@ def read_detail_checkpoint(path, record, scope, *, detail_source='dom'):
         except RuntimeError as exc:
             raise RuntimeError('Existing detail checkpoint has unverifiable return provenance') from exc
     audit = saved.get('detail_source')
+    if detail_source == 'json-only' and audit is None and (
+            saved.get('capture_complete') or saved.get('sections') or saved.get('attachments')):
+        raise JsonSafetyError('Unaudited DOM checkpoint cannot be reused in strict JSON mode')
     if audit is not None:
         if (not isinstance(audit, dict) or type(audit.get('version')) is not int or audit['version'] != 1
-                or audit.get('requested') not in ('dom', 'json-first') or audit.get('used') not in ('dom', 'json')):
+                or audit.get('requested') not in ('dom', 'json-first', 'json-only')
+                or audit.get('used') not in ('dom', 'json', 'none')):
             raise JsonSafetyError('Checkpoint detail-source descriptor is unsupported')
-        if audit['used'] == 'json' and (audit['requested'] != 'json-first' or detail_source != 'json-first'):
+        if (audit['requested'] == 'json-only') != (detail_source == 'json-only'):
+            raise JsonSafetyError('Checkpoint strict JSON mode does not match the requested mode')
+        if detail_source == 'json-only' and audit['used'] == 'dom':
+            raise JsonSafetyError('DOM checkpoint cannot be reused in strict JSON mode')
+        if audit['used'] == 'none' and (audit['requested'] != 'json-only'
+                or saved.get('capture_complete') or saved.get('sections') or saved.get('attachments')):
+            raise JsonSafetyError('Incomplete JSON checkpoint cannot contain completed detail')
+        if audit['used'] == 'json' and (audit['requested'] not in ('json-first', 'json-only')
+                or detail_source != audit['requested']):
             raise JsonSafetyError('Checkpoint JSON source does not match the requested mode')
         if audit.get('capture') is not None or audit['used'] == 'json':
             from coretax_json_capture import checkpoint_bodies
@@ -3067,6 +3172,9 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
     failures retain fixed public error categories and PARTIAL. Final completion
     requires persisted detail reconciliation, independently of later publication."""
     validate_detail_source(detail_source)
+    if detail_source == 'json-only' and any(
+            r.get('meta', {}).get('Jenis Pajak') != 'PPh Badan' for r in run['records']):
+        raise ValueError('json-only detail capture supports PPh Badan only')
     _check_cancel(check_cancel)
     folder = Path(folder)
     checkpoint_dir = folder / 'returns'
@@ -3140,7 +3248,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                             _verify_restored_metadata(page, run, record, current_meta,
                                 current_response['rows'][position], folder, ordinal, check_cancel)
                             observer._check_state()
-                            if detail_source == 'json-first' and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
+                            if detail_source in ('json-first', 'json-only') and record['meta'].get('Jenis Pajak') in ('PPN', 'PPh Pasal 21/26', 'PPh Unifikasi', 'PPh Badan'):
                                 from coretax_masa_json import (bind_ppn_listing_identity, bind_pph21_listing_identity,
                                                                bind_unifikasi_listing_identity, bind_corporate_listing_identity)
                                 prefix, bind_identity = {
@@ -3168,7 +3276,7 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     record['source_identity'] = {**identity['source_identity'],
                                                                  'relative_path': relative.as_posix()}
                             session = nullcontext(None)
-                            if detail_source == 'json-first':
+                            if detail_source in ('json-first', 'json-only'):
                                 from coretax_json_capture import DetailJsonCapture
                                 session = DetailJsonCapture(page.context, page, record, scope, folder,
                                                             ordinal=ordinal, check_cancel=check_cancel)
@@ -3184,7 +3292,8 @@ def collect_details(page, run, folder, max_pages=1000, detail_limit=None, on_pro
                                     capture = capture_detail(detail, max_pages=max_pages, check_cancel=check_cancel,
                                                              record=record, folder=folder)
                                 else:
-                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages, check_cancel)
+                                    capture = _hybrid_detail(detail, record, scope, folder, json_capture, max_pages,
+                                                             check_cancel, detail_source=detail_source)
                             timing['source_used'] = capture.get('detail_source', {}).get('used', 'dom')
                             if 'detail_source' in capture:
                                 record['detail_source'] = capture['detail_source']
