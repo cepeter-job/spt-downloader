@@ -993,11 +993,7 @@ def corporate_reference_bindings(capture, kinds, *, page=None, check_cancel=None
     builds = capture.observe_corporate_reference_providers(check_cancel=check_cancel)
     if builds is None:
         return None
-    if page is not None:
-        observations = _reacquire_reference_observations(
-            page, capture, [urls[kind] for kind in kinds], check_cancel)
-    else:
-        observations = capture.request_observations()
+    observations = capture.request_observations()
     _check_cancel(check_cancel)
     references = []
     for kind in kinds:
