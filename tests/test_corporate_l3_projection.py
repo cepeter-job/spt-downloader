@@ -106,6 +106,26 @@ def test_l3b_extended_rows_admit_portal_metadata_and_exact_usd_lexeme():
     assert usd and all(p['value'] == '16.50003087' for p in usd)
 
 
+def test_l3b_sixty_row_paged_shape_with_extended_metadata():
+    # The live L3-B grid is 60 rows across six pages of ten; every row carries
+    # the extended metadata and an exact high-precision USD lexeme.
+    form, pages, footer = inputs()
+    base = pages[0]['data'][0]
+    rows = []
+    for _ in range(60):
+        row = deepcopy(base)
+        row.update({'IncomeTaxUsd': 16.50003087, 'IsManually': False,
+                    'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None})
+        rows.append(row)
+    pages = [{'offset': i, 'rows': 10, 'total': 60, 'data': rows[i:i + 10]}
+             for i in range(0, 60, 10)]
+    footer['IncomeTaxUsd'] = 10736.41742465
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert a['body_row_count'] == 2
+    assert b['body_row_count'] == 60
+
+
 def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
     # Fail-closed: an unknown TableSource or a non-boolean IsManually refuses.
     for bad in ({'TableSource': 'UNKNOWN_GRID'}, {'IsManually': 'true'}):
