@@ -3804,7 +3804,7 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                     or not isinstance(node.get('Data'), dict)):
                 raise _UnsupportedMetadata('unsupported_corporate_l1d_tree_node')
             data = node['Data']
-            if (not data_fields <= set(data) or set(data) - data_fields - metadata_fields
+            if (set(data) - data_fields - metadata_fields
                     or type(data.get('AccountCode')) is not str or data['AccountCode'] not in codes
                     or data['AccountCode'] in nodes or type(data.get('Description')) is not str):
                 raise _UnsupportedMetadata('ambiguous_corporate_l1d_account')
@@ -3816,14 +3816,14 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                         or any(value not in ('', None) for value in style.values())):
                     raise _UnsupportedMetadata('unverified_corporate_l1d_effective_style')
             for field in _L1D_FIELDS:
-                _l1d_integer(data[field], nullish=True)
+                _l1d_integer(data.get(field), nullish=True)
             masks = data.get('BlockFields')
             if (masks is not None and not isinstance(masks, dict)
                     or code in _L1D_UNCHANGED and isinstance(masks, dict)
                     and any(masks.get(key) is not None and type(masks[key]) is not bool
                             for key in _L1D_MASKS)):
                 raise _UnsupportedMetadata('unsupported_corporate_l1d_mask')
-            correction = data['CorrectionCode']
+            correction = data.get('CorrectionCode')
             if not (correction is None or type(correction) is str or
                     isinstance(correction, list) and len(correction) <= 10000
                     and all(type(value) is str for value in correction)):
@@ -3865,18 +3865,19 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
                 field in ('NonTaxableObject', 'SubjectToFinalTax') and code not in _L1D_UNCHANGED
                 or code in _L1D_SUBTOTALS
                 or code in _L1D_UNCHANGED and masks.get(field) is True)
-            row.append('' if masked or data[field] is None else _number(data[field], 0, locale=locale))
-            evidence(data[field], [*path, field], {**destination, 'column': column},
+            row.append('' if masked or data.get(field) is None else _number(data.get(field), 0, locale=locale))
+            evidence(data.get(field), [*path, field], {**destination, 'column': column},
                      'source-mask' if masked else 'angular-number-1.0-0-id')
-        correction = data['CorrectionCode']
+        correction = data.get('CorrectionCode')
         row.append('; '.join(correction) if isinstance(correction, list) else correction or '')
         if isinstance(correction, list):
             for index, value in enumerate(correction):
                 evidence(value, [*path, 'CorrectionCode', index], {**destination, 'column': 8})
         else:
             evidence(correction, [*path, 'CorrectionCode'], {**destination, 'column': 8})
-        row.append('' if data['FinalAmount'] is None else _number(data['FinalAmount'], 0, locale=locale))
-        evidence(data['FinalAmount'], [*path, 'FinalAmount'], {**destination, 'column': 9})
+        final_amount = data.get('FinalAmount')
+        row.append('' if final_amount is None else _number(final_amount, 0, locale=locale))
+        evidence(final_amount, [*path, 'FinalAmount'], {**destination, 'column': 9})
         body.append(row)
     reported = form['L1dTreeTotalRow']
     if (not isinstance(reported, dict) or not set(_L1D_FIELDS) <= set(reported)
@@ -3886,7 +3887,7 @@ def project_l1d(form, *, migrated, headers, footer_spans, tax_type, locale, time
     for field in _L1D_FIELDS:
         value = _l1d_integer(reported[field])
         if not migrated and value != _l1d_sum(
-                [_l1d_integer(nodes[code][0][field], nullish=True) for code in ('4500', '4700')]):
+                [_l1d_integer(nodes[code][0].get(field), nullish=True) for code in ('4500', '4700')]):
             raise _UnsupportedMetadata('unreconciled_corporate_l1d_tree_total')
         footer.append(_number(reported[field], 0, locale=locale))
         evidence(reported[field], ['L1dTreeTotalRow', field], {'table': 'L1-D/tree', 'footer': 0},
