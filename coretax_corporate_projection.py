@@ -2665,7 +2665,8 @@ def project_l2_owner(form, *, tax_type, locale, country_labels, position_labels)
     if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict)
             or not isinstance(country_labels, dict) or not isinstance(position_labels, dict)):
         raise _UnsupportedMetadata('unsupported_corporate_l2_owner_structure')
-    if set(form) != {L2_SHAREHOLDERS, L2_AFFILIATES, *L2_TOTALS}:
+    if (set(form) - {L2_SHAREHOLDERS, L2_AFFILIATES, *L2_TOTALS}
+            or not {L2_SHAREHOLDERS, *L2_TOTALS} <= set(form)):
         raise _UnsupportedMetadata('unsupported_corporate_l2_owner_shape')
     columns = (
         ('Name', 'Address', 'CountryCode', 'TIN', 'Position', 'PaidInCapital',
@@ -2676,7 +2677,8 @@ def project_l2_owner(form, *, tax_type, locale, country_labels, position_labels)
     for block, (body_key, headers, spans) in enumerate((
             (L2_SHAREHOLDERS, L2_SHAREHOLDER_HEADERS, L2_SHAREHOLDER_SPANS),
             (L2_AFFILIATES, L2_AFFILIATE_HEADERS, L2_AFFILIATE_SPANS))):
-        body = [] if form[body_key] is None else form[body_key]
+        value = form.get(body_key)
+        body = [] if value is None else value
         if not isinstance(body, list) or len(body) > 10000:
             raise _UnsupportedMetadata('unsupported_corporate_l2_owner_body')
         rows, operands = [], {}
