@@ -1580,7 +1580,26 @@ return for Python Stop checks before another read; Stop and expiration still
 take priority before data acceptance, with no retry of a dispatched click.
 A source or time inconsistency stays PARTIAL, and unproven live throughput
 must not be described as improved. This fusion does not affect <=250 DOM
-cursor paths or native JSON selection. Diagnostics use the fixed cursor_turn
+cursor paths or native JSON selection.
+
+When the same owner-bound 500-row pilot label read also proves that the
+exact enabled-First selector is absent, the original separate First lookup
+may be omitted. A positive or missing proof retains the original Python
+First lookup, guarded click and Stop path. Before accepting any initial
+rows on the negative proof, reuse the existing table snapshot RPC to
+atomically recheck the *same held* paginator owner, the exact enabled-First
+selector (must remain absent) and unchanged admitted page-size label.
+Any change must fail closed, not infer first-page state or issue a click.
+Never apply this optimization to <=250 row-cap tables or native JSON.
+
+For the fused cursor, record only closed-category readiness outcomes
+(ready, late_state, pending_overlay, pending_settle, refused, budget,
+idle_timeout, not_advanced or unavailable) on existing passive RPC
+events. A pending reply can occur because the global overlay is still
+visible or the existing 180ms settling interval is not complete.
+Do not extend a single renderer Stop-check slice, the 180s table budget,
+the 45s overlay deadline, or the number of browser RPCs for diagnostics.
+The new codes contain no page body, state, source IDs or control text. Diagnostics use the fixed cursor_turn
 stage and measure bundled wall time inclusively, not separate click/snapshot
 durations; do not infer renderer queue time from wall-minus-renderer residual.
 

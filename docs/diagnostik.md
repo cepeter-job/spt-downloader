@@ -408,6 +408,28 @@ RPC `cursor_turn` (termasuk snapshot jika sukses di call tersebut),
 sedangkan `table_dom_ms` bisa mendekati nol. Bandingkan durasi
 wall-clock `cursor_turn`, bukan kedua field secara terpisah.
 Tidak ada klaim peningkatan throughput nyata tanpa live A/B setara.
+
+Untuk 500-row candidate dengan tombol First tidak aktif, pembacaan label
+pilot yang sudah ada juga mengembalikan bukti negatif tombol First pada
+owner yang sama. `table.reset_timing` menampilkan
+`table_first_lookup_source=pilot_absence` jika lookup terpisah dilewati,
+atau `owner_query` jika tetap dilakukan. Sebelum membaca halaman pertama,
+snapshot awal yang sudah ada memeriksa ulang owner yang dipegang, label
+page size, dan absennya tombol First aktif secara atomik; perubahan
+kondisi ditolak, bukan dianggap sebagai halaman pertama. Jalur 250-row,
+First aktif, dan native JSON tetap mengikuti perilaku lama.
+
+Pada event `table.existing_rpc_timing` yang sudah ada,
+`table_cursor_turn_outcome` dan `table_cursor_snapshot_outcome` hanya
+mencatat kategori aman: `ready`, `late_state`, `pending_overlay`,
+`pending_settle`, `refused`, `budget`, `idle_timeout`,
+`not_advanced`, atau `unavailable` sesuai tahap.
+`pending_overlay` berarti overlay global yang diuji readiness belum
+hilang, sedangkan `pending_settle` berarti interval 180 ms belum selesai
+pada batas satu slice. Keduanya bukan bukti pemilik network request
+atau sumber latensi wall/renderer. Tidak ada probe tambahan, body
+JSON, selector, URL, ataupun row data di log. Perubahan ini tidak
+meningkatkan budget 180 detik maupun memanjangkan slice Stop.
 Event memakai ordinal form/tabel, fixed enum
 `table_existing_rpc_stage` dan `table_existing_rpc_outcome`
 (`returned`/`raised`), `duration_ms` (wall-clock Python),
