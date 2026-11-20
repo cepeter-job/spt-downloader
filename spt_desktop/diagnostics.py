@@ -46,6 +46,10 @@ EVENTS = frozenset({
     'settings.failed', 'checkpoint.reused', 'auth.state', 'auth.result', 'auth.request_blocked',
     'catalog.checkpoint', 'catalog.read', 'catalog.validation', 'capture.panel_timeout', 'search.result',
 })
+# Fixed corporate sheet names; the only tokens a missing-forms diagnostic may carry.
+_CORPORATE_FORM_NAMES = frozenset({
+    'Induk', 'L1-B', 'L1-D', 'L2', 'L3', 'L4', 'L6', 'L7', 'L8', 'L9',
+    'L10-A', 'L10-B', 'L10-C', 'L10-D', 'L11-A', 'L11-B', 'L11-C'})
 ENUMS = {
     'table_first_page_step': frozenset({
         'pilot_label_lookup', 'pilot_label_text', 'first_overlay_wait', 'first_settle_wait'}),
@@ -325,6 +329,14 @@ def _safe_fields(fields):
     mismatch_count = fields.get('mpn_parent_mismatch_count')
     if type(mismatch_count) is int and 1 <= mismatch_count <= 7:
         result['mpn_parent_mismatch_count'] = mismatch_count
+    # Comma-joined corporate sheet names, drawn only from the fixed FORMS enum.
+    missing_forms = fields.get('corporate_missing_forms')
+    if type(missing_forms) is str:
+        tokens = [token for token in missing_forms.split(',') if token]
+        if (len(tokens) <= len(_CORPORATE_FORM_NAMES)
+                and len(set(tokens)) == len(tokens)
+                and all(token in _CORPORATE_FORM_NAMES for token in tokens)):
+            result['corporate_missing_forms'] = ','.join(tokens)
     readiness_budget = fields.get('mpn_readiness_budget_ms')
     if type(readiness_budget) in (int, float) and 0 <= readiness_budget <= 5000:
         result['mpn_readiness_budget_ms'] = round(readiness_budget, 2)

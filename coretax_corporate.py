@@ -1531,7 +1531,8 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             diagnostics.record('corporate.observe_timing', **fields)
 
     def unavailable(error=None, *, reason=None, l3_reason=None, l3_table_shape=None,
-                    l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None):
+                    l3_extra_layout=None, l3_extra_owner=None, l11a_reason=None,
+                    missing_forms=None):
         # A finite stage and an observed ordinal, never tab text, values,
         # URL, source body or exception message. Does not grant JSON admission.
         # Emit already-measured stage segments so even a late refusal keeps
@@ -1551,6 +1552,7 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
                            corporate_l3_extra_layout=l3_extra_layout,
                            corporate_l3_extra_owner=l3_extra_owner,
                            corporate_l11a_reason=(l11a_reason or 'observation_error') if stage == 'l11a' else None,
+                           corporate_missing_forms=missing_forms,
                            error=error)
         return None
     _check_cancel(check_cancel)
@@ -1929,9 +1931,10 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             # reviewed build when its native tab inventory is incomplete.
             # Other asset builds need their own reviewed inventory before
             # their approved pin can adopt this completeness contract.
-            if digest == CIT_SOURCE_SHA256 and (
-                    set(FORMS) - {'L1-B', 'L8'} - names):
-                return unavailable(reason='incomplete_coverage')
+            missing = set(FORMS) - {'L1-B', 'L8'} - names
+            if digest == CIT_SOURCE_SHA256 and missing:
+                return unavailable(reason='incomplete_coverage',
+                                   missing_forms=','.join(sorted(missing)))
             # Only L1-B and L8 are reviewed as legitimately absent.
             # Their path-only bindings remain strictly null/missing-inert.
             for absent in ('L1-B', 'L8'):

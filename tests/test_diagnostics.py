@@ -34,6 +34,28 @@ def test_renderer_timing_schema_keeps_bounded_numbers_and_rounds(field, tmp_path
     assert [row.get(field) for row in events] == [0, 1, 1.23, 604_800_000]
 
 
+def test_corporate_missing_forms_keeps_only_fixed_sheet_names(tmp_path):
+    d = diagnostics()
+    with d.session(tmp_path, 'worker') as log:
+        d.record('corporate.observe_unavailable', level='WARNING',
+                 corporate_observer_stage='grid', form_ordinal=10,
+                 corporate_refusal_reason='incomplete_coverage',
+                 corporate_missing_forms='L10-C,L10-D,L6,L11-B')
+        # A foreign token, a duplicate, or free text must drop the whole field.
+        d.record('corporate.observe_unavailable', level='WARNING',
+                 corporate_observer_stage='grid', form_ordinal=10,
+                 corporate_refusal_reason='incomplete_coverage',
+                 corporate_missing_forms='L6,EVIL,<script>')
+        d.record('corporate.observe_unavailable', level='WARNING',
+                 corporate_observer_stage='grid', form_ordinal=10,
+                 corporate_refusal_reason='incomplete_coverage',
+                 corporate_missing_forms='L6,L6')
+        assert log.flush()
+    events = [row for row in records(tmp_path) if row['event'] == 'corporate.observe_unavailable']
+    assert [row.get('corporate_missing_forms') for row in events] == [
+        'L10-C,L10-D,L6,L11-B', None, None]
+
+
 @pytest.mark.parametrize('field', ['table_advance_renderer_ms', 'table_dom_renderer_ms'])
 def test_renderer_timing_schema_drops_invalid_private_values_without_coercion(field, tmp_path):
     d = diagnostics()
