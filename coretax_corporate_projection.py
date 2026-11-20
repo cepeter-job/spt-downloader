@@ -1130,6 +1130,19 @@ def _l11b_exact(value):
     return amount
 
 
+def _l11b_quarter(value):
+    """EBITDA (25%) is ebitda * 0.25 in binary64; a non-multiple-of-4 EBITDA
+    leaves a .25/.5/.75 fraction. Admit exactly 2 decimals, reject more."""
+    if type(value) is not _CorporateNumber:
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_type')
+    number = _decimal(value)
+    if abs(number) > _MAX_INTEGER or number != number.quantize(Decimal('0.01')):
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_amount_precision')
+    if number == 0 and number.is_signed():
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_signed_zero')
+    return number
+
+
 def _l11b_average(value):
     """Saved row Average is a computed mean, not a rupiah control.
 
@@ -1173,9 +1186,9 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
     numbers = [0 if form[name] is None else _l11b_exact(form[name])
                for name, _ in L11B_FIELDS]
     ebitda = _l11b_add(_l11b_add(numbers[0], numbers[1]), numbers[2])
-    quarter = ebitda // 4  # binary64 multiplication by .25 is exact in this bound
+    quarter = Decimal(ebitda) / 4  # binary64 multiplication by .25 is exact in this bound
     quarter_null = form['Ebitda25'] is None
-    if (quarter != 0 if quarter_null else _l11b_exact(form['Ebitda25']) != quarter):
+    if (quarter != 0 if quarter_null else _l11b_quarter(form['Ebitda25']) != quarter):
         raise _UnsupportedMetadata('unverified_corporate_l11b_quarter_hydration')
     if type(part_ii) is not bool or part_ii != (numbers[3] > quarter or ebitda <= 0):
         raise _UnsupportedMetadata('unverified_corporate_l11b_conditional')

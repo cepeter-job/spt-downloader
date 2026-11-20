@@ -248,13 +248,17 @@ def test_hydrated_saved_workbook_keeps_unrounded_der_references_and_partial_resu
         resume.close()
 
 
-@pytest.mark.parametrize('commercial,quarter', [('-200004', '-1'), ('-200001', '-1'), ('-200000', '0')])
-def test_nonpositive_ebitda_uses_floor_not_truncation(commercial, quarter):
+@pytest.mark.parametrize('commercial,quarter,display', [
+    ('-200004', '-1', '-1'), ('-200001', '-0.25', '0'), ('-200000', '0', '0')])
+def test_nonpositive_ebitda_uses_exact_quarter_product(commercial, quarter, display):
+    # The portal stores Ebitda25 = Ebitda * 0.25 exactly (binary64), so a
+    # non-multiple-of-4 EBITDA leaves a .25/.5/.75 fraction; the cell renders
+    # at 0 decimals. A whole-rupiah floor would reject the real submitted value.
     source = populated(CommercialNettIncome=Number(commercial), IncomeTaxExpense=Number('0'),
                        BorrowingCostExpense=Number('0'), Ebitda25=Number(quarter))
     result = project(source)
     assert result['tables'][0]['name'] == 'L11-B/debt'
-    assert result['fields'][-1]['value'] == quarter
+    assert result['fields'][-1]['value'] == display
 
 
 def test_exact_quarter_boundary_hides_part_ii():
