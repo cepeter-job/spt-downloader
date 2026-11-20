@@ -197,7 +197,7 @@ ENUMS = {
         'enumeration_unavailable', 'enumeration_error', 'database_missing', 'store_missing',
         'record_missing', 'record_identity', 'open_blocked', 'open_error', 'upgrade_refused',
         'version_changed', 'read_error', 'projection_error', 'read_timeout', 'evaluation_error'}),
-    'source_requested': frozenset({'dom', 'json-first'}),
+    'source_requested': frozenset({'dom', 'json-first', 'json-only'}),
     'source_used': frozenset({'dom', 'json', 'none'}),
     'source_reason': frozenset({'dom_requested', 'native_verified', 'capture_incomplete',
         'adapter_ineligible', 'coverage_incomplete', 'forms_unavailable', 'unsupported_tax', 'checkpoint_reuse'}),

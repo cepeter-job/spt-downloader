@@ -38,7 +38,7 @@ def test_legacy_and_consumer_validator_names_keep_one_object():
                for module in (coretax_browser, coretax_resume, app, controller, worker))
 
 
-@pytest.mark.parametrize('value', ['dom', 'json-first'])
+@pytest.mark.parametrize('value', ['dom', 'json-first', 'json-only'])
 def test_literal_mode_returns_the_original_string(value):
     from coretax_json import validate_detail_source
 
@@ -51,7 +51,7 @@ def test_invalid_mode_retains_the_exact_error(value):
 
     with pytest.raises(ValueError) as error:
         validate_detail_source(value)
-    assert str(error.value) == 'Detail source must be dom or json-first.'
+    assert str(error.value) == 'Detail source must be dom, json-first or json-only.'
 
 
 def test_validator_refuses_subclasses_and_coercion_without_using_them():
@@ -68,7 +68,7 @@ def test_validator_refuses_subclasses_and_coercion_without_using_them():
             raise AssertionError('Mode must not compare an object')
 
     for value in (UntrustedString('dom'), Untrusted()):
-        with pytest.raises(ValueError, match='^Detail source must be dom or json-first\\.$'):
+        with pytest.raises(ValueError, match='^Detail source must be dom, json-first or json-only\\.$'):
             validate_detail_source(value)
 
 

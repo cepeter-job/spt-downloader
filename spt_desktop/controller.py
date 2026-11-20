@@ -93,6 +93,8 @@ class JobController:
     def start(self,npwp,year,browser='msedge',headless=True,*,detail_source='dom',account=''):
         if self.active:raise RuntimeError('Pekerjaan masih berjalan.')
         validate_detail_source(detail_source)
+        if detail_source == 'json-only':
+            raise ValueError('json-only is a Corporate CLI-only mode')
         npwp,year=validate_job_scope(npwp,year)
         if not isinstance(account,str) or (account and (not account.strip() or len(account)>256 or '\0' in account)):
             raise ValueError('Akun login tidak valid; simpan ulang Pengaturan.')

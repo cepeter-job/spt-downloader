@@ -8,7 +8,8 @@ from coretax import _select_corporate_cli_scope
 from coretax_resume import load_resume_inventory
 
 
-def test_corporate_scope_persists_only_matching_record_ids(tmp_path):
+@pytest.mark.parametrize('mode', ['dom', 'json-only'])
+def test_corporate_scope_persists_only_matching_record_ids(tmp_path, mode):
     inventory = {
         'npwp': '0000000000000001', 'year': 2025, 'year_basis': 'period',
         'records': [
@@ -22,13 +23,13 @@ def test_corporate_scope_persists_only_matching_record_ids(tmp_path):
         'scope_description': 'Synthetic inventory', 'complete': False,
     }
     (tmp_path / 'inventory.json').write_text(json.dumps(inventory), encoding='utf-8')
-    chosen = _select_corporate_cli_scope(inventory, tmp_path, detail_source='dom')
+    chosen = _select_corporate_cli_scope(inventory, tmp_path, detail_source=mode)
     assert [r['record_id'] for r in chosen['records']] == ['fake-2']
     assert chosen['selection']['inventory_count'] == 3
     assert chosen['cli_detail_scope'] == 'spt-badan-only'
     assert 'mpn' not in chosen
-    resumed, source = load_resume_inventory(tmp_path, detail_source='dom')
-    assert source == 'dom'
+    resumed, source = load_resume_inventory(tmp_path, detail_source=mode)
+    assert source == mode
     assert [r['record_id'] for r in resumed['records']] == ['fake-2']
     with pytest.raises(ValueError):
         load_resume_inventory(tmp_path, detail_source='json-first')
@@ -42,7 +43,8 @@ def test_no_corporate_candidate_refuses_to_select(tmp_path):
     assert not (tmp_path / 'selection.json').exists()
 
 
-def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch):
+@pytest.mark.parametrize('mode', ['dom', 'json-only'])
+def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch, mode):
     from types import SimpleNamespace
     import coretax
 
@@ -58,6 +60,7 @@ def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch):
     }
     output = tmp_path / 'result'
     selected_kinds = []
+    captured_modes = []
 
     def make_inventory(page, npwp, year, basis, folder, **kwargs):
         Path(folder).mkdir(parents=True, exist_ok=True)
@@ -65,6 +68,7 @@ def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch):
         return inv
 
     def make_details(page, run, folder, **kwargs):
+        captured_modes.append(kwargs['detail_source'])
         selected_kinds.extend(r['meta']['Jenis Pajak'] for r in run['records'])
         run['records'][0]['capture_complete'] = True
         run['complete'] = True
@@ -98,7 +102,7 @@ def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch):
     monkeypatch.setattr(coretax, 'save_output', saved)
     code = coretax._main(['--npwp', inv['npwp'], '--year', '2025',
                           '--output', str(output), '--spt-badan-only',
-                          '--non-interactive'])
+                          '--detail-source', mode, '--non-interactive'])
     assert code == 0
     assert selected_kinds == ['PPh Badan']
     assert (output / 'selection.json').exists()
@@ -106,6 +110,7 @@ def test_cli_runs_only_corporate_details_and_never_mpn(tmp_path, monkeypatch):
     assert coretax._main(['--resume', str(output), '--spt-badan-only',
                           '--non-interactive']) == 0
     assert selected_kinds == ['PPh Badan', 'PPh Badan']
+    assert captured_modes == [mode, mode]
     # A CLI resume that omits the explicit subset opt-in must never widen.
     with pytest.raises(SystemExit, match='2'):
         coretax._main(['--resume', str(output), '--non-interactive'])
