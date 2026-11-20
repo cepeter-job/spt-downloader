@@ -840,7 +840,7 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
                 new Promise((_, reject) => setTimeout(
                     () => reject(new Error('reference-timeout')), 8000))])))''',
             missing)
-    except Exception:
+    except Exception:  # nosec B110 - Bounded reacquisition is best effort; a failed/cancelled fetch leaves the catalog absent and the caller still refuses.
         pass
     _check_cancel(check_cancel)
     return capture.request_observations()
