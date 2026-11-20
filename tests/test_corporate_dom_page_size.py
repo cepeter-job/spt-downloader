@@ -965,8 +965,8 @@ def test_passive_large_rpc_timing_records_existing_calls_without_an_extra_rpc(
     rows = [r for r in records(tmp_path) if r['event'] == 'table.existing_rpc_timing']
     assert 4 <= len(rows) <= driver.PASSIVE_RPC_MAX_EVENTS_PER_TABLE
     assert {'pilot_label_lookup', 'previous_lookup', 'previous_limit_lookup',
-            'initial_snapshot', 'cursor_init', 'cursor_advance', 'cursor_poll',
-            'cursor_snapshot'} <= {r['table_existing_rpc_stage'] for r in rows}
+            'initial_snapshot', 'cursor_init', 'cursor_turn'} <= {
+                r['table_existing_rpc_stage'] for r in rows}
     assert all(r['table_existing_rpc_outcome'] == 'returned' for r in rows)
     assert all(r['form_ordinal'] == 1 and r['table_ordinal'] == 3 for r in rows)
     assert all(r['duration_ms'] >= 0 and r['table_rpc_thread_cpu_ms'] >= 0

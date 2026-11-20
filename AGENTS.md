@@ -1568,6 +1568,22 @@ final page retains prior verified rows as PARTIAL even if its browser snapshot
 finished in time; source-count equality cannot override the host deadline.
 RPC reduction alone is not build-matched live speed or completion acceptance.
 
+For the L3-B 500-row candidate only, the guarded owned cursor may bundle one
+authorized Next action, a state-change observation (up to 850ms in one browser
+slice), and the existing verified owned snapshot in a single RPC. This is
+not an alternative source, replay or permission to take multiple Next actions:
+the exact page-state set, unique original p-table/Document/route, click guard,
+overlay/180ms settling, source count and fixed 180s browser/host deadlines
+remain authoritative. If state has not changed within the slice, resume the
+existing Python state poll then owned snapshot. Pending overlay snapshots
+return for Python Stop checks before another read; Stop and expiration still
+take priority before data acceptance, with no retry of a dispatched click.
+A source or time inconsistency stays PARTIAL, and unproven live throughput
+must not be described as improved. This fusion does not affect <=250 DOM
+cursor paths or native JSON selection. Diagnostics use the fixed cursor_turn
+stage and measure bundled wall time inclusively, not separate click/snapshot
+durations; do not infer renderer queue time from wall-minus-renderer residual.
+
 The source-proven MPN transaction-date Clear date uses the same5000ms maximum
 actual dispatch timeout as Search, always within preparation's original45s
 deadline. Trial-only readiness retries remain separate from the single actual

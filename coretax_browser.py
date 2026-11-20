@@ -441,6 +441,37 @@ TABLE_VERIFIED_JS = r'''async (owner, cursor) => {
  return {data,state};
 }'''.replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS).replace('CAPTURE_TABLE', TABLE_JS).replace('CAPTURE_STATE', STATE_JS)
 
+# Large Corporate tables: one guarded browser round-trip can contain the
+# inspected Next click, page-state transition and owned atomic snapshot.
+# If the state has not changed within one bounded renderer slice, resume the
+# original Python poll/read path. A returned snapshot never bypasses Stop,
+# ownership, source identity or the total table budget.
+TABLE_CURSOR_TURN_JS = r'''async (cursor, options) => {
+ const started=performance.now();
+ const advance=(ADVANCE)(cursor,options);
+ const done=(snapshot)=>({
+   ...advance, snapshot, turn_renderer_ms:performance.now()-started
+ });
+ if(advance.status!=='advanced')
+   return {...advance,turn_renderer_ms:performance.now()-started};
+ const owner=cursor.owner;
+ const stopAt=Math.min(cursor.deadline,performance.now()+850);
+ while(true){
+   const refusal=(CHECK_OWNER)(cursor);
+   if(refusal) return done({refusal});
+   const now=performance.now();
+   if(now>=cursor.deadline) return done({budget:true});
+   if((READ_STATE)(owner)!==cursor.pending) break;
+   if(now>=stopAt) return done(null); // Python's original state poll follows.
+   await new Promise(resolve=>setTimeout(resolve,Math.min(120,stopAt-now)));
+ }
+ return done(await (VERIFIED)(owner,cursor));
+}'''.replace('ADVANCE', TABLE_CURSOR_ADVANCE_JS
+).replace('CHECK_OWNER', TABLE_CURSOR_OWNER_JS
+).replace('READ_STATE', STATE_JS
+).replace('VERIFIED', TABLE_VERIFIED_JS)
+
+
 
 class CaptureCancelled(KeyboardInterrupt):
     """Lewati penanganan Exception per SPT agar Stop tetap menghasilkan PARTIAL."""
@@ -668,7 +699,8 @@ PASSIVE_RPC_MAX_EVENTS_PER_TABLE = 48
 # The caps sample the original pilot label and first genuine Previous lookup,
 # plus up to three original advance/snapshot calls each.
 HOST_CPU_STAGE_SAMPLES = {'pilot_label_lookup': 1, 'previous_lookup': 1,
-                          'cursor_advance': 3, 'cursor_snapshot': 3}
+                          'cursor_advance': 3, 'cursor_snapshot': 3,
+                          'cursor_turn': 3}
 
 
 def _host_cpu_snapshot():
@@ -987,15 +1019,26 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
     while True:
         _check_cancel(check_cancel)
         advance_renderer_ms = None
+        embedded_snapshot = None
         if cursor is not None:
             page_started = _diagnostic_clock()
             remaining_ms = max(0, (capture_deadline-time.monotonic())*1000)
-            with _timed_existing_rpc('cursor_advance', ordinal, max_page_size,
+            # L3-B's 500-row candidate pays ~15s wall time per browser RPC
+            # in operator logs even when renderer work is <250ms. Try to
+            # capture an already-updated page in the same owner-bound call.
+            # A late state transition falls back to the unchanged poll path.
+            use_turn = max_page_size >= 500
+            stage = 'cursor_turn' if use_turn else 'cursor_advance'
+            with _timed_existing_rpc(stage, ordinal, max_page_size,
                                      passive_rpc_slots, host_cpu_slots) as timing:
-                advance = cursor.evaluate(TABLE_CURSOR_ADVANCE_JS,
-                                          {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
+                advance = cursor.evaluate(
+                    TABLE_CURSOR_TURN_JS if use_turn else TABLE_CURSOR_ADVANCE_JS,
+                    {'remaining_ms': remaining_ms, 'allow': result['pages'] < max_pages})
                 if timing is not None and type(advance) is dict:
-                    timing['renderer_ms'] = advance.get('renderer_ms')
+                    timing['renderer_ms'] = advance.get(
+                        'turn_renderer_ms' if use_turn else 'renderer_ms')
+                if use_turn and type(advance) is dict:
+                    embedded_snapshot = advance.get('snapshot')
             _check_cancel(check_cancel)
             status = advance['status']
             if status == 'done':
@@ -1051,6 +1094,8 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
             page_started = _diagnostic_clock()
             _click_table_paginator(container_handle.query_selector(next_selector), container_handle, check_cancel)
         poll_started = _diagnostic_clock()
+        # On the bundled 500-row path this click time includes the browser's
+        # atomic snapshot when it fits in the same call, not just the click.
         click_ms = (poll_started - page_started) * 1000
         deadline = min(time.monotonic() + 30, capture_deadline)
         try:
@@ -1061,7 +1106,9 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
                         return not cursor.evaluate(TABLE_CURSOR_POLL_JS)
                 return container_handle.evaluate(STATE_JS) == state
 
-            while unchanged():
+            # A bundled snapshot is issued only after the original state
+            # changed. Otherwise the legacy Python poll remains authoritative.
+            while embedded_snapshot is None and unchanged():
                 _check_cancel(check_cancel)
                 if time.monotonic() >= deadline:
                     result['complete'] = False
@@ -1115,11 +1162,16 @@ def _capture_table(page, table, ordinal, max_pages, check_cancel, *, max_page_si
         try:
             # ElementHandle is pinned to the inspected owner, so a replaced
             # table cannot make its original Locator wait for 10 seconds.
-            with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
-                                     passive_rpc_slots, host_cpu_slots) as timing:
-                snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
-                if timing is not None and type(snapshot) is dict:
-                    timing['renderer_ms'] = snapshot.get('renderer_ms')
+            if embedded_snapshot is not None:
+                # Same exact owner/snapshot verification JS was invoked by the
+                # cursor turn. Stop and remaining deadline are checked above.
+                snapshot = embedded_snapshot
+            else:
+                with _timed_existing_rpc('cursor_snapshot', ordinal, max_page_size,
+                                         passive_rpc_slots, host_cpu_slots) as timing:
+                    snapshot = container_handle.evaluate(TABLE_VERIFIED_JS, cursor)
+                    if timing is not None and type(snapshot) is dict:
+                        timing['renderer_ms'] = snapshot.get('renderer_ms')
             while cursor is not None:
                 _check_cancel(check_cancel)
                 if time.monotonic() >= capture_deadline:
