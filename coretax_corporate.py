@@ -1923,20 +1923,24 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
-            # The shipped, hash-pinned 525 build has a CDP-reviewed 15-tab
-            # inventory: all FORMS other than L1-B and L8 must be visible.
-            # An absent required tab with an omitted JSON root would not
-            # produce an uncovered evidence row, so downstream evidence
-            # matching alone cannot prove completeness. Refuse this exact
-            # reviewed build when its native tab inventory is incomplete.
-            # Other asset builds need their own reviewed inventory before
-            # their approved pin can adopt this completeness contract.
-            missing = set(FORMS) - {'L1-B', 'L8'} - names
+            # The shipped, hash-pinned build exposes a tab only for the forms
+            # the return actually carries data for. L1-B, L8 and the
+            # data-conditional sheets below are rendered only when the return
+            # has data for them (confirmed absent from CurrentFormData on a
+            # live return whose prefill omits their root keys), so their
+            # absence is legitimate and must not force a whole-record DOM
+            # fallback. Every other reviewed form must be visible: an absent
+            # required tab with an omitted JSON root would not produce an
+            # uncovered evidence row, so downstream evidence matching alone
+            # cannot prove completeness.
+            data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-D', 'L11-A', 'L11-C'}
+            missing = set(FORMS) - data_conditional - names
             if digest == CIT_SOURCE_SHA256 and missing:
                 return unavailable(reason='incomplete_coverage',
                                    missing_forms=','.join(sorted(missing)))
-            # Only L1-B and L8 are reviewed as legitimately absent.
-            # Their path-only bindings remain strictly null/missing-inert.
+            # Only L1-B and L8 are reviewed as legitimately absent with an
+            # inert path-only binding. Their bindings remain strictly
+            # null/missing-inert.
             for absent in ('L1-B', 'L8'):
                 if absent not in names:
                     names.add(absent)
