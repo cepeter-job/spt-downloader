@@ -122,7 +122,7 @@ def test_candidate_refuses_unproved_display_structure(option, value):
     'question-object', 'too-many-rows'])
 def test_candidate_closed_shape_never_drops_unknown_original_content(defect):
     form = source()
-    if defect == 'missing-root': del form[BODY]
+    if defect == 'missing-root': del form['TotalTransactionValue']
     elif defect == 'extra-root': form['SYNTHETIC_UNKNOWN'] = None
     elif defect == 'null-form': form = None
     elif defect == 'object-body': form[BODY] = {}
@@ -138,6 +138,16 @@ def test_candidate_closed_shape_never_drops_unknown_original_content(defect):
     with pytest.raises(_UnsupportedMetadata):
         helper(form, headers=HEADERS, footer_spans=[], tax_type='ICT_RCIT', locale='id-ID',
                labels={'TRANSACTION_TYPE': {}, 'COUNTRY_CODE': {}})
+
+
+def test_absent_tax_haven_body_projects_empty_table_not_refusal():
+    # No tax-haven transactions -> ListTaxHavenCountry key is omitted entirely;
+    # that is an empty table, not a closed-shape drift (the two totals stay
+    # mandatory and unknown roots still refuse).
+    form = source()
+    del form[BODY]
+    result = project(form)
+    assert result['table']['body_row_count'] == 0
 
 
 @pytest.mark.parametrize('value', [None, '', '0', '1', False, True, Number('0'), Number('1')])

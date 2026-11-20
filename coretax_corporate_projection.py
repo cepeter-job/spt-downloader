@@ -530,12 +530,13 @@ def project_l10c(form, *, headers, footer_spans, tax_type, locale, labels):
             or not isinstance(labels, dict) or set(labels) != {'TRANSACTION_TYPE', 'COUNTRY_CODE'}
             or any(not isinstance(value, dict) for value in labels.values())):
         raise _UnsupportedMetadata('unverified_corporate_l10c_structure')
-    if (not isinstance(form, dict) or set(form) != {L10C_BODY, 'TotalTransactionValue',
+    if (not isinstance(form, dict) or set(form) - {L10C_BODY, 'TotalTransactionValue',
             'DeterminationOfTransactionQuestion'}
+            or not {'TotalTransactionValue', 'DeterminationOfTransactionQuestion'} <= set(form)
             or type(form['TotalTransactionValue']) is not _CorporateNumber
             or type(form['DeterminationOfTransactionQuestion']) not in (bool, str, _CorporateNumber, type(None))):
         raise _UnsupportedMetadata('unsupported_corporate_l10c_source_shape')
-    original_body = form[L10C_BODY]
+    original_body = form.get(L10C_BODY)
     body = [] if original_body is None else original_body
     if (not isinstance(body, list) or len(body) > 10000
             or any(not isinstance(row, dict) or set(row) != set(_L10C_COLUMNS) for row in body)):
@@ -1038,7 +1039,9 @@ def project_l11b(form, *, tax_type, locale, null_defaults=False):
     """
     if tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict):
         raise _UnsupportedMetadata('unsupported_corporate_l11b_structure')
-    if set(form) != L11B_KEYS or type(form['IsDocumentListForm']) is not bool:
+    l11b_optional = {'BorrowingCosts', 'DebtBalanceAverage', 'EquityBalanceAverage'}
+    if (set(form) - L11B_KEYS or not L11B_KEYS - l11b_optional <= set(form)
+            or type(form['IsDocumentListForm']) is not bool):
         raise _UnsupportedMetadata('unsupported_corporate_l11b_source_shape')
     manual = form['IsEbitdaManuallyEdited']
     if not (manual is True or type(manual) is _CorporateNumber and manual == '1'):
@@ -1072,7 +1075,7 @@ def project_l11b(form, *, tax_type, locale, null_defaults=False):
     manual_evidence = ({'path': manual_path, 'type': 'boolean', 'value': manual}
                        if manual is True else _evidence(manual, manual_path))
     evidence.append({**manual_evidence, 'rule': 'exclude-l1-auto-overwrite'})
-    source = form['BorrowingCosts']
+    source = form.get('BorrowingCosts')
     if source is not None and (not isinstance(source, list) or len(source) > 10000):
         raise _UnsupportedMetadata('unsupported_corporate_l11b_cost_body')
     rows = [] if source is None else source
@@ -1194,7 +1197,7 @@ def project_l11b_hydrated(form, *, tax_type, locale, part_ii):
     for index, (key, prefix, text_keys) in enumerate((
             ('DebtBalanceAverage', 'Debt', ('IdentityNumber', 'Name', 'Relationship')),
             ('EquityBalanceAverage', 'Equity', ('TypeOfEquity',)))):
-        source = form[key]
+        source = form.get(key)
         if source is not None and (not isinstance(source, list) or len(source) > 10000):
             raise _UnsupportedMetadata('unsupported_corporate_l11b_month_body')
         rows = [] if source is None else source
@@ -2542,13 +2545,16 @@ def project_l6(form, *, tax_type, locale):
     if tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict):
         raise _UnsupportedMetadata('unsupported_corporate_l6_structure')
     expected = {name for name, _ in L6_FIELDS} | set(L6_EDIT_FLAGS)
-    if set(form) != expected:
+    if set(form) - expected or not expected - {'FiscalLossCompensation'} <= set(form):
         raise _UnsupportedMetadata('unsupported_corporate_l6_source_shape')
     if any(type(form[name]) is not bool for name in L6_EDIT_FLAGS):
         raise _UnsupportedMetadata('unsupported_corporate_l6_edit_flag')
     amounts = {}
     for name, _ in L6_FIELDS:
-        value = form[name]
+        value = form.get(name)
+        if name == 'FiscalLossCompensation' and value is None:
+            amounts[name] = Decimal(0)
+            continue
         if type(value) is not _CorporateNumber:
             raise _UnsupportedMetadata('unsupported_corporate_l6_amount_type')
         number = _decimal(value)
@@ -2567,9 +2573,10 @@ def project_l6(form, *, tax_type, locale):
         raise _UnsupportedMetadata('unreconciled_corporate_l6_self_paid_tax')
     fields, provenance = [], []
     for name, caption in L6_FIELDS:
+        value = form.get(name)
         fields.append({'group': '', 'field': name, 'label': caption,
-                       'value': _number(form[name], 0, locale=locale)})
-        entry = _evidence(form[name], [L6_ROOT, name])
+                       'value': '0' if value is None else _number(value, 0, locale=locale)})
+        entry = _evidence(value, [L6_ROOT, name])
         entry.update(rule='literal-installment-control',
                      destination={'form': 'L6', 'field': name})
         provenance.append(entry)
@@ -4023,7 +4030,8 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
     spans = [[[1, 4, 1, 1, 2, 1]], [[4, 1, 1, 2]] * 3]
     if (tax_type != 'ICT_RCIT' or locale != 'id-ID' or timezone_name != 'Asia/Jakarta'
             or headers != _L3_HEADERS or footer_spans != spans
-            or not isinstance(form, dict) or set(form) != {'IncomeOverseas', *_L3_SCALARS}
+            or not isinstance(form, dict) or set(form) - {'IncomeOverseas', *_L3_SCALARS}
+            or not ({'IncomeOverseas'} | set(_L3_SCALARS) - {'OverseasRefundPreviousYear'}) <= set(form)
             or not isinstance(labels, dict) or set(labels) != set(_L3_LABELS)
             or any(not isinstance(labels[k], dict) for k in _L3_LABELS)):
         raise _UnsupportedMetadata('unverified_corporate_l3_source_structure')
@@ -4061,8 +4069,9 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
         return _number(value, fraction, locale=locale)
 
     for field in _L3_SCALARS:
-        _l3_integer(form[field], nullish=True)
-        evidence(form[field], [_L3_ROOT, field], {'control': field})
+        value = form.get(field)
+        _l3_integer(value, nullish=True)
+        evidence(value, [_L3_ROOT, field], {'control': field})
     sums = []
     for field, reported in zip(('NetIncome', 'PayableRupiah', 'CreditCalculated'), _L3_SCALARS[:3]):
         if any(not isinstance(row, dict) or set(row) != set(_L3_A_FIELDS) for row in overseas):
@@ -4071,7 +4080,7 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
         if _l3_integer(form[reported]) != total:
             raise _UnsupportedMetadata('unreconciled_corporate_l3_overseas_total')
         sums.append(total)
-    foreign_credit = _l3_sum([sums[2], -_l3_integer(form['OverseasRefundPreviousYear'], nullish=True)])
+    foreign_credit = _l3_sum([sums[2], -_l3_integer(form.get('OverseasRefundPreviousYear'), nullish=True)])
     for index, row in enumerate(overseas):
         arows.append([str(index + 1), text(row['Name']), label(row['CountryCode'], 'COUNTRY_CODE', offline=True),
             _l3_date(row['DateOfTransaction'], offline=True), label(row['IncomeCode'], 'FOREIGN_INCOME_TYPE_CIT', offline=True),
@@ -4149,7 +4158,7 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
         for index, row in enumerate(overseas):
             evidence(row['CreditCalculated'], [_L3_ROOT, 'IncomeOverseas', index, 'CreditCalculated'],
                      destination, rule='credit-sum-minus-refund')
-        evidence(form['OverseasRefundPreviousYear'], [_L3_ROOT, 'OverseasRefundPreviousYear'],
+        evidence(form.get('OverseasRefundPreviousYear'), [_L3_ROOT, 'OverseasRefundPreviousYear'],
                  destination, rule='credit-sum-minus-refund')
         if footer_index == 2:
             evidence(footer_payload['IncomeTax'], ['IncomeTax'], destination, source='footer',
@@ -4166,7 +4175,8 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
         tables.append({'name': ('L3/overseas', 'L3/domestic')[index], 'headers': list(headers[index]),
             'rows': body + footer, 'footer': footer, 'footer_spans': deepcopy(spans[index]),
             'body_row_count': len(body), 'source_total': len(body), 'complete': True})
-    fields = [{'field': field, 'label': caption, 'value': '' if form[field] is None else number(form[field]),
+    fields = [{'field': field, 'label': caption,
+               'value': ('' if form.get(field) is None else number(form.get(field))),
                'group': 'A. PENGHASILAN DARI LUAR NEGERI'}
               for field, caption in zip(_L3_SCALARS[3:5], _L3_CAPTIONS)]
     return {'tables': tables, 'fields': fields, 'provenance': provenance}

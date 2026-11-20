@@ -65,6 +65,16 @@ def project(form, pages, footer, *, footer_wire=None, **overrides):
         assert (captured, observed_pages, captured_footer, options) == before
 
 
+def test_absent_overseas_refund_projects_as_zero_not_refusal():
+    # No previous-year overseas refund -> OverseasRefundPreviousYear key is
+    # omitted; it reads as 0 (empty control), not a closed-shape drift.
+    form, pages, footer = inputs()
+    del form['OverseasRefundPreviousYear']
+    result = project(form, pages, footer)
+    a, b = result['tables']
+    assert [a['body_row_count'], b['body_row_count']] == [2, 12]
+
+
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():
     form, pages, footer = inputs()
     before = deepcopy((form, pages, footer))
@@ -164,7 +174,7 @@ def test_unproved_l3_source_arithmetic_pages_or_metadata_remains_unsupported(def
     elif defect == 'span':
         overrides['footer_spans'] = [[[4, 1, 1, 2, 1]], SPANS[1]]
     elif defect == 'missing-root-field':
-        del form['OverseasRefundPreviousYear']
+        del form['OverseasTotalNetIncome']
     elif defect == 'missing-overseas':
         del form['IncomeOverseas']
     elif defect in ('string-money', 'bool-money', 'fraction-money', 'unsafe-money'):
