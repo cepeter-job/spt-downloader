@@ -106,14 +106,15 @@ def test_l3b_extended_rows_admit_reviewed_metadata_and_exact_footer_usd_lexeme()
 
 
 def test_l3b_sixty_row_paged_shape_with_reviewed_metadata():
-    # The live L3-B grid is 60 rows across six pages of ten; every row carries
-    # the reviewed extended metadata and the footer keeps the exact USD lexeme.
+    # The live L3-B grid is 60 distinct rows across six pages of ten; every row
+    # carries the reviewed extended metadata. Verify per-page provenance (last
+    # page / last row evidence) and the exact USD footer lexeme.
     form, pages, footer = inputs()
     base = pages[0]['data'][0]
     rows = []
-    for _ in range(60):
+    for n in range(60):
         row = deepcopy(base)
-        row.update({'IncomeTaxUsd': 0, 'IsManually': True,
+        row.update({'RecordId': 'ROW-%02d' % n, 'IncomeTaxUsd': 0, 'IsManually': True,
                     'TableSource': None, 'Index': 0, 'Action': None})
         rows.append(row)
     pages = [{'offset': i, 'rows': 10, 'total': 60, 'data': rows[i:i + 10]}
@@ -123,6 +124,18 @@ def test_l3b_sixty_row_paged_shape_with_reviewed_metadata():
     a, b = result['tables']
     assert a['body_row_count'] == 2
     assert b['body_row_count'] == 60
+    # Distinct row keys are preserved into the per-page grid provenance.
+    row_ids = {e['value'] for e in result['provenance']
+               if e.get('source') == 'grid' and e.get('path', [])[-1:] == ['RecordId']}
+    assert row_ids == {'ROW-%02d' % n for n in range(60)}
+    # The last page (index 5) carries the last row (ROW-59).
+    assert any(e.get('source') == 'grid' and e.get('page_index') == 5
+               and e.get('path') == ['Data', 9, 'RecordId'] and e.get('value') == 'ROW-59'
+               for e in result['provenance'])
+    # The footer USD total keeps the exact 8-decimal lexeme, not a rounded form.
+    usd = [p for p in result['provenance']
+           if p.get('path') == ['IncomeTaxUsd'] and p.get('source') == 'footer']
+    assert usd and usd[0]['value'] == '10736.41742465'
 
 
 def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
