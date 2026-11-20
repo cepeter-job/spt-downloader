@@ -49,6 +49,8 @@ def run_job(npwp,year,root,job_id,browser,headless,emit,cancelled,*,requests=Non
               'percent':progress.percent,'message':message})
     try:
         validate_detail_source(detail_source)
+        if detail_source == 'json-only':
+            raise ValueError('json-only is a Corporate CLI-only mode')
         if account is not None and (not isinstance(account,str) or (account and (not account.strip() or len(account)>256 or '\0' in account))):
             raise ValueError('Invalid login account')
         npwp,year=validate_scope(npwp,year)
