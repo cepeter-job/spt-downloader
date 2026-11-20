@@ -210,14 +210,27 @@ def test_negative_main_does_not_borrow_legacy_or_coercive_selection_proof(key, v
     assert not result['eligible'] and result['sections'] == []
 
 
-@pytest.mark.parametrize('key', ['IsIncomeUnder', 'IsIncomeSolely'])
+@pytest.mark.parametrize('key', ['IsIncomeUnder'])
 def test_negative_main_requires_explicit_original_reset_predicates(key):
+    # IsIncomeUnder must be present and '0' (the reset predicate); deleting it
+    # loses the proof and refuses.
     value = source(NetIncomeBeforeTax=-1234)
     current = json.loads(value['Payload']['CurrentFormData'])
     del current['MainFormData'][key]
     value['Payload']['CurrentFormData'] = corpus.wire(current)
     result = adapt(packet(value))
     assert not result['eligible'] and result['sections'] == []
+
+
+def test_negative_main_tolerates_absent_is_income_solely():
+    # A submitted return with a negative main whose IsIncomeSolely key is simply
+    # absent (not solely-set) is valid; absence is the same as a null flag.
+    value = source(NetIncomeBeforeTax=-1234)
+    current = json.loads(value['Payload']['CurrentFormData'])
+    del current['MainFormData']['IsIncomeSolely']
+    value['Payload']['CurrentFormData'] = corpus.wire(current)
+    result = adapt(packet(value))
+    assert result['eligible'], result['reason']
 
 
 def test_mixed_component_attempt_remains_fatal_before_projection():
