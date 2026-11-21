@@ -499,7 +499,6 @@ def test_two_return_l2_reference_reacquired_with_populated_catalog(browser, tmp_
     rid1, rid2 = '00000000-0000-4000-8000-000000000021', '00000000-0000-4000-8000-000000000022'
     first = Fixture(browser, monkeypatch, model='Normal', record_id=rid1,
                     rows=[rid1, rid2], position='SYN_REL_A', l3=True)
-    bodies1, log1 = None, None
     try:
         with DetailJsonCapture(first.context, first.page, first.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(first, capture)
