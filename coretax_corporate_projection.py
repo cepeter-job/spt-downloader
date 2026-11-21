@@ -3982,6 +3982,8 @@ _L3_B_METADATA = ('IncomeTaxUsd', 'IsManually', 'TableSource', 'Index', 'Action'
 # The pinned L3-B grid emits rows from these two source grids (plus manual rows
 # with a null TableSource). Any other TableSource is unproved and refuses.
 _L3_B_TABLE_SOURCES = frozenset((None, 'EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'))
+# The two pinned source grids a non-manual (grid-sourced) row may name.
+_L3_B_GRID_SOURCES = frozenset(('EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'))
 _L3_B_ROW_FIELDS = frozenset(('RecordId', *_L3_B_FIELDS))
 _L3_B_EXTENDED_FIELDS = _L3_B_ROW_FIELDS | frozenset(_L3_B_METADATA)
 _L3_LABELS = ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')
@@ -4162,21 +4164,31 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                 raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             extended = set(row) == _L3_B_EXTENDED_FIELDS
             if extended:
-                # The pinned grid emits both manual rows (IsManually true, null
-                # TableSource) and grid-sourced rows (IsManually false, a known
-                # TableSource) with a bounded nonnegative USD lexeme. Admit both
-                # proved variants; refuse unknown/inconsistent combinations,
-                # malformed types, nonzero Index, non-null Action and unproved
-                # numeric values.
+                # The pinned grid emits two proved variants: manual rows
+                # (IsManually true, a null TableSource) and grid-sourced rows
+                # (IsManually false, one of the two pinned source grids) with a
+                # bounded nonnegative USD lexeme. Admit exactly those; the
+                # cross-product (a manual row naming a grid source, or a
+                # grid-sourced row with a null source), negative USD, nonzero
+                # Index, non-null Action and malformed/unproved values are
+                # inconsistent and refuse.
                 try:
-                    _l3_usd_exact(row['IncomeTaxUsd'])
+                    usd = _l3_usd_exact(row['IncomeTaxUsd'])
                     index_ok = _l3_integer(row['Index']) == 0
                 except _UnsupportedMetadata:
                     raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row') from None
                 if (type(row['IsManually']) is not bool
                         or type(row['TableSource']) not in (str, type(None))
                         or row['TableSource'] not in _L3_B_TABLE_SOURCES
-                        or row['Action'] is not None or not index_ok):
+                        or row['Action'] is not None or not index_ok
+                        or usd < 0):
+                    raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
+                if row['IsManually'] is True:
+                    # A manual row has no grid source.
+                    if row['TableSource'] is not None:
+                        raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
+                elif row['TableSource'] not in _L3_B_GRID_SOURCES:
+                    # A grid-sourced row names one of the two pinned source grids.
                     raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             text(row['RecordId'])
             brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),

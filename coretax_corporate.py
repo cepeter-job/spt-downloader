@@ -823,10 +823,11 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
     caches the catalogs). Reacquire only the missing allowlisted ones with a
     bounded, cache-busting, same-origin GET on the DETAIL page. An
     AbortController cancels the outstanding fetches on timeout so a late
-    response is never captured; only successful captured responses count, so
-    a failure, timeout or cancellation leaves the catalog absent and the
-    caller refuses. Cancellation is preserved; the provider/locale/route/
-    lifetime proof is unchanged.
+    response is never captured, and the body is read before the timer clears
+    so the completion (not just the header response) is bounded. Only
+    successful captured responses count, so a failure, timeout or cancellation
+    leaves the catalog absent and the caller refuses. Cancellation is
+    preserved; the provider/locale/route/lifetime proof is unchanged.
     """
     from coretax_browser import _check_cancel
     def _observed(items, url):
@@ -845,7 +846,7 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
             return Promise.all(urls.map(u =>
                 fetch(u, {cache: 'reload', credentials: 'include',
                           signal: controller.signal})
-                    .then(r => (r.ok ? r : null))
+                    .then(r => (r.ok ? r.text() : null))
                     .catch(() => null)))
               .then(() => clearTimeout(timer));
         }''',

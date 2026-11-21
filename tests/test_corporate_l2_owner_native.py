@@ -31,9 +31,9 @@ GROUPS = [
 
 
 class Fixture(SpaFixture):
-    def __init__(self, browser, monkeypatch, *, defect=None, oracle=False):
+    def __init__(self, browser, monkeypatch, *, defect=None, oracle=False, model='Normal', context=None):
         self.oracle = oracle
-        super().__init__(browser, monkeypatch, defect=defect)
+        super().__init__(browser, monkeypatch, defect=defect, model=model, context=context)
         monkeypatch.setattr(projection, 'L2_BUILD_DIGESTS', self.pins, raising=False)
         value = corpus.current_form()
         l2 = populated()
@@ -47,9 +47,10 @@ class Fixture(SpaFixture):
         for row in l2['InvestmentList']:
             row['CountryCode'] = 'SYN_COUNTRY_A'
         value['ListOfOwnership'] = wire(l2)
+        model_value = 'NORMAL' if model == 'Normal' else 'AMENDMENT'
         self.raw = corpus.wire({'IsSuccessful': True, 'Payload': {
             'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
-            'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+            'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': model_value,
             'PreviousFormData': None, 'LastSubmittedFormData': None,
             'RelatedTaxpayers': [{'Name': 'SYNTHETIC PREFILL MUST NOT WIN'}],
             'CurrentFormData': corpus.wire(value)}}).encode()
@@ -360,21 +361,26 @@ def test_cached_l2_references_are_reacquired(browser, tmp_path, monkeypatch):
 
 
 def test_two_return_l2_reference_reacquired_with_populated_catalog(browser, tmp_path, monkeypatch):
-    # 1st return: the L2 reference (the nonempty related-person catalog) is
-    # captured. 2nd return (Amendment): the SPA caches the reference (no fresh
+    # 1st return (Normal): the L2 reference (the nonempty related-person
+    # catalog) is captured; the Position label is bound and the record is
+    # eligible. 2nd return (Amendment): the SPA caches the reference (no fresh
     # GET); the bounded re-fetch restores it, so the L2 stays observed and the
-    # Position label is bound across both consecutive returns.
-    first = Fixture(browser, monkeypatch, defect=None)
-    try:
-        with DetailJsonCapture(first.context, first.page, first.record, corpus.SCOPE, tmp_path) as capture:
-            page = open_selected(first, capture)
-            forms = observer.observe_forms(page, first.record, corpus.SCOPE, capture,
-                approved_digest=first.pins[ASSET])
-            assert forms is not None
-            capture.drain()
-    finally:
-        first.close()
-    second = Fixture(browser, monkeypatch, defect='cached-references')
+    # Position label is bound. One context/page is shared so the SPA cache
+    # survives the list/detail/list/detail transitions; the 1st return's SPA
+    # route is replaced by the 2nd return's Amendment route, and custody is
+    # isolated (the 2nd return's capture is fresh — no 1st-return record leak).
+    first = Fixture(browser, monkeypatch, defect=None, model='Normal')
+    with DetailJsonCapture(first.context, first.page, first.record, corpus.SCOPE, tmp_path) as capture:
+        page = open_selected(first, capture)
+        first_forms = observer.observe_forms(page, first.record, corpus.SCOPE, capture,
+            approved_digest=first.pins[ASSET])
+        assert first_forms is not None
+        capture.drain()
+        first_result = adapt_corporate_detail(capture.iter_bodies(), first.record, corpus.SCOPE, first_forms)
+        assert first_result['eligible'], first_result['reason']
+    first.context.unroute('**/*', first.route)
+    second = Fixture(browser, monkeypatch, defect='cached-references', model='Amendment 002',
+                    context=first.context)
     try:
         with DetailJsonCapture(second.context, second.page, second.record, corpus.SCOPE, tmp_path) as capture:
             page = open_selected(second, capture)
@@ -387,5 +393,10 @@ def test_two_return_l2_reference_reacquired_with_populated_catalog(browser, tmp_
             capture.drain()
             result = adapt_corporate_detail(capture.iter_bodies(), second.record, corpus.SCOPE, forms)
             assert result['eligible'], result['reason']
+            # Custody isolation: the 2nd return's capture is fresh — no
+            # 1st-return evidence (record/model) leaks into the 2nd projection.
+            assert second.record['meta']['Model SPT'] != first.record['meta']['Model SPT']
+            assert all(body['context']['record_id'] == second.record['record_id']
+                       for body in capture.iter_bodies())
     finally:
         second.close()

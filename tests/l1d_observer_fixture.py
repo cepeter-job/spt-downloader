@@ -13,13 +13,17 @@ import support_json_corpus as corpus
 
 class Fixture:
     def __init__(self, browser, monkeypatch, *, model='Normal', migrated=False, defect=None,
-                 classification_source='outer', omitted_5322=False, body_layout_defect=None):
+                 classification_source='outer', omitted_5322=False, body_layout_defect=None,
+                 context=None):
         self.record, self.defect = selected(model), defect
         self.omitted_5322, self.body_layout_defect = omitted_5322, body_layout_defect
         self.non_script = next(((url, mode) for label, url in
             (('corporate', ASSET), ('main', MAIN), ('vendor', VENDOR))
             for mode in ('fetch-only', 'preload-only') if defect == label + '-' + mode), None)
-        self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta', service_workers='block')
+        if context is not None:
+            self.context = context
+        else:
+            self.context = browser.new_context(locale='id-ID', timezone_id='Asia/Jakarta', service_workers='block')
         if defect != 'external-context':
             self.context._spt_financial_route_policy = 'service_workers_blocked'
         self.assets = {ASSET: BUILD, MAIN: MAIN_BUILD, VENDOR: VENDOR_BUILD}
