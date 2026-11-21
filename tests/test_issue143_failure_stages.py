@@ -418,15 +418,17 @@ def test_corporate_absent_grid_bearing_tab_binds_nothing(monkeypatch):
     assert 'L3' not in names and 'L4' not in names and 'L11-A' not in names
 
 
-@pytest.mark.parametrize('missing', ['L3', 'L9', 'L10-A'])
+@pytest.mark.parametrize('missing', ['L3', 'L9'])
 def test_pinned_corporate_build_refuses_unseen_required_grid_tab(monkeypatch, missing):
     import coretax_corporate
 
     # A synthetic pin standing in for the reviewed 525 asset: the always-present
-    # (non data-conditional) forms are contractual. L4/L7/L10-D/L11-A/L11-C are
-    # data-conditional and are tolerated as absent when the return lacks them.
+    # (non data-conditional) forms are contractual. L4/L7/L10-A/L10-B/L10-C/
+    # L10-D/L11-A/L11-C are data-conditional and are tolerated as absent when
+    # the return lacks them.
     monkeypatch.setattr(coretax_corporate, 'CIT_SOURCE_SHA256', 'c' * 64)
-    data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-D', 'L11-A', 'L11-C'}
+    data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-A', 'L10-B', 'L10-C',
+                        'L10-D', 'L11-A', 'L11-C'}
     required = [name for name in coretax_corporate.FORMS
                 if name not in data_conditional and name != missing]
     assert required[0] == 'Induk'
@@ -439,17 +441,20 @@ def test_pinned_corporate_build_refuses_unseen_required_grid_tab(monkeypatch, mi
 def test_pinned_corporate_build_accepts_data_conditional_absent_inventory(monkeypatch):
     import coretax_corporate
 
-    # A live return carries data only for these sheets; L4/L7/L10-D/L11-A/L11-C
-    # and L1-B are data-conditional (absent from CurrentFormData) and are
-    # legitimately absent — the pinned build must not force a DOM fallback.
+    # Live returns carry data only for the sheets they render; the
+    # data-conditional sheets (absent from CurrentFormData / not rendered as
+    # tabs) are legitimately absent and must not force a DOM fallback. Two
+    # witnessed compositions: the Normal return missing L4/L7/L10-D/L11-A/
+    # L11-C, and the Amendment return missing L10-A/L10-B/L10-C.
     monkeypatch.setattr(coretax_corporate, 'CIT_SOURCE_SHA256', 'c' * 64)
-    captions = ['Induk', 'L1-D', 'L2', 'L3', 'L6', 'L8', 'L9',
-                'L10-A', 'L10-B', 'L10-C', 'L11-B']
-    forms, inspected = _observe_with_tabs(
-        monkeypatch, [False] + [True] * (len(captions) - 1), captions)
-    assert forms is not None
-    assert 'Induk' in {item['name'] for item in forms}
-    assert inspected == ['Induk']
+    for captions in (['Induk', 'L1-D', 'L2', 'L3', 'L6', 'L8', 'L9',
+                      'L10-A', 'L10-B', 'L10-C', 'L11-B'],
+                     ['Induk', 'L1-D', 'L2', 'L3', 'L6', 'L8', 'L9', 'L11-B']):
+        forms, inspected = _observe_with_tabs(
+            monkeypatch, [False] + [True] * (len(captions) - 1), captions)
+        assert forms is not None
+        assert 'Induk' in {item['name'] for item in forms}
+        assert inspected == ['Induk']
 
 
 def test_pinned_corporate_build_accepts_reviewed_fifteen_tab_inventory(monkeypatch):

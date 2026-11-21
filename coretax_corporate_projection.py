@@ -3987,6 +3987,14 @@ _L3_B_GRID_SOURCES = frozenset(('EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING'))
 _L3_B_ROW_FIELDS = frozenset(('RecordId', *_L3_B_FIELDS))
 _L3_B_EXTENDED_FIELDS = _L3_B_ROW_FIELDS | frozenset(_L3_B_METADATA)
 _L3_LABELS = ('COUNTRY_CODE', 'CURRENCY', 'FOREIGN_INCOME_TYPE_CIT', 'TAX_TYPE_BY_OTHER_PARTIES')
+# The pinned L3-B grid emits the tax type of some rows as the bare label
+# without the "PPh " prefix ("Pasal 23") instead of the catalog code
+# (ARTICLE23, whose label is "PPh Pasal 23"). This source-bound mapping is
+# pinned to the observed contract; the resolved code must still be present in
+# the observed TAX_TYPE_BY_OTHER_PARTIES catalog, so the label binds through
+# the normal catalog lookup and nothing is fabricated. Any other bare label
+# stays unbound and refuses.
+_L3_B_TAX_TYPE_BARE_LABELS = {'Pasal 23': 'ARTICLE23'}
 _L3_CAPTIONS = (
     'PENGEMBALIAN/PENGURANGAN PAJAK PENGHASILAN LUAR NEGERI (PASAL 24) YANG TELAH DIKREDITKAN UNTUK TAHUN SEBELUMNYA',
     'JUMLAH PAJAK PENGHASILAN YANG DIBAYAR DI LUAR NEGERI YANG DAPAT DIPERHITUNGKAN DALAM TAHUN BERJALAN')
@@ -4194,8 +4202,14 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                     # A grid-sourced row names one of the two pinned source grids.
                     raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
             text(row['RecordId'])
+            # The source-bound bare-label mapping: some pinned L3-B rows carry
+            # "Pasal 23" where the catalog code is ARTICLE23; the resolved
+            # code still must bind through the observed catalog.
+            tax_type = row['TaxType']
+            tax_type = (_L3_B_TAX_TYPE_BARE_LABELS.get(tax_type, tax_type)
+                        if type(tax_type) is str else tax_type)
             brows.append([str(local_index + 1), text(row['Name']), text(row['TIN']),
-                label(row['TaxType'], 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
+                label(tax_type, 'TAX_TYPE_BY_OTHER_PARTIES'), number(row['TaxBase']), number(row['IncomeTax']),
                 text(row['WithholdingSlipsNumber']),
                 _l3_date(row['WithholdingSlipsDate'], domestic_jakarta_midnight=True)])
             evidence(row['RecordId'], ['Data', local_index, 'RecordId'],
