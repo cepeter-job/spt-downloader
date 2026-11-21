@@ -1288,10 +1288,14 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
             'sha256': hashlib.sha256(prefill_id.encode()).hexdigest()}
         _corporate_rows(prefill_id, ('PrefillFromId',), metadata_rows)
     if 'ElectronicReceiptSubmission' in root:
-        if type(root['ElectronicReceiptSubmission']) is not bool:
+        receipt = root['ElectronicReceiptSubmission']
+        # Explicit null is the live "no receipt yet" source value and is
+        # admitted as an empty metadata cell; any non-null value must be a
+        # strict boolean (no 0/1 or string coercions).
+        if receipt is not None and type(receipt) is not bool:
             raise _UnsupportedMetadata('unverified_corporate_receipt_status')
-        metadata['ElectronicReceiptSubmission'] = root['ElectronicReceiptSubmission']
-        _corporate_rows(root['ElectronicReceiptSubmission'], ('ElectronicReceiptSubmission',), metadata_rows)
+        metadata['ElectronicReceiptSubmission'] = receipt
+        _corporate_rows(receipt, ('ElectronicReceiptSubmission',), metadata_rows)
     # A declared disabled panel carries no DOM proof; its JSON root is bound
     # only when the source value is exactly null/missing (this also gives the
     # inert null evidence row a pointer). Any other value refuses closed,
