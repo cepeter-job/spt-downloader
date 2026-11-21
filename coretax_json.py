@@ -659,7 +659,7 @@ _CIT_NULL_OMISSIONS = frozenset({'CalculationAfterTaxIncome5Years',
 # New data-bearing top-level keys, validated as source evidence when present
 # (doc metadata never proves PDF custody; IDs/provenance are bound, not logged).
 _CIT_METADATA_KEYS = frozenset({'ActualMonths', 'AuditOpinion', 'FinancialStatement',
-    'OtherDocuments', 'PrefillFromId', 'ElectronicReceiptSubmission'})
+    'OtherDocuments', 'PrefillFromId', 'ElectronicReceiptSubmission', 'FacilityRegisters'})
 CORPORATE_L4_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid'
 CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
@@ -1137,6 +1137,19 @@ def _corporate_integer(value):
         except ValueError:
             pass
     raise JsonSafetyError('Native corporate count or year is not a nonnegative JSON integer')
+
+
+def _empty_absent_l4_payload(payload):
+    """True for the empty grid/footer an absent (data-conditional) L4 fetches."""
+    if not isinstance(payload, dict):
+        return False
+    if 'TotalRecords' in payload:
+        return (isinstance(payload.get('TotalRecords'), _CorporateNumber)
+                and str(payload['TotalRecords']) == '0' and not payload.get('Data'))
+    keys = {'TaxBase', 'IncomeTax', 'TaxBaseUsd', 'IncomeTaxUsd'}
+    return set(payload) == keys and all(
+        value is None or (isinstance(value, _CorporateNumber) and str(value) == '0')
+        for value in payload.values())
 
 
 def _corporate_primary(payload, record, selected, scope, paths, provenance):
@@ -1622,6 +1635,14 @@ def adapt_corporate_detail(bodies, record: dict, scope, observed_forms: list) ->
             elif (urlparse(ctx['url']).path.endswith('/getinfotin') and ctx['status'] == 400
                   and isinstance(envelope, dict) and envelope.get('IsSuccessful') is False and payload is None):
                 event['informational_failure'] = True
+            elif (ctx['url'] in (CORPORATE_L4_GRID_URL, CORPORATE_L4_FOOTER_URL) and success
+                  and _empty_absent_l4_payload(payload)):
+                # L4 is data-conditional: an absent L4 still fetches an empty
+                # grid page and a zero footer with no observed binding. Keep the
+                # original empty payloads for replay like the L4 footer; they are
+                # never projected without an L4 section. A NON-empty unbound L4
+                # response still fails closed below (data without an observed tab).
+                auxiliary_packets.setdefault(key, {'payload': payload, 'event': event})
             else:
                 raise _UnsupportedMetadata('unbound_corporate_source_response')
         except _UnsupportedMetadata as error:

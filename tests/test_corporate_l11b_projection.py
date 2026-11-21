@@ -265,9 +265,17 @@ def test_bad_previous_encoding_refuses(previous):
 
 def test_missing_required_source_key_is_not_an_empty_control():
     value = form()
-    value.pop('BorrowingCosts')
+    value.pop('Ebitda')
     with pytest.raises(_UnsupportedMetadata, match='^unsupported_corporate_l11b_source_shape$'):
         project(value)
+
+
+def test_absent_body_tables_project_as_empty_not_refusal():
+    value = form()
+    for key in ('BorrowingCosts', 'DebtBalanceAverage', 'EquityBalanceAverage'):
+        value.pop(key)
+    result = project(value)
+    assert result['tables'] and all(t['body_row_count'] == 0 for t in result['tables'])
 
 
 def test_adapter_preserves_custody_and_explicit_omissions():

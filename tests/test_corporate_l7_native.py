@@ -24,11 +24,15 @@ FRAME = (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/' +
 REQUEST = {'RecordId': corpus.RECORD_ID, 'OnManualClick': False}
 
 
-def selected(model='Normal'):
+def selected(model='Normal', record_id=None):
     record = corpus.selected_record()
     record['meta'].update({'Masa Pajak': 'Januari - Desember 2025', 'Model SPT': model})
     record['source_fields'].update(ReturnSheetStatusCode='SUBMITTED',
-                                  ReturnSheetTypeCode='ICT_RCITR', ReturnSheetModel=model)
+                                   ReturnSheetTypeCode='ICT_RCITR', ReturnSheetModel=model)
+    if record_id is not None:
+        record['record_id'] = record_id
+        record['source_fields']['RecordId'] = record_id
+        record['source_identity']['record_id'] = record_id
     return record
 
 

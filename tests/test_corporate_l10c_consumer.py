@@ -147,7 +147,9 @@ def test_observer_descriptor_consumer_contract_without_claiming_loaded_portal_cu
 
     class Page:
         url = ROUTE
-        def evaluate(self, script, url=None):
+        def evaluate(self, script, url=None, **kwargs):
+            if 'AbortController' in script:
+                return None
             if url is not None:
                 return None if defect == 'provider' else projection.L10C_BUILD_DIGESTS[url]
             return {'locale': 'en-US' if defect == 'environment' else 'id-ID', 'timezone': 'Asia/Jakarta'}

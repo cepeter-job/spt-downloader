@@ -28,6 +28,10 @@ def catalog():
          'ValidFrom': None, 'ValidTo': None}]}]
 
 
+def related_person_catalog():
+    return [{'ReferenceDataType': 'RELATED_PERSON_TYPE', 'language': 'id-ID', 'Details': []}]
+
+
 def envelope(model='Normal'):
     form = corpus.current_form()
     form[ROOT] = raw_source()

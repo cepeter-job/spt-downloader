@@ -121,11 +121,21 @@ def test_partial_metadata_extension_is_not_silently_stripped(field):
 
 @pytest.mark.parametrize(('field', 'value'), [
     ('Index', False), ('Index', True), ('Index', '0'), ('Index', 1), ('Index', None),
-    ('IncomeTaxUsd', False), ('IncomeTaxUsd', '0'), ('IncomeTaxUsd', 1),
-    ('IncomeTaxUsd', None), ('IncomeTaxUsd', 0.5), ('IncomeTaxUsd', 1000000000000000),
-    ('IsManually', False), ('IsManually', 1), ('IsManually', 'true'), ('IsManually', None),
-    ('TableSource', 'TAXPAYER_ACCOUNTING'), ('TableSource', ''), ('TableSource', False),
-    ('TableSource', {}), ('Action', 'download'), ('Action', False), ('Action', []),
+    ('IncomeTaxUsd', False), ('IncomeTaxUsd', '0'), ('IncomeTaxUsd', None),
+    ('IncomeTaxUsd', 1000000000000000), ('IncomeTaxUsd', -1),
+    # A manually entered USD amount is unproved: the default manual row
+    # (IsManually true, null TableSource) keeps the traditional zero-only
+    # contract, so a nonzero manual USD is inconsistent and refuses.
+    ('IncomeTaxUsd', 5), ('IncomeTaxUsd', 0.5),
+    ('IsManually', 1), ('IsManually', 'true'), ('IsManually', None),
+    # A single-field mutation on the default manual row creates an inconsistent
+    # cross-product (grid-sourced with a null source, or manual with a grid
+    # source), which is unproved and refuses.
+    ('IsManually', False),
+    ('TableSource', ''), ('TableSource', False), ('TableSource', {}),
+    ('TableSource', 'UNKNOWN_GRID'), ('TableSource', 'EBUPOTBPU_GRID'),
+    ('TableSource', 'TAXPAYER_ACCOUNTING'),
+    ('Action', 'download'), ('Action', False), ('Action', []),
 ])
 def test_extended_row_rejects_nonreviewed_metadata_values(field, value):
     form, pages, footer = inputs()
@@ -135,6 +145,25 @@ def test_extended_row_rejects_nonreviewed_metadata_values(field, value):
     with pytest.raises(_UnsupportedMetadata):
         project(form, pages, footer)
     assert (form, pages, footer) == before
+
+
+@pytest.mark.parametrize(('is_manual', 'table_source'), [
+    (True, None), (False, 'EBUPOTBPU_GRID'), (False, 'TAXPAYER_ACCOUNTING')])
+def test_extended_row_admits_reviewed_source_combinations(is_manual, table_source):
+    # The two proved L3-B variants: a manual row (IsManually true, null
+    # TableSource, the traditional zero-only USD contract) and a grid-sourced
+    # row (IsManually false, a pinned source grid) with a bounded nonnegative
+    # USD lexeme (43 fractional / 28 with >2 decimals in the live capture).
+    form, pages, footer = inputs()
+    _extend(pages)
+    row = pages[0]['data'][0]
+    row['IsManually'] = is_manual
+    row['TableSource'] = table_source
+    if not is_manual:
+        # Only a grid-sourced row carries a nonzero (fractional) USD lexeme.
+        row['IncomeTaxUsd'] = 16.5
+    result = project(form, pages, footer)
+    assert result['tables'][1]['body_row_count'] == 12
 
 
 @pytest.mark.parametrize('extended', [False, True])

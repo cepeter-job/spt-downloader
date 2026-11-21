@@ -36,6 +36,7 @@ GRID_ROLES = {
         ('rshshr-citr-l9-form-grid3', 'l9-table-3-grid', GROUPS)),
  'L10-A': (('rshshr-citr-l10a-form-grid1', 'l10a-grid', (None,)),),
 }
+_REFERENCE_REACQUIRE_TIMEOUT_MS = 8000
 _BUILD_HASH = r'''async url => {
  const loaded=[...document.scripts].some(s=>s.src===url) ||
    performance.getEntriesByType('resource').some(e=>e.name===url);
@@ -314,10 +315,11 @@ def _observe_l10c_projection(page, form, tab, panel, capture, check_cancel):
             or metadata.get('footer_spans') != []):
         return None
     references, kinds_seen = [], set()
-    observations = capture.request_observations()
+    observations = _reacquire_reference_observations(page, capture, list(urls), check_cancel)
     for url, kinds in sorted(urls.items()):
         sequences = sorted({event['sequence'] for event in observations if event['url'] == url
-                            and event['method'] == 'GET' and event['request_json'] is None})
+                            and event['method'] == 'GET' and event['request_json'] is None
+                            and event.get('status') in (None, 200)})
         if sequences:
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
             kinds_seen.update(kinds)
@@ -472,12 +474,15 @@ def _observe_l2(page, form, tab, capture, digest, check_cancel):
         tables.append({'component': L2_COMPONENTS[index], 'source_structure': structure,
             'headers': metadata['headers'], 'footer_spans': metadata['footer_spans']})
     references = []
-    observations = capture.request_observations()
+    l2_urls = [url for url, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if kinds and not set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}]
+    observations = _reacquire_reference_observations(page, capture, l2_urls, check_cancel)
     for url, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if not kinds or set(kinds) - {'COUNTRY_CODE', 'RELATED_PERSON_TYPE'}:
             continue
         sequences = [item['sequence'] for item in observations if item['url'] == url
-                     and item['method'] == 'GET' and item.get('request_json') is None]
+                     and item['method'] == 'GET' and item.get('request_json') is None
+                     and item.get('status') in (None, 200)]
         if sequences:
             references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
     environment = page.evaluate('() => ({locale:navigator.language,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})')
@@ -812,6 +817,46 @@ def _l3_standalone_layout(form):
     }''', [list(pair) for pair in _L3_LAYOUT_CAPTIONS], timeout=1000) is True
 
 
+def _reacquire_reference_observations(page, capture, urls, check_cancel):
+    """Reacquire allowlisted reference catalogs the SPA served from cache.
+
+    A later return in the same job observes no fresh reference GETs (the SPA
+    caches the catalogs). Reacquire only the missing allowlisted ones with a
+    bounded, cache-busting, same-origin GET on the DETAIL page. An
+    AbortController cancels the outstanding fetches on timeout so a late
+    response is never captured, and the body is read before the timer clears
+    so the completion (not just the header response) is bounded. Only
+    successful captured responses count, so a failure, timeout or cancellation
+    leaves the catalog absent and the caller refuses. Cancellation is
+    preserved; the provider/locale/route/lifetime proof is unchanged. The
+    deadline is the module-owned _REFERENCE_REACQUIRE_TIMEOUT_MS.
+    """
+    from coretax_browser import _check_cancel
+    def _observed(items, url):
+        return any(item['url'] == url and item['method'] == 'GET'
+                   and item.get('request_json') is None and item.get('status') in (None, 200)
+                   for item in items)
+    observations = capture.request_observations()
+    missing = [url for url in dict.fromkeys(urls) if not _observed(observations, url)]
+    if not missing:
+        return observations
+    _check_cancel(check_cancel)
+    page.evaluate(
+        '''([urls, timeoutMs]) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            return Promise.all(urls.map(u =>
+                fetch(u, {cache: 'reload', credentials: 'include',
+                          signal: controller.signal})
+                    .then(r => (r.ok ? r.text() : null))
+                    .catch(() => null)))
+              .then(() => clearTimeout(timer));
+        }''',
+        [missing, _REFERENCE_REACQUIRE_TIMEOUT_MS])
+    _check_cancel(check_cancel)
+    return capture.request_observations()
+
+
 def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *, reason_out=None):
     """Inspect source providers/structure and turn only the owned B paginator."""
     from coretax_browser import _check_cancel, CORPORATE_STRUCTURE_JS
@@ -924,9 +969,12 @@ def _observe_l3(page, form, capture, digest, record, max_pages, check_cancel, *,
     if not requests or not footer:
         return refuse('grid_or_footer_missing')
     references = []
+    observations = _reacquire_reference_observations(
+        page, capture, list(CORPORATE_L3_REFERENCE_URLS.values()), check_cancel)
     for url in CORPORATE_L3_REFERENCE_URLS.values():
         sequences = [item['sequence'] for item in observations
-            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None]
+            if item['url'] == url and item['method'] == 'GET' and item.get('request_json') is None
+            and item.get('status') in (None, 200)]
         if not sequences:
             return refuse('reference_request')
         references.append({'endpoint': url, 'method': 'GET', 'sequences': sequences})
@@ -1295,11 +1343,15 @@ def _observe_l9(page, form, capture, digest, check_cancel):
             or pins[CIT_SOURCE_URL] != digest):
         return None
     references, observed_kinds = [], set()
+    l9_urls = [endpoint for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items()
+               if len(kinds) == 1 and kinds[0] in L9_REFERENCE_KINDS]
+    observations = _reacquire_reference_observations(page, capture, l9_urls, check_cancel)
     for endpoint, kinds in CORPORATE_REFERENCE_REQUESTS.items():
         if len(kinds) != 1 or kinds[0] not in L9_REFERENCE_KINDS:
             continue
-        sequences = [event['sequence'] for event in capture.request_observations()
-            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None]
+        sequences = [event['sequence'] for event in observations
+            if event['url'] == endpoint and event['method'] == 'GET' and event['request_json'] is None
+            and event.get('status') in (None, 200)]
         if not sequences:
             continue
         if kinds[0] in observed_kinds:
@@ -1923,20 +1975,24 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             forms.append(binding)
         _emit_timings()
         if 'Induk' in names:
-            # The shipped, hash-pinned 525 build has a CDP-reviewed 15-tab
-            # inventory: all FORMS other than L1-B and L8 must be visible.
-            # An absent required tab with an omitted JSON root would not
-            # produce an uncovered evidence row, so downstream evidence
-            # matching alone cannot prove completeness. Refuse this exact
-            # reviewed build when its native tab inventory is incomplete.
-            # Other asset builds need their own reviewed inventory before
-            # their approved pin can adopt this completeness contract.
-            missing = set(FORMS) - {'L1-B', 'L8'} - names
+            # The shipped, hash-pinned build exposes a tab only for the forms
+            # the return actually carries data for. L1-B, L8 and the
+            # data-conditional sheets below are rendered only when the return
+            # has data for them (confirmed absent from CurrentFormData on a
+            # live return whose prefill omits their root keys), so their
+            # absence is legitimate and must not force a whole-record DOM
+            # fallback. Every other reviewed form must be visible: an absent
+            # required tab with an omitted JSON root would not produce an
+            # uncovered evidence row, so downstream evidence matching alone
+            # cannot prove completeness.
+            data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-D', 'L11-A', 'L11-C'}
+            missing = set(FORMS) - data_conditional - names
             if digest == CIT_SOURCE_SHA256 and missing:
                 return unavailable(reason='incomplete_coverage',
                                    missing_forms=','.join(sorted(missing)))
-            # Only L1-B and L8 are reviewed as legitimately absent.
-            # Their path-only bindings remain strictly null/missing-inert.
+            # Only L1-B and L8 are reviewed as legitimately absent with an
+            # inert path-only binding. Their bindings remain strictly
+            # null/missing-inert.
             for absent in ('L1-B', 'L8'):
                 if absent not in names:
                     names.add(absent)

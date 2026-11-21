@@ -292,7 +292,7 @@ def test_every_other_missing_account_is_refused_not_generalized_as_optional(laye
 @pytest.mark.parametrize('layer', ['pure', 'native'])
 @pytest.mark.parametrize('defect', ['duplicate', 'extra-code', 'null-node', 'null-data', 'null-code',
     'bad-children', 'bad-mask', 'bad-mask-container', 'unsafe-operand', 'fractional-operand',
-    'string-operand', 'boolean-operand', 'missing-operand', 'unsafe-footer', 'missing-footer'])
+    'string-operand', 'boolean-operand', 'unsafe-footer', 'missing-footer'])
 def test_omission_does_not_relax_tree_shape_masks_or_numeric_guards(layer, defect):
     raw = omission_source()
     data = l1d_source.tree_row(raw, '4021')
@@ -314,8 +314,6 @@ def test_omission_does_not_relax_tree_shape_masks_or_numeric_guards(layer, defec
         data['BlockFields']['NonTaxableObject'] = 'SYNTHETIC UNSAFE MASK'
     elif defect == 'bad-mask-container':
         data['BlockFields'] = []
-    elif defect == 'missing-operand':
-        del data['Amount']
     elif defect == 'unsafe-footer':
         raw['L1dTreeTotalRow']['Amount'] = 1000000000000000
     elif defect == 'missing-footer':
@@ -324,6 +322,28 @@ def test_omission_does_not_relax_tree_shape_masks_or_numeric_guards(layer, defec
         data['Amount'] = {'unsafe-operand': 1000000000000000, 'fractional-operand': 1.5,
                           'string-operand': '7', 'boolean-operand': True}[defect]
     reject_source(raw, layer)
+
+
+@pytest.mark.parametrize('layer', ['pure', 'native'])
+def test_absent_tree_operand_projects_as_empty_cell_not_refusal(layer):
+    # The submitted prefill legitimately omits numeric operands on unfilled
+    # items (absent != corrupt). An absent operand is an empty cell and 0 to
+    # the reconciled totals; only PRESENT-but-unsafe operands still refuse.
+    if layer == 'pure':
+        raw = full_source()
+        del l1d_source.tree_row(raw, '4021')['Amount']
+        table = project(raw)['tables'][0]
+        row, = [r for r in table['rows'] if r[0] == '4021']
+        assert row[2] == ''
+    else:
+        raw = omission_source()
+        del l1d_source.tree_row(raw, '4021')['Amount']
+        value, observed, record = native_case(raw)
+        result, _ = adapt(value, observed, record)
+        assert result['eligible'] and result['coverage']['complete'], result['reason']
+        section, = [s for s in result['sections'] if s['name'] == 'L1-D']
+        row, = [r for r in section['tables'][0]['rows'] if r[0] == '4021']
+        assert row[2] == ''
 
 
 @pytest.mark.parametrize('layer', ['pure', 'native'])

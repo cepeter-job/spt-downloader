@@ -248,13 +248,100 @@ def test_hydrated_saved_workbook_keeps_unrounded_der_references_and_partial_resu
         resume.close()
 
 
-@pytest.mark.parametrize('commercial,quarter', [('-200004', '-1'), ('-200001', '-1'), ('-200000', '0')])
-def test_nonpositive_ebitda_uses_floor_not_truncation(commercial, quarter):
+def test_fractional_quarter_workbook_export_shows_rounded_cell_and_exact_provenance(tmp_path):
+    # Ebitda25 = 1.25 (ebitda 5 * 0.25) renders at 0 decimals in the workbook
+    # while the provenance keeps the exact lexeme; the export completes cleanly.
+    from openpyxl import load_workbook
+    import coretax_exporter as exporter
+    from support_templates import source_run
+    frac = populated(CommercialNettIncome=Number('5'),
+                     DepreciationAndAmortizationExpenses=Number('0'),
+                     IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('2'),
+                     Ebitda25=Number('1.25'))
+    result = adapt(forms=bindings(part_ii=True), packet=packet(frac))
+    assert result['eligible'], result['reason']
+    section = next(s for s in result['sections'] if s['name'] == 'L11-B')
+    fields = {f['field']: f for f in section['fields']}
+    assert fields['Ebitda25']['value'] == '1'
+    # The adapter provenance keeps the exact original quarter lexeme (1.25).
+    projected = next(p for p in result['provenance']['projections'] if p['form'] == 'L11-B')
+    saved = [e for e in projected['values'] if e.get('path') == ['L11BFormData', 'Ebitda25']]
+    assert saved and saved[0]['value'] == '1.25'
+    run = source_run('PPh Badan', [section])
+    run['year'] = 2025
+    run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
+    reports = []
+    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=reports)
+    book = load_workbook(tmp_path / [p for p in paths if p != 'resume.xlsx'][0])
+    try:
+        sheet = book['L11-B']
+        # The saved EBITDA (25%) cell renders the exact 1.25 at 0 decimals.
+        assert sheet['B7'].value == 1
+    finally:
+        book.close()
+
+
+@pytest.mark.parametrize('commercial,quarter,display', [
+    ('-200004', '-1', '-1'), ('-200001', '-0.25', '0'), ('-200000', '0', '0')])
+def test_nonpositive_ebitda_uses_exact_quarter_product(commercial, quarter, display):
+    # The portal stores Ebitda25 = Ebitda * 0.25 exactly (binary64), so a
+    # non-multiple-of-4 EBITDA leaves a .25/.5/.75 fraction; the cell renders
+    # at 0 decimals. A whole-rupiah floor would reject the real submitted value.
     source = populated(CommercialNettIncome=Number(commercial), IncomeTaxExpense=Number('0'),
                        BorrowingCostExpense=Number('0'), Ebitda25=Number(quarter))
     result = project(source)
     assert result['tables'][0]['name'] == 'L11-B/debt'
-    assert result['fields'][-1]['value'] == quarter
+    assert result['fields'][-1]['value'] == display
+
+
+@pytest.mark.parametrize('commercial,quarter,display,part_ii', [
+    ('5', '1.25', '1', False), ('3', '0.75', '1', False), ('2', '0.5', '1', False),
+    ('-2', '-0.5', '-1', True), ('-3', '-0.75', '-1', True)])
+def test_fractional_quarter_products_admit_both_signs(commercial, quarter, display, part_ii):
+    # Ebitda25 = Ebitda * 0.25 for a non-multiple-of-4 EBITDA leaves .25/.5/.75
+    # fractions in both signs; the saved lexeme survives independently of the
+    # 0-decimal rendered cell. Positive EBITDA hides part II (debt/equity).
+    source = populated(CommercialNettIncome=Number(commercial),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                       Ebitda25=Number(quarter))
+    result = project(source, part_ii=part_ii)
+    assert result['fields'][-1]['value'] == display
+    saved = [e for e in result['provenance'] if e.get('path') == ['L11BFormData', 'Ebitda25']]
+    assert saved and str(saved[0]['value']) == quarter
+
+
+@pytest.mark.parametrize('quarter,reason', [
+    ('1.3', 'unverified_corporate_l11b_quarter_hydration'),
+    ('1.123', 'unsupported_corporate_l11b_amount_precision')])
+def test_mismatched_or_excess_precision_quarter_refuses(quarter, reason):
+    source = populated(CommercialNettIncome=Number('5'),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                       Ebitda25=Number(quarter))
+    with pytest.raises(_UnsupportedMetadata, match=reason):
+        project(source)
+
+
+def test_signed_zero_quarter_refuses():
+    source = populated(CommercialNettIncome=Number('0'),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                       Ebitda25=Number('-0.0'))
+    with pytest.raises(_UnsupportedMetadata, match='signed_zero'):
+        project(source)
+
+
+@pytest.mark.parametrize('borrowing,visible', [(1, False), (2, True)])
+def test_fractional_quarter_visibility_threshold(borrowing, visible):
+    # Part II is visible exactly when BorrowingCost > quarter (ebitda > 0).
+    # With quarter = 1.25, the integer BorrowingCost threshold is >= 2; 1 hides.
+    source = populated(CommercialNettIncome=Number('5'),
+                       DepreciationAndAmortizationExpenses=Number('0'),
+                       IncomeTaxExpense=Number('0'),
+                       BorrowingCostExpense=Number(str(borrowing)), Ebitda25=Number('1.25'))
+    result = project(source, part_ii=visible)
+    assert len(result['tables']) == (3 if visible else 1)
 
 
 def test_exact_quarter_boundary_hides_part_ii():
