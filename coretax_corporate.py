@@ -1981,11 +1981,14 @@ def observe_forms(page, record, scope, capture, *, approved_digest, max_pages=10
             # has data for them (confirmed absent from CurrentFormData on a
             # live return whose prefill omits their root keys), so their
             # absence is legitimate and must not force a whole-record DOM
-            # fallback. Every other reviewed form must be visible: an absent
-            # required tab with an omitted JSON root would not produce an
-            # uncovered evidence row, so downstream evidence matching alone
-            # cannot prove completeness.
-            data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-D', 'L11-A', 'L11-C'}
+            # fallback. L10-A/L10-B/L10-C join that set: a live Amendment
+            # return carries no L10-A/B/C data and renders no such tabs.
+            # Every other reviewed form must be visible: an absent required
+            # tab with an omitted JSON root would not produce an uncovered
+            # evidence row, so downstream evidence matching alone cannot
+            # prove completeness.
+            data_conditional = {'L1-B', 'L8', 'L4', 'L7', 'L10-A', 'L10-B',
+                                'L10-C', 'L10-D', 'L11-A', 'L11-C'}
             missing = set(FORMS) - data_conditional - names
             if digest == CIT_SOURCE_SHA256 and missing:
                 return unavailable(reason='incomplete_coverage',

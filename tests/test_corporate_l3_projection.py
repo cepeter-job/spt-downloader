@@ -24,7 +24,8 @@ SPANS = [[[1, 4, 1, 1, 2, 1]], [[4, 1, 1, 2]] * 3]
 LABELS = {'COUNTRY_CODE': {'ZZ': 'SYNTHETIC COUNTRY'},
           'CURRENCY': {'XXX': 'SYNTHETIC CURRENCY'},
           'FOREIGN_INCOME_TYPE_CIT': {'SYNTHETIC-INCOME': 'SYNTHETIC INCOME'},
-          'TAX_TYPE_BY_OTHER_PARTIES': {'SYNTHETIC-TAX': 'SYNTHETIC TAX'}}
+          'TAX_TYPE_BY_OTHER_PARTIES': {'SYNTHETIC-TAX': 'SYNTHETIC TAX',
+                                         'ARTICLE23': 'PPh Pasal 23'}}
 ROOT = 'ListIncomeTaxWithheldByOtherParties'
 
 
@@ -120,6 +121,10 @@ def test_l3b_sixty_row_paged_shape_with_grid_source_metadata():
         row.update({'RecordId': 'ROW-%02d' % n,
                     'IncomeTaxUsd': 16.5 + n / 10000, 'IsManually': False,
                     'TableSource': ('EBUPOTBPU_GRID', 'TAXPAYER_ACCOUNTING')[n % 2],
+                    # Both live TaxType representations in one table: the
+                    # catalog code and the bare label without the "PPh "
+                    # prefix (source-bound to ARTICLE23).
+                    'TaxType': 'Pasal 23' if n % 3 == 0 else 'SYNTHETIC-TAX',
                     'Index': 0, 'Action': None})
         rows.append(row)
     pages = [{'offset': i, 'rows': 10, 'total': 60, 'data': rows[i:i + 10]}
@@ -145,6 +150,11 @@ def test_l3b_sixty_row_paged_shape_with_grid_source_metadata():
     usd = [p for p in result['provenance']
            if p.get('path') == ['IncomeTaxUsd'] and p.get('source') == 'footer']
     assert usd and usd[0]['value'] == '10736.41742465'
+    # Both TaxType representations project: the bare label binds through the
+    # source-bound mapping to ARTICLE23's catalog label; the code as-is.
+    # Body rows only: the footer rows (JUMLAH / KREDIT) carry no label.
+    assert {row[3] for row in b['rows'][:b['body_row_count']]} == {
+        'PPh Pasal 23', 'SYNTHETIC TAX'}
 
 
 def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
@@ -157,6 +167,35 @@ def test_l3b_extended_row_rejects_unproved_source_and_unsafe_usd():
                             'TableSource': 'EBUPOTBPU_GRID', 'Index': 0, 'Action': None, **bad})
         with pytest.raises(_UnsupportedMetadata):
             project(form, pages, footer)
+
+
+def test_l3b_tax_type_binds_both_code_and_source_bound_bare_label_representations():
+    # Regression: the live L3-B grid emits TaxType in two representations in
+    # one table — the catalog code and the bare label without the "PPh "
+    # prefix ("Pasal 23"). The source-bound mapping resolves the bare label
+    # to ARTICLE23, which must still bind through the observed catalog; both
+    # representations project side by side.
+    form, pages, footer = inputs()
+    pages[0]['data'][0]['TaxType'] = 'Pasal 23'
+    result = project(form, pages, footer)
+    _, b = result['tables']
+    assert b['rows'][0][3] == 'PPh Pasal 23'
+    assert b['rows'][1][3] == 'SYNTHETIC TAX'
+
+
+def test_l3b_bare_label_refuses_without_mapping_or_catalog_entry():
+    form, pages, footer = inputs()
+    pages[0]['data'][0]['TaxType'] = 'Pasal 99'
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages, footer)
+    # The mapping resolves 'Pasal 23' to ARTICLE23; without that catalog
+    # entry the resolved code stays unbound — nothing is fabricated.
+    form, pages, footer = inputs()
+    pages[0]['data'][0]['TaxType'] = 'Pasal 23'
+    labels = deepcopy(LABELS)
+    del labels['TAX_TYPE_BY_OTHER_PARTIES']['ARTICLE23']
+    with pytest.raises(_UnsupportedMetadata):
+        project(form, pages, footer, labels=labels)
 
 
 def test_l3_uses_actual_current_offline_and_paged_fields_and_authoritative_footer():
