@@ -36,6 +36,7 @@ GRID_ROLES = {
         ('rshshr-citr-l9-form-grid3', 'l9-table-3-grid', GROUPS)),
  'L10-A': (('rshshr-citr-l10a-form-grid1', 'l10a-grid', (None,)),),
 }
+_REFERENCE_REACQUIRE_TIMEOUT_MS = 8000
 _BUILD_HASH = r'''async url => {
  const loaded=[...document.scripts].some(s=>s.src===url) ||
    performance.getEntriesByType('resource').some(e=>e.name===url);
@@ -827,7 +828,8 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
     so the completion (not just the header response) is bounded. Only
     successful captured responses count, so a failure, timeout or cancellation
     leaves the catalog absent and the caller refuses. Cancellation is
-    preserved; the provider/locale/route/lifetime proof is unchanged.
+    preserved; the provider/locale/route/lifetime proof is unchanged. The
+    deadline is the module-owned _REFERENCE_REACQUIRE_TIMEOUT_MS.
     """
     from coretax_browser import _check_cancel
     def _observed(items, url):
@@ -840,9 +842,9 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
         return observations
     _check_cancel(check_cancel)
     page.evaluate(
-        '''urls => {
+        '''([urls, timeoutMs]) => {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 8000);
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
             return Promise.all(urls.map(u =>
                 fetch(u, {cache: 'reload', credentials: 'include',
                           signal: controller.signal})
@@ -850,7 +852,7 @@ def _reacquire_reference_observations(page, capture, urls, check_cancel):
                     .catch(() => null)))
               .then(() => clearTimeout(timer));
         }''',
-        missing)
+        [missing, _REFERENCE_REACQUIRE_TIMEOUT_MS])
     _check_cancel(check_cancel)
     return capture.request_observations()
 

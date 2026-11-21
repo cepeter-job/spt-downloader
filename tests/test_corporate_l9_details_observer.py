@@ -27,7 +27,7 @@ from test_json_hybrid_native import browser as browser
 class Fixture(RecapFixture):
     def __init__(self, browser, monkeypatch, urls, *, defect=None):
         self.urls, self.detail_defect = urls, defect
-        super().__init__(browser, monkeypatch)
+        super().__init__(browser, monkeypatch, natural_refs=list(self.urls.values()))
         monkeypatch.setattr(projection, 'L9_DETAIL_BUILD_DIGESTS', self.pins)
         current = corpus.current_form()
         current['MainFormData']['IsMigrated'] = defect == 'migrated'
@@ -98,13 +98,11 @@ class Fixture(RecapFixture):
             + ''.join(panels) + '</div></div></div></rshshr-corporate-income-tax-return>')
 
     def document(self):
-        value = super().document().replace('</head>', '<style>ui-grid,p-panel,p-accordiontab,'
+        # The natural reference GETs run through the page-level SPA cache
+        # (natural_refs registered in __init__), so only the L9 block styles
+        # are added here.
+        return super().document().replace('</head>', '<style>ui-grid,p-panel,p-accordiontab,'
             'rshshr-citr-l2-form{display:block}</style></head>')
-        original = '.then(r=>r.json()).then(()=>window.primaryDone=true);'
-        replacement = '.then(r=>r.json()).then(()=>Promise.all(' + json.dumps(list(self.urls.values())) + (
-            '.map(url=>fetch(url).then(r=>r.json())))).then(()=>window.primaryDone=true);')
-        assert original in value
-        return value.replace(original, replacement)
 
 
 @pytest.mark.parametrize('defect', [None, 'one-grid-month', 'unprojected-form', 'migrated', 'header', 'owner'])

@@ -4171,7 +4171,10 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                 # cross-product (a manual row naming a grid source, or a
                 # grid-sourced row with a null source), negative USD, nonzero
                 # Index, non-null Action and malformed/unproved values are
-                # inconsistent and refuse.
+                # inconsistent and refuse. A manually entered USD amount is
+                # unproved by the pinned consumer, so manual rows keep the
+                # traditional zero-only contract; only grid-sourced rows carry
+                # a nonzero (fractional) USD lexeme.
                 try:
                     usd = _l3_usd_exact(row['IncomeTaxUsd'])
                     index_ok = _l3_integer(row['Index']) == 0
@@ -4184,8 +4187,8 @@ def project_l3(form, *, pages, footer_payload, headers, footer_spans, tax_type, 
                         or usd < 0):
                     raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
                 if row['IsManually'] is True:
-                    # A manual row has no grid source.
-                    if row['TableSource'] is not None:
+                    # A manual row has no grid source and no proved USD amount.
+                    if row['TableSource'] is not None or usd != 0:
                         raise _UnsupportedMetadata('unsupported_corporate_l3_domestic_row')
                 elif row['TableSource'] not in _L3_B_GRID_SOURCES:
                     # A grid-sourced row names one of the two pinned source grids.

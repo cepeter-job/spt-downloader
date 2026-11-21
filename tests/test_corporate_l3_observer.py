@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 
 import coretax
 import coretax_browser as driver
+import coretax_corporate
 from coretax_corporate import observe_forms
 from coretax_json import JsonSafetyError, adapt_corporate_detail
 from coretax_json_capture import DetailJsonCapture, checkpoint_bodies
@@ -16,8 +17,9 @@ import support_json_corpus as corpus
 
 
 def open_selected(fixture, capture):
-    page, popup = driver.open_return_readonly(fixture.page, fixture.page.locator('tbody tr'),
-        corpus.TAXPAYER_ID, corpus.RECORD_ID, json_capture=capture)
+    row = fixture.page.locator('tbody tr[data-record-id="' + fixture.record['record_id'] + '"]')
+    page, popup = driver.open_return_readonly(fixture.page, row,
+        corpus.TAXPAYER_ID, fixture.record['record_id'], json_capture=capture)
     assert page is fixture.page and popup is False
     page.wait_for_function('window.primaryDone===true')
     assert page.locator('rshshr-citr-main-form').is_visible()
@@ -136,6 +138,57 @@ def test_cached_reference_is_reacquired_via_bounded_cache_bust(browser, tmp_path
             assert result['eligible'] and result['sections'], result['reason']
             assert page.evaluate('window.businessReads') == page.evaluate('window.forbiddenClicks') == 0
             assert fixture.unexpected == []
+    finally:
+        fixture.close()
+
+
+def test_slow_reacquire_body_is_aborted_and_does_not_contaminate_next_attempt(
+        browser, tmp_path, monkeypatch):
+    # A synthetic reference catalog whose body arrives late: the first
+    # cache-busting re-fetch gets headers immediately but the body only
+    # resolves after the AbortController deadline (shortened here so the
+    # test is focused). The aborted attempt leaves the catalog unobserved,
+    # so L3 refuses; the late body must never reach a capture, and a fresh
+    # attempt on the same document still projects from the real catalog.
+    monkeypatch.setattr(coretax_corporate, '_REFERENCE_REACQUIRE_TIMEOUT_MS', 300)
+    fixture = Fixture(browser, monkeypatch, defect='slow-reference-body')
+    try:
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record,
+                corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(fixture, capture)
+            forms = observe_forms(page, fixture.record, corpus.SCOPE, capture,
+                approved_digest=fixture.pins[ASSET])
+            # The aborted re-fetch leaves the last catalog unobserved: the
+            # bounded L3 proof refuses, so no L3 form is projected. The late
+            # body still lands on the abandoned promise (discarded by the
+            # observer), proving it reaches no capture.
+            assert forms is None or not any(f['name'] == 'L3' for f in forms)
+            assert page.evaluate('window.__sptSlowCalls') == 1
+            assert page.evaluate('window.__sptAborted') is True
+            assert page.evaluate('window.__sptLateBodies.length') == 1
+            capture.drain()
+        # Back to the list in the same document, then a fresh attempt: the
+        # SPA catalog cache (page-level) still holds the first attempt's
+        # natural catalogs, and the re-fetch now goes through the real
+        # (fixture-served) catalog, not the late value.
+        page.evaluate('() => { openList(); window.primaryDone = false; }')
+        with DetailJsonCapture(fixture.context, fixture.page, fixture.record,
+                corpus.SCOPE, tmp_path) as capture2:
+            page = open_selected(fixture, capture2)
+            forms2 = observe_forms(page, fixture.record, corpus.SCOPE, capture2,
+                approved_digest=fixture.pins[ASSET])
+            assert forms2 is not None
+            assert any(f['name'] == 'L3' for f in forms2)
+            capture2.drain()
+            bodies2 = list(capture2.iter_bodies())
+            result = adapt_corporate_detail(bodies2, fixture.record, corpus.SCOPE, forms2)
+            assert result['eligible'], result['reason']
+            # The first attempt's late body never reached the second capture.
+            assert all(b'LATE-BODY' not in body['body'] for body in bodies2)
+            # Second re-fetch of the slow catalog went through the real
+            # (fixture-served) catalog, not the late value.
+            assert page.evaluate('window.__sptSlowCalls') == 2
+            assert page.evaluate('window.businessReads') == 0
     finally:
         fixture.close()
 

@@ -123,6 +123,10 @@ def test_partial_metadata_extension_is_not_silently_stripped(field):
     ('Index', False), ('Index', True), ('Index', '0'), ('Index', 1), ('Index', None),
     ('IncomeTaxUsd', False), ('IncomeTaxUsd', '0'), ('IncomeTaxUsd', None),
     ('IncomeTaxUsd', 1000000000000000), ('IncomeTaxUsd', -1),
+    # A manually entered USD amount is unproved: the default manual row
+    # (IsManually true, null TableSource) keeps the traditional zero-only
+    # contract, so a nonzero manual USD is inconsistent and refuses.
+    ('IncomeTaxUsd', 5), ('IncomeTaxUsd', 0.5),
     ('IsManually', 1), ('IsManually', 'true'), ('IsManually', None),
     # A single-field mutation on the default manual row creates an inconsistent
     # cross-product (grid-sourced with a null source, or manual with a grid
@@ -147,14 +151,17 @@ def test_extended_row_rejects_nonreviewed_metadata_values(field, value):
     (True, None), (False, 'EBUPOTBPU_GRID'), (False, 'TAXPAYER_ACCOUNTING')])
 def test_extended_row_admits_reviewed_source_combinations(is_manual, table_source):
     # The two proved L3-B variants: a manual row (IsManually true, null
-    # TableSource) and a grid-sourced row (IsManually false, a pinned source
-    # grid) with a bounded nonnegative USD lexeme (43 fractional / 28 with
-    # >2 decimals in the live capture).
+    # TableSource, the traditional zero-only USD contract) and a grid-sourced
+    # row (IsManually false, a pinned source grid) with a bounded nonnegative
+    # USD lexeme (43 fractional / 28 with >2 decimals in the live capture).
     form, pages, footer = inputs()
     _extend(pages)
     row = pages[0]['data'][0]
     row['IsManually'] = is_manual
     row['TableSource'] = table_source
+    if not is_manual:
+        # Only a grid-sourced row carries a nonzero (fractional) USD lexeme.
+        row['IncomeTaxUsd'] = 16.5
     result = project(form, pages, footer)
     assert result['tables'][1]['body_row_count'] == 12
 

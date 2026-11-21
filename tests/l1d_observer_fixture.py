@@ -4,7 +4,7 @@ import html
 import json
 
 import coretax_corporate_projection as projection
-from test_corporate_l1d_native import DETAIL, envelope, current_classification_envelope
+from test_corporate_l1d_native import envelope, current_classification_envelope
 from test_corporate_l1d_projection import HEADERS
 from test_corporate_l7_native import ASSET, BUILD, MAIN, MAIN_BUILD, selected
 from test_corporate_l11c_native import VENDOR, VENDOR_BUILD
@@ -14,9 +14,13 @@ import support_json_corpus as corpus
 class Fixture:
     def __init__(self, browser, monkeypatch, *, model='Normal', migrated=False, defect=None,
                  classification_source='outer', omitted_5322=False, body_layout_defect=None,
-                 context=None):
-        self.record, self.defect = selected(model), defect
+                 context=None, record_id=None, rows=None, natural_refs=None):
+        self.record, self.defect = selected(model, record_id), defect
         self.omitted_5322, self.body_layout_defect = omitted_5322, body_layout_defect
+        self.list_rows = rows or [self.record['record_id']]
+        self.natural_refs = list(dict.fromkeys(natural_refs or []))
+        self.detail_url = self._detail_url(self.record['record_id'])
+        self.record['detail_url'] = self.detail_url
         self.non_script = next(((url, mode) for label, url in
             (('corporate', ASSET), ('main', MAIN), ('vendor', VENDOR))
             for mode in ('fetch-only', 'preload-only') if defect == label + '-' + mode), None)
@@ -49,9 +53,18 @@ class Fixture:
         self.raw = corpus.wire(value).encode()
         self.requests, self.unexpected = [], []
         self.context.route('**/*', self.route)
-        self.page = self.context.new_page()
-        self.page.goto(corpus.LIST_URL)
-        if self.non_script is not None:
+        if context is None:
+            self.page = self.context.new_page()
+            self.page.goto(corpus.LIST_URL)
+        else:
+            # A later return in the same job: the SPA document (and its page-level
+            # catalog cache) survives the list/detail/list/detail transitions, so
+            # restore the list view in the SAME document instead of reloading it.
+            self.page = context.pages[0]
+            self.page.evaluate('() => { openList(); window.primaryDone = false; }')
+        self.page.evaluate('([rid, html]) => { window.__sptDetail[rid] = html; }',
+                           [self.record['record_id'], self._detail_fragment()])
+        if self.non_script is not None and context is None:
             url, mode = self.non_script
             self.page.evaluate('''async ({url, mode}) => {
                 if(mode === 'fetch-only'){await (await fetch(url)).arrayBuffer();return;}
@@ -68,6 +81,16 @@ class Fixture:
                 url) == (['fetch'] if mode == 'fetch-only' else ['link'])
             assert self.requests.count((url, 'GET')) == 1
 
+    def _detail_fragment(self):
+        """The record's detail DOM as the SPA would render it for this return."""
+        return self.detail()
+
+    @staticmethod
+    def _detail_url(record_id):
+        return (corpus.ORIGIN + '/returnsheets/id-ID/corporate-income-tax-return/'
+            + '/'.join((corpus.TAXPAYER_ID, record_id, 'ICT_RCIT', corpus.AGGREGATE_ID))
+            + '?view=true')
+
     def close(self):
         self.context.close()
 
@@ -83,7 +106,8 @@ class Fixture:
             return route.fulfill(content_type='application/javascript', body=raw)
         if request.url == corpus.PRIMARY_URL:
             assert request.method == 'POST'
-            assert request.post_data_json == {'RecordId': corpus.RECORD_ID, 'OnManualClick': False}
+            assert request.post_data_json == {'RecordId': self.record['record_id'],
+                                               'OnManualClick': False}
             return route.fulfill(content_type='application/json', body=self.raw)
         self.unexpected.append((request.url, request.method))
         return route.abort()
@@ -148,20 +172,39 @@ class Fixture:
     def document(self):
         assets = ''.join('<script src="' + url + '"></script>' for url in self.assets
                          if self.non_script is None or self.non_script[0] != url)
-        return ('<html><head><link rel="icon" href="data:,"><style>'
+        rows = ''.join('<tr data-record-id="' + rid + '"><td><button id="ViewButton" '
+            'title="Lihat" onclick="if(event.isTrusted)openDetail(\'' + rid + '\')">View</button>'
+            '</td></tr>' for rid in self.list_rows)
+        list_markup = ('<rshshr-submitted-returnsheets><table><tbody>' + rows
+                      + '</tbody></table></rshshr-submitted-returnsheets>')
+        detail_by = json.dumps({rid: self._detail_url(rid) for rid in self.list_rows})
+        return ('<html><head><link rel="icon" href="data:,"/><style>'
             'rshshr-submitted-returnsheets,rshshr-corporate-income-tax-return,rshshr-citr-main-form,'
             'rshshr-citr-l1d-form,rsh-citr-l1d-grid1,rsh-citr-l1d-grid2,rsh-citr-l1d-grid3,'
-            'rshshr-citr-financial-statement-grid,p-table,p-accordion,p-accordiontab{display:block}</style>' + assets + '</head><body>'
-            '<rshshr-submitted-returnsheets><table><tbody><tr><td><button id="ViewButton" title="Lihat" '
-            'onclick="if(event.isTrusted)openDetail()">View</button></td></tr></tbody></table></rshshr-submitted-returnsheets>'
-            '<script>window.businessReads=0;window.forbiddenClicks=0;window.primaryDone=false;'
+            'rshshr-citr-financial-statement-grid,p-table,p-accordion,p-accordiontab{display:block}</style>'
+            + assets + '</head><body>' + list_markup
+            + '<script>window.businessReads=0;window.forbiddenClicks=0;window.primaryDone=false;'
+            'window.__sptDetail={};window.__sptCatalogCache={};window.__sptFetchLog=[];'
+            'const __sptFetchNative=window.fetch.bind(window);'
+            'window.fetch=function(input,init){window.__sptFetchLog.push({url:String(input),'
+            'cache:init&&init.cache||null});return __sptFetchNative(input,init);};'
+            'window.sptNaturalRefs=function(urls){urls.forEach(url=>{if(window.__sptCatalogCache[url])return;'
+            'window.__sptCatalogCache[url]=true;window.fetch(url).then(r=>r.json()).catch(()=>{});});};'
+            'window.__sptNaturalRefs=' + json.dumps(self.natural_refs) + ';'
             'function show(i){document.querySelectorAll(".p-tabview-panel").forEach((p,j)=>p.style.display=i===j?"block":"none")}'
-            'function openDetail(){history.pushState({},"",' + json.dumps(DETAIL) + ');'
+            'function openDetail(rid){const details=' + detail_by + ';'
+            'history.pushState("","",details[rid]);window.__sptCurrentRecord=rid;'
             'document.querySelector("rshshr-submitted-returnsheets").remove();'
-            'document.body.insertAdjacentHTML("beforeend",' + json.dumps(self.detail()) + ');'
+            'document.body.insertAdjacentHTML("beforeend",window.__sptDetail[rid]);'
+            'if(window.l3Started!==undefined){window.l3Started=false;window.l3Done=false;window.l3FooterDone=false;}'
+            'window.primaryDone=false;'
             'fetch(' + json.dumps(corpus.PRIMARY_URL) + ',{method:"POST",headers:{"Content-Type":"application/json"},'
-            'body:JSON.stringify({RecordId:' + json.dumps(corpus.RECORD_ID) + ',OnManualClick:false})})'
-            '.then(r=>r.json()).then(()=>window.primaryDone=true);}'
+            'body:JSON.stringify({RecordId:rid,OnManualClick:false})})'
+            '.then(r=>r.json()).then(()=>{window.primaryDone=true;window.sptNaturalRefs(window.__sptNaturalRefs);});}'
+            'function openList(){history.pushState("","",' + json.dumps(corpus.LIST_URL) + ');'
+            'const detail=document.querySelector("rshshr-corporate-income-tax-return");if(detail)detail.remove();'
+            'document.body.insertAdjacentHTML("beforeend",' + json.dumps(list_markup) + ');'
+            'window.primaryDone=false;}'
             'document.addEventListener("click",e=>{if(e.target.closest("button")?.id!=="ViewButton"&&'
             '!e.target.closest("a[role=tab]"))window.forbiddenClicks++;});'
             'for(const [proto,key] of [[HTMLInputElement.prototype,"value"],[HTMLInputElement.prototype,"checked"],'
