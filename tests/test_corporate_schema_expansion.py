@@ -56,6 +56,14 @@ def test_null_allowlist_and_metadata_pass_together():
     assert '11111111-2222-4000-8000-333333333333' not in dump
 
 
+def test_null_receipt_status_is_explicitly_admitted():
+    form = with_schema(current_form())
+    form['ElectronicReceiptSubmission'] = None
+    result = adapt([primary_with_outer_periods(form)])
+    eligible(result)
+    assert result['provenance']['corporate_metadata']['ElectronicReceiptSubmission'] is None
+
+
 def test_document_leaves_retained_in_private_provenance_only():
     form = with_schema(current_form())
     form['AuditOpinion'] = dict(DOC)

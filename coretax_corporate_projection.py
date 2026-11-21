@@ -1463,17 +1463,22 @@ def _apply_l8(binding, section, observed_forms, *, root, payload, record, event)
             or payload.get('ReturnSheetStatusCode') != 'SUBMITTED' or model is None
             or payload.get('ReturnSheetModel') != model or fields.get('ReturnSheetModel') != literal
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
-            or not isinstance(main, dict) or payload.get('TaxRate') != 'TX03' or main.get('TaxRate') != 'TX03'
+            or not isinstance(main, dict) or main.get('TaxRate') != 'TX03'
+            or ('TaxRate' in payload and payload['TaxRate'] != main.get('TaxRate'))
             or any(key not in payload or payload[key] is not None
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
-            or any(key in root for key in ('CalculationOfFiscalLossCompensation',
+            or any(root.get(key) is not None for key in ('CalculationOfFiscalLossCompensation',
                    'L13AListOfTaxFacilityInInvestment', 'L13BListOfAdditionalGrossIncomeDeduction'))):
         raise _UnsupportedMetadata('unverified_corporate_l8_fresh_submitted_lifecycle')
     flags = ('IsCarriedForward', 'IsNetIncomeReduction', 'IsInvestmentOtherIncome',
              'IsGrossIncomeVocational', 'IsGrossIncomeResearch')
-    for source in (main, payload):
-        if any(type(source.get(key)) is not _CorporateNumber or source[key] != '0' for key in flags):
-            raise _UnsupportedMetadata('unverified_corporate_l8_visibility_flags')
+    # Source contract: visibility flags live on MainFormData. The outer payload
+    # copy is optional; when present it must agree with the main owner.
+    if any(type(main.get(key)) is not _CorporateNumber or main[key] != '0' for key in flags):
+        raise _UnsupportedMetadata('unverified_corporate_l8_visibility_flags')
+    if any(key in payload and (type(payload[key]) is not _CorporateNumber
+                               or payload[key] != main[key]) for key in flags):
+        raise _UnsupportedMetadata('unverified_corporate_l8_visibility_flags')
     for source, start, end in ((main, 'AccountingPeriodStart', 'AccountingPeriodEnd'),
                                 (payload, 'PeriodMonthStart', 'PeriodMonthEnd')):
         if (type(source.get(start)) is not _CorporateNumber or source[start] != '1'
@@ -1504,6 +1509,8 @@ def _apply_l8(binding, section, observed_forms, *, root, payload, record, event)
             ('primary', payload, [], (*flags, 'PeriodMonthStart', 'PeriodMonthEnd', 'TaxRate',
                 'PreviousFormData', 'LastSubmittedFormData'))):
         for key in keys:
+            if key not in values:
+                continue
             path = prefix + [key]
             if (source, tuple(path)) in retained:
                 continue

@@ -30,9 +30,11 @@ def envelope(model='Normal', *, net=12345, turnover=100000):
     form['MainFormData'].update(parent, TaxRate='TX03', NetIncomeBeforeTax=net,
         FiscalNetIncomeAfterTax=net, AccountingPeriodStart=1, AccountingPeriodEnd=12,
         **dict.fromkeys(FLAGS, 0), **dict.fromkeys(ZEROS, 0))
+    # Source contract: TaxRate and the visibility flags live on MainFormData
+    # only; the live outer payload carries no copy of either.
     return {'IsSuccessful': True, 'Payload': {'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
-        'PeriodMonthStart': 1, 'PeriodMonthEnd': 12, 'TaxRate': 'TX03',
-        **dict.fromkeys(FLAGS, 0), 'ReturnSheetStatusCode': 'SUBMITTED',
+        'PeriodMonthStart': 1, 'PeriodMonthEnd': 12,
+        'ReturnSheetStatusCode': 'SUBMITTED',
         'ReturnSheetModel': 'NORMAL' if model == 'Normal' else 'AMENDMENT',
         'PreviousFormData': None, 'LastSubmittedFormData': None,
         'CurrentFormData': corpus.wire(form)}}
@@ -87,7 +89,10 @@ def test_l8_packet_fixed_point_reaches_original_provenance_and_saved_workbook(tm
     for key in ('NetIncomeBeforeTax', 'FiscalNetIncomeAfterTax', *ZEROS, *FLAGS):
         assert any(v['path'] == ['MainFormData', key]
                    and v['container'] == ['Payload', 'CurrentFormData'] for v in values)
-    assert any(v['path'] == ['IsInvestmentOtherIncome'] and v['container'] == ['Payload'] for v in values)
+    # The outer payload carries no visibility-flag copy in the live source
+    # contract, so no Payload-container flag evidence exists.
+    assert not any(v['path'] == [key] and v['container'] == ['Payload']
+                   for v in values for key in FLAGS)
     record.update(capture_complete=True, sections=result['sections'])
     run = {'npwp': corpus.NPWP, 'year': 2025, 'year_basis': 'period',
         'inventory_complete': True, 'complete': True, 'errors': [], 'records': [record]}
@@ -137,7 +142,14 @@ def test_l8_visibility_flags_require_original_explicit_numeric_zero(owner, flag,
 def test_l8_visibility_flags_cannot_be_inferred_when_missing(owner, flag):
     source = envelope()
     root = json.loads(source['Payload']['CurrentFormData'])
-    del (source['Payload'] if owner == 'outer' else root['MainFormData'])[flag]
+    if owner == 'outer':
+        # The live source contract places flags on MainFormData only; the
+        # outer payload carries no copy, and that absence is admitted.
+        assert flag not in source['Payload']
+        result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
+        assert result['eligible'] and result['coverage']['complete'], result['reason']
+        return
+    del root['MainFormData'][flag]
     source['Payload']['CurrentFormData'] = corpus.wire(root)
     result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
     assert not result['eligible'] and result['sections'] == []
@@ -172,8 +184,18 @@ def test_l8_null_or_populated_dependency_roots_keep_strict_source_coverage(key, 
     root = json.loads(source['Payload']['CurrentFormData'])
     root[key] = value
     source['Payload']['CurrentFormData'] = corpus.wire(root)
-    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
-    assert not result['eligible'] and result['sections'] == []
+    observed = bindings()
+    if key == 'CalculationOfFiscalLossCompensation' and value is None:
+        # A present-null CFC root is a disabled L7 panel whose declared
+        # path carries the evidence pointer.
+        observed = observed + [{'name': 'L7', 'paths': [[key]], 'disabled': True}]
+    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, observed)
+    if value is None:
+        # The live SPA serializes a data-less dependent root as an explicit
+        # null; a present null is the same proof as an absent key.
+        assert result['eligible'] and result['coverage']['complete'], result['reason']
+    else:
+        assert not result['eligible'] and result['sections'] == []
 
 
 @pytest.mark.parametrize('defect', ['missing-strong', 'missing-both',
@@ -254,3 +276,47 @@ def test_l8_parent_exchange_control_remains_original_unused_evidence(value):
     assert item['rule'] == 'retained-unused-rupiah-source-control'
     section, = [s for s in result['sections'] if s['name'] == 'L8']
     assert section['tables'][0]['footer'][0][2] == '1.320'
+
+
+L13C = 'L13CListOfTaxFacilityOfCorporateIncomeTaxReduction'
+
+
+@pytest.mark.parametrize('model, l13, receipt', [
+    ('Amendment 001', 'absent', 'absent'),  # live amendment shape
+    ('Normal', 'null', 'null'),             # live normal shape
+])
+def test_l8_sanitized_two_spt_live_shapes_admit_native(model, l13, receipt):
+    """Sanitized regression of the two live SPT shapes behind the native gate.
+
+    The amendment serializes the L13/compensation roots with no keys at all
+    and omits the receipt key; the normal serializes the same roots and the
+    receipt as explicit nulls. Both carry TaxRate and the visibility flags on
+    MainFormData only, per the source contract.
+    """
+    source = envelope(model)
+    root = json.loads(source['Payload']['CurrentFormData'])
+    observed = bindings()
+    if l13 == 'null':
+        for key in (*DEPENDENTS, L13C):
+            root[key] = None
+        observed = observed + [{'name': 'L7',
+                                'paths': [['CalculationOfFiscalLossCompensation']],
+                                'disabled': True}]
+    if receipt == 'null':
+        root['ElectronicReceiptSubmission'] = None
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    record = selected(model)
+    result = adapt_corporate_detail([packet(source)], record, corpus.SCOPE, observed)
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = [s for s in result['sections'] if s['name'] == 'L8']
+    assert section['tables'][0]['complete'] is True
+
+
+@pytest.mark.parametrize('value', ['true', 'false', '1', 0, 1])
+def test_l8_non_null_receipt_status_must_be_strict_boolean(value):
+    source = envelope()
+    root = json.loads(source['Payload']['CurrentFormData'])
+    root['ElectronicReceiptSubmission'] = value
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
+    assert not result['eligible'] and result['sections'] == []
