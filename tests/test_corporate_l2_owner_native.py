@@ -357,3 +357,35 @@ def test_cached_l2_references_are_reacquired(browser, tmp_path, monkeypatch):
             assert page.evaluate('window.businessReads') == 0
     finally:
         fixture.close()
+
+
+def test_two_return_l2_reference_reacquired_with_populated_catalog(browser, tmp_path, monkeypatch):
+    # 1st return: the L2 reference (the nonempty related-person catalog) is
+    # captured. 2nd return (Amendment): the SPA caches the reference (no fresh
+    # GET); the bounded re-fetch restores it, so the L2 stays observed and the
+    # Position label is bound across both consecutive returns.
+    first = Fixture(browser, monkeypatch, defect=None)
+    try:
+        with DetailJsonCapture(first.context, first.page, first.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(first, capture)
+            forms = observer.observe_forms(page, first.record, corpus.SCOPE, capture,
+                approved_digest=first.pins[ASSET])
+            assert forms is not None
+            capture.drain()
+    finally:
+        first.close()
+    second = Fixture(browser, monkeypatch, defect='cached-references')
+    try:
+        with DetailJsonCapture(second.context, second.page, second.record, corpus.SCOPE, tmp_path) as capture:
+            page = open_selected(second, capture)
+            forms = observer.observe_forms(page, second.record, corpus.SCOPE, capture,
+                approved_digest=second.pins[ASSET])
+            assert forms is not None
+            binding, = [f for f in forms if f['name'] == 'L2']
+            endpoints = {r['endpoint'] for r in binding['projection']['references']}
+            assert endpoints == {COUNTRY, RELATED_PERSON}
+            capture.drain()
+            result = adapt_corporate_detail(capture.iter_bodies(), second.record, corpus.SCOPE, forms)
+            assert result['eligible'], result['reason']
+    finally:
+        second.close()
