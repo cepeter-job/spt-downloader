@@ -125,6 +125,24 @@ def test_absent_outer_transaction_flag_requires_the_visibility_binding():
     assert result['reason'] == 'unverified_corporate_l10a_binding'
 
 
+def test_populated_row_accepts_index_and_null_action_metadata():
+    """Live row shape: Index (0-based position) and Action (null) are optional
+    metadata; unknown keys still refuse."""
+    rows = [row(Index=0, Action=None), row(Index=1, Action=None)]
+    result = adapt(packets(rows=rows))
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section = next(s for s in result['sections'] if s['name'] == 'L10-A')
+    assert section['tables'][0]['body_row_count'] == 2
+
+
+def test_populated_row_rejects_mismatched_index_or_unknown_metadata():
+    for rows in ([row(Index=1, Action=None)], [row(Index=0, Action='delete')],
+                 [row(Index=0, Action=None, Extra=1)]):
+        result = adapt(packets(rows=rows))
+        assert not result['eligible']
+        assert result['reason'] == 'unsupported_corporate_l10a_row'
+
+
 @pytest.mark.parametrize('defect', ['catalog', 'provider', 'main-pin', 'locale', 'timezone', 'owner',
     'headers', 'footer', 'chain', 'header-structure', 'header-source', 'induk-order', 'outer-flag', 'current-flag', 'missing-previous',
     'invalid-previous', 'extra-request', 'source-root'])
