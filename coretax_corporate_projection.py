@@ -2384,8 +2384,10 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
     proof = binding['projection']
     pins = L10A_BUILD_DIGESTS
     if (not isinstance(proof, dict)
-            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables', 'references'}
+            or set(proof) != {'kind', 'builds', 'route', 'locale', 'timezone', 'tables',
+                              'references', 'visibility_binding'}
             or proof['kind'] != 'corporate-l10a-populated-v1'
+            or proof['visibility_binding'] != 'current-induk-enabled-v1'
             or set(pins) != {CIT_SOURCE, MAIN_SOURCE, VENDOR_SOURCE}
             or any(type(digest) is not str or not re.fullmatch(r'[0-9a-f]{64}', digest)
                    for digest in pins.values())
@@ -2506,6 +2508,10 @@ def _apply_l10a_populated(binding, section, observed_forms, *, root, payload, re
             'ReturnSheetModel', 'PreviousFormData', 'IsTransactionWithRelated')),
             (main, 'current', ['MainFormData'], ('IsTransactionWithRelated',))):
         for key in keys:
+            if key not in owner:
+                # The live amendment omits the outer transaction flag; the
+                # current-Induk visibility binding proves it instead.
+                continue
             entry = _evidence(owner[key], prefix + [key])
             entry.update(response_sequence=event['sequence'],
                 container=['Payload'] if source == 'primary' else ['Payload', 'CurrentFormData'],

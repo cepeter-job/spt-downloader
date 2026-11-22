@@ -48,7 +48,8 @@ def marker(pins=None):
             for index, kind in enumerate(KINDS, 3)],
         'tables': [{'component': OWNER, 'headers': list(projection.L10A_HEADERS),
                     'footer_spans': [], 'source_structure': {'form': 'L10-A', 'owner_chain': CHAIN,
-                                                          'header_controls': ['PeriodYear', 'CollectorTin']}}]}
+                                                          'header_controls': ['PeriodYear', 'CollectorTin']}}],
+        'visibility_binding': 'current-induk-enabled-v1'}
 
 
 def packets(rows=None, value=None):
@@ -99,6 +100,29 @@ def test_positive_populated_original_adapter_uses_descriptions_not_codes_or_iter
     assert all(e['path'] == [0, 'Details', 1, 'CodeDescription'] for e in report['values']
                if e.get('rule', '').startswith('reviewed-corporate-catalog-active-version:')
                and 'row' in e.get('destination', {}))
+
+
+def test_absent_outer_transaction_flag_binds_through_the_current_induk_proof():
+    """Live amendment shape: the outer payload omits IsTransactionWithRelated
+    while MainFormData carries the enabled 1; the populated proof's
+    visibility_binding admits it."""
+    value = envelope()
+    value['Payload'].pop('IsTransactionWithRelated')
+    result = adapt(packets(value=value))
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section = next(s for s in result['sections'] if s['name'] == 'L10-A')
+    assert section['tables'][0]['body_row_count'] == 2
+
+
+def test_absent_outer_transaction_flag_requires_the_visibility_binding():
+    """Without the reviewed visibility binding an absent outer flag refuses."""
+    value = envelope()
+    value['Payload'].pop('IsTransactionWithRelated')
+    proof = marker()
+    proof.pop('visibility_binding')
+    result = adapt(packets(value=value), observed(proof))
+    assert not result['eligible']
+    assert result['reason'] == 'unverified_corporate_l10a_binding'
 
 
 @pytest.mark.parametrize('defect', ['catalog', 'provider', 'main-pin', 'locale', 'timezone', 'owner',
