@@ -1364,7 +1364,7 @@ def _observe_l9(page, form, capture, digest, check_cancel):
         return None
     providers = page.evaluate('''urls => urls.every(url =>
         [...document.scripts].some(s => s.src===url) ||
-        performance.getEntriesByType('resource').some(e => e.name===url && e.initiatorType==='script'))''', list(pins))
+        performance.getEntriesByType('resource').some(e => e.name===url))''', list(pins))
     _check_cancel(check_cancel)
     if providers is not True:
         return None
