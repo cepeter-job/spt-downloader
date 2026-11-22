@@ -73,7 +73,7 @@ class Fixture(RecapFixture):
             grid = ('<' + component + '><ui-grid><p-table data-grid="' + config + '"><table><thead><tr>'
                 + ''.join('<th>' + html.escape(value) + '</th>' for value in headings) + '</tr></thead>'
                 '<tbody><tr>' + '<td>SYNTHETIC BUSINESS BAIT</td>' * 9 + '</tr></tbody>'
-                '<tfoot><tr></tr><tr><td colspan="7">SYNTHETIC BUSINESS BAIT</td><td>SYNTHETIC BUSINESS BAIT</td>'
+                '<tfoot><tr><td colspan="7">SYNTHETIC BUSINESS BAIT</td><td>SYNTHETIC BUSINESS BAIT</td>'
                 '<td></td></tr></tfoot></table><p-paginator><div class="p-paginator">'
                 '<span class="p-paginator-current">Showing 1 to 2 of 2</span>'
                 '<button class="p-paginator-prev" disabled>Prev</button>'
