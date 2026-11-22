@@ -397,7 +397,10 @@ def _l8_integer(value):
         number = _decimal(value)
     except DecimalException:
         raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_precision') from None
-    if number.is_signed() or number > _MAX_INTEGER or number != number.to_integral_value():
+    # Exact integral tokens only: no fractional truncation, no signed zero,
+    # no overflow. Negative integers are legitimate (loss-making returns).
+    if (abs(number) > _MAX_INTEGER or number != number.to_integral_value()
+            or number.is_zero() and number.is_signed()):
         raise _UnsupportedMetadata('unsupported_corporate_l8_numeric_precision')
     return int(number)
 
@@ -429,10 +432,18 @@ def project_l8(form, *, main_form, period_year, headers, footer_spans, tax_type,
     values = [_l8_integer(form[key]) for key in _L8_KEYS]
     taxable = _l8_integer(main_form['TaxableIncome'])
     research = _l8_integer(main_form['TotalGrossIncomeResearch'])
-    if values[0] > 4800000000 or research != 0:
+    if research != 0 or values[0] < 0:
         raise _UnsupportedMetadata('unverified_corporate_l8_branch')
-    masked = taxable - taxable % 1000
-    tax = (masked // 100) * 11
+    if taxable > 0:
+        # 31E-eligible branch: reviewed turnover bound, thousand mask, 11%.
+        if values[0] > 4800000000:
+            raise _UnsupportedMetadata('unverified_corporate_l8_branch')
+        masked = taxable - taxable % 1000
+        tax = (masked // 100) * 11
+    else:
+        # No taxable base (loss or nil): the facility rows are inert zeros and
+        # the captured turnover is reported exactly, never rounded.
+        masked = tax = 0
     if values[1:5] != [masked, 0, tax, 0]:
         raise _UnsupportedMetadata('unreconciled_corporate_l8_reported_values')
     if values[5] != values[3] + values[4] or values[5] != tax:
@@ -1487,9 +1498,13 @@ def _apply_l8(binding, section, observed_forms, *, root, payload, record, event)
     zeros = ('TotalNetIncomeReduction', 'TotalGrossIncomeVocational',
              'TotalCarriedForward', 'TotalGrossIncomeResearch')
     net = _l8_integer(main.get('NetIncomeBeforeTax'))
+    # A loss-making return clamps the taxable base to zero: the 31E facility
+    # branch is inert and fiscal net income keeps the reported loss. A
+    # non-negative return keeps the reviewed thousand-mask fixed point.
+    taxable = 0 if net < 0 else net - net % 1000
     if (any(_l8_integer(main.get(key)) != 0 for key in zeros)
             or _l8_integer(main.get('FiscalNetIncomeAfterTax')) != net
-            or _l8_integer(main.get('TaxableIncome')) != net - net % 1000):
+            or _l8_integer(main.get('TaxableIncome')) != taxable):
         raise _UnsupportedMetadata('unreconciled_corporate_l8_original_main_fixed_points')
     tables = proof['tables']
     structure = {'form': 'L8', 'component': 'rsh-citr-l8-form-grid1', 'groups': [_L8_GROUP]}

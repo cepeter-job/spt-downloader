@@ -1339,6 +1339,12 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     for key, value in root.items():
         if (key not in _CIT_CONTROLS and key not in _CIT_METADATA_KEYS
                 and key not in _CIT_NULL_OMISSIONS):
+            # A data-less L7 root is inert when the L7 panel was not observed:
+            # the SPA omits the tab and serializes the root as an explicit
+            # null. A data-bearing root still needs the observed L7 path.
+            if (key == 'CalculationOfFiscalLossCompensation' and value is None
+                    and not any(path[:1] == [key] for path, _ in paths)):
+                continue
             _corporate_rows(value, (key,), evidence)
     pointers = [_corporate_pointer(path) for path, _ in paths]
     if any(not any(row[0] == pointer or row[0].startswith(pointer + '/') for pointer in pointers)
