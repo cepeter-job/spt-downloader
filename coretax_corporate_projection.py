@@ -2307,9 +2307,12 @@ def project_l10a_populated(rows, *, headers, tax_type, locale, labels):
     rendered, evidence = [], []
     for index, source in enumerate(rows):
         if (not isinstance(source, dict) or not set(L10A_COLUMNS) <= set(source)
-                or set(source) - set(L10A_COLUMNS) - {'RecordId'}
+                or set(source) - set(L10A_COLUMNS) - {'RecordId', 'Index', 'Action'}
                 or 'RecordId' in source and (type(source['RecordId']) is not str
-                    or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', source['RecordId']))):
+                    or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', source['RecordId']))
+                or 'Index' in source and (type(source['Index']) not in (int, _CorporateNumber)
+                    or str(source['Index']) != str(index))
+                or 'Action' in source and source['Action'] is not None):
             raise _UnsupportedMetadata('unsupported_corporate_l10a_row')
         output = []
         for column, key in enumerate(L10A_COLUMNS):

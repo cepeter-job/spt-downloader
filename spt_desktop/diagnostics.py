@@ -38,6 +38,7 @@ EVENTS = frozenset({
     'mpn.paginator_refused', 'mpn.observer_refused', 'mpn.grid_wait_timeout',
     'mpn.catalog_readiness', 'mpn.catalog_preparation', 'corporate.observe_unavailable', 'corporate.observe_timing', 'table.elapsed_budget',
     'corporate.l7_negative_gate', 'corporate.l7_capture_gate', 'corporate.l7_history_arm',
+    'corporate.l9_detail_gate',
     'pph21.observer_gate', 'build.unfamiliar_build', 'masa.observer_gate',
     'table.dom_read_failed', 'table.state_read_failed', 'table.identity_refused', 'table.page_timing',
     'table.initial_loading', 'table.reset_timing', 'table.first_page_timing',
@@ -152,6 +153,9 @@ ENUMS = {
         'js_chain_prefix_' + family + '_' + str(index)
         for family in ('ui', 'p', 'rsh', 'rshshr', 'other') for index in range(1, 5)}),
     'corporate_l7_history_arm': frozenset({'clear', 'occupied', 'document', 'unsupported'}),
+    'corporate_l9_detail_gate': frozenset({'reference_kinds_not_admitted', 'build_pins',
+        'duplicate_reference_kind', 'reference_kinds_incomplete', 'component_lifetime',
+        'providers', 'provider_digests', 'environment', 'tables'}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',
         'table_structure', 'paginator', 'stable_table_metadata', 'request_shape', 'grid_offset',
