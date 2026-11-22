@@ -233,7 +233,7 @@ L11B_KEYS = frozenset({
     *(name for name, _ in L11B_FIELDS), 'Ebitda', 'Ebitda25',
     'DebtBalanceAverage', 'TotalDebtBalanceAverage', 'EquityBalanceAverage',
     'TotalEquityBalanceAverage', 'DebtToEquityRatio', 'BorrowingCosts',
-    'IsDocumentListForm', 'IsEbitdaManuallyEdited'})
+    'TotalBorrowingCosts', 'IsDocumentListForm', 'IsEbitdaManuallyEdited'})
 L7_ROOT = 'CalculationOfFiscalLossCompensation'
 L7_BODY = 'FiscalNetProfitAndLossCompensation'
 L7_SUFFIXES = ('YearMinus4', 'YearMinus3', 'YearMinus2', 'YearMinus1', 'YearCurrent', 'YearNext')

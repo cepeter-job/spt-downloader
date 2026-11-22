@@ -29,6 +29,7 @@ def form(**overrides):
                   'BorrowingCostAmount': _CorporateNumber('80'),
                   'BorrowingCostThatCanBeDeducted': _CorporateNumber('50'),
                   'BorrowingCostThatAreNotDeductible': _CorporateNumber('30')}],
+             'TotalBorrowingCosts': None,
              'IsDocumentListForm': True, 'IsEbitdaManuallyEdited': True}
     value.update(overrides)
     return value
@@ -143,7 +144,6 @@ def test_ordered_sum_preserves_duplicate_operands():
 
 @pytest.mark.parametrize('mutation,reason', [
     ({'Extra': None}, 'source_shape'),
-    ({'TotalBorrowingCosts': None}, 'source_shape'),
     ({'IsDocumentListForm': 'true'}, 'source_shape'),
     ({'CommercialNettIncome': None}, 'amount_type'),
     ({'CommercialNettIncome': '1000000'}, 'amount_type'),
@@ -162,6 +162,20 @@ def test_ordered_sum_preserves_duplicate_operands():
 def test_unreviewed_source_refuses(mutation, reason):
     with pytest.raises(_UnsupportedMetadata, match='^unsupported_corporate_l11b_' + reason + '$'):
         project(form(**mutation))
+
+
+def test_live_explicit_null_totals_are_admitted():
+    """Live shape: TotalBorrowingCosts and the optional averages are explicit
+    nulls; the four scalar controls and the cost grid still project."""
+    value = form(TotalBorrowingCosts=None, DebtBalanceAverage=None,
+                 EquityBalanceAverage=None, BorrowingCosts=None)
+    result = project(value)
+    assert [field['field'] for field in result['fields']] == [
+        'CommercialNettIncome', 'DepreciationAndAmortizationExpenses',
+        'IncomeTaxExpense', 'BorrowingCostExpense']
+    table, = result['tables']
+    assert table['body_row_count'] == 0 and table['complete'] is True
+    assert table['footer'][0][0] == 'JUMLAH'
 
 
 @pytest.mark.parametrize('manual', [False, _CorporateNumber('0'), '1', None])
