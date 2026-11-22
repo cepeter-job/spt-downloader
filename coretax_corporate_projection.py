@@ -126,7 +126,7 @@ L9_GRID_HEADERS = ['KODE HARTA', 'KELOMPOK/JENIS HARTA', 'BULAN/TAHUN PEROLEHAN'
     'BIAYA PEROLEHAN (Rp)', 'NILAI SISA BUKU FISKAL PADA AWAL TAHUN (Rp)',
     'METODE PENYUSUTAN/AMORTISASI / KOMERSIAL', 'METODE PENYUSUTAN/AMORTISASI / FISKAL',
     'PENYUSUTAN/AMORTISASI FISKAL TAHUN INI (Rp)', 'KETERANGAN']
-L9_GRID_SPANS = [[], [7, 1, 1]]
+L9_GRID_SPANS = [[7, 1, 1]]
 L9_GRID_COLUMNS = ('GroupAssetType', 'GroupAssetType', 'MonthYearAcquisition',
     'AcquisitionPrice', 'RemainingBeginningValue', 'MethodCommercial', 'MethodFiscal',
     'FiscalYearValue', 'Notes')
@@ -3172,10 +3172,10 @@ def project_l9_grid(*, index, pages, total, headers, footer_spans, tax_type,
         raise _UnsupportedMetadata('unsupported_corporate_l9_stored_footer')
     # Initial submitted read renders the stored customFooter. Do not sum body
     # display cells, and never acquire edit/refresh footer endpoints here.
-    footer = [[], ['TOTAL', footer_text, '']]
+    footer = [['TOTAL', footer_text, '']]
     provenance.append({**_evidence(total, [L9_ROOT, L9_TABLE_TOTALS[index]]), 'source': 'current',
         'rule': 'initial-nonmigrated-stored-custom-footer/angular-decimal-1.0-0-id',
-        'destination': {'table': L9_GRIDS[index][0], 'footer': 1, 'column': 1}})
+        'destination': {'table': L9_GRIDS[index][0], 'footer': 0, 'column': 1}})
     return {'table': {'name': L9_GRIDS[index][0], 'headers': list(headers), 'rows': rows + footer,
         'footer': footer, 'footer_spans': deepcopy(footer_spans), 'body_row_count': cursor,
         'source_total': source_total, 'complete': True, 'source_structure': structure},
@@ -3472,7 +3472,6 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
                    for key in ('PreviousFormData', 'LastSubmittedFormData'))
             or 'Induk' not in [f['name'] for f in observed_forms[:observed_forms.index(binding)]]
             or not isinstance(main, dict)
-            or 'IsTransactionWithRelated' not in payload
             or not _current_induk_visibility(payload, main, 'IsTransactionWithRelated', proof)
             or type(payload.get('TIN')) is not str or payload['TIN'] != event['scope'][0]
             or type(main.get('Tin')) is not str or main['Tin'] != payload['TIN']
@@ -3502,6 +3501,10 @@ def _apply_l10b(binding, section, observed_forms, *, root, payload, record, even
             (payload, [], ['Payload'], ('TIN', 'PeriodYear', 'ReturnSheetStatusCode',
              'ReturnSheetModel', 'PreviousFormData', 'LastSubmittedFormData', 'IsTransactionWithRelated'))):
         for key in keys:
+            if key not in owner:
+                # The live payload omits the outer transaction flag; the
+                # current-Induk visibility binding proves it instead.
+                continue
             value = owner[key]
             entry = ({'path': prefix + [key], 'type': 'boolean', 'value': value}
                      if type(value) is bool else _evidence(value, prefix + [key]))
@@ -3583,11 +3586,16 @@ def l10b_nondisplay_covered(section, provenance):
             binding = {'name': 'L10-B', 'paths': [[L10B_ROOT]], 'projection': {
                 'kind': L10B_KIND, 'builds': report['builds'], 'route': report['route'],
                 **({'visibility_binding': report['visibility_binding']} if 'visibility_binding' in report else {})}}
+            model = payload.get('ReturnSheetModel')
+            literal = ('Normal' if model == 'NORMAL' else
+                       'Amendment 001' if model == 'AMENDMENT' else None)
+            if literal is None:
+                return False
             record = {'record_id': event['record_id'], 'source_status': 'SPT Dilaporkan',
-                'meta': {'Model SPT': 'Normal'}, 'source_fields': {
+                'meta': {'Model SPT': literal}, 'source_fields': {
                     'TaxpayerAggregateIdentifier': report['route'].split('/')[-4],
                     'TaxTypeCode': 'ICT_RCIT', 'ReturnSheetTypeCode': 'ICT_RCITR',
-                    'ReturnSheetModel': 'Normal',
+                    'ReturnSheetModel': literal,
                     'TaxPeriodCode': root['TaxPeriodCode'],
                     'AggregateIdentifier': root['ReturnSheetAggregateIdentifier']}}
             rebuilt = _apply_l10b(binding, section, [{'name': 'Induk'}, binding],

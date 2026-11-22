@@ -97,7 +97,7 @@ def test_every_question_refuses_unreviewed_types_without_truthy_coercion(key, va
 @pytest.mark.parametrize('defect', ['missing-question', 'extra-question', 'null-root', 'empty-root',
     'array-root', 'missing-history', 'missing-component', 'legacy-binding', 'wrong-kind', 'wrong-route',
     'wrong-pin', 'missing-pin', 'null-pins', 'no-induk', 'previous', 'last', 'missing-previous',
-    'outer-null', 'outer-false', 'outer-zero', 'outer-missing', 'main-null', 'main-false',
+    'outer-null', 'outer-false', 'outer-zero', 'main-null', 'main-false',
     'main-zero', 'main-missing', 'header-missing', 'header-year-missing'])
 def test_unreviewed_profiles_and_missing_lifetime_refuse_closed(defect):
     source, forms = envelope(), observed()
@@ -136,6 +136,23 @@ def test_unreviewed_profiles_and_missing_lifetime_refuse_closed(defect):
         assert result['eligible'] and has_audit_dump_tables(result['sections'], provenance=result['provenance'])
     else:
         assert not result['eligible'] and result['sections'] == []
+
+
+def test_absent_outer_flag_binds_through_the_current_induk_proof():
+    """Live shape: the outer payload omits IsTransactionWithRelated while
+    MainFormData carries the enabled 1; the proof's visibility_binding admits it."""
+    source, forms = envelope(), observed()
+    del source['Payload']['IsTransactionWithRelated']
+    result = adapt(packet(source), forms)
+    assert result['eligible'], result['reason']
+
+
+def test_absent_outer_flag_requires_the_visibility_binding():
+    source, forms = envelope(), observed()
+    del source['Payload']['IsTransactionWithRelated']
+    forms[1]['projection'].pop('visibility_binding')
+    result = adapt(packet(source), forms)
+    assert not result['eligible'] and result['sections'] == []
 
 
 @pytest.mark.parametrize('key,value', [('kind', 'unknown'), ('attempt', 'f' * 32),
