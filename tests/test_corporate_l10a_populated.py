@@ -7,7 +7,7 @@ import pytest
 from coretax_json import _CorporateNumber, _UnsupportedMetadata
 from test_corporate_l10a_projection import row
 
-KINDS = {'Country': 'COUNTRY_CODE', 'RelationshipCode': 'RELATIONSHIP_TYPE',
+KINDS = {'Country': 'COUNTRY_CODE',
          'TypeOfTransaction': 'TRANSACTION_TYPE', 'PricingMethod': 'PRICING_METHOD'}
 
 
@@ -17,7 +17,7 @@ def module():
 
 def labels():
     return {kind: {code: 'SYNTHETIC ' + kind + ' DESCRIPTION'}
-            for kind, code in [('COUNTRY_CODE', 'IDN'), ('RELATIONSHIP_TYPE', '01'),
+            for kind, code in [('COUNTRY_CODE', 'IDN'),
                                ('TRANSACTION_TYPE', '01'), ('PRICING_METHOD', '01')]}
 
 
@@ -37,7 +37,7 @@ def test_populated_consumer_preserves_duplicate_rows_and_expands_only_four_codes
     before = deepcopy(source)
     result = project(source)
     expected = ['SYNTHETIC RELATED PARTY', '0000000000000002',
-        'SYNTHETIC COUNTRY_CODE DESCRIPTION', 'SYNTHETIC RELATIONSHIP_TYPE DESCRIPTION',
+        'SYNTHETIC COUNTRY_CODE DESCRIPTION', '',
         'SYNTHETIC ACTIVITY', 'SYNTHETIC TRANSACTION_TYPE DESCRIPTION', '1.234',
         'SYNTHETIC PRICING_METHOD DESCRIPTION', 'SYNTHETIC REASON']
     assert source == before
@@ -45,6 +45,30 @@ def test_populated_consumer_preserves_duplicate_rows_and_expands_only_four_codes
     assert {tuple(e['path']) for e in result['provenance']} == {
         ('Data', i, key) for i in range(2) for key in source[i]}
     assert all(e['destination']['table'] == 'L10-A/l10a-grid' for e in result['provenance'])
+
+
+@pytest.mark.parametrize('code,label', [
+    ('CIT_RT_01', 'Hubungan istimewa karena kepemilikan saham/ penyertaan sebagaimana '
+                  'diatur oleh Pasal 18 ayat (4) huruf a UU Pajak Penghasilan'),
+    ('CIT_RT_02', 'Hubungan istimewa karena penguasaan sebagaimana diatur oleh '
+                  'Pasal 18 ayat (4) huruf b UU Pajak Penghasilan'),
+    ('CIT_RT_03', 'Hubungan istimewa karena hubungan keluarga sebagaimana diatur oleh '
+                  'Pasal 18 ayat (4) huruf c UU Pajak Penghasilan'),
+    ('CIT_RT_04', 'Hubungan istimewa karena pengendalian sebagaimana diatur oleh '
+                  'Pasal 9 ayat (1) Perjanjian Penghindaran Pajak Berganda (tax treaty) '
+                  'antara Indonesia dengan negara domisili pihak yang mempunyai '
+                  'hubungan istimewa dengan wajib pajak'),
+])
+def test_relationship_code_uses_the_reviewed_portal_enum(code, label):
+    result = project([original_row(RelationshipCode=code)])
+    assert result['rows'][0][3] == label
+    entry, = [e for e in result['provenance'] if e['path'][-1] == 'RelationshipCode']
+    assert entry['rule'] == 'reviewed-relationship-enum' and entry['value'] == code
+
+
+def test_unreviewed_relationship_code_renders_blank():
+    result = project([original_row(RelationshipCode='CIT_RT_99')])
+    assert result['rows'][0][3] == ''
 
 
 @pytest.mark.parametrize('token,expected', [('0', '0'), ('-0', '0'), ('1e3', '1.000'),

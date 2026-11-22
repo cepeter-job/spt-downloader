@@ -91,7 +91,9 @@ def test_positive_populated_original_adapter_uses_descriptions_not_codes_or_iter
     assert section['projection_complete'] is False
     assert section['projection_reason'] == 'l10a_header_slots_omitted'
     assert body[0] == body[1]
-    assert [body[0][c] for c in (2, 3, 5, 7)] == ['A SYNTHETIC ' + kind for kind in KINDS]
+    assert [body[0][c] for c in (2, 3, 5, 7)] == [
+        'A SYNTHETIC COUNTRY_CODE', '', 'A SYNTHETIC TRANSACTION_TYPE',
+        'A SYNTHETIC PRICING_METHOD']
     report = next(p for p in result['provenance']['projections'] if p['form'] == 'L10-A')
     assert all(e['response_sequence'] == 2 for e in report['values'] if e['path'][0] == 'Data')
     assert all(e['path'] == [0, 'Details', 1, 'CodeDescription'] for e in report['values']
@@ -261,7 +263,9 @@ def test_real_populated_observer_capture_held_replay_and_reopened_workbook(brows
             assert sheet.max_row == 14
             assert sheet['A3'].value == sheet['A13'].value == 'SYNTHETIC RELATED PARTY'
             assert sheet['B3'].value == '0000000000000002'
-            assert [sheet.cell(3, c).value for c in (3, 4, 6, 8)] == ['A SYNTHETIC ' + kind for kind in KINDS]
+            assert [sheet.cell(3, c).value for c in (3, 4, 6, 8)] == [
+                'A SYNTHETIC COUNTRY_CODE', None, 'A SYNTHETIC TRANSACTION_TYPE',
+                'A SYNTHETIC PRICING_METHOD']
             assert sheet['G3'].value == 1235 and sheet['G4'].value is None
             assert sheet['G5'].value == sheet['G6'].value == 0 and sheet['G7'].value == -1235
             assert sheet['G8'].value == ('1234.50' if literal_string else 1235)

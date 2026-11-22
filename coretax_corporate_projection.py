@@ -2235,8 +2235,23 @@ def project_l10a(rows, *, headers, tax_type, locale):
     return {'rows': [], 'provenance': []}
 
 
-L10A_LABELS = {'Country': 'COUNTRY_CODE', 'RelationshipCode': 'RELATIONSHIP_TYPE',
+L10A_LABELS = {'Country': 'COUNTRY_CODE',
                'TypeOfTransaction': 'TRANSACTION_TYPE', 'PricingMethod': 'PRICING_METHOD'}
+# The relationship code is not exposed as a live reference request; the portal
+# resolves it from its own reviewed enum. Pinned from the portal's
+# RELATIONSHIP_TYPE catalog (Pasal 18 ayat (4) huruf a-c, Pasal 9 ayat (1)).
+L10A_RELATIONSHIP_LABELS = {
+    'CIT_RT_01': 'Hubungan istimewa karena kepemilikan saham/ penyertaan sebagaimana '
+                 'diatur oleh Pasal 18 ayat (4) huruf a UU Pajak Penghasilan',
+    'CIT_RT_02': 'Hubungan istimewa karena penguasaan sebagaimana diatur oleh '
+                 'Pasal 18 ayat (4) huruf b UU Pajak Penghasilan',
+    'CIT_RT_03': 'Hubungan istimewa karena hubungan keluarga sebagaimana diatur oleh '
+                 'Pasal 18 ayat (4) huruf c UU Pajak Penghasilan',
+    'CIT_RT_04': 'Hubungan istimewa karena pengendalian sebagaimana diatur oleh '
+                 'Pasal 9 ayat (1) Perjanjian Penghindaran Pajak Berganda (tax treaty) '
+                 'antara Indonesia dengan negara domisili pihak yang mempunyai '
+                 'hubungan istimewa dengan wajib pajak',
+}
 L10A_BUILD_DIGESTS = dict(L11C_BUILD_DIGESTS)
 
 
@@ -2306,6 +2321,12 @@ def project_l10a_populated(rows, *, headers, tax_type, locale, labels):
                     raise _UnsupportedMetadata('unsupported_corporate_l10a_reference_type')
                 text = labels[L10A_LABELS[key]].get(value, '')
                 entry['rule'] = 'bound-reference-description'
+            elif key == 'RelationshipCode':
+                # Reviewed portal enum, not a captured reference request.
+                if value is not None and type(value) is not str:
+                    raise _UnsupportedMetadata('unsupported_corporate_l10a_reference_type')
+                text = '' if value is None else L10A_RELATIONSHIP_LABELS.get(value, '')
+                entry['rule'] = 'reviewed-relationship-enum'
             elif key == 'TransactionValue':
                 text, entry['rule'] = _l10a_number(value)
             elif value is None or type(value) is str:
