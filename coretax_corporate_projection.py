@@ -1050,9 +1050,15 @@ def project_l11b(form, *, tax_type, locale, null_defaults=False):
     """
     if tax_type != 'ICT_RCIT' or locale != 'id-ID' or not isinstance(form, dict):
         raise _UnsupportedMetadata('unsupported_corporate_l11b_structure')
-    l11b_optional = {'BorrowingCosts', 'DebtBalanceAverage', 'EquityBalanceAverage'}
+    l11b_optional = {'BorrowingCosts', 'DebtBalanceAverage', 'EquityBalanceAverage',
+                     'TotalBorrowingCosts'}
     if (set(form) - L11B_KEYS or not L11B_KEYS - l11b_optional <= set(form)
             or type(form['IsDocumentListForm']) is not bool):
+        raise _UnsupportedMetadata('unsupported_corporate_l11b_source_shape')
+    # The live source serializes the borrowing-cost total as an explicit null
+    # (or omits it); the projector footers the grid itself, so any non-null
+    # alias value is unreviewed and refuses closed.
+    if 'TotalBorrowingCosts' in form and form['TotalBorrowingCosts'] is not None:
         raise _UnsupportedMetadata('unsupported_corporate_l11b_source_shape')
     manual = form['IsEbitdaManuallyEdited']
     if not (manual is True or type(manual) is _CorporateNumber and manual == '1'):
