@@ -156,11 +156,29 @@ def test_sum_and_ebitda_intermediates_are_checked_before_final_cancellation():
 
 @pytest.mark.parametrize('change', [
     {'Ebitda25': Number('1')}, {'IncomeTaxExpense': Number('1.5')},
-    {'IsEbitdaManuallyEdited': False}, {'TotalBorrowingCosts': None},
+    {'IsEbitdaManuallyEdited': False},
 ])
 def test_unproved_callback_profiles_remain_unsupported(change):
     with pytest.raises(_UnsupportedMetadata):
         project(populated(**change))
+
+
+def test_hydrated_borrowing_cost_total_alias_is_optional_and_null_only():
+    """The hydrated path shares the gate: an omitted key and an explicit null
+    project identical fields and tables."""
+    omitted = populated()
+    omitted.pop('TotalBorrowingCosts', None)
+    nulled = populated(TotalBorrowingCosts=None)
+    a, b = project(omitted), project(nulled)
+    assert a['fields'] == b['fields'] and a['tables'] == b['tables']
+
+
+@pytest.mark.parametrize('value', [
+    Number('0'), Number('80'), False, True, '', '80', [], {}, [0], {'Total': 0},
+])
+def test_hydrated_non_null_borrowing_cost_total_alias_refuses(value):
+    with pytest.raises(_UnsupportedMetadata, match='^unsupported_corporate_l11b_source_shape$'):
+        project(populated(TotalBorrowingCosts=value))
 
 
 def test_der_does_not_round_an_unsupported_ratio_into_a_supported_operand():
