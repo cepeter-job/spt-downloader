@@ -289,6 +289,48 @@ def test_numeric_migrated_flag_encodings_are_read_as_booleans(flag, eligible):
     assert result['eligible'] is eligible, result['reason']
 
 
+def test_absent_main_migrated_flag_falls_back_to_the_outer_payload():
+    """Live shape: MainFormData has no IsMigrated copy; the outer payload
+    carries the authoritative non-migrated flag."""
+    form_value = corpus.current_form()
+    form_value['MainFormData'].pop('IsMigrated', None)
+    form_value['RecapitulationFiscalDepreciationAmortization'] = payload_form()
+    body = [corpus.packet({'IsSuccessful': True,
+        'Payload': {'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
+            'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+            'PreviousFormData': None, 'LastSubmittedFormData': None,
+            'IsMigrated': False, 'CurrentFormData': corpus.wire(form_value)}}, 1)]
+    for sequence, declaration in enumerate(grid_declarations(), start=2):
+        body.append(corpus.packet({'IsSuccessful': True,
+            'Payload': {'Data': [], 'TotalRecords': 0, 'Index': None}},
+            sequence, endpoint=declaration['endpoint'],
+            request=declaration['pages'][0]['request_json']))
+    for item in body:
+        item['context'].update(frame_url=ROUTE, component_lifetime=lifetime())
+    result = adapt_corporate_detail(iter(body), selected(), corpus.SCOPE, observed())
+    assert result['eligible'], result['reason']
+
+
+def test_absent_main_and_outer_migrated_flag_still_refuses():
+    form_value = corpus.current_form()
+    form_value['MainFormData'].pop('IsMigrated', None)
+    form_value['RecapitulationFiscalDepreciationAmortization'] = payload_form()
+    body = [corpus.packet({'IsSuccessful': True,
+        'Payload': {'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
+            'ReturnSheetStatusCode': 'SUBMITTED', 'ReturnSheetModel': 'NORMAL',
+            'PreviousFormData': None, 'LastSubmittedFormData': None,
+            'CurrentFormData': corpus.wire(form_value)}}, 1)]
+    for sequence, declaration in enumerate(grid_declarations(), start=2):
+        body.append(corpus.packet({'IsSuccessful': True,
+            'Payload': {'Data': [], 'TotalRecords': 0, 'Index': None}},
+            sequence, endpoint=declaration['endpoint'],
+            request=declaration['pages'][0]['request_json']))
+    for item in body:
+        item['context'].update(frame_url=ROUTE, component_lifetime=lifetime())
+    result = adapt_corporate_detail(iter(body), selected(), corpus.SCOPE, observed())
+    assert not result['eligible'] and result['reason'] == 'unsupported_corporate_l9_migrated_flag'
+
+
 @pytest.mark.parametrize('options,reason', [
     ({'tax_type': 'ICT_PPN'}, 'unsupported_corporate_l9_structure'),
     ({'locale': 'en-US'}, 'unsupported_corporate_l9_structure'),

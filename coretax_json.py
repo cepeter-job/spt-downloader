@@ -660,6 +660,15 @@ _CIT_NULL_OMISSIONS = frozenset({'CalculationAfterTaxIncome5Years',
 # (doc metadata never proves PDF custody; IDs/provenance are bound, not logged).
 _CIT_METADATA_KEYS = frozenset({'ActualMonths', 'AuditOpinion', 'FinancialStatement',
     'OtherDocuments', 'PrefillFromId', 'ElectronicReceiptSubmission', 'FacilityRegisters'})
+# Data-conditional form roots. The SPA omits the tab and serializes the root
+# as an explicit null when the return carries no data for the form, so a null
+# root with no observed path is inert. A data-bearing root still requires its
+# observed path (fail-closed).
+_CIT_DATA_CONDITIONAL_ROOTS = frozenset({
+    'L1bFormData', 'CalculationFacilitiesIncomeTaxRateReduction',
+    'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject',
+    'CalculationOfFiscalLossCompensation', 'DeclarationTransactionRelatedParties',
+    'L10bFormData', 'L10cFormData', 'L10dFormData', 'L11AFormData', 'L11CFormData'})
 CORPORATE_L4_GRID_URL = ORIGIN + '/returnsheet/api/loadcit/l4-table-a-grid'
 CORPORATE_L4_FOOTER_URL = CORPORATE_L4_GRID_URL + '/footer'
 _CIT_HEADERS = ['JSON path', 'JSON type', 'Source value']
@@ -1339,10 +1348,10 @@ def _corporate_primary(payload, record, selected, scope, paths, provenance):
     for key, value in root.items():
         if (key not in _CIT_CONTROLS and key not in _CIT_METADATA_KEYS
                 and key not in _CIT_NULL_OMISSIONS):
-            # A data-less L7 root is inert when the L7 panel was not observed:
+            # A null data-conditional form root with no observed path is inert:
             # the SPA omits the tab and serializes the root as an explicit
-            # null. A data-bearing root still needs the observed L7 path.
-            if (key == 'CalculationOfFiscalLossCompensation' and value is None
+            # null. A data-bearing root still requires its observed path.
+            if (value is None and key in _CIT_DATA_CONDITIONAL_ROOTS
                     and not any(path[:1] == [key] for path, _ in paths)):
                 continue
             _corporate_rows(value, (key,), evidence)
