@@ -3247,11 +3247,18 @@ def _apply_l9(binding, section, observed_forms, *, root, payload, record, event,
         raise _UnsupportedMetadata('unverified_corporate_l9_submitted_lifecycle')
     main = root.get('MainFormData')
     flag = main.get('IsMigrated') if isinstance(main, dict) else None
+    flag_path = ['MainFormData', 'IsMigrated']
+    if flag is None:
+        # The source contract places the authoritative migrated flag on the
+        # outer payload; an absent main copy is inert when the outer flag is
+        # explicitly non-migrated.
+        flag = payload.get('IsMigrated')
+        flag_path = ['IsMigrated']
     if not (flag is False or (type(flag) is _CorporateNumber and _decimal(flag) == 0)):
         raise _UnsupportedMetadata('unsupported_corporate_l9_migrated_flag')
     result = project_l9(root.get(L9_ROOT), tax_type=fields.get('TaxTypeCode'),
                         locale=proof['locale'], migrated=False)
-    result['provenance'].append({'path': ['MainFormData', 'IsMigrated'],
+    result['provenance'].append({'path': flag_path,
         'type': 'boolean' if flag is False else 'number', 'value': False if flag is False else str(flag),
         'rule': 'retained-original-nonmigrated-initialization',
         'destination': {'form': 'L9', 'control': 'IsMigrated'}})

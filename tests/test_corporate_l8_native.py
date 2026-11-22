@@ -392,3 +392,31 @@ def test_l8_loss_facility_rows_must_stay_zero():
     source['Payload']['CurrentFormData'] = corpus.wire(root)
     result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
     assert not result['eligible'] and result['sections'] == []
+
+
+def test_null_data_conditional_roots_are_inert_without_observed_paths():
+    """The live normal serializes every data-conditional form root as an
+    explicit null and observes none of them; each is inert, and the record
+    still admits native with L8 projected."""
+    source = loss_envelope()
+    root = json.loads(source['Payload']['CurrentFormData'])
+    for key in ('L1bFormData', 'L10bFormData', 'L10cFormData', 'L10dFormData',
+                'L11AFormData', 'L11CFormData',
+                'ListOfIncomeSubjectToFinalTaxAndNonTaxableObject',
+                'CalculationOfFiscalLossCompensation'):
+        root[key] = None
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = [s for s in result['sections'] if s['name'] == 'L8']
+    assert section['tables'][0]['complete'] is True
+
+
+def test_data_conditional_root_with_data_still_requires_an_observed_path():
+    """A data-bearing L10-B root must not pass through an unobserved panel."""
+    source = loss_envelope()
+    root = json.loads(source['Payload']['CurrentFormData'])
+    root['L10bFormData'] = {'SomeData': 'SYNTHETIC'}
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
+    assert not result['eligible'] and result['sections'] == []
