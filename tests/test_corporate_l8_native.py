@@ -320,3 +320,75 @@ def test_l8_non_null_receipt_status_must_be_strict_boolean(value):
     source['Payload']['CurrentFormData'] = corpus.wire(root)
     result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
     assert not result['eligible'] and result['sections'] == []
+
+
+LOSS_NET = -933183569
+LIVE_TURNOVER = 8691990850
+
+
+def loss_envelope(model='Normal'):
+    """Sanitized live loss shape: negative net income, nil taxable base."""
+    form = corpus.current_form()
+    form[ROOT] = dict(zip(('GrossTurnOver',
+        'TaxableIncomeShareOfGrossCirculationGrantedFacility',
+        'TaxableIncomeShareOfGrossCirculationNotGrantedFacility',
+        'IncomeTaxPayableFromTaxableIncomeShareOfGrossCirculationGrantedFacility',
+        'IncomeTaxPayableFromTaxableIncomeShareOfGrossCirculationNotGrantedFacility',
+        'TotalIncomeTax'), (LIVE_TURNOVER, 0, 0, 0, 0, 0)))
+    form[ROOT]['ExchangeRateValue'] = 16777
+    form['MainFormData'].update(TaxRate='TX03', NetIncomeBeforeTax=LOSS_NET,
+        FiscalNetIncomeAfterTax=LOSS_NET, TaxableIncome=0,
+        AccountingPeriodStart=1, AccountingPeriodEnd=12,
+        **dict.fromkeys(FLAGS, 0), **dict.fromkeys(ZEROS, 0))
+    return {'IsSuccessful': True, 'Payload': {'TIN': corpus.NPWP, 'PeriodYear': 2025, 'IsDraft': True,
+        'PeriodMonthStart': 1, 'PeriodMonthEnd': 12,
+        'ReturnSheetStatusCode': 'SUBMITTED',
+        'ReturnSheetModel': 'NORMAL' if model == 'Normal' else 'AMENDMENT',
+        'PreviousFormData': None, 'LastSubmittedFormData': None,
+        'CurrentFormData': corpus.wire(form)}}
+
+
+@pytest.mark.parametrize('model, l13, receipt', [
+    ('Amendment 001', 'absent', 'absent'),  # live amendment shape
+    ('Normal', 'null', 'null'),             # live normal shape
+])
+def test_l8_sanitized_loss_two_spt_live_shapes_admit_native(model, l13, receipt):
+    """Live loss shape: negative net income, nil taxable base, turnover above
+    the 31E bound. Facility rows stay inert zeros; the turnover is reported
+    exactly as captured, never rounded. The live SPA observes no L7 panel, so
+    a null compensation root is inert without an L7 binding."""
+    source = loss_envelope(model)
+    root = json.loads(source['Payload']['CurrentFormData'])
+    if l13 == 'null':
+        for key in (*DEPENDENTS, L13C):
+            root[key] = None
+    if receipt == 'null':
+        root['ElectronicReceiptSubmission'] = None
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    record = selected(model)
+    result = adapt_corporate_detail([packet(source)], record, corpus.SCOPE, bindings())
+    assert result['eligible'] and result['coverage']['complete'], result['reason']
+    section, = [s for s in result['sections'] if s['name'] == 'L8']
+    table = section['tables'][0]
+    assert table['complete'] is True
+    assert table['rows'][1][2] == '8.691.990.850'
+    assert table['rows'][3][2] == '0' and table['rows'][6][2] == '0'
+    assert table['footer'][0][2] == '0'
+
+
+def test_l8_loss_requires_zero_taxable_base():
+    source = loss_envelope()
+    root = json.loads(source['Payload']['CurrentFormData'])
+    root['MainFormData']['TaxableIncome'] = 1000
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
+    assert not result['eligible'] and result['sections'] == []
+
+
+def test_l8_loss_facility_rows_must_stay_zero():
+    source = loss_envelope()
+    root = json.loads(source['Payload']['CurrentFormData'])
+    root[ROOT]['IncomeTaxPayableFromTaxableIncomeShareOfGrossCirculationGrantedFacility'] = 11
+    source['Payload']['CurrentFormData'] = corpus.wire(root)
+    result = adapt_corporate_detail([packet(source)], selected(), corpus.SCOPE, bindings())
+    assert not result['eligible'] and result['sections'] == []
