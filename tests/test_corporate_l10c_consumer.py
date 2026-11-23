@@ -235,6 +235,132 @@ def test_l10c_history_success_emits_no_gate(tmp_path):
     assert not [r for r in rows if r.get('event') == 'corporate.l10c_detail_gate']
 
 
+def test_bind_l10c_structure_records_each_refusal_reason():
+    """The real DetailJsonCapture.bind_l10c_structure names each refusal point.
+
+    Synthetic state only: no browser, no taxpayer values, no raw DOM data.
+    """
+    from coretax_json_capture import DetailJsonCapture
+
+    class Locator:
+        def __init__(self, fail=False): self.fail = fail
+        def element_handle(self):
+            if self.fail:
+                raise RuntimeError('no handle')
+            return object()
+
+    def make_capture(*, lifetime=None, history=None, unavailable=False, state=None):
+        cap = object.__new__(DetailJsonCapture)
+        cap._l10c_history = history
+        cap._l10c_unavailable = unavailable
+        cap._l10c_bind_reason = None
+        cap.observe_component_lifetime = lambda **kw: lifetime
+        def probe(operation, check_cancel=None):
+            try:
+                return operation()
+            except Exception:
+                return None
+        cap._l10c_probe = probe
+        cap._l10c_state = lambda value: state
+        return cap
+
+    def bind(cap, **locators):
+        args = [locators.get(k, Locator()) for k in ('form', 'grid', 'table', 'tab', 'panel')]
+        return cap.bind_l10c_structure(*args, phase='start')
+
+    # early lifetime/history precondition
+    cap = make_capture(lifetime=None, history=object())
+    assert bind(cap) is False and cap._l10c_bind_reason == 'lifetime_or_history'
+    cap = make_capture(lifetime={'kind': 'x'}, history=None)
+    assert bind(cap) is False and cap._l10c_bind_reason == 'lifetime_or_history'
+
+    # each retained handle key
+    for key in ('form', 'grid', 'table', 'tab', 'panel'):
+        cap = make_capture(lifetime={'kind': 'x'}, history=object())
+        assert bind(cap, **{key: Locator(fail=True)}) is False
+        assert cap._l10c_bind_reason == 'handle_' + key
+
+    # malformed/unavailable JS state
+    cap = make_capture(lifetime={'kind': 'x'}, history=object(), state=None)
+    assert bind(cap) is False and cap._l10c_bind_reason == 'state_start'
+
+    # successful start control
+    cap = make_capture(lifetime={'kind': 'x'}, history=object(),
+                       state={'available': True, 'changed': False, 'complete': False})
+    assert bind(cap) is True and cap._l10c_bind_reason is None
+
+
+def test_bind_l10c_structure_end_requires_complete_state():
+    """phase='end' refuses an incomplete state and names state_end."""
+    from coretax_json_capture import DetailJsonCapture
+
+    class Locator:
+        def element_handle(self): return object()
+
+    cap = object.__new__(DetailJsonCapture)
+    cap._l10c_history = object()
+    cap._l10c_unavailable = False
+    cap._l10c_bind_reason = None
+    cap.observe_component_lifetime = lambda **kw: {'kind': 'x'}
+    def probe(operation, check_cancel=None):
+        try:
+            return operation()
+        except Exception:
+            return None
+    cap._l10c_probe = probe
+    cap._l10c_state = lambda value: value
+    args = [Locator() for _ in range(5)]
+    incomplete = {'available': True, 'changed': False, 'complete': False}
+    cap._l10c_state = lambda value: incomplete
+    assert cap.bind_l10c_structure(*args, phase='end') is False
+    assert cap._l10c_bind_reason == 'state_end'
+    cap._l10c_bind_reason = None
+    complete = {'available': True, 'changed': False, 'complete': True}
+    cap._l10c_state = lambda value: complete
+    assert cap.bind_l10c_structure(*args, phase='end') is True
+    assert cap._l10c_bind_reason is None
+
+
+def test_l10c_history_routes_real_bind_reason_to_jsonl(tmp_path):
+    """A real _l10c_bind_reason flows through _observe_l10c_history to the JSONL."""
+    import coretax_corporate as observer
+    from spt_desktop import diagnostics
+    inspect = getattr(observer, '_observe_l10c_projection', None)
+    assert callable(inspect)
+
+    class Node:
+        def __init__(self, selector=''): self.selector = selector
+        def locator(self, selector): return Node(selector)
+        def count(self): return 2 if self.selector.startswith('p-radiobutton') else 1
+        def evaluate(self, script):
+            return {'headers': list(projection.L10C_HEADERS), 'footer_spans': []}
+
+    class Page:
+        url = ROUTE
+        def evaluate(self, script, url=None, **kwargs):
+            if 'AbortController' in script:
+                return None
+            if url is not None:
+                return projection.L10C_BUILD_DIGESTS[url]
+            return {'locale': 'id-ID', 'timezone': 'Asia/Jakarta'}
+
+    class Capture:
+        _l10c_bind_reason = 'handle_grid'
+        def bind_l10c_structure(self, *args, **kwargs): return False
+        def observe_l10c_lifetime(self, **kwargs): return {'kind': 'x'}
+        def request_observations(self): return []
+
+    with diagnostics.session(tmp_path, 'worker') as log:
+        result = inspect(Page(), Node(), Node(), Node(), Capture(), None)
+        assert log.flush()
+    assert result is None
+    rows = [json.loads(line) for f in sorted((tmp_path / 'logs').glob('diag-*.jsonl'))
+            for line in f.read_text(encoding='utf-8').splitlines()]
+    gates = [r.get('corporate_l10c_detail_gate') for r in rows
+             if r.get('event') == 'corporate.l10c_detail_gate']
+    assert gates == ['history_bind_start_handle_grid']
+
+
 @pytest.mark.parametrize('defect', [None, 'environment', 'provider', 'reference', 'history', 'table'])
 def test_observer_descriptor_consumer_contract_without_claiming_loaded_portal_custody(
         consumer_contract, defect):
