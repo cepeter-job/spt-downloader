@@ -163,7 +163,10 @@ ENUMS = {
         'history_bind_' + phase + '_' + reason
         for phase in ('start', 'end')
         for reason in ('lifetime_or_history', 'handle_form', 'handle_grid', 'handle_table',
-                       'handle_tab', 'handle_panel', 'state_' + phase, 'unknown')}),
+                       'handle_tab', 'handle_panel', 'unknown')} | {
+        'history_bind_' + phase + '_state_' + phase + '_' + reason
+        for phase in ('start', 'end')
+        for reason in ('eval', 'malformed', 'unavailable', 'incomplete')}),
     'corporate_l11a_reason': frozenset({'induk_order', 'cit_digest', 'lifetime_start',
         'script_providers', 'main_digest', 'vendor_digest', 'table_count', 'grid_ownership',
         'table_structure', 'paginator', 'stable_table_metadata', 'request_shape', 'grid_offset',

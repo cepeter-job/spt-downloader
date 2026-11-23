@@ -659,6 +659,7 @@ class DetailJsonCapture:
         self._l10c_offered = False
         self._l10c_unavailable = False
         self._l10c_bind_reason = None
+        self._l10c_state_reason = None
         self._l10c_clock_end = None
         self._final_clock = None
         from coretax_corporate_l10d import L10DHistory
@@ -1063,11 +1064,13 @@ class DetailJsonCapture:
         if (not isinstance(state, dict) or set(state) != {'available', 'changed', 'complete'}
                 or any(type(value) is not bool for value in state.values())):
             self._l10c_unavailable = True
+            self._l10c_state_reason = 'malformed'
             return None
         if state['changed']:
             raise JsonSafetyError('Observed corporate L10-C child history changed')
         if not state['available']:
             self._l10c_unavailable = True
+            self._l10c_state_reason = 'unavailable'
         return state
 
     def bind_l10c_structure(self, form, grid, table, tab, panel, *, phase, check_cancel=None):
@@ -1089,12 +1092,24 @@ class DetailJsonCapture:
                     self._l10c_unavailable = True
                     self._l10c_bind_reason = 'handle_' + key
                     return False
-            state = self._l10c_state(self._l10c_probe(lambda: self._l10c_history.evaluate(
-                '(h,args) => h.bind(args)', {**handles, 'phase': phase}), check_cancel))
+            probe_result = self._l10c_probe(lambda: self._l10c_history.evaluate(
+                '(h,args) => h.bind(args)', {**handles, 'phase': phase}), check_cancel)
+            if probe_result is None:
+                self._l10c_bind_reason = 'state_' + phase + '_eval'
+                return False
+            self._l10c_state_reason = None
+            state = self._l10c_state(probe_result)
             result = bool(state is not None and not self._l10c_unavailable
                           and (phase == 'start' or state['complete']))
             if not result:
-                self._l10c_bind_reason = 'state_' + phase
+                if state is None:
+                    self._l10c_bind_reason = ('state_' + phase + '_'
+                                              + (self._l10c_state_reason or 'malformed'))
+                elif self._l10c_unavailable:
+                    self._l10c_bind_reason = ('state_' + phase + '_'
+                                              + (self._l10c_state_reason or 'unavailable'))
+                else:
+                    self._l10c_bind_reason = 'state_' + phase + '_incomplete'
             return result
         finally:
             for handle in reversed(list(handles.values())):
