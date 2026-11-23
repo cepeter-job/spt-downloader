@@ -219,6 +219,20 @@ def test_unmarked_legacy_partial_is_counted_but_not_authorized(
     assert old.is_dir()
 
 
+def test_rejection_report_identifies_changed_snapshot(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    first = _job(root, 1, complete=False)
+    changed = _job(root, 2, complete=False)
+    approvals = _approve(maintenance.inspect_job_storage(root))
+    assert len(approvals) == 2
+    (changed / 'source.json').write_text('{"synthetic":"changed"}')
+
+    result = maintenance.delete_incomplete_jobs(
+        root, approvals, report_reasons=True)
+    assert result['removed'] == 1 and result['incomplete'] is True
+    assert result['rejected'] == ('changed',)
+    assert not first.exists() and changed.is_dir()
+
 def test_oversized_metadata_is_isolated_from_verified_partial_cleanup(
         tmp_path, monkeypatch):
     root, downloads = _setup(tmp_path, monkeypatch)
@@ -235,3 +249,89 @@ def test_oversized_metadata_is_isolated_from_verified_partial_cleanup(
         'removed': 1, 'incomplete': False}
     assert not safe.exists() and oversized.is_dir()
     assert (downloads / 'resume.xlsx').read_bytes() == b'SYNTHETIC VERIFIED EXCEL'
+
+
+def test_rejection_reporting_mode_is_validated(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match='Invalid rejection reporting mode'):
+        maintenance.delete_incomplete_jobs(root, (), report_reasons='yes')
+
+
+def test_empty_approval_set_reports_disabled_reason(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    assert maintenance.delete_incomplete_jobs(root, (), report_reasons=True) == {
+        'removed': 0, 'incomplete': False, 'rejected': ('disabled',)}
+
+
+def test_global_recovery_reports_reason_with_reporting(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    job = _job(root, 1, complete=False)
+    (root / 'jobs' / '.spt-publish-test').mkdir()
+    result = maintenance.delete_incomplete_jobs(
+        root, ((job.name, '0' * 64),), report_reasons=True)
+    assert result == {'removed': 0, 'incomplete': True,
+                      'rejected': ('global_recovery',)}
+
+
+def test_deadline_reports_reason(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    job = _job(root, 1, complete=False)
+    values = iter([0, 200])
+    monkeypatch.setattr(maintenance.time, 'monotonic', lambda: next(values, 200))
+    result = maintenance.delete_incomplete_jobs(
+        root, ((job.name, '0' * 64),), report_reasons=True)
+    assert 'deadline' in result['rejected'] and result['removed'] == 0
+
+
+def test_missing_terminal_and_wrong_status_report_distinct_reasons(
+        tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    unmarked = _job(root, 1, complete=False)
+    (unmarked / maintenance.TERMINAL).unlink()
+    protected = _job(root, 2, complete=False)
+    (protected / 'run.json').write_text('{"records":[]}', encoding='utf-8')
+
+    result = maintenance.delete_incomplete_jobs(
+        root, ((unmarked.name, '0' * 64), (protected.name, '0' * 64)),
+        report_reasons=True)
+    assert result['removed'] == 0
+    assert set(result['rejected']) == {'no_terminal', 'wrong_status'}
+
+
+def test_late_recovery_reports_reason(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    job = _job(root, 1, complete=False)
+    (job / 'publication-recovery-late.json').write_text('{}', encoding='utf-8')
+    result = maintenance.delete_incomplete_jobs(
+        root, ((job.name, '0' * 64),), report_reasons=True)
+    assert result['rejected'] == ('seal_or_recovery',)
+
+
+def test_inventory_failure_reports_error_reason(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+
+    def broken(*args, **kwargs):
+        raise OSError('SYNTHETIC')
+
+    monkeypatch.setattr(maintenance, '_job_directories', broken)
+    result = maintenance.delete_incomplete_jobs(
+        root, (('a' * 32, '0' * 64),), report_reasons=True)
+    assert result == {'removed': 0, 'incomplete': True, 'rejected': ('error',)}
+
+
+def test_recovery_started_after_selection_reports_reason(tmp_path, monkeypatch):
+    root, _ = _setup(tmp_path, monkeypatch)
+    job = _job(root, 1, complete=False)
+    real = maintenance._job_directories
+    calls = []
+
+    def staged(root_arg):
+        calls.append(root_arg)
+        entries, _ = real(root_arg)
+        return entries, len(calls) > 1
+
+    monkeypatch.setattr(maintenance, '_job_directories', staged)
+    result = maintenance.delete_incomplete_jobs(
+        root, ((job.name, '0' * 64),), report_reasons=True)
+    assert result['rejected'] == ('recovery',)
+    assert job.is_dir()

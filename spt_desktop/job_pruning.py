@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 
+from . import diagnostics
 from .output_windows import DirectoryGuard, locked_file
 from .profile_lifecycle import _identity, _ordinary
 
@@ -447,15 +448,20 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
         if len(approved) != len(allowed_ids):
             raise ValueError('Duplicate approved prune candidates')
         if not approved:
+            diagnostics.record('jobs.prune_attempt', removed=0, eligible=0,
+                                reason='no_candidates')
             return {'removed': 0, 'incomplete': False} if report else 0
     else:
         approved = None
     if keep == 0 or not _windows():
+        diagnostics.record('jobs.prune_attempt', removed=0, eligible=0,
+                            reason='disabled')
         return {'removed': 0, 'incomplete': bool(approved)} if report else 0
     with _PRUNE_LOCK:
         try:
             candidates = _candidates(root, keep, exclude)
             removed = 0
+            verified_count = 0
             incomplete = False
             global_deadline = time.monotonic() + 120
             for job in candidates:
@@ -479,6 +485,7 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
                                              source_inventory=verified):
                                 incomplete = True
                                 continue
+                            verified_count += 1
                             from .profile_lifecycle import _remove_tree
                             # _remove_tree must refuse any entries not in the
                             # already-hashed inventory *before* deleting a byte.
@@ -494,6 +501,14 @@ def prune_published_jobs(root, downloads, keep=DEFAULT_KEEP_JOBS, *,
                     incomplete = True
                     continue
             incomplete = incomplete or (approved is not None and removed != len(approved))
+            reason = ('verification_failed' if incomplete else
+                      'removed' if removed else
+                      'no_candidates' if not candidates else
+                      'no_eligible_candidates')
+            diagnostics.record('jobs.prune_attempt', removed=removed,
+                                eligible=verified_count, reason=reason)
             return {'removed': removed, 'incomplete': bool(incomplete)} if report else removed
         except (OSError, ValueError, TypeError):
+            diagnostics.record('jobs.prune_attempt', removed=0, eligible=0,
+                                reason='verification_failed')
             return {'removed': 0, 'incomplete': True} if report else 0

@@ -999,3 +999,107 @@ def test_incomplete_cleanup_partial_scan_without_candidates_stops(
                    copy_text('settings.window.title.pilih.job.partial.gagal')
                    for w in widgets(root))
     assert not app._manual_prune_busy and not ctl.active
+
+def test_incomplete_cleanup_records_counts_without_job_identity(
+        settings, monkeypatch):
+    from types import SimpleNamespace
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root, app, ctl, dialog, path, writes, errors = settings
+    token, digest = 'a' * 32, 'b' * 64
+    preview = {'total': 1, 'complete': 0, 'partial': 1, 'failed': 0,
+               'protected': 1, 'estimated_bytes': 2048,
+               'scan_complete': True,
+               'removable': ({'id': token, 'status': 'PARTIAL',
+                              'bytes': 2048, 'digest': digest,
+                              'modified_ns': 1_700_000_000_000_000_000},)}
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: {'removed': 1, 'incomplete': False,
+                                          'rejected': ()})
+    monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *a, **kw: True)
+    monkeypatch.setattr(gui.messagebox, 'showinfo', lambda *a, **kw: None)
+
+    with diagnostics.session(path, 'gui'):
+        button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
+        _pump_manual_prune(root)
+        picker = next(w for w in widgets(root)
+                      if isinstance(w, tk.Toplevel) and w.title() ==
+                      copy_text('settings.window.title.pilih.job.partial.gagal'))
+        table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
+        table.selection_set(token)
+        button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
+        _pump_manual_prune(root)
+
+    rows = records(path)
+    cleanup = [row for row in rows if row['event'] == 'jobs.incomplete_cleanup']
+    assert len(cleanup) == 1
+    assert (cleanup[0]['selected'], cleanup[0]['removed'],
+            cleanup[0]['rejected']) == (1, 1, 0)
+    assert not any(row['event'] == 'jobs.incomplete_rejected' for row in rows)
+    assert not any(token in str(row) for row in rows)
+
+def test_incomplete_cleanup_counts_rejected_jobs_not_reason_rows(
+        settings, monkeypatch):
+    from types import SimpleNamespace
+    from spt_desktop import diagnostics
+    from test_diagnostics import records
+
+    root, app, ctl, dialog, path, writes, errors = settings
+    ids = ('a' * 32, 'b' * 32)
+    digests = ('c' * 64, 'd' * 64)
+    preview = {'total': 2, 'complete': 0, 'partial': 2, 'failed': 0,
+               'protected': 2, 'estimated_bytes': 4096,
+               'scan_complete': True,
+               'removable': tuple(
+                   {'id': job_id, 'status': 'PARTIAL', 'bytes': 2048,
+                    'digest': digest, 'modified_ns': 1_700_000_000_000_000_000 + index}
+                   for index, (job_id, digest) in enumerate(zip(ids, digests)))}
+    calls = []
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(gui, 'threading', SimpleNamespace(Thread=ImmediateThread))
+    monkeypatch.setattr(gui, 'inspect_job_storage', lambda *a, **kw: preview)
+    monkeypatch.setattr(gui, 'delete_incomplete_jobs',
+                        lambda *a, **kw: calls.append(kw.get('report_reasons')) or
+                        {'removed': 1, 'incomplete': True,
+                         'rejected': ('changed', 'error')})
+    monkeypatch.setattr(gui.messagebox, 'askyesno', lambda *a, **kw: True)
+    monkeypatch.setattr(gui.messagebox, 'showwarning', lambda *a, **kw: None)
+    monkeypatch.setattr(gui.messagebox, 'showinfo', lambda *a, **kw: None)
+
+    with diagnostics.session(path, 'gui'):
+        button(dialog, copy_text('settings.widget.hapus.job.partial.gagal')).invoke()
+        _pump_manual_prune(root)
+        picker = next(w for w in widgets(root)
+                      if isinstance(w, tk.Toplevel) and w.title() ==
+                      copy_text('settings.window.title.pilih.job.partial.gagal'))
+        table = next(w for w in widgets(picker) if w.winfo_class() == 'Treeview')
+        table.selection_set(*ids)
+        button(picker, copy_text('settings.widget.hapus.terpilih')).invoke()
+        _pump_manual_prune(root)
+
+    assert calls == [True]
+    rows = records(path)
+    cleanup = [row for row in rows if row['event'] == 'jobs.incomplete_cleanup']
+    assert len(cleanup) == 1
+    assert (cleanup[0]['selected'], cleanup[0]['removed'],
+            cleanup[0]['rejected']) == (2, 1, 1)
+    assert len([row for row in rows
+                if row['event'] == 'jobs.incomplete_rejected']) == 2

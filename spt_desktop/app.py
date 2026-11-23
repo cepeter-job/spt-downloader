@@ -665,7 +665,8 @@ class App:
         def delete():
             try:
                 result = delete_incomplete_jobs(
-                    self.workspace, approvals, active_id=excluded)
+                    self.workspace, approvals, active_id=excluded,
+                    report_reasons=True)
                 work.put(('deleted', result))
             except (OSError, ValueError, TypeError, RuntimeError):
                 work.put(('delete_error', None))
@@ -803,6 +804,13 @@ class App:
                 messagebox.showerror(copy_text('settings.dialog.title.pembersihan.gagal'),
                     copy_text('settings.dialog.body.pemeriksaan.atau.penghapusan.tidak.tuntas'), parent=dialog)
             elif kind == 'deleted':
+                reasons = result.get('rejected', ())
+                rejected = max(0, len(approvals) - result['removed'])
+                diagnostics.record('jobs.incomplete_cleanup',
+                                   selected=len(approvals), removed=result['removed'],
+                                   rejected=rejected)
+                for reason in reasons:
+                    diagnostics.record('jobs.incomplete_rejected', reason=reason)
                 if result['incomplete']:
                     messagebox.showwarning(copy_text('settings.dialog.title.pembersihan.tidak.tuntas'),
                         format_text('settings.dialog.body.value1.job.dihapus.sepenuhnya.ada', value1=result['removed']), parent=dialog)
