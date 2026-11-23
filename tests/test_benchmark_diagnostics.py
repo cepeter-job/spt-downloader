@@ -52,7 +52,9 @@ def test_detail_source_projection_incomplete_reason_survives_allowlist(tmp_path)
 
 
 @pytest.mark.parametrize('reason', ['history_capture_api', 'history_source_controls',
-    'history_grid_structure', 'history_bind_start', 'history_bind_end', 'history_lifetime'])
+    'history_grid_structure', 'history_bind_start_lifetime_or_history',
+    'history_bind_start_handle_form', 'history_bind_start_state_start',
+    'history_bind_end_state_end', 'history_lifetime'])
 def test_corporate_l10c_history_gate_reasons_survive_allowlist(tmp_path, reason):
     """Every fixed history_* label must reach the JSONL; private payloads must not."""
     with d.session(tmp_path, 'worker') as log:

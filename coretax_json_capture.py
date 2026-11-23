@@ -658,6 +658,7 @@ class DetailJsonCapture:
         self._l10c_requested = False
         self._l10c_offered = False
         self._l10c_unavailable = False
+        self._l10c_bind_reason = None
         self._l10c_clock_end = None
         self._final_clock = None
         from coretax_corporate_l10d import L10DHistory
@@ -1076,6 +1077,7 @@ class DetailJsonCapture:
         self._l10c_requested = True
         if (self.observe_component_lifetime(check_cancel=check_cancel) is None
                 or self._l10c_history is None or self._l10c_unavailable):
+            self._l10c_bind_reason = 'lifetime_or_history'
             return False
         handles = {}
         try:
@@ -1085,11 +1087,15 @@ class DetailJsonCapture:
                     return handles[key]
                 if self._l10c_probe(retain, check_cancel) is None:
                     self._l10c_unavailable = True
+                    self._l10c_bind_reason = 'handle_' + key
                     return False
             state = self._l10c_state(self._l10c_probe(lambda: self._l10c_history.evaluate(
                 '(h,args) => h.bind(args)', {**handles, 'phase': phase}), check_cancel))
-            return bool(state is not None and not self._l10c_unavailable
-                        and (phase == 'start' or state['complete']))
+            result = bool(state is not None and not self._l10c_unavailable
+                          and (phase == 'start' or state['complete']))
+            if not result:
+                self._l10c_bind_reason = 'state_' + phase
+            return result
         finally:
             for handle in reversed(list(handles.values())):
                 if handle is not None:

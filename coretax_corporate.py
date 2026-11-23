@@ -275,10 +275,10 @@ def _observe_l10c_history(form, tab, panel, capture, check_cancel):
         return 'grid_structure'
     if not capture.bind_l10c_structure(form, grid, table, tab, panel,
                                        phase='start', check_cancel=check_cancel):
-        return 'bind_start'
+        return 'bind_start_' + (getattr(capture, '_l10c_bind_reason', None) or 'unknown')
     if not capture.bind_l10c_structure(form, grid, table, tab, panel,
                                        phase='end', check_cancel=check_cancel):
-        return 'bind_end'
+        return 'bind_end_' + (getattr(capture, '_l10c_bind_reason', None) or 'unknown')
     if capture.observe_l10c_lifetime(check_cancel=check_cancel) is None:
         return 'lifetime'
     return None

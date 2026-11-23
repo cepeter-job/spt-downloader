@@ -135,8 +135,8 @@ def test_c_consumer_refuses_unproved_capabilities_without_label_or_control_loss(
     ('capture_api', 'history_capture_api'),
     ('source_controls', 'history_source_controls'),
     ('grid_structure', 'history_grid_structure'),
-    ('bind_start', 'history_bind_start'),
-    ('bind_end', 'history_bind_end'),
+    ('bind_start', 'history_bind_start_unknown'),
+    ('bind_end', 'history_bind_end_unknown'),
     ('lifetime', 'history_lifetime'),
 ])
 def test_l10c_history_subreason_matrix(tmp_path, defect, expected):
