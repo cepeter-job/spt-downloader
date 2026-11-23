@@ -378,6 +378,45 @@ def test_l10c_history_routes_real_bind_reason_to_jsonl(tmp_path):
     assert gates == ['history_bind_start_handle_grid']
 
 
+def test_bind_eval_failure_blocks_later_lifetime_candidate():
+    """A failed h.bind(args) evaluation keeps the history unavailable so a
+    later lifetime sample cannot offer a candidate (fail-closed)."""
+    from coretax_json_capture import DetailJsonCapture
+
+    class Locator:
+        def element_handle(self): return object()
+
+    class History:
+        def __init__(self): self.calls = 0
+        def evaluate(self, script, args=None):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError('bind evaluation failed')
+            return {'available': True, 'changed': False, 'complete': True}
+
+    cap = object.__new__(DetailJsonCapture)
+    cap._l10c_history = History()
+    cap._l10c_unavailable = False
+    cap._l10c_bind_reason = None
+    cap._l10c_state_reason = None
+    cap._l10c_offered = False
+    cap.observe_component_lifetime = lambda **kw: {'kind': 'x'}
+    cap._cancel = lambda check_cancel=None: None
+    def probe(operation, check_cancel=None):
+        try:
+            return operation()
+        except Exception:
+            return None
+    cap._l10c_probe = probe
+    args = [Locator() for _ in range(5)]
+    assert cap.bind_l10c_structure(*args, phase='start') is False
+    assert cap._l10c_bind_reason == 'state_start_eval'
+    assert cap._l10c_unavailable is True
+    # The history is still functional, but the failed binding forbids a candidate.
+    assert cap.observe_l10c_lifetime() is None
+    assert cap._l10c_offered is False
+
+
 @pytest.mark.parametrize('defect', [None, 'environment', 'provider', 'reference', 'history', 'table'])
 def test_observer_descriptor_consumer_contract_without_claiming_loaded_portal_custody(
         consumer_contract, defect):

@@ -1095,6 +1095,10 @@ class DetailJsonCapture:
             probe_result = self._l10c_probe(lambda: self._l10c_history.evaluate(
                 '(h,args) => h.bind(args)', {**handles, 'phase': phase}), check_cancel)
             if probe_result is None:
+                # A failed evaluation must keep the history permanently
+                # unavailable, exactly as _l10c_state(None) did before, so a
+                # later lifetime sample can never resurrect it.
+                self._l10c_unavailable = True
                 self._l10c_bind_reason = 'state_' + phase + '_eval'
                 return False
             self._l10c_state_reason = None
