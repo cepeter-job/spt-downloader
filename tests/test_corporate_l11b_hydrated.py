@@ -299,6 +299,46 @@ def test_fractional_quarter_workbook_export_shows_rounded_cell_and_exact_provena
         book.close()
 
 
+def test_live_quarter_evidence_exact_while_rendered_cell_matches_dom(tmp_path):
+    """Acceptance for the live -207205419.25 quarter (EBITDA -828821677).
+
+    The native evidence keeps the exact quarter, the workbook cell renders at
+    0 decimals, and the DOM display is the same 0-decimal rendering. DOM/Excel
+    parity is compared on rendered numeric values, not raw evidence values.
+    """
+    from decimal import Decimal
+    from openpyxl import load_workbook
+    import coretax_exporter as exporter
+    from support_templates import source_run
+    frac = populated(CommercialNettIncome=Number('-828821677'),
+                     DepreciationAndAmortizationExpenses=Number('0'),
+                     IncomeTaxExpense=Number('0'), BorrowingCostExpense=Number('0'),
+                     Ebitda25=Number('-207205419.25'))
+    result = adapt(forms=bindings(part_ii=True), packet=packet(frac))
+    assert result['eligible'], result['reason']
+    projected = next(p for p in result['provenance']['projections'] if p['form'] == 'L11-B')
+    saved = [e for e in projected['values'] if e.get('path') == ['L11BFormData', 'Ebitda25']]
+    # 1. exact native evidence keeps the quarter
+    assert saved and Decimal(str(saved[0]['value'])) == Decimal('-207205419.25')
+    section = next(s for s in result['sections'] if s['name'] == 'L11-B')
+    fields = {f['field']: f for f in section['fields']}
+    # 3. rendered DOM display is 0 decimals with id-ID thousands separators
+    assert fields['Ebitda25']['value'] == '-207.205.419'
+    run = source_run('PPh Badan', [section])
+    run['year'] = 2025
+    run['records'][0]['meta']['Masa Pajak'] = 'Januari - Desember 2025'
+    paths = exporter.export_split_workbooks(run, tmp_path, mapping_reports=[])
+    book = load_workbook(tmp_path / [p for p in paths if p != 'resume.xlsx'][0])
+    try:
+        sheet = book['L11-B']
+        # 2. native workbook cell renders 0 decimals
+        assert sheet['B7'].value == -207205419
+        # 4. parity on rendered numeric values, not raw evidence
+        assert Decimal(str(sheet['B7'].value)) == Decimal(fields['Ebitda25']['value'].replace('.', ''))
+    finally:
+        book.close()
+
+
 @pytest.mark.parametrize('commercial,quarter,display', [
     ('-200004', '-1', '-1'), ('-200001', '-0.25', '0'), ('-200000', '0', '0')])
 def test_nonpositive_ebitda_uses_exact_quarter_product(commercial, quarter, display):
