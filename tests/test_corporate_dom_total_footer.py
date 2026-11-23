@@ -147,7 +147,7 @@ def _l3_live_domestic_tables():
     redundant = {
         'name': 'Tabel 2', 'group': 'A. PENGHASILAN DARI LUAR NEGERI',
         'headers': [], 'rows': [], 'body_row_count': 0, 'footer': [],
-        'footer_spans': [],
+        'footer_spans': [], 'complete': True,
     }
     domestic = {
         'name': 'Tabel 3', 'group': 'B. PPh YANG DIPOTONG/DIPUNGUT PIHAK LAIN',
@@ -212,6 +212,9 @@ def test_dom_l3b_complete_total_footer_restores_live_three_table_composition(tmp
         assert report['complete'] is False
         assert report['unmapped_rows'] == 0
         assert report['unmapped_tables'] == 1
+        assert report['unmapped_fields'] == 2
+        assert report['reviewed_redundant_tables'] == 1
+        assert report['reviewed_redundant_fields'] == 2
         assert [item['name'] for item in report['unmapped_table_identities']] == [
             'Tabel 2']
         assert {item['field'] for item in report['unmapped_field_identities']} == {
