@@ -120,6 +120,7 @@ Tahun pajak permintaan: {year}</string>
   <string id="settings.dialog.body.pilih.sekurangnya.satu.job.partial">Pilih sekurangnya satu job PARTIAL/gagal.</string>
   <string id="settings.dialog.body.removed.job.lama.berhasil.dipangkas">{removed} job lama berhasil dipangkas setelah verifikasi ulang. File hasil Downloads dan data login tidak dihapus.</string>
   <string id="settings.dialog.body.removed.job.selesai.dipangkas.tetapi">{removed} job selesai dipangkas, tetapi ada kandidat yang tidak berhasil diverifikasi atau dihapus sepenuhnya. Sisa capture dan checkpoint mungkin tidak lengkap; jangan menganggap job tersebut berhasil dibersihkan. Tinjau kembali sebelum mencoba lagi. Hasil Downloads dan data login tidak dihapus.</string>
+  <string id="settings.dialog.body.inventaris.sebagian.tidak.diverifikasi">Sebagian job tidak dapat diverifikasi dan tetap dilindungi. Hanya kandidat terverifikasi yang dapat dipilih; hasil Downloads tidak dihapus.</string>
   <string id="settings.dialog.body.sebagian.job.belum.dapat.diverifikasi">Sebagian job belum dapat diverifikasi atau batas waktu pemeriksaan habis. Tidak ada job yang dihapus; coba lagi setelah masalah selesai.</string>
   <string id="settings.dialog.body.simpan.atau.abaikan.perubahan.pengaturan">Simpan atau abaikan perubahan Pengaturan sebelum memangkas job.</string>
   <string id="settings.dialog.body.simpan.atau.abaikan.perubahan.sebelum">Simpan atau abaikan perubahan sebelum membersihkan job.</string>
