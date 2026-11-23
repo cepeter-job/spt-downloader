@@ -129,7 +129,9 @@ def inspect_job_storage(root, keep=pruning.DEFAULT_KEEP_JOBS, *, active_id=None)
     protected overlaps status counts: every unfinished/unknown job and every
     retained newest-N job is protected *from automatic pruning*. A partial
     scan still returns the subset that passed every check; scan_complete stays
-    False so the dashboard bound and automatic pruning remain fail-closed.
+    False so the dashboard's lower-bound estimate remains honest. Automatic
+    pruning is a separate path (controller._finish -> prune_published_jobs)
+    and is not gated by this flag.
     """
     pruning.validate_keep_jobs(keep)
     result = {'total': 0, 'complete': 0, 'partial': 0, 'failed': 0,

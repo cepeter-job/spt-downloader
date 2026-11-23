@@ -43,8 +43,12 @@ ditujukan pada sifat kode yang tetap dapat terulang, bukan pada data lama.
 
 ## Yang tidak berubah
 
-- Auto-clean (`prune_published_jobs` / `preview_published_jobs`) tetap
-  fail-closed: `scan_complete=False` tetap menghalangi penghapusan COMPLETE.
+- Auto-clean tidak diubah dan **tidak** dikendalikan oleh flag inventaris
+  manual: `controller._finish()` memanggil `prune_published_jobs()` langsung,
+  tanpa `inspect_job_storage().scan_complete`. Perlindungannya berasal dari
+  verifikasi seal dan file publikasi di `job_pruning.py`. Pratinjau COMPLETE
+  manual (`preview_published_jobs()`) tetap memakai `scan_complete`-nya sendiri
+  dan tetap fail-closed.
 - Batas 16 MiB, `MAX_KEEP_JOBS`, retensi `keep_jobs`, dan verifikasi publikasi
   Downloads tidak dilonggarkan. Job COMPLETE dengan folder publikasi hilang
   tetap dilindungi (P1, di luar lingkup PR ini).
