@@ -27,10 +27,10 @@ auto-clean sampai jobs baru selesai.
    tidak ada dialog/konfirmasi baru. `prune_published_jobs` tetap melakukan
    verifikasi seal + file publikasi Downloads + batas retensi yang sama.
 5. Inventory manual (`inspect_job_storage`) tetap read-only saat startup.
-6. `_dispose()` mencatat thread yang berjalan dan `join(timeout=30)` sebelum
-   teardown GUI. Karena thread non-daemon, proses tetap menunggu sampai
-   `prune_published_jobs()` selesai walaupun join mencapai batas waktu; tidak
-   ada proses yang keluar di tengah `_remove_tree()`.
+6. `_dispose()` **tidak** melakukan join pada thread Tk; menutup jendela tetap
+   responsif. Karena thread non-daemon, proses tetap menunggu sampai
+   `prune_published_jobs()` selesai; tidak ada proses yang keluar di tengah
+   `_remove_tree()`.
 
 ## Yang tidak berubah
 

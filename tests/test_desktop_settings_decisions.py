@@ -800,8 +800,9 @@ def test_startup_auto_prune_excludes_active_job(tmp_path, monkeypatch):
         root.destroy()
 
 
-def test_startup_prune_is_joined_before_gui_disposal(tmp_path, monkeypatch):
+def test_gui_close_does_not_block_on_startup_prune(tmp_path, monkeypatch):
     import threading as real_threading
+    import time
 
     release = real_threading.Event()
     monkeypatch.setattr(gui, 'JobController', lambda *args: Controller())
@@ -819,10 +820,14 @@ def test_startup_prune_is_joined_before_gui_disposal(tmp_path, monkeypatch):
         worker = app._startup_prune_thread
         assert worker is not None and worker.is_alive()
         assert worker.daemon is False
-        real_threading.Timer(0.5, release.set).start()
+        began = time.monotonic()
         app._dispose()
-        assert not worker.is_alive()
+        assert time.monotonic() - began < 1
+        assert worker.is_alive() and worker.daemon is False
         assert app._startup_prune_thread is None
+        release.set()
+        worker.join(5)
+        assert not worker.is_alive()
     finally:
         release.set()
         app._dispose()

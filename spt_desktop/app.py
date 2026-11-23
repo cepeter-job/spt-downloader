@@ -944,12 +944,8 @@ class App:
                 pass
             self._startup_prune_after = None
         if self._startup_prune_thread is not None:
-            # Await an in-flight mutation before teardown. The thread is
-            # non-daemon, so a join timeout cannot leave a half-deleted job:
-            # process exit still waits for the bounded prune call to finish.
-            join = getattr(self._startup_prune_thread, 'join', None)
-            if join is not None:
-                join(timeout=30)
+            # Do not block Tk for a slow prune. The thread is non-daemon, so
+            # process exit still waits for any in-flight _remove_tree to finish.
             self._startup_prune_thread = None
         if self._update_after is not None:
             try:
